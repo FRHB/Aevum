@@ -1,0 +1,11 @@
+{
+  "version": 2,
+  "dgSpecHash": "NfD6bQ6RinY=",
+  "success": true,
+  "projectFilePath": "C:\\Users\\markfrancis\\source\\repos\\FRHB\\Photo-Aevum-Studio\\PhotoAevumStudioBackend\\PhotoAevumStudioBackend\\PhotoAevumStudioBackend.csproj",
+  "expectedPackageFiles": [
+    "C:\\Users\\markfrancis\\.nuget\\packages\\microsoft.aspnetcore.openapi\\10.0.12\\microsoft.aspnetcore.openapi.10.0.12.nupkg.sha512",
+    "C:\\Users\\markfrancis\\.nuget\\packages\\microsoft.openapi\\2.12.0\\microsoft.openapi.2.12.0.nupkg.sha512"
+  ],
+  "logs": []
+}
