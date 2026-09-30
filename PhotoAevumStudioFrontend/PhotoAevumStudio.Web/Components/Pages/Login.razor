@@ -1,6 +1,49 @@
-﻿@page "/Login"
-<h3>Login</h3>
+﻿@page "/login"
+
+<div class="login-page-wrapper">
+    <div class="login-card">
+        <!-- Logo Section -->
+        <div class="logo-wrapper">
+            <img src="images/AevumLogo.jpg" alt="Aevum Studio Logo" class="aevum-logo" />
+        </div>
+
+        <h2 class="login-header">Sign In</h2>
+
+        <!-- Blazor EditForm for Data Binding -->
+        <EditForm Model="@loginModel" OnValidSubmit="HandleLogin">
+            <div class="input-group">
+                <label for="userId">ID</label>
+                <InputText id="userId" class="minimal-input" @bind-Value="loginModel.UserId" placeholder="Enter your ID" />
+            </div>
+
+            <div class="input-group">
+                <label for="password">Password</label>
+                <!-- Note: InputText doesn't natively support type="password" easily without warnings in some versions,
+                     so standard HTML input with @bind is often preferred for passwords in simple implementations. -->
+                <input type="password" id="password" class="minimal-input" @bind="loginModel.Password" placeholder="Enter your password" />
+            </div>
+
+            <div class="forgot-password-container">
+                <a href="/forgot-password" class="forgot-password-link">Forgot password?</a>
+            </div>
+
+            <button type="submit" class="login-button">Login</button>
+        </EditForm>
+    </div>
+</div>
 
 @code {
+    private LoginCredentials loginModel = new LoginCredentials();
 
+    private void HandleLogin()
+    {
+        // Add your authentication logic here
+        Console.WriteLine($"Attempting login for ID: {loginModel.UserId}");
+    }
+
+    public class LoginCredentials
+    {
+        public string UserId { get; set; } = string.Empty;
+        public string Password { get; set; } = string.Empty;
+    }
 }
