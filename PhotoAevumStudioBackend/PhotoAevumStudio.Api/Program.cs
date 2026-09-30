@@ -1,51 +1,42 @@
 using Microsoft.EntityFrameworkCore;
 using PhotoAevumStudio.Infrastructure.Data;
-using PhotoAevumStudio.Application.Interfaces;
-using PhotoAevumStudio.Infrastructure.Services;
-
-builder.Services.AddScoped<IPhotoService, PhotoService>();
 
 var builder = WebApplication.CreateBuilder(args);
 
-// Register SQL Server Database Context
+// Add services to the container.
+builder.Services.AddControllers();
+builder.Services.AddEndpointsApiExplorer();
+
+// Register the Database Context
 builder.Services.AddDbContext<ApplicationDbContext>(options =>
     options.UseSqlServer(builder.Configuration.GetConnectionString("DefaultConnection")));
 
-// Allow Web/Maui Frontend to connect
-builder.Services.AddCors(options =>
-{
-    options.AddPolicy("AllowFrontend", policy =>
-    {
-        policy.AllowAnyOrigin()
-              .AllowAnyHeader()
-              .AllowAnyMethod();
-    });
-});
-
-builder.Services.AddControllers();
-
 var app = builder.Build();
 
-app.UseCors("AllowFrontend");
+// Configure the HTTP request pipeline.
+app.UseHttpsRedirection();
 app.UseAuthorization();
 app.MapControllers();
 
-app.Run();
-
-var app = builder.Build();
-
-// Standardized error response for unhandled server exceptions
-app.UseExceptionHandler(exceptionHandlerApp =>
+// Quick Database Connection Test Endpoint
+app.MapGet("/test-db", (ApplicationDbContext db) =>
 {
-    exceptionHandlerApp.Run(async context =>
+    try
     {
-        context.Response.StatusCode = StatusCodes.Status500InternalServerError;
-        context.Response.ContentType = "application/json";
-
-        await context.Response.WriteAsJsonAsync(new
+        if (db.Database.CanConnect())
         {
-            StatusCode = 500,
-            Message = "An unexpected server error occurred. Please try again later."
-        });
-    });
+            return "✅ Database is Connected successfully!";
+        }
+        else
+        {
+            return "❌ CanConnect returned false (Database exists or server is up, but connection refused).";
+        }
+    }
+    catch (Exception ex)
+    {
+        // 👉 This will show us the exact MonsterASP error (e.g., firewall, password, or IP block)
+        return $"❌ Detailed Error: {ex.Message}";
+    }
 });
+
+app.Run();

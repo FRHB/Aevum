@@ -8,9 +8,11 @@
 
   <ItemGroup>
     <PackageReference Include="Microsoft.AspNetCore.OpenApi" Version="10.0.12" />
+    <PackageReference Include="Microsoft.EntityFrameworkCore.SqlServer" Version="10.0.12" />
   </ItemGroup>
 
   <ItemGroup>
+    <ProjectReference Include="..\..\PhotoAevumStudio.SharedCore\PhotoAevumStudio.SharedCore.csproj" />
     <ProjectReference Include="..\PhotoAevumStudio.Application\PhotoAevumStudio.Application.csproj" />
     <ProjectReference Include="..\PhotoAevumStudio.Infrastructure\PhotoAevumStudio.Infrastructure.csproj" />
   </ItemGroup>
