@@ -1,23 +1,64 @@
 ﻿@inherits LayoutComponentBase
 
-<div class="page">
-    <div class="sidebar">
-        <NavMenu />
-    </div>
+<NavMenu />
 
-    <main>
-        <div class="top-row px-4">
-            <a href="https://learn.microsoft.com/aspnet/core/" target="_blank">About</a>
+<main class="flex-grow pt-20">
+    @Body
+</main>
+
+<footer id="contact" class="bg-black text-white pt-24 pb-12">
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+        <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-12 mb-16">
+            <div class="col-span-1 lg:col-span-2">
+               <div class="flex items-center mb-6">
+                 <!-- If you have a light/white version of your logo for the dark footer, use it here -->
+                 <img src="images/AevumLogo.jpg" alt="Photo Aevum Logo" class="h-10 w-auto rounded-full" />
+                 <span class="font-bold text-xl tracking-tight uppercase tracking-widest text-white-900 ml-4">  Photo Aevum Studio</span>
+               </div>
+                <p class="text-gray-400 text-sm mb-8 max-w-sm font-light leading-relaxed">
+                    A modern photography studio dedicated to capturing compelling visual narratives for individuals and brands.
+                </p>
+                <div class="flex space-x-6">
+                    <a href="#" class="text-gray-400 hover:text-white transition-colors" aria-label="Instagram"><i data-lucide="instagram" class="w-5 h-5"></i></a>
+                    <a href="#" class="text-gray-400 hover:text-white transition-colors" aria-label="Twitter"><i data-lucide="twitter" class="w-5 h-5"></i></a>
+                    <a href="#" class="text-gray-400 hover:text-white transition-colors" aria-label="Facebook"><i data-lucide="facebook" class="w-5 h-5"></i></a>
+                </div>
+            </div>
+            <!--Studio Footer-->
+            <div>
+                <h4 class="font-medium text-white mb-6 uppercase tracking-wider text-sm">Studio</h4>
+                <ul class="space-y-4 text-sm text-gray-400 font-light">
+                    <li><a href="#services" class="hover:text-white transition-colors">Services & Pricing</a></li>
+                    <li><a href="#portfolio" class="hover:text-white transition-colors">Portfolio</a></li>
+                    <li><a href="#" class="hover:text-white transition-colors">About</a></li>
+                    <li><a href="#faq" class="hover:text-white transition-colors">FAQ</a></li>
+                </ul>
+            </div>
+            <!--Contact Footer-->
+            <div>
+                <h4 class="font-medium text-white mb-6 uppercase tracking-wider text-sm ml-7">Contact</h4>
+                <ul class="space-y-4 text-sm text-gray-400 font-light">
+                 <!-- <li class="flex items-start gap-3">
+                        <i data-lucide="map-pin" class="w-4 h-4 mt-0.5"></i>
+                        <span>123 Creative Studio Ave.<br>Ar</span>
+                    </li> -->
+                    <li class="flex items-center gap-3">
+                        <i data-lucide="mail" class="w-4 h-4"></i>
+                        <a href="mailto:hello&#64;photoaevum.com" class="hover:text-white transition-colors">photoaevumstudio@gmail.com</a>
+                    </li>
+                    <li class="flex items-center gap-3">
+                        <i data-lucide="phone" class="w-4 h-4"></i>
+                        <span>(+63) 919-578-93124</span>
+                    </li>
+                </ul>
+            </div>
         </div>
-
-        <article class="content px-4">
-            @Body
-        </article>
-    </main>
-</div>
-
-<div id="blazor-error-ui" data-nosnippet>
-    An unhandled error has occurred.
-    <a href="." class="reload">Reload</a>
-    <span class="dismiss">🗙</span>
-</div>
+        <div class="border-t border-gray-800 pt-8 flex flex-col md:flex-row justify-between items-center gap-4">
+            <p class="text-xs text-gray-500 uppercase tracking-widest">&copy; 2026 Photo Aevum Studio. All rights reserved.</p>
+            <div class="flex gap-6 text-xs text-gray-500 uppercase tracking-widest">
+                <a href="#" class="hover:text-white transition-colors">Privacy</a>
+                <a href="#" class="hover:text-white transition-colors">Terms</a>
+            </div>
+        </div>
+    </div>
+</footer>
