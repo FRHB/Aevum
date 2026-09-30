@@ -1,0 +1,232 @@
+﻿@page "/Admin/Dashboard"
+@layout AdminLayout
+@using YourNamespace.ViewModels
+@namespace YourNamespace.Pages
+
+<PageTitle>Admin Dashboard - Admin Portal</PageTitle>
+
+<div class="dashboard-container">
+    <div class="dashboard-grid">
+
+        <!-- 1. SCHEDULES MODULE -->
+        <section class="dashboard-card">
+            <div>
+                <div class="card-header">
+                    <h2>Upcoming Schedules</h2>
+                    <span class="badge">Timeline</span>
+                </div>
+                <div class="card-body-space">
+                    @if (DashboardData?.Schedules != null && DashboardData.Schedules.Any())
+                    {
+                        @foreach (var schedule in DashboardData.Schedules)
+                        {
+                            <div class="sub-card" @key="schedule.Id">
+                                <div>
+                                    <p class="sub-title">@schedule.Title</p>
+                                    <p class="sub-desc">@schedule.ClientName</p>
+                                </div>
+                                <span class="time-badge">@schedule.StartTime.ToString("MMM dd, HH:mm")</span>
+                            </div>
+                        }
+                    }
+                    else
+                    {
+                        <div class="sub-card">
+                            <div>
+                                <p class="sub-title">System Architecture Review</p>
+                                <p class="sub-desc">Client: Acme Corp</p>
+                            </div>
+                            <span class="time-badge">Oct 01, 10:00</span>
+                        </div>
+                        <div class="sub-card">
+                            <div>
+                                <p class="sub-title">Database Migration Check</p>
+                                <p class="sub-desc">Client: Globex Ltd</p>
+                            </div>
+                            <span class="time-badge">Oct 02, 14:30</span>
+                        </div>
+                    }
+                </div>
+            </div>
+            <div class="card-footer">
+                <a href="/Admin/Schedules" class="footer-link">View full calendar &rarr;</a>
+            </div>
+        </section>
+
+        <!-- 2. EMPLOYEES MODULE -->
+        <section class="dashboard-card">
+            <div>
+                <div class="card-header">
+                    <h2>Staff Members</h2>
+                    <span class="badge">Active Team</span>
+                </div>
+                <div class="card-body-space">
+                    @if (DashboardData?.Employees != null && DashboardData.Employees.Any())
+                    {
+                        @foreach (var emp in DashboardData.Employees)
+                        {
+                            <div class="employee-row" @key="emp.Id">
+                                <div class="employee-info">
+                                    <div class="avatar">@emp.Initials</div>
+                                    <div>
+                                        <p class="sub-title">@emp.FullName</p>
+                                        <p class="sub-desc">@emp.Role</p>
+                                    </div>
+                                </div>
+                                <span class="status-pill @(emp.IsActive ? "pill-active" : "pill-away")">
+                                    @(emp.IsActive ? "Active" : "Away")
+                                </span>
+                            </div>
+                        }
+                    }
+                    else
+                    {
+                        <div class="employee-row">
+                            <div class="employee-info">
+                                <div class="avatar">JD</div>
+                                <div>
+                                    <p class="sub-title">Jane Doe</p>
+                                    <p class="sub-desc">Senior Architect</p>
+                                </div>
+                            </div>
+                            <span class="status-pill pill-active">Active</span>
+                        </div>
+                        <div class="employee-row">
+                            <div class="employee-info">
+                                <div class="avatar">JS</div>
+                                <div>
+                                    <p class="sub-title">John Smith</p>
+                                    <p class="sub-desc">Backend Engineer</p>
+                                </div>
+                            </div>
+                            <span class="status-pill pill-away">Away</span>
+                        </div>
+                    }
+                </div>
+            </div>
+            <div class="card-footer">
+                <a href="/Admin/Employees" class="footer-link">Manage directory &rarr;</a>
+            </div>
+        </section>
+
+        <!-- 3. SERVICES MODULE -->
+        <section class="dashboard-card">
+            <div>
+                <div class="card-header">
+                    <h2>Core Services</h2>
+                    <span class="badge">Offerings</span>
+                </div>
+                <div class="card-body-space">
+                    @if (DashboardData?.Services != null && DashboardData.Services.Any())
+                    {
+                        @foreach (var service in DashboardData.Services)
+                        {
+                            <div class="service-row" @key="service.Id">
+                                <div>
+                                    <p class="sub-title">@service.Name</p>
+                                    <p class="sub-desc">@service.Duration minutes</p>
+                                </div>
+                                <span class="price-text">$@service.Price</span>
+                            </div>
+                        }
+                    }
+                    else
+                    {
+                        <div class="service-row">
+                            <div>
+                                <p class="sub-title">Cloud Architecture Consultation</p>
+                                <p class="sub-desc">60 minutes</p>
+                            </div>
+                            <span class="price-text">$150</span>
+                        </div>
+                        <div class="service-row">
+                            <div>
+                                <p class="sub-title">Performance Optimization Audit</p>
+                                <p class="sub-desc">90 minutes</p>
+                            </div>
+                            <span class="price-text">$250</span>
+                        </div>
+                    }
+                </div>
+            </div>
+            <div class="card-footer">
+                <a href="/Admin/Services" class="footer-link">View catalog &rarr;</a>
+            </div>
+        </section>
+
+        <!-- 4. EQUIPMENT TRACKER MODULE -->
+        <section class="dashboard-card equipment-card-span">
+            <div>
+                <div class="card-header">
+                    <h2>Equipment Tracker</h2>
+                    <span class="badge">Hardware Inventory</span>
+                </div>
+
+                <div class="table-container">
+                    <table class="inventory-table">
+                        <thead>
+                            <tr>
+                                <th>Item Name</th>
+                                <th>Serial No.</th>
+                                <th>Assigned To</th>
+                                <th>Status</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @if (DashboardData?.EquipmentList != null && DashboardData.EquipmentList.Any())
+                            {
+                                @foreach (var item in DashboardData.EquipmentList)
+                                {
+                                    <tr @key="item.Id">
+                                        <td class="font-medium">@item.Name</td>
+                                        <td class="text-secondary">@item.SerialNumber</td>
+                                        <td class="text-secondary">@item.AssignedEmployee</td>
+                                        <td>
+                                            <span class="status-pill @(item.Status == "Available" ? "pill-active" : "pill-purple")">
+                                                @item.Status
+                                            </span>
+                                        </td>
+                                    </tr>
+                                }
+                            }
+                            else
+                            {
+                                <tr>
+                                    <td class="font-medium">MacBook Pro 16"</td>
+                                    <td class="text-secondary">SN-998234-X</td>
+                                    <td class="text-secondary">Jane Doe</td>
+                                    <td>
+                                        <span class="status-pill pill-purple">In Use</span>
+                                    </td>
+                                </tr>
+                                <tr>
+                                    <td class="font-medium">Dell UltraSharp Monitor</td>
+                                    <td class="text-secondary">SN-442109-B</td>
+                                    <td class="text-secondary">Unassigned</td>
+                                    <td>
+                                        <span class="status-pill pill-active">Available</span>
+                                    </td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+            <div class="card-footer">
+                <a href="/Admin/Equipment" class="footer-link">Manage inventory &rarr;</a>
+            </div>
+        </section>
+
+    </div>
+</div>
+
+@code {
+    [Parameter]
+    public AdminDashboardViewModel? DashboardData { get; set; }
+
+    protected override async Task OnInitializedAsync()
+    {
+        // TODO: Load data from your backend service or database context here.
+        await Task.CompletedTask;
+    }
+}

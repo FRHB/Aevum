@@ -1,0 +1,248 @@
+﻿/* Dashboard Viewport & Grid Layout */
+.dashboard-container {
+    padding: 1.5rem;
+    background-color: #F8FAFC;
+    min-height: calc(100vh - 4rem);
+    font-family: 'Inter', sans-serif;
+    color: #0F172A;
+}
+
+@media (min-width: 1024px) {
+    .dashboard-container {
+        padding: 2rem;
+    }
+}
+
+.dashboard-grid {
+    display: grid;
+    grid-template-columns: repeat(1, minmax(0, 1fr));
+    gap: 1.5rem;
+    max-width: 1600px;
+    margin: 0 auto;
+}
+
+@media (min-width: 768px) {
+    .dashboard-grid {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+}
+
+@media (min-width: 1280px) {
+    .dashboard-grid {
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+    }
+}
+
+/* Card Architecture */
+.dashboard-card {
+    background-color: #FFFFFF;
+    border: 1px solid #E5E7EB;
+    border-radius: 12px;
+    box-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.05);
+    padding: 1.5rem;
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+    height: 100%;
+}
+
+.equipment-card-span {
+    grid-column: 1 / -1;
+}
+
+.card-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding-bottom: 1rem;
+    border-bottom: 1px solid #E5E7EB;
+}
+
+    .card-header h2 {
+        font-size: 1rem;
+        font-weight: 600;
+        color: #0F172A;
+        letter-spacing: -0.01em;
+        margin: 0;
+    }
+
+.badge {
+    font-size: 0.75rem;
+    font-weight: 500;
+    background-color: #F8FAFC;
+    border: 1px solid #E2E8F0;
+    color: #64748B;
+    padding: 0.2rem 0.6rem;
+    border-radius: 6px;
+}
+
+.card-body-space {
+    margin-top: 1rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+}
+
+.card-footer {
+    margin-top: 1.25rem;
+    padding-top: 0.875rem;
+    border-top: 1px solid #E5E7EB;
+    display: flex;
+    justify-content: flex-end;
+}
+
+.footer-link {
+    font-size: 0.75rem;
+    font-weight: 600;
+    color: #1E293B;
+    text-decoration: none;
+    min-height: 32px;
+    display: flex;
+    align-items: center;
+    gap: 0.25rem;
+    transition: color 0.15s ease;
+}
+
+    .footer-link:hover {
+        color: #0F172A;
+        text-decoration: underline;
+    }
+
+/* Sub-components & Rows */
+.sub-card {
+    padding: 0.75rem 1rem;
+    border-radius: 8px;
+    background-color: #F8FAFC;
+    border: 1px solid #E5E7EB;
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+}
+
+@media (min-width: 640px) {
+    .sub-card {
+        flex-direction: row;
+        align-items: center;
+        justify-content: space-between;
+    }
+}
+
+.sub-title {
+    font-size: 0.875rem;
+    font-weight: 600;
+    color: #0F172A;
+    margin: 0;
+}
+
+.sub-desc {
+    font-size: 0.75rem;
+    color: #64748B;
+    margin: 0;
+    margin-top: 2px;
+}
+
+.time-badge {
+    font-size: 0.75rem;
+    font-weight: 500;
+    padding: 0.2rem 0.5rem;
+    border-radius: 4px;
+    background-color: #EFF6FF;
+    color: #1D4ED8;
+    align-self: flex-start;
+}
+
+.employee-row, .service-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0.75rem 1rem;
+    border-radius: 8px;
+    border: 1px solid #E5E7EB;
+    background-color: #F8FAFC;
+}
+
+.employee-info {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+}
+
+.avatar {
+    width: 2.25rem;
+    height: 2.25rem;
+    border-radius: 50%;
+    background-color: #E2E8F0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-weight: 700;
+    font-size: 0.75rem;
+    color: #0F172A;
+}
+
+.status-pill {
+    font-size: 0.75rem;
+    padding: 0.15rem 0.625rem;
+    border-radius: 9999px;
+    font-weight: 500;
+}
+
+.pill-active {
+    background-color: #ECFDF5;
+    color: #047857;
+}
+
+.pill-away {
+    background-color: #FFFBEB;
+    color: #B45309;
+}
+
+.pill-purple {
+    background-color: #F3E8FF;
+    color: #7E22CE;
+}
+
+.price-text {
+    font-size: 0.875rem;
+    font-weight: 700;
+    color: #0F172A;
+}
+
+/* Equipment Table Styling */
+.table-container {
+    margin-top: 1rem;
+    overflow-x: auto;
+}
+
+.inventory-table {
+    width: 100%;
+    text-align: left;
+    border-collapse: collapse;
+    min-width: 500px;
+}
+
+    .inventory-table th {
+        padding: 0.75rem 1rem;
+        border-bottom: 1px solid #E5E7EB;
+        font-size: 0.75rem;
+        font-weight: 600;
+        color: #64748B;
+        text-transform: uppercase;
+        letter-spacing: 0.05em;
+        background-color: #F8FAFC;
+    }
+
+    .inventory-table td {
+        padding: 0.875rem 1rem;
+        border-bottom: 1px solid #E5E7EB;
+        font-size: 0.875rem;
+    }
+
+.font-medium {
+    font-weight: 500;
+    color: #0F172A;
+}
+
+.text-secondary {
+    color: #64748B;
+}

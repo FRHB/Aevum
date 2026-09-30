@@ -1,0 +1,70 @@
+﻿@inject NavigationManager Navigation
+
+<div class="admin-nav-wrapper">
+    <header class="admin-mobile-header md:hidden">
+        <div class="mobile-brand-container">
+            <button @onclick="ToggleSidebar" aria-label="Open Navigation" class="menu-toggle-btn">
+                <svg class="w-6 h-6 text-[#0F172A]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16"></path>
+                </svg>
+            </button>
+            <span class="mobile-brand-title">AdminPortal</span>
+        </div>
+        <div class="flex items-center space-x-2">
+            <span class="version-pill">v1.0</span>
+        </div>
+    </header>
+
+    <aside id="admin-sidebar" class="admin-sidebar @(_isSidebarOpen ? "translate-x-0" : "-translate-x-full md:translate-x-0")">
+        <div class="sidebar-brand-header">
+            <span class="sidebar-brand-text">AdminPanel</span>
+        </div>
+
+        <nav class="sidebar-nav-list">
+            <NavLink href="/Admin/Dashboard" Match="NavLinkMatch.All" class="nav-link" ActiveClass="active-nav-link">
+                <svg class="nav-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2V6zM14 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2V6zM4 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2v-2zM14 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2v-2z"></path></svg>
+                Dashboard
+            </NavLink>
+            <NavLink href="/Admin/Employees" Match="NavLinkMatch.Prefix" class="nav-link" ActiveClass="active-nav-link">
+                <svg class="nav-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z"></path></svg>
+                Employees
+            </NavLink>
+            <NavLink href="/Admin/Services" Match="NavLinkMatch.Prefix" class="nav-link" ActiveClass="active-nav-link">
+                <svg class="nav-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 13.255A23.931 23.931 0 0112 15c-3.183 0-6.22-.62-9-1.745M16 6V4a2 2 0 00-2-2h-4a2 2 0 00-2 2v2m4 6h.01M5 20h14a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"></path></svg>
+                Services
+            </NavLink>
+            <NavLink href="/Admin/Equipment" Match="NavLinkMatch.Prefix" class="nav-link" ActiveClass="active-nav-link">
+                <svg class="nav-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 3v2m6-2v2M9 19v2m6-2v2M5 9H3m2 6H3m18-6h-2m2 6h-2M7 19h10a2 2 0 002-2V7a2 2 0 00-2-2H7a2 2 0 00-2 2v10a2 2 0 002 2zM9 9h6v6H9V9z"></path></svg>
+                Equipment
+            </NavLink>
+            <NavLink href="/Admin/Schedules" Match="NavLinkMatch.Prefix" class="nav-link" ActiveClass="active-nav-link">
+                <svg class="nav-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"></path></svg>
+                Schedules
+            </NavLink>
+        </nav>
+
+        <div class="sidebar-footer">
+            <div class="user-profile-container">
+                <div class="user-avatar">AD</div>
+                <div class="user-info-text">
+                    <p class="user-name">Administrator</p>
+                    <p class="user-email">admin@netcore.internal</p>
+                </div>
+            </div>
+        </div>
+    </aside>
+
+    @if (_isSidebarOpen)
+    {
+        <div class="mobile-backdrop md:hidden" @onclick="ToggleSidebar"></div>
+    }
+</div>
+
+@code {
+    private bool _isSidebarOpen = false;
+
+    private void ToggleSidebar()
+    {
+        _isSidebarOpen = !_isSidebarOpen;
+    }
+}
