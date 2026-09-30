@@ -1,4 +1,6 @@
 ﻿@page "/login"
+@layout EmptyLayout
+@inject NavigationManager NavManager
 
 <div class="login-page-wrapper">
     <div class="login-card">
@@ -7,25 +9,32 @@
             <img src="images/AevumLogo.jpg" alt="Aevum Studio Logo" class="aevum-logo" />
         </div>
 
-        <h2 class="login-header">Sign In</h2>
+        <h2 class="login-header font-bold text-xl tracking-tight uppercase tracking-widest text-gray-900">Log In</h2>
 
         <!-- Blazor EditForm for Data Binding -->
         <EditForm Model="@loginModel" OnValidSubmit="HandleLogin">
-            <div class="input-group">
-                <label for="userId">ID</label>
-                <InputText id="userId" class="minimal-input" @bind-Value="loginModel.UserId" placeholder="Enter your ID" />
-            </div>
+           <div class="input-group">
+    <label for="userId">ID</label>
+    <!-- Change from <InputText> to a standard <input> -->
+    <input type="text" id="userId" class="minimal-input" @bind="loginModel.UserId" placeholder="Enter your ID" />
+</div>
 
             <div class="input-group">
                 <label for="password">Password</label>
-                <!-- Note: InputText doesn't natively support type="password" easily without warnings in some versions,
-                     so standard HTML input with @bind is often preferred for passwords in simple implementations. -->
                 <input type="password" id="password" class="minimal-input" @bind="loginModel.Password" placeholder="Enter your password" />
             </div>
 
             <div class="forgot-password-container">
                 <a href="/forgot-password" class="forgot-password-link">Forgot password?</a>
             </div>
+
+            <!-- Display error message if login fails -->
+            @if (!string.IsNullOrEmpty(errorMessage))
+            {
+                <div style="color: #dc3545; margin-bottom: 10px; font-size: 0.9em;">
+                    @errorMessage
+                </div>
+            }
 
             <button type="submit" class="login-button">Login</button>
         </EditForm>
@@ -34,11 +43,23 @@
 
 @code {
     private LoginCredentials loginModel = new LoginCredentials();
+    private string errorMessage = ""; // Variable to hold login errors
 
     private void HandleLogin()
     {
-        // Add your authentication logic here
         Console.WriteLine($"Attempting login for ID: {loginModel.UserId}");
+
+        // Replace this with your actual database authentication check
+        if (loginModel.UserId == "employee" && loginModel.Password == "secret123")
+        {
+            // Login successful: Route the employee to the dashboard
+            NavManager.NavigateTo("/dashboard");
+        }
+        else
+        {
+            // Login failed: Show an error message on the screen
+            errorMessage = "Invalid ID or password. Please try again.";
+        }
     }
 
     public class LoginCredentials
