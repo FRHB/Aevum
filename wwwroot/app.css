@@ -1,0 +1,55 @@
+body {
+    font-family: 'Inter', sans-serif;
+    background-color: #ffffff;
+    color: #1a1a1a;
+}
+
+.glass-nav {
+    background: rgba(255, 255, 255, 0.95);
+    backdrop-filter: blur(10px);
+    -webkit-backdrop-filter: blur(10px);
+    border-bottom: 1px solid rgba(0, 0, 0, 0.05);
+}
+
+.service-card {
+    transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+    border: 1px solid #f0f0f0;
+}
+
+    .service-card:hover {
+        transform: translateY(-8px);
+        box-shadow: 0 20px 40px -15px rgba(0, 0, 0, 0.1);
+        border-color: transparent;
+    }
+
+.image-placeholder {
+    background-color: #f3f4f6;
+    position: relative;
+    overflow: hidden;
+}
+
+    .image-placeholder::after {
+        content: '';
+        position: absolute;
+        top: 0;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        background: linear-gradient(90deg, transparent, rgba(255,255,255,0.4), transparent);
+        transform: translateX(-100%);
+        animation: shimmer 2s infinite;
+    }
+
+@keyframes shimmer {
+    100% {
+        transform: translateX(100%);
+    }
+}
+
+details > summary {
+    list-style: none;
+}
+
+    details > summary::-webkit-details-marker {
+        display: none;
+    }

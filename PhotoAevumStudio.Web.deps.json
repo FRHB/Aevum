@@ -1,0 +1,23 @@
+{
+  "runtimeTarget": {
+    "name": ".NETCoreApp,Version=v10.0",
+    "signature": ""
+  },
+  "compilationOptions": {},
+  "targets": {
+    ".NETCoreApp,Version=v10.0": {
+      "PhotoAevumStudio.Web/1.0.0": {
+        "runtime": {
+          "PhotoAevumStudio.Web.dll": {}
+        }
+      }
+    }
+  },
+  "libraries": {
+    "PhotoAevumStudio.Web/1.0.0": {
+      "type": "project",
+      "serviceable": false,
+      "sha512": ""
+    }
+  }
+}
