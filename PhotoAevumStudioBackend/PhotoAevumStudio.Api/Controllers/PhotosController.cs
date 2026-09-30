@@ -1,7 +1,6 @@
 using Microsoft.AspNetCore.Mvc;
-using Microsoft.EntityFrameworkCore;
-using PhotoAevumStudio.Application.Entities;
-using PhotoAevumStudio.Infrastructure.Data;
+using PhotoAevumStudio.Application.DTOs;
+using PhotoAevumStudio.Application.Interfaces;
 
 namespace PhotoAevumStudio.Api.Controllers;
 
@@ -9,16 +8,24 @@ namespace PhotoAevumStudio.Api.Controllers;
 [Route("api/[controller]")]
 public class PhotosController : ControllerBase
 {
-    private readonly ApplicationDbContext _context;
+    private readonly IPhotoService _photoService;
 
-    public PhotosController(ApplicationDbContext context)
+    public PhotosController(IPhotoService photoService)
     {
-        _context = context;
+        _photoService = photoService;
     }
 
     [HttpGet]
-    public async Task<ActionResult<IEnumerable<Photo>>> GetPhotos()
+    public async Task<IActionResult> GetAll()
     {
-        return await _context.Photos.ToListAsync();
+        var photos = await _photoService.GetAllAsync();
+        return Ok(photos);
+    }
+
+    [HttpPost]
+    public async Task<IActionResult> Create([FromBody] CreatePhotoDto dto)
+    {
+        var result = await _photoService.CreateAsync(dto);
+        return CreatedAtAction(nameof(GetAll), new { id = result.Id }, result);
     }
 }

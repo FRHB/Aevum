@@ -1,0 +1,6 @@
+C:\Users\markfrancis\source\repos\FRHB\Photo-Aevum-Studio\PhotoAevumStudioBackend\PhotoAevumStudio.Infrastructure\obj\Debug\net10.0\PhotoAevumStudio.Infrastructure.csproj.AssemblyReference.cache
+C:\Users\markfrancis\source\repos\FRHB\Photo-Aevum-Studio\PhotoAevumStudioBackend\PhotoAevumStudio.Infrastructure\obj\Debug\net10.0\PhotoAevumStudio.Infrastructure.GeneratedMSBuildEditorConfig.editorconfig
+C:\Users\markfrancis\source\repos\FRHB\Photo-Aevum-Studio\PhotoAevumStudioBackend\PhotoAevumStudio.Infrastructure\obj\Debug\net10.0\PhotoAevumStudio.Infrastructure.AssemblyInfoInputs.cache
+C:\Users\markfrancis\source\repos\FRHB\Photo-Aevum-Studio\PhotoAevumStudioBackend\PhotoAevumStudio.Infrastructure\obj\Debug\net10.0\PhotoAevumStudio.Infrastructure.AssemblyInfo.cs
+C:\Users\markfrancis\source\repos\FRHB\Photo-Aevum-Studio\PhotoAevumStudioBackend\PhotoAevumStudio.Infrastructure\obj\Debug\net10.0\PhotoAevumStudio.Infrastructure.csproj.CoreCompileInputs.cache
+C:\Users\markfrancis\source\repos\FRHB\Photo-Aevum-Studio\PhotoAevumStudioBackend\PhotoAevumStudio.Infrastructure\obj\Debug\net10.0\PhotoAevumStudio.Infrastructure.sourcelink.json

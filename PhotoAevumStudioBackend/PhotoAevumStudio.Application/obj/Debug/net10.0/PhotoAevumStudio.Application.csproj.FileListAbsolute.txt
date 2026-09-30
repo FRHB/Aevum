@@ -1,0 +1,13 @@
+C:\Users\markfrancis\source\repos\FRHB\Photo-Aevum-Studio\PhotoAevumStudioBackend\PhotoAevumStudio.Application\bin\Debug\net10.0\PhotoAevumStudio.Application.deps.json
+C:\Users\markfrancis\source\repos\FRHB\Photo-Aevum-Studio\PhotoAevumStudioBackend\PhotoAevumStudio.Application\bin\Debug\net10.0\PhotoAevumStudio.Application.dll
+C:\Users\markfrancis\source\repos\FRHB\Photo-Aevum-Studio\PhotoAevumStudioBackend\PhotoAevumStudio.Application\bin\Debug\net10.0\PhotoAevumStudio.Application.pdb
+C:\Users\markfrancis\source\repos\FRHB\Photo-Aevum-Studio\PhotoAevumStudioBackend\PhotoAevumStudio.Application\obj\Debug\net10.0\PhotoAevumStudio.Application.GeneratedMSBuildEditorConfig.editorconfig
+C:\Users\markfrancis\source\repos\FRHB\Photo-Aevum-Studio\PhotoAevumStudioBackend\PhotoAevumStudio.Application\obj\Debug\net10.0\PhotoAevumStudio.Application.AssemblyInfoInputs.cache
+C:\Users\markfrancis\source\repos\FRHB\Photo-Aevum-Studio\PhotoAevumStudioBackend\PhotoAevumStudio.Application\obj\Debug\net10.0\PhotoAevumStudio.Application.AssemblyInfo.cs
+C:\Users\markfrancis\source\repos\FRHB\Photo-Aevum-Studio\PhotoAevumStudioBackend\PhotoAevumStudio.Application\obj\Debug\net10.0\PhotoAevumStudio.Application.csproj.CoreCompileInputs.cache
+C:\Users\markfrancis\source\repos\FRHB\Photo-Aevum-Studio\PhotoAevumStudioBackend\PhotoAevumStudio.Application\obj\Debug\net10.0\PhotoAevumStudio.Application.sourcelink.json
+C:\Users\markfrancis\source\repos\FRHB\Photo-Aevum-Studio\PhotoAevumStudioBackend\PhotoAevumStudio.Application\obj\Debug\net10.0\PhotoAevumStudio.Application.dll
+C:\Users\markfrancis\source\repos\FRHB\Photo-Aevum-Studio\PhotoAevumStudioBackend\PhotoAevumStudio.Application\obj\Debug\net10.0\refint\PhotoAevumStudio.Application.dll
+C:\Users\markfrancis\source\repos\FRHB\Photo-Aevum-Studio\PhotoAevumStudioBackend\PhotoAevumStudio.Application\obj\Debug\net10.0\PhotoAevumStudio.Application.pdb
+C:\Users\markfrancis\source\repos\FRHB\Photo-Aevum-Studio\PhotoAevumStudioBackend\PhotoAevumStudio.Application\obj\Debug\net10.0\ref\PhotoAevumStudio.Application.dll
+C:\Users\markfrancis\source\repos\FRHB\Photo-Aevum-Studio\PhotoAevumStudioBackend\PhotoAevumStudio.Application\obj\Debug\net10.0\PhotoAev.0701A25E.Up2Date

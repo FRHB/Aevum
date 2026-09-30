@@ -1,5 +1,9 @@
 using Microsoft.EntityFrameworkCore;
 using PhotoAevumStudio.Infrastructure.Data;
+using PhotoAevumStudio.Application.Interfaces;
+using PhotoAevumStudio.Infrastructure.Services;
+
+builder.Services.AddScoped<IPhotoService, PhotoService>();
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -27,3 +31,21 @@ app.UseAuthorization();
 app.MapControllers();
 
 app.Run();
+
+var app = builder.Build();
+
+// Standardized error response for unhandled server exceptions
+app.UseExceptionHandler(exceptionHandlerApp =>
+{
+    exceptionHandlerApp.Run(async context =>
+    {
+        context.Response.StatusCode = StatusCodes.Status500InternalServerError;
+        context.Response.ContentType = "application/json";
+
+        await context.Response.WriteAsJsonAsync(new
+        {
+            StatusCode = 500,
+            Message = "An unexpected server error occurred. Please try again later."
+        });
+    });
+});
