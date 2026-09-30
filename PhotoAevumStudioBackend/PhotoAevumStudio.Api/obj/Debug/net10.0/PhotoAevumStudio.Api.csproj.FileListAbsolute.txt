@@ -1,0 +1,8 @@
+C:\Users\markfrancis\source\repos\FRHB\Photo-Aevum-Studio\PhotoAevumStudioBackend\PhotoAevumStudio.Api\obj\Debug\net10.0\PhotoAevumStudio.Api.csproj.AssemblyReference.cache
+C:\Users\markfrancis\source\repos\FRHB\Photo-Aevum-Studio\PhotoAevumStudioBackend\PhotoAevumStudio.Api\obj\Debug\net10.0\rpswa.dswa.cache.json
+C:\Users\markfrancis\source\repos\FRHB\Photo-Aevum-Studio\PhotoAevumStudioBackend\PhotoAevumStudio.Api\obj\Debug\net10.0\PhotoAevumStudio.Api.GeneratedMSBuildEditorConfig.editorconfig
+C:\Users\markfrancis\source\repos\FRHB\Photo-Aevum-Studio\PhotoAevumStudioBackend\PhotoAevumStudio.Api\obj\Debug\net10.0\PhotoAevumStudio.Api.AssemblyInfoInputs.cache
+C:\Users\markfrancis\source\repos\FRHB\Photo-Aevum-Studio\PhotoAevumStudioBackend\PhotoAevumStudio.Api\obj\Debug\net10.0\PhotoAevumStudio.Api.AssemblyInfo.cs
+C:\Users\markfrancis\source\repos\FRHB\Photo-Aevum-Studio\PhotoAevumStudioBackend\PhotoAevumStudio.Api\obj\Debug\net10.0\PhotoAevumStudio.Api.csproj.CoreCompileInputs.cache
+C:\Users\markfrancis\source\repos\FRHB\Photo-Aevum-Studio\PhotoAevumStudioBackend\PhotoAevumStudio.Api\obj\Debug\net10.0\PhotoAevumStudio.Api.MvcApplicationPartsAssemblyInfo.cache
+C:\Users\markfrancis\source\repos\FRHB\Photo-Aevum-Studio\PhotoAevumStudioBackend\PhotoAevumStudio.Api\obj\Debug\net10.0\PhotoAevumStudio.Api.sourcelink.json
