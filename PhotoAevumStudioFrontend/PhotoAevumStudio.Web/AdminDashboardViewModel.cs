@@ -21,7 +21,7 @@
         public int Id { get; set; }
         public string FullName { get; set; } = string.Empty;
         public string Role { get; set; } = string.Empty;
-        public string Initials { get; set; } = string.Empty;
+        public string Specialization { get; set; } = string.Empty;
         public bool IsActive { get; set; }
     }
 
@@ -29,6 +29,7 @@
     {
         public int Id { get; set; }
         public string Name { get; set; } = string.Empty;
+        public string Kind { get; set; } = "Service"; // Service, Additional Service, Combo Package
         public decimal Price { get; set; }
         public int Duration { get; set; }
     }
@@ -38,7 +39,7 @@
         public int Id { get; set; }
         public string Name { get; set; } = string.Empty;
         public string SerialNumber { get; set; } = string.Empty;
-        public string AssignedEmployee { get; set; } = string.Empty;
+        public string Kind { get; set; } = string.Empty;
         public string Status { get; set; } = "Available";
     }
 }

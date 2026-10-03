@@ -1,0 +1,27 @@
+@using Microsoft.AspNetCore.Components.Routing
+
+<nav class="glass-nav sticky top-0 z-40">
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
+        <a href="/admin" class="font-bold tracking-tight text-gray-900">Photo Aevum <span class="font-light text-gray-500">Admin</span></a>
+
+        <div class="flex items-center gap-6 text-sm font-medium">
+            <NavLink href="/admin" Match="NavLinkMatch.All"
+                     class="py-5 text-gray-500 hover:text-gray-900 border-b-2 border-transparent"
+                     ActiveClass="!text-gray-900 !border-gray-900">Dashboard</NavLink>
+
+            <NavLink href="/admin/employees"
+                     class="py-5 text-gray-500 hover:text-gray-900 border-b-2 border-transparent"
+                     ActiveClass="!text-gray-900 !border-gray-900">Employees</NavLink>
+
+            <NavLink href="/admin/services"
+                     class="py-5 text-gray-500 hover:text-gray-900 border-b-2 border-transparent"
+                     ActiveClass="!text-gray-900 !border-gray-900">Services</NavLink>
+
+            <NavLink href="/admin/equipment"
+                     class="py-5 text-gray-500 hover:text-gray-900 border-b-2 border-transparent"
+                     ActiveClass="!text-gray-900 !border-gray-900">Equipment</NavLink>
+
+            <a href="/" class="text-gray-400 hover:text-gray-900 ml-4">View site</a>
+        </div>
+    </div>
+</nav>

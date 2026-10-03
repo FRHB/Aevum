@@ -1,0 +1,290 @@
+﻿@inject IEmployeeService Employees
+@implements IDisposable
+
+<div class="p-6 sm:p-8">
+    <div class="flex items-start justify-between mb-8">
+        <h2 id="wizard-title" class="text-2xl font-bold text-gray-900 tracking-tight">Add employee</h2>
+        <button type="button" class="text-2xl leading-none text-gray-400 hover:text-gray-900" aria-label="Close"
+                @onclick="() => OnCancel.InvokeAsync()" disabled="@isSaving">&times;</button>
+    </div>
+
+    <!-- Progress -->
+    <ol class="flex gap-4 mb-8" aria-label="Progress">
+        @for (var i = 1; i <= TotalSteps; i++)
+        {
+            var n = i;
+            <li class="flex items-center gap-2 flex-1 text-xs @(n == step ? "text-gray-900 font-semibold" : "text-gray-400")"
+                aria-current="@(n == step ? "step" : null)">
+                <span class="w-6 h-6 rounded-full flex items-center justify-center shrink-0 text-xs font-semibold @(n <= step ? "bg-gray-900 text-white" : "border border-gray-300")">
+                    @(n < step ? " " : n.ToString())
+                </span>
+                <span class="hidden sm:inline">@StepTitles[n - 1]</span>
+            </li>
+        }
+    </ol>
+
+    @switch (step)
+    {
+        case 1:
+            <EditForm Model="personal" OnValidSubmit="() => step = 2" class="space-y-5">
+                <DataAnnotationsValidator />
+
+                <div class="grid sm:grid-cols-2 gap-5">
+                    <div>
+                        <label for="emp-first" class="block text-sm font-medium text-gray-700 mb-2">First name</label>
+                        <InputText id="emp-first" @bind-Value="personal.FirstName" class="@InputClass" autocomplete="off" />
+                        <ValidationMessage For="() => personal.FirstName" class="text-xs text-red-600 mt-1" />
+                    </div>
+                    <div>
+                        <label for="emp-last" class="block text-sm font-medium text-gray-700 mb-2">Last name</label>
+                        <InputText id="emp-last" @bind-Value="personal.LastName" class="@InputClass" autocomplete="off" />
+                        <ValidationMessage For="() => personal.LastName" class="text-xs text-red-600 mt-1" />
+                    </div>
+                </div>
+
+                <div>
+                    <label for="emp-middle" class="block text-sm font-medium text-gray-700 mb-2">
+                        Middle name <span class="text-gray-400 font-light">(optional)</span>
+                    </label>
+                    <InputText id="emp-middle" @bind-Value="personal.MiddleName" class="@InputClass" autocomplete="off" />
+                    <ValidationMessage For="() => personal.MiddleName" class="text-xs text-red-600 mt-1" />
+                </div>
+
+                <div>
+                    <label for="emp-email" class="block text-sm font-medium text-gray-700 mb-2">Employee email</label>
+                    <InputText id="emp-email" type="email" @bind-Value="personal.Email" class="@InputClass" autocomplete="off" />
+                    <ValidationMessage For="() => personal.Email" class="text-xs text-red-600 mt-1" />
+                </div>
+
+                <div class="flex justify-between pt-2">
+                    <button type="button" class="@GhostBtn" @onclick="() => OnCancel.InvokeAsync()">Cancel</button>
+                    <button type="submit" class="@PrimaryBtn">Next</button>
+                </div>
+            </EditForm>
+            break;
+
+        case 2:
+            <div class="space-y-5">
+                <div>
+                    <label for="emp-spec" class="block text-sm font-medium text-gray-700 mb-2">Specialization</label>
+                    @if (allSpecializations is null)
+                    {
+                        <div class="image-placeholder h-12 bg-gray-100" aria-hidden="true"></div>
+                    }
+                    else
+                    {
+                        <div class="flex gap-3">
+                            <select id="emp-spec" @bind="pendingSpec" class="@InputClass">
+                                <option value="">Select a specialization</option>
+                                @foreach (var s in AvailableSpecializations)
+                                {
+                                    <option value="@s">@s</option>
+                                }
+                            </select>
+                            <button type="button" class="@GhostBtn whitespace-nowrap" @onclick="AddSpecialization"
+                                    disabled="@(!AvailableSpecializations.Any())">
+                                @(selectedSpecs.Count == 0 ? "Add" : "Add Another Specialization")
+                            </button>
+                        </div>
+                    }
+                    @if (specError is not null)
+                    {
+                        <p class="text-xs text-red-600 mt-2" role="alert">@specError</p>
+                    }
+                </div>
+
+                <div>
+                    <p class="text-sm font-medium text-gray-700 mb-2">Assigned (@selectedSpecs.Count)</p>
+                    @if (selectedSpecs.Count == 0)
+                    {
+                        <p class="text-sm text-gray-400 font-light">None yet. Choose one above and add it.</p>
+                    }
+                    else
+                    {
+                        <ul class="flex flex-wrap gap-2">
+                            @foreach (var s in selectedSpecs)
+                            {
+                                <li class="inline-flex items-center gap-2 bg-gray-900 text-white text-xs pl-3 pr-2 py-1.5">
+                                    @s
+                                    <button type="button" class="text-gray-300 hover:text-white text-base leading-none"
+                                            aria-label="Remove @s" @onclick="() => RemoveSpecialization(s)">&times;</button>
+                                </li>
+                            }
+                        </ul>
+                    }
+                </div>
+
+                <div class="flex justify-between pt-2">
+                    <button type="button" class="@GhostBtn" @onclick="() => step = 1">Previous</button>
+                    <button type="button" class="@PrimaryBtn" @onclick="GoToReview">Next</button>
+                </div>
+            </div>
+            break;
+
+        case 3:
+            <EditForm Model="account" OnValidSubmit="SaveAsync" class="space-y-6">
+                <DataAnnotationsValidator />
+
+                <!-- Read-only overview of steps 1 and 2 -->
+                <dl class="border border-gray-200 divide-y divide-gray-100 text-sm">
+                    <div class="flex justify-between gap-4 px-4 py-3">
+                        <dt class="text-gray-500">Name</dt>
+                        <dd class="font-semibold text-gray-900 text-right">@FullName</dd>
+                    </div>
+                    <div class="flex justify-between gap-4 px-4 py-3">
+                        <dt class="text-gray-500">Email</dt>
+                        <dd class="font-semibold text-gray-900 text-right">@personal.Email</dd>
+                    </div>
+                    <div class="flex justify-between gap-4 px-4 py-3">
+                        <dt class="text-gray-500">Specializations</dt>
+                        <dd class="flex flex-wrap gap-2 justify-end">
+                            @foreach (var s in selectedSpecs)
+                            {
+                                <span class="border border-gray-300 text-gray-700 text-xs px-2.5 py-1">@s</span>
+                            }
+                        </dd>
+                    </div>
+                </dl>
+
+                <div>
+                    <label for="emp-id" class="block text-sm font-medium text-gray-700 mb-2">Employee ID</label>
+                    <InputText id="emp-id" @bind-Value="account.EmployeeId" class="@InputClass" autocomplete="off" />
+                    <ValidationMessage For="() => account.EmployeeId" class="text-xs text-red-600 mt-1" />
+                </div>
+
+                <div>
+                    <label for="emp-pw" class="block text-sm font-medium text-gray-700 mb-2">Starting password</label>
+                    <div class="relative">
+                        <InputText id="emp-pw" @bind-Value="account.Password" class="@InputClass"
+                                   type="@(showPassword ? "text" : "password")" autocomplete="new-password" />
+                        <button type="button" class="absolute right-4 top-1/2 -translate-y-1/2 text-xs text-gray-500 hover:text-gray-900 underline"
+                                @onclick="() => showPassword = !showPassword">@(showPassword ? "Hide" : "Show")</button>
+                    </div>
+                    <ValidationMessage For="() => account.Password" class="text-xs text-red-600 mt-1" />
+                    <p class="text-xs text-gray-400 mt-1">At least 8 characters, with a letter and a number.</p>
+                </div>
+
+                @if (saveError is not null)
+                {
+                    <p class="text-sm text-red-700 bg-red-50 px-4 py-3" role="alert">@saveError</p>
+                }
+
+                <div class="flex justify-between pt-2">
+                    <button type="button" class="@GhostBtn" @onclick="() => step = 2" disabled="@isSaving">Previous</button>
+                    <button type="submit" class="@PrimaryBtn" disabled="@isSaving">
+                        @(isSaving ? "Saving " : "Save & Create Employee")
+                    </button>
+                </div>
+            </EditForm>
+            break;
+    }
+</div>
+
+@code {
+    [Parameter] public EventCallback OnSaved { get; set; }
+    [Parameter] public EventCallback OnCancel { get; set; }
+
+    private const int TotalSteps = 3;
+    private static readonly string[] StepTitles = { "Personal info", "Specializations", "Review & account" };
+
+    private const string InputClass =
+        "w-full border border-gray-300 bg-white px-4 py-3 text-sm text-gray-900 focus:outline-none focus:border-gray-900";
+    private const string PrimaryBtn =
+        "bg-gray-900 hover:bg-black text-white px-6 py-3 rounded-none font-medium transition-colors text-sm uppercase tracking-wider disabled:opacity-60 disabled:cursor-not-allowed";
+    private const string GhostBtn =
+        "bg-transparent hover:bg-gray-100 text-gray-900 border border-gray-300 px-6 py-3 rounded-none font-medium transition-colors text-sm uppercase tracking-wider disabled:opacity-60 disabled:cursor-not-allowed";
+
+    private readonly EmployeePersonalModel personal = new();
+    private readonly EmployeeAccountModel account = new();
+    private readonly List<string> selectedSpecs = new();
+    
+    private IReadOnlyList<string>? allSpecializations;
+    private CancellationTokenSource? _cts;
+    private int step = 1;
+    private string? pendingSpec;
+    private string? specError;
+    private string? saveError;
+    private bool isSaving;
+    private bool showPassword;
+
+    private IEnumerable<string> AvailableSpecializations =>
+        (allSpecializations ?? Array.Empty<string>()).Except(selectedSpecs);
+
+    private string FullName =>
+        string.Join(' ', new[] { personal.FirstName, personal.MiddleName, personal.LastName }
+            .Where(p => !string.IsNullOrWhiteSpace(p)));
+
+    protected override async Task OnInitializedAsync()
+    {
+        _cts = new CancellationTokenSource();
+        allSpecializations = await Employees.GetSpecializationsAsync(_cts.Token);
+    }
+
+    private void AddSpecialization()
+    {
+        if (string.IsNullOrEmpty(pendingSpec))
+        {
+            specError = "Choose a specialization first.";
+            return;
+        }
+
+        selectedSpecs.Add(pendingSpec);
+        pendingSpec = null;
+        specError = null;
+    }
+
+    private void RemoveSpecialization(string spec) => selectedSpecs.Remove(spec);
+
+    private void GoToReview()
+    {
+        if (!string.IsNullOrEmpty(pendingSpec)) AddSpecialization();
+
+        if (selectedSpecs.Count == 0)
+        {
+            specError = "Add at least one specialization.";
+            return;
+        }
+
+        specError = null;
+        step = 3;
+    }
+
+    private async Task SaveAsync()
+    {
+        isSaving = true;
+        saveError = null;
+
+        try
+        {
+            var result = await Employees.CreateEmployeeAsync(new NewEmployeeRequest(
+                account.EmployeeId, personal.FirstName, personal.LastName, personal.MiddleName,
+                personal.Email, selectedSpecs.ToList(), account.Password), _cts!.Token);
+
+            if (!result.Success)
+            {
+                saveError = result.Error; 
+                return;
+            }
+
+            await OnSaved.InvokeAsync();
+        }
+        catch (OperationCanceledException)
+        {
+            // Request was cancelled, do nothing
+        }
+        catch
+        {
+            saveError = "Something went wrong while saving. Try again in a moment.";
+        }
+        finally
+        {
+            isSaving = false;
+        }
+    }
+
+    public void Dispose()
+    {
+        _cts?.Cancel();
+        _cts?.Dispose();
+    }
+}

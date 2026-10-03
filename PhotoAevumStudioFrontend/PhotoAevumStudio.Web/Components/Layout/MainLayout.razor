@@ -1,8 +1,6 @@
 ﻿@inherits LayoutComponentBase
 
-<NavMenu />
-
-<main class="flex-grow pt-20">
+<main class="flex-grow">
     @Body
 </main>
 
@@ -11,9 +9,8 @@
         <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-12 mb-16">
             <div class="col-span-1 lg:col-span-2">
                <div class="flex items-center mb-6">
-                 <!-- If you have a light/white version of your logo for the dark footer, use it here -->
                  <img src="images/AevumLogo.jpg" alt="Photo Aevum Logo" class="h-10 w-auto rounded-full" />
-                 <span class="font-bold text-xl tracking-tight uppercase tracking-widest text-white-900 ml-4">  Photo Aevum Studio</span>
+                 <span class="font-bold text-xl tracking-tight uppercase tracking-widest text-white ml-4">Photo Aevum Studio</span>
                </div>
                 <p class="text-gray-400 text-sm mb-8 max-w-sm font-light leading-relaxed">
                     A modern photography studio dedicated to capturing compelling visual narratives for individuals and brands.
@@ -38,13 +35,9 @@
             <div>
                 <h4 class="font-medium text-white mb-6 uppercase tracking-wider text-sm ml-7">Contact</h4>
                 <ul class="space-y-4 text-sm text-gray-400 font-light">
-                 <!-- <li class="flex items-start gap-3">
-                        <i data-lucide="map-pin" class="w-4 h-4 mt-0.5"></i>
-                        <span>123 Creative Studio Ave.<br>Ar</span>
-                    </li> -->
                     <li class="flex items-center gap-3">
                         <i data-lucide="mail" class="w-4 h-4"></i>
-                        <a href="mailto:hello&#64;photoaevum.com" class="hover:text-white transition-colors">photoaevumstudio@gmail.com</a>
+                        <a href="mailto:photoaevumstudio@gmail.com" class="hover:text-white transition-colors">photoaevumstudio@gmail.com</a>
                     </li>
                     <li class="flex items-center gap-3">
                         <i data-lucide="phone" class="w-4 h-4"></i>
