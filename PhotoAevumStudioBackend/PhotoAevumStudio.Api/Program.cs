@@ -1,5 +1,7 @@
 using Microsoft.EntityFrameworkCore;
+using PhotoAevumStudio.Application.Interfaces;
 using PhotoAevumStudio.Infrastructure.Data;
+using PhotoAevumStudio.Infrastructure.Services;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -10,6 +12,10 @@ builder.Services.AddEndpointsApiExplorer();
 // Register the Database Context
 builder.Services.AddDbContext<ApplicationDbContext>(options =>
     options.UseSqlServer(builder.Configuration.GetConnectionString("DefaultConnection")));
+
+// Register application services
+
+builder.Services.AddScoped<IBookingService, BookingService>();
 
 var app = builder.Build();
 

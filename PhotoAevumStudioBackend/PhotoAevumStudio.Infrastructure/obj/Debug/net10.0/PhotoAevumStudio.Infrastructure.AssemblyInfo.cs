@@ -14,7 +14,7 @@ using System.Reflection;
 [assembly: System.Reflection.AssemblyCompanyAttribute("PhotoAevumStudio.Infrastructure")]
 [assembly: System.Reflection.AssemblyConfigurationAttribute("Debug")]
 [assembly: System.Reflection.AssemblyFileVersionAttribute("1.0.0.0")]
-[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+7eec0f384e183ca79aa1c585ed68fb51bde9aebe")]
+[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+5107d5fe909e1e2a2fcc26dd28385494a8814923")]
 [assembly: System.Reflection.AssemblyProductAttribute("PhotoAevumStudio.Infrastructure")]
 [assembly: System.Reflection.AssemblyTitleAttribute("PhotoAevumStudio.Infrastructure")]
 [assembly: System.Reflection.AssemblyVersionAttribute("1.0.0.0")]
