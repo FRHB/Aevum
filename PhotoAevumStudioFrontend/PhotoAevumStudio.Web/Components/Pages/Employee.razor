@@ -1,135 +1,23 @@
-﻿@page "/Admin/Employees"
+﻿@page "/Employee"
+@layout AdminLayout
 @rendermode InteractiveServer
-@inject IEmployeeService Employees
-@implements IDisposable
 
-<PageTitle>Employees | Photo Aevum Studio</PageTitle>
-
-<AdminNav />
-
-<section class="bg-gray-50 min-h-screen py-12">
-    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-        <div class="flex flex-col sm:flex-row sm:items-end justify-between gap-6 mb-8">
-            <div>
-                <h1 class="text-3xl md:text-5xl font-bold text-gray-900 tracking-tighter mb-2">Employees</h1>
-                <p class="text-gray-500 font-light">People who can be assigned to client sessions.</p>
-            </div>
-            <button type="button" @onclick="OpenWizard"
-                    class="bg-gray-900 hover:bg-black text-white px-8 py-4 rounded-none font-medium transition-colors text-sm uppercase tracking-wider w-full sm:w-auto">
-                Add Employee
-            </button>
-        </div>
-
-        @if (successMessage is not null)
-        {
-            <div class="mb-6 bg-white border border-gray-900 px-6 py-4 text-sm text-gray-900 flex justify-between items-center" role="status">
-                <span>@successMessage</span>
-                <button type="button" class="text-gray-400 hover:text-gray-900" aria-label="Dismiss"
-                        @onclick="() => successMessage = null">&times;</button>
-            </div>
-        }
-
-        <div class="bg-white border border-gray-200 overflow-x-auto">
-            @if (employees is null)
-            {
-                <div class="p-6 space-y-4" aria-hidden="true">
-                    @for (var i = 0; i < 5; i++)
-                    {
-                        <div class="image-placeholder h-10 bg-gray-100"></div>
-                    }
-                </div>
-            }
-            else if (employees.Count == 0)
-            {
-                <div class="p-12 text-center">
-                    <p class="text-gray-900 font-semibold mb-1">No employees yet</p>
-                    <p class="text-gray-500 font-light text-sm">Add your first employee to start assigning sessions.</p>
-                </div>
-            }
-            else
-            {
-                <table class="w-full text-left text-sm">
-                    <thead class="border-b border-gray-200 text-gray-500">
-                        <tr>
-                            <th scope="col" class="px-6 py-4 font-medium">ID</th>
-                            <th scope="col" class="px-6 py-4 font-medium">Name</th>
-                            <th scope="col" class="px-6 py-4 font-medium">Email</th>
-                            <th scope="col" class="px-6 py-4 font-medium">Specializations</th>
-                            <th scope="col" class="px-6 py-4 font-medium">Status</th>
-                        </tr>
-                    </thead>
-                    <tbody class="divide-y divide-gray-100">
-                        @foreach (var e in employees)
-                        {
-                            <tr>
-                                <td class="px-6 py-4 text-gray-500 whitespace-nowrap">@e.EmployeeId</td>
-                                <th scope="row" class="px-6 py-4 font-semibold text-gray-900 whitespace-nowrap">@e.FullName</th>
-                                <td class="px-6 py-4 text-gray-500">@e.Email</td>
-                                <td class="px-6 py-4">
-                                    <div class="flex flex-wrap gap-2">
-                                        @foreach (var s in e.Specializations)
-                                        {
-                                            <span class="border border-gray-300 text-gray-700 text-xs px-2.5 py-1">@s</span>
-                                        }
-                                    </div>
-                                </td>
-                                <td class="px-6 py-4 whitespace-nowrap">
-                                    <!-- Using the new computed IsActive property for cleaner logic -->
-                                    <span class="text-xs font-medium px-2.5 py-1 @(e.IsActive ? "bg-gray-900 text-white" : "bg-gray-100 text-gray-500")">@e.Status</span>
-                                </td>
-                            </tr>
-                        }
-                    </tbody>
-                </table>
-            }
-        </div>
+<div class="flex justify-between items-center mb-8">
+    <div>
+        <h1 class="text-3xl font-bold text-gray-900">Directory</h1>
+        <p class="text-gray-500 mt-1">Manage staff roles and access levels.</p>
     </div>
-</section>
+    <button @onclick="() => isWizardOpen = true" class="btn btn--primary flex items-center gap-2">
+        <i data-lucide="user-plus" class="w-4 h-4"></i> Add Staff
+    </button>
+</div>
 
-@if (showWizard)
-{
-    <!-- Modal. Rendering the wizard only while open gives it fresh state every time. -->
-    <div class="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
-        <div class="bg-white w-full max-w-xl max-h-[90vh] overflow-y-auto shadow-2xl"
-             role="dialog" aria-modal="true" aria-labelledby="wizard-title">
-            <AddEmployeeWizard OnSaved="HandleSaved" OnCancel="CloseWizard" />
-        </div>
-    </div>
-}
+<div class="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
+    <div class="p-6 text-gray-500">Employee list populated here.</div>
+</div>
+
+<AddEmployeeWizard @bind-IsOpen="isWizardOpen" />
 
 @code {
-    private IReadOnlyList<EmployeeViewModel>? employees;
-    private bool showWizard;
-    private string? successMessage;
-    private CancellationTokenSource? _cts;
-
-    protected override async Task OnInitializedAsync() 
-    {
-        _cts = new CancellationTokenSource();
-        await LoadAsync();
-    }
-
-    private async Task LoadAsync() => employees = await Employees.GetEmployeesAsync(_cts!.Token);
-
-    private void OpenWizard()
-    {
-        successMessage = null;
-        showWizard = true;
-    }
-
-    private void CloseWizard() => showWizard = false;
-
-    private async Task HandleSaved()
-    {
-        showWizard = false;
-        employees = null; // show the skeleton while refreshing
-        successMessage = "Employee added. They can now be assigned to sessions.";
-        await LoadAsync();
-    }
-
-    public void Dispose()
-    {
-        _cts?.Cancel();
-        _cts?.Dispose();
-    }
+    private bool isWizardOpen = false;
 }

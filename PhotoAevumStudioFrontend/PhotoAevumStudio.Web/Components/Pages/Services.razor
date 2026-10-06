@@ -1,60 +1,59 @@
-﻿@page "/admin/services"
-@page "/Dashboard/Services"
-@inherits ServicesBase
-@using YourNamespace.ViewModels;
+﻿@page "/Services"
+@layout AdminLayout
+@rendermode InteractiveServer
 
-<div class="dashboard-layout d-flex min-vh-100">
-    <!-- Persistent Left Navigation Bar -->
-    <nav class="sidebar bg-navy text-white p-3" style="width: 260px; background-color: #0f172a;">
-        <h4 class="brand mb-4 text-white font-weight-bold">Operations</h4>
-        <ul class="nav flex-column">
-            <li class="nav-item mb-2"><a href="/Dashboard" class="nav-link text-white-50">Dashboard</a></li>
-            <li class="nav-item mb-2"><a href="/Dashboard/Schedules" class="nav-link text-white-50">Schedules</a></li>
-            <li class="nav-item mb-2"><a href="/Dashboard/Services" class="nav-link text-white active fw-bold bg-teal rounded">Services</a></li>
-            <li class="nav-item mb-2"><a href="/Dashboard/Equipment" class="nav-link text-white-50">Equipment</a></li>
-            <li class="nav-item mb-2"><a href="/Dashboard/Employees" class="nav-link text-white-50">Employees</a></li>
-        </ul>
-    </nav>
-
-    <!-- Main Content Panel -->
-    <main class="main-content p-4 bg-light flex-grow-1">
-        <div class="d-flex justify-content-between align-items-center mb-4">
-            <div>
-                <h2>Services</h2>
-                <p class="text-muted">Company's full service catalog and pricing options.</p>
-            </div>
-            <button class="btn btn-primary" @onclick="OpenAddServiceModal">+ Add Service</button>
-        </div>
-
-        <div class="card shadow-sm border-0 rounded-3 p-3 bg-white">
-            <table class="table table-hover align-middle">
-                <thead class="table-light">
-                    <tr>
-                        <th>ID</th>
-                        <th>Service Name</th>
-                        <th>Type / Kind</th>
-                        <th>Duration</th>
-                        <th>Price</th>
-                        <th>Status</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    @if (ServicesList != null)
-                    {
-                        @foreach (var item in ServicesList)
-                        {
-                            <tr>
-                                <td>SRV-@item.Id</td>
-                                <td><strong>@item.Name</strong></td>
-                                <td>@item.Kind</td>
-                                <td>@item.Duration mins</td>
-                                <td>$@item.Price.ToString("N2")</td>
-                                <td><span class="badge bg-success">Active</span></td>
-                            </tr>
-                        }
-                    }
-                </tbody>
-            </table>
-        </div>
-    </main>
+<div class="flex justify-between items-center mb-8">
+    <div>
+        <h1 class="text-3xl font-bold text-gray-900">Services</h1>
+        <p class="text-gray-500 mt-1">Manage studio offerings and combo packages.</p>
+    </div>
+    <button @onclick="() => isWizardOpen = true" class="btn btn--primary flex items-center gap-2">
+        <i data-lucide="plus" class="w-4 h-4"></i> Add Service
+    </button>
 </div>
+
+<div class="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
+    <table class="w-full text-left text-sm">
+        <thead class="bg-gray-50 border-b border-gray-200 text-gray-500 uppercase text-xs font-semibold">
+            <tr>
+                <th class="px-6 py-4">Service Name</th>
+                <th class="px-6 py-4">Type</th>
+                <th class="px-6 py-4">Duration</th>
+                <th class="px-6 py-4 text-right">Price</th>
+            </tr>
+        </thead>
+        <tbody class="divide-y divide-gray-100">
+            @foreach (var service in ServicesList)
+            {
+                <tr class="hover:bg-gray-50">
+                    <td class="px-6 py-4 font-medium text-gray-900">@service.Name</td>
+                    <td class="px-6 py-4 text-gray-500">@service.Kind</td>
+                    <td class="px-6 py-4 text-gray-500">@service.Duration mins</td>
+                    <td class="px-6 py-4 text-right font-semibold text-gray-900">$@service.Price.ToString("0.00")</td>
+                </tr>
+            }
+        </tbody>
+    </table>
+</div>
+
+<AddServicesWizard @bind-IsOpen="isWizardOpen" />
+
+@code {
+    private bool isWizardOpen = false;
+
+    protected List<ServiceItem> ServicesList { get; set; } = new()
+    {
+        new ServiceItem { Id = 1041, Name = "Deep Tissue Massage", Kind = "Service", Duration = 60, Price = 75.00m },
+        new ServiceItem { Id = 1042, Name = "Studio Lighting Combo", Kind = "Combo Package", Duration = 120, Price = 150.00m },
+        new ServiceItem { Id = 1043, Name = "Express Headshot Session", Kind = "Additional Service", Duration = 30, Price = 45.00m }
+    };
+
+    public class ServiceItem
+    {
+        public int Id { get; set; }
+        public string Name { get; set; } = string.Empty;
+        public string Kind { get; set; } = string.Empty;
+        public int Duration { get; set; }
+        public decimal Price { get; set; }
+    }
+}

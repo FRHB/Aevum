@@ -1,71 +1,63 @@
-﻿@page "/admin/equipment"
-@page "/Dashboard/Equipment"
-@inherits EquipmentBase
-@using YourNamespace.ViewModels
+﻿@page "/Equipment"
+@layout AdminLayout
+@rendermode InteractiveServer
 
-<div class="dashboard-layout d-flex min-vh-100">
-    <!-- Persistent Left Navigation Bar -->
-    <nav class="sidebar bg-navy text-white p-3" style="width: 260px; background-color: #0f172a;">
-        <h4 class="brand mb-4 text-white font-weight-bold">Operations</h4>
-        <ul class="nav flex-column">
-            <li class="nav-item mb-2"><a href="/Dashboard" class="nav-link text-white-50">Dashboard</a></li>
-            <li class="nav-item mb-2"><a href="/Dashboard/Schedules" class="nav-link text-white-50">Schedules</a></li>
-            <li class="nav-item mb-2"><a href="/Dashboard/Services" class="nav-link text-white-50">Services</a></li>
-            <li class="nav-item mb-2"><a href="/Dashboard/Equipment" class="nav-link text-white active fw-bold bg-teal rounded">Equipment</a></li>
-            <li class="nav-item mb-2"><a href="/Dashboard/Employees" class="nav-link text-white-50">Employees</a></li>
-        </ul>
-    </nav>
-
-    <!-- Main Content Panel -->
-    <main class="main-content p-4 bg-light flex-grow-1">
-        <div class="d-flex justify-content-between align-items-center mb-4">
-            <div>
-                <h2>Equipment</h2>
-                <p class="text-muted">Manage company inventory, hardware, tools, and operational gear.</p>
-            </div>
-            <button class="btn btn-primary" @onclick="OpenAddEquipmentModal">+ Add Equipment</button>
-        </div>
-
-        <div class="card shadow-sm border-0 rounded-3 p-3 bg-white">
-            <table class="table table-hover align-middle">
-                <thead class="table-light">
-                    <tr>
-                        <th>Equipment ID</th>
-                        <th>Serial ID</th>
-                        <th>Equipment Name</th>
-                        <th>Kind</th>
-                        <th>Status</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    @if (EquipmentList != null)
-                    {
-                        @foreach (var eq in EquipmentList)
-                        {
-                            <tr>
-                                <td>EQ-@eq.Id</td>
-                                <td><code>@eq.SerialNumber</code></td>
-                                <td><strong>@eq.Name</strong></td>
-                                <td>@eq.Kind</td>
-                                <td>
-                                    @if (eq.Status == "Available")
-                                    {
-                                        <span class="badge bg-success">Available</span>
-                                    }
-                                    else if (eq.Status == "In Use")
-                                    {
-                                        <span class="badge bg-warning text-dark">In Use</span>
-                                    }
-                                    else
-                                    {
-                                        <span class="badge bg-danger">Maintenance</span>
-                                    }
-                                </td>
-                            </tr>
-                        }
-                    }
-                </tbody>
-            </table>
-        </div>
-    </main>
+<div class="flex justify-between items-center mb-8">
+    <div>
+        <h1 class="text-3xl font-bold text-gray-900">Equipment Tracker</h1>
+        <p class="text-gray-500 mt-1">Manage physical hardware and studio gear.</p>
+    </div>
+    <button @onclick="() => isWizardOpen = true" class="btn btn--primary flex items-center gap-2">
+        <i data-lucide="plus" class="w-4 h-4"></i> Add Gear
+    </button>
 </div>
+
+<div class="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
+    <table class="w-full text-left text-sm">
+        <thead class="bg-gray-50 border-b border-gray-200 text-gray-500 uppercase text-xs font-semibold">
+            <tr>
+                <th class="px-6 py-4">Item Name</th>
+                <th class="px-6 py-4">Serial Number</th>
+                <th class="px-6 py-4">Category</th>
+                <th class="px-6 py-4">Status</th>
+            </tr>
+        </thead>
+        <tbody class="divide-y divide-gray-100">
+            @foreach (var item in EquipmentList)
+            {
+                <tr class="hover:bg-gray-50">
+                    <td class="px-6 py-4 font-medium text-gray-900">@item.Name</td>
+                    <td class="px-6 py-4 text-gray-500 font-mono text-xs">@item.SerialNumber</td>
+                    <td class="px-6 py-4 text-gray-500">@item.Kind</td>
+                    <td class="px-6 py-4">
+                        <span class="px-2.5 py-1 rounded-full text-xs font-medium @(item.Status == "Available" ? "bg-green-100 text-green-800" : "bg-yellow-100 text-yellow-800")">
+                            @item.Status
+                        </span>
+                    </td>
+                </tr>
+            }
+        </tbody>
+    </table>
+</div>
+
+<AddEquipmentWizard @bind-IsOpen="isWizardOpen" />
+
+@code {
+    private bool isWizardOpen = false;
+
+    protected List<EquipmentItem> EquipmentList { get; set; } = new()
+    {
+        new EquipmentItem { Id = 2084, SerialNumber = "SN-99321", Name = "Godox AD600Pro", Kind = "Camera & Lighting Gear", Status = "Available" },
+        new EquipmentItem { Id = 2085, SerialNumber = "SN-44102", Name = "C-Stand Heavy", Kind = "Studio Support", Status = "In Use" },
+        new EquipmentItem { Id = 2086, SerialNumber = "SN-11883", Name = "Sony FX3 Body", Kind = "Camera & Lighting Gear", Status = "Maintenance" }
+    };
+
+    public class EquipmentItem
+    {
+        public int Id { get; set; }
+        public string SerialNumber { get; set; } = string.Empty;
+        public string Name { get; set; } = string.Empty;
+        public string Kind { get; set; } = string.Empty;
+        public string Status { get; set; } = "Available";
+    }
+}
