@@ -1,6 +1,0 @@
-@PhotoAevumStudioBackend_HostAddress = http://localhost:5020
-
-GET {{PhotoAevumStudioBackend_HostAddress}}/weatherforecast/
-Accept: application/json
-
-###

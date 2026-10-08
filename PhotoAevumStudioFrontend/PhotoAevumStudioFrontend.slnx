@@ -1,6 +1,3 @@
 <Solution>
-  <Project Path="../PhotoAevumStudio.SharedCore/PhotoAevumStudio.SharedCore.csproj" />
-  <Project Path="PhotoAevumStudio.Maui/PhotoAevumStudio.Maui.csproj" />
-  <Project Path="PhotoAevumStudio.Shared.UI/PhotoAevumStudio.Shared.UI.csproj" />
   <Project Path="PhotoAevumStudio.Web/PhotoAevumStudio.Web.csproj" />
 </Solution>

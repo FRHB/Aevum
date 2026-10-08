@@ -480,3 +480,19 @@ $RECYCLE.BIN/
 
 # Vim temporary swap files
 *.swp
+
+# ── Aevum Photo Studio ─────────────────────────────────────────────────────
+# Blazor WASM publish output (Blazor framework JS bundles)
+wwwroot/_framework/
+
+# Repository tree dumps
+folder_tree.txt
+
+# .NET User Secrets (never commit secrets to source control)
+secrets.json
+appsettings.Production.json
+appsettings.Staging.json
+
+# Published output
+**/publish/
+# ───────────────────────────────────────────────────────────────────────────

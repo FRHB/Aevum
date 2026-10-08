@@ -7,12 +7,4 @@
     <BlazorDisableThrowNavigationException>true</BlazorDisableThrowNavigationException>
   </PropertyGroup>
 
-  <ItemGroup>
-    <PackageReference Include="Octopus.Client" Version="25.0.2943" />
-  </ItemGroup>
-
-  <ItemGroup>
-    <ProjectReference Include="..\..\PhotoAevumStudio.SharedCore\PhotoAevumStudio.SharedCore.csproj" />
-  </ItemGroup>
-
 </Project>
