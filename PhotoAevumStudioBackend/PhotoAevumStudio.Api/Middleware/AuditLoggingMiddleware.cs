@@ -1,6 +1,6 @@
 using System.Security.Claims;
 using Microsoft.AspNetCore.Http;
-using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
 using PhotoAevumStudio.Application.Entities;
 using PhotoAevumStudio.Infrastructure.Data;
 
@@ -9,50 +9,44 @@ namespace PhotoAevumStudio.Api.Middleware;
 public class AuditLoggingMiddleware
 {
     private readonly RequestDelegate _next;
+    private readonly ILogger<AuditLoggingMiddleware> _logger;
 
-    public AuditLoggingMiddleware(RequestDelegate next)
+    public AuditLoggingMiddleware(RequestDelegate next, ILogger<AuditLoggingMiddleware> logger)
     {
         _next = next;
+        _logger = logger;
     }
 
-    public async Task InvokeAsync(HttpContext context)
+    public async Task InvokeAsync(HttpContext context, ApplicationDbContext dbContext)
     {
-        // Intercept request path and method
-        var path = context.Request.Path.Value ?? string.Empty;
-        var method = context.Request.Method;
-
-        // Only track mutative methods on bookings
-        bool isBookingMutation = path.StartsWith("/api/bookings", StringComparison.OrdinalIgnoreCase)
-                                 && (HttpMethods.IsPost(method) || HttpMethods.IsPut(method) || HttpMethods.IsDelete(method) || HttpMethods.IsPatch(method));
-
-        // Let the request proceed
-        await _next(context);
-
-        // After the request completes, if successful, log the audit
-        if (isBookingMutation && context.Response.StatusCode is >= 200 and < 300)
+        try
         {
-            var user = context.User;
-            if (user.Identity?.IsAuthenticated == true)
+            await _next(context);
+        }
+        finally
+        {
+            if (context.Request.Path.StartsWithSegments("/api/bookings") &&
+               (context.Request.Method == "POST" || context.Request.Method == "PUT" || context.Request.Method == "DELETE"))
             {
-                var userId = user.FindFirstValue(ClaimTypes.NameIdentifier) ?? "UnknownId";
-                var userEmail = user.FindFirstValue(ClaimTypes.Email) ?? "UnknownEmail";
-
-                var auditLog = new AuditLog
+                try
                 {
-                    UserId = userId,
-                    UserEmail = userEmail,
-                    Action = $"{method} Booking",
-                    Resource = "Booking",
-                    Details = $"Endpoint: {path}",
-                    Timestamp = DateTime.UtcNow
-                };
-
-                // Use DI to get a scoped DbContext to save the log
-                using var scope = context.RequestServices.CreateScope();
-                var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
-                
-                db.AuditLogs.Add(auditLog);
-                await db.SaveChangesAsync();
+                    var auditLog = new AuditLog
+                    {
+                        UserId = context.User.FindFirstValue(ClaimTypes.NameIdentifier) ?? "Anonymous",
+                        UserEmail = context.User.FindFirstValue(ClaimTypes.Email) ?? "Anonymous",
+                        Action = $"{context.Request.Method} Booking",
+                        Resource = "Booking",
+                        Details = $"Endpoint: {context.Request.Path}",
+                        Timestamp = DateTime.UtcNow,
+                        //StatusCode = context.Response.StatusCode
+                    };
+                    dbContext.AuditLogs.Add(auditLog);
+                    await dbContext.SaveChangesAsync();
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogError(ex, "Failed to write audit log.");
+                }
             }
         }
     }

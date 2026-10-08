@@ -20,6 +20,10 @@ public class ApplicationDbContext : IdentityDbContext<ApplicationUser>
     public DbSet<Equipment> Equipment => Set<Equipment>();
     public DbSet<Employee> Employees => Set<Employee>();
     public DbSet<AuditLog> AuditLogs => Set<AuditLog>();
+    
+    public DbSet<Booking> Bookings => Set<Booking>();
+    public DbSet<EmployeeAssignment> EmployeeAssignments => Set<EmployeeAssignment>();
+    public DbSet<EquipmentAssignment> EquipmentAssignments => Set<EquipmentAssignment>();
 
     protected override void OnModelCreating(ModelBuilder builder)
     {
@@ -32,6 +36,11 @@ public class ApplicationDbContext : IdentityDbContext<ApplicationUser>
             e.Property(p => p.Title).HasMaxLength(200).IsRequired();
             e.Property(p => p.Url).HasMaxLength(2000).IsRequired();
             e.Property(p => p.UploadedAt).HasDefaultValueSql("GETUTCDATE()");
+            
+            e.HasOne(p => p.Booking)
+             .WithMany()
+             .HasForeignKey(p => p.BookingId)
+             .OnDelete(DeleteBehavior.SetNull);
         });
 
         // ── ApplicationUser ──────────────────────────────────────────────────
@@ -74,5 +83,15 @@ public class ApplicationDbContext : IdentityDbContext<ApplicationUser>
              .HasForeignKey(eq => eq.AssignedEmployeeId)
              .OnDelete(DeleteBehavior.SetNull);
         });
+
+        // Prevent Double-Booking Staff
+        builder.Entity<EmployeeAssignment>()
+            .HasIndex(ea => new { ea.EmployeeId, ea.ScheduleDate, ea.ScheduleTime })
+            .IsUnique();
+
+        // Prevent Double-Booking Gear
+        builder.Entity<EquipmentAssignment>()
+            .HasIndex(eq => new { eq.EquipmentId, eq.ScheduleDate, eq.ScheduleTime })
+            .IsUnique();
     }
 }

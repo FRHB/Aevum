@@ -1,3 +1,5 @@
+using System.Threading.RateLimiting;
+using Microsoft.AspNetCore.RateLimiting;
 using System.Text;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using FluentValidation;
@@ -107,6 +109,19 @@ builder.Services.AddScoped<IStudioManagementService, StudioManagementService>();
 builder.Services.AddScoped<IStorageProvider, LocalStorageProvider>();
 
 // ═════════════════════════════════════════════════════════════════════════════
+
+// 1. Configure Rate Limiting
+builder.Services.AddRateLimiter(options =>
+{
+    options.AddFixedWindowLimiter("LoginPolicy", opt =>
+    {
+        opt.Window = TimeSpan.FromMinutes(1);
+        opt.PermitLimit = 5; // 5 attempts per minute
+        opt.QueueLimit = 0;
+    });
+    options.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
+});
+
 var app = builder.Build();
 // ═════════════════════════════════════════════════════════════════════════════
 
@@ -150,6 +165,7 @@ if (app.Environment.IsDevelopment())
 
 app.UseHttpsRedirection();
 app.UseCors("BlazorFrontend");
+app.UseRateLimiter();
 app.UseAuthentication(); // Must come before UseAuthorization
 app.UseAuthorization();
 app.UseMiddleware<PhotoAevumStudio.Api.Middleware.AuditLoggingMiddleware>();
@@ -157,7 +173,7 @@ app.MapControllers();
 
 app.MapGet("/health", () => Results.Ok(new { Status = "Healthy", Timestamp = DateTime.UtcNow }))
    .WithName("GetHealth")
-   .WithOpenApi();
+   ;
 
 app.MapGet("/health/db", async (ApplicationDbContext dbContext) => 
 {
@@ -170,7 +186,7 @@ app.MapGet("/health/db", async (ApplicationDbContext dbContext) =>
     {
         return Results.StatusCode(503);
     }
-}).WithName("GetDbHealth").WithOpenApi();
+}).WithName("GetDbHealth");
 
 // ── Migrate + Seed on startup ─────────────────────────────────────────────────
 
@@ -185,7 +201,14 @@ await using (var scope = app.Services.CreateAsyncScope())
         await db.Database.MigrateAsync();
 
     var adminEmail    = builder.Configuration["Seed:AdminEmail"]    ?? "admin@photoaevum.studio";
-    var adminPassword = builder.Configuration["Seed:AdminPassword"] ?? "Admin@12345!";
+    
+    var adminPassword = builder.Configuration["Seed:AdminPassword"];
+    if (!app.Environment.IsDevelopment() && string.IsNullOrWhiteSpace(adminPassword))
+    {
+        throw new InvalidOperationException("CRITICAL: Seed:AdminPassword is required outside of Development to prevent fallback passwords.");
+    }
+    adminPassword ??= "Admin@12345!";
+
 
     await DatabaseSeeder.SeedAsync(roleManager, userManager, adminEmail, adminPassword);
 }

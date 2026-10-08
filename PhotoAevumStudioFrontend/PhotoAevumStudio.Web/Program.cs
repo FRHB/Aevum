@@ -27,9 +27,17 @@ builder.Services.AddHttpClient("AevumApi.Authorized", client =>
 }).AddHttpMessageHandler<AuthHttpHandler>();
 
 builder.Services.AddScoped<IAuthService, AuthService>();
-builder.Services.AddScoped<IEmployeeService, EmployeeService>(); 
+builder.Services.AddScoped<IEmployeeService, EmployeeService>();
 
+var apiBaseUrl = builder.Configuration["Api:BaseUrl"]
+    ?? throw new InvalidOperationException("Api:BaseUrl is missing from configuration.");
 
+builder.Services.AddHttpClient("AevumApi", client =>
+    client.BaseAddress = new Uri(apiBaseUrl))
+    .AddHttpMessageHandler<AuthHttpHandler>();
+
+builder.Services.AddHttpClient("AevumApi.Anonymous", client =>
+    client.BaseAddress = new Uri(apiBaseUrl));
 var app = builder.Build();
 
 if (!app.Environment.IsDevelopment())
