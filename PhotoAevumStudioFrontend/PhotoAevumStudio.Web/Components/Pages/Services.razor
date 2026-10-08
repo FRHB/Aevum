@@ -1,4 +1,4 @@
-﻿@page "/Services"
+@page "/Services"
 @layout AdminLayout
 @rendermode InteractiveServer
 
@@ -29,7 +29,7 @@
                     <td class="px-6 py-4 font-medium text-gray-900">@service.Name</td>
                     <td class="px-6 py-4 text-gray-500">@service.Kind</td>
                     <td class="px-6 py-4 text-gray-500">@service.Duration mins</td>
-                    <td class="px-6 py-4 text-right font-semibold text-gray-900">$@service.Price.ToString("0.00")</td>
+                    <td class="px-6 py-4 text-right font-semibold text-gray-900">₱@service.Price.ToString("0.00")</td>
                 </tr>
             }
         </tbody>
@@ -43,9 +43,9 @@
 
     protected List<ServiceItem> ServicesList { get; set; } = new()
     {
-        new ServiceItem { Id = 1041, Name = "Deep Tissue Massage", Kind = "Service", Duration = 60, Price = 75.00m },
-        new ServiceItem { Id = 1042, Name = "Studio Lighting Combo", Kind = "Combo Package", Duration = 120, Price = 150.00m },
-        new ServiceItem { Id = 1043, Name = "Express Headshot Session", Kind = "Additional Service", Duration = 30, Price = 45.00m }
+        new ServiceItem { Id = 1041, Name = "Portrait Session", Kind = "Portrait", Duration = 60, Price = 5000.00m },
+        new ServiceItem { Id = 1042, Name = "Event Coverage", Kind = "Event", Duration = 240, Price = 15000.00m },
+        new ServiceItem { Id = 1043, Name = "Studio Session Combo", Kind = "Studio Session", Duration = 120, Price = 8000.00m }
     };
 
     public class ServiceItem

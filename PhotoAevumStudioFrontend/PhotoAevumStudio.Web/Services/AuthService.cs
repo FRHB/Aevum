@@ -50,6 +50,12 @@ public sealed class AuthService : IAuthService
         }
     }
 
+    public async Task<bool> LoginAsync(string username, string password)
+    {
+        var result = await LoginAsync(username, password, CancellationToken.None);
+        return result.Success;
+    }
+
     public async Task LogoutAsync(CancellationToken cancellationToken = default)
     {
         await _authStateProvider.NotifyUserLogoutAsync();

@@ -4,6 +4,7 @@
 @using PhotoAevumStudio.Web.Services
 @inject NavigationManager NavManager
 @inject IAuthService AuthService
+@inject AuthenticationStateProvider AuthStateProvider
 
 <div class="login-page-wrapper">
     <div class="login-card">
@@ -57,16 +58,22 @@
         errorMessage = "";
         StateHasChanged();
 
-        var result = await AuthService.LoginAsync(loginModel.UserId, loginModel.Password);
+        var result = await AuthService.LoginAsync(loginModel.UserId, loginModel.Password, CancellationToken.None);
 
         if (result.Success)
         {
-            // Login successful: Route the user to the dashboard
-            NavManager.NavigateTo("/dashboard");
+            var authState = await AuthStateProvider.GetAuthenticationStateAsync();
+            var user = authState.User;
+
+            if (user.IsInRole("Admin"))
+                NavManager.NavigateTo("/admin");
+            else if (user.IsInRole("Employee"))
+                NavManager.NavigateTo("/staff");
+            else
+                NavManager.NavigateTo("/my");
         }
         else
         {
-            // Login failed: Show an error message on the screen
             errorMessage = result.Error ?? "Invalid ID or password. Please try again.";
         }
         
