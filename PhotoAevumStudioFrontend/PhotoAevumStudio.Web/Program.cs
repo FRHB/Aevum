@@ -27,7 +27,8 @@ builder.Services.AddHttpClient("AevumApi.Authorized", client =>
 }).AddHttpMessageHandler<AuthHttpHandler>();
 
 builder.Services.AddScoped<IAuthService, AuthService>();
-builder.Services.AddSingleton<IEmployeeService, MockEmployeeService>(); // Will replace in phase 3
+builder.Services.AddScoped<IEmployeeService, EmployeeService>(); 
+
 
 var app = builder.Build();
 

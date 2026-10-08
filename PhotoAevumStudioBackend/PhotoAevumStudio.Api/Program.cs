@@ -1,5 +1,7 @@
 using System.Text;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
+using FluentValidation;
+using FluentValidation.AspNetCore;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
@@ -16,6 +18,9 @@ var builder = WebApplication.CreateBuilder(args);
 builder.Services.AddControllers();
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddOpenApi();
+
+builder.Services.AddFluentValidationAutoValidation();
+builder.Services.AddValidatorsFromAssemblyContaining<PhotoAevumStudio.Application.Validation.RegisterRequestValidator>();
 
 // ── Database ─────────────────────────────────────────────────────────────────
 
@@ -92,6 +97,7 @@ builder.Services.AddProblemDetails();
 
 builder.Services.AddScoped<IBookingService, BookingService>();
 builder.Services.AddScoped<IPhotoService,   PhotoService>();
+builder.Services.AddScoped<IStudioManagementService, StudioManagementService>();
 
 // ═════════════════════════════════════════════════════════════════════════════
 var app = builder.Build();

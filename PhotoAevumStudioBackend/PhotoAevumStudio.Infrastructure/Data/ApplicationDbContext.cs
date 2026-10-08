@@ -16,6 +16,9 @@ public class ApplicationDbContext : IdentityDbContext<ApplicationUser>
 
     // ── Domain tables ────────────────────────────────────────────────────────
     public DbSet<Photo> Photos => Set<Photo>();
+    public DbSet<StudioService> Services => Set<StudioService>();
+    public DbSet<Equipment> Equipment => Set<Equipment>();
+    public DbSet<Employee> Employees => Set<Employee>();
 
     protected override void OnModelCreating(ModelBuilder builder)
     {
@@ -38,6 +41,37 @@ public class ApplicationDbContext : IdentityDbContext<ApplicationUser>
             e.Property(u => u.MiddleName).HasMaxLength(100);
             e.Property(u => u.StudioId).HasMaxLength(30);
             e.HasIndex(u => u.StudioId).IsUnique().HasFilter("[StudioId] IS NOT NULL");
+        });
+
+        // ── StudioService ────────────────────────────────────────────────────
+        builder.Entity<StudioService>(e =>
+        {
+            e.HasKey(s => s.Id);
+            e.Property(s => s.Name).HasMaxLength(100).IsRequired();
+            e.Property(s => s.Price).HasColumnType("decimal(18,2)");
+        });
+
+        // ── Employee ─────────────────────────────────────────────────────────
+        builder.Entity<Employee>(e =>
+        {
+            e.HasKey(emp => emp.Id);
+            e.HasOne(emp => emp.IdentityUser)
+             .WithOne()
+             .HasForeignKey<Employee>(emp => emp.IdentityUserId)
+             .OnDelete(DeleteBehavior.Cascade);
+        });
+
+        // ── Equipment ────────────────────────────────────────────────────────
+        builder.Entity<Equipment>(e =>
+        {
+            e.HasKey(eq => eq.Id);
+            e.Property(eq => eq.Name).HasMaxLength(100).IsRequired();
+            e.Property(eq => eq.SerialNumber).HasMaxLength(100).IsRequired();
+            
+            e.HasOne(eq => eq.AssignedEmployee)
+             .WithMany(emp => emp.AssignedEquipment)
+             .HasForeignKey(eq => eq.AssignedEmployeeId)
+             .OnDelete(DeleteBehavior.SetNull);
         });
     }
 }
