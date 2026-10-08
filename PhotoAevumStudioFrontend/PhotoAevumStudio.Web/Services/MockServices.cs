@@ -1,4 +1,4 @@
-﻿using System.Collections.Concurrent;
+using System.Collections.Concurrent;
 using PhotoAevumStudio.Web.Models;
 
 namespace PhotoAevumStudio.Web.Services;
@@ -100,57 +100,4 @@ public class MockEmployeeService : IEmployeeService
         }
         return result;
     }
-}
-
-public class MockAuthService : IAuthService
-{
-    private sealed record PendingCode(string Code, DateTime ExpiresUtc);
-    private static readonly TimeSpan CodeLifetime = TimeSpan.FromMinutes(10);
-
-    private readonly ConcurrentDictionary<string, PendingCode> _pending = new(StringComparer.OrdinalIgnoreCase);
-    private readonly ConcurrentDictionary<string, RegistrationRequest> _users = new(StringComparer.OrdinalIgnoreCase);
-    private readonly ILogger<MockAuthService> _logger;
-
-    public MockAuthService(ILogger<MockAuthService> logger) => _logger = logger;
-
-    public async Task<bool> IsUserLoggedInAsync(CancellationToken cancellationToken = default)
-    {
-        await Task.Delay(400, cancellationToken);
-        return false;
-    }
-
-    public async Task<bool> SendVerificationCodeAsync(string email, CancellationToken cancellationToken = default)
-    {
-        await Task.Delay(1200, cancellationToken);
-        var code = Random.Shared.Next(0, 1_000_000).ToString("D6");
-        _pending[email] = new PendingCode(code, DateTime.UtcNow.Add(CodeLifetime));
-
-        _logger.LogInformation("[MOCK EMAIL] Verification code for {Email}: {Code}", email, code);
-        return true;
-    }
-
-    public async Task<bool> VerifyCodeAsync(string email, string code, CancellationToken cancellationToken = default)
-    {
-        await Task.Delay(900, cancellationToken);
-        if (!_pending.TryGetValue(email, out var pending)) return false;
-
-        if (pending.ExpiresUtc < DateTime.UtcNow)
-        {
-            _pending.TryRemove(email, out _);
-            return false;
-        }
-
-        if (!string.Equals(pending.Code, code, StringComparison.Ordinal)) return false;
-
-        _pending.TryRemove(email, out _);
-        return true;
-    }
-
-    public async Task<bool> RegisterAsync(RegistrationRequest request, CancellationToken cancellationToken = default)
-    {
-        await Task.Delay(600, cancellationToken);
-        _users[request.Email] = request with { Password = "[hashed]" };
-        _logger.LogInformation("[MOCK API] Registered {Email}", request.Email);
-        return true;
-    }
-}
+}

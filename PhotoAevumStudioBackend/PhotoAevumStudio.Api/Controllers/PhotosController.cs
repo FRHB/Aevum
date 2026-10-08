@@ -1,4 +1,6 @@
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using PhotoAevumStudio.Application.Auth;
 using PhotoAevumStudio.Application.DTOs;
 using PhotoAevumStudio.Application.Interfaces;
 
@@ -6,6 +8,7 @@ namespace PhotoAevumStudio.Api.Controllers;
 
 [ApiController]
 [Route("api/[controller]")]
+[Authorize]
 public class PhotosController : ControllerBase
 {
     private readonly IPhotoService _photoService;
@@ -15,6 +18,7 @@ public class PhotosController : ControllerBase
         _photoService = photoService;
     }
 
+    /// <summary>Returns all photos. Available to all authenticated users.</summary>
     [HttpGet]
     public async Task<IActionResult> GetAll()
     {
@@ -22,7 +26,9 @@ public class PhotosController : ControllerBase
         return Ok(photos);
     }
 
+    /// <summary>Creates a photo record. Admin and Employee only.</summary>
     [HttpPost]
+    [Authorize(Roles = $"{AppRoles.Admin},{AppRoles.Employee}")]
     public async Task<IActionResult> Create([FromBody] CreatePhotoDto dto)
     {
         var result = await _photoService.CreateAsync(dto);

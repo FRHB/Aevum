@@ -1,11 +1,14 @@
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using PhotoAevumStudio.Application;
+using PhotoAevumStudio.Application.Auth;
 using PhotoAevumStudio.Application.Interfaces;
 
 namespace PhotoAevumStudio.Api.Controllers;
 
 [ApiController]
 [Route("api/[controller]")]
+[Authorize] // All endpoints require a valid JWT by default
 public class BookingsController : ControllerBase
 {
     private readonly IBookingService _bookingService;
@@ -16,20 +19,23 @@ public class BookingsController : ControllerBase
     }
 
     // POST api/bookings
+    // Customers and Employees can create bookings; Admins always can.
     [HttpPost]
+    [Authorize(Roles = $"{AppRoles.Admin},{AppRoles.Employee},{AppRoles.Customer}")]
     public async Task<IActionResult> Create(
         [FromBody] CreateBookingRequest request,
         CancellationToken cancellationToken)
     {
-        try
-        {
-            var result = await _bookingService.CreateEventAppointmentAsync(request, cancellationToken);
-            return StatusCode(StatusCodes.Status201Created, result);
-        }
-        catch (BookingRuleException ex)
-        {
-            // Business-rule rejection from the stored procedure 
-            return BadRequest(new { error = ex.Message });
-        }
+        var result = await _bookingService.CreateEventAppointmentAsync(request, cancellationToken);
+        return StatusCode(StatusCodes.Status201Created, result);
+    }
+
+    // GET api/bookings — placeholder for listing (Phase 3 will expand this)
+    [HttpGet]
+    [Authorize(Roles = $"{AppRoles.Admin},{AppRoles.Employee}")]
+    public IActionResult GetAll()
+    {
+        // Will be wired to a query service in Phase 3
+        return Ok(Array.Empty<object>());
     }
 }

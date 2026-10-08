@@ -1,6 +1,9 @@
-﻿@page "/login"
+@page "/login"
 @layout EmptyLayout
+@using PhotoAevumStudio.Web.Models
+@using PhotoAevumStudio.Web.Services
 @inject NavigationManager NavManager
+@inject IAuthService AuthService
 
 <div class="login-page-wrapper">
     <div class="login-card">
@@ -14,10 +17,10 @@
         <!-- Blazor EditForm for Data Binding -->
         <EditForm Model="@loginModel" OnValidSubmit="HandleLogin">
            <div class="input-group">
-    <label for="userId">ID</label>
-    <!-- Change from <InputText> to a standard <input> -->
-    <input type="text" id="userId" class="minimal-input" @bind="loginModel.UserId" placeholder="Enter your ID" />
-</div>
+                <label for="userId">ID</label>
+                <!-- Change from <InputText> to a standard <input> -->
+                <input type="text" id="userId" class="minimal-input" @bind="loginModel.UserId" placeholder="Enter your ID or Email" />
+            </div>
 
             <div class="input-group">
                 <label for="password">Password</label>
@@ -36,7 +39,9 @@
                 </div>
             }
 
-            <button type="submit" class="login-button">Login</button>
+            <button type="submit" class="login-button" disabled="@isSubmitting">
+                @if (isSubmitting) { <span>Logging in...</span> } else { <span>Login</span> }
+            </button>
         </EditForm>
     </div>
 </div>
@@ -44,22 +49,28 @@
 @code {
     private LoginCredentials loginModel = new LoginCredentials();
     private string errorMessage = ""; // Variable to hold login errors
+    private bool isSubmitting = false;
 
-    private void HandleLogin()
+    private async Task HandleLogin()
     {
-        Console.WriteLine($"Attempting login for ID: {loginModel.UserId}");
+        isSubmitting = true;
+        errorMessage = "";
+        StateHasChanged();
 
-        // Replace this with your actual database authentication check
-        if (loginModel.UserId == "employee" && loginModel.Password == "secret123")
+        var result = await AuthService.LoginAsync(loginModel.UserId, loginModel.Password);
+
+        if (result.Success)
         {
-            // Login successful: Route the employee to the dashboard
+            // Login successful: Route the user to the dashboard
             NavManager.NavigateTo("/dashboard");
         }
         else
         {
             // Login failed: Show an error message on the screen
-            errorMessage = "Invalid ID or password. Please try again.";
+            errorMessage = result.Error ?? "Invalid ID or password. Please try again.";
         }
+        
+        isSubmitting = false;
     }
 
     public class LoginCredentials
