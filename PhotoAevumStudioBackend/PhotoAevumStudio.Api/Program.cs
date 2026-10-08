@@ -24,9 +24,15 @@ builder.Services.AddValidatorsFromAssemblyContaining<PhotoAevumStudio.Applicatio
 
 // ── Database ─────────────────────────────────────────────────────────────────
 
+var connectionString = builder.Configuration.GetConnectionString("DefaultConnection");
+if (string.IsNullOrWhiteSpace(connectionString))
+{
+    throw new InvalidOperationException("Connection string 'DefaultConnection' not found or empty. Set it in user-secrets or environment variables.");
+}
+
 builder.Services.AddDbContext<ApplicationDbContext>(options =>
     options.UseSqlServer(
-        builder.Configuration.GetConnectionString("DefaultConnection"),
+        connectionString,
         sql => sql.EnableRetryOnFailure()));
 
 // ── Identity ──────────────────────────────────────────────────────────────────
@@ -79,8 +85,8 @@ builder.Services.AddCors(options =>
     options.AddPolicy("BlazorFrontend", policy =>
     {
         var origins = builder.Configuration
-            .GetSection("AllowedOrigins")
-            .Get<string[]>() ?? ["http://localhost:5050", "https://localhost:5051"];
+            .GetSection("Cors:AllowedOrigins")
+            .Get<string[]>() ?? ["https://localhost:7001"];
 
         policy.WithOrigins(origins)
               .AllowAnyHeader()
@@ -148,6 +154,23 @@ app.UseAuthentication(); // Must come before UseAuthorization
 app.UseAuthorization();
 app.UseMiddleware<PhotoAevumStudio.Api.Middleware.AuditLoggingMiddleware>();
 app.MapControllers();
+
+app.MapGet("/health", () => Results.Ok(new { Status = "Healthy", Timestamp = DateTime.UtcNow }))
+   .WithName("GetHealth")
+   .WithOpenApi();
+
+app.MapGet("/health/db", async (ApplicationDbContext dbContext) => 
+{
+    try 
+    {
+        bool canConnect = await dbContext.Database.CanConnectAsync();
+        return canConnect ? Results.Ok(new { Status = "Database Connected" }) : Results.StatusCode(503);
+    }
+    catch
+    {
+        return Results.StatusCode(503);
+    }
+}).WithName("GetDbHealth").WithOpenApi();
 
 // ── Migrate + Seed on startup ─────────────────────────────────────────────────
 
