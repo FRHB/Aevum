@@ -19,6 +19,7 @@ public class ApplicationDbContext : IdentityDbContext<ApplicationUser>
     public DbSet<StudioService> Services => Set<StudioService>();
     public DbSet<Equipment> Equipment => Set<Equipment>();
     public DbSet<Employee> Employees => Set<Employee>();
+    public DbSet<AuditLog> AuditLogs => Set<AuditLog>();
 
     protected override void OnModelCreating(ModelBuilder builder)
     {

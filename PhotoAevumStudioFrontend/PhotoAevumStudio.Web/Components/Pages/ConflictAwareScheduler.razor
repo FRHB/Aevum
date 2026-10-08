@@ -1,0 +1,102 @@
+@page "/scheduler"
+@using PhotoAevumStudio.Web.Models
+@attribute [Authorize(Roles = "Admin,Employee")]
+
+<PageTitle>Internal Scheduler</PageTitle>
+
+<div class="max-w-6xl mx-auto py-10 px-6">
+    <h1 class="text-3xl font-bold mb-6">Master Schedule</h1>
+
+    <div class="overflow-x-auto border rounded-lg">
+        <table class="w-full text-left border-collapse">
+            <thead>
+                <tr class="bg-gray-100">
+                    <th class="p-4 border-b font-medium">Time</th>
+                    <th class="p-4 border-b font-medium">Studio A</th>
+                    <th class="p-4 border-b font-medium">Studio B</th>
+                    <th class="p-4 border-b font-medium">On Location</th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var slot in ScheduleSlots)
+                {
+                    <tr>
+                        <td class="p-4 border-b font-medium bg-gray-50 whitespace-nowrap w-32">@slot.Time</td>
+                        
+                        <!-- Studio A -->
+                        <td class="p-4 border-b @GetConflictClass(slot.StudioA)">
+                            @if(slot.StudioA != null)
+                            {
+                                <div class="font-medium">@slot.StudioA.ClientName</div>
+                                <div class="text-sm text-gray-600">@slot.StudioA.Title</div>
+                                @if(slot.StudioA.HasConflict)
+                                {
+                                    <div class="text-xs font-bold text-red-600 mt-1 uppercase">Double Booked</div>
+                                }
+                            }
+                        </td>
+                        
+                        <!-- Studio B -->
+                        <td class="p-4 border-b @GetConflictClass(slot.StudioB)">
+                            @if(slot.StudioB != null)
+                            {
+                                <div class="font-medium">@slot.StudioB.ClientName</div>
+                                <div class="text-sm text-gray-600">@slot.StudioB.Title</div>
+                                @if(slot.StudioB.HasConflict)
+                                {
+                                    <div class="text-xs font-bold text-red-600 mt-1 uppercase">Double Booked</div>
+                                }
+                            }
+                        </td>
+                        
+                        <!-- On Location -->
+                        <td class="p-4 border-b">
+                            <!-- Implementation details omitted for brevity -->
+                        </td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    </div>
+</div>
+
+@code {
+    private List<TimeSlotData> ScheduleSlots = new();
+
+    protected override void OnInitialized()
+    {
+        ScheduleSlots = new List<TimeSlotData>
+        {
+            new TimeSlotData { Time = "09:00 AM", StudioA = new BookingInfo("John Doe", "Portrait"), StudioB = null },
+            new TimeSlotData { Time = "10:00 AM", StudioA = new BookingInfo("John Doe", "Portrait"), StudioB = new BookingInfo("Acme Corp", "Product", true) },
+            new TimeSlotData { Time = "11:00 AM", StudioA = null, StudioB = new BookingInfo("Acme Corp", "Product", true) }
+        };
+    }
+
+    private string GetConflictClass(BookingInfo? info)
+    {
+        if (info == null) return "";
+        return info.HasConflict ? "bg-red-50 border-red-200" : "bg-green-50 border-green-200";
+    }
+
+    private class TimeSlotData
+    {
+        public string Time { get; set; } = string.Empty;
+        public BookingInfo? StudioA { get; set; }
+        public BookingInfo? StudioB { get; set; }
+    }
+
+    private class BookingInfo
+    {
+        public string ClientName { get; }
+        public string Title { get; }
+        public bool HasConflict { get; }
+
+        public BookingInfo(string clientName, string title, bool hasConflict = false)
+        {
+            ClientName = clientName;
+            Title = title;
+            HasConflict = hasConflict;
+        }
+    }
+}

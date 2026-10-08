@@ -98,6 +98,7 @@ builder.Services.AddProblemDetails();
 builder.Services.AddScoped<IBookingService, BookingService>();
 builder.Services.AddScoped<IPhotoService,   PhotoService>();
 builder.Services.AddScoped<IStudioManagementService, StudioManagementService>();
+builder.Services.AddScoped<IStorageProvider, LocalStorageProvider>();
 
 // ═════════════════════════════════════════════════════════════════════════════
 var app = builder.Build();
@@ -145,6 +146,7 @@ app.UseHttpsRedirection();
 app.UseCors("BlazorFrontend");
 app.UseAuthentication(); // Must come before UseAuthorization
 app.UseAuthorization();
+app.UseMiddleware<PhotoAevumStudio.Api.Middleware.AuditLoggingMiddleware>();
 app.MapControllers();
 
 // ── Migrate + Seed on startup ─────────────────────────────────────────────────
