@@ -1,0 +1,45 @@
+@page "/staff/gear"
+@attribute [Authorize(Roles = "Employee")]
+
+<PageTitle>Gear Checklist</PageTitle>
+
+<div class="max-w-4xl mx-auto py-10 px-6">
+    <div class="flex justify-between items-center mb-8">
+        <h1 class="text-3xl font-bold">Gear Checklist</h1>
+        <a href="/staff" class="text-teal-600 hover:underline">Back to Dashboard</a>
+    </div>
+
+    <div class="bg-white border rounded-xl overflow-hidden shadow-sm p-6 mb-6">
+        <h2 class="text-xl font-bold mb-4">Checkout Gear</h2>
+        <div class="flex gap-4 mb-4">
+            <select class="border rounded-md text-sm p-2 flex-1 bg-white">
+                <option value="">Select Equipment...</option>
+                <option value="1">Canon R5 (SN: 12345)</option>
+                <option value="2">Sony A7IV (SN: 67890)</option>
+            </select>
+            <button class="bg-teal-600 text-white px-6 py-2 rounded-md font-semibold text-sm hover:bg-teal-700">Checkout</button>
+        </div>
+    </div>
+
+    <div class="bg-white border rounded-xl overflow-hidden shadow-sm">
+        <table class="w-full text-left text-sm border-collapse">
+            <thead class="bg-gray-50 border-b border-gray-200 text-gray-500 uppercase text-xs font-semibold">
+                <tr>
+                    <th class="px-6 py-4">Item</th>
+                    <th class="px-6 py-4">Time Checked Out</th>
+                    <th class="px-6 py-4 text-right">Actions</th>
+                </tr>
+            </thead>
+            <tbody class="divide-y divide-gray-100">
+                <tr class="hover:bg-gray-50">
+                    <td class="px-6 py-4 font-bold text-gray-900">Godox AD600 Pro</td>
+                    <td class="px-6 py-4 text-gray-500">Today, 08:15 AM</td>
+                    <td class="px-6 py-4 text-right">
+                        <button class="bg-slate-900 text-white px-3 py-1.5 rounded-md text-xs font-semibold hover:bg-slate-800">Return</button>
+                        <button class="bg-red-100 text-red-700 px-3 py-1.5 rounded-md text-xs font-semibold hover:bg-red-200 ml-2">Report Damage</button>
+                    </td>
+                </tr>
+            </tbody>
+        </table>
+    </div>
+</div>

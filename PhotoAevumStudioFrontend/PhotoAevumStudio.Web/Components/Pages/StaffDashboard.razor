@@ -1,0 +1,32 @@
+@page "/staff"
+@attribute [Authorize(Roles = "Employee")]
+
+<PageTitle>Staff Dashboard</PageTitle>
+
+<div class="max-w-6xl mx-auto py-10 px-6">
+    <h1 class="text-3xl font-bold mb-6">Staff Dashboard</h1>
+    
+    <div class="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
+        <a href="/staff/assignments" class="block p-6 bg-white rounded-xl shadow-sm border border-gray-200 hover:border-teal-500 transition-colors">
+            <h2 class="text-xl font-bold text-gray-900">My Assignments</h2>
+            <p class="text-gray-500 mt-2 text-sm">View upcoming shoots, call times, and shot lists.</p>
+        </a>
+        <a href="/staff/pipeline" class="block p-6 bg-white rounded-xl shadow-sm border border-gray-200 hover:border-teal-500 transition-colors">
+            <h2 class="text-xl font-bold text-gray-900">Delivery Pipeline</h2>
+            <p class="text-gray-500 mt-2 text-sm">Track post-processing: Culling, Editing, Uploading.</p>
+        </a>
+        <a href="/staff/gear" class="block p-6 bg-white rounded-xl shadow-sm border border-gray-200 hover:border-teal-500 transition-colors">
+            <h2 class="text-xl font-bold text-gray-900">Gear Checklist</h2>
+            <p class="text-gray-500 mt-2 text-sm">Check out/return equipment and file damage reports.</p>
+        </a>
+    </div>
+
+    <div class="bg-white p-6 rounded-xl shadow-sm border border-gray-200">
+        <h2 class="text-xl font-bold mb-4">Availability Management</h2>
+        <p class="text-sm text-gray-500 mb-4">Mark dates where you are unavailable for assignment.</p>
+        <div class="flex items-center gap-4">
+            <input type="date" class="border p-2 rounded-md" />
+            <button class="bg-slate-900 text-white px-4 py-2 rounded-md text-sm font-semibold hover:bg-slate-800">Block Date</button>
+        </div>
+    </div>
+</div>
