@@ -1,31 +1,100 @@
+@* ============================================================
+   CustomerDashboard.razor  –  Role: Customer
+   Route: /my
+   ============================================================
+   Task 3.3 – Auth State Preparation
+   ──────────────────────────────────
+   Hardcoded UserRole="customer" is the mock value.
+   To swap in the real JWT role:
+       [CascadingParameter] Task<AuthenticationState> AuthState { get; set; }
+       protected override async Task OnInitializedAsync()
+       {
+           var state = await AuthState;
+           _userRole = state.User.FindFirst(ClaimTypes.Role)?.Value?.ToLower()
+                       ?? "customer";
+       }
+   ============================================================ *@
+
 @page "/my"
 @attribute [Authorize(Roles = "Customer")]
+@rendermode InteractiveServer
 
-<PageTitle>My Aevum Portal</PageTitle>
+<PageTitle>My Aevum Portal | Photo Aevum Studio</PageTitle>
 
-<div class="max-w-4xl mx-auto py-10 px-6">
-    <div class="flex justify-between items-center mb-10">
-        <h1 class="text-3xl font-bold text-gray-900">Welcome to Aevum</h1>
-        <a href="/my/book" class="bg-teal-600 text-white px-6 py-3 rounded-xl font-bold hover:bg-teal-700 shadow-sm transition-colors">
-            Book a Session
-        </a>
-    </div>
-    
-    <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
-        <a href="/my/bookings" class="block p-8 bg-white rounded-2xl shadow-sm border border-gray-200 hover:border-teal-500 hover:shadow-md transition-all group">
-            <div class="w-12 h-12 bg-teal-50 text-teal-600 rounded-full flex items-center justify-center mb-4 group-hover:bg-teal-600 group-hover:text-white transition-colors">
-                <i data-lucide="calendar" class="w-6 h-6"></i>
+@* ── Shell ──────────────────────────────────────────────────────────────── *@
+<div class="aev-shell">
+    <Sidebar UserRole="customer" />
+
+    <main class="aev-shell__content">
+
+        @* ── Page header ─────────────────────────────────────────────────── *@
+        <header class="aev-page-header">
+            <div>
+                <h1 class="aev-page-header__title">Welcome to Aevum</h1>
+                <p class="aev-page-header__subtitle">Your photography portal</p>
             </div>
-            <h2 class="text-xl font-bold text-gray-900">My Bookings</h2>
-            <p class="text-gray-500 mt-2">Track the status of your upcoming and past shoots.</p>
-        </a>
+            <a href="/my/book" class="btn btn--primary">Book a Session</a>
+        </header>
 
-        <a href="/my/gallery/demo-gallery" class="block p-8 bg-white rounded-2xl shadow-sm border border-gray-200 hover:border-teal-500 hover:shadow-md transition-all group">
-            <div class="w-12 h-12 bg-teal-50 text-teal-600 rounded-full flex items-center justify-center mb-4 group-hover:bg-teal-600 group-hover:text-white transition-colors">
-                <i data-lucide="image" class="w-6 h-6"></i>
+        @* ── Pending tasks banner ─────────────────────────────────────────── *@
+        <div class="aev-alert-banner" role="status">
+            <span aria-hidden="true">🔔</span>
+            You have <strong>1 pending action</strong> — please complete your payment for your upcoming session.
+        </div>
+
+        @* ── Navigation cards ─────────────────────────────────────────────── *@
+        <div class="aev-content-row aev-content-row--wrap" aria-label="Portal sections">
+
+            <a href="/my/bookings" class="aev-nav-card">
+                <span class="aev-nav-card__icon" aria-hidden="true">📋</span>
+                <h2 class="aev-nav-card__title">My Appointments</h2>
+                <p class="aev-nav-card__desc">Track the status of your upcoming and past shoots.</p>
+            </a>
+
+            <a href="/my/book" class="aev-nav-card">
+                <span class="aev-nav-card__icon" aria-hidden="true">➕</span>
+                <h2 class="aev-nav-card__title">Book a Schedule</h2>
+                <p class="aev-nav-card__desc">Request a new photography session with our team.</p>
+            </a>
+
+            <a href="/my/gallery/demo-gallery" class="aev-nav-card">
+                <span class="aev-nav-card__icon" aria-hidden="true">🖼</span>
+                <h2 class="aev-nav-card__title">Private Galleries</h2>
+                <p class="aev-nav-card__desc">View, favourite, and download your delivered photos.</p>
+            </a>
+
+        </div>
+
+        @* ── Upcoming appointments mini-list ─────────────────────────────── *@
+        <section class="aev-card" aria-label="Upcoming appointments">
+            <header class="aev-card__header">
+                <h2 class="aev-card__heading">Upcoming Appointments</h2>
+                <a href="/my/bookings" class="aev-card__action-link">View All</a>
+            </header>
+            <div class="aev-table-wrap">
+                <table class="aev-table">
+                    <thead>
+                        <tr>
+                            <th>Service</th>
+                            <th>Date &amp; Time</th>
+                            <th>Status</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td>Express Headshot</td>
+                            <td>Oct 15, 2026 – 2:00 PM</td>
+                            <td><span class="aev-badge aev-badge--amber">Awaiting Payment</span></td>
+                        </tr>
+                        <tr>
+                            <td>Couple Portrait</td>
+                            <td>Nov 3, 2026 – 10:00 AM</td>
+                            <td><span class="aev-badge aev-badge--green">Confirmed</span></td>
+                        </tr>
+                    </tbody>
+                </table>
             </div>
-            <h2 class="text-xl font-bold text-gray-900">Private Galleries</h2>
-            <p class="text-gray-500 mt-2">View, favorite, and download your delivered photos.</p>
-        </a>
-    </div>
+        </section>
+
+    </main>
 </div>

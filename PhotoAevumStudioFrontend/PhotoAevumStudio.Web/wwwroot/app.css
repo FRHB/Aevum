@@ -447,3 +447,534 @@ details > summary {
         animation: none;
     }
 }
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   SIDEBAR & DASHBOARD STYLES  –  Photo Aevum Studio
+   Appended by Task 3.2. All class names use the `aev-` BEM prefix to avoid
+   conflicts with existing utilities. Variables reuse :root tokens already
+   defined above (--ink, --muted, --line, --danger, --teal).
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+/* ── Additional root tokens (sidebar-specific) ─────────────────────────── */
+:root {
+    --sidebar-w:      240px;
+    --sidebar-bg:     #ffffff;
+    --sidebar-border: var(--line);
+    --sidebar-active: #f3f4f6;
+    --sidebar-hover:  #f9fafb;
+    --sidebar-accent: var(--teal, #0f766e);
+    --sidebar-label:  #9ca3af;   /* lighter than --muted for section headings */
+    --shell-bg:       #f8f9fa;
+    --radius-sm:      .5rem;
+    --radius-md:      .75rem;
+}
+
+/* ── Shell (sidebar + content wrapper) ────────────────────────────────── */
+.aev-shell {
+    display: flex;
+    min-height: 100vh;
+    background: var(--shell-bg);
+}
+
+.aev-shell__content {
+    flex: 1;
+    min-width: 0;                  /* prevent flex overflow */
+    margin-left: var(--sidebar-w);
+    padding: 2rem 2.5rem;
+    overflow-x: hidden;
+}
+
+/* ── Sidebar ───────────────────────────────────────────────────────────── */
+.aev-sidebar {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: var(--sidebar-w);
+    height: 100vh;
+    background: var(--sidebar-bg);
+    border-right: 1px solid var(--sidebar-border);
+    display: flex;
+    flex-direction: column;
+    overflow-y: auto;
+    overflow-x: hidden;
+    z-index: 100;
+    scrollbar-width: thin;
+    scrollbar-color: var(--line) transparent;
+}
+
+/* ── Sidebar brand ─────────────────────────────────────────────────────── */
+.aev-sidebar__brand {
+    display: flex;
+    align-items: center;
+    gap: .75rem;
+    padding: 1.25rem 1rem 1rem;
+    border-bottom: 1px solid var(--sidebar-border);
+    flex-shrink: 0;
+}
+
+.aev-sidebar__logo {
+    width: 2rem;
+    height: 2rem;
+    border-radius: 50%;
+    object-fit: cover;
+    flex-shrink: 0;
+}
+
+.aev-sidebar__brand-text {
+    font-size: .875rem;
+    font-weight: 700;
+    color: var(--ink);
+    letter-spacing: -0.01em;
+    white-space: nowrap;
+}
+
+/* ── Sidebar sections (category labels) ────────────────────────────────── */
+.aev-sidebar__section {
+    padding: .75rem 0 .25rem;
+}
+
+.aev-sidebar__section--footer {
+    margin-top: auto;
+    border-top: 1px solid var(--sidebar-border);
+    padding-top: .75rem;
+}
+
+.aev-sidebar__section-label {
+    margin: 0;
+    padding: 0 1rem .35rem;
+    font-size: .65rem;
+    font-weight: 600;
+    letter-spacing: .08em;
+    text-transform: uppercase;
+    color: var(--sidebar-label);
+}
+
+/* ── Sidebar list & links ──────────────────────────────────────────────── */
+.aev-sidebar__list {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+}
+
+.aev-sidebar__link {
+    display: flex;
+    align-items: center;
+    gap: .625rem;
+    width: 100%;
+    padding: .55rem 1rem;
+    font-size: .875rem;
+    font-weight: 500;
+    color: var(--muted);
+    text-decoration: none;
+    background: none;
+    border: none;
+    border-radius: var(--radius-sm);
+    cursor: pointer;
+    transition: background .15s, color .15s;
+    text-align: left;
+}
+
+.aev-sidebar__link:hover {
+    background: var(--sidebar-hover);
+    color: var(--ink);
+}
+
+.aev-sidebar__link--active {
+    background: var(--sidebar-active);
+    color: var(--ink);
+    font-weight: 600;
+}
+
+.aev-sidebar__icon {
+    font-size: .95rem;
+    width: 1.25rem;
+    text-align: center;
+    flex-shrink: 0;
+}
+
+/* ── Accordion chevron ─────────────────────────────────────────────────── */
+.aev-sidebar__accordion-toggle {
+    position: relative;
+}
+
+.aev-sidebar__chevron {
+    margin-left: auto;
+    font-size: 1rem;
+    line-height: 1;
+    display: inline-block;
+    transform: rotate(0deg);
+    transition: transform .2s ease;
+    color: var(--sidebar-label);
+}
+
+.aev-sidebar__accordion-toggle.is-open .aev-sidebar__chevron {
+    transform: rotate(90deg);
+}
+
+/* ── Accordion sub-menu ────────────────────────────────────────────────── */
+.aev-sidebar__sub {
+    list-style: none;
+    margin: 0;
+    padding: 0 0 0 2rem;
+    max-height: 0;
+    overflow: hidden;
+    transition: max-height .25s ease;
+}
+
+.aev-sidebar__sub.is-expanded {
+    max-height: 20rem;   /* large enough for all sub-items */
+}
+
+.aev-sidebar__sub-link {
+    display: block;
+    padding: .45rem .75rem;
+    font-size: .8125rem;
+    font-weight: 400;
+    color: var(--muted);
+    text-decoration: none;
+    border-radius: var(--radius-sm);
+    transition: background .15s, color .15s;
+}
+
+.aev-sidebar__sub-link:hover {
+    background: var(--sidebar-hover);
+    color: var(--ink);
+}
+
+.aev-sidebar__link--active.aev-sidebar__sub-link {
+    color: var(--sidebar-accent);
+    font-weight: 600;
+}
+
+/* ── Page header ───────────────────────────────────────────────────────── */
+.aev-page-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    margin-bottom: 2rem;
+    gap: 1rem;
+    flex-wrap: wrap;
+}
+
+.aev-page-header__title {
+    font-size: clamp(1.5rem, 3vw, 2rem);
+    font-weight: 700;
+    letter-spacing: -0.02em;
+    color: var(--ink);
+    margin: 0 0 .25rem;
+}
+
+.aev-page-header__subtitle {
+    color: var(--muted);
+    font-size: .9rem;
+    margin: 0;
+}
+
+/* ── Stat grid ─────────────────────────────────────────────────────────── */
+.aev-stat-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(13rem, 1fr));
+    gap: 1.25rem;
+    margin-bottom: 2rem;
+}
+
+.aev-stat-card {
+    background: #fff;
+    border: 1px solid var(--line);
+    border-radius: var(--radius-md);
+    padding: 1.25rem 1.5rem;
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+}
+
+.aev-stat-card__icon {
+    width: 2.75rem;
+    height: 2.75rem;
+    border-radius: 50%;
+    display: grid;
+    place-items: center;
+    font-size: 1.1rem;
+    flex-shrink: 0;
+}
+
+.aev-stat-card__icon--teal   { background: #f0fdf4; }
+.aev-stat-card__icon--blue   { background: #eff6ff; }
+.aev-stat-card__icon--amber  { background: #fffbeb; }
+.aev-stat-card__icon--violet { background: #f5f3ff; }
+
+.aev-stat-card__label {
+    font-size: .8rem;
+    color: var(--muted);
+    margin: 0 0 .25rem;
+}
+
+.aev-stat-card__value {
+    font-size: 1.75rem;
+    font-weight: 700;
+    color: var(--ink);
+    margin: 0;
+    line-height: 1;
+}
+
+/* ── Content row ───────────────────────────────────────────────────────── */
+.aev-content-row {
+    display: grid;
+    grid-template-columns: 1fr 320px;
+    gap: 1.5rem;
+    margin-bottom: 2rem;
+}
+
+.aev-content-row--wrap {
+    grid-template-columns: repeat(auto-fit, minmax(14rem, 1fr));
+}
+
+/* ── Card ──────────────────────────────────────────────────────────────── */
+.aev-card {
+    background: #fff;
+    border: 1px solid var(--line);
+    border-radius: var(--radius-md);
+    overflow: hidden;
+    margin-bottom: 1.5rem;
+}
+
+.aev-card--wide {
+    /* takes the wide column in the content row */
+}
+
+.aev-card__header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 1rem 1.25rem;
+    border-bottom: 1px solid var(--line);
+}
+
+.aev-card__heading {
+    font-size: 1rem;
+    font-weight: 700;
+    color: var(--ink);
+    margin: 0;
+}
+
+.aev-card__action-link {
+    font-size: .8rem;
+    font-weight: 500;
+    color: var(--sidebar-accent);
+    text-decoration: none;
+}
+
+.aev-card__action-link:hover {
+    text-decoration: underline;
+}
+
+.aev-card__body {
+    padding: 1.25rem;
+}
+
+.aev-card__desc {
+    color: var(--muted);
+    font-size: .875rem;
+    margin: 0 0 1rem;
+}
+
+/* ── Table ─────────────────────────────────────────────────────────────── */
+.aev-table-wrap {
+    overflow-x: auto;
+}
+
+.aev-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: .875rem;
+    text-align: left;
+}
+
+.aev-table thead {
+    background: #f9fafb;
+    border-bottom: 1px solid var(--line);
+}
+
+.aev-table th {
+    padding: .75rem 1.25rem;
+    font-size: .75rem;
+    font-weight: 600;
+    color: var(--muted);
+    text-transform: uppercase;
+    letter-spacing: .05em;
+    white-space: nowrap;
+}
+
+.aev-table td {
+    padding: .85rem 1.25rem;
+    color: var(--ink);
+    border-bottom: 1px solid var(--line);
+}
+
+.aev-table tbody tr:last-child td {
+    border-bottom: none;
+}
+
+.aev-table tbody tr:hover {
+    background: #fafafa;
+}
+
+/* ── Badges ────────────────────────────────────────────────────────────── */
+.aev-badge {
+    display: inline-flex;
+    align-items: center;
+    padding: .2em .65em;
+    font-size: .75rem;
+    font-weight: 600;
+    border-radius: 999px;
+    line-height: 1.4;
+}
+
+.aev-badge--green  { background: #dcfce7; color: #15803d; }
+.aev-badge--amber  { background: #fef9c3; color: #92400e; }
+.aev-badge--red    { background: #fee2e2; color: var(--danger); }
+.aev-badge--violet { background: #ede9fe; color: #6d28d9; }
+
+/* ── Quick actions ─────────────────────────────────────────────────────── */
+.aev-quick-actions {
+    padding: .75rem;
+    display: flex;
+    flex-direction: column;
+    gap: .5rem;
+}
+
+.aev-quick-action {
+    display: flex;
+    align-items: center;
+    gap: .75rem;
+    padding: .75rem 1rem;
+    background: var(--shell-bg);
+    border: 1px solid var(--line);
+    border-radius: var(--radius-sm);
+    text-decoration: none;
+    color: var(--ink);
+    font-size: .875rem;
+    font-weight: 500;
+    transition: background .15s, border-color .15s;
+}
+
+.aev-quick-action:hover {
+    background: #f3f4f6;
+    border-color: #d1d5db;
+}
+
+.aev-quick-action__icon {
+    font-size: 1rem;
+}
+
+.aev-quick-action__arrow {
+    margin-left: auto;
+    color: var(--muted);
+}
+
+/* ── Nav cards (portal grid tiles) ────────────────────────────────────── */
+.aev-nav-card {
+    display: block;
+    padding: 1.5rem;
+    background: #fff;
+    border: 1px solid var(--line);
+    border-radius: var(--radius-md);
+    text-decoration: none;
+    color: var(--ink);
+    transition: border-color .2s, box-shadow .2s;
+}
+
+.aev-nav-card:hover {
+    border-color: var(--sidebar-accent);
+    box-shadow: 0 4px 16px -8px rgba(0,0,0,.12);
+}
+
+.aev-nav-card__icon {
+    font-size: 1.75rem;
+    display: block;
+    margin-bottom: .75rem;
+}
+
+.aev-nav-card__title {
+    font-size: 1.0625rem;
+    font-weight: 700;
+    margin: 0 0 .4rem;
+}
+
+.aev-nav-card__desc {
+    font-size: .875rem;
+    color: var(--muted);
+    margin: 0;
+    line-height: 1.5;
+}
+
+/* ── Alert banner ──────────────────────────────────────────────────────── */
+.aev-alert-banner {
+    display: flex;
+    align-items: center;
+    gap: .6rem;
+    padding: .75rem 1.25rem;
+    background: #fffbeb;
+    border: 1px solid #fde68a;
+    border-radius: var(--radius-sm);
+    color: #92400e;
+    font-size: .875rem;
+    margin-bottom: 1.5rem;
+}
+
+/* ── Muted helper text ─────────────────────────────────────────────────── */
+.aev-muted-text {
+    font-size: .8rem;
+    color: var(--muted);
+    font-style: italic;
+}
+
+/* ── Inline form (availability manager) ───────────────────────────────── */
+.aev-inline-form {
+    display: flex;
+    flex-wrap: wrap;
+    gap: .75rem;
+    align-items: center;
+}
+
+.aev-input {
+    font: inherit;
+    padding: .65rem .85rem;
+    border: 1px solid var(--line);
+    border-radius: var(--radius-sm);
+    background: #fff;
+    color: var(--ink);
+}
+
+.aev-input:focus {
+    outline: 2px solid var(--ink);
+    outline-offset: 0;
+    border-color: transparent;
+}
+
+/* ── Button size modifier ──────────────────────────────────────────────── */
+.btn--sm {
+    padding: .45rem 1rem;
+    font-size: .8rem;
+}
+
+/* ── Responsive: collapse sidebar on small screens ─────────────────────── */
+@media (max-width: 768px) {
+    .aev-sidebar {
+        transform: translateX(-100%);
+        transition: transform .25s ease;
+    }
+
+    .aev-sidebar.is-open {
+        transform: translateX(0);
+    }
+
+    .aev-shell__content {
+        margin-left: 0;
+        padding: 1.25rem;
+    }
+
+    .aev-content-row {
+        grid-template-columns: 1fr;
+    }
+}

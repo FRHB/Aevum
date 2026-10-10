@@ -1,0 +1,304 @@
+@* ============================================================
+   Sidebar.razor  –  Shared fixed left navigation sidebar
+   Usage:
+       <Sidebar UserRole="admin" />
+       <Sidebar UserRole="employee" />
+       <Sidebar UserRole="customer" />
+
+   Task 3.3 – Auth State Preparation
+   ──────────────────────────────────
+   To wire this to your real JWT claims, inject
+   AevumAuthenticationStateProvider and replace the
+   UserRole [Parameter] with a computed property:
+
+       [CascadingParameter] Task<AuthenticationState> AuthState { get; set; }
+       protected override async Task OnInitializedAsync()
+       {
+           var state = await AuthState;
+           UserRole = state.User.FindFirst(ClaimTypes.Role)?.Value?.ToLower() ?? string.Empty;
+       }
+   ============================================================ *@
+
+@using Microsoft.AspNetCore.Components.Routing
+@inject NavigationManager Nav
+
+<nav class="aev-sidebar" aria-label="Primary navigation">
+
+    @* ── Brand ─────────────────────────────────────────────────────────── *@
+    <div class="aev-sidebar__brand">
+        <img src="images/AevumLogo.jpg" alt="Photo Aevum" class="aev-sidebar__logo" />
+        <span class="aev-sidebar__brand-text">Aevum Studio</span>
+    </div>
+
+    @RenderNav()
+
+</nav>
+
+@code {
+    /// <summary>
+    /// The authenticated user's role.
+    /// Accepts: "admin", "employee", or "customer".
+    ///
+    /// ── Task 3.3 – Auth State Preparation ──────────────────────────────
+    /// Replace this parameter with a cascading AuthenticationState read:
+    ///
+    ///   [CascadingParameter] Task&lt;AuthenticationState&gt; AuthState { get; set; } = default!;
+    ///
+    ///   protected override async Task OnInitializedAsync()
+    ///   {
+    ///       var state = await AuthState;
+    ///       UserRole = state.User.FindFirst(ClaimTypes.Role)?.Value?.ToLower()
+    ///                  ?? string.Empty;
+    ///   }
+    /// </summary>
+    [Parameter] public string UserRole { get; set; } = string.Empty;
+
+    // ── Accordion state ──────────────────────────────────────────────────────
+    private readonly HashSet<string> _openAccordions = new();
+
+    private bool IsOpen(string key) => _openAccordions.Contains(key);
+
+    private void Toggle(string key)
+    {
+        if (!_openAccordions.Remove(key))
+            _openAccordions.Add(key);
+    }
+
+    // ── Role dispatcher ──────────────────────────────────────────────────────
+    private RenderFragment RenderNav() => UserRole switch
+    {
+        "admin"    => RenderAdminNav(),
+        "employee" => RenderEmployeeNav(),
+        "customer" => RenderCustomerNav(),
+        _          => builder => { } // empty for unknown roles
+    };
+
+    // ════════════════════════════════════════════════════════════════════════
+    // ADMIN nav
+    // ════════════════════════════════════════════════════════════════════════
+    private RenderFragment RenderAdminNav() =>
+    @<text>
+        @* ── MANAGEMENT ─────────────────────────────────────────────────── *@
+        <div class="aev-sidebar__section">
+            <p class="aev-sidebar__section-label">Management</p>
+            <ul class="aev-sidebar__list">
+
+                <li>
+                    <NavLink href="/admin" Match="NavLinkMatch.All"
+                             class="aev-sidebar__link" ActiveClass="aev-sidebar__link--active">
+                        <span class="aev-sidebar__icon" aria-hidden="true">⊞</span>
+                        Overview
+                    </NavLink>
+                </li>
+
+                @* Events Calendar – collapsible *@
+                <li>
+                    <button class="aev-sidebar__link aev-sidebar__accordion-toggle @(IsOpen("calendar") ? "is-open" : "")"
+                            @onclick='() => Toggle("calendar")'
+                            aria-expanded="@IsOpen("calendar")"
+                            aria-controls="acc-calendar">
+                        <span class="aev-sidebar__icon" aria-hidden="true">📅</span>
+                        Events Calendar
+                        <span class="aev-sidebar__chevron" aria-hidden="true">›</span>
+                    </button>
+                    <ul id="acc-calendar"
+                        class="aev-sidebar__sub @(IsOpen("calendar") ? "is-expanded" : "")"
+                        aria-hidden="@(!IsOpen("calendar"))">
+                        <li><NavLink href="/admin/calendar/master"    class="aev-sidebar__sub-link" ActiveClass="aev-sidebar__link--active">Master Calendar</NavLink></li>
+                        <li><NavLink href="/admin/calendar/staff"     class="aev-sidebar__sub-link" ActiveClass="aev-sidebar__link--active">Staff</NavLink></li>
+                        <li><NavLink href="/admin/calendar/equipment" class="aev-sidebar__sub-link" ActiveClass="aev-sidebar__link--active">Equipments</NavLink></li>
+                    </ul>
+                </li>
+
+                <li>
+                    <NavLink href="/admin/clients" class="aev-sidebar__link" ActiveClass="aev-sidebar__link--active">
+                        <span class="aev-sidebar__icon" aria-hidden="true">👥</span>
+                        Clients
+                    </NavLink>
+                </li>
+
+                <li>
+                    <NavLink href="/Services" class="aev-sidebar__link" ActiveClass="aev-sidebar__link--active">
+                        <span class="aev-sidebar__icon" aria-hidden="true">🗂</span>
+                        Services
+                    </NavLink>
+                </li>
+
+            </ul>
+        </div>
+
+        @* ── RESOURCES & LOGISTICS ──────────────────────────────────────── *@
+        <div class="aev-sidebar__section">
+            <p class="aev-sidebar__section-label">Resources &amp; Logistics</p>
+            <ul class="aev-sidebar__list">
+
+                @* Employees – collapsible *@
+                <li>
+                    <button class="aev-sidebar__link aev-sidebar__accordion-toggle @(IsOpen("employees") ? "is-open" : "")"
+                            @onclick='() => Toggle("employees")'
+                            aria-expanded="@IsOpen("employees")"
+                            aria-controls="acc-employees">
+                        <span class="aev-sidebar__icon" aria-hidden="true">👤</span>
+                        Employees
+                        <span class="aev-sidebar__chevron" aria-hidden="true">›</span>
+                    </button>
+                    <ul id="acc-employees"
+                        class="aev-sidebar__sub @(IsOpen("employees") ? "is-expanded" : "")"
+                        aria-hidden="@(!IsOpen("employees"))">
+                        <li><NavLink href="/Employee"                       class="aev-sidebar__sub-link" ActiveClass="aev-sidebar__link--active">Staff List</NavLink></li>
+                        <li><NavLink href="/admin/employees/specialization" class="aev-sidebar__sub-link" ActiveClass="aev-sidebar__link--active">Specialization</NavLink></li>
+                    </ul>
+                </li>
+
+                @* Equipment Inventory – collapsible *@
+                <li>
+                    <button class="aev-sidebar__link aev-sidebar__accordion-toggle @(IsOpen("equipment") ? "is-open" : "")"
+                            @onclick='() => Toggle("equipment")'
+                            aria-expanded="@IsOpen("equipment")"
+                            aria-controls="acc-equipment">
+                        <span class="aev-sidebar__icon" aria-hidden="true">📷</span>
+                        Equipment Inventory
+                        <span class="aev-sidebar__chevron" aria-hidden="true">›</span>
+                    </button>
+                    <ul id="acc-equipment"
+                        class="aev-sidebar__sub @(IsOpen("equipment") ? "is-expanded" : "")"
+                        aria-hidden="@(!IsOpen("equipment"))">
+                        <li><NavLink href="/Equipment"                  class="aev-sidebar__sub-link" ActiveClass="aev-sidebar__link--active">Gear List</NavLink></li>
+                        <li><NavLink href="/admin/equipment/dispatch"   class="aev-sidebar__sub-link" ActiveClass="aev-sidebar__link--active">Dispatch / Check-outs</NavLink></li>
+                        <li><NavLink href="/admin/equipment/kits"       class="aev-sidebar__sub-link" ActiveClass="aev-sidebar__link--active">Gear Kits</NavLink></li>
+                        <li><NavLink href="/admin/equipment/maintenance" class="aev-sidebar__sub-link" ActiveClass="aev-sidebar__link--active">Maintenance Logs</NavLink></li>
+                    </ul>
+                </li>
+
+            </ul>
+        </div>
+
+        @* ── ACCOUNT ─────────────────────────────────────────────────────── *@
+        <div class="aev-sidebar__section aev-sidebar__section--footer">
+            <p class="aev-sidebar__section-label">Account</p>
+            <ul class="aev-sidebar__list">
+                <li>
+                    <NavLink href="/admin/profile" class="aev-sidebar__link" ActiveClass="aev-sidebar__link--active">
+                        <span class="aev-sidebar__icon" aria-hidden="true">⚙</span>
+                        Profile
+                    </NavLink>
+                </li>
+            </ul>
+        </div>
+    </text>;
+
+    // ════════════════════════════════════════════════════════════════════════
+    // EMPLOYEE nav
+    // ════════════════════════════════════════════════════════════════════════
+    private RenderFragment RenderEmployeeNav() =>
+    @<text>
+        @* ── MANAGEMENT ─────────────────────────────────────────────────── *@
+        <div class="aev-sidebar__section">
+            <p class="aev-sidebar__section-label">Management</p>
+            <ul class="aev-sidebar__list">
+
+                <li>
+                    <NavLink href="/staff" Match="NavLinkMatch.All"
+                             class="aev-sidebar__link" ActiveClass="aev-sidebar__link--active">
+                        <span class="aev-sidebar__icon" aria-hidden="true">⊞</span>
+                        Overview
+                    </NavLink>
+                </li>
+
+                @* Events Calendar – collapsible *@
+                <li>
+                    <button class="aev-sidebar__link aev-sidebar__accordion-toggle @(IsOpen("emp-calendar") ? "is-open" : "")"
+                            @onclick='() => Toggle("emp-calendar")'
+                            aria-expanded="@IsOpen("emp-calendar")"
+                            aria-controls="acc-emp-calendar">
+                        <span class="aev-sidebar__icon" aria-hidden="true">📅</span>
+                        Events Calendar
+                        <span class="aev-sidebar__chevron" aria-hidden="true">›</span>
+                    </button>
+                    <ul id="acc-emp-calendar"
+                        class="aev-sidebar__sub @(IsOpen("emp-calendar") ? "is-expanded" : "")"
+                        aria-hidden="@(!IsOpen("emp-calendar"))">
+                        <li><NavLink href="/staff/calendar/master"    class="aev-sidebar__sub-link" ActiveClass="aev-sidebar__link--active">Master Calendar</NavLink></li>
+                        <li><NavLink href="/staff/calendar/staff"     class="aev-sidebar__sub-link" ActiveClass="aev-sidebar__link--active">Staff</NavLink></li>
+                        <li><NavLink href="/staff/calendar/equipment" class="aev-sidebar__sub-link" ActiveClass="aev-sidebar__link--active">Equipments</NavLink></li>
+                    </ul>
+                </li>
+
+                <li>
+                    <NavLink href="/Services" class="aev-sidebar__link" ActiveClass="aev-sidebar__link--active">
+                        <span class="aev-sidebar__icon" aria-hidden="true">🗂</span>
+                        Services
+                    </NavLink>
+                </li>
+
+            </ul>
+        </div>
+
+        @* ── ACCOUNT ─────────────────────────────────────────────────────── *@
+        <div class="aev-sidebar__section aev-sidebar__section--footer">
+            <p class="aev-sidebar__section-label">Account</p>
+            <ul class="aev-sidebar__list">
+                <li>
+                    <NavLink href="/staff/profile" class="aev-sidebar__link" ActiveClass="aev-sidebar__link--active">
+                        <span class="aev-sidebar__icon" aria-hidden="true">⚙</span>
+                        Profile
+                    </NavLink>
+                </li>
+            </ul>
+        </div>
+    </text>;
+
+    // ════════════════════════════════════════════════════════════════════════
+    // CUSTOMER nav
+    // ════════════════════════════════════════════════════════════════════════
+    private RenderFragment RenderCustomerNav() =>
+    @<text>
+        @* ── DASHBOARD ───────────────────────────────────────────────────── *@
+        <div class="aev-sidebar__section">
+            <p class="aev-sidebar__section-label">Dashboard</p>
+            <ul class="aev-sidebar__list">
+
+                <li>
+                    <NavLink href="/my" Match="NavLinkMatch.All"
+                             class="aev-sidebar__link" ActiveClass="aev-sidebar__link--active"
+                             title="Pending tasks and home screen">
+                        <span class="aev-sidebar__icon" aria-hidden="true">⊞</span>
+                        Overview
+                    </NavLink>
+                </li>
+
+                <li>
+                    <NavLink href="/my/bookings"
+                             class="aev-sidebar__link" ActiveClass="aev-sidebar__link--active"
+                             title="View existing and past bookings">
+                        <span class="aev-sidebar__icon" aria-hidden="true">📋</span>
+                        Appointment
+                    </NavLink>
+                </li>
+
+                <li>
+                    <NavLink href="/my/book"
+                             class="aev-sidebar__link" ActiveClass="aev-sidebar__link--active"
+                             title="Request a new photography session">
+                        <span class="aev-sidebar__icon" aria-hidden="true">➕</span>
+                        Book Schedule
+                    </NavLink>
+                </li>
+
+            </ul>
+        </div>
+
+        @* ── ACCOUNT ─────────────────────────────────────────────────────── *@
+        <div class="aev-sidebar__section aev-sidebar__section--footer">
+            <p class="aev-sidebar__section-label">Account</p>
+            <ul class="aev-sidebar__list">
+                <li>
+                    <NavLink href="/my/profile" class="aev-sidebar__link" ActiveClass="aev-sidebar__link--active">
+                        <span class="aev-sidebar__icon" aria-hidden="true">⚙</span>
+                        Profile
+                    </NavLink>
+                </li>
+            </ul>
+        </div>
+    </text>;
+}

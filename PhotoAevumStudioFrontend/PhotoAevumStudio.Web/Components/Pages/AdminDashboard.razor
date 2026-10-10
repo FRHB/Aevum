@@ -1,79 +1,150 @@
+@* ============================================================
+   AdminDashboard.razor  –  Role: Admin
+   Route: /admin
+   ============================================================
+   Task 3.3 – Auth State Preparation
+   ──────────────────────────────────
+   When you wire in the real JWT, replace the hardcoded
+   UserRole = "admin" below with the result of:
+
+       var state = await AuthState;
+       _userRole = state.User.FindFirst(ClaimTypes.Role)
+                              ?.Value?.ToLower() ?? string.Empty;
+
+   Then bind <Sidebar UserRole="@_userRole" />.
+   ============================================================ *@
+
 @page "/admin"
 @layout AdminLayout
-@using PhotoAevumStudio.Web.Models
+@attribute [Authorize(Roles = "Admin")]
 @rendermode InteractiveServer
 
 <PageTitle>Admin Dashboard | Photo Aevum Studio</PageTitle>
 
-<div class="mb-10">
-    <h1 class="text-3xl md:text-5xl font-bold text-gray-900 tracking-tighter mb-2">Dashboard Overview</h1>
-    <p class="text-gray-500 font-light text-lg">@DateTime.Today.ToString("dddd, MMMM d")</p>
-</div>
+@* ── Shell ──────────────────────────────────────────────────────────────── *@
+<div class="aev-shell">
+    <Sidebar UserRole="admin" />
 
-<div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6 mb-10">
-    <div class="bg-white rounded-xl shadow-sm border border-gray-200 p-6 flex items-center gap-4">
-        <div class="w-12 h-12 rounded-full bg-teal-50 text-teal-600 flex items-center justify-center flex-shrink-0">
-            <i data-lucide="calendar-check" class="w-6 h-6"></i>
-        </div>
-        <div>
-            <p class="text-sm font-medium text-gray-500 mb-1">Appointments Today</p>
-            <h3 class="text-2xl font-bold text-neutral-900 mb-0.5 leading-none">4</h3>
-        </div>
-    </div>
-    <div class="bg-white rounded-xl shadow-sm border border-gray-200 p-6 flex items-center gap-4">
-        <div class="w-12 h-12 rounded-full bg-blue-50 text-blue-600 flex items-center justify-center flex-shrink-0">
-            <i data-lucide="users" class="w-6 h-6"></i>
-        </div>
-        <div>
-            <p class="text-sm font-medium text-gray-500 mb-1">Active Employees</p>
-            <h3 class="text-2xl font-bold text-neutral-900 mb-0.5 leading-none">12</h3>
-        </div>
-    </div>
-</div>
+    <main class="aev-shell__content">
 
-<div class="grid grid-cols-1 lg:grid-cols-3 gap-8 mb-12">
-    <div class="lg:col-span-2 bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden flex flex-col">
-        <div class="px-6 py-5 border-b border-gray-200 flex justify-between items-center">
-            <h2 class="text-lg font-bold text-neutral-900">Recent Bookings</h2>
-            <a href="/Schedules" class="text-sm font-medium text-teal-600 hover:text-teal-700">View All</a>
-        </div>
-        <div class="overflow-x-auto flex-1">
-            <table class="w-full text-left text-sm">
-                <thead class="bg-gray-50 text-gray-500 uppercase tracking-wider text-xs font-semibold border-b border-gray-200">
-                    <tr>
-                        <th class="px-6 py-4">Client</th>
-                        <th class="px-6 py-4">Service</th>
-                        <th class="px-6 py-4">Date & Time</th>
-                    </tr>
-                </thead>
-                <tbody class="divide-y divide-gray-200">
-                    <tr class="hover:bg-gray-50 transition-colors">
-                        <td class="px-6 py-4 font-medium text-neutral-900">Sarah Jenkins</td>
-                        <td class="px-6 py-4 text-gray-600">Express Headshot</td>
-                        <td class="px-6 py-4 text-gray-600">Today, 2:00 PM</td>
-                    </tr>
-                </tbody>
-            </table>
-        </div>
-    </div>
+        @* ── Page header ─────────────────────────────────────────────────── *@
+        <header class="aev-page-header">
+            <div>
+                <h1 class="aev-page-header__title">Dashboard Overview</h1>
+                <p class="aev-page-header__subtitle">@DateTime.Today.ToString("dddd, MMMM d, yyyy")</p>
+            </div>
+        </header>
 
-    <div class="bg-white rounded-xl shadow-sm border border-gray-200 flex flex-col">
-        <div class="px-6 py-5 border-b border-gray-200">
-            <h2 class="text-lg font-bold text-neutral-900">Quick Actions</h2>
+        @* ── Stat cards ──────────────────────────────────────────────────── *@
+        <section class="aev-stat-grid" aria-label="Summary statistics">
+
+            <article class="aev-stat-card">
+                <div class="aev-stat-card__icon aev-stat-card__icon--teal" aria-hidden="true">📅</div>
+                <div>
+                    <p class="aev-stat-card__label">Appointments Today</p>
+                    <h2 class="aev-stat-card__value">4</h2>
+                </div>
+            </article>
+
+            <article class="aev-stat-card">
+                <div class="aev-stat-card__icon aev-stat-card__icon--blue" aria-hidden="true">👥</div>
+                <div>
+                    <p class="aev-stat-card__label">Active Employees</p>
+                    <h2 class="aev-stat-card__value">12</h2>
+                </div>
+            </article>
+
+            <article class="aev-stat-card">
+                <div class="aev-stat-card__icon aev-stat-card__icon--amber" aria-hidden="true">📷</div>
+                <div>
+                    <p class="aev-stat-card__label">Equipment In Use</p>
+                    <h2 class="aev-stat-card__value">7</h2>
+                </div>
+            </article>
+
+            <article class="aev-stat-card">
+                <div class="aev-stat-card__icon aev-stat-card__icon--violet" aria-hidden="true">📊</div>
+                <div>
+                    <p class="aev-stat-card__label">Bookings This Week</p>
+                    <h2 class="aev-stat-card__value">19</h2>
+                </div>
+            </article>
+
+        </section>
+
+        @* ── Main content row ─────────────────────────────────────────────── *@
+        <div class="aev-content-row">
+
+            @* Recent bookings table *@
+            <section class="aev-card aev-card--wide" aria-label="Recent bookings">
+                <header class="aev-card__header">
+                    <h2 class="aev-card__heading">Recent Bookings</h2>
+                    <a href="/Schedules" class="aev-card__action-link">View All</a>
+                </header>
+                <div class="aev-table-wrap">
+                    <table class="aev-table">
+                        <thead>
+                            <tr>
+                                <th>Client</th>
+                                <th>Service</th>
+                                <th>Date &amp; Time</th>
+                                <th>Status</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr>
+                                <td>Sarah Jenkins</td>
+                                <td>Express Headshot</td>
+                                <td>Today, 2:00 PM</td>
+                                <td><span class="aev-badge aev-badge--green">Confirmed</span></td>
+                            </tr>
+                            <tr>
+                                <td>Mark Uy</td>
+                                <td>Full Studio Session</td>
+                                <td>Today, 4:30 PM</td>
+                                <td><span class="aev-badge aev-badge--amber">Pending</span></td>
+                            </tr>
+                            <tr>
+                                <td>Anna Cruz</td>
+                                <td>Corporate Package</td>
+                                <td>Tomorrow, 10:00 AM</td>
+                                <td><span class="aev-badge aev-badge--green">Confirmed</span></td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </section>
+
+            @* Quick actions *@
+            <section class="aev-card" aria-label="Quick actions">
+                <header class="aev-card__header">
+                    <h2 class="aev-card__heading">Quick Actions</h2>
+                </header>
+                <div class="aev-quick-actions">
+                    <a href="/Services" class="aev-quick-action">
+                        <span class="aev-quick-action__icon" aria-hidden="true">🗂</span>
+                        <span>Manage Services</span>
+                        <span class="aev-quick-action__arrow" aria-hidden="true">›</span>
+                    </a>
+                    <a href="/Equipment" class="aev-quick-action">
+                        <span class="aev-quick-action__icon" aria-hidden="true">📷</span>
+                        <span>Track Equipment</span>
+                        <span class="aev-quick-action__arrow" aria-hidden="true">›</span>
+                    </a>
+                    <a href="/Employee" class="aev-quick-action">
+                        <span class="aev-quick-action__icon" aria-hidden="true">👤</span>
+                        <span>Manage Staff</span>
+                        <span class="aev-quick-action__arrow" aria-hidden="true">›</span>
+                    </a>
+                    <a href="/admin/clients" class="aev-quick-action">
+                        <span class="aev-quick-action__icon" aria-hidden="true">👥</span>
+                        <span>View Clients</span>
+                        <span class="aev-quick-action__arrow" aria-hidden="true">›</span>
+                    </a>
+                </div>
+            </section>
+
         </div>
-        <div class="p-6 space-y-4 flex-1">
-            <a href="/Services" class="w-full py-3 px-4 flex items-center justify-between text-left bg-gray-50 border border-gray-200 rounded-lg hover:bg-gray-100 transition-colors group">
-                <span class="flex items-center gap-3 font-medium text-gray-700">
-                    <i data-lucide="layers" class="w-5 h-5 text-gray-400 group-hover:text-teal-600 transition-colors"></i> Manage Services
-                </span>
-                <i data-lucide="chevron-right" class="w-4 h-4 text-gray-400"></i>
-            </a>
-            <a href="/Equipment" class="w-full py-3 px-4 flex items-center justify-between text-left bg-gray-50 border border-gray-200 rounded-lg hover:bg-gray-100 transition-colors group">
-                <span class="flex items-center gap-3 font-medium text-gray-700">
-                    <i data-lucide="package" class="w-5 h-5 text-gray-400 group-hover:text-teal-600 transition-colors"></i> Track Equipment
-                </span>
-                <i data-lucide="chevron-right" class="w-4 h-4 text-gray-400"></i>
-            </a>
-        </div>
-    </div>
+
+    </main>
 </div>

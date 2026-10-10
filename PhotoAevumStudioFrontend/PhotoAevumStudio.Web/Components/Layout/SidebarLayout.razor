@@ -1,0 +1,30 @@
+@* ============================================================
+   SidebarLayout.razor  –  Shared layout that wraps the Sidebar
+   and a main content area. Used by AdminDashboard,
+   EmployeeDashboard, and CustomerDashboard.
+
+   Task 3.3 – Auth State Preparation
+   ──────────────────────────────────
+   UserRole is passed down from each dashboard page.
+   When you are ready to read from JWT claims directly, the
+   dashboard pages can inject AevumAuthenticationStateProvider
+   and derive UserRole from the ClaimTypes.Role claim before
+   passing it here.
+   ============================================================ *@
+
+@inherits LayoutComponentBase
+
+<div class="aev-shell">
+    <Sidebar UserRole="@UserRole" />
+    <div class="aev-shell__content">
+        @Body
+    </div>
+</div>
+
+@code {
+    /// <summary>
+    /// Forwarded from each dashboard page; drives Sidebar role selection.
+    /// See Task 3.3 comment on Sidebar.razor for the JWT swap-out pattern.
+    /// </summary>
+    [Parameter] public string UserRole { get; set; } = string.Empty;
+}

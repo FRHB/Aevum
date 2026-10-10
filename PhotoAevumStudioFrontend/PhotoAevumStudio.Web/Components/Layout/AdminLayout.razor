@@ -1,8 +1,8 @@
-﻿@inherits LayoutComponentBase
+@inherits LayoutComponentBase
 
-<div class="min-h-screen bg-gray-50 font-sans text-neutral-900 flex flex-col w-full">
-    <NavMenuAdmin />
-    <main class="flex-1 w-full max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-10">
-        @Body
-    </main>
-</div>
+@* Pages that use AdminDashboard.razor manage their own aev-shell + Sidebar.
+   Other admin pages that haven't been migrated yet will still see NavMenuAdmin
+   as a top-bar fallback until they are individually updated. *@
+<div class="min-h-screen bg-gray-50 font-sans text-neutral-900">
+    @Body
+</div>
