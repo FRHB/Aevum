@@ -978,3 +978,325 @@ details > summary {
         grid-template-columns: 1fr;
     }
 }
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   AUTH PORTAL MODAL STYLES  –  AuthPortalModal.razor
+   All class names use the `apm-` prefix to avoid conflicts.
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+/* ── Backdrop ──────────────────────────────────────────────────────────── */
+.apm-backdrop {
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.55);
+    backdrop-filter: blur(4px);
+    -webkit-backdrop-filter: blur(4px);
+    z-index: 200;
+    animation: apm-fade-in .2s ease;
+}
+
+/* ── Panel ─────────────────────────────────────────────────────────────── */
+.apm-panel {
+    position: fixed;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    z-index: 201;
+    width: min(480px, calc(100vw - 2rem));
+    max-height: calc(100vh - 2rem);
+    overflow-y: auto;
+    background: #ffffff;
+    padding: 2.5rem 2rem 2rem;
+    box-shadow: 0 24px 64px -12px rgba(0, 0, 0, 0.3);
+    animation: apm-slide-up .25s ease;
+    scrollbar-width: thin;
+}
+
+@keyframes apm-fade-in   { from { opacity: 0; } to { opacity: 1; } }
+@keyframes apm-slide-up  { from { transform: translate(-50%, -46%); opacity: 0; } to { transform: translate(-50%, -50%); opacity: 1; } }
+
+/* ── Close button ──────────────────────────────────────────────────────── */
+.apm-close {
+    position: absolute;
+    top: 1rem;
+    right: 1rem;
+    background: none;
+    border: none;
+    font-size: 1.1rem;
+    color: var(--muted);
+    cursor: pointer;
+    padding: .25rem .5rem;
+    border-radius: .25rem;
+    line-height: 1;
+    transition: color .15s, background .15s;
+}
+.apm-close:hover { color: var(--ink); background: #f3f4f6; }
+
+/* ── Brand ─────────────────────────────────────────────────────────────── */
+.apm-brand {
+    display: flex;
+    align-items: center;
+    gap: .6rem;
+    margin-bottom: 1.5rem;
+}
+.apm-logo      { width: 2rem; height: 2rem; border-radius: 50%; object-fit: cover; }
+.apm-brand-name { font-size: .8rem; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; color: var(--ink); }
+
+/* ── Title / subtitle ──────────────────────────────────────────────────── */
+.apm-title    { font-size: 1.375rem; font-weight: 700; letter-spacing: -0.02em; color: var(--ink); margin: 0 0 .35rem; }
+.apm-subtitle { font-size: .9rem; color: var(--muted); margin: 0 0 1.25rem; line-height: 1.5; }
+
+/* ── Back link ─────────────────────────────────────────────────────────── */
+.apm-back {
+    background: none;
+    border: none;
+    padding: 0;
+    font: inherit;
+    font-size: .8rem;
+    color: var(--muted);
+    cursor: pointer;
+    margin-bottom: .75rem;
+    display: inline-block;
+    transition: color .15s;
+}
+.apm-back:hover { color: var(--ink); }
+
+/* ── Chooser grid ──────────────────────────────────────────────────────── */
+.apm-chooser-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 1rem;
+    margin-top: 1rem;
+}
+
+.apm-chooser-card {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: .5rem;
+    padding: 1.75rem 1rem;
+    background: #f9fafb;
+    border: 1.5px solid var(--line);
+    border-radius: .75rem;
+    cursor: pointer;
+    transition: border-color .2s, box-shadow .2s, background .2s;
+    text-align: center;
+    font: inherit;
+}
+.apm-chooser-card:hover {
+    border-color: var(--ink);
+    background: #fff;
+    box-shadow: 0 4px 16px -8px rgba(0, 0, 0, .15);
+}
+.apm-chooser-icon  { font-size: 1.75rem; }
+.apm-chooser-label { font-size: .9rem; font-weight: 700; color: var(--ink); }
+.apm-chooser-desc  { font-size: .75rem; color: var(--muted); line-height: 1.4; }
+
+/* ── Form fields ───────────────────────────────────────────────────────── */
+.apm-field {
+    display: flex;
+    flex-direction: column;
+    gap: .35rem;
+    margin-bottom: 1rem;
+}
+.apm-field label { font-size: .85rem; font-weight: 500; color: var(--ink); }
+
+.apm-input {
+    font: inherit;
+    padding: .7rem .875rem;
+    border: 1.5px solid var(--line);
+    border-radius: .5rem;
+    background: #fff;
+    color: var(--ink);
+    width: 100%;
+    box-sizing: border-box;
+    transition: border-color .15s, box-shadow .15s;
+}
+.apm-input:focus {
+    outline: none;
+    border-color: var(--ink);
+    box-shadow: 0 0 0 3px rgba(26, 26, 26, .08);
+}
+.apm-input--code {
+    font-size: 1.5rem;
+    letter-spacing: .5em;
+    text-align: center;
+    font-variant-numeric: tabular-nums;
+}
+
+/* ── Input with toggle button ──────────────────────────────────────────── */
+.apm-input-wrap  { position: relative; }
+.apm-pw-toggle {
+    position: absolute;
+    right: .6rem;
+    top: 50%;
+    transform: translateY(-50%);
+    background: none;
+    border: none;
+    cursor: pointer;
+    font-size: 1rem;
+    padding: .2rem;
+    color: var(--muted);
+    line-height: 1;
+}
+
+/* ── Validation ────────────────────────────────────────────────────────── */
+.apm-validation { font-size: .78rem; color: var(--danger); }
+.apm-required   { color: var(--danger); }
+.apm-optional   { font-size: .78rem; color: var(--muted); font-weight: 400; }
+
+/* ── Buttons ───────────────────────────────────────────────────────────── */
+.apm-btn {
+    display: block;
+    width: 100%;
+    padding: .85rem 1.5rem;
+    font: inherit;
+    font-weight: 600;
+    font-size: .875rem;
+    border-radius: .5rem;
+    border: 1.5px solid transparent;
+    cursor: pointer;
+    text-align: center;
+    transition: background .2s, opacity .2s, border-color .2s;
+    margin-bottom: .75rem;
+}
+.apm-btn:disabled { opacity: .55; cursor: not-allowed; }
+.apm-btn--primary {
+    background: var(--ink);
+    color: #fff;
+    border-color: var(--ink);
+}
+.apm-btn--primary:hover:not(:disabled) { background: #000; }
+.apm-btn--ghost {
+    background: #fff;
+    color: var(--ink);
+    border-color: var(--line);
+}
+.apm-btn--ghost:hover:not(:disabled) { background: #f9fafb; }
+
+/* ── Utility links ─────────────────────────────────────────────────────── */
+.apm-link {
+    background: none;
+    border: none;
+    padding: 0;
+    font: inherit;
+    font-size: .82rem;
+    color: var(--ink);
+    text-decoration: underline;
+    cursor: pointer;
+}
+.apm-link:hover { color: var(--muted); }
+.apm-link--center { display: block; text-align: center; width: 100%; margin-top: .5rem; }
+.apm-link:disabled { opacity: .5; cursor: not-allowed; }
+
+/* ── Row helpers ───────────────────────────────────────────────────────── */
+.apm-row-between {
+    display: flex;
+    justify-content: flex-end;
+    margin-bottom: 1.1rem;
+}
+
+/* ── Divider ───────────────────────────────────────────────────────────── */
+.apm-divider {
+    display: flex;
+    align-items: center;
+    gap: .75rem;
+    margin: 1rem 0;
+    color: var(--muted);
+    font-size: .8rem;
+}
+.apm-divider::before,
+.apm-divider::after { content: ''; flex: 1; height: 1px; background: var(--line); }
+
+/* ── Alerts ────────────────────────────────────────────────────────────── */
+.apm-error {
+    background: #fef2f2;
+    color: var(--danger);
+    border: 1px solid #fecaca;
+    border-radius: .5rem;
+    padding: .65rem 1rem;
+    font-size: .85rem;
+    margin-bottom: 1rem;
+}
+
+.apm-success {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: .5rem;
+    background: #f0fdf4;
+    color: #166534;
+    border: 1px solid #bbf7d0;
+    border-radius: .5rem;
+    padding: 1.25rem 1rem;
+    font-size: .9rem;
+    text-align: center;
+    margin-bottom: 1rem;
+    line-height: 1.5;
+}
+.apm-success__icon { font-size: 2rem; }
+
+/* ── Sign-Up stepper ───────────────────────────────────────────────────── */
+.apm-stepper {
+    display: flex;
+    list-style: none;
+    margin: 0 0 1.5rem;
+    padding: 0;
+    gap: .25rem;
+    counter-reset: none;
+}
+.apm-stepper__item {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: .3rem;
+    flex: 1;
+    font-size: .68rem;
+    color: var(--muted);
+    position: relative;
+}
+.apm-stepper__item:not(:last-child)::after {
+    content: '';
+    position: absolute;
+    top: .75rem;
+    left: calc(50% + .9rem);
+    right: calc(-50% + .9rem);
+    height: 1.5px;
+    background: var(--line);
+}
+.apm-stepper__item.is-current::after,
+.apm-stepper__item.is-done::after     { background: var(--ink); }
+
+.apm-stepper__dot {
+    width: 1.5rem;
+    height: 1.5rem;
+    border-radius: 50%;
+    border: 1.5px solid var(--line);
+    display: grid;
+    place-items: center;
+    font-size: .7rem;
+    font-weight: 700;
+    transition: background .2s, border-color .2s, color .2s;
+    background: #fff;
+    color: var(--muted);
+    z-index: 1;
+}
+.apm-stepper__item.is-current .apm-stepper__dot {
+    background: var(--ink);
+    border-color: var(--ink);
+    color: #fff;
+}
+.apm-stepper__item.is-done .apm-stepper__dot {
+    background: #166534;
+    border-color: #166534;
+    color: #fff;
+    font-size: .6rem;
+}
+.apm-stepper__item.is-current { color: var(--ink); font-weight: 600; }
+.apm-stepper__label { text-align: center; }
+
+/* ── Responsive ────────────────────────────────────────────────────────── */
+@media (max-width: 480px) {
+    .apm-panel        { padding: 2rem 1.25rem 1.5rem; }
+    .apm-chooser-grid { grid-template-columns: 1fr; }
+}

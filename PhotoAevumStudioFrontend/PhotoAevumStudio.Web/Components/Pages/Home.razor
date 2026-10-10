@@ -1,35 +1,54 @@
-﻿@page "/"
+@page "/"
 @page "/Home"
 @rendermode InteractiveServer
 
 <PageTitle>Photo Aevum Studio | Book Your Session</PageTitle>
 
-<!-- Public Top Navigation Bar (Visible only on Home) -->
+@* ── Auth portal modal (rendered inline so Blazor Server wires the events) *@
+<AuthPortalModal IsVisible="_modalOpen" OnClose="CloseModal" />
+
+@* ── Public Top Navigation Bar ────────────────────────────────────────────── *@
 <header class="sticky top-0 z-50 bg-white/95 backdrop-blur-md border-b border-gray-100">
     <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-20 flex items-center justify-between">
+
+        @* Brand *@
         <a href="/" class="flex items-center gap-3">
             <img src="images/AevumLogo.jpg" alt="Photo Aevum Logo" class="h-9 w-auto rounded-full" />
             <span class="font-bold text-lg tracking-tight uppercase tracking-widest text-gray-900">Photo Aevum Studio</span>
         </a>
+
+        @* Desktop nav links *@
         <nav class="hidden md:flex items-center gap-8 text-sm font-medium text-gray-600">
-            <a href="/" class="hover:text-gray-950 transition-colors">HOME</a>
-            <a href="#services" class="hover:text-gray-950 transition-colors">SERVICES</a>
+            <a href="/"          class="hover:text-gray-950 transition-colors">HOME</a>
+            <a href="#services"  class="hover:text-gray-950 transition-colors">SERVICES</a>
             <a href="#portfolio" class="hover:text-gray-950 transition-colors">PORTFOLIO</a>
-            <a href="#faq" class="hover:text-gray-950 transition-colors">FAQ</a>
-            <a href="#contact" class="hover:text-gray-950 transition-colors">CONTACT</a>
+            <a href="#faq"       class="hover:text-gray-950 transition-colors">FAQ</a>
+            <a href="#contact"   class="hover:text-gray-950 transition-colors">CONTACT</a>
         </nav>
-        <div>
-            <a href="/create-account" class="bg-gray-900 hover:bg-black text-white px-6 py-3 rounded-none font-medium text-xs uppercase tracking-wider transition-colors">
+
+        @* CTA group *@
+        <div class="flex items-center gap-3">
+            @* LOGIN / SIGN IN → opens auth portal modal *@
+            <button @onclick="OpenModal"
+                    class="hidden md:inline-flex items-center gap-1.5 border border-gray-300 text-gray-700 hover:border-gray-700 hover:text-gray-900 px-5 py-2.5 rounded-none font-medium text-xs uppercase tracking-wider transition-colors">
+                <span aria-hidden="true">→</span> Login / Sign In
+            </button>
+
+            @* BOOK SESSION → opens modal so they can auth first *@
+            <button @onclick="OpenModal"
+                    class="bg-gray-900 hover:bg-black text-white px-6 py-3 rounded-none font-medium text-xs uppercase tracking-wider transition-colors">
                 BOOK SESSION
-            </a>
+            </button>
         </div>
+
     </div>
 </header>
 
+@* ── Hero Section ─────────────────────────────────────────────────────────── *@
 <section class="relative pt-24 pb-32 lg:pt-36 lg:pb-40 bg-gray-50">
     <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 relative z-10">
         <div class="grid lg:grid-cols-2 gap-12 lg:gap-16 items-center">
-            
+
             <div class="max-w-2xl">
                 <h1 class="text-5xl lg:text-7xl font-bold tracking-tighter text-gray-900 leading-none mb-6">
                     Capture <br/> the moment.
@@ -38,19 +57,25 @@
                     Professional photography and videography studio specializing in portraits, landscapes, and editorials. Secure your date effortlessly online.
                 </p>
                 <div class="flex flex-col sm:flex-row gap-4">
-                    <button class="bg-gray-900 hover:bg-black text-white px-8 py-4 rounded-none font-medium transition-colors text-sm uppercase tracking-wider flex items-center justify-center gap-2 group w-full sm:w-auto">
+                    @* Hero "Schedule Appointment" → opens modal *@
+                    <button @onclick="OpenModal"
+                            class="bg-gray-900 hover:bg-black text-white px-8 py-4 rounded-none font-medium transition-colors text-sm uppercase tracking-wider flex items-center justify-center gap-2 group w-full sm:w-auto">
                         Schedule Appointment
                         <i data-lucide="arrow-right" class="w-4 h-4 group-hover:translate-x-1 transition-transform"></i>
                     </button>
-                    <a href="#services" class="bg-transparent hover:bg-gray-100 text-gray-900 border border-gray-300 px-8 py-4 rounded-none font-medium transition-colors text-sm uppercase tracking-wider flex items-center justify-center w-full sm:w-auto text-center">
+                    <a href="#services"
+                       class="bg-transparent hover:bg-gray-100 text-gray-900 border border-gray-300 px-8 py-4 rounded-none font-medium transition-colors text-sm uppercase tracking-wider flex items-center justify-center w-full sm:w-auto text-center">
                         View Pricing
                     </a>
                 </div>
             </div>
 
             <div class="relative w-full aspect-[4/5] lg:aspect-square bg-gray-200 overflow-hidden">
-                <img src="https://images.unsplash.com/photo-1604904612715-47bf9d9bc670?q=80&w=2000&auto=format&fit=crop" alt="Editorial Fashion Shot" class="object-cover w-full h-full grayscale hover:grayscale-0 transition-all duration-700">
-                
+                <img src="https://images.unsplash.com/photo-1604904612715-47bf9d9bc670?q=80&w=2000&auto=format&fit=crop"
+                     alt="Editorial Fashion Shot"
+                     class="object-cover w-full h-full grayscale hover:grayscale-0 transition-all duration-700" />
+
+                @* Floating availability card *@
                 <div class="absolute bottom-6 left-6 right-6 sm:left-auto sm:right-6 sm:bottom-6 sm:w-80 bg-white/95 backdrop-blur-md p-6 shadow-2xl border border-white/20">
                     <div class="flex items-center justify-between mb-4 pb-4 border-b border-gray-100">
                         <div>
@@ -63,10 +88,15 @@
                     </div>
                     <div class="flex justify-between items-center">
                         <p class="text-sm font-medium text-gray-900">Oct 24, 10:00 AM</p>
-                        <button class="text-xs font-bold text-gray-900 uppercase tracking-wider hover:underline">Book Now</button>
+                        @* Floating "Book Now" → opens modal *@
+                        <button @onclick="OpenModal"
+                                class="text-xs font-bold text-gray-900 uppercase tracking-wider hover:underline">
+                            Book Now
+                        </button>
                     </div>
                 </div>
             </div>
+
         </div>
     </div>
 </section>
@@ -212,26 +242,24 @@
 </section>
 
 @code {
-    private int activeIndex = 1; 
+    // ── Service carousel ────────────────────────────────────────────────────
+    private int activeIndex = 1;
 
-    private void SetActive(int index)
-    {
-        activeIndex = index;
-    }
+    private void SetActive(int index) => activeIndex = index;
 
     private string GetCardClass(int cardIndex)
     {
         if (cardIndex == activeIndex)
-        {
             return "z-30 scale-100 opacity-100 translate-x-0 shadow-2xl";
-        }
         else if (cardIndex < activeIndex)
-        {
             return "z-20 scale-75 md:scale-85 opacity-40 hover:opacity-75 -translate-x-28 md:-translate-x-64 shadow-lg";
-        }
         else
-        {
             return "z-20 scale-75 md:scale-85 opacity-40 hover:opacity-75 translate-x-28 md:translate-x-64 shadow-lg";
-        }
     }
+
+    // ── Auth modal ──────────────────────────────────────────────────────────
+    private bool _modalOpen = false;
+
+    private void OpenModal()  => _modalOpen = true;
+    private void CloseModal() => _modalOpen = false;
 }

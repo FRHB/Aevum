@@ -496,3 +496,7 @@ appsettings.Staging.json
 # Published output
 **/publish/
 # ───────────────────────────────────────────────────────────────────────────
+
+# Security: Ignore all appsettings to prevent credential leaks
+appsettings.json
+appsettings.*.json
