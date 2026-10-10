@@ -2,6 +2,7 @@
 @layout AdminLayout
 @using PhotoAevumStudio.Web.Models
 @rendermode InteractiveServer
+@attribute [Authorize(Roles = "Admin")]
 
 <PageTitle>Schedules - PhotoAevum</PageTitle>
 

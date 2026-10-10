@@ -1,4 +1,4 @@
-namespace PhotoAevumStudio.Web.Services;
+namespace PhotoAevumStudio.Application.Interfaces;
 
 public interface IEmailService
 {

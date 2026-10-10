@@ -1,4 +1,5 @@
-﻿@using PhotoAevumStudio.Web.Models
+@using PhotoAevumStudio.Web.Models
+@attribute [Authorize(Roles = "Admin")]
 @inject IEmployeeService Employees
 @implements IDisposable
 
@@ -21,7 +22,7 @@
                         <li class="flex items-center gap-2 flex-1 text-xs @(n == step ? "text-gray-900 font-semibold" : "text-gray-400")"
                             aria-current="@(n == step ? "step" : null)">
                             <span class="w-6 h-6 rounded-full flex items-center justify-center shrink-0 text-xs font-semibold @(n <= step ? "bg-gray-900 text-white" : "border border-gray-300")">
-                                @(n < step ? "✓" : n.ToString())
+                                @(n < step ? "?" : n.ToString())
                             </span>
                             <span class="hidden sm:inline">@StepTitles[n - 1]</span>
                         </li>

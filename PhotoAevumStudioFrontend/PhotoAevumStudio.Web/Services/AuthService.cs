@@ -67,6 +67,18 @@ public sealed class AuthService : IAuthService
         return state.User.Identity?.IsAuthenticated ?? false;
     }
 
+    public async Task<bool> RegisterCustomerAsync(object request, CancellationToken cancellationToken = default)
+    {
+        var response = await _http.PostAsJsonAsync("api/auth/register-customer", request, cancellationToken);
+        return response.IsSuccessStatusCode;
+    }
+
+    public async Task<bool> SendVerificationCodeAsync(string email, CancellationToken cancellationToken = default)
+    {
+        var response = await _http.PostAsJsonAsync("api/auth/send-verification", new { Email = email }, cancellationToken);
+        return response.IsSuccessStatusCode;
+    }
+
     public async Task<bool> RegisterAsync(
         RegistrationRequest request,
         CancellationToken cancellationToken = default)
@@ -88,3 +100,4 @@ public sealed class AuthService : IAuthService
     // Local record so we don't need a NuGet dep for ProblemDetails deserialization
     private sealed record ProblemDetails(string? Detail);
 }
+

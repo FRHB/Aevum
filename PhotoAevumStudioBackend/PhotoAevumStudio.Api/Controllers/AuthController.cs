@@ -1,9 +1,13 @@
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
-using Microsoft.AspNetCore.RateLimiting;
+using Microsoft.Extensions.Caching.Memory;
 using Microsoft.IdentityModel.Tokens;
 using PhotoAevumStudio.Application.Auth;
 using PhotoAevumStudio.Application.Entities;
+using PhotoAevumStudio.Application.Interfaces;
+using PhotoAevumStudio.Application.DTOs;
+using PhotoAevumStudio.Infrastructure.Data;
 using System.IdentityModel.Tokens.Jwt;
 using System.Security.Claims;
 using System.Text;
@@ -11,43 +15,89 @@ using System.Text;
 namespace PhotoAevumStudio.Api.Controllers;
 
 [ApiController]
-[Route("api/[controller]")]
+[Route("api/auth")]
+[Produces("application/json")]
 public class AuthController : ControllerBase
 {
     private readonly UserManager<ApplicationUser> _userManager;
     private readonly IConfiguration _configuration;
     private readonly ILogger<AuthController> _logger;
+    private readonly IMemoryCache _cache;
+    private readonly IEmailService _emailService;
+    private readonly ApplicationDbContext _dbContext;
 
     public AuthController(
         UserManager<ApplicationUser> userManager,
         IConfiguration configuration,
-        ILogger<AuthController> logger)
+        ILogger<AuthController> logger,
+        IMemoryCache cache,
+        IEmailService emailService,
+        ApplicationDbContext dbContext)
     {
         _userManager   = userManager;
         _configuration = configuration;
         _logger        = logger;
+        _cache         = cache;
+        _emailService  = emailService;
+        _dbContext     = dbContext;
     }
 
-    // ── POST /api/auth/login ─────────────────────────────────────────────────
+    [HttpPost("send-verification")]
+    [AllowAnonymous]
+    public async Task<IActionResult> SendVerificationCode([FromBody] SendVerificationRequest request)
+    {
+        if (string.IsNullOrWhiteSpace(request.Email)) return BadRequest("Email is required.");
+        
+        var code = new Random().Next(100000, 999999).ToString();
+        _cache.Set($"VerificationCode_{request.Email}", code, TimeSpan.FromMinutes(10));
+        
+        await _emailService.SendEmailAsync(
+            request.Email,
+            "Your Photo Aevum Studio Verification Code",
+            $"<p>Your verification code is: <strong>{code}</strong></p><p>This code will expire in 10 minutes.</p>",
+            isHtml: true);
+            
+        return Ok(new { Message = "Verification code sent." });
+    }
 
-    /// <summary>
-    /// Authenticates an employee or admin by their StudioId or email + password.
-    /// Returns a signed JWT on success.
-    /// </summary>
+    [HttpPost("register-customer")]
+    [AllowAnonymous]
+    public async Task<IActionResult> RegisterCustomer([FromBody] CustomerRegisterRequest request)
+    {
+        if (!_cache.TryGetValue($"VerificationCode_{request.Email}", out string? storedCode) || storedCode != request.VerificationCode)
+        {
+            return BadRequest(new ProblemDetails { Title = "Invalid or expired verification code", Status = 400 });
+        }
+        
+        var user = new ApplicationUser
+        {
+            UserName       = request.Email,
+            Email          = request.Email,
+            FirstName      = request.FirstName,
+            LastName       = request.LastName,
+            MiddleName     = request.MiddleName,
+            EmailConfirmed = true
+        };
+
+        var result = await _userManager.CreateAsync(user, request.Password);
+        if (!result.Succeeded)
+            return BadRequest(new ProblemDetails { Title = "Registration failed", Detail = string.Join("; ", result.Errors.Select(e => e.Description)) });
+            
+        await _userManager.AddToRoleAsync(user, AppRoles.Customer);
+        _cache.Remove($"VerificationCode_{request.Email}");
+        return Ok(new { Message = "Customer registered successfully." });
+    }
+
     [HttpPost("login")]
-    [ProducesResponseType<LoginResponse>(StatusCodes.Status200OK)]
-    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+    [AllowAnonymous]
     public async Task<IActionResult> Login([FromBody] LoginRequest request)
     {
-        // Allow login by either email or StudioId
         var user = await _userManager.FindByEmailAsync(request.UserId)
                    ?? await _userManager.FindByNameAsync(request.UserId);
 
-        // If not found by email/username, try StudioId
         if (user is null)
         {
-            user = _userManager.Users
-                .FirstOrDefault(u => u.StudioId == request.UserId);
+            user = _userManager.Users.FirstOrDefault(u => u.StudioId == request.UserId);
         }
 
         if (user is null || !await _userManager.CheckPasswordAsync(user, request.Password))
@@ -64,8 +114,7 @@ public class AuthController : ControllerBase
         var roles = await _userManager.GetRolesAsync(user);
         var token = BuildJwt(user, roles);
 
-        _logger.LogInformation("Successful login for {Email} ({Role})",
-            user.Email, string.Join(',', roles));
+        _logger.LogInformation("Successful login for {Email} ({Role})", user.Email, string.Join(',', roles));
 
         return Ok(new LoginResponse(
             Token:    token.Token,
@@ -74,18 +123,19 @@ public class AuthController : ControllerBase
             ExpiresAt: token.ExpiresAt));
     }
 
-    // ── POST /api/auth/register ──────────────────────────────────────────────
-
-    /// <summary>
-    /// Creates a new Employee or Customer account.
-    /// Restricted to Admins only.
-    /// </summary>
     [HttpPost("register")]
-    [Microsoft.AspNetCore.Authorization.Authorize(Roles = AppRoles.Admin)]
-    [ProducesResponseType(StatusCodes.Status201Created)]
-    [ProducesResponseType(StatusCodes.Status400BadRequest)]
+    [Authorize(Roles = AppRoles.Admin)]
     public async Task<IActionResult> Register([FromBody] RegisterRequest request)
     {
+        if (request.Role == AppRoles.Admin && !System.Text.RegularExpressions.Regex.IsMatch(request.StudioId ?? "", @"^(SADM|ADM)-\d{3}$"))
+        {
+            return BadRequest(new ProblemDetails { Title = "Invalid Admin ID format", Detail = "Admin ID must be SADM-### or ADM-###" });
+        }
+        if (request.Role == AppRoles.Employee && !System.Text.RegularExpressions.Regex.IsMatch(request.StudioId ?? "", @"^EMP-\d{3}$"))
+        {
+            return BadRequest(new ProblemDetails { Title = "Invalid Employee ID format", Detail = "Employee ID must be EMP-###" });
+        }
+
         if (!AppRoles.All.Contains(request.Role))
             return BadRequest(new ProblemDetails
             {
@@ -118,19 +168,20 @@ public class AuthController : ControllerBase
         }
 
         await _userManager.AddToRoleAsync(user, request.Role);
+        if (request.Role == AppRoles.Employee)
+        {
+            _dbContext.Employees.Add(new Employee { IdentityUserId = user.Id });
+            await _dbContext.SaveChangesAsync();
+        }
         _logger.LogInformation("Created {Role} account for {Email}", request.Role, user.Email);
 
         return StatusCode(StatusCodes.Status201Created,
             new { user.Id, user.Email, user.FullName, Role = request.Role });
     }
 
-    // ── JWT Builder ──────────────────────────────────────────────────────────
-
-    private (string Token, DateTime ExpiresAt) BuildJwt(
-        ApplicationUser user, IList<string> roles)
+    private (string Token, DateTime ExpiresAt) BuildJwt(ApplicationUser user, IList<string> roles)
     {
-        var key    = _configuration["Jwt:Key"]
-                     ?? throw new InvalidOperationException("Jwt:Key is not configured.");
+        var key    = _configuration["Jwt:Key"] ?? throw new InvalidOperationException("Jwt:Key is not configured.");
         var issuer = _configuration["Jwt:Issuer"] ?? "PhotoAevumStudioApi";
         var audience = _configuration["Jwt:Audience"] ?? "PhotoAevumStudioClients";
 
@@ -144,8 +195,7 @@ public class AuthController : ControllerBase
             new("studio_id",                   user.StudioId ?? string.Empty),
         };
 
-        foreach (var role in roles)
-            claims.Add(new Claim(ClaimTypes.Role, role));
+        foreach (var role in roles) claims.Add(new Claim(ClaimTypes.Role, role));
 
         var expiresAt = DateTime.UtcNow.AddHours(8);
         var signingKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(key));
@@ -161,3 +211,6 @@ public class AuthController : ControllerBase
         return (new JwtSecurityTokenHandler().WriteToken(jwt), expiresAt);
     }
 }
+
+
+

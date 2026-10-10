@@ -9,4 +9,6 @@ public interface IAuthService
     Task LogoutAsync(CancellationToken cancellationToken = default);
     Task<bool> IsUserLoggedInAsync(CancellationToken cancellationToken = default);
     Task<bool> RegisterAsync(RegistrationRequest request, CancellationToken cancellationToken = default);
+    Task<bool> RegisterCustomerAsync(object request, CancellationToken cancellationToken = default);
+    Task<bool> SendVerificationCodeAsync(string email, CancellationToken cancellationToken = default);
 }

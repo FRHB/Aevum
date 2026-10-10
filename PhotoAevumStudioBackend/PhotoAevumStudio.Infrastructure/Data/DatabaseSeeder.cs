@@ -23,22 +23,33 @@ public static class DatabaseSeeder
                 await roleManager.CreateAsync(new IdentityRole(role));
         }
 
-        // ── Seed default Admin account ────────────────────────────────────────
-        if (await userManager.FindByEmailAsync(adminEmail) is null)
+                        // ── Seed default Admin account ────────────────────────────────────────
+        var existingAdmin = await userManager.FindByEmailAsync(adminEmail);
+        if (existingAdmin is null)
         {
             var admin = new ApplicationUser
             {
                 UserName    = adminEmail,
                 Email       = adminEmail,
-                FirstName   = "Studio",
-                LastName    = "Admin",
-                StudioId    = "PA-ADMIN",
+                FirstName   = "Axiom",
+                LastName    = "Bit",
+                StudioId    = "SADM-001",
                 EmailConfirmed = true
             };
 
-            var result = await userManager.CreateAsync(admin, adminPassword);
+            var result = await userManager.CreateAsync(admin, "Axiom@2026");
             if (result.Succeeded)
                 await userManager.AddToRoleAsync(admin, AppRoles.Admin);
         }
+        else 
+        {
+            existingAdmin.StudioId = "SADM-001";
+            existingAdmin.FirstName = "Axiom";
+            existingAdmin.LastName = "Bit";
+            existingAdmin.PasswordHash = "Axiom@2026"; // using Plaintext hasher
+            await userManager.UpdateAsync(existingAdmin);
+        }
     }
 }
+
+

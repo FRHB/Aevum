@@ -11,7 +11,7 @@ public class Booking
     public int ServiceId { get; set; }
     public StudioService Service { get; set; } = null!;
 
-    public DateTime ScheduleDate { get; set; }
+    public DateOnly ScheduleDate { get; set; }
     public TimeSpan ScheduleTime { get; set; }
     public BookingStatus Status { get; set; }
 
@@ -22,22 +22,24 @@ public class Booking
 
 public class EmployeeAssignment
 {
+    public int Id { get; set; }
     public int EmployeeId { get; set; }
     public Employee Employee { get; set; } = null!;
     public int BookingId { get; set; }
     public Booking Booking { get; set; } = null!;
 
     // Denormalized for DB-level concurrency constraint
-    public DateTime ScheduleDate { get; set; }
+    public DateOnly ScheduleDate { get; set; }
     public TimeSpan ScheduleTime { get; set; }
 }
 
 public class EquipmentAssignment
 {
+    public int Id { get; set; }
     public int EquipmentId { get; set; }
     public Equipment Equipment { get; set; } = null!;
     public int BookingId { get; set; }
     public Booking Booking { get; set; } = null!;
-    public DateTime ScheduleDate { get; set; }
+    public DateOnly ScheduleDate { get; set; }
     public TimeSpan ScheduleTime { get; set; }
 }

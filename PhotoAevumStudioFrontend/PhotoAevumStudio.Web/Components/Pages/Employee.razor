@@ -1,6 +1,7 @@
 @page "/admin/employees"
 @layout AdminLayout
 @rendermode InteractiveServer
+@attribute [Authorize(Roles = "Admin")]
 
 <div class="flex justify-between items-center mb-8">
     <div>

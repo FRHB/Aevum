@@ -1,9 +1,11 @@
 using System.Net;
 using System.Net.Mail;
 using Microsoft.Extensions.Options;
-using PhotoAevumStudio.Web.Models;
+using Microsoft.Extensions.Logging;
+using PhotoAevumStudio.Application.Interfaces;
+using PhotoAevumStudio.Application.Models;
 
-namespace PhotoAevumStudio.Web.Services;
+namespace PhotoAevumStudio.Infrastructure.Services;
 
 public class EmailService : IEmailService
 {
@@ -36,7 +38,6 @@ public class EmailService : IEmailService
             
             mailMessage.To.Add(toEmail);
 
-            // Execute asynchronously to avoid blocking the main thread
             await client.SendMailAsync(mailMessage);
             
             _logger.LogInformation("Email sent successfully to {ToEmail}", toEmail);

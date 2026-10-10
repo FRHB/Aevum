@@ -84,14 +84,53 @@ public class ApplicationDbContext : IdentityDbContext<ApplicationUser>
              .OnDelete(DeleteBehavior.SetNull);
         });
 
-        // Prevent Double-Booking Staff
-        builder.Entity<EmployeeAssignment>()
-            .HasIndex(ea => new { ea.EmployeeId, ea.ScheduleDate, ea.ScheduleTime })
-            .IsUnique();
+                        // Prevent Double-Booking Staff
+        builder.Entity<EmployeeAssignment>(e =>
+        {
+            e.HasIndex(ea => new { ea.EmployeeId, ea.ScheduleDate, ea.ScheduleTime }).IsUnique();
+            e.HasOne(ea => ea.Employee)
+             .WithMany()
+             .HasForeignKey(ea => ea.EmployeeId)
+             .OnDelete(DeleteBehavior.NoAction);
+             
+            e.HasOne(ea => ea.Booking)
+             .WithMany(b => b.EmployeeAssignments)
+             .HasForeignKey(ea => ea.BookingId)
+             .OnDelete(DeleteBehavior.Cascade);
+        });
 
-        // Prevent Double-Booking Gear
-        builder.Entity<EquipmentAssignment>()
-            .HasIndex(eq => new { eq.EquipmentId, eq.ScheduleDate, eq.ScheduleTime })
-            .IsUnique();
+                // Prevent Double-Booking Gear
+        builder.Entity<EquipmentAssignment>(e =>
+        {
+            e.HasIndex(eq => new { eq.EquipmentId, eq.ScheduleDate, eq.ScheduleTime }).IsUnique();
+            e.HasOne(ea => ea.Equipment)
+             .WithMany()
+             .HasForeignKey(ea => ea.EquipmentId)
+             .OnDelete(DeleteBehavior.NoAction);
+             
+            e.HasOne(ea => ea.Booking)
+             .WithMany(b => b.EquipmentAssignments)
+             .HasForeignKey(ea => ea.BookingId)
+             .OnDelete(DeleteBehavior.Cascade);
+        });
+
+                // Prevent Double-Booking Gear
+        builder.Entity<EquipmentAssignment>(e =>
+        {
+            e.HasIndex(eq => new { eq.EquipmentId, eq.ScheduleDate, eq.ScheduleTime }).IsUnique();
+            e.HasOne(ea => ea.Equipment)
+             .WithMany()
+             .HasForeignKey(ea => ea.EquipmentId)
+             .OnDelete(DeleteBehavior.NoAction);
+             
+            e.HasOne(ea => ea.Booking)
+             .WithMany(b => b.EquipmentAssignments)
+             .HasForeignKey(ea => ea.BookingId)
+             .OnDelete(DeleteBehavior.Cascade);
+        });
     }
 }
+
+
+
+

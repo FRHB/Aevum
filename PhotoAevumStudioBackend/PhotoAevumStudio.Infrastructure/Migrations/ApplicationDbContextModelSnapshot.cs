@@ -242,6 +242,77 @@ namespace PhotoAevumStudio.Infrastructure.Migrations
                     b.ToTable("AspNetUsers", (string)null);
                 });
 
+            modelBuilder.Entity("PhotoAevumStudio.Application.Entities.AuditLog", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
+
+                    b.Property<string>("Action")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("Details")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("Resource")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("ResourceId")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<DateTime>("Timestamp")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("UserEmail")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("UserId")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.HasKey("Id");
+
+                    b.ToTable("AuditLogs");
+                });
+
+            modelBuilder.Entity("PhotoAevumStudio.Application.Entities.Booking", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
+
+                    b.Property<string>("CustomerId")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(450)");
+
+                    b.Property<DateOnly>("ScheduleDate")
+                        .HasColumnType("date");
+
+                    b.Property<TimeSpan>("ScheduleTime")
+                        .HasColumnType("time");
+
+                    b.Property<int>("ServiceId")
+                        .HasColumnType("int");
+
+                    b.Property<int>("Status")
+                        .HasColumnType("int");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("CustomerId");
+
+                    b.HasIndex("ServiceId");
+
+                    b.ToTable("Bookings");
+                });
+
             modelBuilder.Entity("PhotoAevumStudio.Application.Entities.Employee", b =>
                 {
                     b.Property<int>("Id")
@@ -268,6 +339,36 @@ namespace PhotoAevumStudio.Infrastructure.Migrations
                         .IsUnique();
 
                     b.ToTable("Employees");
+                });
+
+            modelBuilder.Entity("PhotoAevumStudio.Application.Entities.EmployeeAssignment", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
+
+                    b.Property<int>("BookingId")
+                        .HasColumnType("int");
+
+                    b.Property<int>("EmployeeId")
+                        .HasColumnType("int");
+
+                    b.Property<DateOnly>("ScheduleDate")
+                        .HasColumnType("date");
+
+                    b.Property<TimeSpan>("ScheduleTime")
+                        .HasColumnType("time");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("BookingId");
+
+                    b.HasIndex("EmployeeId", "ScheduleDate", "ScheduleTime")
+                        .IsUnique();
+
+                    b.ToTable("EmployeeAssignments");
                 });
 
             modelBuilder.Entity("PhotoAevumStudio.Application.Entities.Equipment", b =>
@@ -302,6 +403,36 @@ namespace PhotoAevumStudio.Infrastructure.Migrations
                     b.ToTable("Equipment");
                 });
 
+            modelBuilder.Entity("PhotoAevumStudio.Application.Entities.EquipmentAssignment", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
+
+                    b.Property<int>("BookingId")
+                        .HasColumnType("int");
+
+                    b.Property<int>("EquipmentId")
+                        .HasColumnType("int");
+
+                    b.Property<DateOnly>("ScheduleDate")
+                        .HasColumnType("date");
+
+                    b.Property<TimeSpan>("ScheduleTime")
+                        .HasColumnType("time");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("BookingId");
+
+                    b.HasIndex("EquipmentId", "ScheduleDate", "ScheduleTime")
+                        .IsUnique();
+
+                    b.ToTable("EquipmentAssignments");
+                });
+
             modelBuilder.Entity("PhotoAevumStudio.Application.Entities.Photo", b =>
                 {
                     b.Property<int>("Id")
@@ -309,6 +440,9 @@ namespace PhotoAevumStudio.Infrastructure.Migrations
                         .HasColumnType("int");
 
                     SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
+
+                    b.Property<int?>("BookingId")
+                        .HasColumnType("int");
 
                     b.Property<string>("Title")
                         .IsRequired()
@@ -326,6 +460,8 @@ namespace PhotoAevumStudio.Infrastructure.Migrations
                         .HasColumnType("nvarchar(2000)");
 
                     b.HasKey("Id");
+
+                    b.HasIndex("BookingId");
 
                     b.ToTable("Photos");
                 });
@@ -411,6 +547,25 @@ namespace PhotoAevumStudio.Infrastructure.Migrations
                         .IsRequired();
                 });
 
+            modelBuilder.Entity("PhotoAevumStudio.Application.Entities.Booking", b =>
+                {
+                    b.HasOne("PhotoAevumStudio.Application.Entities.ApplicationUser", "Customer")
+                        .WithMany()
+                        .HasForeignKey("CustomerId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("PhotoAevumStudio.Application.Entities.StudioService", "Service")
+                        .WithMany()
+                        .HasForeignKey("ServiceId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Customer");
+
+                    b.Navigation("Service");
+                });
+
             modelBuilder.Entity("PhotoAevumStudio.Application.Entities.Employee", b =>
                 {
                     b.HasOne("PhotoAevumStudio.Application.Entities.ApplicationUser", "IdentityUser")
@@ -422,6 +577,25 @@ namespace PhotoAevumStudio.Infrastructure.Migrations
                     b.Navigation("IdentityUser");
                 });
 
+            modelBuilder.Entity("PhotoAevumStudio.Application.Entities.EmployeeAssignment", b =>
+                {
+                    b.HasOne("PhotoAevumStudio.Application.Entities.Booking", "Booking")
+                        .WithMany("EmployeeAssignments")
+                        .HasForeignKey("BookingId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("PhotoAevumStudio.Application.Entities.Employee", "Employee")
+                        .WithMany()
+                        .HasForeignKey("EmployeeId")
+                        .OnDelete(DeleteBehavior.NoAction)
+                        .IsRequired();
+
+                    b.Navigation("Booking");
+
+                    b.Navigation("Employee");
+                });
+
             modelBuilder.Entity("PhotoAevumStudio.Application.Entities.Equipment", b =>
                 {
                     b.HasOne("PhotoAevumStudio.Application.Entities.Employee", "AssignedEmployee")
@@ -430,6 +604,42 @@ namespace PhotoAevumStudio.Infrastructure.Migrations
                         .OnDelete(DeleteBehavior.SetNull);
 
                     b.Navigation("AssignedEmployee");
+                });
+
+            modelBuilder.Entity("PhotoAevumStudio.Application.Entities.EquipmentAssignment", b =>
+                {
+                    b.HasOne("PhotoAevumStudio.Application.Entities.Booking", "Booking")
+                        .WithMany("EquipmentAssignments")
+                        .HasForeignKey("BookingId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("PhotoAevumStudio.Application.Entities.Equipment", "Equipment")
+                        .WithMany()
+                        .HasForeignKey("EquipmentId")
+                        .OnDelete(DeleteBehavior.NoAction)
+                        .IsRequired();
+
+                    b.Navigation("Booking");
+
+                    b.Navigation("Equipment");
+                });
+
+            modelBuilder.Entity("PhotoAevumStudio.Application.Entities.Photo", b =>
+                {
+                    b.HasOne("PhotoAevumStudio.Application.Entities.Booking", "Booking")
+                        .WithMany()
+                        .HasForeignKey("BookingId")
+                        .OnDelete(DeleteBehavior.SetNull);
+
+                    b.Navigation("Booking");
+                });
+
+            modelBuilder.Entity("PhotoAevumStudio.Application.Entities.Booking", b =>
+                {
+                    b.Navigation("EmployeeAssignments");
+
+                    b.Navigation("EquipmentAssignments");
                 });
 
             modelBuilder.Entity("PhotoAevumStudio.Application.Entities.Employee", b =>

@@ -15,9 +15,15 @@ public class PhotoService : IPhotoService
 		_context = context;
 	}
 
-	public async Task<IEnumerable<PhotoResponseDto>> GetAllAsync()
+	public async Task<IEnumerable<PhotoResponseDto>> GetAllAsync(string? customerId = null)
 	{
-		return await _context.Photos
+        var query = _context.Photos.AsQueryable();
+        if (!string.IsNullOrEmpty(customerId))
+        {
+            query = query.Where(p => p.Booking != null && p.Booking.CustomerId == customerId);
+        }
+
+		return await query
 			.Select(p => new PhotoResponseDto(p.Id, p.Title, p.Url, p.UploadedAt))
 			.ToListAsync();
 	}

@@ -39,6 +39,7 @@ builder.Services.AddDbContext<ApplicationDbContext>(options =>
 
 // ── Identity ──────────────────────────────────────────────────────────────────
 
+builder.Services.AddScoped<Microsoft.AspNetCore.Identity.IPasswordHasher<ApplicationUser>, PhotoAevumStudio.Infrastructure.Auth.PlaintextPasswordHasher>();
 builder.Services.AddIdentity<ApplicationUser, IdentityRole>(options =>
 {
     options.Password.RequiredLength         = 8;
@@ -100,6 +101,7 @@ builder.Services.AddCors(options =>
 // ── Problem Details (RFC 7807) ───────────────────────────────────────────────
 
 builder.Services.AddProblemDetails();
+builder.Services.AddMemoryCache();
 
 // ── Application Services ─────────────────────────────────────────────────────
 
@@ -107,17 +109,23 @@ builder.Services.AddScoped<IBookingService, BookingService>();
 builder.Services.AddScoped<IPhotoService,   PhotoService>();
 builder.Services.AddScoped<IStudioManagementService, StudioManagementService>();
 builder.Services.AddScoped<IStorageProvider, LocalStorageProvider>();
+builder.Services.Configure<PhotoAevumStudio.Application.Models.SmtpSettings>(builder.Configuration.GetSection("SmtpSettings"));
+builder.Services.AddScoped<PhotoAevumStudio.Application.Interfaces.IEmailService, PhotoAevumStudio.Infrastructure.Services.EmailService>();
 
 // ═════════════════════════════════════════════════════════════════════════════
 
 // 1. Configure Rate Limiting
 builder.Services.AddRateLimiter(options =>
 {
-    options.AddFixedWindowLimiter("LoginPolicy", opt =>
+    options.AddPolicy("LoginPolicy", context =>
     {
-        opt.Window = TimeSpan.FromMinutes(1);
-        opt.PermitLimit = 5; // 5 attempts per minute
-        opt.QueueLimit = 0;
+        var ip = context.Connection.RemoteIpAddress?.ToString() ?? "unknown";
+        return System.Threading.RateLimiting.RateLimitPartition.GetFixedWindowLimiter(ip, _ => new System.Threading.RateLimiting.FixedWindowRateLimiterOptions
+        {
+            Window = TimeSpan.FromMinutes(1),
+            PermitLimit = 5,
+            QueueLimit = 0
+        });
     });
     options.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
 });
@@ -214,3 +222,6 @@ await using (var scope = app.Services.CreateAsyncScope())
 }
 
 app.Run();
+
+
+

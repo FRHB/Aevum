@@ -1,3 +1,4 @@
+@using Microsoft.AspNetCore.Components.Authorization
 @* ============================================================
    Sidebar.razor  –  Shared fixed left navigation sidebar
    Usage:
@@ -51,7 +52,16 @@
     ///                  ?? string.Empty;
     ///   }
     /// </summary>
-    [Parameter] public string UserRole { get; set; } = string.Empty;
+    
+    [CascadingParameter] Task<AuthenticationState> AuthState { get; set; } = default!;
+    public string UserRole { get; set; } = string.Empty;
+
+    protected override async Task OnInitializedAsync()
+    {
+        var state = await AuthState;
+        UserRole = state.User.FindFirst(System.Security.Claims.ClaimTypes.Role)?.Value?.ToLower() ?? string.Empty;
+    }
+
 
     // ── Accordion state ──────────────────────────────────────────────────────
     private readonly HashSet<string> _openAccordions = new();
@@ -104,9 +114,9 @@
                     <ul id="acc-calendar"
                         class="aev-sidebar__sub @(IsOpen("calendar") ? "is-expanded" : "")"
                         aria-hidden="@(!IsOpen("calendar"))">
-                        <li><NavLink href="/admin/calendar/master"    class="aev-sidebar__sub-link" ActiveClass="aev-sidebar__link--active">Master Calendar</NavLink></li>
-                        <li><NavLink href="/admin/calendar/staff"     class="aev-sidebar__sub-link" ActiveClass="aev-sidebar__link--active">Staff</NavLink></li>
-                        <li><NavLink href="/admin/calendar/equipment" class="aev-sidebar__sub-link" ActiveClass="aev-sidebar__link--active">Equipments</NavLink></li>
+                        <li><NavLink href="/admin/schedules"    class="aev-sidebar__sub-link" ActiveClass="aev-sidebar__link--active">Master Calendar</NavLink></li>
+                        <!-- <li><NavLink href="/admin/calendar/staff"     class="aev-sidebar__sub-link" ActiveClass="aev-sidebar__link--active">Staff</NavLink></li> (Hidden - Dead Link) -->
+                        <!-- <li><NavLink href="/admin/calendar/equipment" class="aev-sidebar__sub-link" ActiveClass="aev-sidebar__link--active">Equipments</NavLink></li> (Hidden - Dead Link) -->
                     </ul>
                 </li>
 
@@ -118,7 +128,7 @@
                 </li>
 
                 <li>
-                    <NavLink href="/Services" class="aev-sidebar__link" ActiveClass="aev-sidebar__link--active">
+                    <NavLink href="/admin/services" class="aev-sidebar__link" ActiveClass="aev-sidebar__link--active">
                         <span class="aev-sidebar__icon" aria-hidden="true">🗂</span>
                         Services
                     </NavLink>
@@ -145,8 +155,8 @@
                     <ul id="acc-employees"
                         class="aev-sidebar__sub @(IsOpen("employees") ? "is-expanded" : "")"
                         aria-hidden="@(!IsOpen("employees"))">
-                        <li><NavLink href="/Employee"                       class="aev-sidebar__sub-link" ActiveClass="aev-sidebar__link--active">Staff List</NavLink></li>
-                        <li><NavLink href="/admin/employees/specialization" class="aev-sidebar__sub-link" ActiveClass="aev-sidebar__link--active">Specialization</NavLink></li>
+                        <li><NavLink href="/admin/employees"                       class="aev-sidebar__sub-link" ActiveClass="aev-sidebar__link--active">Staff List</NavLink></li>
+                        <!-- <li><NavLink href="/admin/employees/specialization" class="aev-sidebar__sub-link" ActiveClass="aev-sidebar__link--active">Specialization</NavLink></li> (Hidden - Dead Link) -->
                     </ul>
                 </li>
 
@@ -163,10 +173,10 @@
                     <ul id="acc-equipment"
                         class="aev-sidebar__sub @(IsOpen("equipment") ? "is-expanded" : "")"
                         aria-hidden="@(!IsOpen("equipment"))">
-                        <li><NavLink href="/Equipment"                  class="aev-sidebar__sub-link" ActiveClass="aev-sidebar__link--active">Gear List</NavLink></li>
-                        <li><NavLink href="/admin/equipment/dispatch"   class="aev-sidebar__sub-link" ActiveClass="aev-sidebar__link--active">Dispatch / Check-outs</NavLink></li>
-                        <li><NavLink href="/admin/equipment/kits"       class="aev-sidebar__sub-link" ActiveClass="aev-sidebar__link--active">Gear Kits</NavLink></li>
-                        <li><NavLink href="/admin/equipment/maintenance" class="aev-sidebar__sub-link" ActiveClass="aev-sidebar__link--active">Maintenance Logs</NavLink></li>
+                        <li><NavLink href="/admin/equipment"                  class="aev-sidebar__sub-link" ActiveClass="aev-sidebar__link--active">Gear List</NavLink></li>
+                        <!-- <li><NavLink href="/admin/equipment/dispatch"   class="aev-sidebar__sub-link" ActiveClass="aev-sidebar__link--active">Dispatch / Check-outs</NavLink></li> (Hidden - Dead Link) -->
+                        <!-- <li><NavLink href="/admin/equipment/kits"       class="aev-sidebar__sub-link" ActiveClass="aev-sidebar__link--active">Gear Kits</NavLink></li> (Hidden - Dead Link) -->
+                        <!-- <li><NavLink href="/admin/equipment/maintenance" class="aev-sidebar__sub-link" ActiveClass="aev-sidebar__link--active">Maintenance Logs</NavLink></li> (Hidden - Dead Link) -->
                     </ul>
                 </li>
 
@@ -218,14 +228,14 @@
                     <ul id="acc-emp-calendar"
                         class="aev-sidebar__sub @(IsOpen("emp-calendar") ? "is-expanded" : "")"
                         aria-hidden="@(!IsOpen("emp-calendar"))">
-                        <li><NavLink href="/staff/calendar/master"    class="aev-sidebar__sub-link" ActiveClass="aev-sidebar__link--active">Master Calendar</NavLink></li>
-                        <li><NavLink href="/staff/calendar/staff"     class="aev-sidebar__sub-link" ActiveClass="aev-sidebar__link--active">Staff</NavLink></li>
-                        <li><NavLink href="/staff/calendar/equipment" class="aev-sidebar__sub-link" ActiveClass="aev-sidebar__link--active">Equipments</NavLink></li>
+                        <!-- <li><NavLink href="/staff/calendar/master"    class="aev-sidebar__sub-link" ActiveClass="aev-sidebar__link--active">Master Calendar</NavLink></li> (Hidden - Dead Link) -->
+                        <!-- <li><NavLink href="/staff/calendar/staff"     class="aev-sidebar__sub-link" ActiveClass="aev-sidebar__link--active">Staff</NavLink></li> (Hidden - Dead Link) -->
+                        <!-- <li><NavLink href="/staff/calendar/equipment" class="aev-sidebar__sub-link" ActiveClass="aev-sidebar__link--active">Equipments</NavLink></li> (Hidden - Dead Link) -->
                     </ul>
                 </li>
 
                 <li>
-                    <NavLink href="/Services" class="aev-sidebar__link" ActiveClass="aev-sidebar__link--active">
+                    <NavLink href="/admin/services" class="aev-sidebar__link" ActiveClass="aev-sidebar__link--active">
                         <span class="aev-sidebar__icon" aria-hidden="true">🗂</span>
                         Services
                     </NavLink>
@@ -302,3 +312,4 @@
         </div>
     </text>;
 }
+

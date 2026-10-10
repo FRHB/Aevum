@@ -1,4 +1,4 @@
-namespace PhotoAevumStudio.Web.Models;
+namespace PhotoAevumStudio.Application.Models;
 
 public class SmtpSettings
 {

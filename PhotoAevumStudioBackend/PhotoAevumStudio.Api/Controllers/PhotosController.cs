@@ -20,11 +20,17 @@ public class PhotosController : ControllerBase
         _photoService = photoService;
     }
 
-    /// <summary>Returns all photos. Available to all authenticated users.</summary>
+    /// <summary>Returns all photos. Available to all authenticated users. Customers only see their own.</summary>
     [HttpGet]
     public async Task<IActionResult> GetAll()
     {
-        var photos = await _photoService.GetAllAsync();
+        string? customerId = null;
+        if (User.IsInRole(AppRoles.Customer))
+        {
+            customerId = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+        }
+
+        var photos = await _photoService.GetAllAsync(customerId);
         return Ok(photos);
     }
 
