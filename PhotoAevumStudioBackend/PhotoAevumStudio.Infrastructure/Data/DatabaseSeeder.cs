@@ -34,14 +34,19 @@ public static class DatabaseSeeder
                 FirstName   = "Axiom",
                 LastName    = "Bit",
                 StudioId    = "SADM-001",
-                EmailConfirmed = true
+                EmailConfirmed = true,
+                MustChangePassword = true,
+                existingAdmin.MustChangePassword = true;
             };
 
             var result = await userManager.CreateAsync(admin, "Axiom@2026");
-            if (result.Succeeded)
-                await userManager.AddToRoleAsync(admin, AppRoles.Admin);
+            if (!result.Succeeded)
+                throw new InvalidOperationException(
+                   "Failed to seed admin: " + string.Join("; ", result.Errors.Select(e => e.Description)));
+            
+            await userManager.AddToRoleAsync(admin, AppRoles.Admin);
         }
-        else 
+        else if (existingAdmin.StudioId != "SADM-001")
         {
             existingAdmin.StudioId = "SADM-001";
             existingAdmin.FirstName = "Axiom";
