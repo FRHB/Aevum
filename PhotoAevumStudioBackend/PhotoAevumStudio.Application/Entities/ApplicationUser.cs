@@ -23,4 +23,7 @@ public class ApplicationUser : IdentityUser
         string.Join(' ',
             new[] { FirstName, MiddleName, LastName }
             .Where(p => !string.IsNullOrWhiteSpace(p)));
+
+    public bool MustChangePassword { get; set; } = true;
+    public DateTime? PasswordChangedAt { get; set; }
 }

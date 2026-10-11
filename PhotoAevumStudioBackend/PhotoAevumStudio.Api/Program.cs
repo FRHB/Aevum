@@ -1,17 +1,20 @@
-using System.Threading.RateLimiting;
-using Microsoft.AspNetCore.RateLimiting;
-using System.Text;
-using Microsoft.AspNetCore.Authentication.JwtBearer;
 using FluentValidation;
 using FluentValidation.AspNetCore;
+using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Identity;
+using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
 using PhotoAevumStudio.Application;
+using PhotoAevumStudio.Application.Auth;
 using PhotoAevumStudio.Application.Entities;
 using PhotoAevumStudio.Application.Interfaces;
 using PhotoAevumStudio.Infrastructure.Data;
 using PhotoAevumStudio.Infrastructure.Services;
+using System.Security.Claims;
+using System.Text;
+using System.Threading.RateLimiting;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -58,29 +61,54 @@ var jwtKey = builder.Configuration["Jwt:Key"]
     ?? throw new InvalidOperationException(
         "Jwt:Key is not configured. Set it in User Secrets or environment variables.");
 
+var jwtIssuer = builder.Configuration["Jwt:Issuer"]
+    ?? throw new InvalidOperationException("Jwt:Issuer is not configured.");
+var jwtAudience = builder.Configuration["Jwt:Audience"]
+    ?? throw new InvalidOperationException("Jwt:Audience is not configured.");
+
+if (jwtKey.Length < 32)
+    throw new InvalidOperationException("Jwt:Key must be at least 32 characters.");
+
 builder.Services.AddAuthentication(options =>
 {
     options.DefaultAuthenticateScheme = JwtBearerDefaults.AuthenticationScheme;
-    options.DefaultChallengeScheme    = JwtBearerDefaults.AuthenticationScheme;
+    options.DefaultChallengeScheme = JwtBearerDefaults.AuthenticationScheme;
 })
 .AddJwtBearer(options =>
 {
     options.TokenValidationParameters = new TokenValidationParameters
     {
-        ValidateIssuer           = true,
-        ValidateAudience         = true,
-        ValidateLifetime         = true,
+        ValidateIssuer = true,
+        ValidateAudience = true,
+        ValidateLifetime = true,
         ValidateIssuerSigningKey = true,
-        ValidIssuer              = builder.Configuration["Jwt:Issuer"],
-        ValidAudience            = builder.Configuration["Jwt:Audience"],
-        IssuerSigningKey         = new SymmetricSecurityKey(
-                                       Encoding.UTF8.GetBytes(jwtKey)),
-        ClockSkew                = TimeSpan.FromSeconds(30)
+        ValidIssuer = jwtIssuer,
+        ValidAudience = jwtAudience,
+        IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(jwtKey)),
+        ClockSkew = TimeSpan.FromSeconds(30)
     };
 });
+builder.Services.AddAuthorization(o =>
+{
+    static bool MustChange(AuthorizationHandlerContext c) =>
+        c.User.FindFirstValue("must_change_password") == "true";
 
-builder.Services.AddAuthorization();
+    o.DefaultPolicy = new AuthorizationPolicyBuilder()
+        .RequireAuthenticatedUser()
+        .RequireAssertion(c => !MustChange(c))
+        .Build();
 
+    o.AddPolicy("AllowPasswordChange", p => p.RequireAuthenticatedUser());
+
+
+    o.AddPolicy("AdminOrAbove", p => p
+        .RequireRole(AppRoles.Admin)
+        .RequireAssertion(c => !MustChange(c)));
+
+    o.AddPolicy("StaffOrAbove", p => p
+        .RequireRole(AppRoles.Admin, AppRoles.Employee)
+        .RequireAssertion(c => !MustChange(c)));
+});
 // ── CORS — allow the Blazor frontend origin ───────────────────────────────────
 
 builder.Services.AddCors(options =>
@@ -175,6 +203,21 @@ app.UseHttpsRedirection();
 app.UseCors("BlazorFrontend");
 app.UseRateLimiter();
 app.UseAuthentication(); // Must come before UseAuthorization
+var passwordChangeExempt = new[] { "/api/auth/change-password", "/api/auth/login", "/api/auth/logout" };
+app.Use(async (ctx, next) =>
+{
+    if (ctx.User.Identity?.IsAuthenticated == true
+        && ctx.User.FindFirstValue("must_change_password") == "true"
+        && ctx.Request.Path.StartsWithSegments("/api")
+        && !passwordChangeExempt.Any(p => ctx.Request.Path.StartsWithSegments(p, StringComparison.OrdinalIgnoreCase)))
+    {
+        ctx.Response.StatusCode = StatusCodes.Status403Forbidden;
+        await ctx.Response.WriteAsJsonAsync(new { code = "PASSWORD_CHANGE_REQUIRED" });
+        return;
+    }
+    await next();
+});
+
 app.UseAuthorization();
 app.UseMiddleware<PhotoAevumStudio.Api.Middleware.AuditLoggingMiddleware>();
 app.MapControllers();

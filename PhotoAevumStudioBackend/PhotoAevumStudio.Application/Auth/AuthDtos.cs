@@ -24,8 +24,11 @@ public record RegisterRequest(
 /// Successful login response. The Blazor frontend stores the Token and uses it
 /// as a Bearer header on all subsequent API calls.
 /// </summary>
+public record ChangePasswordRequest(string CurrentPassword, string NewPassword, string ConfirmPassword);
+
 public record LoginResponse(
     string Token,
     string Role,
     string FullName,
-    DateTime ExpiresAt);
+    DateTime ExpiresAt,
+    bool MustChangePassword);

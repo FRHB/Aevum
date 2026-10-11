@@ -11,6 +11,7 @@ public class RegisterRequestValidator : AbstractValidator<RegisterRequest>
         RuleFor(x => x.LastName).NotEmpty().MaximumLength(100);
         RuleFor(x => x.Email).NotEmpty().EmailAddress();
         RuleFor(x => x.Password).NotEmpty().MinimumLength(8);
+        RuleFor(x => x.Password).MeetsPasswordPolicy();
         RuleFor(x => x.Role).Must(role => AppRoles.All.Contains(role))
             .WithMessage($"Role must be one of: {string.Join(", ", AppRoles.All)}");
     }

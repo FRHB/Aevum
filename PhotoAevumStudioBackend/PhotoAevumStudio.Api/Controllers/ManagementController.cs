@@ -6,7 +6,7 @@ namespace PhotoAevumStudio.Api.Controllers;
 
 [ApiController]
 [Route("api/[controller]")]
-[Authorize] // All management data requires authentication
+[Authorize(Policy = "StaffOrAbove")] // All management data requires authentication
 public class ManagementController : ControllerBase
 {
     private readonly IStudioManagementService _service;
