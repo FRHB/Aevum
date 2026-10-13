@@ -38,7 +38,8 @@ if (string.IsNullOrWhiteSpace(connectionString))
 builder.Services.AddDbContext<ApplicationDbContext>(options =>
     options.UseSqlServer(
         connectionString,
-        sql => sql.EnableRetryOnFailure()));
+        sql => sql.MigrationsAssembly("PhotoAevumStudio.Infrastructure")
+                  .EnableRetryOnFailure()));
 
 // ── Identity ──────────────────────────────────────────────────────────────────
 

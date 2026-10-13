@@ -13,7 +13,7 @@ using System.Reflection;
 [assembly: System.Reflection.AssemblyCompanyAttribute("PhotoAevumStudio.Api.Tests")]
 [assembly: System.Reflection.AssemblyConfigurationAttribute("Debug")]
 [assembly: System.Reflection.AssemblyFileVersionAttribute("1.0.0.0")]
-[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+2c822679efbb359b0f1b7469186bdd68e0b05038")]
+[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+c3dbbacab4fecc371b33edb65aa43453422db590")]
 [assembly: System.Reflection.AssemblyProductAttribute("PhotoAevumStudio.Api.Tests")]
 [assembly: System.Reflection.AssemblyTitleAttribute("PhotoAevumStudio.Api.Tests")]
 [assembly: System.Reflection.AssemblyVersionAttribute("1.0.0.0")]
