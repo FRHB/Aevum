@@ -1,15 +1,11 @@
 using Microsoft.AspNetCore.Authorization;
-using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.RateLimiting;
-using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Caching.Memory;
 using Microsoft.IdentityModel.Tokens;
 using PhotoAevumStudio.Application.Auth;
-using PhotoAevumStudio.Application.Entities;
-using PhotoAevumStudio.Application.Interfaces;
 using PhotoAevumStudio.Application.DTOs;
-using PhotoAevumStudio.Infrastructure.Data;
+using PhotoAevumStudio.Application.Interfaces;
 using System.IdentityModel.Tokens.Jwt;
 using System.Security.Claims;
 using System.Security.Cryptography;
@@ -22,30 +18,24 @@ namespace PhotoAevumStudio.Api.Controllers;
 [Produces("application/json")]
 public class AuthController : ControllerBase
 {
-    private readonly UserManager<ApplicationUser> _userManager;
-    private readonly SignInManager<ApplicationUser> _signInManager;
+    private readonly ISqlAuthService _sqlAuthService;
     private readonly IConfiguration _configuration;
     private readonly ILogger<AuthController> _logger;
     private readonly IMemoryCache _cache;
     private readonly IEmailService _emailService;
-    private readonly ApplicationDbContext _dbContext;
 
     public AuthController(
-        UserManager<ApplicationUser> userManager,
-        SignInManager<ApplicationUser> signInManager,
+        ISqlAuthService sqlAuthService,
         IConfiguration configuration,
         ILogger<AuthController> logger,
         IMemoryCache cache,
-        IEmailService emailService,
-        ApplicationDbContext dbContext)
+        IEmailService emailService)
     {
-        _userManager = userManager;
-        _signInManager = signInManager;
+        _sqlAuthService = sqlAuthService;
         _configuration = configuration;
         _logger = logger;
         _cache = cache;
         _emailService = emailService;
-        _dbContext = dbContext;
     }
 
     [HttpPost("send-verification")]
@@ -54,7 +44,6 @@ public class AuthController : ControllerBase
     {
         if (string.IsNullOrWhiteSpace(request.Email)) return BadRequest("Email is required.");
 
-        // Cryptographically secure 6-digit code (System.Random is predictable).
         var code = RandomNumberGenerator.GetInt32(100000, 1000000).ToString();
         _cache.Set($"VerificationCode_{request.Email}", code, TimeSpan.FromMinutes(10));
 
@@ -86,19 +75,15 @@ public class AuthController : ControllerBase
     {
         if (string.IsNullOrWhiteSpace(request.Email)) return BadRequest("Email is required.");
 
-        var user = await _userManager.FindByEmailAsync(request.Email);
-        if (user != null)
-        {
-            var code = RandomNumberGenerator.GetInt32(100000, 1000000).ToString();
-            _cache.Set($"ResetCode_{request.Email}", code, TimeSpan.FromMinutes(10));
-            _logger.LogInformation("Password reset code for {Email}: {Code}", request.Email, code);
+        var code = RandomNumberGenerator.GetInt32(100000, 1000000).ToString();
+        _cache.Set($"ResetCode_{request.Email}", code, TimeSpan.FromMinutes(10));
+        _logger.LogInformation("Password reset code for {Email}: {Code}", request.Email, code);
 
-            await _emailService.SendEmailAsync(
-                request.Email,
-                "Photo Aevum Studio - Password Reset Code",
-                $"<p>Your password reset code is: <strong>{code}</strong></p><p>This code will expire in 10 minutes.</p>",
-                isHtml: true);
-        }
+        await _emailService.SendEmailAsync(
+            request.Email,
+            "Photo Aevum Studio - Password Reset Code",
+            $"<p>Your password reset code is: <strong>{code}</strong></p><p>This code will expire in 10 minutes.</p>",
+            isHtml: true);
 
         return Ok(new { Message = "If an account with that email exists, a reset code was sent." });
     }
@@ -112,25 +97,16 @@ public class AuthController : ControllerBase
             return BadRequest(new ProblemDetails { Title = "Invalid or expired reset code", Status = 400 });
         }
 
-        var user = await _userManager.FindByEmailAsync(request.Email);
-        if (user is null)
-            return BadRequest(new ProblemDetails { Title = "Account not found", Status = 400 });
-
-        var resetToken = await _userManager.GeneratePasswordResetTokenAsync(user);
-        var result = await _userManager.ResetPasswordAsync(user, resetToken, request.NewPassword);
-        if (!result.Succeeded)
+        var (success, message) = await _sqlAuthService.ResetPasswordAsync(request.Email, request.NewPassword);
+        if (!success)
             return BadRequest(new ProblemDetails
             {
                 Title = "Password reset failed",
-                Detail = string.Join("; ", result.Errors.Select(e => e.Description)),
+                Detail = message,
                 Status = 400
             });
 
-        user.MustChangePassword = false;
-        user.PasswordChangedAt = DateTime.UtcNow;
-        await _userManager.UpdateAsync(user);
         _cache.Remove($"ResetCode_{request.Email}");
-
         return Ok(new { Message = "Password has been successfully reset." });
     }
 
@@ -143,23 +119,14 @@ public class AuthController : ControllerBase
             return BadRequest(new ProblemDetails { Title = "Invalid or expired verification code", Status = 400 });
         }
 
-        var user = new ApplicationUser
-        {
-            UserName = request.Email,
-            Email = request.Email,
-            FirstName = request.FirstName,
-            LastName = request.LastName,
-            MiddleName = request.MiddleName,
-            EmailConfirmed = true
-        };
+        var (success, message, customerId) = await _sqlAuthService.RegisterCustomerAsync(
+            request.FirstName, request.LastName, request.MiddleName, request.Email, null, request.Password);
 
-        var result = await _userManager.CreateAsync(user, request.Password);
-        if (!result.Succeeded)
-            return BadRequest(new ProblemDetails { Title = "Registration failed", Detail = string.Join("; ", result.Errors.Select(e => e.Description)) });
+        if (!success)
+            return BadRequest(new ProblemDetails { Title = "Registration failed", Detail = message, Status = 400 });
 
-        await _userManager.AddToRoleAsync(user, AppRoles.Customer);
         _cache.Remove($"VerificationCode_{request.Email}");
-        return Ok(new { Message = "Customer registered successfully." });
+        return Ok(new { Message = "Customer registered successfully.", CustomerId = customerId });
     }
 
     [HttpPost("login")]
@@ -167,43 +134,46 @@ public class AuthController : ControllerBase
     [EnableRateLimiting("LoginPolicy")]
     public async Task<IActionResult> Login([FromBody] LoginRequest request)
     {
-        var user = await _userManager.FindByEmailAsync(request.UserId)
-                   ?? await _userManager.FindByNameAsync(request.UserId)
-                   ?? await _userManager.Users.FirstOrDefaultAsync(u => u.StudioId == request.UserId);
+        var authResult = await _sqlAuthService.AuthenticateAsync(request.UserId, request.Password);
 
-        if (user is null)
+        if (!authResult.Success)
         {
-            _logger.LogWarning("Failed login attempt (unknown account).");
+            _logger.LogWarning("Failed login attempt for {UserId}: {Error}", request.UserId, authResult.ErrorMessage);
             return InvalidCredentials();
         }
 
-        // lockoutOnFailure: true increments the failed-attempt counter and locks the
-        // account once Lockout.MaxFailedAccessAttempts is reached (see Program.cs).
-        var result = await _signInManager.CheckPasswordSignInAsync(user, request.Password, lockoutOnFailure: true);
+        var user = authResult.User!;
 
-        if (!result.Succeeded)
+        // 1. First-time login check for Admin and Employee accounts:
+        // Do not issue the standard JWT or grant access to the system.
+        // Instead, return RequiresPasswordChange directing frontend to "Change Password" screen.
+        if (authResult.RequiresPasswordChange)
         {
-            if (result.IsLockedOut)
-                _logger.LogWarning("Login blocked: account {UserId} is locked out.", user.Id);
-            else
-                _logger.LogWarning("Failed login attempt for account {UserId}.", user.Id);
-
-            // Same response for wrong ID, wrong password and locked account,
-            // so callers can't tell which accounts exist or are locked.
-            return InvalidCredentials();
+            _logger.LogInformation("Account {UserId} requires initial password change. JWT withheld.", user.Id);
+            return Ok(new LoginResponse(
+                Token: null,
+                Role: user.Role,
+                FullName: user.FullName,
+                ExpiresAt: null,
+                MustChangePassword: true,
+                RequiresPasswordChange: true,
+                UserId: user.Id));
         }
 
-        var roles = await _userManager.GetRolesAsync(user);
-        var token = BuildJwt(user, roles);
+        // 2. Standard login verified against stored hashes rather than plain text.
+        var roles = new List<string> { user.Role };
+        var token = BuildJwt(user.Id, user.Email, user.FullName, user.Id, roles);
 
-        _logger.LogInformation("Successful login for {Email} ({Role})", user.Email, string.Join(',', roles));
+        _logger.LogInformation("Successful login for {UserId} ({Role})", user.Id, user.Role);
 
         return Ok(new LoginResponse(
             Token: token.Token,
-            Role: roles.FirstOrDefault() ?? string.Empty,
+            Role: user.Role,
             FullName: user.FullName,
             ExpiresAt: token.ExpiresAt,
-            MustChangePassword: user.MustChangePassword));
+            MustChangePassword: false,
+            RequiresPasswordChange: false,
+            UserId: user.Id));
     }
 
     private IActionResult InvalidCredentials() =>
@@ -213,6 +183,38 @@ public class AuthController : ControllerBase
             Detail = "Invalid credentials.",
             Status = StatusCodes.Status401Unauthorized
         });
+
+    [HttpPost("initial-password-change")]
+    [AllowAnonymous]
+    public async Task<IActionResult> InitialPasswordChange([FromBody] InitialPasswordChangeRequest request)
+    {
+        if (string.IsNullOrWhiteSpace(request.UserId) || string.IsNullOrWhiteSpace(request.CurrentPassword) || string.IsNullOrWhiteSpace(request.NewPassword))
+            return BadRequest(new ProblemDetails { Title = "Validation Error", Detail = "All fields are required.", Status = 400 });
+
+        if (request.NewPassword.Length < 8)
+            return BadRequest(new ProblemDetails { Title = "Validation Error", Detail = "Password must be at least 8 characters long.", Status = 400 });
+
+        if (!string.IsNullOrEmpty(request.ConfirmPassword) && request.NewPassword != request.ConfirmPassword)
+            return BadRequest(new ProblemDetails { Title = "Validation Error", Detail = "Passwords do not match.", Status = 400 });
+
+        var (success, message) = await _sqlAuthService.ChangeInitialPasswordAsync(
+            request.UserId, request.CurrentPassword, request.NewPassword);
+
+        if (!success)
+            return BadRequest(new ProblemDetails
+            {
+                Title = "Password change failed",
+                Detail = message,
+                Status = 400
+            });
+
+        return Ok(new { Success = true, Message = message });
+    }
+
+    [HttpPost("first-login/change-password")]
+    [AllowAnonymous]
+    public Task<IActionResult> FirstLoginChangePassword([FromBody] InitialPasswordChangeRequest request)
+        => InitialPasswordChange(request);
 
     [HttpPost("register")]
     [Authorize(Roles = AppRoles.Admin)]
@@ -235,42 +237,36 @@ public class AuthController : ControllerBase
                 Status = StatusCodes.Status400BadRequest
             });
 
-        var user = new ApplicationUser
-        {
-            UserName = request.Email,
-            Email = request.Email,
-            FirstName = request.FirstName,
-            LastName = request.LastName,
-            MiddleName = request.MiddleName,
-            StudioId = request.StudioId,
-            EmailConfirmed = true
-        };
-
-        var result = await _userManager.CreateAsync(user, request.Password);
-        if (!result.Succeeded)
-        {
-            var errors = result.Errors.Select(e => e.Description);
-            return BadRequest(new ProblemDetails
-            {
-                Title = "Registration failed",
-                Detail = string.Join("; ", errors),
-                Status = StatusCodes.Status400BadRequest
-            });
-        }
-
-        await _userManager.AddToRoleAsync(user, request.Role);
         if (request.Role == AppRoles.Employee)
         {
-            _dbContext.Employees.Add(new Employee { IdentityUserId = user.Id });
-            await _dbContext.SaveChangesAsync();
-        }
-        _logger.LogInformation("Created {Role} account for {Email}", request.Role, user.Email);
+            var (success, message) = await _sqlAuthService.RegisterEmployeeAsync(
+                request.StudioId!, request.FirstName, request.LastName, request.MiddleName, request.Email, request.Password);
 
-        return StatusCode(StatusCodes.Status201Created,
-            new { user.Id, user.Email, user.FullName, Role = request.Role });
+            if (!success)
+                return BadRequest(new ProblemDetails { Title = "Registration failed", Detail = message, Status = 400 });
+
+            _logger.LogInformation("Created Employee account {EmployeeId} ({Email})", request.StudioId, request.Email);
+            return StatusCode(StatusCodes.Status201Created,
+                new { Id = request.StudioId, Email = request.Email, Role = request.Role });
+        }
+
+        if (request.Role == AppRoles.Customer)
+        {
+            var (success, message, customerId) = await _sqlAuthService.RegisterCustomerAsync(
+                request.FirstName, request.LastName, request.MiddleName, request.Email, null, request.Password);
+
+            if (!success)
+                return BadRequest(new ProblemDetails { Title = "Registration failed", Detail = message, Status = 400 });
+
+            _logger.LogInformation("Created Customer account {CustomerId} ({Email})", customerId, request.Email);
+            return StatusCode(StatusCodes.Status201Created,
+                new { Id = customerId, Email = request.Email, Role = request.Role });
+        }
+
+        return BadRequest(new ProblemDetails { Title = "Unsupported role registration", Status = 400 });
     }
 
-    private (string Token, DateTime ExpiresAt) BuildJwt(ApplicationUser user, IList<string> roles)
+    private (string Token, DateTime ExpiresAt) BuildJwt(string userId, string email, string fullName, string studioId, IList<string> roles)
     {
         var key = _configuration["Jwt:Key"] ?? throw new InvalidOperationException("Jwt:Key is not configured.");
         var issuer = _configuration["Jwt:Issuer"] ?? throw new InvalidOperationException("Jwt:Issuer is not configured.");
@@ -279,14 +275,14 @@ public class AuthController : ControllerBase
 
         var claims = new List<Claim>
         {
-            new(JwtRegisteredClaimNames.Sub,   user.Id),
-            new(JwtRegisteredClaimNames.Email, user.Email ?? string.Empty),
+            new(JwtRegisteredClaimNames.Sub,   userId),
+            new(JwtRegisteredClaimNames.Email, email),
             new(JwtRegisteredClaimNames.Jti,   Guid.NewGuid().ToString()),
-            new(ClaimTypes.NameIdentifier,     user.Id),
-            new(ClaimTypes.Name,               user.UserName ?? string.Empty),
-            new("full_name",                   user.FullName),
-            new("studio_id",                   user.StudioId ?? string.Empty),
-            new("must_change_password",        user.MustChangePassword ? "true" : "false"),
+            new(ClaimTypes.NameIdentifier,     userId),
+            new(ClaimTypes.Name,               email),
+            new("full_name",                   fullName),
+            new("studio_id",                   studioId),
+            new("must_change_password",        "false"),
         };
 
         foreach (var role in roles) claims.Add(new Claim(ClaimTypes.Role, role));
@@ -302,27 +298,27 @@ public class AuthController : ControllerBase
     }
 
     [HttpPost("change-password")]
-    [Authorize(Policy = "AllowPasswordChange")]
+    [Authorize]
     public async Task<IActionResult> ChangePassword([FromBody] ChangePasswordRequest request)
     {
-        var user = await _userManager.FindByIdAsync(User.FindFirstValue(ClaimTypes.NameIdentifier)!);
-        if (user is null) return Unauthorized();
+        string? userId = User.FindFirstValue(ClaimTypes.NameIdentifier)
+                         ?? User.FindFirstValue("studio_id")
+                         ?? User.FindFirstValue(ClaimTypes.Name);
 
-        var result = await _userManager.ChangePasswordAsync(user, request.CurrentPassword, request.NewPassword);
-        if (!result.Succeeded)
+        if (string.IsNullOrWhiteSpace(userId))
+            return Unauthorized();
+
+        var (success, message) = await _sqlAuthService.ChangeInitialPasswordAsync(
+            userId, request.CurrentPassword, request.NewPassword);
+
+        if (!success)
             return BadRequest(new ProblemDetails
             {
                 Title = "Password change failed",
-                Detail = string.Join("; ", result.Errors.Select(e => e.Description)),
+                Detail = message,
                 Status = StatusCodes.Status400BadRequest
             });
 
-        user.MustChangePassword = false;
-        user.PasswordChangedAt = DateTime.UtcNow;
-        await _userManager.UpdateAsync(user);
-
-        var roles = await _userManager.GetRolesAsync(user);
-        var token = BuildJwt(user, roles);   // fresh token with must_change_password = "false"
-        return Ok(new { token.Token, token.ExpiresAt, MustChangePassword = false });
+        return Ok(new { Success = true, Message = message });
     }
 }

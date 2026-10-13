@@ -60,6 +60,12 @@
 
         var result = await AuthService.LoginAsync(loginModel.UserId, loginModel.Password, CancellationToken.None);
 
+        if (result.RequiresPasswordChange)
+        {
+            NavManager.NavigateTo($"/change-password?userId={Uri.EscapeDataString(result.UserId ?? loginModel.UserId)}");
+            return;
+        }
+
         if (result.Success)
         {
             var authState = await AuthStateProvider.GetAuthenticationStateAsync();

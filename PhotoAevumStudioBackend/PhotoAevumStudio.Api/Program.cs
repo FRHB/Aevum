@@ -44,7 +44,7 @@ builder.Services.AddDbContext<ApplicationDbContext>(options =>
 
 // ── Identity ──────────────────────────────────────────────────────────────────
 
-builder.Services.AddScoped<Microsoft.AspNetCore.Identity.IPasswordHasher<ApplicationUser>, PhotoAevumStudio.Infrastructure.Auth.PlaintextPasswordHasher>();
+builder.Services.AddScoped<Microsoft.AspNetCore.Identity.IPasswordHasher<ApplicationUser>, PhotoAevumStudio.Infrastructure.Auth.BCryptPasswordHasher>();
 builder.Services.AddIdentity<ApplicationUser, IdentityRole>(options =>
 {
     options.Password.RequiredLength         = 8;
@@ -119,12 +119,27 @@ builder.Services.AddCors(options =>
     {
         var origins = builder.Configuration
             .GetSection("Cors:AllowedOrigins")
-            .Get<string[]>() ?? ["https://localhost:7001"];
+            .Get<string[]>() ?? [
+                "https://localhost:7128",
+                "http://localhost:5181",
+                "https://localhost:7001",
+                "http://localhost:5000",
+                "https://localhost:5001"
+            ];
 
         policy.WithOrigins(origins)
               .AllowAnyHeader()
               .AllowAnyMethod()
-              .AllowCredentials();
+              .AllowCredentials()
+              .SetIsOriginAllowed(origin =>
+              {
+                  if (Uri.TryCreate(origin, UriKind.Absolute, out var uri))
+                  {
+                      return uri.Host.Equals("localhost", StringComparison.OrdinalIgnoreCase)
+                          || uri.Host.Equals("127.0.0.1", StringComparison.OrdinalIgnoreCase);
+                  }
+                  return false;
+              });
     });
 });
 
@@ -141,6 +156,7 @@ builder.Services.AddScoped<IStudioManagementService, StudioManagementService>();
 builder.Services.AddScoped<IStorageProvider, LocalStorageProvider>();
 builder.Services.Configure<PhotoAevumStudio.Application.Models.SmtpSettings>(builder.Configuration.GetSection("SmtpSettings"));
 builder.Services.AddScoped<PhotoAevumStudio.Application.Interfaces.IEmailService, PhotoAevumStudio.Infrastructure.Services.EmailService>();
+builder.Services.AddScoped<PhotoAevumStudio.Application.Interfaces.ISqlAuthService, PhotoAevumStudio.Infrastructure.Services.SqlAuthService>();
 
 // ═════════════════════════════════════════════════════════════════════════════
 
@@ -201,11 +217,19 @@ app.UseExceptionHandler(errorApp =>
 if (app.Environment.IsDevelopment())
     app.MapOpenApi();
 
-app.UseHttpsRedirection();
+if (!app.Environment.IsEnvironment("Testing"))
+    app.UseHttpsRedirection();
 app.UseCors("BlazorFrontend");
 app.UseRateLimiter();
 app.UseAuthentication(); // Must come before UseAuthorization
-var passwordChangeExempt = new[] { "/api/auth/change-password", "/api/auth/login", "/api/auth/logout" };
+var passwordChangeExempt = new[]
+{
+    "/api/auth/change-password",
+    "/api/auth/initial-password-change",
+    "/api/auth/first-login/change-password",
+    "/api/auth/login",
+    "/api/auth/logout"
+};
 app.Use(async (ctx, next) =>
 {
     if (ctx.User.Identity?.IsAuthenticated == true
@@ -245,51 +269,30 @@ app.MapGet("/health/db", async (ApplicationDbContext dbContext) =>
 
 await using (var scope = app.Services.CreateAsyncScope())
 {
-    var db          = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
-    var roleManager = scope.ServiceProvider.GetRequiredService<RoleManager<IdentityRole>>();
-    var userManager = scope.ServiceProvider.GetRequiredService<UserManager<ApplicationUser>>();
-
-    var logger      = scope.ServiceProvider.GetRequiredService<ILogger<Program>>();
+    var db     = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+    var logger = scope.ServiceProvider.GetRequiredService<ILogger<Program>>();
 
     try
     {
-        // Apply any pending EF migrations automatically in Development
-        if (app.Environment.IsDevelopment())
+        if (await db.Database.CanConnectAsync())
         {
-            try
-            {
-                await DatabaseSeeder.ReconcileMigrationHistoryAsync(db);
-                await db.Database.MigrateAsync();
-            }
-            catch (Microsoft.Data.SqlClient.SqlException ex) when (ex.Number == 2714)
-            {
-                // Object already exists collision — re-run reconciliation and complete migrations
-                await DatabaseSeeder.ReconcileMigrationHistoryAsync(db);
-                await db.Database.MigrateAsync();
-            }
+            logger.LogInformation("Successfully connected to the local SQL Server database.");
+            await DatabaseSeeder.EnsureStoredProceduresAsync(db);
         }
-
-        // Ensure required database stored procedures (e.g. usp_CreateEventAppointment) exist
-        await DatabaseSeeder.EnsureStoredProceduresAsync(db);
-
-        var adminEmail    = builder.Configuration["Seed:AdminEmail"]    ?? "admin@photoaevum.studio";
-        
-        var adminPassword = builder.Configuration["Seed:AdminPassword"];
-        if (!app.Environment.IsDevelopment() && string.IsNullOrWhiteSpace(adminPassword))
+        else
         {
-            throw new InvalidOperationException("CRITICAL: Seed:AdminPassword is required outside of Development to prevent fallback passwords.");
+            logger.LogWarning("Unable to connect to local SQL Server database on startup.");
         }
-        adminPassword ??= "Axiom@2026";
-
-        await DatabaseSeeder.SeedAsync(roleManager, userManager, db, adminEmail, adminPassword);
     }
     catch (Exception ex)
     {
-        logger.LogError(ex, "Database connection or migration failed during startup. The API server will continue running on ports 5001/5000, but database operations may fail until the database is reachable.");
+        logger.LogError(ex, "Database connection or initialization failed during startup. The API server will continue running, but database operations may fail until the database is reachable.");
     }
 }
 
 app.Run();
+
+public partial class Program { }
 
 
 

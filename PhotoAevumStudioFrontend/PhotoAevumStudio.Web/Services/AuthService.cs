@@ -8,8 +8,6 @@ public sealed class AuthService : IAuthService
     private readonly HttpClient _http;
     private readonly AevumAuthenticationStateProvider _authStateProvider;
 
-    // Use a named/typed client that does NOT go through AuthHttpHandler
-    // (we don't have a token yet when logging in)
     public AuthService(IHttpClientFactory httpClientFactory,
                        AevumAuthenticationStateProvider authStateProvider)
     {
@@ -32,7 +30,7 @@ public sealed class AuthService : IAuthService
             {
                 var problem = await response.Content
                     .ReadFromJsonAsync<ProblemDetails>(cancellationToken: cancellationToken);
-                return new AuthResult(false, Error: problem?.Detail ?? "Invalid credentials.");
+                return new AuthResult(false, Error: problem?.GetErrorMessage("Invalid credentials.") ?? "Invalid credentials.");
             }
 
             var loginResponse = await response.Content
@@ -40,6 +38,19 @@ public sealed class AuthService : IAuthService
 
             if (loginResponse is null)
                 return new AuthResult(false, Error: "Unexpected server response.");
+
+            // First-time login: JWT is not issued; redirect to password change screen
+            if (loginResponse.RequiresPasswordChange)
+            {
+                return new AuthResult(
+                    true,
+                    RequiresPasswordChange: true,
+                    UserId: loginResponse.UserId ?? userId,
+                    Role: loginResponse.Role);
+            }
+
+            if (string.IsNullOrWhiteSpace(loginResponse.Token))
+                return new AuthResult(false, Error: "Token missing from server response.");
 
             await _authStateProvider.NotifyUserLoginAsync(loginResponse.Token);
             return new AuthResult(true, Token: loginResponse.Token);
@@ -53,7 +64,33 @@ public sealed class AuthService : IAuthService
     public async Task<bool> LoginAsync(string username, string password)
     {
         var result = await LoginAsync(username, password, CancellationToken.None);
-        return result.Success;
+        return result.Success && !result.RequiresPasswordChange;
+    }
+
+    public async Task<AuthResult> ChangeInitialPasswordAsync(
+        string userId, string currentPassword, string newPassword, string confirmPassword,
+        CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            var response = await _http.PostAsJsonAsync(
+                "api/auth/initial-password-change",
+                new InitialPasswordChangeRequest(userId, currentPassword, newPassword, confirmPassword),
+                cancellationToken);
+
+            if (!response.IsSuccessStatusCode)
+            {
+                var problem = await response.Content
+                    .ReadFromJsonAsync<ProblemDetails>(cancellationToken: cancellationToken);
+                return new AuthResult(false, Error: problem?.GetErrorMessage("Password change failed.") ?? "Password change failed.");
+            }
+
+            return new AuthResult(true);
+        }
+        catch (HttpRequestException ex)
+        {
+            return new AuthResult(false, Error: $"Cannot reach the API server: {ex.Message}");
+        }
     }
 
     public async Task LogoutAsync(CancellationToken cancellationToken = default)
@@ -137,6 +174,27 @@ public sealed class AuthService : IAuthService
         }
     }
 
-    // Local record so we don't need a NuGet dep for ProblemDetails deserialization
-    private sealed record ProblemDetails(string? Detail);
+    private sealed record ProblemDetails(
+        string? Title = null,
+        string? Detail = null,
+        Dictionary<string, string[]>? Errors = null)
+    {
+        public string GetErrorMessage(string fallback)
+        {
+            if (Errors is { Count: > 0 })
+            {
+                var firstError = Errors.Values.SelectMany(v => v).FirstOrDefault(e => !string.IsNullOrWhiteSpace(e));
+                if (!string.IsNullOrWhiteSpace(firstError))
+                    return firstError;
+            }
+
+            if (!string.IsNullOrWhiteSpace(Detail))
+                return Detail;
+
+            if (!string.IsNullOrWhiteSpace(Title) && Title != "One or more validation errors occurred.")
+                return Title;
+
+            return fallback;
+        }
+    }
 }

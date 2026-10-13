@@ -430,6 +430,13 @@
         // If it fails, no state is mutated; the user stays on the login view.
         var result = await AuthService.LoginAsync(_loginForm.Email, _loginForm.Password, CancellationToken.None);
 
+        if (result.RequiresPasswordChange)
+        {
+            Close();
+            Nav.NavigateTo($"/change-password?userId={Uri.EscapeDataString(result.UserId ?? _loginForm.Email)}");
+            return;
+        }
+
         if (result.Success)
         {
             // ACID Durability: token is persisted by AevumAuthenticationStateProvider.

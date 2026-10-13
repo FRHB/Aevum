@@ -18,17 +18,26 @@ public record RegisterRequest(
     string Role,
     string? StudioId = null);
 
+public record ChangePasswordRequest(string CurrentPassword, string NewPassword, string ConfirmPassword);
+
+public record InitialPasswordChangeRequest(
+    string UserId,
+    string CurrentPassword,
+    string NewPassword,
+    string ConfirmPassword);
+
 // ─── Response DTOs ───────────────────────────────────────────────────────────
 
 /// <summary>
 /// Successful login response. The Blazor frontend stores the Token and uses it
 /// as a Bearer header on all subsequent API calls.
+/// When RequiresPasswordChange is true, no Token is issued.
 /// </summary>
-public record ChangePasswordRequest(string CurrentPassword, string NewPassword, string ConfirmPassword);
-
 public record LoginResponse(
-    string Token,
-    string Role,
-    string FullName,
-    DateTime ExpiresAt,
-    bool MustChangePassword);
+    string? Token,
+    string? Role,
+    string? FullName,
+    DateTime? ExpiresAt,
+    bool MustChangePassword = false,
+    bool RequiresPasswordChange = false,
+    string? UserId = null);

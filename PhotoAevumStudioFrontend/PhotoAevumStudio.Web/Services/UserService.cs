@@ -8,28 +8,9 @@ namespace PhotoAevumStudio.Web.Services;
 /// </summary>
 public sealed class UserService : IUserService
 {
-    // ── Seed data ────────────────────────────────────────────────────────────
-
-    private readonly List<Admin> _admins = new()
-    {
-        new Admin { Id = "SADM-001", Name = "Root Administrator", Email = "sadm@aevumstudio.com", Role = "Super Admin" },
-        new Admin { Id = "ADM-001",  Name = "Maria Santos",       Email = "msantos@aevumstudio.com", Role = "Admin" },
-        new Admin { Id = "ADM-002",  Name = "Jose Reyes",         Email = "jreyes@aevumstudio.com",  Role = "Admin" },
-    };
-
-    private readonly List<Employee> _employees = new()
-    {
-        new Employee { Id = "EMP-001", Name = "Ana Cruz",    Email = "acruz@aevumstudio.com",  Position = "Photographer",       Department = "Production" },
-        new Employee { Id = "EMP-002", Name = "Ben Torres",  Email = "btorres@aevumstudio.com", Position = "Photo Editor",      Department = "Post-Production" },
-        new Employee { Id = "EMP-003", Name = "Clara Lim",   Email = "clim@aevumstudio.com",    Position = "Studio Coordinator", Department = "Operations" },
-    };
-
-    private readonly List<Customer> _customers = new()
-    {
-        new Customer { Id = "CUST-0001", Name = "David Kim",    Email = "dkim@email.com",    Phone = "+63 912-345-6789", JoinDate = new DateTime(2025, 3, 10) },
-        new Customer { Id = "CUST-0002", Name = "Elena Gomez",  Email = "egomez@email.com",  Phone = "+63 917-654-3210", JoinDate = new DateTime(2025, 6, 22) },
-        new Customer { Id = "CUST-0003", Name = "Frank Uy",     Email = "fuy@email.com",     Phone = "+63 919-111-2222", JoinDate = new DateTime(2026, 1,  5)  },
-    };
+    private readonly List<Admin> _admins = new();
+    private readonly List<Employee> _employees = new();
+    private readonly List<Customer> _customers = new();
 
     // ── Admins ───────────────────────────────────────────────────────────────
 

@@ -1,0 +1,332 @@
+using Microsoft.Data.SqlClient;
+using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.Logging.Abstractions;
+using PhotoAevumStudio.Application.Interfaces;
+using PhotoAevumStudio.Infrastructure.Services;
+using Xunit;
+
+namespace PhotoAevumStudio.Api.Tests;
+
+[Collection("DatabaseIntegration")]
+public class SqlAuthServiceTests
+{
+    private readonly IConfiguration _configuration;
+    private readonly SqlAuthService _authService;
+    private readonly string _connectionString;
+
+    public SqlAuthServiceTests()
+    {
+        var configBuilder = new ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?>
+            {
+                ["ConnectionStrings:DefaultConnection"] = "Server=localhost\\SQLEXPRESS; Database=PhotoAevumStudio; Trusted_Connection=True; TrustServerCertificate=True; MultipleActiveResultSets=True;"
+            });
+        _configuration = configBuilder.Build();
+        _connectionString = _configuration.GetConnectionString("DefaultConnection")!;
+        _authService = new SqlAuthService(_configuration, NullLogger<SqlAuthService>.Instance);
+    }
+
+    [Fact]
+    public async Task CanConnectToLocalDatabase()
+    {
+        await using var conn = new SqlConnection(_connectionString);
+        await conn.OpenAsync();
+        Assert.Equal(System.Data.ConnectionState.Open, conn.State);
+    }
+
+    [Fact]
+    public async Task Admin_FirstLogin_And_PasswordHashingFlow_WorksEndToEnd()
+    {
+        // 1. Arrange: Ensure ADM-001 exists with isFirstLogin = 1 and password 'AxiomBit@2026'
+        await using (var conn = new SqlConnection(_connectionString))
+        {
+            await conn.OpenAsync();
+            const string resetSql = @"
+                IF EXISTS (SELECT 1 FROM dbo.Admin WHERE AdminID = 'ADM-001')
+                BEGIN
+                    UPDATE dbo.Admin
+                    SET AdminPassword = 'AxiomBit@2026', isFirstLogin = 1
+                    WHERE AdminID = 'ADM-001';
+                END
+                ELSE
+                BEGIN
+                    INSERT INTO dbo.Admin (AdminID, AdminRole, AdminFirstName, AdminLastName, AdminMiddleName, AdminPassword, isFirstLogin)
+                    VALUES ('ADM-001', 'Super Admin', 'Axiom', 'Bit', NULL, 'AxiomBit@2026', 1);
+                END";
+            await using var cmd = new SqlCommand(resetSql, conn);
+            await cmd.ExecuteNonQueryAsync();
+        }
+
+        try
+        {
+            // 2. First login attempt with temporary plain-text password
+            var firstLogin = await _authService.AuthenticateAsync("ADM-001", "AxiomBit@2026");
+            Assert.True(firstLogin.Success, "First login credentials should be accepted");
+            Assert.True(firstLogin.RequiresPasswordChange, "First login MUST require password change");
+            Assert.NotNull(firstLogin.User);
+            Assert.Equal("ADM-001", firstLogin.User.Id);
+
+            // 3. Attempt first login with WRONG password -> should fail
+            var wrongPassLogin = await _authService.AuthenticateAsync("ADM-001", "WrongPassword123!");
+            Assert.False(wrongPassLogin.Success);
+
+            // 4. Perform initial password change: sets new password, hashes with BCrypt, updates isFirstLogin to 0
+            const string newPassword = "NewSecurePassword2026!";
+            var (changeSuccess, changeMessage) = await _authService.ChangeInitialPasswordAsync(
+                "ADM-001", "AxiomBit@2026", newPassword);
+            Assert.True(changeSuccess, $"Password change should succeed: {changeMessage}");
+
+            // 5. Verify database state directly:
+            // isFirstLogin MUST be 0
+            // AdminPassword MUST be a valid BCrypt hash ($2a$ or $2b$)
+            await using (var conn = new SqlConnection(_connectionString))
+            {
+                await conn.OpenAsync();
+                const string verifySql = "SELECT AdminPassword, isFirstLogin FROM dbo.Admin WHERE AdminID = 'ADM-001';";
+                await using var cmd = new SqlCommand(verifySql, conn);
+                await using var reader = await cmd.ExecuteReaderAsync();
+                Assert.True(await reader.ReadAsync());
+
+                var storedHash = reader.GetString(0);
+                var isFirstLogin = reader.GetBoolean(1);
+
+                Assert.False(isFirstLogin, "isFirstLogin should now be false (0)");
+                Assert.StartsWith("$2", storedHash); // BCrypt prefix ($2a$, $2b$)
+                Assert.True(BCrypt.Net.BCrypt.Verify(newPassword, storedHash), "Stored hash must match new password");
+            }
+
+            // 6. Standard login with new password: should succeed without requiring password change
+            var standardLogin = await _authService.AuthenticateAsync("ADM-001", newPassword);
+            Assert.True(standardLogin.Success, "Standard login with new password must succeed");
+            Assert.False(standardLogin.RequiresPasswordChange, "Standard login must NOT require password change");
+            Assert.NotNull(standardLogin.User);
+
+            // 7. Standard login with old plain text password: MUST FAIL
+            var oldPlainLogin = await _authService.AuthenticateAsync("ADM-001", "AxiomBit@2026");
+            Assert.False(oldPlainLogin.Success, "Old plain text password must no longer work");
+        }
+        finally
+        {
+            // Reset ADM-001 so it remains ready for user first-login testing
+            await using var conn = new SqlConnection(_connectionString);
+            await conn.OpenAsync();
+            const string resetSql = @"
+                UPDATE dbo.Admin
+                SET AdminPassword = 'AxiomBit@2026', isFirstLogin = 1
+                WHERE AdminID = 'ADM-001';";
+            await using var cmd = new SqlCommand(resetSql, conn);
+            await cmd.ExecuteNonQueryAsync();
+        }
+    }
+
+    [Fact]
+    public async Task Employee_Creation_FirstLogin_And_PasswordChangeFlow_WorksEndToEnd()
+    {
+        const string testEmpId = "EMP-999";
+        const string testEmail = "testemployee999@photoaevum.studio";
+        const string tempPassword = "InitialEmpPassword123!";
+        const string newPassword = "UpdatedEmpSecurePass456!";
+
+        // Clean up before test
+        await using (var conn = new SqlConnection(_connectionString))
+        {
+            await conn.OpenAsync();
+            await using var cleanCmd = new SqlCommand("DELETE FROM dbo.Employee WHERE EmployeeID = @Id;", conn);
+            cleanCmd.Parameters.AddWithValue("@Id", testEmpId);
+            await cleanCmd.ExecuteNonQueryAsync();
+        }
+
+        try
+        {
+            // 1. Create employee via sp_CreateEmployee
+            var (regSuccess, regMsg) = await _authService.RegisterEmployeeAsync(
+                testEmpId, "Test", "Employee", null, testEmail, tempPassword);
+            Assert.True(regSuccess, $"Employee registration failed: {regMsg}");
+
+            // 2. First login attempt: must require password change
+            var firstLogin = await _authService.AuthenticateAsync(testEmpId, tempPassword);
+            Assert.True(firstLogin.Success);
+            Assert.True(firstLogin.RequiresPasswordChange);
+
+            // 3. Change password
+            var (changeSuccess, changeMsg) = await _authService.ChangeInitialPasswordAsync(
+                testEmpId, tempPassword, newPassword);
+            Assert.True(changeSuccess, $"Change password failed: {changeMsg}");
+
+            // 4. Standard login with new password
+            var standardLogin = await _authService.AuthenticateAsync(testEmpId, newPassword);
+            Assert.True(standardLogin.Success);
+            Assert.False(standardLogin.RequiresPasswordChange);
+
+            // 5. Old password must fail
+            var oldLogin = await _authService.AuthenticateAsync(testEmpId, tempPassword);
+            Assert.False(oldLogin.Success);
+        }
+        finally
+        {
+            // Clean up
+            await using var conn = new SqlConnection(_connectionString);
+            await conn.OpenAsync();
+            await using var cleanCmd = new SqlCommand("DELETE FROM dbo.Employee WHERE EmployeeID = @Id;", conn);
+            cleanCmd.Parameters.AddWithValue("@Id", testEmpId);
+            await cleanCmd.ExecuteNonQueryAsync();
+        }
+    }
+
+    [Fact]
+    public async Task Customer_Registration_And_BCryptVerification_WorksEndToEnd()
+    {
+        const string testEmail = "testcustomer_verify@photoaevum.studio";
+        const string password = "SecureCustomerPassword123!";
+
+        string? createdCustomerId = null;
+
+        // Clean up before test
+        await using (var conn = new SqlConnection(_connectionString))
+        {
+            await conn.OpenAsync();
+            await using var cleanCmd = new SqlCommand("DELETE FROM dbo.Customer WHERE CustomerEmail = @Email;", conn);
+            cleanCmd.Parameters.AddWithValue("@Email", testEmail);
+            await cleanCmd.ExecuteNonQueryAsync();
+        }
+
+        try
+        {
+            // 1. Register customer via sp_CreateCustomer
+            var (regSuccess, regMsg, customerId) = await _authService.RegisterCustomerAsync(
+                "Jane", "Customer", "M", testEmail, "09123456789", password);
+            Assert.True(regSuccess, $"Customer registration failed: {regMsg}");
+            Assert.NotNull(customerId);
+            createdCustomerId = customerId;
+
+            // 2. Verify password is stored as BCrypt hash
+            await using (var conn = new SqlConnection(_connectionString))
+            {
+                await conn.OpenAsync();
+                await using var cmd = new SqlCommand("SELECT CustomerPassword FROM dbo.Customer WHERE CustomerID = @Id;", conn);
+                cmd.Parameters.AddWithValue("@Id", customerId);
+                var storedPassword = (string?)await cmd.ExecuteScalarAsync();
+                Assert.NotNull(storedPassword);
+                Assert.StartsWith("$2", storedPassword);
+                Assert.True(BCrypt.Net.BCrypt.Verify(password, storedPassword));
+            }
+
+            // 3. Login with correct password
+            var loginResult = await _authService.AuthenticateAsync(testEmail, password);
+            Assert.True(loginResult.Success);
+            Assert.False(loginResult.RequiresPasswordChange);
+
+            // 4. Login with wrong password must fail
+            var wrongResult = await _authService.AuthenticateAsync(testEmail, "WrongPassword!");
+            Assert.False(wrongResult.Success);
+        }
+        finally
+        {
+            // Clean up
+            if (createdCustomerId != null)
+            {
+                await using var conn = new SqlConnection(_connectionString);
+                await conn.OpenAsync();
+                await using var cleanCmd = new SqlCommand("DELETE FROM dbo.Customer WHERE CustomerID = @Id;", conn);
+                cleanCmd.Parameters.AddWithValue("@Id", createdCustomerId);
+                await cleanCmd.ExecuteNonQueryAsync();
+            }
+        }
+    }
+
+    [Fact]
+    public async Task Admin_CanAuthenticate_UsingEmailPrefix()
+    {
+        // ADM-001 can authenticate using ADM-001@photoaevum.studio
+        var loginResult = await _authService.AuthenticateAsync("ADM-001@photoaevum.studio", "AxiomBit@2026");
+        Assert.True(loginResult.Success);
+        Assert.True(loginResult.RequiresPasswordChange);
+        Assert.Equal("ADM-001", loginResult.User?.Id);
+    }
+
+    [Fact]
+    public async Task Customer_StandardLogin_StrictlyRejects_UnHashedPlainTextInDatabase()
+    {
+        const string testCustId = "CUST-PLAIN";
+        const string testEmail = "plaincustomer@photoaevum.studio";
+        const string plainPass = "PlainTextPass123!";
+
+        await using (var conn = new SqlConnection(_connectionString))
+        {
+            await conn.OpenAsync();
+            await using var cleanCmd = new SqlCommand("DELETE FROM dbo.Customer WHERE CustomerID = @Id;", conn);
+            cleanCmd.Parameters.AddWithValue("@Id", testCustId);
+            await cleanCmd.ExecuteNonQueryAsync();
+
+            // Insert plain text password directly into database
+            const string insertSql = @"
+                INSERT INTO dbo.Customer (CustomerID, CustomerFirstName, CustomerLastName, CustomerEmail, CustomerPassword)
+                VALUES (@Id, 'Plain', 'User', @Email, @PlainPass);";
+            await using var insCmd = new SqlCommand(insertSql, conn);
+            insCmd.Parameters.AddWithValue("@Id", testCustId);
+            insCmd.Parameters.AddWithValue("@Email", testEmail);
+            insCmd.Parameters.AddWithValue("@PlainPass", plainPass);
+            await insCmd.ExecuteNonQueryAsync();
+        }
+
+        try
+        {
+            // Standard login must reject unhashed plain text passwords
+            var login = await _authService.AuthenticateAsync(testEmail, plainPass);
+            Assert.False(login.Success, "Standard login must reject passwords not stored as valid BCrypt hashes.");
+        }
+        finally
+        {
+            await using var conn = new SqlConnection(_connectionString);
+            await conn.OpenAsync();
+            await using var cleanCmd = new SqlCommand("DELETE FROM dbo.Customer WHERE CustomerID = @Id;", conn);
+            cleanCmd.Parameters.AddWithValue("@Id", testCustId);
+            await cleanCmd.ExecuteNonQueryAsync();
+        }
+    }
+
+    [Fact]
+    public async Task InactiveEmployee_Login_And_PasswordChange_IsRejected()
+    {
+        const string testEmpId = "EMP-INACT";
+        const string testEmail = "inactive@photoaevum.studio";
+        const string testPass = "InactiveEmp123!";
+
+        await using (var conn = new SqlConnection(_connectionString))
+        {
+            await conn.OpenAsync();
+            await using var cleanCmd = new SqlCommand("DELETE FROM dbo.Employee WHERE EmployeeID = @Id;", conn);
+            cleanCmd.Parameters.AddWithValue("@Id", testEmpId);
+            await cleanCmd.ExecuteNonQueryAsync();
+
+            const string insertSql = @"
+                INSERT INTO dbo.Employee (EmployeeID, EmployeeFirstName, EmployeeLastName, EmployeeEmail, EmployeePassword, EmployeeStatus, isFirstLogin)
+                VALUES (@Id, 'Inactive', 'Staff', @Email, @Pass, 'Inactive', 1);";
+            await using var insCmd = new SqlCommand(insertSql, conn);
+            insCmd.Parameters.AddWithValue("@Id", testEmpId);
+            insCmd.Parameters.AddWithValue("@Email", testEmail);
+            insCmd.Parameters.AddWithValue("@Pass", BCrypt.Net.BCrypt.HashPassword(testPass));
+            await insCmd.ExecuteNonQueryAsync();
+        }
+
+        try
+        {
+            var login = await _authService.AuthenticateAsync(testEmpId, testPass);
+            Assert.False(login.Success, "Inactive employee login must be rejected.");
+            Assert.Equal("Employee account is inactive.", login.ErrorMessage);
+
+            var (changeSuccess, changeMsg) = await _authService.ChangeInitialPasswordAsync(
+                testEmpId, testPass, "NewPass123456!");
+            Assert.False(changeSuccess, "Inactive employee password change must be rejected.");
+            Assert.Equal("Employee account is inactive.", changeMsg);
+        }
+        finally
+        {
+            await using var conn = new SqlConnection(_connectionString);
+            await conn.OpenAsync();
+            await using var cleanCmd = new SqlCommand("DELETE FROM dbo.Employee WHERE EmployeeID = @Id;", conn);
+            cleanCmd.Parameters.AddWithValue("@Id", testEmpId);
+            await cleanCmd.ExecuteNonQueryAsync();
+        }
+    }
+}

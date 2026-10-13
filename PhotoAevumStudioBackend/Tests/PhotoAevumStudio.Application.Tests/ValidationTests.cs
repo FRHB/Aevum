@@ -11,6 +11,7 @@ public class ValidationTests
     private readonly RegisterRequestValidator _registerValidator = new();
     private readonly ChangePasswordRequestValidator _changePasswordValidator = new();
     private readonly CustomerRegisterRequestValidator _customerRegisterValidator = new();
+    private readonly InitialPasswordChangeRequestValidator _initialPasswordValidator = new();
 
     [Theory]
     [InlineData("Valid1Pass")]
@@ -47,5 +48,29 @@ public class ValidationTests
         var model = new CustomerRegisterRequest("Alice", "Wonder", null, "alice@example.com", "Password123", "123456");
         var result = _customerRegisterValidator.TestValidate(model);
         result.ShouldNotHaveAnyValidationErrors();
+    }
+
+    [Fact]
+    public void InitialPasswordValidator_Accepts_Valid_Request()
+    {
+        var model = new InitialPasswordChangeRequest("ADM-001", "AxiomBit@2026", "NewSecurePassword2026!", "NewSecurePassword2026!");
+        var result = _initialPasswordValidator.TestValidate(model);
+        result.ShouldNotHaveAnyValidationErrors();
+    }
+
+    [Fact]
+    public void InitialPasswordValidator_Rejects_Mismatched_Passwords()
+    {
+        var model = new InitialPasswordChangeRequest("ADM-001", "AxiomBit@2026", "NewSecurePassword2026!", "DifferentPassword123!");
+        var result = _initialPasswordValidator.TestValidate(model);
+        result.ShouldHaveValidationErrorFor(x => x.ConfirmPassword);
+    }
+
+    [Fact]
+    public void InitialPasswordValidator_Rejects_Identical_Current_And_New()
+    {
+        var model = new InitialPasswordChangeRequest("ADM-001", "SamePassword123!", "SamePassword123!", "SamePassword123!");
+        var result = _initialPasswordValidator.TestValidate(model);
+        result.ShouldHaveValidationErrorFor(x => x.NewPassword);
     }
 }
