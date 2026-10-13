@@ -9,7 +9,7 @@ namespace PhotoAevumStudio.Infrastructure.Migrations
         protected override void Up(MigrationBuilder migrationBuilder)
         {
             migrationBuilder.Sql(@"
-                CREATE VIEW [dbo].[Admins] AS
+                CREATE OR ALTER VIEW [dbo].[Admins] AS
                 SELECT 
                     StudioId AS AdminID,
                     FirstName AS AdminFirstName,

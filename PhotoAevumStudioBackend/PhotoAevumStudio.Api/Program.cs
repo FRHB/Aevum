@@ -249,7 +249,22 @@ await using (var scope = app.Services.CreateAsyncScope())
 
     // Apply any pending EF migrations automatically in Development
     if (app.Environment.IsDevelopment())
-        await db.Database.MigrateAsync();
+    {
+        try
+        {
+            await DatabaseSeeder.ReconcileMigrationHistoryAsync(db);
+            await db.Database.MigrateAsync();
+        }
+        catch (Microsoft.Data.SqlClient.SqlException ex) when (ex.Number == 2714)
+        {
+            // Object already exists collision — re-run reconciliation and complete migrations
+            await DatabaseSeeder.ReconcileMigrationHistoryAsync(db);
+            await db.Database.MigrateAsync();
+        }
+    }
+
+    // Ensure required database stored procedures (e.g. usp_CreateEventAppointment) exist
+    await DatabaseSeeder.EnsureStoredProceduresAsync(db);
 
     var adminEmail    = builder.Configuration["Seed:AdminEmail"]    ?? "admin@photoaevum.studio";
     

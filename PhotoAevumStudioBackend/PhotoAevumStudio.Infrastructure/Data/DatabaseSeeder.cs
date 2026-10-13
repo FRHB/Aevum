@@ -131,4 +131,131 @@ public static class DatabaseSeeder
             }
         }
     }
+
+    /// <summary>
+    /// Reconciles __EFMigrationsHistory if database tables already exist (e.g. from an imported SQL script or prior restore),
+    /// preventing SqlException (e.g. "There is already an object named 'Services' in the database") on machines with unrecorded migrations.
+    /// </summary>
+    public static async Task ReconcileMigrationHistoryAsync(ApplicationDbContext db)
+    {
+        if (!await db.Database.CanConnectAsync())
+            return;
+
+        const string reconcileScript = @"
+            IF NOT EXISTS (SELECT 1 FROM sys.tables WHERE name = '__EFMigrationsHistory')
+            BEGIN
+                CREATE TABLE [__EFMigrationsHistory] (
+                    [MigrationId] nvarchar(150) NOT NULL,
+                    [ProductVersion] nvarchar(32) NOT NULL,
+                    CONSTRAINT [PK___EFMigrationsHistory] PRIMARY KEY ([MigrationId])
+                );
+            END;
+
+            -- 1. AddIdentityAndPhotos (Identity tables and Photos)
+            IF OBJECT_ID(N'dbo.AspNetUsers', N'U') IS NOT NULL
+               AND NOT EXISTS (SELECT 1 FROM [__EFMigrationsHistory] WHERE [MigrationId] = '20261008080923_AddIdentityAndPhotos')
+            BEGIN
+                INSERT INTO [__EFMigrationsHistory] ([MigrationId], [ProductVersion])
+                VALUES ('20261008080923_AddIdentityAndPhotos', '10.0.12');
+            END;
+
+            -- 2. ExpandDomainModels (Services, Employees, Equipment)
+            IF OBJECT_ID(N'dbo.Services', N'U') IS NOT NULL
+               AND NOT EXISTS (SELECT 1 FROM [__EFMigrationsHistory] WHERE [MigrationId] = '20261008081827_ExpandDomainModels')
+            BEGIN
+                INSERT INTO [__EFMigrationsHistory] ([MigrationId], [ProductVersion])
+                VALUES ('20261008081827_ExpandDomainModels', '10.0.12');
+            END;
+
+            -- 3. UpdateBookingKeysAndDate_FixCascade (Bookings, AuditLogs, Assignments)
+            IF OBJECT_ID(N'dbo.Bookings', N'U') IS NOT NULL
+               AND NOT EXISTS (SELECT 1 FROM [__EFMigrationsHistory] WHERE [MigrationId] = '20261010090001_UpdateBookingKeysAndDate_FixCascade')
+            BEGIN
+                INSERT INTO [__EFMigrationsHistory] ([MigrationId], [ProductVersion])
+                VALUES ('20261010090001_UpdateBookingKeysAndDate_FixCascade', '10.0.12');
+            END;
+
+            -- 4. AddAdminsView (Admins view)
+            IF OBJECT_ID(N'dbo.Admins', N'V') IS NOT NULL
+               AND NOT EXISTS (SELECT 1 FROM [__EFMigrationsHistory] WHERE [MigrationId] = '20261010100000_AddAdminsView')
+            BEGIN
+                INSERT INTO [__EFMigrationsHistory] ([MigrationId], [ProductVersion])
+                VALUES ('20261010100000_AddAdminsView', '10.0.12');
+            END;
+
+            -- 5. AddMustChangePasswordToApplicationUser (MustChangePassword column)
+            IF COL_LENGTH(N'dbo.AspNetUsers', N'MustChangePassword') IS NOT NULL
+               AND NOT EXISTS (SELECT 1 FROM [__EFMigrationsHistory] WHERE [MigrationId] = '20261013034024_AddMustChangePasswordToApplicationUser')
+            BEGIN
+                INSERT INTO [__EFMigrationsHistory] ([MigrationId], [ProductVersion])
+                VALUES ('20261013034024_AddMustChangePasswordToApplicationUser', '10.0.12');
+            END;
+        ";
+
+        try
+        {
+            await db.Database.ExecuteSqlRawAsync(reconcileScript);
+        }
+        catch
+        {
+            // If the database is brand new, ExecuteSqlRawAsync may safely pass; MigrateAsync will create everything.
+        }
+    }
+
+    /// <summary>
+    /// Ensures that the stored procedure dbo.usp_CreateEventAppointment is created or updated in the database.
+    /// </summary>
+    public static async Task EnsureStoredProceduresAsync(ApplicationDbContext db)
+    {
+        if (!await db.Database.CanConnectAsync())
+            return;
+
+        try
+        {
+            var conn = db.Database.GetDbConnection();
+            if (conn.State != System.Data.ConnectionState.Open)
+                await conn.OpenAsync();
+
+            await using var checkCmd = conn.CreateCommand();
+            checkCmd.CommandText = "SELECT OBJECT_ID(N'dbo.usp_CreateEventAppointment', N'P');";
+            var exists = await checkCmd.ExecuteScalarAsync();
+
+            if (exists is null || exists is DBNull)
+            {
+                var candidatePaths = new[]
+                {
+                    Path.Combine(AppContext.BaseDirectory, "Data", "Scripts", "usp_CreateEventAppointment.sql"),
+                    Path.Combine(AppContext.BaseDirectory, "usp_CreateEventAppointment.sql"),
+                    Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "..", "PhotoAevumStudio.Infrastructure", "Data", "Scripts", "usp_CreateEventAppointment.sql"))
+                };
+
+                string? script = null;
+                foreach (var p in candidatePaths)
+                {
+                    if (File.Exists(p))
+                    {
+                        script = await File.ReadAllTextAsync(p);
+                        break;
+                    }
+                }
+
+                if (!string.IsNullOrWhiteSpace(script))
+                {
+                    var cleanedScript = System.Text.RegularExpressions.Regex.Replace(
+                        script,
+                        @"^\s*GO\s*$",
+                        "",
+                        System.Text.RegularExpressions.RegexOptions.Multiline | System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+
+                    await using var createCmd = conn.CreateCommand();
+                    createCmd.CommandText = cleanedScript;
+                    await createCmd.ExecuteNonQueryAsync();
+                }
+            }
+        }
+        catch
+        {
+            // Ignored if connection fails or permission restricted
+        }
+    }
 }

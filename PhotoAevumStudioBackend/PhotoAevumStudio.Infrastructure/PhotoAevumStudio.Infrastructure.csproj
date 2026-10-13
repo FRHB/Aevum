@@ -1,4 +1,4 @@
-﻿<Project Sdk="Microsoft.NET.Sdk">
+<Project Sdk="Microsoft.NET.Sdk">
 
   <ItemGroup>
     <PackageReference Include="Microsoft.AspNetCore.Identity.EntityFrameworkCore" Version="10.0.12" />
@@ -11,6 +11,12 @@
 
   <ItemGroup>
     <ProjectReference Include="..\PhotoAevumStudio.Application\PhotoAevumStudio.Application.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <None Update="Data\Scripts\*.sql">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
   </ItemGroup>
 
   <PropertyGroup>
