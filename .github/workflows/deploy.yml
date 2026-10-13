@@ -1,8 +1,29 @@
-- name: Deploy via FTP
-          uses: SamKirkland/FTP-Deploy-Action@v4.3.4
-          with:
-            server: site96971.siteasp.net
-            username: site96971
-            password: Aw3_@2Zs7Qm-
-            local-dir: ./publish_output/
-            server-dir: /wwwroot/
+name: Deploy to MonsterASP
+
+on:
+  push:
+    branches: [ "main" ] # Runs every time you push to main
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout Code
+      uses: actions/checkout@v3
+
+    - name: Setup .NET
+      uses: actions/setup-dotnet@v3
+      with:
+        dotnet-version: '8.0.x' # Change to 9.0.x if you are using .NET 9
+
+    - name: Publish App
+      run: dotnet publish -c Release -o ./publish_output
+
+    - name: Deploy via FTP
+      uses: SamKirkland/FTP-Deploy-Action@v4.3.4
+      with:
+        server: site96971.siteasp.net
+        username: site96971
+        password: Aw3_@2Zs7Qm-
+        local-dir: ./publish_output/
