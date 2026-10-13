@@ -1,0 +1,8 @@
+- name: Deploy via FTP
+          uses: SamKirkland/FTP-Deploy-Action@v4.3.4
+          with:
+            server: site96971.siteasp.net
+            username: site96971
+            password: Aw3_@2Zs7Qm-
+            local-dir: ./publish_output/
+            server-dir: /wwwroot/
