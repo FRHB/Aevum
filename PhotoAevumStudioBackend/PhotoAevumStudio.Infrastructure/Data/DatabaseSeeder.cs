@@ -160,7 +160,8 @@ public static class DatabaseSeeder
             END;
 
             -- 2. ExpandDomainModels (Services, Employees, Equipment)
-            IF OBJECT_ID(N'dbo.Services', N'U') IS NOT NULL
+            IF COL_LENGTH(N'dbo.Services', N'Id') IS NOT NULL
+               AND COL_LENGTH(N'dbo.Equipment', N'SerialNumber') IS NOT NULL
                AND NOT EXISTS (SELECT 1 FROM [__EFMigrationsHistory] WHERE [MigrationId] = '20261008081827_ExpandDomainModels')
             BEGIN
                 INSERT INTO [__EFMigrationsHistory] ([MigrationId], [ProductVersion])
@@ -168,7 +169,8 @@ public static class DatabaseSeeder
             END;
 
             -- 3. UpdateBookingKeysAndDate_FixCascade (Bookings, AuditLogs, Assignments)
-            IF OBJECT_ID(N'dbo.Bookings', N'U') IS NOT NULL
+            IF COL_LENGTH(N'dbo.Bookings', N'ScheduleDate') IS NOT NULL
+               AND OBJECT_ID(N'dbo.AuditLogs', N'U') IS NOT NULL
                AND NOT EXISTS (SELECT 1 FROM [__EFMigrationsHistory] WHERE [MigrationId] = '20261010090001_UpdateBookingKeysAndDate_FixCascade')
             BEGIN
                 INSERT INTO [__EFMigrationsHistory] ([MigrationId], [ProductVersion])

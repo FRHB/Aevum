@@ -1,0 +1,14 @@
+<Solution>
+  <Folder Name="/Backend/">
+    <Project Path="PhotoAevumStudioBackend/PhotoAevumStudio.Api/PhotoAevumStudio.Api.csproj" />
+    <Project Path="PhotoAevumStudioBackend/PhotoAevumStudio.Application/PhotoAevumStudio.Application.csproj" />
+    <Project Path="PhotoAevumStudioBackend/PhotoAevumStudio.Infrastructure/PhotoAevumStudio.Infrastructure.csproj" />
+  </Folder>
+  <Folder Name="/Frontend/">
+    <Project Path="PhotoAevumStudioFrontend/PhotoAevumStudio.Web/PhotoAevumStudio.Web.csproj" />
+  </Folder>
+  <Folder Name="/Tests/">
+    <Project Path="PhotoAevumStudioBackend/Tests/PhotoAevumStudio.Api.Tests/PhotoAevumStudio.Api.Tests.csproj" />
+    <Project Path="PhotoAevumStudioBackend/Tests/PhotoAevumStudio.Application.Tests/PhotoAevumStudio.Application.Tests.csproj" />
+  </Folder>
+</Solution>

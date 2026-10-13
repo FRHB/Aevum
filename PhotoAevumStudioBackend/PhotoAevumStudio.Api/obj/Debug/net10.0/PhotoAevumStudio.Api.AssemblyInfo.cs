@@ -15,7 +15,7 @@ using System.Reflection;
 [assembly: System.Reflection.AssemblyCompanyAttribute("PhotoAevumStudio.Api")]
 [assembly: System.Reflection.AssemblyConfigurationAttribute("Debug")]
 [assembly: System.Reflection.AssemblyFileVersionAttribute("1.0.0.0")]
-[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+c3dbbacab4fecc371b33edb65aa43453422db590")]
+[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+934de44280a4cfaa564c2b1d28029ba40e191a7a")]
 [assembly: System.Reflection.AssemblyProductAttribute("PhotoAevumStudio.Api")]
 [assembly: System.Reflection.AssemblyTitleAttribute("PhotoAevumStudio.Api")]
 [assembly: System.Reflection.AssemblyVersionAttribute("1.0.0.0")]

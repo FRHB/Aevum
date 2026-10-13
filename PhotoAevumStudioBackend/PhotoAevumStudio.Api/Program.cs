@@ -39,6 +39,7 @@ builder.Services.AddDbContext<ApplicationDbContext>(options =>
     options.UseSqlServer(
         connectionString,
         sql => sql.MigrationsAssembly("PhotoAevumStudio.Infrastructure")
+                  .CommandTimeout(60)
                   .EnableRetryOnFailure()));
 
 // ── Identity ──────────────────────────────────────────────────────────────────
@@ -248,36 +249,44 @@ await using (var scope = app.Services.CreateAsyncScope())
     var roleManager = scope.ServiceProvider.GetRequiredService<RoleManager<IdentityRole>>();
     var userManager = scope.ServiceProvider.GetRequiredService<UserManager<ApplicationUser>>();
 
-    // Apply any pending EF migrations automatically in Development
-    if (app.Environment.IsDevelopment())
+    var logger      = scope.ServiceProvider.GetRequiredService<ILogger<Program>>();
+
+    try
     {
-        try
+        // Apply any pending EF migrations automatically in Development
+        if (app.Environment.IsDevelopment())
         {
-            await DatabaseSeeder.ReconcileMigrationHistoryAsync(db);
-            await db.Database.MigrateAsync();
+            try
+            {
+                await DatabaseSeeder.ReconcileMigrationHistoryAsync(db);
+                await db.Database.MigrateAsync();
+            }
+            catch (Microsoft.Data.SqlClient.SqlException ex) when (ex.Number == 2714)
+            {
+                // Object already exists collision — re-run reconciliation and complete migrations
+                await DatabaseSeeder.ReconcileMigrationHistoryAsync(db);
+                await db.Database.MigrateAsync();
+            }
         }
-        catch (Microsoft.Data.SqlClient.SqlException ex) when (ex.Number == 2714)
+
+        // Ensure required database stored procedures (e.g. usp_CreateEventAppointment) exist
+        await DatabaseSeeder.EnsureStoredProceduresAsync(db);
+
+        var adminEmail    = builder.Configuration["Seed:AdminEmail"]    ?? "admin@photoaevum.studio";
+        
+        var adminPassword = builder.Configuration["Seed:AdminPassword"];
+        if (!app.Environment.IsDevelopment() && string.IsNullOrWhiteSpace(adminPassword))
         {
-            // Object already exists collision — re-run reconciliation and complete migrations
-            await DatabaseSeeder.ReconcileMigrationHistoryAsync(db);
-            await db.Database.MigrateAsync();
+            throw new InvalidOperationException("CRITICAL: Seed:AdminPassword is required outside of Development to prevent fallback passwords.");
         }
+        adminPassword ??= "Admin@12345!";
+
+        await DatabaseSeeder.SeedAsync(roleManager, userManager, db, adminEmail, adminPassword);
     }
-
-    // Ensure required database stored procedures (e.g. usp_CreateEventAppointment) exist
-    await DatabaseSeeder.EnsureStoredProceduresAsync(db);
-
-    var adminEmail    = builder.Configuration["Seed:AdminEmail"]    ?? "admin@photoaevum.studio";
-    
-    var adminPassword = builder.Configuration["Seed:AdminPassword"];
-    if (!app.Environment.IsDevelopment() && string.IsNullOrWhiteSpace(adminPassword))
+    catch (Exception ex)
     {
-        throw new InvalidOperationException("CRITICAL: Seed:AdminPassword is required outside of Development to prevent fallback passwords.");
+        logger.LogError(ex, "Database connection or migration failed during startup. The API server will continue running on ports 5001/5000, but database operations may fail until the database is reachable.");
     }
-    adminPassword ??= "Admin@12345!";
-
-
-    await DatabaseSeeder.SeedAsync(roleManager, userManager, db, adminEmail, adminPassword);
 }
 
 app.Run();
