@@ -279,7 +279,7 @@ await using (var scope = app.Services.CreateAsyncScope())
         {
             throw new InvalidOperationException("CRITICAL: Seed:AdminPassword is required outside of Development to prevent fallback passwords.");
         }
-        adminPassword ??= "Admin@12345!";
+        adminPassword ??= "Axiom@2026";
 
         await DatabaseSeeder.SeedAsync(roleManager, userManager, db, adminEmail, adminPassword);
     }
