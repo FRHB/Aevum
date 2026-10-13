@@ -40,7 +40,7 @@ public sealed class AevumAuthenticationStateProvider : AuthenticationStateProvid
                 return Anonymous;
             }
 
-            var identity = new ClaimsIdentity(jwt.Claims, "jwt");
+            var identity = CreateIdentity(jwt);
             return new AuthenticationState(new ClaimsPrincipal(identity));
         }
         catch
@@ -55,9 +55,28 @@ public sealed class AevumAuthenticationStateProvider : AuthenticationStateProvid
         await _tokenStore.SetTokenAsync(token);
         var handler = new JwtSecurityTokenHandler();
         var jwt = handler.ReadJwtToken(token);
-        var identity = new ClaimsIdentity(jwt.Claims, "jwt");
+        var identity = CreateIdentity(jwt);
         var user = new ClaimsPrincipal(identity);
         NotifyAuthenticationStateChanged(Task.FromResult(new AuthenticationState(user)));
+    }
+
+    private static ClaimsIdentity CreateIdentity(JwtSecurityToken jwt)
+    {
+        var claims = new List<Claim>();
+        foreach (var c in jwt.Claims)
+        {
+            claims.Add(c);
+            if (c.Type == "role" || c.Type == ClaimTypes.Role)
+            {
+                claims.Add(new Claim(ClaimTypes.Role, c.Value));
+                claims.Add(new Claim("role", c.Value));
+            }
+            if (c.Type == "name" || c.Type == ClaimTypes.Name || c.Type == "unique_name")
+            {
+                claims.Add(new Claim(ClaimTypes.Name, c.Value));
+            }
+        }
+        return new ClaimsIdentity(claims.DistinctBy(c => (c.Type, c.Value)), "jwt", ClaimTypes.Name, ClaimTypes.Role);
     }
 
     /// <summary>Call on logout to clear the token and notify Blazor.</summary>

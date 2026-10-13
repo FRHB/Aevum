@@ -69,14 +69,54 @@ public sealed class AuthService : IAuthService
 
     public async Task<bool> RegisterCustomerAsync(object request, CancellationToken cancellationToken = default)
     {
-        var response = await _http.PostAsJsonAsync("api/auth/register-customer", request, cancellationToken);
-        return response.IsSuccessStatusCode;
+        try
+        {
+            var response = await _http.PostAsJsonAsync("api/auth/register-customer", request, cancellationToken);
+            return response.IsSuccessStatusCode;
+        }
+        catch
+        {
+            return false;
+        }
     }
 
     public async Task<bool> SendVerificationCodeAsync(string email, CancellationToken cancellationToken = default)
     {
-        var response = await _http.PostAsJsonAsync("api/auth/send-verification", new { Email = email }, cancellationToken);
-        return response.IsSuccessStatusCode;
+        try
+        {
+            var response = await _http.PostAsJsonAsync("api/auth/send-verification", new { Email = email }, cancellationToken);
+            return response.IsSuccessStatusCode;
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
+    public async Task<bool> VerifyCodeAsync(string email, string code, CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            var response = await _http.PostAsJsonAsync("api/auth/verify-code", new { Email = email, VerificationCode = code }, cancellationToken);
+            return response.IsSuccessStatusCode;
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
+    public async Task<bool> ForgotPasswordAsync(string email, CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            var response = await _http.PostAsJsonAsync("api/auth/forgot-password", new { Email = email }, cancellationToken);
+            return response.IsSuccessStatusCode;
+        }
+        catch
+        {
+            return false;
+        }
     }
 
     public async Task<bool> RegisterAsync(
@@ -100,4 +140,3 @@ public sealed class AuthService : IAuthService
     // Local record so we don't need a NuGet dep for ProblemDetails deserialization
     private sealed record ProblemDetails(string? Detail);
 }
-

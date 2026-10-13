@@ -54,12 +54,16 @@
     /// </summary>
     
     [CascadingParameter] Task<AuthenticationState> AuthState { get; set; } = default!;
-    public string UserRole { get; set; } = string.Empty;
+    [Parameter] public string UserRole { get; set; } = string.Empty;
 
     protected override async Task OnInitializedAsync()
     {
-        var state = await AuthState;
-        UserRole = state.User.FindFirst(System.Security.Claims.ClaimTypes.Role)?.Value?.ToLower() ?? string.Empty;
+        if (string.IsNullOrWhiteSpace(UserRole) && AuthState != null)
+        {
+            var state = await AuthState;
+            var roleClaim = state.User.FindFirst(System.Security.Claims.ClaimTypes.Role) ?? state.User.FindFirst("role");
+            UserRole = roleClaim?.Value?.ToLower() ?? string.Empty;
+        }
     }
 
 

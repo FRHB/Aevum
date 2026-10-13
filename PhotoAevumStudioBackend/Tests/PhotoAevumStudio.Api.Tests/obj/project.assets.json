@@ -3418,23 +3418,23 @@
     ]
   },
   "packageFolders": {
-    "C:\\Users\\markfrancis\\.nuget\\packages\\": {},
+    "C:\\Users\\Fernest Rumon H. Bac\\.nuget\\packages\\": {},
     "C:\\Program Files (x86)\\Microsoft Visual Studio\\Shared\\NuGetPackages": {}
   },
   "project": {
     "version": "1.0.0",
     "restore": {
-      "projectUniqueName": "C:\\Users\\markfrancis\\source\\repos\\FRHB\\Photo-Aevum-Studio\\PhotoAevumStudioBackend\\Tests\\PhotoAevumStudio.Api.Tests\\PhotoAevumStudio.Api.Tests.csproj",
+      "projectUniqueName": "C:\\Aevum\\PhotoAevumStudioBackend\\Tests\\PhotoAevumStudio.Api.Tests\\PhotoAevumStudio.Api.Tests.csproj",
       "projectName": "PhotoAevumStudio.Api.Tests",
-      "projectPath": "C:\\Users\\markfrancis\\source\\repos\\FRHB\\Photo-Aevum-Studio\\PhotoAevumStudioBackend\\Tests\\PhotoAevumStudio.Api.Tests\\PhotoAevumStudio.Api.Tests.csproj",
-      "packagesPath": "C:\\Users\\markfrancis\\.nuget\\packages\\",
-      "outputPath": "C:\\Users\\markfrancis\\source\\repos\\FRHB\\Photo-Aevum-Studio\\PhotoAevumStudioBackend\\Tests\\PhotoAevumStudio.Api.Tests\\obj\\",
+      "projectPath": "C:\\Aevum\\PhotoAevumStudioBackend\\Tests\\PhotoAevumStudio.Api.Tests\\PhotoAevumStudio.Api.Tests.csproj",
+      "packagesPath": "C:\\Users\\Fernest Rumon H. Bac\\.nuget\\packages\\",
+      "outputPath": "C:\\Aevum\\PhotoAevumStudioBackend\\Tests\\PhotoAevumStudio.Api.Tests\\obj\\",
       "projectStyle": "PackageReference",
       "fallbackFolders": [
         "C:\\Program Files (x86)\\Microsoft Visual Studio\\Shared\\NuGetPackages"
       ],
       "configFilePaths": [
-        "C:\\Users\\markfrancis\\AppData\\Roaming\\NuGet\\NuGet.Config",
+        "C:\\Users\\Fernest Rumon H. Bac\\AppData\\Roaming\\NuGet\\NuGet.Config",
         "C:\\Program Files (x86)\\NuGet\\Config\\Microsoft.VisualStudio.FallbackLocation.config",
         "C:\\Program Files (x86)\\NuGet\\Config\\Microsoft.VisualStudio.Offline.config"
       ],
@@ -3451,8 +3451,8 @@
           "framework": "net10.0",
           "targetAlias": "net10.0",
           "projectReferences": {
-            "C:\\Users\\markfrancis\\source\\repos\\FRHB\\Photo-Aevum-Studio\\PhotoAevumStudioBackend\\PhotoAevumStudio.Api\\PhotoAevumStudio.Api.csproj": {
-              "projectPath": "C:\\Users\\markfrancis\\source\\repos\\FRHB\\Photo-Aevum-Studio\\PhotoAevumStudioBackend\\PhotoAevumStudio.Api\\PhotoAevumStudio.Api.csproj"
+            "C:\\Aevum\\PhotoAevumStudioBackend\\PhotoAevumStudio.Api\\PhotoAevumStudio.Api.csproj": {
+              "projectPath": "C:\\Aevum\\PhotoAevumStudioBackend\\PhotoAevumStudio.Api\\PhotoAevumStudio.Api.csproj"
             }
           }
         }

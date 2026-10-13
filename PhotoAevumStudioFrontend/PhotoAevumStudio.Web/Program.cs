@@ -26,6 +26,10 @@ builder.Services.AddHttpClient("AevumApi", client =>
     client.BaseAddress = new Uri(apiBaseUrl))
     .AddHttpMessageHandler<AuthHttpHandler>();
 
+builder.Services.AddHttpClient("AevumApi.Authorized", client =>
+    client.BaseAddress = new Uri(apiBaseUrl))
+    .AddHttpMessageHandler<AuthHttpHandler>();
+
 builder.Services.AddHttpClient("AevumApi.Anonymous", client =>
     client.BaseAddress = new Uri(apiBaseUrl));
 var app = builder.Build();

@@ -1,23 +1,23 @@
 {
   "format": 1,
   "restore": {
-    "C:\\Users\\markfrancis\\source\\repos\\FRHB\\Photo-Aevum-Studio\\PhotoAevumStudioBackend\\PhotoAevumStudio.Api\\PhotoAevumStudio.Api.csproj": {}
+    "C:\\Aevum\\PhotoAevumStudioBackend\\PhotoAevumStudio.Api\\PhotoAevumStudio.Api.csproj": {}
   },
   "projects": {
-    "C:\\Users\\markfrancis\\source\\repos\\FRHB\\Photo-Aevum-Studio\\PhotoAevumStudioBackend\\PhotoAevumStudio.Api\\PhotoAevumStudio.Api.csproj": {
+    "C:\\Aevum\\PhotoAevumStudioBackend\\PhotoAevumStudio.Api\\PhotoAevumStudio.Api.csproj": {
       "version": "1.0.0",
       "restore": {
-        "projectUniqueName": "C:\\Users\\markfrancis\\source\\repos\\FRHB\\Photo-Aevum-Studio\\PhotoAevumStudioBackend\\PhotoAevumStudio.Api\\PhotoAevumStudio.Api.csproj",
+        "projectUniqueName": "C:\\Aevum\\PhotoAevumStudioBackend\\PhotoAevumStudio.Api\\PhotoAevumStudio.Api.csproj",
         "projectName": "PhotoAevumStudio.Api",
-        "projectPath": "C:\\Users\\markfrancis\\source\\repos\\FRHB\\Photo-Aevum-Studio\\PhotoAevumStudioBackend\\PhotoAevumStudio.Api\\PhotoAevumStudio.Api.csproj",
-        "packagesPath": "C:\\Users\\markfrancis\\.nuget\\packages\\",
-        "outputPath": "C:\\Users\\markfrancis\\source\\repos\\FRHB\\Photo-Aevum-Studio\\PhotoAevumStudioBackend\\PhotoAevumStudio.Api\\obj\\",
+        "projectPath": "C:\\Aevum\\PhotoAevumStudioBackend\\PhotoAevumStudio.Api\\PhotoAevumStudio.Api.csproj",
+        "packagesPath": "C:\\Users\\Fernest Rumon H. Bac\\.nuget\\packages\\",
+        "outputPath": "C:\\Aevum\\PhotoAevumStudioBackend\\PhotoAevumStudio.Api\\obj\\",
         "projectStyle": "PackageReference",
         "fallbackFolders": [
           "C:\\Program Files (x86)\\Microsoft Visual Studio\\Shared\\NuGetPackages"
         ],
         "configFilePaths": [
-          "C:\\Users\\markfrancis\\AppData\\Roaming\\NuGet\\NuGet.Config",
+          "C:\\Users\\Fernest Rumon H. Bac\\AppData\\Roaming\\NuGet\\NuGet.Config",
           "C:\\Program Files (x86)\\NuGet\\Config\\Microsoft.VisualStudio.FallbackLocation.config",
           "C:\\Program Files (x86)\\NuGet\\Config\\Microsoft.VisualStudio.Offline.config"
         ],
@@ -34,11 +34,11 @@
             "framework": "net10.0",
             "targetAlias": "net10.0",
             "projectReferences": {
-              "C:\\Users\\markfrancis\\source\\repos\\FRHB\\Photo-Aevum-Studio\\PhotoAevumStudioBackend\\PhotoAevumStudio.Application\\PhotoAevumStudio.Application.csproj": {
-                "projectPath": "C:\\Users\\markfrancis\\source\\repos\\FRHB\\Photo-Aevum-Studio\\PhotoAevumStudioBackend\\PhotoAevumStudio.Application\\PhotoAevumStudio.Application.csproj"
+              "C:\\Aevum\\PhotoAevumStudioBackend\\PhotoAevumStudio.Application\\PhotoAevumStudio.Application.csproj": {
+                "projectPath": "C:\\Aevum\\PhotoAevumStudioBackend\\PhotoAevumStudio.Application\\PhotoAevumStudio.Application.csproj"
               },
-              "C:\\Users\\markfrancis\\source\\repos\\FRHB\\Photo-Aevum-Studio\\PhotoAevumStudioBackend\\PhotoAevumStudio.Infrastructure\\PhotoAevumStudio.Infrastructure.csproj": {
-                "projectPath": "C:\\Users\\markfrancis\\source\\repos\\FRHB\\Photo-Aevum-Studio\\PhotoAevumStudioBackend\\PhotoAevumStudio.Infrastructure\\PhotoAevumStudio.Infrastructure.csproj"
+              "C:\\Aevum\\PhotoAevumStudioBackend\\PhotoAevumStudio.Infrastructure\\PhotoAevumStudio.Infrastructure.csproj": {
+                "projectPath": "C:\\Aevum\\PhotoAevumStudioBackend\\PhotoAevumStudio.Infrastructure\\PhotoAevumStudio.Infrastructure.csproj"
               }
             }
           }
@@ -524,20 +524,20 @@
         }
       }
     },
-    "C:\\Users\\markfrancis\\source\\repos\\FRHB\\Photo-Aevum-Studio\\PhotoAevumStudioBackend\\PhotoAevumStudio.Application\\PhotoAevumStudio.Application.csproj": {
+    "C:\\Aevum\\PhotoAevumStudioBackend\\PhotoAevumStudio.Application\\PhotoAevumStudio.Application.csproj": {
       "version": "1.0.0",
       "restore": {
-        "projectUniqueName": "C:\\Users\\markfrancis\\source\\repos\\FRHB\\Photo-Aevum-Studio\\PhotoAevumStudioBackend\\PhotoAevumStudio.Application\\PhotoAevumStudio.Application.csproj",
+        "projectUniqueName": "C:\\Aevum\\PhotoAevumStudioBackend\\PhotoAevumStudio.Application\\PhotoAevumStudio.Application.csproj",
         "projectName": "PhotoAevumStudio.Application",
-        "projectPath": "C:\\Users\\markfrancis\\source\\repos\\FRHB\\Photo-Aevum-Studio\\PhotoAevumStudioBackend\\PhotoAevumStudio.Application\\PhotoAevumStudio.Application.csproj",
-        "packagesPath": "C:\\Users\\markfrancis\\.nuget\\packages\\",
-        "outputPath": "C:\\Users\\markfrancis\\source\\repos\\FRHB\\Photo-Aevum-Studio\\PhotoAevumStudioBackend\\PhotoAevumStudio.Application\\obj\\",
+        "projectPath": "C:\\Aevum\\PhotoAevumStudioBackend\\PhotoAevumStudio.Application\\PhotoAevumStudio.Application.csproj",
+        "packagesPath": "C:\\Users\\Fernest Rumon H. Bac\\.nuget\\packages\\",
+        "outputPath": "C:\\Aevum\\PhotoAevumStudioBackend\\PhotoAevumStudio.Application\\obj\\",
         "projectStyle": "PackageReference",
         "fallbackFolders": [
           "C:\\Program Files (x86)\\Microsoft Visual Studio\\Shared\\NuGetPackages"
         ],
         "configFilePaths": [
-          "C:\\Users\\markfrancis\\AppData\\Roaming\\NuGet\\NuGet.Config",
+          "C:\\Users\\Fernest Rumon H. Bac\\AppData\\Roaming\\NuGet\\NuGet.Config",
           "C:\\Program Files (x86)\\NuGet\\Config\\Microsoft.VisualStudio.FallbackLocation.config",
           "C:\\Program Files (x86)\\NuGet\\Config\\Microsoft.VisualStudio.Offline.config"
         ],
@@ -880,20 +880,20 @@
         }
       }
     },
-    "C:\\Users\\markfrancis\\source\\repos\\FRHB\\Photo-Aevum-Studio\\PhotoAevumStudioBackend\\PhotoAevumStudio.Infrastructure\\PhotoAevumStudio.Infrastructure.csproj": {
+    "C:\\Aevum\\PhotoAevumStudioBackend\\PhotoAevumStudio.Infrastructure\\PhotoAevumStudio.Infrastructure.csproj": {
       "version": "1.0.0",
       "restore": {
-        "projectUniqueName": "C:\\Users\\markfrancis\\source\\repos\\FRHB\\Photo-Aevum-Studio\\PhotoAevumStudioBackend\\PhotoAevumStudio.Infrastructure\\PhotoAevumStudio.Infrastructure.csproj",
+        "projectUniqueName": "C:\\Aevum\\PhotoAevumStudioBackend\\PhotoAevumStudio.Infrastructure\\PhotoAevumStudio.Infrastructure.csproj",
         "projectName": "PhotoAevumStudio.Infrastructure",
-        "projectPath": "C:\\Users\\markfrancis\\source\\repos\\FRHB\\Photo-Aevum-Studio\\PhotoAevumStudioBackend\\PhotoAevumStudio.Infrastructure\\PhotoAevumStudio.Infrastructure.csproj",
-        "packagesPath": "C:\\Users\\markfrancis\\.nuget\\packages\\",
-        "outputPath": "C:\\Users\\markfrancis\\source\\repos\\FRHB\\Photo-Aevum-Studio\\PhotoAevumStudioBackend\\PhotoAevumStudio.Infrastructure\\obj\\",
+        "projectPath": "C:\\Aevum\\PhotoAevumStudioBackend\\PhotoAevumStudio.Infrastructure\\PhotoAevumStudio.Infrastructure.csproj",
+        "packagesPath": "C:\\Users\\Fernest Rumon H. Bac\\.nuget\\packages\\",
+        "outputPath": "C:\\Aevum\\PhotoAevumStudioBackend\\PhotoAevumStudio.Infrastructure\\obj\\",
         "projectStyle": "PackageReference",
         "fallbackFolders": [
           "C:\\Program Files (x86)\\Microsoft Visual Studio\\Shared\\NuGetPackages"
         ],
         "configFilePaths": [
-          "C:\\Users\\markfrancis\\AppData\\Roaming\\NuGet\\NuGet.Config",
+          "C:\\Users\\Fernest Rumon H. Bac\\AppData\\Roaming\\NuGet\\NuGet.Config",
           "C:\\Program Files (x86)\\NuGet\\Config\\Microsoft.VisualStudio.FallbackLocation.config",
           "C:\\Program Files (x86)\\NuGet\\Config\\Microsoft.VisualStudio.Offline.config"
         ],
@@ -910,8 +910,8 @@
             "framework": "net10.0",
             "targetAlias": "net10.0",
             "projectReferences": {
-              "C:\\Users\\markfrancis\\source\\repos\\FRHB\\Photo-Aevum-Studio\\PhotoAevumStudioBackend\\PhotoAevumStudio.Application\\PhotoAevumStudio.Application.csproj": {
-                "projectPath": "C:\\Users\\markfrancis\\source\\repos\\FRHB\\Photo-Aevum-Studio\\PhotoAevumStudioBackend\\PhotoAevumStudio.Application\\PhotoAevumStudio.Application.csproj"
+              "C:\\Aevum\\PhotoAevumStudioBackend\\PhotoAevumStudio.Application\\PhotoAevumStudio.Application.csproj": {
+                "projectPath": "C:\\Aevum\\PhotoAevumStudioBackend\\PhotoAevumStudio.Application\\PhotoAevumStudio.Application.csproj"
               }
             }
           }

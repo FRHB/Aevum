@@ -58,6 +58,8 @@ public class AuthController : ControllerBase
         var code = RandomNumberGenerator.GetInt32(100000, 1000000).ToString();
         _cache.Set($"VerificationCode_{request.Email}", code, TimeSpan.FromMinutes(10));
 
+        _logger.LogInformation("Verification code for {Email}: {Code}", request.Email, code);
+
         await _emailService.SendEmailAsync(
             request.Email,
             "Your Photo Aevum Studio Verification Code",
@@ -65,6 +67,71 @@ public class AuthController : ControllerBase
             isHtml: true);
 
         return Ok(new { Message = "Verification code sent." });
+    }
+
+    [HttpPost("verify-code")]
+    [AllowAnonymous]
+    public IActionResult VerifyCode([FromBody] VerifyCodeRequest request)
+    {
+        if (!_cache.TryGetValue($"VerificationCode_{request.Email}", out string? storedCode) || storedCode != request.VerificationCode)
+        {
+            return BadRequest(new ProblemDetails { Title = "Invalid or expired verification code", Status = 400 });
+        }
+        return Ok(new { Message = "Verification code is valid." });
+    }
+
+    [HttpPost("forgot-password")]
+    [AllowAnonymous]
+    public async Task<IActionResult> ForgotPassword([FromBody] SendVerificationRequest request)
+    {
+        if (string.IsNullOrWhiteSpace(request.Email)) return BadRequest("Email is required.");
+
+        var user = await _userManager.FindByEmailAsync(request.Email);
+        if (user != null)
+        {
+            var code = RandomNumberGenerator.GetInt32(100000, 1000000).ToString();
+            _cache.Set($"ResetCode_{request.Email}", code, TimeSpan.FromMinutes(10));
+            _logger.LogInformation("Password reset code for {Email}: {Code}", request.Email, code);
+
+            await _emailService.SendEmailAsync(
+                request.Email,
+                "Photo Aevum Studio - Password Reset Code",
+                $"<p>Your password reset code is: <strong>{code}</strong></p><p>This code will expire in 10 minutes.</p>",
+                isHtml: true);
+        }
+
+        return Ok(new { Message = "If an account with that email exists, a reset code was sent." });
+    }
+
+    [HttpPost("reset-password")]
+    [AllowAnonymous]
+    public async Task<IActionResult> ResetPassword([FromBody] ResetPasswordRequest request)
+    {
+        if (!_cache.TryGetValue($"ResetCode_{request.Email}", out string? storedCode) || storedCode != request.VerificationCode)
+        {
+            return BadRequest(new ProblemDetails { Title = "Invalid or expired reset code", Status = 400 });
+        }
+
+        var user = await _userManager.FindByEmailAsync(request.Email);
+        if (user is null)
+            return BadRequest(new ProblemDetails { Title = "Account not found", Status = 400 });
+
+        var resetToken = await _userManager.GeneratePasswordResetTokenAsync(user);
+        var result = await _userManager.ResetPasswordAsync(user, resetToken, request.NewPassword);
+        if (!result.Succeeded)
+            return BadRequest(new ProblemDetails
+            {
+                Title = "Password reset failed",
+                Detail = string.Join("; ", result.Errors.Select(e => e.Description)),
+                Status = 400
+            });
+
+        user.MustChangePassword = false;
+        user.PasswordChangedAt = DateTime.UtcNow;
+        await _userManager.UpdateAsync(user);
+        _cache.Remove($"ResetCode_{request.Email}");
+
+        return Ok(new { Message = "Password has been successfully reset." });
     }
 
     [HttpPost("register-customer")]

@@ -20,17 +20,28 @@ public class EmailService : IEmailService
 
     public async Task SendEmailAsync(string toEmail, string subject, string body, bool isHtml = true)
     {
+        // Gracefully handle unconfigured / dummy credentials so local development isn't blocked
+        if (string.IsNullOrWhiteSpace(_smtpSettings.Host) ||
+            string.IsNullOrWhiteSpace(_smtpSettings.Username) ||
+            _smtpSettings.Username.Contains("YOUR_MAILTRAP", StringComparison.OrdinalIgnoreCase))
+        {
+            _logger.LogWarning("SMTP credentials not configured. Verification/notification email simulated for {ToEmail}. Subject: {Subject}", toEmail, subject);
+            return;
+        }
+
         try
         {
             using var client = new SmtpClient(_smtpSettings.Host, _smtpSettings.Port)
             {
                 Credentials = new NetworkCredential(_smtpSettings.Username, _smtpSettings.Password),
-                EnableSsl = true // Mailtrap recommends TLS
+                EnableSsl = true
             };
 
             var mailMessage = new MailMessage
             {
-                From = new MailAddress(_smtpSettings.FromEmail, _smtpSettings.FromName),
+                From = new MailAddress(
+                    string.IsNullOrWhiteSpace(_smtpSettings.FromEmail) ? "noreply@photoaevum.com" : _smtpSettings.FromEmail,
+                    string.IsNullOrWhiteSpace(_smtpSettings.FromName) ? "Photo Aevum Studio" : _smtpSettings.FromName),
                 Subject = subject,
                 Body = body,
                 IsBodyHtml = isHtml
@@ -44,8 +55,8 @@ public class EmailService : IEmailService
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Failed to send email to {ToEmail}", toEmail);
-            throw;
+            _logger.LogError(ex, "Failed to send email to {ToEmail}. Continuing without breaking request flow.", toEmail);
+            // Do not rethrow in order to keep application flow alive if SMTP sandbox is unreachable
         }
     }
 }

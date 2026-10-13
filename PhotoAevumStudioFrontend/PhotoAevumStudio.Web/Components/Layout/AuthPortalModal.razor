@@ -457,9 +457,15 @@
 
         try
         {
-            // TODO: Replace with real API endpoint POST /api/auth/forgot-password
-            await Task.Delay(800); // simulate network
-            _fpSent = true;
+            var ok = await AuthService.ForgotPasswordAsync(_fpForm.Email.Trim().ToLowerInvariant());
+            if (ok)
+            {
+                _fpSent = true;
+            }
+            else
+            {
+                _fpError = "Could not send the reset email. Please try again.";
+            }
         }
         catch
         {
@@ -479,11 +485,16 @@
 
         try
         {
-            // TODO: Replace with POST /api/auth/send-verification?email=...
-            await Task.Delay(600); // simulate network
-            _expectedCode = "123456"; // mock; backend will send the real code
-            _suVerify     = new();
-            _signUpStep   = 3;
+            var ok = await AuthService.SendVerificationCodeAsync(_suEmail.Email.Trim().ToLowerInvariant());
+            if (ok)
+            {
+                _suVerify     = new();
+                _signUpStep   = 3;
+            }
+            else
+            {
+                _suEmailError = "Could not send verification email. Please check your address.";
+            }
         }
         catch
         {
@@ -494,30 +505,36 @@
     }
 
     // ── Sign-Up Step 3: Verify code ──────────────────────────────────────────
-    // ACID Isolation: code checked in-memory; no DB write yet.
+    // ACID Isolation: code checked with backend cache; no DB write yet.
     private async Task HandleVerifyCode()
     {
         _suVerifyError = string.Empty;
         _isBusy        = true;
         StateHasChanged();
 
-        await Task.Delay(300); // simulate check
-
-        if (_suVerify.Code.Trim() == _expectedCode)
+        try
         {
-            _signUpStep = 4;
+            var ok = await AuthService.VerifyCodeAsync(_suEmail.Email.Trim().ToLowerInvariant(), _suVerify.Code.Trim());
+            if (ok)
+            {
+                _signUpStep = 4;
+            }
+            else
+            {
+                _suVerifyError = "That code doesn't match or has expired. Please try again or request a new one.";
+            }
         }
-        else
+        catch
         {
-            _suVerifyError = "That code doesn't match. Please try again or request a new one.";
+            _suVerifyError = "Could not verify code. Please try again.";
         }
 
         _isBusy = false;
     }
 
     // ── Sign-Up Step 4: Commit registration ─────────────────────────────────
-    // ACID Atomicity: single RegisterAsync call. If it fails, nothing is written.
-    // ACID Consistency: all four fields validated before this is reached.
+    // ACID Atomicity: single RegisterCustomerAsync call. If it fails, nothing is written.
+    // ACID Consistency: all fields validated before this is reached.
     // ACID Durability: backend persists the new user record.
     private async Task HandleSignUp()
     {
@@ -532,17 +549,19 @@
             return;
         }
 
-        var request = new RegistrationRequest(
-            FirstName:  _suName.FirstName.Trim(),
-            LastName:   _suName.LastName.Trim(),
-            MiddleName: string.IsNullOrWhiteSpace(_suName.MiddleName) ? null : _suName.MiddleName.Trim(),
-            Email:      _suEmail.Email.Trim().ToLowerInvariant(),
-            Cellphone:  null,
-            Password:   _suPassword.Password);
+        var customerPayload = new
+        {
+            FirstName = _suName.FirstName.Trim(),
+            LastName = _suName.LastName.Trim(),
+            MiddleName = string.IsNullOrWhiteSpace(_suName.MiddleName) ? null : _suName.MiddleName.Trim(),
+            Email = _suEmail.Email.Trim().ToLowerInvariant(),
+            Password = _suPassword.Password,
+            VerificationCode = _suVerify.Code.Trim()
+        };
 
         try
         {
-            var ok = await AuthService.RegisterAsync(request);
+            var ok = await AuthService.RegisterCustomerAsync(customerPayload);
             if (ok)
             {
                 // ACID Durability: record committed; clear all in-memory wizard state.
@@ -551,7 +570,7 @@
             }
             else
             {
-                _suSignUpError = "Registration failed. The email may already be in use.";
+                _suSignUpError = "Registration failed. Verification code may be invalid or email already registered.";
             }
         }
         catch

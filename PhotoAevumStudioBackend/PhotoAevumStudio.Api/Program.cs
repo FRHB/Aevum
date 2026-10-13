@@ -261,7 +261,7 @@ await using (var scope = app.Services.CreateAsyncScope())
     adminPassword ??= "Admin@12345!";
 
 
-    await DatabaseSeeder.SeedAsync(roleManager, userManager, adminEmail, adminPassword);
+    await DatabaseSeeder.SeedAsync(roleManager, userManager, db, adminEmail, adminPassword);
 }
 
 app.Run();
