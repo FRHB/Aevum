@@ -147,7 +147,7 @@ public class AuthController : ControllerBase
         // 1. First-time login check for Admin and Employee accounts:
         // Do not issue the standard JWT or grant access to the system.
         // Instead, return RequiresPasswordChange directing frontend to "Change Password" screen.
-        if (authResult.RequiresPasswordChange)
+        if (authResult.RequiresPasswordChange || authResult.IsFirstLogin)
         {
             _logger.LogInformation("Account {UserId} requires initial password change. JWT withheld.", user.Id);
             return Ok(new LoginResponse(
@@ -157,7 +157,8 @@ public class AuthController : ControllerBase
                 ExpiresAt: null,
                 MustChangePassword: true,
                 RequiresPasswordChange: true,
-                UserId: user.Id));
+                UserId: user.Id,
+                IsFirstLogin: true));
         }
 
         // 2. Standard login verified against stored hashes rather than plain text.
@@ -173,7 +174,8 @@ public class AuthController : ControllerBase
             ExpiresAt: token.ExpiresAt,
             MustChangePassword: false,
             RequiresPasswordChange: false,
-            UserId: user.Id));
+            UserId: user.Id,
+            IsFirstLogin: false));
     }
 
     private IActionResult InvalidCredentials() =>

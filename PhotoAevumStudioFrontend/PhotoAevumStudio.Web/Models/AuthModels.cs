@@ -6,7 +6,8 @@ public record AuthResult(
     string? Error = null,
     bool RequiresPasswordChange = false,
     string? UserId = null,
-    string? Role = null);
+    string? Role = null,
+    bool IsFirstLogin = false);
 
 public record LoginRequest(string UserId, string Password);
 
@@ -17,7 +18,8 @@ public record LoginResponse(
     DateTime? ExpiresAt = null,
     bool MustChangePassword = false,
     bool RequiresPasswordChange = false,
-    string? UserId = null);
+    string? UserId = null,
+    bool IsFirstLogin = false);
 
 public record InitialPasswordChangeRequest(
     string UserId,

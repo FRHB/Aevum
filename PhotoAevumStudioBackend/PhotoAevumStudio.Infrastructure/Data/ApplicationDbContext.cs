@@ -46,6 +46,8 @@ public class ApplicationDbContext : IdentityDbContext<ApplicationUser>
         // ── ApplicationUser ──────────────────────────────────────────────────
         builder.Entity<ApplicationUser>(e =>
         {
+            e.Ignore(u => u.isFirstLogin);
+            e.Ignore(u => u.IsFirstLogin);
             e.Property(u => u.FirstName).HasMaxLength(100).IsRequired();
             e.Property(u => u.LastName).HasMaxLength(100).IsRequired();
             e.Property(u => u.MiddleName).HasMaxLength(100);

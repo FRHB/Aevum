@@ -40,4 +40,5 @@ public record LoginResponse(
     DateTime? ExpiresAt,
     bool MustChangePassword = false,
     bool RequiresPasswordChange = false,
-    string? UserId = null);
+    string? UserId = null,
+    bool IsFirstLogin = false);

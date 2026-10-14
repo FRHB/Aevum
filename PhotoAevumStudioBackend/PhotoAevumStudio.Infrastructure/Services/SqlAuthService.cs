@@ -40,7 +40,10 @@ public class SqlAuthService : ISqlAuthService
         const string adminQuery = @"
             SELECT AdminID, AdminRole, AdminFirstName, AdminLastName, AdminMiddleName, AdminPassword, isFirstLogin
             FROM dbo.Admin
-            WHERE AdminID = @UserId OR AdminID = @CandidateAdminId;";
+            WHERE AdminID = @UserId 
+               OR AdminID = @CandidateAdminId 
+               OR UPPER(AdminID) = UPPER(@CandidateAdminId) 
+               OR UPPER(AdminID) = UPPER(@UserId);";
 
         await using (var adminCmd = new SqlCommand(adminQuery, conn))
         {
@@ -55,7 +58,7 @@ public class SqlAuthService : ISqlAuthService
                 var last = reader.GetString(reader.GetOrdinal("AdminLastName"));
                 var middle = reader.IsDBNull(reader.GetOrdinal("AdminMiddleName")) ? null : reader.GetString(reader.GetOrdinal("AdminMiddleName"));
                 var storedPassword = reader.GetString(reader.GetOrdinal("AdminPassword"));
-                var isFirstLogin = !reader.IsDBNull(reader.GetOrdinal("isFirstLogin")) && reader.GetBoolean(reader.GetOrdinal("isFirstLogin"));
+                var isFirstLogin = reader.IsDBNull(reader.GetOrdinal("isFirstLogin")) || reader.GetBoolean(reader.GetOrdinal("isFirstLogin"));
 
                 var fullName = string.Join(" ", new[] { first, middle, last }.Where(s => !string.IsNullOrWhiteSpace(s)));
                 var email = $"{adminId.ToLowerInvariant()}@photoaevum.studio";
@@ -72,7 +75,7 @@ public class SqlAuthService : ISqlAuthService
                     }
 
                     _logger.LogInformation("Admin {AdminId} first-time login detected. Access withheld until password change.", adminId);
-                    return new AuthValidationResult(Success: true, RequiresPasswordChange: true, User: authUser);
+                    return new AuthValidationResult(Success: true, RequiresPasswordChange: true, User: authUser, IsFirstLogin: true);
                 }
                 else
                 {
@@ -84,7 +87,7 @@ public class SqlAuthService : ISqlAuthService
                     }
 
                     _logger.LogInformation("Successful standard login for admin {AdminId}.", adminId);
-                    return new AuthValidationResult(Success: true, RequiresPasswordChange: false, User: authUser);
+                    return new AuthValidationResult(Success: true, RequiresPasswordChange: false, User: authUser, IsFirstLogin: false);
                 }
             }
         }
@@ -93,11 +96,17 @@ public class SqlAuthService : ISqlAuthService
         const string empQuery = @"
             SELECT EmployeeID, EmployeeFirstName, EmployeeLastName, EmployeeMiddleName, EmployeeEmail, EmployeePassword, EmployeeStatus, isFirstLogin
             FROM dbo.Employee
-            WHERE EmployeeID = @UserId OR EmployeeEmail = @UserId;";
+            WHERE EmployeeID = @UserId 
+               OR EmployeeEmail = @UserId 
+               OR EmployeeID = @CandidateAdminId 
+               OR UPPER(EmployeeID) = UPPER(@CandidateAdminId) 
+               OR UPPER(EmployeeID) = UPPER(@UserId) 
+               OR UPPER(EmployeeEmail) = UPPER(@UserId);";
 
         await using (var empCmd = new SqlCommand(empQuery, conn))
         {
             empCmd.Parameters.AddWithValue("@UserId", trimmedId);
+            empCmd.Parameters.AddWithValue("@CandidateAdminId", candidateAdminId);
             await using var reader = await empCmd.ExecuteReaderAsync(cancellationToken);
             if (await reader.ReadAsync(cancellationToken))
             {
@@ -108,7 +117,7 @@ public class SqlAuthService : ISqlAuthService
                 var empEmail = reader.IsDBNull(reader.GetOrdinal("EmployeeEmail")) ? $"{empId.ToLowerInvariant()}@photoaevum.studio" : reader.GetString(reader.GetOrdinal("EmployeeEmail"));
                 var storedPassword = reader.IsDBNull(reader.GetOrdinal("EmployeePassword")) ? string.Empty : reader.GetString(reader.GetOrdinal("EmployeePassword"));
                 var status = reader.GetString(reader.GetOrdinal("EmployeeStatus"));
-                var isFirstLogin = !reader.IsDBNull(reader.GetOrdinal("isFirstLogin")) && reader.GetBoolean(reader.GetOrdinal("isFirstLogin"));
+                var isFirstLogin = reader.IsDBNull(reader.GetOrdinal("isFirstLogin")) || reader.GetBoolean(reader.GetOrdinal("isFirstLogin"));
 
                 if (!string.Equals(status, "Active", StringComparison.OrdinalIgnoreCase))
                 {
@@ -129,7 +138,7 @@ public class SqlAuthService : ISqlAuthService
                     }
 
                     _logger.LogInformation("Employee {EmployeeId} first-time login detected. Access withheld until password change.", empId);
-                    return new AuthValidationResult(Success: true, RequiresPasswordChange: true, User: authUser);
+                    return new AuthValidationResult(Success: true, RequiresPasswordChange: true, User: authUser, IsFirstLogin: true);
                 }
                 else
                 {
@@ -141,7 +150,7 @@ public class SqlAuthService : ISqlAuthService
                     }
 
                     _logger.LogInformation("Successful standard login for employee {EmployeeId}.", empId);
-                    return new AuthValidationResult(Success: true, RequiresPasswordChange: false, User: authUser);
+                    return new AuthValidationResult(Success: true, RequiresPasswordChange: false, User: authUser, IsFirstLogin: false);
                 }
             }
         }
@@ -178,7 +187,7 @@ public class SqlAuthService : ISqlAuthService
                 }
 
                 _logger.LogInformation("Successful standard login for customer {Email}.", custEmail);
-                return new AuthValidationResult(Success: true, RequiresPasswordChange: false, User: authUser);
+                return new AuthValidationResult(Success: true, RequiresPasswordChange: false, User: authUser, IsFirstLogin: false);
             }
         }
 
@@ -212,7 +221,10 @@ public class SqlAuthService : ISqlAuthService
         const string adminCheck = @"
             SELECT AdminID, AdminPassword, isFirstLogin
             FROM dbo.Admin
-            WHERE AdminID = @UserId OR AdminID = @CandidateAdminId;";
+            WHERE AdminID = @UserId 
+               OR AdminID = @CandidateAdminId 
+               OR UPPER(AdminID) = UPPER(@CandidateAdminId) 
+               OR UPPER(AdminID) = UPPER(@UserId);";
 
         await using (var cmd = new SqlCommand(adminCheck, conn))
         {
@@ -223,7 +235,7 @@ public class SqlAuthService : ISqlAuthService
             {
                 var adminId = reader.GetString(reader.GetOrdinal("AdminID"));
                 var storedPassword = reader.GetString(reader.GetOrdinal("AdminPassword"));
-                var isFirstLogin = !reader.IsDBNull(reader.GetOrdinal("isFirstLogin")) && reader.GetBoolean(reader.GetOrdinal("isFirstLogin"));
+                var isFirstLogin = reader.IsDBNull(reader.GetOrdinal("isFirstLogin")) || reader.GetBoolean(reader.GetOrdinal("isFirstLogin"));
                 reader.Close();
 
                 bool currentValid = VerifyPasswordFlexible(currentPassword, storedPassword, allowPlainText: isFirstLogin);
@@ -260,6 +272,16 @@ public class SqlAuthService : ISqlAuthService
                         spCmd.Parameters.RemoveAt("@NewPassword");
                         await spCmd.ExecuteNonQueryAsync(cancellationToken);
                     }
+                    catch (Exception ex)
+                    {
+                        _logger.LogWarning(ex, "Non-fatal error calling dbo.sp_CompleteAdminFirstLogin for {AdminId}.", adminId);
+                    }
+                }
+
+                await TrySyncAspNetUsersAsync(conn, adminId, newHashed, cancellationToken);
+                if (!string.Equals(adminId, trimmedId, StringComparison.OrdinalIgnoreCase))
+                {
+                    await TrySyncAspNetUsersAsync(conn, trimmedId, newHashed, cancellationToken);
                 }
 
                 _logger.LogInformation("Admin {AdminId} successfully completed initial password change and hashing.", adminId);
@@ -269,20 +291,27 @@ public class SqlAuthService : ISqlAuthService
 
         // Check Employee
         const string empCheck = @"
-            SELECT EmployeeID, EmployeePassword, EmployeeStatus, isFirstLogin
+            SELECT EmployeeID, EmployeeEmail, EmployeePassword, EmployeeStatus, isFirstLogin
             FROM dbo.Employee
-            WHERE EmployeeID = @UserId OR EmployeeEmail = @UserId;";
+            WHERE EmployeeID = @UserId 
+               OR EmployeeEmail = @UserId 
+               OR EmployeeID = @CandidateAdminId 
+               OR UPPER(EmployeeID) = UPPER(@CandidateAdminId) 
+               OR UPPER(EmployeeID) = UPPER(@UserId) 
+               OR UPPER(EmployeeEmail) = UPPER(@UserId);";
 
         await using (var cmd = new SqlCommand(empCheck, conn))
         {
             cmd.Parameters.AddWithValue("@UserId", trimmedId);
+            cmd.Parameters.AddWithValue("@CandidateAdminId", candidateAdminId);
             await using var reader = await cmd.ExecuteReaderAsync(cancellationToken);
             if (await reader.ReadAsync(cancellationToken))
             {
                 var empId = reader.GetString(reader.GetOrdinal("EmployeeID"));
+                var empEmail = reader.IsDBNull(reader.GetOrdinal("EmployeeEmail")) ? null : reader.GetString(reader.GetOrdinal("EmployeeEmail"));
                 var storedPassword = reader.IsDBNull(reader.GetOrdinal("EmployeePassword")) ? string.Empty : reader.GetString(reader.GetOrdinal("EmployeePassword"));
                 var status = reader.GetString(reader.GetOrdinal("EmployeeStatus"));
-                var isFirstLogin = !reader.IsDBNull(reader.GetOrdinal("isFirstLogin")) && reader.GetBoolean(reader.GetOrdinal("isFirstLogin"));
+                var isFirstLogin = reader.IsDBNull(reader.GetOrdinal("isFirstLogin")) || reader.GetBoolean(reader.GetOrdinal("isFirstLogin"));
                 reader.Close();
 
                 if (!string.Equals(status, "Active", StringComparison.OrdinalIgnoreCase))
@@ -322,9 +351,68 @@ public class SqlAuthService : ISqlAuthService
                         spCmd.Parameters.RemoveAt("@NewPassword");
                         await spCmd.ExecuteNonQueryAsync(cancellationToken);
                     }
+                    catch (Exception ex)
+                    {
+                        _logger.LogWarning(ex, "Non-fatal error calling dbo.sp_CompleteEmployeeFirstLogin for {EmployeeId}.", empId);
+                    }
+                }
+
+                await TrySyncAspNetUsersAsync(conn, empId, newHashed, cancellationToken);
+                if (!string.Equals(empId, trimmedId, StringComparison.OrdinalIgnoreCase))
+                {
+                    await TrySyncAspNetUsersAsync(conn, trimmedId, newHashed, cancellationToken);
+                }
+                if (!string.IsNullOrWhiteSpace(empEmail) && !string.Equals(empEmail, trimmedId, StringComparison.OrdinalIgnoreCase))
+                {
+                    await TrySyncAspNetUsersAsync(conn, empEmail, newHashed, cancellationToken);
                 }
 
                 _logger.LogInformation("Employee {EmployeeId} successfully completed initial password change and hashing.", empId);
+                return (true, "Password has been successfully updated.");
+            }
+        }
+
+        // Check Customer
+        const string custCheck = @"
+            SELECT CustomerID, CustomerPassword
+            FROM dbo.Customer
+            WHERE CustomerEmail = @UserId 
+               OR CustomerID = @UserId 
+               OR UPPER(CustomerEmail) = UPPER(@UserId) 
+               OR UPPER(CustomerID) = UPPER(@UserId);";
+
+        await using (var cmd = new SqlCommand(custCheck, conn))
+        {
+            cmd.Parameters.AddWithValue("@UserId", trimmedId);
+            await using var reader = await cmd.ExecuteReaderAsync(cancellationToken);
+            if (await reader.ReadAsync(cancellationToken))
+            {
+                var custId = reader.GetString(reader.GetOrdinal("CustomerID"));
+                var storedPassword = reader.GetString(reader.GetOrdinal("CustomerPassword"));
+                reader.Close();
+
+                bool currentValid = VerifyPasswordFlexible(currentPassword, storedPassword, allowPlainText: false);
+                if (!currentValid)
+                    return (false, "Current password is incorrect.");
+
+                string newHashed = BCrypt.Net.BCrypt.HashPassword(newPassword);
+
+                const string updateCustSql = @"
+                    UPDATE dbo.Customer
+                    SET CustomerPassword = @NewPassword
+                    WHERE CustomerID = @CustomerID;";
+                await using var updateCmd = new SqlCommand(updateCustSql, conn);
+                updateCmd.Parameters.AddWithValue("@NewPassword", newHashed);
+                updateCmd.Parameters.AddWithValue("@CustomerID", custId);
+                await updateCmd.ExecuteNonQueryAsync(cancellationToken);
+
+                await TrySyncAspNetUsersAsync(conn, custId, newHashed, cancellationToken);
+                if (!string.Equals(custId, trimmedId, StringComparison.OrdinalIgnoreCase))
+                {
+                    await TrySyncAspNetUsersAsync(conn, trimmedId, newHashed, cancellationToken);
+                }
+
+                _logger.LogInformation("Customer {CustomerId} successfully updated password.", custId);
                 return (true, "Password has been successfully updated.");
             }
         }
@@ -427,7 +515,33 @@ public class SqlAuthService : ISqlAuthService
         cmd.Parameters.AddWithValue("@EmployeePassword", hashedPassword);
         cmd.Parameters.AddWithValue("@isFirstLogin", true);
 
-        await cmd.ExecuteNonQueryAsync(cancellationToken);
+        try
+        {
+            await cmd.ExecuteNonQueryAsync(cancellationToken);
+        }
+        catch (SqlException)
+        {
+            const string insertSql = @"
+                IF COL_LENGTH(N'dbo.Employee', N'isFirstLogin') IS NOT NULL
+                BEGIN
+                    INSERT INTO dbo.Employee (EmployeeID, EmployeeFirstName, EmployeeLastName, EmployeeMiddleName, EmployeeEmail, EmployeePassword, EmployeeStatus, isFirstLogin)
+                    VALUES (@EmployeeID, @EmployeeFirstName, @EmployeeLastName, @EmployeeMiddleName, @EmployeeEmail, @EmployeePassword, 'Active', 1);
+                END
+                ELSE
+                BEGIN
+                    INSERT INTO dbo.Employee (EmployeeID, EmployeeFirstName, EmployeeLastName, EmployeeMiddleName, EmployeeEmail, EmployeePassword, EmployeeStatus)
+                    VALUES (@EmployeeID, @EmployeeFirstName, @EmployeeLastName, @EmployeeMiddleName, @EmployeeEmail, @EmployeePassword, 'Active');
+                END";
+            await using var insertCmd = new SqlCommand(insertSql, conn);
+            insertCmd.Parameters.AddWithValue("@EmployeeID", employeeId.Trim());
+            insertCmd.Parameters.AddWithValue("@EmployeeFirstName", firstName.Trim());
+            insertCmd.Parameters.AddWithValue("@EmployeeLastName", lastName.Trim());
+            insertCmd.Parameters.AddWithValue("@EmployeeMiddleName", string.IsNullOrWhiteSpace(middleName) ? DBNull.Value : middleName.Trim());
+            insertCmd.Parameters.AddWithValue("@EmployeeEmail", email.Trim());
+            insertCmd.Parameters.AddWithValue("@EmployeePassword", hashedPassword);
+            await insertCmd.ExecuteNonQueryAsync(cancellationToken);
+        }
+
         _logger.LogInformation("Created Employee {EmployeeId} ({Email}) with isFirstLogin = true.", employeeId, email);
 
         return (true, "Employee registered successfully.");
@@ -448,37 +562,114 @@ public class SqlAuthService : ISqlAuthService
         var candidateAdminId = atIndex > 0 ? trimmedEmail[..atIndex] : trimmedEmail;
 
         // Try Admin
-        const string updateAdmin = "UPDATE dbo.Admin SET AdminPassword = @Hash, isFirstLogin = 0 WHERE AdminID = @Email OR AdminID = @CandidateAdminId;";
+        const string updateAdmin = @"
+            UPDATE dbo.Admin 
+            SET AdminPassword = @Hash, isFirstLogin = 0 
+            WHERE AdminID = @Email 
+               OR AdminID = @CandidateAdminId 
+               OR UPPER(AdminID) = UPPER(@CandidateAdminId) 
+               OR UPPER(AdminID) = UPPER(@Email);";
         await using (var cmd = new SqlCommand(updateAdmin, conn))
         {
             cmd.Parameters.AddWithValue("@Hash", hashedPassword);
             cmd.Parameters.AddWithValue("@Email", trimmedEmail);
             cmd.Parameters.AddWithValue("@CandidateAdminId", candidateAdminId);
             if (await cmd.ExecuteNonQueryAsync(cancellationToken) > 0)
+            {
+                await TrySyncAspNetUsersAsync(conn, trimmedEmail, hashedPassword, cancellationToken);
+                if (atIndex > 0)
+                {
+                    await TrySyncAspNetUsersAsync(conn, candidateAdminId, hashedPassword, cancellationToken);
+                }
                 return (true, "Password has been successfully reset.");
+            }
         }
 
         // Try Employee
-        const string updateEmp = "UPDATE dbo.Employee SET EmployeePassword = @Hash, isFirstLogin = 0 WHERE EmployeeEmail = @Email OR EmployeeID = @Email;";
+        const string updateEmp = @"
+            UPDATE dbo.Employee 
+            SET EmployeePassword = @Hash, isFirstLogin = 0 
+            WHERE EmployeeEmail = @Email 
+               OR EmployeeID = @Email 
+               OR EmployeeID = @CandidateAdminId 
+               OR UPPER(EmployeeID) = UPPER(@CandidateAdminId) 
+               OR UPPER(EmployeeID) = UPPER(@Email) 
+               OR UPPER(EmployeeEmail) = UPPER(@Email);";
         await using (var cmd = new SqlCommand(updateEmp, conn))
         {
             cmd.Parameters.AddWithValue("@Hash", hashedPassword);
-            cmd.Parameters.AddWithValue("@Email", email.Trim());
+            cmd.Parameters.AddWithValue("@Email", trimmedEmail);
+            cmd.Parameters.AddWithValue("@CandidateAdminId", candidateAdminId);
             if (await cmd.ExecuteNonQueryAsync(cancellationToken) > 0)
+            {
+                await TrySyncAspNetUsersAsync(conn, trimmedEmail, hashedPassword, cancellationToken);
+                if (atIndex > 0)
+                {
+                    await TrySyncAspNetUsersAsync(conn, candidateAdminId, hashedPassword, cancellationToken);
+                }
                 return (true, "Password has been successfully reset.");
+            }
         }
 
         // Try Customer
-        const string updateCust = "UPDATE dbo.Customer SET CustomerPassword = @Hash WHERE CustomerEmail = @Email OR CustomerID = @Email;";
+        const string updateCust = @"
+            UPDATE dbo.Customer 
+            SET CustomerPassword = @Hash 
+            WHERE CustomerEmail = @Email 
+               OR CustomerID = @Email 
+               OR UPPER(CustomerEmail) = UPPER(@Email) 
+               OR UPPER(CustomerID) = UPPER(@Email);";
         await using (var cmd = new SqlCommand(updateCust, conn))
         {
             cmd.Parameters.AddWithValue("@Hash", hashedPassword);
-            cmd.Parameters.AddWithValue("@Email", email.Trim());
+            cmd.Parameters.AddWithValue("@Email", trimmedEmail);
             if (await cmd.ExecuteNonQueryAsync(cancellationToken) > 0)
+            {
+                await TrySyncAspNetUsersAsync(conn, trimmedEmail, hashedPassword, cancellationToken);
                 return (true, "Password has been successfully reset.");
+            }
         }
 
         return (false, "Account not found.");
+    }
+
+    private static async Task TrySyncAspNetUsersAsync(
+        SqlConnection conn,
+        string userIdentifier,
+        string? passwordHash,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            const string syncSql = @"
+                IF OBJECT_ID(N'dbo.AspNetUsers', N'U') IS NOT NULL
+                BEGIN
+                    UPDATE dbo.AspNetUsers
+                    SET MustChangePassword = 0,
+                        PasswordChangedAt = SYSUTCDATETIME(),
+                        PasswordHash = COALESCE(@PasswordHash, PasswordHash)
+                    WHERE StudioId = @UserId 
+                       OR UserName = @UserId 
+                       OR Email = @UserId 
+                       OR Id = @UserId 
+                       OR UPPER(StudioId) = UPPER(@UserId) 
+                       OR UPPER(UserName) = UPPER(@UserId) 
+                       OR UPPER(Email) = UPPER(@UserId);
+
+                    IF COL_LENGTH(N'dbo.AspNetUsers', N'isFirstLogin') IS NOT NULL
+                    BEGIN
+                        EXEC(N'UPDATE dbo.AspNetUsers SET isFirstLogin = 0 WHERE StudioId = @U OR UserName = @U OR Email = @U OR Id = @U OR UPPER(StudioId) = UPPER(@U) OR UPPER(UserName) = UPPER(@U) OR UPPER(Email) = UPPER(@U);', N'@U nvarchar(256)', @U = @UserId);
+                    END;
+                END;";
+            await using var cmd = new SqlCommand(syncSql, conn);
+            cmd.Parameters.AddWithValue("@UserId", userIdentifier);
+            cmd.Parameters.AddWithValue("@PasswordHash", (object?)passwordHash ?? DBNull.Value);
+            await cmd.ExecuteNonQueryAsync(cancellationToken);
+        }
+        catch
+        {
+            // Best effort identity sync
+        }
     }
 
     private static bool VerifyPasswordStrict(string provided, string storedHash)

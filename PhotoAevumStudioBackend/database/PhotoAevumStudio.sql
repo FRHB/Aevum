@@ -9,7 +9,8 @@ CREATE TABLE dbo.Admin (
     AdminFirstName nvarchar(255) NOT NULL,
     AdminLastName nvarchar(255) NOT NULL,
     AdminMiddleName nvarchar(255),
-    AdminPassword nvarchar(255) NOT NULL
+    AdminPassword nvarchar(255) NOT NULL,
+    isFirstLogin bit NOT NULL CONSTRAINT DF_Admin_isFirstLogin DEFAULT 1
 );
 
 CREATE TABLE dbo.Employee (
@@ -20,6 +21,7 @@ CREATE TABLE dbo.Employee (
     EmployeeEmail nvarchar(255),
     EmployeePassword nvarchar(255),
     EmployeeStatus nvarchar(20) NOT NULL CONSTRAINT DF_Employee_Status DEFAULT 'Active',
+    isFirstLogin bit NOT NULL CONSTRAINT DF_Employee_isFirstLogin DEFAULT 1,
     CONSTRAINT CK_Employee_Status CHECK (EmployeeStatus IN ('Active','Inactive'))
 );
 

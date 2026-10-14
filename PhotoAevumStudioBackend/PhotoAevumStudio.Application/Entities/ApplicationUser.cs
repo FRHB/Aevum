@@ -1,3 +1,4 @@
+using System.ComponentModel.DataAnnotations.Schema;
 using Microsoft.AspNetCore.Identity;
 
 namespace PhotoAevumStudio.Application.Entities;
@@ -26,4 +27,18 @@ public class ApplicationUser : IdentityUser
 
     public bool MustChangePassword { get; set; } = true;
     public DateTime? PasswordChangedAt { get; set; }
+
+    [NotMapped]
+    public bool isFirstLogin
+    {
+        get => MustChangePassword;
+        set => MustChangePassword = value;
+    }
+
+    [NotMapped]
+    public bool IsFirstLogin
+    {
+        get => MustChangePassword;
+        set => MustChangePassword = value;
+    }
 }

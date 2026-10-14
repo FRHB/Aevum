@@ -18,6 +18,10 @@
     <None Update="Data\Scripts\*.sql">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </None>
+    <None Update="..\database\*.sql">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      <Link>database\%(Filename)%(Extension)</Link>
+    </None>
   </ItemGroup>
 
   <PropertyGroup>

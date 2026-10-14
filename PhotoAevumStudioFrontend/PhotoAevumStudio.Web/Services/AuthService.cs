@@ -40,13 +40,14 @@ public sealed class AuthService : IAuthService
                 return new AuthResult(false, Error: "Unexpected server response.");
 
             // First-time login: JWT is not issued; redirect to password change screen
-            if (loginResponse.RequiresPasswordChange)
+            if (loginResponse.RequiresPasswordChange || loginResponse.IsFirstLogin)
             {
                 return new AuthResult(
                     true,
                     RequiresPasswordChange: true,
                     UserId: loginResponse.UserId ?? userId,
-                    Role: loginResponse.Role);
+                    Role: loginResponse.Role,
+                    IsFirstLogin: true);
             }
 
             if (string.IsNullOrWhiteSpace(loginResponse.Token))

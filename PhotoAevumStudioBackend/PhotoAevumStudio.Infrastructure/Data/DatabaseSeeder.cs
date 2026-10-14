@@ -35,6 +35,34 @@ public static class DatabaseSeeder
                 INSERT INTO [__EFMigrationsHistory] ([MigrationId], [ProductVersion])
                 VALUES ('20261008080923_AddIdentityAndPhotos', '10.0.12');
             END;
+
+            IF OBJECT_ID(N'dbo.Services', N'U') IS NOT NULL
+               AND NOT EXISTS (SELECT 1 FROM [__EFMigrationsHistory] WHERE [MigrationId] = '20261008081827_ExpandDomainModels')
+            BEGIN
+                INSERT INTO [__EFMigrationsHistory] ([MigrationId], [ProductVersion])
+                VALUES ('20261008081827_ExpandDomainModels', '10.0.12');
+            END;
+
+            IF OBJECT_ID(N'dbo.Bookings', N'U') IS NOT NULL
+               AND NOT EXISTS (SELECT 1 FROM [__EFMigrationsHistory] WHERE [MigrationId] = '20261010090001_UpdateBookingKeysAndDate_FixCascade')
+            BEGIN
+                INSERT INTO [__EFMigrationsHistory] ([MigrationId], [ProductVersion])
+                VALUES ('20261010090001_UpdateBookingKeysAndDate_FixCascade', '10.0.12');
+            END;
+
+            IF OBJECT_ID(N'dbo.Admins', N'V') IS NOT NULL
+               AND NOT EXISTS (SELECT 1 FROM [__EFMigrationsHistory] WHERE [MigrationId] = '20261010100000_AddAdminsView')
+            BEGIN
+                INSERT INTO [__EFMigrationsHistory] ([MigrationId], [ProductVersion])
+                VALUES ('20261010100000_AddAdminsView', '10.0.12');
+            END;
+
+            IF COL_LENGTH(N'dbo.AspNetUsers', N'MustChangePassword') IS NOT NULL
+               AND NOT EXISTS (SELECT 1 FROM [__EFMigrationsHistory] WHERE [MigrationId] = '20261013034024_AddMustChangePasswordToApplicationUser')
+            BEGIN
+                INSERT INTO [__EFMigrationsHistory] ([MigrationId], [ProductVersion])
+                VALUES ('20261013034024_AddMustChangePasswordToApplicationUser', '10.0.12');
+            END;
         ";
 
         try
@@ -62,7 +90,60 @@ public static class DatabaseSeeder
                 await conn.OpenAsync();
 
             await using var setCmd = conn.CreateCommand();
-            setCmd.CommandText = "SET QUOTED_IDENTIFIER ON; SET ANSI_NULLS ON;";
+            setCmd.CommandText = @"SET QUOTED_IDENTIFIER ON; SET ANSI_NULLS ON;
+                IF OBJECT_ID(N'dbo.Admin', N'U') IS NOT NULL
+                BEGIN
+                    IF COL_LENGTH(N'dbo.Admin', N'isFirstLogin') IS NULL
+                    BEGIN
+                        ALTER TABLE dbo.Admin ADD isFirstLogin bit NOT NULL CONSTRAINT DF_Admin_isFirstLogin DEFAULT 1;
+                    END
+                    ELSE
+                    BEGIN
+                        UPDATE dbo.Admin SET isFirstLogin = 1 WHERE isFirstLogin IS NULL;
+                    END
+                END;
+
+                IF OBJECT_ID(N'dbo.Employee', N'U') IS NOT NULL
+                BEGIN
+                    IF COL_LENGTH(N'dbo.Employee', N'isFirstLogin') IS NULL
+                    BEGIN
+                        ALTER TABLE dbo.Employee ADD isFirstLogin bit NOT NULL CONSTRAINT DF_Employee_isFirstLogin DEFAULT 1;
+                    END
+                    ELSE
+                    BEGIN
+                        UPDATE dbo.Employee SET isFirstLogin = 1 WHERE isFirstLogin IS NULL;
+                    END
+                END;
+
+                IF OBJECT_ID(N'dbo.sp_CompleteEmployeeFirstLogin', N'P') IS NULL
+                BEGIN
+                    EXEC(N'CREATE PROCEDURE dbo.sp_CompleteEmployeeFirstLogin
+                        @EmployeeID nvarchar(30),
+                        @NewPassword nvarchar(255) = NULL
+                    AS
+                    BEGIN
+                        SET NOCOUNT ON;
+                        UPDATE dbo.Employee
+                        SET isFirstLogin = 0,
+                            EmployeePassword = COALESCE(@NewPassword, EmployeePassword)
+                        WHERE EmployeeID = @EmployeeID;
+                    END;');
+                END;
+
+                IF OBJECT_ID(N'dbo.sp_CompleteAdminFirstLogin', N'P') IS NULL
+                BEGIN
+                    EXEC(N'CREATE PROCEDURE dbo.sp_CompleteAdminFirstLogin
+                        @AdminID nvarchar(30),
+                        @NewPassword nvarchar(255) = NULL
+                    AS
+                    BEGIN
+                        SET NOCOUNT ON;
+                        UPDATE dbo.Admin
+                        SET isFirstLogin = 0,
+                            AdminPassword = COALESCE(@NewPassword, AdminPassword)
+                        WHERE AdminID = @AdminID;
+                    END;');
+                END;";
             await setCmd.ExecuteNonQueryAsync();
 
             await using var checkCmd = conn.CreateCommand();

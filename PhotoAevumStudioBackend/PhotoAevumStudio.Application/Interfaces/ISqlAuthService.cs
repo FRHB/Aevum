@@ -12,7 +12,8 @@ public record AuthValidationResult(
     bool Success,
     bool RequiresPasswordChange = false,
     AuthUser? User = null,
-    string? ErrorMessage = null);
+    string? ErrorMessage = null,
+    bool IsFirstLogin = false);
 
 public interface ISqlAuthService
 {
