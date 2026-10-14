@@ -39,7 +39,8 @@ CREATE TABLE dbo.Customer (
 
 CREATE TABLE dbo.EmployeeSpecialization (
     SpecializationID nvarchar(30) NOT NULL PRIMARY KEY,
-    SpecializationName nvarchar(255) NOT NULL
+    SpecializationName nvarchar(255) NOT NULL,
+    Specialization nvarchar(255) NOT NULL
 );
 
 CREATE TABLE dbo.EquipmentType (

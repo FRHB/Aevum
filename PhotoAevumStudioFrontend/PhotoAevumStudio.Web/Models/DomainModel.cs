@@ -1,4 +1,4 @@
-﻿using System.ComponentModel.DataAnnotations;
+using System.ComponentModel.DataAnnotations;
 
 namespace PhotoAevumStudio.Web.Models;
 
@@ -131,3 +131,54 @@ public class VerificationModel
     [RegularExpression(@"^\d{6}$", ErrorMessage = "The code is 6 digits.")]
     public string Code { get; set; } = string.Empty;
 }
+
+public class EmployeeRegistrationModel : IValidatableObject
+{
+    // Step 1: Personal Information
+    [Required(ErrorMessage = "First name is required.")]
+    [StringLength(50, ErrorMessage = "First name cannot exceed 50 characters.")]
+    [Display(Name = "First Name")]
+    public string FirstName { get; set; } = string.Empty;
+
+    [Required(ErrorMessage = "Last name is required.")]
+    [StringLength(50, ErrorMessage = "Last name cannot exceed 50 characters.")]
+    [Display(Name = "Last Name")]
+    public string LastName { get; set; } = string.Empty;
+
+    [StringLength(50, ErrorMessage = "Middle name cannot exceed 50 characters.")]
+    [Display(Name = "Middle Name")]
+    public string? MiddleName { get; set; }
+
+    [Required(ErrorMessage = "Email address is required.")]
+    [EmailAddress(ErrorMessage = "Please enter a valid email address.")]
+    [Display(Name = "Employee Email")]
+    public string Email { get; set; } = string.Empty;
+
+    // Step 2: Specializations
+    public List<string> Specializations { get; set; } = new();
+
+    public string FullName => string.Join(" ", new[] { FirstName, MiddleName, LastName }
+        .Where(s => !string.IsNullOrWhiteSpace(s)));
+
+    // Step 3: Overview & Credentials
+    [Required(ErrorMessage = "Employee ID is required.")]
+    [RegularExpression(@"^[A-Za-z0-9\-]{3,20}$", ErrorMessage = "Employee ID must be 3 to 20 letters, numbers, or hyphens.")]
+    [Display(Name = "Employee ID")]
+    public string EmployeeId { get; set; } = string.Empty;
+
+    [Required(ErrorMessage = "Starting password is required.")]
+    [MinLength(8, ErrorMessage = "Password must be at least 8 characters.")]
+    [RegularExpression(@"^(?=.*[A-Za-z])(?=.*\d).+$", ErrorMessage = "Password must contain at least one letter and one number.")]
+    [Display(Name = "Starting Password")]
+    public string Password { get; set; } = string.Empty;
+
+    public IEnumerable<ValidationResult> Validate(ValidationContext validationContext)
+    {
+        if (Specializations == null || Specializations.Count == 0)
+        {
+            yield return new ValidationResult(
+                "At least one specialization is required.",
+                new[] { nameof(Specializations) });
+        }
+    }
+}

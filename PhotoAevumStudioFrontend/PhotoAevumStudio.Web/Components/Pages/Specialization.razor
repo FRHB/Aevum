@@ -5,19 +5,582 @@
 @page "/specializations"
 @layout AdminLayout
 @rendermode InteractiveServer
+@attribute [Authorize(Roles = "Admin")]
+@inject IEmployeeService EmployeeService
+@using PhotoAevumStudio.Web.Models
 
-<PageTitle>Specialization - PhotoAevum</PageTitle>
+<PageTitle>Specializations Management | Photo Aevum Studio</PageTitle>
 
-<div class="flex justify-between items-center mb-8">
-    <div>
-        <h1 class="text-3xl font-bold text-gray-900">Specialization</h1>
-        <p class="text-gray-500 mt-1">Staff expertise classifications: Portrait, Wedding, Product, Commercial.</p>
+<div class="space-y-6">
+    <!-- Page Header & Action Controls -->
+    <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 pb-2">
+        <div>
+            <div class="flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-gray-500 mb-1">
+                <span>Employees Module</span>
+                <span>/</span>
+                <span class="text-gray-900">Specializations</span>
+            </div>
+            <h1 class="text-2xl sm:text-3xl font-extrabold text-gray-900 tracking-tight">Specializations Management</h1>
+            <p class="text-sm text-gray-500 mt-1">
+                Monitor team skill distributions, search staff specializations, and manage the master lookup registry.
+            </p>
+        </div>
+
+        <div class="flex items-center gap-3">
+            <button type="button" 
+                    @onclick="OpenWizard"
+                    class="inline-flex items-center gap-2 px-4 py-2.5 bg-gray-900 hover:bg-black text-white text-sm font-semibold rounded-lg shadow-sm hover:shadow transition-all duration-150 active:scale-95 focus:outline-none focus:ring-2 focus:ring-gray-900 focus:ring-offset-2">
+                <svg class="w-4 h-4 text-emerald-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M12 4v16m8-8H4" />
+                </svg>
+                <span>Add New Specialization</span>
+            </button>
+        </div>
+    </div>
+
+    <!-- Alert / Toast Banner for Newly Added Master Specialization -->
+    @if (!string.IsNullOrWhiteSpace(notificationMessage))
+    {
+        <div class="p-4 bg-emerald-50 border border-emerald-200 text-emerald-900 rounded-xl flex items-center justify-between shadow-xs animate-in fade-in duration-200">
+            <div class="flex items-center gap-3">
+                <span class="w-7 h-7 rounded-full bg-emerald-600 text-white flex items-center justify-center shrink-0">
+                    <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M5 13l4 4L19 7" />
+                    </svg>
+                </span>
+                <div>
+                    <p class="text-xs font-bold text-emerald-950">Master Catalogue Updated</p>
+                    <p class="text-xs text-emerald-800">@notificationMessage</p>
+                </div>
+            </div>
+            <button type="button" @onclick="() => notificationMessage = null" class="text-emerald-700 hover:text-emerald-950 p-1 text-sm font-bold">&times;</button>
+        </div>
+    }
+
+    <!-- Quick Stats Grid -->
+    <div class="grid grid-cols-2 lg:grid-cols-4 gap-4">
+        <div class="bg-white p-4 rounded-xl border border-gray-200 shadow-xs">
+            <div class="flex items-center justify-between">
+                <span class="text-xs font-semibold text-gray-500 uppercase tracking-wider">Total Staff</span>
+                <span class="p-1.5 rounded-lg bg-gray-100 text-gray-700">👥</span>
+            </div>
+            <p class="text-2xl font-bold text-gray-900 mt-2">@employees.Count</p>
+            <p class="text-[11px] text-gray-400 mt-0.5">Active directory members</p>
+        </div>
+
+        <div class="bg-white p-4 rounded-xl border border-gray-200 shadow-xs">
+            <div class="flex items-center justify-between">
+                <span class="text-xs font-semibold text-gray-500 uppercase tracking-wider">Master Categories</span>
+                <span class="p-1.5 rounded-lg bg-blue-50 text-blue-700">🏷️</span>
+            </div>
+            <p class="text-2xl font-bold text-gray-900 mt-2">@masterSpecializations.Count</p>
+            <p class="text-[11px] text-gray-400 mt-0.5">Master lookup catalog</p>
+        </div>
+
+        <div class="bg-white p-4 rounded-xl border border-gray-200 shadow-xs">
+            <div class="flex items-center justify-between">
+                <span class="text-xs font-semibold text-gray-500 uppercase tracking-wider">Photographers</span>
+                <span class="p-1.5 rounded-lg bg-purple-50 text-purple-700">📷</span>
+            </div>
+            <p class="text-2xl font-bold text-gray-900 mt-2">
+                @employees.Count(e => e.Specializations.Any(s => s.Contains("Photo", StringComparison.OrdinalIgnoreCase)))
+            </p>
+            <p class="text-[11px] text-gray-400 mt-0.5">Primary shoot operators</p>
+        </div>
+
+        <div class="bg-white p-4 rounded-xl border border-gray-200 shadow-xs">
+            <div class="flex items-center justify-between">
+                <span class="text-xs font-semibold text-gray-500 uppercase tracking-wider">Post-Processing</span>
+                <span class="p-1.5 rounded-lg bg-emerald-50 text-emerald-700">🎨</span>
+            </div>
+            <p class="text-2xl font-bold text-gray-900 mt-2">
+                @employees.Count(e => e.Specializations.Any(s => s.Contains("Edit", StringComparison.OrdinalIgnoreCase) || s.Contains("Color", StringComparison.OrdinalIgnoreCase) || s.Contains("Retouch", StringComparison.OrdinalIgnoreCase)))
+            </p>
+            <p class="text-[11px] text-gray-400 mt-0.5">Editing & lab specialists</p>
+        </div>
+    </div>
+
+    <!-- Search & Filter Controls -->
+    <div class="bg-white p-4 rounded-xl border border-gray-200 shadow-xs space-y-3">
+        <div class="flex flex-col md:flex-row gap-3 items-stretch md:items-center justify-between">
+            
+            <!-- Search Bar: Search by Employee Name or ID -->
+            <div class="relative flex-1 min-w-[240px]">
+                <div class="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-gray-400">
+                    <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                    </svg>
+                </div>
+                <input type="text"
+                       @bind="searchQuery"
+                       @bind:event="oninput"
+                       placeholder="Search employee by name (e.g., Alex, Sofia) or ID..."
+                       class="w-full pl-10 pr-10 py-2.5 text-sm bg-gray-50/70 border border-gray-200 rounded-lg text-gray-900 placeholder-gray-400 focus:bg-white focus:outline-none focus:ring-2 focus:ring-gray-900 focus:border-transparent transition-all" />
+                @if (!string.IsNullOrWhiteSpace(searchQuery))
+                {
+                    <button type="button" 
+                            @onclick="() => searchQuery = string.Empty"
+                            class="absolute inset-y-0 right-0 pr-3 flex items-center text-gray-400 hover:text-gray-700">
+                        <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+                        </svg>
+                    </button>
+                }
+            </div>
+
+            <!-- Filter Dropdown (ComboBox): Filter by Specialization -->
+            <div class="flex flex-wrap sm:flex-nowrap items-center gap-3">
+                <div class="relative min-w-[200px]">
+                    <div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-gray-400">
+                        <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2.586a1 1 0 01-.293.707l-6.414 6.414a1 1 0 00-.293.707V17l-4 4v-6.586a1 1 0 00-.293-.707L3.293 7.293A1 1 0 013 6.586V4z" />
+                        </svg>
+                    </div>
+                    <select @bind="selectedSpecializationFilter"
+                            class="w-full pl-9 pr-8 py-2.5 text-sm bg-gray-50/70 border border-gray-200 rounded-lg text-gray-800 focus:bg-white focus:outline-none focus:ring-2 focus:ring-gray-900 focus:border-transparent cursor-pointer transition-all">
+                        <option value="ALL">All Specializations (@masterSpecializations.Count)</option>
+                        @foreach (var spec in masterSpecializations)
+                        {
+                            <option value="@spec.Name">@spec.Name (@GetStaffCountForSpecialization(spec.Name))</option>
+                        }
+                    </select>
+                </div>
+
+                <!-- Secondary Department Filter -->
+                <div class="relative min-w-[170px]">
+                    <select @bind="selectedDepartmentFilter"
+                            class="w-full px-3 py-2.5 text-sm bg-gray-50/70 border border-gray-200 rounded-lg text-gray-800 focus:bg-white focus:outline-none focus:ring-2 focus:ring-gray-900 focus:border-transparent cursor-pointer transition-all">
+                        <option value="ALL">All Departments</option>
+                        <option value="Photography">Photography</option>
+                        <option value="Videography">Videography</option>
+                        <option value="Post-Processing">Post-Processing</option>
+                        <option value="Studio Staff">Studio Staff</option>
+                    </select>
+                </div>
+
+                @if (IsFiltered)
+                {
+                    <button type="button" 
+                            @onclick="ResetFilters"
+                            class="px-3 py-2.5 text-xs font-semibold text-gray-600 hover:text-gray-900 hover:bg-gray-100 rounded-lg border border-gray-200 transition-colors whitespace-nowrap">
+                        Reset Filters
+                    </button>
+                }
+            </div>
+        </div>
+
+        <!-- Master Categories Interactive Tag Bar -->
+        <div class="pt-2 border-t border-gray-100 flex items-center gap-2 flex-wrap">
+            <span class="text-[11px] font-semibold text-gray-400 uppercase tracking-wider mr-1">Quick Filter:</span>
+            <button type="button"
+                    @onclick='() => selectedSpecializationFilter = "ALL"'
+                    class="px-2.5 py-1 rounded-full text-xs font-medium transition-all @(selectedSpecializationFilter == "ALL" ? "bg-gray-900 text-white" : "bg-gray-100 text-gray-600 hover:bg-gray-200")">
+                All (@employees.Count)
+            </button>
+            @foreach (var spec in masterSpecializations)
+            {
+                var isSelected = selectedSpecializationFilter.Equals(spec.Name, StringComparison.OrdinalIgnoreCase);
+                var classes = SpecializationColorHelper.GetClasses(spec.ColorTag);
+                var count = GetStaffCountForSpecialization(spec.Name);
+
+                <button type="button"
+                        @onclick="() => FilterByTag(spec.Name)"
+                        class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium border transition-all duration-150 @(isSelected ? "ring-2 ring-gray-900 border-gray-900 font-bold" : "hover:opacity-80") @classes.BadgeClass">
+                    <span class="w-1.5 h-1.5 rounded-full @classes.DotClass"></span>
+                    <span>@spec.Name</span>
+                    <span class="text-[10px] opacity-75 font-semibold">(@count)</span>
+                </button>
+            }
+        </div>
+    </div>
+
+    <!-- Data Table: Employees & Assigned Specializations -->
+    <div class="bg-white rounded-xl shadow-xs border border-gray-200 overflow-hidden">
+        
+        <!-- Table Metadata Bar -->
+        <div class="px-6 py-3.5 bg-gray-50/50 border-b border-gray-200 flex items-center justify-between text-xs text-gray-500 font-medium">
+            <div>
+                Showing <span class="font-bold text-gray-900">@FilteredEmployees.Count()</span> of <span class="font-bold text-gray-900">@employees.Count</span> employees
+            </div>
+            @if (IsFiltered)
+            {
+                <span class="inline-flex items-center gap-1 text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded text-[11px] font-semibold">
+                    <span>Active Filters Applied</span>
+                </span>
+            }
+        </div>
+
+        <div class="overflow-x-auto">
+            <table class="w-full text-left border-collapse">
+                <thead>
+                    <tr class="bg-gray-50/80 border-b border-gray-200 text-[11px] font-semibold uppercase tracking-wider text-gray-500">
+                        <th scope="col" class="py-3.5 px-6">Employee</th>
+                        <th scope="col" class="py-3.5 px-6">Contact & Role</th>
+                        <th scope="col" class="py-3.5 px-6">Assigned Specializations</th>
+                        <th scope="col" class="py-3.5 px-6">Status</th>
+                        <th scope="col" class="py-3.5 px-6 text-right">Actions</th>
+                    </tr>
+                </thead>
+                <tbody class="divide-y divide-gray-100 text-sm">
+                    @if (FilteredEmployees.Any())
+                    {
+                        @foreach (var emp in FilteredEmployees)
+                        {
+                            <tr class="hover:bg-gray-50/60 transition-colors duration-100">
+                                
+                                <!-- Employee Name & Monospace ID -->
+                                <td class="py-4 px-6">
+                                    <div class="flex items-center gap-3">
+                                        <div class="w-10 h-10 rounded-full bg-gray-900 text-white font-bold text-xs flex items-center justify-center shrink-0 shadow-xs">
+                                            @emp.Initials
+                                        </div>
+                                        <div>
+                                            <div class="font-semibold text-gray-900">@emp.FullName</div>
+                                            <div class="font-mono text-[11px] text-gray-400">@emp.EmployeeId</div>
+                                        </div>
+                                    </div>
+                                </td>
+
+                                <!-- Contact & Role -->
+                                <td class="py-4 px-6">
+                                    <div class="text-xs text-gray-700 font-medium">@emp.Email</div>
+                                    <div class="text-[11px] text-gray-400 mt-0.5">@emp.Role</div>
+                                </td>
+
+                                <!-- Assigned Specializations (Color Chips) -->
+                                <td class="py-4 px-6">
+                                    @if (emp.Specializations.Any())
+                                    {
+                                        <div class="flex flex-wrap gap-1.5 max-w-md">
+                                            @foreach (var specName in emp.Specializations)
+                                            {
+                                                var specMeta = GetSpecializationMeta(specName);
+                                                var classes = SpecializationColorHelper.GetClasses(specMeta?.ColorTag);
+
+                                                <span class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium border @classes.BadgeClass shadow-2xs"
+                                                      title="Department: @(specMeta?.Department ?? "General")">
+                                                    <span class="w-1.5 h-1.5 rounded-full @classes.DotClass"></span>
+                                                    @specName
+                                                </span>
+                                            }
+                                        </div>
+                                    }
+                                    else
+                                    {
+                                        <span class="text-xs text-gray-400 italic">No specializations assigned</span>
+                                    }
+                                </td>
+
+                                <!-- Status Badge -->
+                                <td class="py-4 px-6">
+                                    @if (emp.IsActive)
+                                    {
+                                        <span class="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200">
+                                            <span class="w-1.5 h-1.5 rounded-full bg-emerald-500"></span>
+                                            Active
+                                        </span>
+                                    }
+                                    else
+                                    {
+                                        <span class="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-semibold bg-gray-100 text-gray-600 border border-gray-200">
+                                            <span class="w-1.5 h-1.5 rounded-full bg-gray-400"></span>
+                                            Inactive
+                                        </span>
+                                    }
+                                </td>
+
+                                <!-- Action Quick Links -->
+                                <td class="py-4 px-6 text-right">
+                                    <a href="/profile" class="text-xs font-semibold text-gray-600 hover:text-gray-900 hover:underline">
+                                        View Profile &rarr;
+                                    </a>
+                                </td>
+                            </tr>
+                        }
+                    }
+                    else
+                    {
+                        <!-- Empty Results State -->
+                        <tr>
+                            <td colspan="5" class="py-12 px-6 text-center">
+                                <div class="max-w-sm mx-auto space-y-3">
+                                    <div class="w-12 h-12 mx-auto rounded-full bg-gray-100 text-gray-400 flex items-center justify-center">
+                                        <svg class="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9.172 16.172a4 4 0 015.656 0M9 10h.01M15 10h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                                        </svg>
+                                    </div>
+                                    <h4 class="text-sm font-bold text-gray-900">No matching employees found</h4>
+                                    <p class="text-xs text-gray-500 leading-relaxed">
+                                        No team members matched the search term <span class="font-semibold text-gray-700">"@searchQuery"</span> 
+                                        @(selectedSpecializationFilter != "ALL" ? $" or specialization \"{selectedSpecializationFilter}\"" : "").
+                                    </p>
+                                    <button type="button" @onclick="ResetFilters"
+                                            class="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-gray-700 bg-gray-100 hover:bg-gray-200 rounded-lg transition-colors">
+                                        Reset Search & Filters
+                                    </button>
+                                </div>
+                            </td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
     </div>
 </div>
 
-<div class="bg-white rounded-xl shadow-sm border border-gray-200 p-8 text-center">
-    <div class="max-w-md mx-auto text-gray-500">
-        <p class="text-base font-medium text-gray-700 mb-1">Staff Specialization</p>
-        <p class="text-sm">Skill and specialization tag management is ready for integration.</p>
-    </div>
-</div>
+<!-- Add Specialization Multi-Step Wizard Modal -->
+<AddSpecializationWizard @bind-IsOpen="isWizardOpen"
+                         OnSpecializationCreated="HandleSpecializationCreated" />
+
+@code {
+    private bool isWizardOpen = false;
+    private string searchQuery = string.Empty;
+    private string selectedSpecializationFilter = "ALL";
+    private string selectedDepartmentFilter = "ALL";
+    private string? notificationMessage;
+
+    private List<EmployeeSpecializationDto> employees = new();
+    private List<SpecializationLookupItem> masterSpecializations = new();
+
+    private bool IsFiltered => 
+        !string.IsNullOrWhiteSpace(searchQuery) || 
+        selectedSpecializationFilter != "ALL" || 
+        selectedDepartmentFilter != "ALL";
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadMasterSpecializationsAsync();
+        await LoadEmployeesAsync();
+    }
+
+    private void OpenWizard()
+    {
+        isWizardOpen = true;
+    }
+
+    private void ResetFilters()
+    {
+        searchQuery = string.Empty;
+        selectedSpecializationFilter = "ALL";
+        selectedDepartmentFilter = "ALL";
+    }
+
+    private void FilterByTag(string tagName)
+    {
+        if (selectedSpecializationFilter.Equals(tagName, StringComparison.OrdinalIgnoreCase))
+        {
+            selectedSpecializationFilter = "ALL";
+        }
+        else
+        {
+            selectedSpecializationFilter = tagName;
+        }
+    }
+
+    private int GetStaffCountForSpecialization(string specializationName)
+    {
+        return employees.Count(e => e.Specializations.Any(s => s.Equals(specializationName, StringComparison.OrdinalIgnoreCase)));
+    }
+
+    private SpecializationLookupItem? GetSpecializationMeta(string name)
+    {
+        return masterSpecializations.FirstOrDefault(m => m.Name.Equals(name, StringComparison.OrdinalIgnoreCase));
+    }
+
+    /// <summary>
+    /// Filters employees dynamically using LINQ based on search bar text and specialization / department dropdowns.
+    /// </summary>
+    private IEnumerable<EmployeeSpecializationDto> FilteredEmployees
+    {
+        get
+        {
+            var result = employees.AsEnumerable();
+
+            // 1. Search Bar Filter: Case-insensitive search on Employee Name, ID, or Email
+            if (!string.IsNullOrWhiteSpace(searchQuery))
+            {
+                var q = searchQuery.Trim();
+                result = result.Where(e =>
+                    e.FullName.Contains(q, StringComparison.OrdinalIgnoreCase) ||
+                    e.EmployeeId.Contains(q, StringComparison.OrdinalIgnoreCase) ||
+                    e.Email.Contains(q, StringComparison.OrdinalIgnoreCase));
+            }
+
+            // 2. Specialization ComboBox Filter
+            if (!string.IsNullOrWhiteSpace(selectedSpecializationFilter) && selectedSpecializationFilter != "ALL")
+            {
+                result = result.Where(e => e.Specializations.Any(s =>
+                    s.Equals(selectedSpecializationFilter, StringComparison.OrdinalIgnoreCase)));
+            }
+
+            // 3. Department Filter
+            if (!string.IsNullOrWhiteSpace(selectedDepartmentFilter) && selectedDepartmentFilter != "ALL")
+            {
+                var validSpecsInDept = masterSpecializations
+                    .Where(m => m.Department.Equals(selectedDepartmentFilter, StringComparison.OrdinalIgnoreCase))
+                    .Select(m => m.Name)
+                    .ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+                result = result.Where(e => e.Specializations.Any(s => validSpecsInDept.Contains(s)));
+            }
+
+            return result;
+        }
+    }
+
+    /// <summary>
+    /// Handles the completion of the Add Specialization wizard.
+    /// CRITICAL DATABASE RULE: This handler updates ONLY the master lookup registry.
+    /// It does not alter employee joint records.
+    /// </summary>
+    private void HandleSpecializationCreated(SpecializationLookupItem newSpec)
+    {
+        // 1. Insert into local master lookup list
+        masterSpecializations.Insert(0, newSpec);
+
+        // 2. Automatically select the newly created specialization in the filter dropdown
+        selectedSpecializationFilter = newSpec.Name;
+
+        // 3. Show confirmation notification banner
+        notificationMessage = $"Specialization \"{newSpec.Name}\" was saved to the master Specializations table. Staff assignment can now be managed in employee profiles.";
+    }
+
+    private async Task LoadMasterSpecializationsAsync()
+    {
+        // Initialize standard master lookup categories
+        masterSpecializations = new List<SpecializationLookupItem>
+        {
+            new() { Id = "SP-001", Name = "Portrait Specialist", Department = "Photography", ColorTag = "Blue", Description = "Lead portrait photography and studio backdrop lighting." },
+            new() { Id = "SP-002", Name = "Wedding Lead", Department = "Photography", ColorTag = "Rose", Description = "Ceremony and reception shoot director." },
+            new() { Id = "SP-003", Name = "Drone Operator", Department = "Videography", ColorTag = "Purple", Description = "FAA Part 107 certified aerial footage capture." },
+            new() { Id = "SP-004", Name = "Cinematographer", Department = "Videography", ColorTag = "Indigo", Description = "High-frame-rate commercial and video production." },
+            new() { Id = "SP-005", Name = "Lead Retoucher", Department = "Post-Processing", ColorTag = "Emerald", Description = "High-end skin retouching and editorial color correction." },
+            new() { Id = "SP-006", Name = "Lighting Specialist", Department = "Studio Staff", ColorTag = "Amber", Description = "Grip, strobes, continuous softboxes, and electrical safety." }
+        };
+
+        try
+        {
+            // If backend is active, merge backend specializations into master catalog
+            var backendSpecs = await EmployeeService.GetSpecializationsAsync();
+            if (backendSpecs != null && backendSpecs.Count > 0)
+            {
+                foreach (var specName in backendSpecs)
+                {
+                    if (!masterSpecializations.Any(m => m.Name.Equals(specName, StringComparison.OrdinalIgnoreCase)))
+                    {
+                        masterSpecializations.Add(new SpecializationLookupItem
+                        {
+                            Id = $"SP-{Guid.NewGuid():N}"[..6].ToUpperInvariant(),
+                            Name = specName,
+                            Department = "Photography",
+                            ColorTag = "Cyan"
+                        });
+                    }
+                }
+            }
+        }
+        catch
+        {
+            // Graceful fallback to default master specializations
+        }
+    }
+
+    private async Task LoadEmployeesAsync()
+    {
+        try
+        {
+            var apiEmployees = await EmployeeService.GetEmployeesAsync();
+            if (apiEmployees != null && apiEmployees.Count > 0)
+            {
+                employees = apiEmployees.Select(e => new EmployeeSpecializationDto
+                {
+                    Id = e.Id,
+                    EmployeeId = string.IsNullOrWhiteSpace(e.EmployeeId) ? $"PA-{e.Id:D3}" : e.EmployeeId,
+                    FirstName = e.FirstName,
+                    LastName = e.LastName,
+                    MiddleName = e.MiddleName,
+                    Email = e.Email,
+                    Role = e.Role,
+                    Status = e.Status,
+                    Specializations = e.Specializations ?? new List<string>()
+                }).ToList();
+                return;
+            }
+        }
+        catch
+        {
+            // Fallback to sample data below
+        }
+
+        // Default studio staff with specializations for demonstration & development
+        employees = new List<EmployeeSpecializationDto>
+        {
+            new()
+            {
+                Id = 1,
+                EmployeeId = "PA-001",
+                FirstName = "Sofia",
+                LastName = "Rivera",
+                Email = "sofia.rivera@photoaevum.com",
+                Role = "Senior Lead Photographer",
+                Status = "Active",
+                Specializations = new List<string> { "Portrait Specialist", "Wedding Lead" }
+            },
+            new()
+            {
+                Id = 2,
+                EmployeeId = "PA-002",
+                FirstName = "Liam",
+                LastName = "Vance",
+                Email = "liam.vance@photoaevum.com",
+                Role = "Director of Photography",
+                Status = "Active",
+                Specializations = new List<string> { "Cinematographer", "Drone Operator" }
+            },
+            new()
+            {
+                Id = 3,
+                EmployeeId = "PA-003",
+                FirstName = "Elena",
+                LastName = "Reyes",
+                Email = "elena.reyes@photoaevum.com",
+                Role = "Post-Production Supervisor",
+                Status = "Active",
+                Specializations = new List<string> { "Lead Retoucher" }
+            },
+            new()
+            {
+                Id = 4,
+                EmployeeId = "PA-004",
+                FirstName = "Marcus",
+                LastName = "Chen",
+                Email = "marcus.chen@photoaevum.com",
+                Role = "Studio Lighting Tech",
+                Status = "Active",
+                Specializations = new List<string> { "Lighting Specialist", "Portrait Specialist" }
+            },
+            new()
+            {
+                Id = 5,
+                EmployeeId = "PA-005",
+                FirstName = "Chloe",
+                LastName = "Dela Cruz",
+                Email = "chloe.delacruz@photoaevum.com",
+                Role = "Associate Videographer",
+                Status = "Active",
+                Specializations = new List<string> { "Cinematographer" }
+            },
+            new()
+            {
+                Id = 6,
+                EmployeeId = "PA-006",
+                FirstName = "Ethan",
+                LastName = "Cole",
+                Email = "ethan.cole@photoaevum.com",
+                Role = "Apprentice",
+                Status = "Inactive",
+                Specializations = new List<string>()
+            }
+        };
+    }
+}

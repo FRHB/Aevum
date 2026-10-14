@@ -351,5 +351,50 @@ public class FormsAndSecurityTests
 
         Assert.Equal(expectedSuperAdmin, isSuper);
     }
+
+    // ══════════════════════════════════════════════════════════════════════════
+    // EmployeeRegistrationModel Validation Tests
+    // ══════════════════════════════════════════════════════════════════════════
+
+    [Fact]
+    public void EmployeeRegistrationModel_ComputesFullNameCorrectly()
+    {
+        var model = new EmployeeRegistrationModel
+        {
+            FirstName = "Marcus",
+            MiddleName = "Alexander",
+            LastName = "Vance"
+        };
+
+        Assert.Equal("Marcus Alexander Vance", model.FullName);
+
+        model.MiddleName = null;
+        Assert.Equal("Marcus Vance", model.FullName);
+    }
+
+    [Fact]
+    public void EmployeeRegistrationModel_RequiresAtLeastOneSpecialization()
+    {
+        var model = new EmployeeRegistrationModel
+        {
+            FirstName = "Marcus",
+            LastName = "Vance",
+            Email = "marcus@photoaevum.com",
+            EmployeeId = "PA-001",
+            Password = "Password123!"
+        };
+
+        var validationResults = new List<System.ComponentModel.DataAnnotations.ValidationResult>();
+        var context = new System.ComponentModel.DataAnnotations.ValidationContext(model);
+        bool isValid = System.ComponentModel.DataAnnotations.Validator.TryValidateObject(model, context, validationResults, true);
+
+        Assert.False(isValid);
+        Assert.Contains(validationResults, r => r.MemberNames.Contains("Specializations"));
+
+        model.Specializations.Add("Photographer");
+        validationResults.Clear();
+        isValid = System.ComponentModel.DataAnnotations.Validator.TryValidateObject(model, context, validationResults, true);
+        Assert.True(isValid);
+    }
 }
 
