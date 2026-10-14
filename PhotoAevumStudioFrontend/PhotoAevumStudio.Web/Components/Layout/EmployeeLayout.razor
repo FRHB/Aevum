@@ -1,6 +1,8 @@
 @inherits LayoutComponentBase
 
-@* StaffDashboard.razor manages the aev-shell + Sidebar internally. *@
-<div class="min-h-screen">
-    @Body
+<div class="aev-shell">
+    <Sidebar UserRole="employee" />
+    <main class="aev-shell__content">
+        @Body
+    </main>
 </div>

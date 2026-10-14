@@ -25,7 +25,12 @@
 
             <div class="input-group">
                 <label for="password">Password</label>
-                <input type="password" id="password" class="minimal-input" @bind="loginModel.Password" placeholder="Enter your password" />
+                <PasswordInput Id="password"
+                               Name="password"
+                               Autocomplete="current-password"
+                               @bind-Value="loginModel.Password"
+                               Placeholder="Enter your password"
+                               Disabled="@isSubmitting" />
             </div>
 
             <div class="forgot-password-container">

@@ -1,34 +1,39 @@
 @using Microsoft.AspNetCore.Components.Authorization
-@* ============================================================
-   Sidebar.razor  –  Shared fixed left navigation sidebar
-   Usage:
-       <Sidebar UserRole="admin" />
-       <Sidebar UserRole="employee" />
-       <Sidebar UserRole="customer" />
-
-   Task 3.3 – Auth State Preparation
-   ──────────────────────────────────
-   To wire this to your real JWT claims, inject
-   AevumAuthenticationStateProvider and replace the
-   UserRole [Parameter] with a computed property:
-
-       [CascadingParameter] Task<AuthenticationState> AuthState { get; set; }
-       protected override async Task OnInitializedAsync()
-       {
-           var state = await AuthState;
-           UserRole = state.User.FindFirst(ClaimTypes.Role)?.Value?.ToLower() ?? string.Empty;
-       }
-   ============================================================ *@
-
 @using Microsoft.AspNetCore.Components.Routing
+@implements IDisposable
 @inject NavigationManager Nav
 
-<nav class="aev-sidebar" aria-label="Primary navigation">
+@* ── Mobile Hamburger Toggle ──────────────────────────────────────────────── *@
+<button type="button"
+        class="aev-sidebar__mobile-toggle"
+        @onclick="ToggleMobile"
+        aria-label="Toggle navigation menu"
+        aria-expanded="@_isMobileOpen">
+    <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <line x1="3" y1="12" x2="21" y2="12"></line>
+        <line x1="3" y1="6" x2="21" y2="6"></line>
+        <line x1="3" y1="18" x2="21" y2="18"></line>
+    </svg>
+</button>
+
+@* ── Mobile Drawer Backdrop ───────────────────────────────────────────────── *@
+@if (_isMobileOpen)
+{
+    <div class="aev-sidebar__backdrop" @onclick="() => _isMobileOpen = false" aria-hidden="true"></div>
+}
+
+<nav class="aev-sidebar @(_isMobileOpen ? "is-open" : "")" aria-label="Primary navigation">
 
     @* ── Brand ─────────────────────────────────────────────────────────── *@
     <div class="aev-sidebar__brand">
         <img src="images/AevumLogo.jpg" alt="Photo Aevum" class="aev-sidebar__logo" />
         <span class="aev-sidebar__brand-text">Aevum Studio</span>
+        <button type="button"
+                class="aev-sidebar__mobile-close"
+                @onclick="() => _isMobileOpen = false"
+                aria-label="Close sidebar">
+            ✕
+        </button>
     </div>
 
     @RenderNav()
@@ -36,25 +41,16 @@
 </nav>
 
 @code {
-    /// <summary>
-    /// The authenticated user's role.
-    /// Accepts: "admin", "employee", or "customer".
-    ///
-    /// ── Task 3.3 – Auth State Preparation ──────────────────────────────
-    /// Replace this parameter with a cascading AuthenticationState read:
-    ///
-    ///   [CascadingParameter] Task&lt;AuthenticationState&gt; AuthState { get; set; } = default!;
-    ///
-    ///   protected override async Task OnInitializedAsync()
-    ///   {
-    ///       var state = await AuthState;
-    ///       UserRole = state.User.FindFirst(ClaimTypes.Role)?.Value?.ToLower()
-    ///                  ?? string.Empty;
-    ///   }
-    /// </summary>
-    
     [CascadingParameter] Task<AuthenticationState> AuthState { get; set; } = default!;
     [Parameter] public string UserRole { get; set; } = string.Empty;
+
+    private bool _isMobileOpen;
+    private readonly HashSet<string> _openAccordions = new();
+
+    protected override void OnInitialized()
+    {
+        Nav.LocationChanged += OnLocationChanged;
+    }
 
     protected override async Task OnInitializedAsync()
     {
@@ -64,11 +60,57 @@
             var roleClaim = state.User.FindFirst(System.Security.Claims.ClaimTypes.Role) ?? state.User.FindFirst("role");
             UserRole = roleClaim?.Value?.ToLower() ?? string.Empty;
         }
+
+        if (string.IsNullOrWhiteSpace(UserRole))
+        {
+            UserRole = "admin";
+        }
+
+        AutoExpandActiveAccordion();
     }
 
+    private void OnLocationChanged(object? sender, LocationChangedEventArgs e)
+    {
+        _isMobileOpen = false;
+        AutoExpandActiveAccordion();
+        InvokeAsync(StateHasChanged);
+    }
 
-    // ── Accordion state ──────────────────────────────────────────────────────
-    private readonly HashSet<string> _openAccordions = new();
+    public void Dispose()
+    {
+        Nav.LocationChanged -= OnLocationChanged;
+    }
+
+    private void ToggleMobile()
+    {
+        _isMobileOpen = !_isMobileOpen;
+    }
+
+    private void AutoExpandActiveAccordion()
+    {
+        var path = Nav.ToBaseRelativePath(Nav.Uri).ToLowerInvariant();
+
+        if (path.StartsWith("admin/schedules") || path.StartsWith("admin/calendar") || path.StartsWith("calendar") || path.StartsWith("staff-schedule") || path.StartsWith("equipment-schedule") || path.StartsWith("equipments-schedule"))
+            _openAccordions.Add("calendar");
+        else if (path.StartsWith("staff/calendar"))
+            _openAccordions.Add("emp-calendar");
+
+        if (path.StartsWith("admin/services") || path.StartsWith("services") || path.StartsWith("main-services") || path.StartsWith("package-services") || path.StartsWith("additional-services"))
+        {
+            _openAccordions.Add("services");
+            _openAccordions.Add("emp-services");
+        }
+        else if (path.StartsWith("staff/services"))
+        {
+            _openAccordions.Add("emp-services");
+        }
+
+        if (path.StartsWith("admin/employees") || path.StartsWith("employees") || path.StartsWith("specialization"))
+            _openAccordions.Add("employees");
+
+        if (path.StartsWith("admin/equipment") || path.StartsWith("equipment") || path.StartsWith("equipments") || path.StartsWith("dispatch") || path.StartsWith("maintenance") || path.StartsWith("equipment-types"))
+            _openAccordions.Add("equipment");
+    }
 
     private bool IsOpen(string key) => _openAccordions.Contains(key);
 
@@ -84,7 +126,7 @@
         "admin"    => RenderAdminNav(),
         "employee" => RenderEmployeeNav(),
         "customer" => RenderCustomerNav(),
-        _          => builder => { } // empty for unknown roles
+        _          => RenderAdminNav()
     };
 
     // ════════════════════════════════════════════════════════════════════════
@@ -118,9 +160,9 @@
                     <ul id="acc-calendar"
                         class="aev-sidebar__sub @(IsOpen("calendar") ? "is-expanded" : "")"
                         aria-hidden="@(!IsOpen("calendar"))">
-                        <li><NavLink href="/admin/schedules"    class="aev-sidebar__sub-link" ActiveClass="aev-sidebar__link--active">Master Calendar</NavLink></li>
-                        <!-- <li><NavLink href="/admin/calendar/staff"     class="aev-sidebar__sub-link" ActiveClass="aev-sidebar__link--active">Staff</NavLink></li> (Hidden - Dead Link) -->
-                        <!-- <li><NavLink href="/admin/calendar/equipment" class="aev-sidebar__sub-link" ActiveClass="aev-sidebar__link--active">Equipments</NavLink></li> (Hidden - Dead Link) -->
+                        <li><NavLink href="/admin/calendar/events" class="aev-sidebar__sub-link" Match="NavLinkMatch.All" ActiveClass="aev-sidebar__link--active">Calendar of Events</NavLink></li>
+                        <li><NavLink href="/admin/calendar/staff" class="aev-sidebar__sub-link" ActiveClass="aev-sidebar__link--active">Staff Schedule</NavLink></li>
+                        <li><NavLink href="/admin/calendar/equipment" class="aev-sidebar__sub-link" ActiveClass="aev-sidebar__link--active">Equipments schedule</NavLink></li>
                     </ul>
                 </li>
 
@@ -131,11 +173,23 @@
                     </NavLink>
                 </li>
 
+                @* Services – collapsible *@
                 <li>
-                    <NavLink href="/admin/services" class="aev-sidebar__link" ActiveClass="aev-sidebar__link--active">
+                    <button class="aev-sidebar__link aev-sidebar__accordion-toggle @(IsOpen("services") ? "is-open" : "")"
+                            @onclick='() => Toggle("services")'
+                            aria-expanded="@IsOpen("services")"
+                            aria-controls="acc-services">
                         <span class="aev-sidebar__icon" aria-hidden="true">🗂</span>
                         Services
-                    </NavLink>
+                        <span class="aev-sidebar__chevron" aria-hidden="true">›</span>
+                    </button>
+                    <ul id="acc-services"
+                        class="aev-sidebar__sub @(IsOpen("services") ? "is-expanded" : "")"
+                        aria-hidden="@(!IsOpen("services"))">
+                        <li><NavLink href="/admin/services/main" class="aev-sidebar__sub-link" Match="NavLinkMatch.All" ActiveClass="aev-sidebar__link--active">Main Services</NavLink></li>
+                        <li><NavLink href="/admin/services/packages" class="aev-sidebar__sub-link" ActiveClass="aev-sidebar__link--active">Package Services</NavLink></li>
+                        <li><NavLink href="/admin/services/additional" class="aev-sidebar__sub-link" ActiveClass="aev-sidebar__link--active">Additional Services</NavLink></li>
+                    </ul>
                 </li>
 
             </ul>
@@ -159,8 +213,8 @@
                     <ul id="acc-employees"
                         class="aev-sidebar__sub @(IsOpen("employees") ? "is-expanded" : "")"
                         aria-hidden="@(!IsOpen("employees"))">
-                        <li><NavLink href="/admin/employees"                       class="aev-sidebar__sub-link" ActiveClass="aev-sidebar__link--active">Staff List</NavLink></li>
-                        <!-- <li><NavLink href="/admin/employees/specialization" class="aev-sidebar__sub-link" ActiveClass="aev-sidebar__link--active">Specialization</NavLink></li> (Hidden - Dead Link) -->
+                        <li><NavLink href="/admin/employees" class="aev-sidebar__sub-link" Match="NavLinkMatch.All" ActiveClass="aev-sidebar__link--active">Staff List</NavLink></li>
+                        <li><NavLink href="/admin/employees/specialization" class="aev-sidebar__sub-link" ActiveClass="aev-sidebar__link--active">Specialization</NavLink></li>
                     </ul>
                 </li>
 
@@ -177,10 +231,10 @@
                     <ul id="acc-equipment"
                         class="aev-sidebar__sub @(IsOpen("equipment") ? "is-expanded" : "")"
                         aria-hidden="@(!IsOpen("equipment"))">
-                        <li><NavLink href="/admin/equipment"                  class="aev-sidebar__sub-link" ActiveClass="aev-sidebar__link--active">Gear List</NavLink></li>
-                        <!-- <li><NavLink href="/admin/equipment/dispatch"   class="aev-sidebar__sub-link" ActiveClass="aev-sidebar__link--active">Dispatch / Check-outs</NavLink></li> (Hidden - Dead Link) -->
-                        <!-- <li><NavLink href="/admin/equipment/kits"       class="aev-sidebar__sub-link" ActiveClass="aev-sidebar__link--active">Gear Kits</NavLink></li> (Hidden - Dead Link) -->
-                        <!-- <li><NavLink href="/admin/equipment/maintenance" class="aev-sidebar__sub-link" ActiveClass="aev-sidebar__link--active">Maintenance Logs</NavLink></li> (Hidden - Dead Link) -->
+                        <li><NavLink href="/admin/equipments" class="aev-sidebar__sub-link" Match="NavLinkMatch.All" ActiveClass="aev-sidebar__link--active">Equipments</NavLink></li>
+                        <li><NavLink href="/admin/equipment/dispatch" class="aev-sidebar__sub-link" ActiveClass="aev-sidebar__link--active">Dispatch</NavLink></li>
+                        <li><NavLink href="/admin/equipment/maintenance" class="aev-sidebar__sub-link" ActiveClass="aev-sidebar__link--active">Maintenance</NavLink></li>
+                        <li><NavLink href="/admin/equipment/types" class="aev-sidebar__sub-link" ActiveClass="aev-sidebar__link--active">Equipment Types</NavLink></li>
                     </ul>
                 </li>
 
@@ -192,7 +246,7 @@
             <p class="aev-sidebar__section-label">Account</p>
             <ul class="aev-sidebar__list">
                 <li>
-                    <NavLink href="/admin/profile" class="aev-sidebar__link" ActiveClass="aev-sidebar__link--active">
+                    <NavLink href="/profile" class="aev-sidebar__link" ActiveClass="aev-sidebar__link--active">
                         <span class="aev-sidebar__icon" aria-hidden="true">⚙</span>
                         Profile
                     </NavLink>
@@ -232,17 +286,29 @@
                     <ul id="acc-emp-calendar"
                         class="aev-sidebar__sub @(IsOpen("emp-calendar") ? "is-expanded" : "")"
                         aria-hidden="@(!IsOpen("emp-calendar"))">
-                        <!-- <li><NavLink href="/staff/calendar/master"    class="aev-sidebar__sub-link" ActiveClass="aev-sidebar__link--active">Master Calendar</NavLink></li> (Hidden - Dead Link) -->
-                        <!-- <li><NavLink href="/staff/calendar/staff"     class="aev-sidebar__sub-link" ActiveClass="aev-sidebar__link--active">Staff</NavLink></li> (Hidden - Dead Link) -->
-                        <!-- <li><NavLink href="/staff/calendar/equipment" class="aev-sidebar__sub-link" ActiveClass="aev-sidebar__link--active">Equipments</NavLink></li> (Hidden - Dead Link) -->
+                        <li><NavLink href="/staff/calendar/master" class="aev-sidebar__sub-link" Match="NavLinkMatch.All" ActiveClass="aev-sidebar__link--active">Calendar of Events</NavLink></li>
+                        <li><NavLink href="/staff/calendar/staff" class="aev-sidebar__sub-link" ActiveClass="aev-sidebar__link--active">Staff Schedule</NavLink></li>
+                        <li><NavLink href="/staff/calendar/equipment" class="aev-sidebar__sub-link" ActiveClass="aev-sidebar__link--active">Equipments schedule</NavLink></li>
                     </ul>
                 </li>
 
+                @* Services – collapsible *@
                 <li>
-                    <NavLink href="/admin/services" class="aev-sidebar__link" ActiveClass="aev-sidebar__link--active">
+                    <button class="aev-sidebar__link aev-sidebar__accordion-toggle @(IsOpen("emp-services") ? "is-open" : "")"
+                            @onclick='() => Toggle("emp-services")'
+                            aria-expanded="@IsOpen("emp-services")"
+                            aria-controls="acc-emp-services">
                         <span class="aev-sidebar__icon" aria-hidden="true">🗂</span>
                         Services
-                    </NavLink>
+                        <span class="aev-sidebar__chevron" aria-hidden="true">›</span>
+                    </button>
+                    <ul id="acc-emp-services"
+                        class="aev-sidebar__sub @(IsOpen("emp-services") ? "is-expanded" : "")"
+                        aria-hidden="@(!IsOpen("emp-services"))">
+                        <li><NavLink href="/staff/services" class="aev-sidebar__sub-link" Match="NavLinkMatch.All" ActiveClass="aev-sidebar__link--active">Main Services</NavLink></li>
+                        <li><NavLink href="/staff/services/packages" class="aev-sidebar__sub-link" ActiveClass="aev-sidebar__link--active">Package Services</NavLink></li>
+                        <li><NavLink href="/staff/services/additional" class="aev-sidebar__sub-link" ActiveClass="aev-sidebar__link--active">Additional Services</NavLink></li>
+                    </ul>
                 </li>
 
             </ul>
@@ -316,4 +382,3 @@
         </div>
     </text>;
 }
-

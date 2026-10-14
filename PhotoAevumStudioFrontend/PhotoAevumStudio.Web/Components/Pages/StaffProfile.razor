@@ -1,0 +1,345 @@
+@page "/staff/profile"
+@page "/staff/settings"
+@layout EmployeeLayout
+@rendermode InteractiveServer
+@using System.Security.Claims
+@using PhotoAevumStudio.Web.Models
+@using PhotoAevumStudio.Web.Services
+@inject AuthenticationStateProvider AuthStateProvider
+@inject IUserService UserService
+@inject IAuthService AuthService
+@inject NavigationManager NavManager
+
+<PageTitle>Staff Profile | Photo Aevum Studio</PageTitle>
+
+@* ── Page header ─────────────────────────────────────────────────── *@
+<header class="aev-page-header">
+    <div>
+        <h1 class="aev-page-header__title">Staff Profile</h1>
+        <p class="aev-page-header__subtitle">Manage your staff credentials, assignments, and profile settings.</p>
+    </div>
+    <div class="profile-header-badge">
+        <span class="aev-badge aev-badge--teal">
+            @(!string.IsNullOrWhiteSpace(profile.Position) ? profile.Position : "Staff Member")
+        </span>
+    </div>
+</header>
+
+@if (isLoading)
+{
+    <div class="aev-card profile-loading-card">
+        <p class="aev-muted-text">Loading profile data...</p>
+    </div>
+}
+else
+{
+    <div class="profile-content-grid">
+        @* ── User Data Card ───────────────────────────────────────────── *@
+        <section class="aev-card profile-info-card" aria-label="Staff Account Details">
+            <header class="aev-card__header">
+                <h2 class="aev-card__heading">Account Details</h2>
+                <span class="aev-badge aev-badge--teal">@profile.Status</span>
+            </header>
+
+            <div class="profile-card-body">
+                <div class="profile-hero">
+                    <div class="profile-avatar staff-avatar" aria-hidden="true">
+                        @GetInitials(profile.Name, profile.Id)
+                    </div>
+                    <div class="profile-hero-text">
+                        <h3 class="profile-name">@profile.Name</h3>
+                        <p class="profile-email">@profile.Email</p>
+                        <span class="profile-id-chip">ID: @profile.Id</span>
+                    </div>
+                </div>
+
+                <div class="profile-fields-grid">
+                    <div class="profile-field">
+                        <span class="profile-field__label">Employee ID</span>
+                        <span class="profile-field__value" id="profile-id">@profile.Id</span>
+                    </div>
+
+                    <div class="profile-field">
+                        <span class="profile-field__label">Full Name</span>
+                        <span class="profile-field__value" id="profile-name">@profile.Name</span>
+                    </div>
+
+                    <div class="profile-field">
+                        <span class="profile-field__label">Role</span>
+                        <span class="profile-field__value" id="profile-role">@profile.Role</span>
+                    </div>
+
+                    <div class="profile-field">
+                        <span class="profile-field__label">Email Address</span>
+                        <span class="profile-field__value" id="profile-email">@profile.Email</span>
+                    </div>
+
+                    <div class="profile-field">
+                        <span class="profile-field__label">Department</span>
+                        <span class="profile-field__value">@(!string.IsNullOrWhiteSpace(profile.Department) ? profile.Department : "Photography")</span>
+                    </div>
+
+                    <div class="profile-field">
+                        <span class="profile-field__label">Position</span>
+                        <span class="profile-field__value">@(!string.IsNullOrWhiteSpace(profile.Position) ? profile.Position : "Staff Photographer")</span>
+                    </div>
+
+                    <div class="profile-field">
+                        <span class="profile-field__label">Status</span>
+                        <span class="profile-field__value status-active">@profile.Status</span>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        @* ── Security / Settings Card ─────────────────────────────────── *@
+        <section class="aev-card profile-settings-card" aria-label="Security Settings">
+            <header class="aev-card__header">
+                <h2 class="aev-card__heading">Security Settings</h2>
+                <span class="aev-muted-text">Change Password</span>
+            </header>
+
+            <div class="profile-card-body">
+                <p class="settings-intro">
+                    Ensure your account stays secure by choosing a strong, unique password.
+                </p>
+
+                @if (!string.IsNullOrEmpty(passwordSuccessMessage))
+                {
+                    <div class="success-banner" role="status">
+                        @passwordSuccessMessage
+                    </div>
+                }
+
+                @if (!string.IsNullOrEmpty(passwordErrorMessage))
+                {
+                    <div class="error-message" role="alert">
+                        @passwordErrorMessage
+                    </div>
+                }
+
+                <EditForm Model="@passwordForm" OnValidSubmit="HandleUpdatePassword">
+                    <div class="input-group">
+                        <label for="staff-current-password">Current Password</label>
+                        <PasswordInput Id="staff-current-password"
+                                       Name="currentPassword"
+                                       Autocomplete="current-password"
+                                       @bind-Value="passwordForm.CurrentPassword"
+                                       Placeholder="Enter current password"
+                                       Disabled="@isUpdatingPassword" />
+                    </div>
+
+                    <div class="input-group">
+                        <label for="staff-new-password">New Password</label>
+                        <PasswordInput Id="staff-new-password"
+                                       Name="newPassword"
+                                       Autocomplete="new-password"
+                                       @bind-Value="passwordForm.NewPassword"
+                                       Placeholder="Enter new password (min. 8 characters)"
+                                       Disabled="@isUpdatingPassword" />
+                    </div>
+
+                    <div class="input-group">
+                        <label for="staff-confirm-password">Confirm Password</label>
+                        <PasswordInput Id="staff-confirm-password"
+                                       Name="confirmPassword"
+                                       Autocomplete="new-password"
+                                       @bind-Value="passwordForm.ConfirmPassword"
+                                       Placeholder="Re-enter new password"
+                                       Disabled="@isUpdatingPassword" />
+                    </div>
+
+                    <button type="submit" class="btn btn--primary profile-btn" disabled="@isUpdatingPassword">
+                        @if (isUpdatingPassword)
+                        {
+                            <span>Updating password...</span>
+                        }
+                        else
+                        {
+                            <span>Update Password</span>
+                        }
+                    </button>
+                </EditForm>
+            </div>
+        </section>
+    </div>
+}
+
+@code {
+    private StaffProfileModel profile = new();
+    private PasswordUpdateModel passwordForm = new();
+    private bool isLoading = true;
+    private bool isUpdatingPassword = false;
+    private string passwordErrorMessage = "";
+    private string passwordSuccessMessage = "";
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadUserDataAsync();
+    }
+
+    private async Task LoadUserDataAsync()
+    {
+        isLoading = true;
+        try
+        {
+            var authState = await AuthStateProvider.GetAuthenticationStateAsync();
+            var user = authState.User;
+
+            // 1. Read claims from currently logged-in user
+            var claimId = user.FindFirst("studio_id")?.Value
+                          ?? user.FindFirst(ClaimTypes.NameIdentifier)?.Value
+                          ?? user.FindFirst("sub")?.Value
+                          ?? user.Identity?.Name
+                          ?? string.Empty;
+
+            var claimEmail = user.FindFirst(ClaimTypes.Email)?.Value
+                            ?? user.FindFirst("email")?.Value
+                            ?? (user.Identity?.Name?.Contains("@") == true ? user.Identity.Name : string.Empty);
+
+            var claimName = user.FindFirst("full_name")?.Value
+                           ?? user.FindFirst("name")?.Value
+                           ?? user.FindFirst(ClaimTypes.Name)?.Value
+                           ?? string.Empty;
+
+            var claimRole = user.FindFirst(ClaimTypes.Role)?.Value
+                           ?? user.FindFirst("role")?.Value
+                           ?? string.Empty;
+
+            profile.Id = claimId;
+            profile.Email = claimEmail;
+            profile.Name = claimName;
+            profile.Role = !string.IsNullOrWhiteSpace(claimRole) ? claimRole : "Employee";
+            profile.Status = "Active";
+
+            // 2. Enrich from IUserService if account exists in mock/backing store
+            if (!string.IsNullOrWhiteSpace(profile.Id))
+            {
+                var employee = UserService.GetEmployeeById(profile.Id);
+                if (employee != null)
+                {
+                    if (string.IsNullOrWhiteSpace(profile.Name)) profile.Name = employee.Name;
+                    if (string.IsNullOrWhiteSpace(profile.Email)) profile.Email = employee.Email;
+                    profile.Department = employee.Department;
+                    profile.Position = employee.Position;
+                }
+            }
+
+            // Fallback display formatters if claims had missing pieces
+            if (string.IsNullOrWhiteSpace(profile.Id))
+            {
+                profile.Id = "EMP-001";
+            }
+
+            if (string.IsNullOrWhiteSpace(profile.Name))
+            {
+                profile.Name = !string.IsNullOrWhiteSpace(profile.Email)
+                    ? profile.Email.Split('@')[0]
+                    : profile.Id;
+            }
+        }
+        finally
+        {
+            isLoading = false;
+        }
+    }
+
+    private async Task HandleUpdatePassword()
+    {
+        isUpdatingPassword = true;
+        passwordErrorMessage = "";
+        passwordSuccessMessage = "";
+        StateHasChanged();
+
+        if (string.IsNullOrWhiteSpace(passwordForm.CurrentPassword) ||
+            string.IsNullOrWhiteSpace(passwordForm.NewPassword) ||
+            string.IsNullOrWhiteSpace(passwordForm.ConfirmPassword))
+        {
+            passwordErrorMessage = "All password fields are required.";
+            isUpdatingPassword = false;
+            return;
+        }
+
+        if (passwordForm.NewPassword.Length < 8)
+        {
+            passwordErrorMessage = "New password must be at least 8 characters long.";
+            isUpdatingPassword = false;
+            return;
+        }
+
+        if (!System.Text.RegularExpressions.Regex.IsMatch(passwordForm.NewPassword, @"[A-Za-z]"))
+        {
+            passwordErrorMessage = "Password must contain at least one letter.";
+            isUpdatingPassword = false;
+            return;
+        }
+
+        if (!System.Text.RegularExpressions.Regex.IsMatch(passwordForm.NewPassword, @"[0-9]"))
+        {
+            passwordErrorMessage = "Password must contain at least one digit.";
+            isUpdatingPassword = false;
+            return;
+        }
+
+        if (passwordForm.NewPassword != passwordForm.ConfirmPassword)
+        {
+            passwordErrorMessage = "New passwords do not match.";
+            isUpdatingPassword = false;
+            return;
+        }
+
+        if (passwordForm.NewPassword == passwordForm.CurrentPassword)
+        {
+            passwordErrorMessage = "New password must be different from current password.";
+            isUpdatingPassword = false;
+            return;
+        }
+
+        var result = await AuthService.ChangeInitialPasswordAsync(
+            profile.Id,
+            passwordForm.CurrentPassword,
+            passwordForm.NewPassword,
+            passwordForm.ConfirmPassword);
+
+        if (result.Success)
+        {
+            passwordSuccessMessage = "Password successfully updated!";
+            passwordForm = new();
+        }
+        else
+        {
+            passwordErrorMessage = result.Error ?? "Failed to update password. Please check your current password.";
+        }
+
+        isUpdatingPassword = false;
+    }
+
+    private static string GetInitials(string name, string id)
+    {
+        if (string.IsNullOrWhiteSpace(name))
+            return !string.IsNullOrWhiteSpace(id) && id.Length >= 2 ? id[..2].ToUpperInvariant() : "S";
+
+        var parts = name.Split(' ', StringSplitOptions.RemoveEmptyEntries);
+        if (parts.Length >= 2)
+            return $"{char.ToUpperInvariant(parts[0][0])}{char.ToUpperInvariant(parts[^1][0])}";
+        return char.ToUpperInvariant(name[0]).ToString();
+    }
+
+    public class StaffProfileModel
+    {
+        public string Id { get; set; } = string.Empty;
+        public string Name { get; set; } = string.Empty;
+        public string Email { get; set; } = string.Empty;
+        public string Role { get; set; } = "Employee";
+        public string Status { get; set; } = "Active";
+        public string Department { get; set; } = string.Empty;
+        public string Position { get; set; } = string.Empty;
+    }
+
+    public class PasswordUpdateModel
+    {
+        public string CurrentPassword { get; set; } = string.Empty;
+        public string NewPassword { get; set; } = string.Empty;
+        public string ConfirmPassword { get; set; } = string.Empty;
+    }
+}

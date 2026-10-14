@@ -607,8 +607,31 @@ details > summary {
     color: var(--sidebar-label);
 }
 
-.aev-sidebar__accordion-toggle.is-open .aev-sidebar__chevron {
+.aev-sidebar__accordion-toggle.is-open .aev-sidebar__chevron,
+.aev-accordion-header.is-open .aev-sidebar__chevron,
+.aev-sidebar__chevron.is-open {
     transform: rotate(90deg);
+}
+
+/* ── General Accordion Card Body ────────────────────────────────────────── */
+.aev-accordion-header {
+    cursor: pointer;
+    user-select: none;
+    transition: background-color .15s ease;
+}
+
+.aev-accordion-header:hover {
+    background-color: #f9fafb;
+}
+
+.aev-accordion-body {
+    max-height: 0;
+    overflow: hidden;
+    transition: max-height .3s ease;
+}
+
+.aev-accordion-body.is-expanded {
+    max-height: 150rem;
 }
 
 /* ── Accordion sub-menu ────────────────────────────────────────────────── */
@@ -959,6 +982,46 @@ details > summary {
 }
 
 /* ── Responsive: collapse sidebar on small screens ─────────────────────── */
+.aev-sidebar__mobile-toggle {
+    display: none;
+    position: fixed;
+    top: 1rem;
+    left: 1rem;
+    z-index: 90;
+    width: 2.5rem;
+    height: 2.5rem;
+    border-radius: var(--radius-sm);
+    background: #ffffff;
+    border: 1px solid var(--sidebar-border);
+    color: var(--ink);
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.08);
+}
+
+.aev-sidebar__mobile-close {
+    display: none;
+    background: transparent;
+    border: none;
+    font-size: 1.25rem;
+    line-height: 1;
+    color: var(--muted);
+    cursor: pointer;
+    margin-left: auto;
+    padding: .25rem .5rem;
+    border-radius: var(--radius-sm);
+}
+
+.aev-sidebar__mobile-close:hover {
+    color: var(--ink);
+    background: var(--sidebar-hover);
+}
+
+.aev-sidebar__backdrop {
+    display: none;
+}
+
 @media (max-width: 768px) {
     .aev-sidebar {
         transform: translateX(-100%);
@@ -969,9 +1032,27 @@ details > summary {
         transform: translateX(0);
     }
 
+    .aev-sidebar__mobile-toggle {
+        display: flex;
+    }
+
+    .aev-sidebar__mobile-close {
+        display: block;
+    }
+
+    .aev-sidebar__backdrop {
+        display: block;
+        position: fixed;
+        inset: 0;
+        background: rgba(0, 0, 0, 0.4);
+        z-index: 95;
+        backdrop-filter: blur(2px);
+    }
+
     .aev-shell__content {
         margin-left: 0;
         padding: 1.25rem;
+        padding-top: 4.5rem;
     }
 
     .aev-content-row {
@@ -1138,6 +1219,56 @@ details > summary {
     padding: .2rem;
     color: var(--muted);
     line-height: 1;
+}
+
+/* ── Standard Password Toggle ────────────────────────────────────────── */
+.password-input-wrapper {
+    position: relative;
+    display: flex;
+    align-items: center;
+    width: 100%;
+}
+
+.password-input-wrapper .minimal-input {
+    padding-right: 2.75rem;
+}
+
+.password-toggle-btn {
+    position: absolute;
+    right: 0.75rem;
+    top: 50%;
+    transform: translateY(-50%);
+    background: transparent;
+    border: none;
+    cursor: pointer;
+    color: var(--muted);
+    padding: 0.25rem;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: color 0.2s ease;
+    z-index: 2;
+}
+
+.password-toggle-btn:hover {
+    color: var(--ink);
+}
+
+.password-toggle-btn:focus-visible {
+    outline: 2px solid var(--ink);
+    border-radius: 4px;
+}
+
+.password-toggle-btn:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+
+.minimal-input:disabled,
+.minimal-input[readonly] {
+    background-color: #f3f4f6;
+    color: #6b7280;
+    cursor: not-allowed;
 }
 
 /* ── Validation ────────────────────────────────────────────────────────── */

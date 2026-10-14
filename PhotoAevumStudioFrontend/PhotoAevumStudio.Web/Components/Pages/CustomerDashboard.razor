@@ -16,19 +16,14 @@
    ============================================================ *@
 
 @page "/my"
+@layout CustomerLayout
 @attribute [Authorize(Roles = "Customer")]
 @rendermode InteractiveServer
 
 <PageTitle>My Aevum Portal | Photo Aevum Studio</PageTitle>
 
-@* ── Shell ──────────────────────────────────────────────────────────────── *@
-<div class="aev-shell">
-    <Sidebar UserRole="customer" />
-
-    <main class="aev-shell__content">
-
-        @* ── Page header ─────────────────────────────────────────────────── *@
-        <header class="aev-page-header">
+@* ── Page header ─────────────────────────────────────────────────── *@
+<header class="aev-page-header">
             <div>
                 <h1 class="aev-page-header__title">Welcome to Aevum</h1>
                 <p class="aev-page-header__subtitle">Your photography portal</p>
@@ -95,6 +90,3 @@
                 </table>
             </div>
         </section>
-
-    </main>
-</div>

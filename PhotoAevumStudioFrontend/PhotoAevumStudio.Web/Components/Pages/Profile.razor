@@ -1,0 +1,819 @@
+@page "/profile"
+@page "/admin/profile"
+@page "/settings"
+@page "/admin/settings"
+@layout AdminLayout
+@using System.Security.Claims
+@using PhotoAevumStudio.Web.Models
+@using PhotoAevumStudio.Web.Services
+@using PhotoAevumStudio.Web.Components.Shared
+@inject AuthenticationStateProvider AuthStateProvider
+@inject IUserService UserService
+@inject IAuthService AuthService
+@inject NavigationManager NavManager
+@rendermode InteractiveServer
+
+<PageTitle>Account Profile | Photo Aevum Studio</PageTitle>
+
+@* ── Page header ─────────────────────────────────────────────────── *@
+<header class="aev-page-header">
+    <div>
+        <h1 class="aev-page-header__title">Account Profile</h1>
+        <p class="aev-page-header__subtitle">Manage your account information, role privileges, and security settings</p>
+    </div>
+    <div class="profile-header-actions">
+        @* Quick mock preview switcher to preview admin, staff, or customer roles (only when not authenticated) *@
+        @if (!isAuthenticatedUser)
+        {
+            <div class="profile-preview-switcher" role="group" aria-label="Role preview controls">
+                <span class="preview-label">Role Preview:</span>
+                <button type="button"
+                        class="btn-preview @(currentRoleKey == "admin" ? "is-active" : "")"
+                        @onclick='() => SwitchMockRole("admin")'
+                        title="Preview as Administrator">
+                    Admin
+                </button>
+                <button type="button"
+                        class="btn-preview @(currentRoleKey == "employee" ? "is-active" : "")"
+                        @onclick='() => SwitchMockRole("employee")'
+                        title="Preview as Staff / Employee">
+                    Staff
+                </button>
+                <button type="button"
+                        class="btn-preview @(currentRoleKey == "customer" ? "is-active" : "")"
+                        @onclick='() => SwitchMockRole("customer")'
+                        title="Preview as Customer">
+                    Customer
+                </button>
+            </div>
+        }
+
+        <span class="aev-badge @GetRoleBadgeClass(profile.Role, profile.IsSuperAdmin)">
+            @(profile.IsSuperAdmin ? "Root Super Admin" : (!string.IsNullOrWhiteSpace(profile.Role) ? profile.Role : "Authenticated User"))
+        </span>
+    </div>
+</header>
+
+@if (isLoading)
+{
+    <div class="aev-card profile-loading-card">
+        <LoadingSpinner />
+        <p class="aev-muted-text mt-3">Loading profile data...</p>
+    </div>
+}
+else
+{
+    <div class="profile-layout-stack">
+
+        @* ── 1. ACCOUNT DETAILS ACCORDION ─────────────────────────────────── *@
+        <section class="aev-card profile-card" aria-label="User Account Details">
+            <header class="aev-card__header aev-accordion-header @(IsSectionOpen("details") ? "is-open" : "")"
+                    @onclick='() => ToggleSection("details")'
+                    role="button"
+                    tabindex="0"
+                    aria-expanded="@IsSectionOpen("details")"
+                    aria-controls="acc-sec-details">
+                <div class="flex items-center gap-3">
+                    <span class="profile-section-icon" aria-hidden="true">👤</span>
+                    <div>
+                        <h2 class="aev-card__heading">Account Details</h2>
+                        <span class="profile-section-summary">Personal identity, studio credentials, and contact info</span>
+                    </div>
+                </div>
+                <div class="flex items-center gap-3">
+                    <span class="aev-badge aev-badge--green">@profile.Status</span>
+                    <span class="aev-sidebar__chevron @(IsSectionOpen("details") ? "is-open" : "")" aria-hidden="true">›</span>
+                </div>
+            </header>
+
+            <div id="acc-sec-details"
+                 class="aev-accordion-body @(IsSectionOpen("details") ? "is-expanded" : "")"
+                 aria-hidden="@(!IsSectionOpen("details"))">
+                <div class="profile-card-body">
+
+                    @* Hero avatar & headline *@
+                    <div class="profile-hero">
+                        <div class="profile-avatar" aria-hidden="true">
+                            @GetInitials(profile.Name, profile.Id)
+                        </div>
+                        <div class="profile-hero-text">
+                            <h3 class="profile-name">@profile.Name</h3>
+                            <p class="profile-email">@profile.Email</p>
+                            <span class="profile-id-chip">User ID: @profile.Id</span>
+                        </div>
+
+                        <div class="profile-hero-actions">
+                            @if (!isEditingProfile)
+                            {
+                                <button type="button" class="btn btn-edit-toggle" @onclick="StartProfileEdit">
+                                    <span aria-hidden="true">✏️</span> Edit Profile
+                                </button>
+                            }
+                            else
+                            {
+                                <div class="flex gap-2">
+                                    <button type="button" class="btn btn-save" @onclick="SaveProfileChanges">
+                                        Save
+                                    </button>
+                                    <button type="button" class="btn btn-cancel" @onclick="CancelProfileEdit">
+                                        Cancel
+                                    </button>
+                                </div>
+                            }
+                        </div>
+                    </div>
+
+                    @if (isEditingProfile)
+                    {
+                        <div class="profile-edit-form">
+                            <div class="input-group">
+                                <label for="edit-profile-name">Full Name</label>
+                                <input type="text" id="edit-profile-name" class="minimal-input" @bind="editName" />
+                            </div>
+                            <div class="input-group">
+                                <label for="edit-profile-email">Email Address</label>
+                                <input type="email" id="edit-profile-email" class="minimal-input" @bind="editEmail" />
+                            </div>
+                            <div class="input-group">
+                                <label for="edit-profile-phone">Phone Number</label>
+                                <input type="tel" id="edit-profile-phone" class="minimal-input" @bind="editPhone" />
+                            </div>
+                            @if (currentRoleKey != "customer")
+                            {
+                                <div class="input-group">
+                                    <label for="edit-profile-department">Department</label>
+                                    <input type="text" id="edit-profile-department" class="minimal-input" @bind="editDepartment" />
+                                </div>
+                            }
+                        </div>
+                    }
+                    else
+                    {
+                        @* Key-value field grid *@
+                        <div class="profile-fields-grid">
+                            <div class="profile-field">
+                                <span class="profile-field__label">Account ID</span>
+                                <span class="profile-field__value" id="profile-id">@profile.Id</span>
+                            </div>
+
+                            <div class="profile-field">
+                                <span class="profile-field__label">Full Name</span>
+                                <span class="profile-field__value" id="profile-name">@profile.Name</span>
+                            </div>
+
+                            <div class="profile-field">
+                                <span class="profile-field__label">Role</span>
+                                <span class="profile-field__value" id="profile-role">@profile.Role</span>
+                            </div>
+
+                            <div class="profile-field">
+                                <span class="profile-field__label">Email Address</span>
+                                <span class="profile-field__value" id="profile-email">@profile.Email</span>
+                            </div>
+
+                            <div class="profile-field">
+                                <span class="profile-field__label">Account Status</span>
+                                <span class="profile-field__value status-active">@profile.Status</span>
+                            </div>
+
+                            @if (!string.IsNullOrWhiteSpace(profile.Department))
+                            {
+                                <div class="profile-field">
+                                    <span class="profile-field__label">Department</span>
+                                    <span class="profile-field__value">@profile.Department</span>
+                                </div>
+                            }
+
+                            @if (!string.IsNullOrWhiteSpace(profile.Position))
+                            {
+                                <div class="profile-field">
+                                    <span class="profile-field__label">Position</span>
+                                    <span class="profile-field__value">@profile.Position</span>
+                                </div>
+                            }
+
+                            @if (!string.IsNullOrWhiteSpace(profile.Phone))
+                            {
+                                <div class="profile-field">
+                                    <span class="profile-field__label">Phone</span>
+                                    <span class="profile-field__value">@profile.Phone</span>
+                                </div>
+                            }
+
+                            @if (profile.MemberSince.HasValue)
+                            {
+                                <div class="profile-field">
+                                    <span class="profile-field__label">Member Since</span>
+                                    <span class="profile-field__value">@profile.MemberSince.Value.ToString("MMMM d, yyyy")</span>
+                                </div>
+                            }
+                        </div>
+                    }
+
+                </div>
+            </div>
+        </section>
+
+        @* ── 2. PERMISSIONS & MODULE ACCESS ACCORDION ─────────────────────── *@
+        <section class="aev-card profile-card" aria-label="Permissions and Module Access">
+            <header class="aev-card__header aev-accordion-header @(IsSectionOpen("permissions") ? "is-open" : "")"
+                    @onclick='() => ToggleSection("permissions")'
+                    role="button"
+                    tabindex="0"
+                    aria-expanded="@IsSectionOpen("permissions")"
+                    aria-controls="acc-sec-permissions">
+                <div class="flex items-center gap-3">
+                    <span class="profile-section-icon" aria-hidden="true">🛡️</span>
+                    <div>
+                        <h2 class="aev-card__heading">Permissions &amp; Module Access</h2>
+                        <span class="profile-section-summary">Studio management systems and role authorizations</span>
+                    </div>
+                </div>
+                <div class="flex items-center gap-3">
+                    <span class="aev-badge aev-badge--violet">@(profile.IsSuperAdmin ? "Full Access" : profile.Role)</span>
+                    <span class="aev-sidebar__chevron @(IsSectionOpen("permissions") ? "is-open" : "")" aria-hidden="true">›</span>
+                </div>
+            </header>
+
+            <div id="acc-sec-permissions"
+                 class="aev-accordion-body @(IsSectionOpen("permissions") ? "is-expanded" : "")"
+                 aria-hidden="@(!IsSectionOpen("permissions"))">
+                <div class="profile-card-body">
+                    <div class="permissions-grid">
+
+                        <article class="permission-item">
+                            <div class="permission-item__header">
+                                <span class="permission-item__icon" aria-hidden="true">📅</span>
+                                <h3 class="permission-item__title">Events Calendar</h3>
+                                @if (currentRoleKey != "customer")
+                                {
+                                    <span class="aev-badge aev-badge--green">Authorized</span>
+                                }
+                                else
+                                {
+                                    <span class="aev-badge aev-badge--amber">Client Booking Only</span>
+                                }
+                            </div>
+                            <p class="permission-item__desc">Access Calendar of Events, Staff Schedules, and Equipment availability.</p>
+                        </article>
+
+                        <article class="permission-item">
+                            <div class="permission-item__header">
+                                <span class="permission-item__icon" aria-hidden="true">🗂</span>
+                                <h3 class="permission-item__title">Services Catalog</h3>
+                                @if (currentRoleKey == "admin")
+                                {
+                                    <span class="aev-badge aev-badge--green">Full Manage</span>
+                                }
+                                else if (currentRoleKey == "employee")
+                                {
+                                    <span class="aev-badge aev-badge--teal">View Packages</span>
+                                }
+                                else
+                                {
+                                    <span class="aev-badge aev-badge--amber">Public Offerings</span>
+                                }
+                            </div>
+                            <p class="permission-item__desc">Manage studio offerings: Main Services, Package Services, and Additional Add-ons.</p>
+                        </article>
+
+                        <article class="permission-item">
+                            <div class="permission-item__header">
+                                <span class="permission-item__icon" aria-hidden="true">👤</span>
+                                <h3 class="permission-item__title">Employees &amp; Staff</h3>
+                                @if (currentRoleKey == "admin")
+                                {
+                                    <span class="aev-badge aev-badge--green">Full Admin</span>
+                                }
+                                else
+                                {
+                                    <span class="aev-badge aev-badge--red">Restricted</span>
+                                }
+                            </div>
+                            <p class="permission-item__desc">Manage employee directory, staff specialization tags, and credential roles.</p>
+                        </article>
+
+                        <article class="permission-item">
+                            <div class="permission-item__header">
+                                <span class="permission-item__icon" aria-hidden="true">📷</span>
+                                <h3 class="permission-item__title">Equipment Inventory</h3>
+                                @if (currentRoleKey == "admin")
+                                {
+                                    <span class="aev-badge aev-badge--green">Full Dispatch &amp; Logs</span>
+                                }
+                                else if (currentRoleKey == "employee")
+                                {
+                                    <span class="aev-badge aev-badge--teal">Check-out Log</span>
+                                }
+                                else
+                                {
+                                    <span class="aev-badge aev-badge--red">Restricted</span>
+                                }
+                            </div>
+                            <p class="permission-item__desc">Track studio cameras, lenses, lighting gear, dispatch records, and maintenance schedules.</p>
+                        </article>
+
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        @* ── 3. SECURITY & PASSWORD MANAGEMENT ACCORDION ───────────────────── *@
+        <section class="aev-card profile-card" aria-label="Security Settings">
+            <header class="aev-card__header aev-accordion-header @(IsSectionOpen("security") ? "is-open" : "")"
+                    @onclick='() => ToggleSection("security")'
+                    role="button"
+                    tabindex="0"
+                    aria-expanded="@IsSectionOpen("security")"
+                    aria-controls="acc-sec-security">
+                <div class="flex items-center gap-3">
+                    <span class="profile-section-icon" aria-hidden="true">🔑</span>
+                    <div>
+                        <h2 class="aev-card__heading">Security &amp; Password Settings</h2>
+                        <span class="profile-section-summary">Update your account authentication credentials</span>
+                    </div>
+                </div>
+                <div class="flex items-center gap-3">
+                    <span class="aev-badge aev-badge--blue">Credentials</span>
+                    <span class="aev-sidebar__chevron @(IsSectionOpen("security") ? "is-open" : "")" aria-hidden="true">›</span>
+                </div>
+            </header>
+
+            <div id="acc-sec-security"
+                 class="aev-accordion-body @(IsSectionOpen("security") ? "is-expanded" : "")"
+                 aria-hidden="@(!IsSectionOpen("security"))">
+                <div class="profile-card-body">
+                    <p class="settings-intro">
+                        Ensure your account stays secure with a unique password. Passwords must be at least 8 characters and contain both letters and digits.
+                    </p>
+
+                    @if (!string.IsNullOrEmpty(passwordSuccessMessage))
+                    {
+                        <div class="success-banner" role="status">
+                            <span>✅</span> @passwordSuccessMessage
+                        </div>
+                    }
+
+                    @if (!string.IsNullOrEmpty(passwordErrorMessage))
+                    {
+                        <div class="error-message" role="alert">
+                            <span>⚠️</span> @passwordErrorMessage
+                        </div>
+                    }
+
+                    <EditForm Model="@passwordForm" OnValidSubmit="HandleUpdatePassword">
+                        <div class="input-group">
+                            <label for="profile-current-password">Current Password</label>
+                            <PasswordInput Id="profile-current-password"
+                                           Name="currentPassword"
+                                           @bind-Value="passwordForm.CurrentPassword"
+                                           Placeholder="Enter your current password"
+                                           Disabled="@isUpdatingPassword"
+                                           Autocomplete="current-password" />
+                        </div>
+
+                        <div class="input-group">
+                            <label for="profile-new-password">New Password</label>
+                            <PasswordInput Id="profile-new-password"
+                                           Name="newPassword"
+                                           @bind-Value="passwordForm.NewPassword"
+                                           Placeholder="Enter new password (min. 8 characters)"
+                                           Disabled="@isUpdatingPassword"
+                                           Autocomplete="new-password" />
+                        </div>
+
+                        <div class="input-group">
+                            <label for="profile-confirm-password">Confirm Password</label>
+                            <PasswordInput Id="profile-confirm-password"
+                                           Name="confirmPassword"
+                                           @bind-Value="passwordForm.ConfirmPassword"
+                                           Placeholder="Re-enter new password"
+                                           Disabled="@isUpdatingPassword"
+                                           Autocomplete="new-password" />
+                        </div>
+
+                        <button type="submit" class="btn btn--primary profile-btn" disabled="@isUpdatingPassword">
+                            @if (isUpdatingPassword)
+                            {
+                                <span>Updating password...</span>
+                            }
+                            else
+                            {
+                                <span>Update Password</span>
+                            }
+                        </button>
+                    </EditForm>
+                </div>
+            </div>
+        </section>
+
+        @* ── 4. RECENT ACTIVITY ACCORDION ──────────────────────────────────── *@
+        <section class="aev-card profile-card" aria-label="Recent Activity and Session History">
+            <header class="aev-card__header aev-accordion-header @(IsSectionOpen("activity") ? "is-open" : "")"
+                    @onclick='() => ToggleSection("activity")'
+                    role="button"
+                    tabindex="0"
+                    aria-expanded="@IsSectionOpen("activity")"
+                    aria-controls="acc-sec-activity">
+                <div class="flex items-center gap-3">
+                    <span class="profile-section-icon" aria-hidden="true">⏱️</span>
+                    <div>
+                        <h2 class="aev-card__heading">Recent Activity &amp; Session History</h2>
+                        <span class="profile-section-summary">Recent sign-ins, device sessions, and audit entries</span>
+                    </div>
+                </div>
+                <div class="flex items-center gap-3">
+                    <span class="aev-badge aev-badge--green">Online</span>
+                    <span class="aev-sidebar__chevron @(IsSectionOpen("activity") ? "is-open" : "")" aria-hidden="true">›</span>
+                </div>
+            </header>
+
+            <div id="acc-sec-activity"
+                 class="aev-accordion-body @(IsSectionOpen("activity") ? "is-expanded" : "")"
+                 aria-hidden="@(!IsSectionOpen("activity"))">
+                <div class="profile-card-body p-0">
+                    <div class="aev-table-wrap">
+                        <table class="aev-table">
+                            <thead>
+                                <tr>
+                                    <th>Activity Event</th>
+                                    <th>Device / Browser</th>
+                                    <th>IP Address</th>
+                                    <th>Timestamp</th>
+                                    <th>Status</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <tr>
+                                    <td>Dashboard Session Active</td>
+                                    <td>Chrome 122 (Windows 11)</td>
+                                    <td>192.168.1.104</td>
+                                    <td>Today, @DateTime.Now.ToString("h:mm tt")</td>
+                                    <td><span class="aev-badge aev-badge--green">Current</span></td>
+                                </tr>
+                                <tr>
+                                    <td>Profile Security Check</td>
+                                    <td>Chrome 122 (Windows 11)</td>
+                                    <td>192.168.1.104</td>
+                                    <td>Today, @DateTime.Now.AddMinutes(-12).ToString("h:mm tt")</td>
+                                    <td><span class="aev-badge aev-badge--green">Verified</span></td>
+                                </tr>
+                                <tr>
+                                    <td>Account Sign-In</td>
+                                    <td>Safari 17 (macOS Sonoma)</td>
+                                    <td>112.198.74.22</td>
+                                    <td>Yesterday, 4:18 PM</td>
+                                    <td><span class="aev-badge aev-badge--violet">Completed</span></td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+    </div>
+}
+
+@code {
+    private UserProfileModel profile = new();
+    private PasswordUpdateModel passwordForm = new();
+    private string currentRoleKey = "admin";
+    private bool isLoading = true;
+    private bool isUpdatingPassword = false;
+    private bool isEditingProfile = false;
+    private string passwordErrorMessage = "";
+    private string passwordSuccessMessage = "";
+    private bool isAuthenticatedUser = false;
+
+    // Edit fields
+    private string editName = "";
+    private string editEmail = "";
+    private string editPhone = "";
+    private string editDepartment = "";
+
+    // Accordion state
+    private readonly HashSet<string> _openSections = new() { "details", "security" };
+
+    private bool IsSectionOpen(string key) => _openSections.Contains(key);
+
+    private void ToggleSection(string key)
+    {
+        if (!_openSections.Remove(key))
+            _openSections.Add(key);
+    }
+
+    // ── Pre-configured Realistic Mock Profiles ──────────────────────────────
+    private static readonly UserProfileModel MockAdmin = new()
+    {
+        Id = "ADM-1082",
+        Name = "Alexandria Vance",
+        Email = "alexandria.vance@photoaevum.com",
+        Role = "Administrator",
+        Status = "Active",
+        Department = "Studio Operations",
+        Position = "Managing Director & Chief Studio Admin",
+        Phone = "(+63) 919-555-0142",
+        IsSuperAdmin = true,
+        MemberSince = new DateTime(2024, 1, 15)
+    };
+
+    private static readonly UserProfileModel MockEmployee = new()
+    {
+        Id = "EMP-0042",
+        Name = "Marcus Sterling",
+        Email = "marcus.sterling@photoaevum.com",
+        Role = "Employee",
+        Status = "Active",
+        Department = "Creative & Production",
+        Position = "Lead Studio Photographer",
+        Phone = "(+63) 919-555-0188",
+        IsSuperAdmin = false,
+        MemberSince = new DateTime(2024, 3, 10)
+    };
+
+    private static readonly UserProfileModel MockCustomer = new()
+    {
+        Id = "CUST-0042",
+        Name = "Elena Rostova",
+        Email = "elena.rostova@gmail.com",
+        Role = "Customer",
+        Status = "Active",
+        Department = "Private Client",
+        Position = "Gold Tier Member",
+        Phone = "(+63) 919-555-0299",
+        IsSuperAdmin = false,
+        MemberSince = new DateTime(2024, 5, 22)
+    };
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadUserDataAsync();
+    }
+
+    private void SwitchMockRole(string roleKey)
+    {
+        currentRoleKey = roleKey;
+        var template = roleKey switch
+        {
+            "employee" => MockEmployee,
+            "customer" => MockCustomer,
+            _          => MockAdmin
+        };
+
+        profile = new UserProfileModel
+        {
+            Id = template.Id,
+            Name = template.Name,
+            Email = template.Email,
+            Role = template.Role,
+            Status = template.Status,
+            Department = template.Department,
+            Position = template.Position,
+            Phone = template.Phone,
+            IsSuperAdmin = template.IsSuperAdmin,
+            MemberSince = template.MemberSince
+        };
+
+        isEditingProfile = false;
+        passwordSuccessMessage = "";
+        passwordErrorMessage = "";
+    }
+
+    private async Task LoadUserDataAsync()
+    {
+        isLoading = true;
+        try
+        {
+            var uri = NavManager.Uri.ToLowerInvariant();
+            if (uri.Contains("/staff")) currentRoleKey = "employee";
+            else if (uri.Contains("/my")) currentRoleKey = "customer";
+            else currentRoleKey = "admin";
+
+            // Read live claims if user is authenticated
+            var authState = await AuthStateProvider.GetAuthenticationStateAsync();
+            var user = authState.User;
+
+            if (user.Identity?.IsAuthenticated == true)
+            {
+                isAuthenticatedUser = true;
+
+                var claimId = user.FindFirst("studio_id")?.Value
+                              ?? user.FindFirst(ClaimTypes.NameIdentifier)?.Value
+                              ?? user.FindFirst("sub")?.Value
+                              ?? user.Identity.Name
+                              ?? string.Empty;
+
+                var claimEmail = user.FindFirst(ClaimTypes.Email)?.Value
+                                ?? user.FindFirst("email")?.Value
+                                ?? (user.Identity.Name?.Contains("@") == true ? user.Identity.Name : string.Empty);
+
+                var claimName = user.FindFirst("full_name")?.Value
+                               ?? user.FindFirst("name")?.Value
+                               ?? user.FindFirst(ClaimTypes.Name)?.Value
+                               ?? string.Empty;
+
+                var claimRole = user.FindFirst(ClaimTypes.Role)?.Value
+                               ?? user.FindFirst("role")?.Value
+                               ?? string.Empty;
+
+                bool isSuper = user.IsInRole("Super Admin")
+                               || (!string.IsNullOrEmpty(claimRole) && claimRole.Contains("Super", StringComparison.OrdinalIgnoreCase))
+                               || (!string.IsNullOrEmpty(claimId) && claimId.StartsWith("SADM-", StringComparison.OrdinalIgnoreCase));
+
+                string displayRole = isSuper ? "Super Admin"
+                                   : (user.IsInRole("Admin") || claimRole.Contains("Admin", StringComparison.OrdinalIgnoreCase)) ? "Administrator"
+                                   : (user.IsInRole("Employee") || claimRole.Contains("Employee", StringComparison.OrdinalIgnoreCase) || claimRole.Contains("Staff", StringComparison.OrdinalIgnoreCase)) ? "Employee"
+                                   : "Customer";
+
+                if (displayRole == "Administrator" || isSuper) currentRoleKey = "admin";
+                else if (displayRole == "Employee") currentRoleKey = "employee";
+                else currentRoleKey = "customer";
+
+                profile = new UserProfileModel
+                {
+                    Id = claimId,
+                    Name = !string.IsNullOrWhiteSpace(claimName) ? claimName : (!string.IsNullOrWhiteSpace(claimEmail) ? claimEmail.Split('@')[0] : claimId),
+                    Email = claimEmail,
+                    Role = displayRole,
+                    Status = "Active",
+                    IsSuperAdmin = isSuper,
+                    Department = (isSuper || displayRole == "Administrator") ? "Administration & Studio Management" : (displayRole == "Employee" ? "Creative & Production" : "Client"),
+                    Position = isSuper ? "Root Super Administrator" : (displayRole == "Administrator" ? "Studio Administrator" : (displayRole == "Employee" ? "Staff Member" : "Customer")),
+                    Phone = string.Empty,
+                    MemberSince = null
+                };
+
+                // Enrich from IUserService if backing store has extra details
+                if (!string.IsNullOrWhiteSpace(profile.Id))
+                {
+                    var admin = UserService.GetAdminById(profile.Id);
+                    if (admin != null)
+                    {
+                        if (!string.IsNullOrWhiteSpace(admin.Name)) profile.Name = admin.Name;
+                        if (!string.IsNullOrWhiteSpace(admin.Email)) profile.Email = admin.Email;
+                        if (!string.IsNullOrWhiteSpace(admin.Role)) profile.Role = admin.Role;
+                        profile.IsSuperAdmin = admin.IsSuperAdmin || isSuper;
+                    }
+                    else
+                    {
+                        var employee = UserService.GetEmployeeById(profile.Id);
+                        if (employee != null)
+                        {
+                            if (!string.IsNullOrWhiteSpace(employee.Name)) profile.Name = employee.Name;
+                            if (!string.IsNullOrWhiteSpace(employee.Email)) profile.Email = employee.Email;
+                            if (!string.IsNullOrWhiteSpace(employee.Department)) profile.Department = employee.Department;
+                            if (!string.IsNullOrWhiteSpace(employee.Position)) profile.Position = employee.Position;
+                        }
+                    }
+                }
+            }
+            else
+            {
+                isAuthenticatedUser = false;
+                SwitchMockRole(currentRoleKey);
+            }
+        }
+        finally
+        {
+            isLoading = false;
+        }
+    }
+
+    private void StartProfileEdit()
+    {
+        editName = profile.Name;
+        editEmail = profile.Email;
+        editPhone = profile.Phone;
+        editDepartment = profile.Department;
+        isEditingProfile = true;
+    }
+
+    private void SaveProfileChanges()
+    {
+        if (!string.IsNullOrWhiteSpace(editName)) profile.Name = editName;
+        if (!string.IsNullOrWhiteSpace(editEmail)) profile.Email = editEmail;
+        if (!string.IsNullOrWhiteSpace(editPhone)) profile.Phone = editPhone;
+        if (!string.IsNullOrWhiteSpace(editDepartment)) profile.Department = editDepartment;
+        isEditingProfile = false;
+    }
+
+    private void CancelProfileEdit()
+    {
+        isEditingProfile = false;
+    }
+
+    private async Task HandleUpdatePassword()
+    {
+        isUpdatingPassword = true;
+        passwordErrorMessage = "";
+        passwordSuccessMessage = "";
+        StateHasChanged();
+
+        if (string.IsNullOrWhiteSpace(passwordForm.CurrentPassword) ||
+            string.IsNullOrWhiteSpace(passwordForm.NewPassword) ||
+            string.IsNullOrWhiteSpace(passwordForm.ConfirmPassword))
+        {
+            passwordErrorMessage = "All password fields are required.";
+            isUpdatingPassword = false;
+            return;
+        }
+
+        if (passwordForm.NewPassword.Length < 8)
+        {
+            passwordErrorMessage = "New password must be at least 8 characters long.";
+            isUpdatingPassword = false;
+            return;
+        }
+
+        if (!System.Text.RegularExpressions.Regex.IsMatch(passwordForm.NewPassword, @"[A-Za-z]"))
+        {
+            passwordErrorMessage = "Password must contain at least one letter.";
+            isUpdatingPassword = false;
+            return;
+        }
+
+        if (!System.Text.RegularExpressions.Regex.IsMatch(passwordForm.NewPassword, @"[0-9]"))
+        {
+            passwordErrorMessage = "Password must contain at least one digit.";
+            isUpdatingPassword = false;
+            return;
+        }
+
+        if (passwordForm.NewPassword != passwordForm.ConfirmPassword)
+        {
+            passwordErrorMessage = "New passwords do not match.";
+            isUpdatingPassword = false;
+            return;
+        }
+
+        if (passwordForm.NewPassword == passwordForm.CurrentPassword)
+        {
+            passwordErrorMessage = "New password must be different from current password.";
+            isUpdatingPassword = false;
+            return;
+        }
+
+        var result = await AuthService.ChangeInitialPasswordAsync(
+            profile.Id,
+            passwordForm.CurrentPassword,
+            passwordForm.NewPassword,
+            passwordForm.ConfirmPassword);
+
+        if (result.Success)
+        {
+            passwordSuccessMessage = "Password successfully updated!";
+            passwordForm = new();
+        }
+        else
+        {
+            passwordErrorMessage = result.Error ?? "Failed to update password. Please verify current password.";
+        }
+
+        isUpdatingPassword = false;
+    }
+
+    // ── Static helpers (tested by FormsAndSecurityTests) ────────────────────
+    internal static string GetRoleBadgeClass(string role, bool isSuperAdmin)
+    {
+        if (isSuperAdmin || role.Contains("Super", StringComparison.OrdinalIgnoreCase))
+            return "aev-badge--violet";
+        if (role.Equals("Admin", StringComparison.OrdinalIgnoreCase) || role.Contains("Admin", StringComparison.OrdinalIgnoreCase))
+            return "aev-badge--blue";
+        if (role.Equals("Employee", StringComparison.OrdinalIgnoreCase) || role.Contains("Staff", StringComparison.OrdinalIgnoreCase))
+            return "aev-badge--teal";
+        return "aev-badge--amber";
+    }
+
+    internal static string GetInitials(string name, string id)
+    {
+        if (string.IsNullOrWhiteSpace(name))
+            return !string.IsNullOrWhiteSpace(id) && id.Length >= 2 ? id[..2].ToUpperInvariant() : "U";
+
+        var parts = name.Split(' ', StringSplitOptions.RemoveEmptyEntries);
+        if (parts.Length >= 2)
+            return $"{char.ToUpperInvariant(parts[0][0])}{char.ToUpperInvariant(parts[^1][0])}";
+        return char.ToUpperInvariant(name[0]).ToString();
+    }
+
+    public class UserProfileModel
+    {
+        public string Id { get; set; } = string.Empty;
+        public string Name { get; set; } = string.Empty;
+        public string Email { get; set; } = string.Empty;
+        public string Role { get; set; } = string.Empty;
+        public string Status { get; set; } = "Active";
+        public string Department { get; set; } = string.Empty;
+        public string Position { get; set; } = string.Empty;
+        public string Phone { get; set; } = string.Empty;
+        public bool IsSuperAdmin { get; set; }
+        public DateTime? MemberSince { get; set; }
+    }
+
+    public class PasswordUpdateModel
+    {
+        public string CurrentPassword { get; set; } = string.Empty;
+        public string NewPassword { get; set; } = string.Empty;
+        public string ConfirmPassword { get; set; } = string.Empty;
+    }
+}

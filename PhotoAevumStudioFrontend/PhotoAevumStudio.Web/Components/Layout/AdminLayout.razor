@@ -1,8 +1,8 @@
 @inherits LayoutComponentBase
 
-@* Pages that use AdminDashboard.razor manage their own aev-shell + Sidebar.
-   Other admin pages that haven't been migrated yet will still see NavMenuAdmin
-   as a top-bar fallback until they are individually updated. *@
-<div class="min-h-screen bg-gray-50 font-sans text-neutral-900">
-    @Body
+<div class="aev-shell">
+    <Sidebar UserRole="admin" />
+    <main class="aev-shell__content">
+        @Body
+    </main>
 </div>
