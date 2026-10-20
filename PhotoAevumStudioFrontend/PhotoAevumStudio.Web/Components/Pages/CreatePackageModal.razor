@@ -1,0 +1,677 @@
+@using System.ComponentModel.DataAnnotations
+@using PhotoAevumStudio.Web.Models
+
+@if (IsOpen)
+{
+    <!-- Modal Backdrop -->
+    <div class="fixed inset-0 z-50 bg-black/50 backdrop-blur-xs flex items-center justify-center p-4 sm:p-6 overflow-y-auto animate-in fade-in duration-150"
+         role="dialog" aria-modal="true" aria-labelledby="package-modal-title">
+
+        <!-- Modal Card Container -->
+        <div class="relative w-full max-w-xl bg-white rounded-2xl shadow-2xl border border-gray-100 overflow-hidden flex flex-col max-h-[92vh]">
+
+            <!-- Modal Header -->
+            <div class="px-6 py-5 border-b border-gray-100 flex items-center justify-between bg-white sticky top-0 z-10">
+                <div class="flex items-center gap-3">
+                    <div class="w-10 h-10 rounded-xl bg-gray-900 text-white flex items-center justify-center font-bold text-sm shadow-sm">
+                        <!-- Package / Box Icon -->
+                        <svg class="w-5 h-5 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4" />
+                        </svg>
+                    </div>
+                    <div>
+                        <h2 id="package-modal-title" class="text-xl font-bold text-gray-900">Create New Package</h2>
+                        <p class="text-xs text-gray-500">Tiered service bundle and savings configuration</p>
+                    </div>
+                </div>
+                <button type="button" @onclick="HandleClose" disabled="@isSaving"
+                        class="text-gray-400 hover:text-gray-600 rounded-lg p-1.5 hover:bg-gray-100 transition-colors focus:outline-none focus:ring-2 focus:ring-gray-900"
+                        aria-label="Close dialog">
+                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+                    </svg>
+                </button>
+            </div>
+
+            <!-- Stepper Progress Bar -->
+            <div class="px-6 py-4 bg-gray-50/70 border-b border-gray-100">
+                <ol class="flex items-center justify-between w-full">
+                    @for (int i = 1; i <= TotalSteps; i++)
+                    {
+                        var stepNumber = i;
+                        var isCompleted = stepNumber < currentStep;
+                        var isCurrent = stepNumber == currentStep;
+
+                        <li class="flex items-center @(stepNumber < TotalSteps ? "w-full" : "")">
+                            <div class="flex items-center gap-2">
+                                <span class="w-7 h-7 rounded-full flex items-center justify-center text-xs font-semibold transition-all duration-200
+                                    @(isCurrent ? "bg-gray-900 text-white shadow-sm ring-2 ring-gray-900/20" :
+                                      isCompleted ? "bg-emerald-600 text-white" : "bg-gray-200 text-gray-600")">
+                                    @if (isCompleted)
+                                    {
+                                        <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M5 13l4 4L19 7" />
+                                        </svg>
+                                    }
+                                    else
+                                    {
+                                        @stepNumber
+                                    }
+                                </span>
+                                <span class="text-xs font-medium hidden sm:inline @(isCurrent ? "text-gray-900 font-bold" : isCompleted ? "text-gray-700" : "text-gray-400")">
+                                    @StepTitles[stepNumber - 1]
+                                </span>
+                            </div>
+
+                            @if (stepNumber < TotalSteps)
+                            {
+                                <div class="flex-1 mx-3 h-0.5 @(stepNumber < currentStep ? "bg-emerald-500" : "bg-gray-200")"></div>
+                            }
+                        </li>
+                    }
+                </ol>
+            </div>
+
+            <!-- Modal Body -->
+            <div class="p-6 overflow-y-auto flex-1">
+                <EditForm EditContext="@editContext">
+                    <DataAnnotationsValidator />
+
+                    @* ==========================================
+                       STEP 1: Package Identity
+                       ========================================== *@
+                    @if (currentStep == 1)
+                    {
+                        <div class="space-y-5 animate-in fade-in duration-200">
+                            <div>
+                                <span class="inline-block text-[11px] font-semibold text-gray-500 uppercase tracking-wider mb-1">Step 1 of 3</span>
+                                <h3 class="text-lg font-bold text-gray-900">Package Identity</h3>
+                                <p class="text-xs text-gray-500 mt-0.5">
+                                    Set up a bundled service tier for clients.
+                                </p>
+                            </div>
+
+                            <!-- Package Name -->
+                            <div>
+                                <label for="pkg-name" class="block text-sm font-semibold text-gray-800 mb-1.5">
+                                    Package Name <span class="text-red-500">*</span>
+                                </label>
+                                <InputText id="pkg-name"
+                                           @bind-Value="model.Name"
+                                           placeholder="e.g., Pro Wedding Coverage, Ultimate Studio & Print Bundle"
+                                           class="w-full px-3.5 py-2.5 text-sm bg-white border border-gray-300 rounded-lg text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-gray-900 focus:border-transparent transition-all shadow-sm" />
+                                <ValidationMessage For="@(() => model.Name)" class="text-xs text-red-600 mt-1 font-medium" />
+                                <p class="text-[11px] text-gray-400 mt-1">This will display as the bundle tier title across marketing and client booking pages.</p>
+                            </div>
+
+                            <!-- Package Code & Category Grid -->
+                            <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                                <!-- Package Code -->
+                                <div>
+                                    <label for="pkg-code" class="block text-sm font-semibold text-gray-800 mb-1.5">
+                                        Package Code <span class="text-red-500">*</span>
+                                    </label>
+                                    <InputText id="pkg-code"
+                                               @bind-Value="model.Code"
+                                               placeholder="e.g., PS-509"
+                                               class="w-full px-3.5 py-2.5 text-sm bg-white border border-gray-300 rounded-lg text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-gray-900 focus:border-transparent transition-all shadow-sm font-mono" />
+                                    <ValidationMessage For="@(() => model.Code)" class="text-xs text-red-600 mt-1 font-medium" />
+                                </div>
+
+                                <!-- Target Category -->
+                                <div>
+                                    <label for="pkg-category" class="block text-sm font-semibold text-gray-800 mb-1.5">
+                                        Target Category <span class="text-red-500">*</span>
+                                    </label>
+                                    <InputSelect id="pkg-category"
+                                                 @bind-Value="model.TargetCategory"
+                                                 class="w-full px-3.5 py-2.5 text-sm bg-white border border-gray-300 rounded-lg text-gray-900 focus:outline-none focus:ring-2 focus:ring-gray-900 focus:border-transparent transition-all shadow-sm">
+                                        <option value="Portrait Bundles">Portrait Bundles</option>
+                                        <option value="Wedding Bundles">Wedding Bundles</option>
+                                        <option value="Corporate Bundles">Corporate Bundles</option>
+                                    </InputSelect>
+                                </div>
+                            </div>
+
+                            <!-- Description (Optional) -->
+                            <div>
+                                <div class="flex justify-between items-center mb-1.5">
+                                    <label for="pkg-desc" class="block text-sm font-semibold text-gray-800">
+                                        Package Summary & Scope <span class="text-gray-400 font-normal text-xs">(Optional)</span>
+                                    </label>
+                                    <span class="text-[11px] text-gray-400">@((model.Description ?? string.Empty).Length)/300</span>
+                                </div>
+                                <InputTextArea id="pkg-desc"
+                                               rows="3"
+                                               @bind-Value="model.Description"
+                                               placeholder="Describe bundle inclusions, target event size, or unique value proposition..."
+                                               class="w-full px-3.5 py-2.5 text-sm bg-white border border-gray-300 rounded-lg text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-gray-900 focus:border-transparent transition-all shadow-sm resize-none" />
+                                <ValidationMessage For="@(() => model.Description)" class="text-xs text-red-600 mt-1 font-medium" />
+                            </div>
+
+                            <!-- Helper Callout Note -->
+                            <div class="p-3.5 bg-amber-50/80 border border-amber-200 rounded-xl flex items-start gap-3">
+                                <div class="text-amber-600 text-sm mt-0.5">💡</div>
+                                <div class="text-xs text-amber-900 leading-relaxed">
+                                    Packages bundle multiple services, sessions, and physical prints into high-value client offerings. In step 2, assign inclusions and package pricing.
+                                </div>
+                            </div>
+                        </div>
+                    }
+
+                    @* ==========================================
+                       STEP 2: Bundled Inclusions & Pricing
+                       ========================================== *@
+                    @if (currentStep == 2)
+                    {
+                        <div class="space-y-5 animate-in fade-in duration-200">
+                            <div>
+                                <span class="inline-block text-[11px] font-semibold text-gray-500 uppercase tracking-wider mb-1">Step 2 of 3</span>
+                                <h3 class="text-lg font-bold text-gray-900">Bundled Inclusions &amp; Pricing</h3>
+                                <p class="text-xs text-gray-500 mt-0.5">
+                                    Select package deliverables and configure bundle pricing.
+                                </p>
+                            </div>
+
+                            <!-- Price & Savings Grid -->
+                            <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                                <!-- Package Price -->
+                                <div>
+                                    <label for="pkg-price" class="block text-sm font-semibold text-gray-800 mb-1.5">
+                                        Package Price ($) <span class="text-red-500">*</span>
+                                    </label>
+                                    <div class="relative">
+                                        <div class="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-gray-400 font-medium text-sm">
+                                            $
+                                        </div>
+                                        <InputNumber id="pkg-price"
+                                                     @bind-Value="model.Price"
+                                                     step="25"
+                                                     min="0"
+                                                     class="w-full pl-8 pr-3.5 py-2.5 text-sm bg-white border border-gray-300 rounded-lg text-gray-900 focus:outline-none focus:ring-2 focus:ring-gray-900 focus:border-transparent transition-all shadow-sm font-semibold" />
+                                    </div>
+                                    <ValidationMessage For="@(() => model.Price)" class="text-xs text-red-600 mt-1 font-medium" />
+                                </div>
+
+                                <!-- Estimated Savings Note -->
+                                <div>
+                                    <label for="pkg-savings" class="block text-sm font-semibold text-gray-800 mb-1.5">
+                                        Savings / Discount Note
+                                    </label>
+                                    <InputText id="pkg-savings"
+                                               @bind-Value="model.SavingsNote"
+                                               placeholder="e.g., Save $150 vs individual services"
+                                               class="w-full px-3.5 py-2.5 text-sm bg-white border border-gray-300 rounded-lg text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-gray-900 focus:border-transparent transition-all shadow-sm" />
+                                    <p class="text-[11px] text-gray-400 mt-1">Highlighted as an incentive badge for clients.</p>
+                                </div>
+                            </div>
+
+                            <!-- Bundled Inclusions Selection -->
+                            <div>
+                                <label class="block text-sm font-semibold text-gray-800 mb-1.5">
+                                    Bundled Inclusions (Color Tags)
+                                </label>
+                                <p class="text-xs text-gray-500 mb-2.5">
+                                    Add items or select presets included in this package tier.
+                                </p>
+
+                                <!-- Custom Inclusion Input -->
+                                <div class="flex gap-2 mb-3">
+                                    <input type="text"
+                                           @bind="newInclusionLabel"
+                                           @bind:event="oninput"
+                                           @onkeydown="HandleInclusionKeyDown"
+                                           placeholder="e.g., 2-Hour Studio Session, 20 Retouched Prints"
+                                           class="flex-1 px-3 py-2 text-xs bg-white border border-gray-300 rounded-lg text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-gray-900 focus:border-transparent shadow-xs" />
+
+                                    <select @bind="newInclusionColor"
+                                            class="px-2.5 py-2 text-xs bg-white border border-gray-300 rounded-lg text-gray-700 focus:outline-none focus:ring-2 focus:ring-gray-900 shadow-xs">
+                                        <option value="Rose">Rose Tag</option>
+                                        <option value="Blue">Blue Tag</option>
+                                        <option value="Emerald">Green Tag</option>
+                                        <option value="Purple">Purple Tag</option>
+                                        <option value="Amber">Amber Tag</option>
+                                        <option value="Indigo">Indigo Tag</option>
+                                        <option value="Cyan">Cyan Tag</option>
+                                    </select>
+
+                                    <button type="button"
+                                            @onclick="AddCustomInclusion"
+                                            class="px-3.5 py-2 bg-gray-900 hover:bg-black text-white text-xs font-semibold rounded-lg shadow-xs transition-colors shrink-0">
+                                        + Add
+                                    </button>
+                                </div>
+
+                                <!-- Quick Presets -->
+                                <div class="mb-3">
+                                    <span class="text-[11px] font-semibold text-gray-400 uppercase tracking-wider block mb-1.5">Popular Package Presets:</span>
+                                    <div class="flex flex-wrap gap-1.5">
+                                        @foreach (var preset in commonInclusionPresets)
+                                        {
+                                            var alreadyAdded = model.Inclusions.Any(i => i.Label.Equals(preset.Label, StringComparison.OrdinalIgnoreCase));
+                                            <button type="button"
+                                                    @onclick="() => ToggleInclusionPreset(preset)"
+                                                    class="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium border transition-colors
+                                                           @(alreadyAdded ? "bg-gray-900 text-white border-gray-900" : "bg-white text-gray-700 border-gray-200 hover:bg-gray-50")">
+                                                <span>@(alreadyAdded ? "✓" : "+")</span>
+                                                <span>@preset.Label</span>
+                                            </button>
+                                        }
+                                    </div>
+                                </div>
+
+                                <!-- Inclusions List -->
+                                <div class="p-3 bg-gray-50 border border-gray-200 rounded-xl min-h-[52px]">
+                                    <span class="text-[11px] font-semibold text-gray-500 uppercase tracking-wider block mb-2">Package Inclusions (@model.Inclusions.Count)</span>
+                                    @if (model.Inclusions.Any())
+                                    {
+                                        <div class="flex flex-wrap gap-1.5">
+                                            @foreach (var item in model.Inclusions)
+                                            {
+                                                var classes = SpecializationColorHelper.GetClasses(item.ColorTag);
+                                                <span class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium border @classes.BadgeClass shadow-2xs">
+                                                    <span class="w-1.5 h-1.5 rounded-full @classes.DotClass"></span>
+                                                    <span>@item.Label</span>
+                                                    <button type="button"
+                                                            @onclick="() => RemoveInclusion(item)"
+                                                            class="ml-0.5 text-gray-400 hover:text-gray-700 rounded-full font-bold text-xs"
+                                                            title="Remove item">
+                                                        &times;
+                                                    </button>
+                                                </span>
+                                            }
+                                        </div>
+                                    }
+                                    else
+                                    {
+                                        <p class="text-xs text-gray-400 italic">No inclusions added yet. Pick from presets above or type a custom inclusion.</p>
+                                    }
+                                </div>
+                            </div>
+
+                            <!-- Helper Note -->
+                            <div class="p-3.5 bg-amber-50/80 border border-amber-200 rounded-xl flex items-start gap-3">
+                                <div class="text-amber-600 text-sm mt-0.5">💡</div>
+                                <div class="text-xs text-amber-900 leading-relaxed">
+                                    Clearly listed inclusions help clients understand the exact value of the tier before checkout.
+                                </div>
+                            </div>
+                        </div>
+                    }
+
+                    @* ==========================================
+                       STEP 3: Overview & Save
+                       ========================================== *@
+                    @if (currentStep == 3)
+                    {
+                        <div class="space-y-5 animate-in fade-in duration-200">
+                            <div>
+                                <span class="inline-block text-[11px] font-semibold text-gray-500 uppercase tracking-wider mb-1">Step 3 of 3</span>
+                                <h3 class="text-lg font-bold text-gray-900">Overview &amp; Confirmation</h3>
+                                <p class="text-xs text-gray-500 mt-0.5">
+                                    Review the package tier details and inclusions before saving.
+                                </p>
+                            </div>
+
+                            <!-- Summary Card -->
+                            <div class="border border-gray-200 rounded-xl overflow-hidden divide-y divide-gray-100 text-sm bg-white shadow-xs">
+                                <!-- Package Header Preview -->
+                                <div class="p-4 bg-gray-50/70 flex items-center justify-between">
+                                    <div class="flex items-center gap-3">
+                                        <div class="w-10 h-10 rounded-full bg-gray-900 text-white font-bold text-xs flex items-center justify-center shrink-0 shadow-xs">
+                                            PS
+                                        </div>
+                                        <div>
+                                            <div class="font-bold text-gray-900">@model.Name</div>
+                                            <div class="font-mono text-xs text-gray-400">@model.Code &bull; @model.TargetCategory</div>
+                                        </div>
+                                    </div>
+                                    <div class="text-right">
+                                        <div class="text-base font-extrabold text-gray-900">$@model.Price.ToString("N2")</div>
+                                        @if (!string.IsNullOrWhiteSpace(model.SavingsNote))
+                                        {
+                                            <div class="text-[11px] text-emerald-600 font-semibold">@model.SavingsNote</div>
+                                        }
+                                    </div>
+                                </div>
+
+                                <!-- Inclusions Preview -->
+                                <div class="px-4 py-3">
+                                    <span class="text-xs font-semibold text-gray-500 uppercase tracking-wider block mb-1.5">Bundled Inclusions (@model.Inclusions.Count)</span>
+                                    @if (model.Inclusions.Any())
+                                    {
+                                        <div class="flex flex-wrap gap-1.5">
+                                            @foreach (var inc in model.Inclusions)
+                                            {
+                                                var classes = SpecializationColorHelper.GetClasses(inc.ColorTag);
+                                                <span class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium border @classes.BadgeClass shadow-2xs">
+                                                    <span class="w-1.5 h-1.5 rounded-full @classes.DotClass"></span>
+                                                    @inc.Label
+                                                </span>
+                                            }
+                                        </div>
+                                    }
+                                    else
+                                    {
+                                        <span class="text-xs text-gray-400 italic">None specified</span>
+                                    }
+                                </div>
+
+                                <!-- Scope / Description -->
+                                <div class="px-4 py-3">
+                                    <span class="text-xs font-semibold text-gray-500 uppercase tracking-wider block mb-1">Package Scope</span>
+                                    <p class="text-xs text-gray-700 leading-relaxed italic">
+                                        @(string.IsNullOrWhiteSpace(model.Description) ? "No additional scope notes provided." : model.Description)
+                                    </p>
+                                </div>
+
+                                <!-- Status Selection -->
+                                <div class="p-4 bg-gray-50/40 flex items-center justify-between">
+                                    <div>
+                                        <span class="text-xs font-semibold text-gray-800 block">Package Status</span>
+                                        <span class="text-[11px] text-gray-400">Control immediate availability for client booking</span>
+                                    </div>
+                                    <div class="flex items-center gap-2">
+                                        <button type="button"
+                                                @onclick='() => model.Status = "Active"'
+                                                class="px-3 py-1.5 rounded-lg text-xs font-semibold border transition-all
+                                                       @(model.Status == "Active" ? "bg-emerald-50 text-emerald-700 border-emerald-300 ring-2 ring-emerald-500/20" : "bg-white text-gray-600 border-gray-200")">
+                                            ● Active
+                                        </button>
+                                        <button type="button"
+                                                @onclick='() => model.Status = "Draft"'
+                                                class="px-3 py-1.5 rounded-lg text-xs font-semibold border transition-all
+                                                       @(model.Status == "Draft" ? "bg-gray-100 text-gray-800 border-gray-400 ring-2 ring-gray-900/10" : "bg-white text-gray-600 border-gray-200")">
+                                            ○ Draft
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
+
+                            @if (!string.IsNullOrWhiteSpace(saveErrorMessage))
+                            {
+                                <div class="p-3 bg-red-50 border border-red-200 rounded-lg text-xs text-red-700 font-medium" role="alert">
+                                    @saveErrorMessage
+                                </div>
+                            }
+                        </div>
+                    }
+                </EditForm>
+            </div>
+
+            <!-- Modal Footer Controls -->
+            <div class="px-6 py-4 bg-gray-50 border-t border-gray-100 flex items-center justify-between">
+                <div>
+                    @if (currentStep > 1)
+                    {
+                        <button type="button" @onclick="HandlePrevStep" disabled="@isSaving"
+                                class="inline-flex items-center gap-1.5 px-4 py-2.5 bg-white border border-gray-300 hover:bg-gray-100 text-gray-700 text-xs font-semibold rounded-lg shadow-xs transition-colors disabled:opacity-50">
+                            <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7" />
+                            </svg>
+                            Back
+                        </button>
+                    }
+                    else
+                    {
+                        <button type="button" @onclick="HandleClose" disabled="@isSaving"
+                                class="px-4 py-2.5 bg-white border border-gray-300 hover:bg-gray-100 text-gray-700 text-xs font-semibold rounded-lg shadow-xs transition-colors disabled:opacity-50">
+                            Cancel
+                        </button>
+                    }
+                </div>
+
+                <div class="flex items-center gap-3">
+                    @if (currentStep < TotalSteps)
+                    {
+                        <button type="button" @onclick="HandleNextStep"
+                                class="inline-flex items-center gap-1.5 px-5 py-2.5 bg-gray-900 hover:bg-black text-white text-xs font-semibold rounded-lg shadow-sm transition-all duration-150 active:scale-95">
+                            Next
+                            <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7" />
+                            </svg>
+                        </button>
+                    }
+                    else
+                    {
+                        <button type="button" @onclick="HandleSaveAsync" disabled="@isSaving"
+                                class="inline-flex items-center gap-2 px-6 py-2.5 bg-gray-900 hover:bg-black text-white text-xs font-semibold rounded-lg shadow-sm transition-all duration-150 disabled:opacity-60 active:scale-95">
+                            @if (isSaving)
+                            {
+                                <svg class="animate-spin -ml-1 mr-1 h-3.5 w-3.5 text-white" fill="none" viewBox="0 0 24 24">
+                                    <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                                    <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                                </svg>
+                                <span>Saving Package...</span>
+                            }
+                            else
+                            {
+                                <svg class="w-4 h-4 text-emerald-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7" />
+                                </svg>
+                                <span>Save Package</span>
+                            }
+                        </button>
+                    }
+                </div>
+            </div>
+        </div>
+    </div>
+}
+
+@code {
+    [Parameter] public bool IsOpen { get; set; }
+    [Parameter] public EventCallback<bool> IsOpenChanged { get; set; }
+    [Parameter] public EventCallback<PackageServiceItem> OnPackageCreated { get; set; }
+
+    private const int TotalSteps = 3;
+    private static readonly string[] StepTitles = { "Package Identity", "Inclusions & Pricing", "Overview & Save" };
+
+    private int currentStep = 1;
+    private bool isSaving = false;
+    private string? saveErrorMessage;
+
+    private PackageServiceModel model = new();
+    private EditContext editContext = null!;
+    private ValidationMessageStore messageStore = null!;
+
+    private string newInclusionLabel = string.Empty;
+    private string newInclusionColor = "Rose";
+
+    private record InclusionPreset(string Label, string ColorTag);
+
+    private readonly List<InclusionPreset> commonInclusionPresets = new()
+    {
+        new("Full-Day Coverage", "Rose"),
+        new("2 Photographers", "Blue"),
+        new("Engagement Shoot", "Indigo"),
+        new("Album Design", "Amber"),
+        new("2-Hour Studio Session", "Blue"),
+        new("20 Retouched Prints", "Emerald"),
+        new("Full Digital Gallery", "Purple"),
+        new("Online Gallery", "Purple")
+    };
+
+    protected override void OnInitialized()
+    {
+        ResetWizard();
+    }
+
+    protected override void OnParametersSet()
+    {
+        if (IsOpen && currentStep == 1 && string.IsNullOrWhiteSpace(model.Name))
+        {
+            ResetWizard();
+        }
+    }
+
+    public void ResetWizard()
+    {
+        currentStep = 1;
+        isSaving = false;
+        saveErrorMessage = null;
+        newInclusionLabel = string.Empty;
+        newInclusionColor = "Rose";
+
+        model = new PackageServiceModel
+        {
+            Code = $"PS-{new Random().Next(509, 599)}",
+            TargetCategory = "Wedding Bundles",
+            Price = 1299.00m,
+            SavingsNote = "Save $200 vs individual bookings",
+            Status = "Active",
+            Inclusions = new()
+            {
+                ("Full-Day Coverage", "Rose"),
+                ("2 Photographers", "Blue"),
+                ("Online Gallery", "Purple")
+            }
+        };
+
+        editContext = new EditContext(model);
+        messageStore = new ValidationMessageStore(editContext);
+    }
+
+    private void HandleInclusionKeyDown(KeyboardEventArgs e)
+    {
+        if (e.Key == "Enter")
+        {
+            AddCustomInclusion();
+        }
+    }
+
+    private void AddCustomInclusion()
+    {
+        if (!string.IsNullOrWhiteSpace(newInclusionLabel))
+        {
+            var trimmed = newInclusionLabel.Trim();
+            if (!model.Inclusions.Any(i => i.Label.Equals(trimmed, StringComparison.OrdinalIgnoreCase)))
+            {
+                model.Inclusions.Add((trimmed, newInclusionColor));
+            }
+            newInclusionLabel = string.Empty;
+        }
+    }
+
+    private void ToggleInclusionPreset(InclusionPreset preset)
+    {
+        var existing = model.Inclusions.FirstOrDefault(i => i.Label.Equals(preset.Label, StringComparison.OrdinalIgnoreCase));
+        if (!string.IsNullOrEmpty(existing.Label))
+        {
+            model.Inclusions.Remove(existing);
+        }
+        else
+        {
+            model.Inclusions.Add((preset.Label, preset.ColorTag));
+        }
+    }
+
+    private void RemoveInclusion((string Label, string ColorTag) item)
+    {
+        model.Inclusions.Remove(item);
+    }
+
+    private void HandleNextStep()
+    {
+        saveErrorMessage = null;
+
+        if (currentStep == 1)
+        {
+            var nameField = editContext.Field(nameof(model.Name));
+            var codeField = editContext.Field(nameof(model.Code));
+
+            messageStore.Clear(nameField);
+            messageStore.Clear(codeField);
+
+            bool hasError = false;
+            if (string.IsNullOrWhiteSpace(model.Name))
+            {
+                messageStore.Add(nameField, "Package name is required.");
+                hasError = true;
+            }
+            else if (model.Name.Trim().Length < 2)
+            {
+                messageStore.Add(nameField, "Package name must be at least 2 characters.");
+                hasError = true;
+            }
+
+            if (string.IsNullOrWhiteSpace(model.Code))
+            {
+                messageStore.Add(codeField, "Package code is required.");
+                hasError = true;
+            }
+
+            if (hasError)
+            {
+                editContext.NotifyValidationStateChanged();
+                return;
+            }
+
+            currentStep = 2;
+        }
+        else if (currentStep == 2)
+        {
+            if (model.Price < 0)
+            {
+                model.Price = 0;
+            }
+            currentStep = 3;
+        }
+    }
+
+    private void HandlePrevStep()
+    {
+        if (currentStep > 1)
+        {
+            currentStep--;
+            saveErrorMessage = null;
+        }
+    }
+
+    private async Task HandleClose()
+    {
+        if (isSaving) return;
+        ResetWizard();
+        await IsOpenChanged.InvokeAsync(false);
+    }
+
+    private async Task HandleSaveAsync()
+    {
+        if (string.IsNullOrWhiteSpace(model.Name) || string.IsNullOrWhiteSpace(model.Code))
+        {
+            currentStep = 1;
+            return;
+        }
+
+        try
+        {
+            isSaving = true;
+            saveErrorMessage = null;
+
+            var newItem = new PackageServiceItem
+            {
+                Code = model.Code.Trim().ToUpperInvariant(),
+                Title = model.Name.Trim(),
+                BundleCategory = model.TargetCategory,
+                Inclusions = new List<(string Label, string ColorTag)>(model.Inclusions),
+                Price = $"${model.Price:N2}",
+                SavingsNote = model.SavingsNote?.Trim(),
+                Description = model.Description?.Trim(),
+                Status = model.Status
+            };
+
+            await Task.Delay(350);
+
+            await OnPackageCreated.InvokeAsync(newItem);
+            await HandleClose();
+        }
+        catch (Exception ex)
+        {
+            saveErrorMessage = $"Error creating package: {ex.Message}";
+        }
+        finally
+        {
+            isSaving = false;
+        }
+    }
+}

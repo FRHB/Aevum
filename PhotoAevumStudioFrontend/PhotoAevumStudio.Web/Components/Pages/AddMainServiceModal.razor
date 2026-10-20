@@ -1,0 +1,727 @@
+@using System.ComponentModel.DataAnnotations
+@using PhotoAevumStudio.Web.Models
+
+@if (IsOpen)
+{
+    <!-- Modal Backdrop -->
+    <div class="fixed inset-0 z-50 bg-black/50 backdrop-blur-xs flex items-center justify-center p-4 sm:p-6 overflow-y-auto animate-in fade-in duration-150"
+         role="dialog" aria-modal="true" aria-labelledby="main-service-modal-title">
+
+        <!-- Modal Card Container -->
+        <div class="relative w-full max-w-xl bg-white rounded-2xl shadow-2xl border border-gray-100 overflow-hidden flex flex-col max-h-[92vh]">
+
+            <!-- Modal Header -->
+            <div class="px-6 py-5 border-b border-gray-100 flex items-center justify-between bg-white sticky top-0 z-10">
+                <div class="flex items-center gap-3">
+                    <div class="w-10 h-10 rounded-xl bg-gray-900 text-white flex items-center justify-center font-bold text-sm shadow-sm">
+                        <!-- Camera / Main Service Icon -->
+                        <svg class="w-5 h-5 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z" />
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 13a3 3 0 11-6 0 3 3 0 016 0z" />
+                        </svg>
+                    </div>
+                    <div>
+                        <h2 id="main-service-modal-title" class="text-xl font-bold text-gray-900">Add New Main Service</h2>
+                        <p class="text-xs text-gray-500">Master service catalogue configuration</p>
+                    </div>
+                </div>
+                <button type="button" @onclick="HandleClose" disabled="@isSaving"
+                        class="text-gray-400 hover:text-gray-600 rounded-lg p-1.5 hover:bg-gray-100 transition-colors focus:outline-none focus:ring-2 focus:ring-gray-900"
+                        aria-label="Close dialog">
+                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+                    </svg>
+                </button>
+            </div>
+
+            <!-- Stepper Progress Bar -->
+            <div class="px-6 py-4 bg-gray-50/70 border-b border-gray-100">
+                <ol class="flex items-center justify-between w-full">
+                    @for (int i = 1; i <= TotalSteps; i++)
+                    {
+                        var stepNumber = i;
+                        var isCompleted = stepNumber < currentStep;
+                        var isCurrent = stepNumber == currentStep;
+
+                        <li class="flex items-center @(stepNumber < TotalSteps ? "w-full" : "")">
+                            <div class="flex items-center gap-2">
+                                <span class="w-7 h-7 rounded-full flex items-center justify-center text-xs font-semibold transition-all duration-200
+                                    @(isCurrent ? "bg-gray-900 text-white shadow-sm ring-2 ring-gray-900/20" :
+                                      isCompleted ? "bg-emerald-600 text-white" : "bg-gray-200 text-gray-600")">
+                                    @if (isCompleted)
+                                    {
+                                        <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M5 13l4 4L19 7" />
+                                        </svg>
+                                    }
+                                    else
+                                    {
+                                        @stepNumber
+                                    }
+                                </span>
+                                <span class="text-xs font-medium hidden sm:inline @(isCurrent ? "text-gray-900 font-bold" : isCompleted ? "text-gray-700" : "text-gray-400")">
+                                    @StepTitles[stepNumber - 1]
+                                </span>
+                            </div>
+
+                            @if (stepNumber < TotalSteps)
+                            {
+                                <div class="flex-1 mx-3 h-0.5 @(stepNumber < currentStep ? "bg-emerald-500" : "bg-gray-200")"></div>
+                            }
+                        </li>
+                    }
+                </ol>
+            </div>
+
+            <!-- Modal Body -->
+            <div class="p-6 overflow-y-auto flex-1">
+                <EditForm EditContext="@editContext">
+                    <DataAnnotationsValidator />
+
+                    @* ==========================================
+                       STEP 1: Main Service Details
+                       ========================================== *@
+                    @if (currentStep == 1)
+                    {
+                        <div class="space-y-5 animate-in fade-in duration-200">
+                            <div>
+                                <span class="inline-block text-[11px] font-semibold text-gray-500 uppercase tracking-wider mb-1">Step 1 of 3</span>
+                                <h3 class="text-lg font-bold text-gray-900">Main Service Details</h3>
+                                <p class="text-xs text-gray-500 mt-0.5">
+                                    Enter title and operational parameters for this primary service.
+                                </p>
+                            </div>
+
+                            <!-- Service Name -->
+                            <div>
+                                <label for="svc-name" class="block text-sm font-semibold text-gray-800 mb-1.5">
+                                    Service Name <span class="text-red-500">*</span>
+                                </label>
+                                <InputText id="svc-name"
+                                           @bind-Value="model.Name"
+                                           placeholder="e.g., Portrait & Headshots"
+                                           class="w-full px-3.5 py-2.5 text-sm bg-white border border-gray-300 rounded-lg text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-gray-900 focus:border-transparent transition-all shadow-sm" />
+                                <ValidationMessage For="@(() => model.Name)" class="text-xs text-red-600 mt-1 font-medium" />
+                                <p class="text-[11px] text-gray-400 mt-1">This name will appear as the primary service heading on client booking forms.</p>
+                            </div>
+
+                            <!-- Service Code & Category Grid -->
+                            <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                                <!-- Service Code -->
+                                <div>
+                                    <label for="svc-code" class="block text-sm font-semibold text-gray-800 mb-1.5">
+                                        Service Code <span class="text-red-500">*</span>
+                                    </label>
+                                    <InputText id="svc-code"
+                                               @bind-Value="model.Code"
+                                               placeholder="e.g., MS-007"
+                                               class="w-full px-3.5 py-2.5 text-sm bg-white border border-gray-300 rounded-lg text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-gray-900 focus:border-transparent transition-all shadow-sm font-mono" />
+                                    <ValidationMessage For="@(() => model.Code)" class="text-xs text-red-600 mt-1 font-medium" />
+                                </div>
+
+                                <!-- Category Dropdown -->
+                                <div>
+                                    <label for="svc-category" class="block text-sm font-semibold text-gray-800 mb-1.5">
+                                        Category <span class="text-red-500">*</span>
+                                    </label>
+                                    <InputSelect id="svc-category"
+                                                 @bind-Value="model.Category"
+                                                 @bind-Value:after="OnCategoryChanged"
+                                                 class="w-full px-3.5 py-2.5 text-sm bg-white border border-gray-300 rounded-lg text-gray-900 focus:outline-none focus:ring-2 focus:ring-gray-900 focus:border-transparent transition-all shadow-sm">
+                                        <option value="Portrait">Portrait</option>
+                                        <option value="Commercial">Commercial</option>
+                                        <option value="Event & Wedding">Event &amp; Wedding</option>
+                                        <option value="Product">Product</option>
+                                    </InputSelect>
+                                </div>
+                            </div>
+
+                            <!-- Category Specification / Sub-type -->
+                            <div>
+                                <label for="svc-spec" class="block text-sm font-semibold text-gray-800 mb-1.5">
+                                    Operational Spec / Subtitle
+                                </label>
+                                <InputText id="svc-spec"
+                                           @bind-Value="model.CategorySpec"
+                                           placeholder="e.g., Studio Session, Corporate On-Site, Outdoor / Studio"
+                                           class="w-full px-3.5 py-2.5 text-sm bg-white border border-gray-300 rounded-lg text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-gray-900 focus:border-transparent transition-all shadow-sm" />
+                                <p class="text-[11px] text-gray-400 mt-1">Brief subtitle explaining the scope or venue type.</p>
+                            </div>
+
+                            <!-- Description (Optional) -->
+                            <div>
+                                <div class="flex justify-between items-center mb-1.5">
+                                    <label for="svc-desc" class="block text-sm font-semibold text-gray-800">
+                                        Description <span class="text-gray-400 font-normal text-xs">(Optional)</span>
+                                    </label>
+                                    <span class="text-[11px] text-gray-400">@((model.Description ?? string.Empty).Length)/300</span>
+                                </div>
+                                <InputTextArea id="svc-desc"
+                                               rows="3"
+                                               @bind-Value="model.Description"
+                                               placeholder="Describe shooting parameters, target clientele, or specific creative direction..."
+                                               class="w-full px-3.5 py-2.5 text-sm bg-white border border-gray-300 rounded-lg text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-gray-900 focus:border-transparent transition-all shadow-sm resize-none" />
+                                <ValidationMessage For="@(() => model.Description)" class="text-xs text-red-600 mt-1 font-medium" />
+                            </div>
+
+                            <!-- Helper Callout Note -->
+                            <div class="p-3.5 bg-amber-50/80 border border-amber-200 rounded-xl flex items-start gap-3">
+                                <div class="text-amber-600 text-sm mt-0.5">💡</div>
+                                <div class="text-xs text-amber-900 leading-relaxed">
+                                    Main services form the foundation of client bookings. In the next step, configure standard session duration, pricing rates, and bundled deliverables.
+                                </div>
+                            </div>
+                        </div>
+                    }
+
+                    @* ==========================================
+                       STEP 2: Pricing & Specs
+                       ========================================== *@
+                    @if (currentStep == 2)
+                    {
+                        <div class="space-y-5 animate-in fade-in duration-200">
+                            <div>
+                                <span class="inline-block text-[11px] font-semibold text-gray-500 uppercase tracking-wider mb-1">Step 2 of 3</span>
+                                <h3 class="text-lg font-bold text-gray-900">Pricing & Operational Specs</h3>
+                                <p class="text-xs text-gray-500 mt-0.5">
+                                    Configure session duration, base pricing, and included deliverables.
+                                </p>
+                            </div>
+
+                            <!-- Duration & Base Rate Grid -->
+                            <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                                <!-- Session Duration -->
+                                <div>
+                                    <label for="svc-duration" class="block text-sm font-semibold text-gray-800 mb-1.5">
+                                        Session Duration (Hours) <span class="text-red-500">*</span>
+                                    </label>
+                                    <div class="relative">
+                                        <InputNumber id="svc-duration"
+                                                     @bind-Value="model.DurationHours"
+                                                     step="0.5"
+                                                     min="0.25"
+                                                     max="48"
+                                                     class="w-full px-3.5 py-2.5 text-sm bg-white border border-gray-300 rounded-lg text-gray-900 focus:outline-none focus:ring-2 focus:ring-gray-900 focus:border-transparent transition-all shadow-sm" />
+                                        <div class="absolute inset-y-0 right-0 pr-3.5 flex items-center pointer-events-none text-xs text-gray-400 font-medium">
+                                            Hrs
+                                        </div>
+                                    </div>
+                                    <div class="flex gap-1.5 mt-1.5">
+                                        <button type="button" @onclick="() => model.DurationHours = 1.0m" class="px-2 py-0.5 bg-gray-100 hover:bg-gray-200 text-[11px] font-medium text-gray-700 rounded">1.0h</button>
+                                        <button type="button" @onclick="() => model.DurationHours = 1.5m" class="px-2 py-0.5 bg-gray-100 hover:bg-gray-200 text-[11px] font-medium text-gray-700 rounded">1.5h</button>
+                                        <button type="button" @onclick="() => model.DurationHours = 4.0m" class="px-2 py-0.5 bg-gray-100 hover:bg-gray-200 text-[11px] font-medium text-gray-700 rounded">4.0h (Half)</button>
+                                        <button type="button" @onclick="() => model.DurationHours = 8.0m" class="px-2 py-0.5 bg-gray-100 hover:bg-gray-200 text-[11px] font-medium text-gray-700 rounded">8.0h (Full)</button>
+                                    </div>
+                                    <ValidationMessage For="@(() => model.DurationHours)" class="text-xs text-red-600 mt-1 font-medium" />
+                                </div>
+
+                                <!-- Base Rate / Price -->
+                                <div>
+                                    <label for="svc-price" class="block text-sm font-semibold text-gray-800 mb-1.5">
+                                        Base Rate / Price ($) <span class="text-red-500">*</span>
+                                    </label>
+                                    <div class="relative">
+                                        <div class="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-gray-400 font-medium text-sm">
+                                            $
+                                        </div>
+                                        <InputNumber id="svc-price"
+                                                     @bind-Value="model.BasePrice"
+                                                     step="10"
+                                                     min="0"
+                                                     class="w-full pl-8 pr-3.5 py-2.5 text-sm bg-white border border-gray-300 rounded-lg text-gray-900 focus:outline-none focus:ring-2 focus:ring-gray-900 focus:border-transparent transition-all shadow-sm font-semibold" />
+                                    </div>
+                                    <p class="text-[11px] text-gray-400 mt-1">Starting price before custom add-ons or taxes.</p>
+                                    <ValidationMessage For="@(() => model.BasePrice)" class="text-xs text-red-600 mt-1 font-medium" />
+                                </div>
+                            </div>
+
+                            <!-- Included Deliverables -->
+                            <div>
+                                <label class="block text-sm font-semibold text-gray-800 mb-1.5">
+                                    Included Deliverables (Badges)
+                                </label>
+                                <p class="text-xs text-gray-500 mb-2.5">
+                                    Add items or select quick presets to appear as color chips on the service listing.
+                                </p>
+
+                                <!-- Custom Deliverable Input Form -->
+                                <div class="flex gap-2 mb-3">
+                                    <input type="text"
+                                           @bind="newDeliverableLabel"
+                                           @bind:event="oninput"
+                                           @onkeydown="HandleDeliverableKeyDown"
+                                           placeholder="e.g., 10 Retouched Photos, Online Gallery"
+                                           class="flex-1 px-3 py-2 text-xs bg-white border border-gray-300 rounded-lg text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-gray-900 focus:border-transparent shadow-xs" />
+
+                                    <select @bind="newDeliverableColor"
+                                            class="px-2.5 py-2 text-xs bg-white border border-gray-300 rounded-lg text-gray-700 focus:outline-none focus:ring-2 focus:ring-gray-900 shadow-xs">
+                                        <option value="Blue">Blue Tag</option>
+                                        <option value="Purple">Purple Tag</option>
+                                        <option value="Emerald">Green Tag</option>
+                                        <option value="Amber">Amber Tag</option>
+                                        <option value="Rose">Rose Tag</option>
+                                        <option value="Indigo">Indigo Tag</option>
+                                        <option value="Cyan">Cyan Tag</option>
+                                    </select>
+
+                                    <button type="button"
+                                            @onclick="AddCustomDeliverable"
+                                            class="px-3.5 py-2 bg-gray-900 hover:bg-black text-white text-xs font-semibold rounded-lg shadow-xs transition-colors shrink-0">
+                                        + Add
+                                    </button>
+                                </div>
+
+                                <!-- Quick Presets -->
+                                <div class="mb-3">
+                                    <span class="text-[11px] font-semibold text-gray-400 uppercase tracking-wider block mb-1.5">Quick Presets:</span>
+                                    <div class="flex flex-wrap gap-1.5">
+                                        @foreach (var preset in commonDeliverablePresets)
+                                        {
+                                            var alreadyAdded = model.Deliverables.Any(d => d.Label.Equals(preset.Label, StringComparison.OrdinalIgnoreCase));
+                                            <button type="button"
+                                                    @onclick="() => ToggleDeliverablePreset(preset)"
+                                                    class="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium border transition-colors
+                                                           @(alreadyAdded ? "bg-gray-900 text-white border-gray-900" : "bg-white text-gray-700 border-gray-200 hover:bg-gray-50")">
+                                                <span>@(alreadyAdded ? "✓" : "+")</span>
+                                                <span>@preset.Label</span>
+                                            </button>
+                                        }
+                                    </div>
+                                </div>
+
+                                <!-- Current Deliverables List -->
+                                <div class="p-3 bg-gray-50 border border-gray-200 rounded-xl min-h-[52px]">
+                                    <span class="text-[11px] font-semibold text-gray-500 uppercase tracking-wider block mb-2">Selected Deliverables (@model.Deliverables.Count)</span>
+                                    @if (model.Deliverables.Any())
+                                    {
+                                        <div class="flex flex-wrap gap-1.5">
+                                            @foreach (var item in model.Deliverables)
+                                            {
+                                                var classes = SpecializationColorHelper.GetClasses(item.ColorTag);
+                                                <span class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium border @classes.BadgeClass shadow-2xs">
+                                                    <span class="w-1.5 h-1.5 rounded-full @classes.DotClass"></span>
+                                                    <span>@item.Label</span>
+                                                    <button type="button"
+                                                            @onclick="() => RemoveDeliverable(item)"
+                                                            class="ml-0.5 text-gray-400 hover:text-gray-700 rounded-full font-bold text-xs"
+                                                            title="Remove item">
+                                                        &times;
+                                                    </button>
+                                                </span>
+                                            }
+                                        </div>
+                                    }
+                                    else
+                                    {
+                                        <p class="text-xs text-gray-400 italic">No deliverables added yet. Use presets above or type a custom deliverable.</p>
+                                    }
+                                </div>
+                            </div>
+
+                            <!-- Helper Note -->
+                            <div class="p-3.5 bg-amber-50/80 border border-amber-200 rounded-xl flex items-start gap-3">
+                                <div class="text-amber-600 text-sm mt-0.5">💡</div>
+                                <div class="text-xs text-amber-900 leading-relaxed">
+                                    Deliverables are highlighted directly on customer booking screens and client contracts.
+                                </div>
+                            </div>
+                        </div>
+                    }
+
+                    @* ==========================================
+                       STEP 3: Overview & Save
+                       ========================================== *@
+                    @if (currentStep == 3)
+                    {
+                        <div class="space-y-5 animate-in fade-in duration-200">
+                            <div>
+                                <span class="inline-block text-[11px] font-semibold text-gray-500 uppercase tracking-wider mb-1">Step 3 of 3</span>
+                                <h3 class="text-lg font-bold text-gray-900">Overview & Confirmation</h3>
+                                <p class="text-xs text-gray-500 mt-0.5">
+                                    Review the service details before saving it into the active catalog.
+                                </p>
+                            </div>
+
+                            <!-- Summary Card -->
+                            <div class="border border-gray-200 rounded-xl overflow-hidden divide-y divide-gray-100 text-sm bg-white shadow-xs">
+                                <!-- Service Header Preview -->
+                                <div class="p-4 bg-gray-50/70 flex items-center justify-between">
+                                    <div class="flex items-center gap-3">
+                                        <div class="w-10 h-10 rounded-full bg-gray-900 text-white font-bold text-xs flex items-center justify-center shrink-0 shadow-xs">
+                                            MS
+                                        </div>
+                                        <div>
+                                            <div class="font-bold text-gray-900">@model.Name</div>
+                                            <div class="font-mono text-xs text-gray-400">@model.Code &bull; @model.Category</div>
+                                        </div>
+                                    </div>
+                                    <div class="text-right">
+                                        <div class="text-base font-extrabold text-gray-900">$@model.BasePrice.ToString("F2")</div>
+                                        <div class="text-[11px] text-gray-400">@model.DurationHours Hr Session</div>
+                                    </div>
+                                </div>
+
+                                <!-- Category & Spec -->
+                                <div class="flex items-center justify-between px-4 py-3">
+                                    <span class="text-xs font-semibold text-gray-500 uppercase tracking-wider">Category &amp; Spec</span>
+                                    <span class="font-medium text-gray-800">@model.Category (@model.CategorySpec)</span>
+                                </div>
+
+                                <!-- Deliverables Preview -->
+                                <div class="px-4 py-3">
+                                    <span class="text-xs font-semibold text-gray-500 uppercase tracking-wider block mb-1.5">Deliverables (@model.Deliverables.Count)</span>
+                                    @if (model.Deliverables.Any())
+                                    {
+                                        <div class="flex flex-wrap gap-1.5">
+                                            @foreach (var d in model.Deliverables)
+                                            {
+                                                var classes = SpecializationColorHelper.GetClasses(d.ColorTag);
+                                                <span class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium border @classes.BadgeClass shadow-2xs">
+                                                    <span class="w-1.5 h-1.5 rounded-full @classes.DotClass"></span>
+                                                    @d.Label
+                                                </span>
+                                            }
+                                        </div>
+                                    }
+                                    else
+                                    {
+                                        <span class="text-xs text-gray-400 italic">None specified</span>
+                                    }
+                                </div>
+
+                                <!-- Description -->
+                                <div class="px-4 py-3">
+                                    <span class="text-xs font-semibold text-gray-500 uppercase tracking-wider block mb-1">Description</span>
+                                    <p class="text-xs text-gray-700 leading-relaxed italic">
+                                        @(string.IsNullOrWhiteSpace(model.Description) ? "No description provided." : model.Description)
+                                    </p>
+                                </div>
+
+                                <!-- Catalog Status Selection -->
+                                <div class="p-4 bg-gray-50/40 flex items-center justify-between">
+                                    <div>
+                                        <span class="text-xs font-semibold text-gray-800 block">Initial Catalog Status</span>
+                                        <span class="text-[11px] text-gray-400">Control immediate client visibility</span>
+                                    </div>
+                                    <div class="flex items-center gap-2">
+                                        <button type="button"
+                                                @onclick='() => model.Status = "Active"'
+                                                class="px-3 py-1.5 rounded-lg text-xs font-semibold border transition-all
+                                                       @(model.Status == "Active" ? "bg-emerald-50 text-emerald-700 border-emerald-300 ring-2 ring-emerald-500/20" : "bg-white text-gray-600 border-gray-200")">
+                                            ● Active
+                                        </button>
+                                        <button type="button"
+                                                @onclick='() => model.Status = "Draft"'
+                                                class="px-3 py-1.5 rounded-lg text-xs font-semibold border transition-all
+                                                       @(model.Status == "Draft" ? "bg-gray-100 text-gray-800 border-gray-400 ring-2 ring-gray-900/10" : "bg-white text-gray-600 border-gray-200")">
+                                            ○ Draft
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
+
+                            @if (!string.IsNullOrWhiteSpace(saveErrorMessage))
+                            {
+                                <div class="p-3 bg-red-50 border border-red-200 rounded-lg text-xs text-red-700 font-medium" role="alert">
+                                    @saveErrorMessage
+                                </div>
+                            }
+                        </div>
+                    }
+                </EditForm>
+            </div>
+
+            <!-- Modal Footer Controls -->
+            <div class="px-6 py-4 bg-gray-50 border-t border-gray-100 flex items-center justify-between">
+                <div>
+                    @if (currentStep > 1)
+                    {
+                        <button type="button" @onclick="HandlePrevStep" disabled="@isSaving"
+                                class="inline-flex items-center gap-1.5 px-4 py-2.5 bg-white border border-gray-300 hover:bg-gray-100 text-gray-700 text-xs font-semibold rounded-lg shadow-xs transition-colors disabled:opacity-50">
+                            <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7" />
+                            </svg>
+                            Back
+                        </button>
+                    }
+                    else
+                    {
+                        <button type="button" @onclick="HandleClose" disabled="@isSaving"
+                                class="px-4 py-2.5 bg-white border border-gray-300 hover:bg-gray-100 text-gray-700 text-xs font-semibold rounded-lg shadow-xs transition-colors disabled:opacity-50">
+                            Cancel
+                        </button>
+                    }
+                </div>
+
+                <div class="flex items-center gap-3">
+                    @if (currentStep < TotalSteps)
+                    {
+                        <button type="button" @onclick="HandleNextStep"
+                                class="inline-flex items-center gap-1.5 px-5 py-2.5 bg-gray-900 hover:bg-black text-white text-xs font-semibold rounded-lg shadow-sm transition-all duration-150 active:scale-95">
+                            Next
+                            <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7" />
+                            </svg>
+                        </button>
+                    }
+                    else
+                    {
+                        <button type="button" @onclick="HandleSaveAsync" disabled="@isSaving"
+                                class="inline-flex items-center gap-2 px-6 py-2.5 bg-gray-900 hover:bg-black text-white text-xs font-semibold rounded-lg shadow-sm transition-all duration-150 disabled:opacity-60 active:scale-95">
+                            @if (isSaving)
+                            {
+                                <svg class="animate-spin -ml-1 mr-1 h-3.5 w-3.5 text-white" fill="none" viewBox="0 0 24 24">
+                                    <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                                    <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                                </svg>
+                                <span>Saving Service...</span>
+                            }
+                            else
+                            {
+                                <svg class="w-4 h-4 text-emerald-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7" />
+                                </svg>
+                                <span>Save Service</span>
+                            }
+                        </button>
+                    }
+                </div>
+            </div>
+        </div>
+    </div>
+}
+
+@code {
+    [Parameter] public bool IsOpen { get; set; }
+    [Parameter] public EventCallback<bool> IsOpenChanged { get; set; }
+    [Parameter] public EventCallback<MainServiceItem> OnServiceCreated { get; set; }
+
+    private const int TotalSteps = 3;
+    private static readonly string[] StepTitles = { "Details", "Pricing & Specs", "Overview & Save" };
+
+    private int currentStep = 1;
+    private bool isSaving = false;
+    private string? saveErrorMessage;
+
+    private MainServiceModel model = new();
+    private EditContext editContext = null!;
+    private ValidationMessageStore messageStore = null!;
+
+    private string newDeliverableLabel = string.Empty;
+    private string newDeliverableColor = "Blue";
+
+    private record DeliverablePreset(string Label, string ColorTag);
+
+    private readonly List<DeliverablePreset> commonDeliverablePresets = new()
+    {
+        new("1 Hour Shoot", "Blue"),
+        new("10 Retouched Photos", "Purple"),
+        new("Full Digital Gallery", "Indigo"),
+        new("Full Rights", "Amber"),
+        new("2 Photographers", "Blue"),
+        new("White Background", "Cyan"),
+        new("Half-Day Coverage", "Emerald")
+    };
+
+    protected override void OnInitialized()
+    {
+        ResetWizard();
+    }
+
+    protected override void OnParametersSet()
+    {
+        if (IsOpen && currentStep == 1 && string.IsNullOrWhiteSpace(model.Name))
+        {
+            ResetWizard();
+        }
+    }
+
+    public void ResetWizard()
+    {
+        currentStep = 1;
+        isSaving = false;
+        saveErrorMessage = null;
+        newDeliverableLabel = string.Empty;
+        newDeliverableColor = "Blue";
+
+        model = new MainServiceModel
+        {
+            Code = $"MS-00{new Random().Next(7, 99)}",
+            Category = "Portrait",
+            CategorySpec = "Studio Session",
+            DurationHours = 1.5m,
+            BasePrice = 150.00m,
+            Status = "Active",
+            Deliverables = new()
+            {
+                ("1.5 Hour Session", "Blue"),
+                ("10 Retouched Photos", "Purple")
+            }
+        };
+
+        editContext = new EditContext(model);
+        messageStore = new ValidationMessageStore(editContext);
+    }
+
+    private void OnCategoryChanged()
+    {
+        // Suggest a default category specification based on category
+        model.CategorySpec = model.Category switch
+        {
+            "Portrait" => "Studio Session",
+            "Commercial" => "Corporate / Advertising",
+            "Event & Wedding" => "Ceremony & Reception",
+            "Product" => "E-Commerce & Catalog",
+            _ => "Standard Session"
+        };
+    }
+
+    private void HandleDeliverableKeyDown(KeyboardEventArgs e)
+    {
+        if (e.Key == "Enter")
+        {
+            AddCustomDeliverable();
+        }
+    }
+
+    private void AddCustomDeliverable()
+    {
+        if (!string.IsNullOrWhiteSpace(newDeliverableLabel))
+        {
+            var trimmed = newDeliverableLabel.Trim();
+            if (!model.Deliverables.Any(d => d.Label.Equals(trimmed, StringComparison.OrdinalIgnoreCase)))
+            {
+                model.Deliverables.Add((trimmed, newDeliverableColor));
+            }
+            newDeliverableLabel = string.Empty;
+        }
+    }
+
+    private void ToggleDeliverablePreset(DeliverablePreset preset)
+    {
+        var existing = model.Deliverables.FirstOrDefault(d => d.Label.Equals(preset.Label, StringComparison.OrdinalIgnoreCase));
+        if (!string.IsNullOrEmpty(existing.Label))
+        {
+            model.Deliverables.Remove(existing);
+        }
+        else
+        {
+            model.Deliverables.Add((preset.Label, preset.ColorTag));
+        }
+    }
+
+    private void RemoveDeliverable((string Label, string ColorTag) item)
+    {
+        model.Deliverables.Remove(item);
+    }
+
+    private void HandleNextStep()
+    {
+        saveErrorMessage = null;
+
+        if (currentStep == 1)
+        {
+            var nameField = editContext.Field(nameof(model.Name));
+            var codeField = editContext.Field(nameof(model.Code));
+
+            messageStore.Clear(nameField);
+            messageStore.Clear(codeField);
+
+            bool hasError = false;
+            if (string.IsNullOrWhiteSpace(model.Name))
+            {
+                messageStore.Add(nameField, "Service name is required.");
+                hasError = true;
+            }
+            else if (model.Name.Trim().Length < 2)
+            {
+                messageStore.Add(nameField, "Service name must be at least 2 characters.");
+                hasError = true;
+            }
+
+            if (string.IsNullOrWhiteSpace(model.Code))
+            {
+                messageStore.Add(codeField, "Service code is required.");
+                hasError = true;
+            }
+
+            if (hasError)
+            {
+                editContext.NotifyValidationStateChanged();
+                return;
+            }
+
+            currentStep = 2;
+        }
+        else if (currentStep == 2)
+        {
+            if (model.DurationHours <= 0)
+            {
+                model.DurationHours = 1.0m;
+            }
+            if (model.BasePrice < 0)
+            {
+                model.BasePrice = 0;
+            }
+            currentStep = 3;
+        }
+    }
+
+    private void HandlePrevStep()
+    {
+        if (currentStep > 1)
+        {
+            currentStep--;
+            saveErrorMessage = null;
+        }
+    }
+
+    private async Task HandleClose()
+    {
+        if (isSaving) return;
+        ResetWizard();
+        await IsOpenChanged.InvokeAsync(false);
+    }
+
+    private async Task HandleSaveAsync()
+    {
+        if (string.IsNullOrWhiteSpace(model.Name) || string.IsNullOrWhiteSpace(model.Code))
+        {
+            currentStep = 1;
+            return;
+        }
+
+        try
+        {
+            isSaving = true;
+            saveErrorMessage = null;
+
+            var newItem = new MainServiceItem
+            {
+                Code = model.Code.Trim().ToUpperInvariant(),
+                Title = model.Name.Trim(),
+                Category = model.Category,
+                CategorySpec = string.IsNullOrWhiteSpace(model.CategorySpec) ? model.Category : model.CategorySpec.Trim(),
+                Deliverables = new List<(string Label, string ColorTag)>(model.Deliverables),
+                Duration = $"{model.DurationHours:0.#} Hours",
+                BasePrice = model.BasePrice,
+                Description = model.Description?.Trim(),
+                Status = model.Status
+            };
+
+            // Small async simulation for feedback
+            await Task.Delay(350);
+
+            await OnServiceCreated.InvokeAsync(newItem);
+            await HandleClose();
+        }
+        catch (Exception ex)
+        {
+            saveErrorMessage = $"Error saving service: {ex.Message}";
+        }
+        finally
+        {
+            isSaving = false;
+        }
+    }
+}

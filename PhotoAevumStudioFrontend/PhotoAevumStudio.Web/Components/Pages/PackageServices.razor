@@ -4,19 +4,419 @@
 @page "/services/packages"
 @layout AdminLayout
 @rendermode InteractiveServer
+@using PhotoAevumStudio.Web.Models
 
-<PageTitle>Package Services - PhotoAevum</PageTitle>
+<PageTitle>Package Services | Photo Aevum Studio</PageTitle>
 
-<div class="flex justify-between items-center mb-8">
-    <div>
-        <h1 class="text-3xl font-bold text-gray-900">Package Services</h1>
-        <p class="text-gray-500 mt-1">Bundled photo sessions, prints, and multi-day coverage bundles.</p>
+<div class="space-y-6">
+    <!-- Page Header & Action Controls -->
+    <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 pb-2">
+        <div>
+            <div class="flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-gray-500 mb-1">
+                <span>Services Module</span>
+                <span>/</span>
+                <span class="text-gray-900">Package Services</span>
+            </div>
+            <h1 class="text-2xl sm:text-3xl font-extrabold text-gray-900 tracking-tight">Package Services</h1>
+            <p class="text-sm text-gray-500 mt-1">
+                Bundled photo sessions, prints, and multi-day coverage bundles.
+            </p>
+        </div>
+
+        <div class="flex items-center gap-3">
+            <button type="button"
+                    @onclick="OpenCreateModal"
+                    class="inline-flex items-center gap-2 px-4 py-2.5 bg-gray-900 hover:bg-black text-white text-sm font-semibold rounded-lg shadow-sm hover:shadow transition-all duration-150 active:scale-95 focus:outline-none focus:ring-2 focus:ring-gray-900 focus:ring-offset-2">
+                <svg class="w-4 h-4 text-emerald-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M12 4v16m8-8H4" />
+                </svg>
+                <span>Create New Package</span>
+            </button>
+        </div>
+    </div>
+
+    <!-- Notification Banner for Newly Created Package -->
+    @if (!string.IsNullOrWhiteSpace(notificationMessage))
+    {
+        <div class="p-4 bg-emerald-50 border border-emerald-200 text-emerald-900 rounded-xl flex items-center justify-between shadow-xs animate-in fade-in duration-200">
+            <div class="flex items-center gap-3">
+                <span class="w-7 h-7 rounded-full bg-emerald-600 text-white flex items-center justify-center shrink-0">
+                    <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M5 13l4 4L19 7" />
+                    </svg>
+                </span>
+                <div>
+                    <p class="text-xs font-bold text-emerald-950">Package Catalog Updated</p>
+                    <p class="text-xs text-emerald-800">@notificationMessage</p>
+                </div>
+            </div>
+            <button type="button" @onclick="() => notificationMessage = null" class="text-emerald-700 hover:text-emerald-950 p-1 text-sm font-bold">&times;</button>
+        </div>
+    }
+
+    <!-- Quick Stats Grid -->
+    <div class="grid grid-cols-2 lg:grid-cols-4 gap-4">
+        <div class="bg-white p-4 rounded-xl border border-gray-200 shadow-xs">
+            <div class="flex items-center justify-between">
+                <span class="text-xs font-semibold text-gray-500 uppercase tracking-wider">Total Packages</span>
+                <span class="p-1.5 rounded-lg bg-gray-100 text-gray-700">📦</span>
+            </div>
+            <p class="text-2xl font-bold text-gray-900 mt-2">@packages.Count</p>
+            <p class="text-[11px] text-gray-400 mt-0.5">Active bundle tiers</p>
+        </div>
+
+        <div class="bg-white p-4 rounded-xl border border-gray-200 shadow-xs">
+            <div class="flex items-center justify-between">
+                <span class="text-xs font-semibold text-gray-500 uppercase tracking-wider">Most Booked</span>
+                <span class="p-1.5 rounded-lg bg-blue-50 text-blue-700">⭐</span>
+            </div>
+            <p class="text-2xl font-bold text-gray-900 mt-2">Pro Wedding Bundle</p>
+            <p class="text-[11px] text-gray-400 mt-0.5">45% of total package sales</p>
+        </div>
+
+        <div class="bg-white p-4 rounded-xl border border-gray-200 shadow-xs">
+            <div class="flex items-center justify-between">
+                <span class="text-xs font-semibold text-gray-500 uppercase tracking-wider">Included Items</span>
+                <span class="p-1.5 rounded-lg bg-purple-50 text-purple-700">📋</span>
+            </div>
+            <p class="text-2xl font-bold text-gray-900 mt-2">18</p>
+            <p class="text-[11px] text-gray-400 mt-0.5">Total bundled add-ons</p>
+        </div>
+
+        <div class="bg-white p-4 rounded-xl border border-gray-200 shadow-xs">
+            <div class="flex items-center justify-between">
+                <span class="text-xs font-semibold text-gray-500 uppercase tracking-wider">Avg. Package Price</span>
+                <span class="p-1.5 rounded-lg bg-emerald-50 text-emerald-700">💰</span>
+            </div>
+            <p class="text-2xl font-bold text-gray-900 mt-2">$850</p>
+            <p class="text-[11px] text-gray-400 mt-0.5">Average order value</p>
+        </div>
+    </div>
+
+    <!-- Search & Filter Controls -->
+    <div class="bg-white p-4 rounded-xl border border-gray-200 shadow-xs space-y-3">
+        <div class="flex flex-col md:flex-row gap-3 items-stretch md:items-center justify-between">
+
+            <!-- Search Bar -->
+            <div class="relative flex-1 min-w-[240px]">
+                <div class="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-gray-400">
+                    <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                    </svg>
+                </div>
+                <input type="text"
+                       @bind="searchQuery"
+                       @bind:event="oninput"
+                       placeholder="Search package bundles, inclusions, or codes..."
+                       class="w-full pl-10 pr-10 py-2.5 text-sm bg-gray-50/70 border border-gray-200 rounded-lg text-gray-900 placeholder-gray-400 focus:bg-white focus:outline-none focus:ring-2 focus:ring-gray-900 focus:border-transparent transition-all" />
+                @if (!string.IsNullOrWhiteSpace(searchQuery))
+                {
+                    <button type="button"
+                            @onclick="() => searchQuery = string.Empty"
+                            class="absolute inset-y-0 right-0 pr-3 flex items-center text-gray-400 hover:text-gray-700">
+                        <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+                        </svg>
+                    </button>
+                }
+            </div>
+
+            @if (IsFiltered)
+            {
+                <button type="button"
+                        @onclick="ResetFilters"
+                        class="px-3 py-2.5 text-xs font-semibold text-gray-600 hover:text-gray-900 hover:bg-gray-100 rounded-lg border border-gray-200 transition-colors whitespace-nowrap">
+                    Reset Filters
+                </button>
+            }
+        </div>
+
+        <!-- Quick Filter Pills -->
+        <div class="pt-2 border-t border-gray-100 flex items-center gap-2 flex-wrap">
+            <span class="text-[11px] font-semibold text-gray-400 uppercase tracking-wider mr-1">Quick Filter:</span>
+            <button type="button"
+                    @onclick='() => selectedQuickFilter = "ALL"'
+                    class="px-2.5 py-1 rounded-full text-xs font-medium transition-all @(selectedQuickFilter == "ALL" ? "bg-gray-900 text-white" : "bg-gray-100 text-gray-600 hover:bg-gray-200")">
+                All (@packages.Count)
+            </button>
+            @foreach (var cat in categoryFilters)
+            {
+                var isSelected = selectedQuickFilter.Equals(cat.Name, StringComparison.OrdinalIgnoreCase);
+                var classes = SpecializationColorHelper.GetClasses(cat.ColorTag);
+                var count = packages.Count(p => p.BundleCategory.Equals(cat.Name, StringComparison.OrdinalIgnoreCase));
+
+                <button type="button"
+                        @onclick="() => FilterByTag(cat.Name)"
+                        class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium border transition-all duration-150 @(isSelected ? "ring-2 ring-gray-900 border-gray-900 font-bold" : "hover:opacity-80") @classes.BadgeClass">
+                    <span class="w-1.5 h-1.5 rounded-full @classes.DotClass"></span>
+                    <span>@cat.Name</span>
+                    <span class="text-[10px] opacity-75 font-semibold">(@count)</span>
+                </button>
+            }
+        </div>
+    </div>
+
+    <!-- Data Table: Package Services -->
+    <div class="bg-white rounded-xl shadow-xs border border-gray-200 overflow-hidden">
+
+        <!-- Table Metadata Bar -->
+        <div class="px-6 py-3.5 bg-gray-50/50 border-b border-gray-200 flex items-center justify-between text-xs text-gray-500 font-medium">
+            <div>
+                Showing <span class="font-bold text-gray-900">@FilteredPackages.Count()</span> of <span class="font-bold text-gray-900">@packages.Count</span> packages
+            </div>
+            @if (IsFiltered)
+            {
+                <span class="inline-flex items-center gap-1 text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded text-[11px] font-semibold">
+                    <span>Active Filters Applied</span>
+                </span>
+            }
+        </div>
+
+        <div class="overflow-x-auto">
+            <table class="w-full text-left border-collapse">
+                <thead>
+                    <tr class="bg-gray-50/80 border-b border-gray-200 text-[11px] font-semibold uppercase tracking-wider text-gray-500">
+                        <th scope="col" class="py-3.5 px-6">Package Tier</th>
+                        <th scope="col" class="py-3.5 px-6">Bundled Inclusions</th>
+                        <th scope="col" class="py-3.5 px-6">Bundle Price</th>
+                        <th scope="col" class="py-3.5 px-6">Status</th>
+                        <th scope="col" class="py-3.5 px-6 text-right">Actions</th>
+                    </tr>
+                </thead>
+                <tbody class="divide-y divide-gray-100 text-sm">
+                    @if (FilteredPackages.Any())
+                    {
+                        @foreach (var pkg in FilteredPackages)
+                        {
+                            <tr class="hover:bg-gray-50/60 transition-colors duration-100">
+
+                                <!-- Package Tier Name & Code -->
+                                <td class="py-4 px-6">
+                                    <div class="flex items-center gap-3">
+                                        <div class="w-10 h-10 rounded-full bg-gray-900 text-white font-bold text-xs flex items-center justify-center shrink-0 shadow-xs">
+                                            PS
+                                        </div>
+                                        <div>
+                                            <div class="font-semibold text-gray-900">@pkg.Title</div>
+                                            <div class="font-mono text-[11px] text-gray-400">@pkg.Code</div>
+                                        </div>
+                                    </div>
+                                </td>
+
+                                <!-- Bundled Inclusions (Color Chips) -->
+                                <td class="py-4 px-6">
+                                    <div class="flex flex-wrap gap-1.5 max-w-lg">
+                                        @foreach (var inclusion in pkg.Inclusions)
+                                        {
+                                            var classes = SpecializationColorHelper.GetClasses(inclusion.ColorTag);
+                                            <span class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium border @classes.BadgeClass shadow-2xs">
+                                                <span class="w-1.5 h-1.5 rounded-full @classes.DotClass"></span>
+                                                @inclusion.Label
+                                            </span>
+                                        }
+                                    </div>
+                                </td>
+
+                                <!-- Bundle Price -->
+                                <td class="py-4 px-6">
+                                    <div class="text-sm font-semibold text-gray-900">@pkg.Price</div>
+                                </td>
+
+                                <!-- Status Badge -->
+                                <td class="py-4 px-6">
+                                    @if (pkg.IsActive)
+                                    {
+                                        <span class="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200">
+                                            <span class="w-1.5 h-1.5 rounded-full bg-emerald-500"></span>
+                                            Active
+                                        </span>
+                                    }
+                                    else
+                                    {
+                                        <span class="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-semibold bg-gray-100 text-gray-600 border border-gray-200">
+                                            <span class="w-1.5 h-1.5 rounded-full bg-gray-400"></span>
+                                            @pkg.Status
+                                        </span>
+                                    }
+                                </td>
+
+                                <!-- Action Link -->
+                                <td class="py-4 px-6 text-right">
+                                    <a href="#" class="text-xs font-semibold text-gray-600 hover:text-gray-900 hover:underline">
+                                        Manage Package &rarr;
+                                    </a>
+                                </td>
+                            </tr>
+                        }
+                    }
+                    else
+                    {
+                        <!-- Empty Results State -->
+                        <tr>
+                            <td colspan="5" class="py-12 px-6 text-center">
+                                <div class="max-w-sm mx-auto space-y-3">
+                                    <div class="w-12 h-12 mx-auto rounded-full bg-gray-100 text-gray-400 flex items-center justify-center">
+                                        <svg class="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9.172 16.172a4 4 0 015.656 0M9 10h.01M15 10h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                                        </svg>
+                                    </div>
+                                    <h4 class="text-sm font-bold text-gray-900">No matching packages found</h4>
+                                    <p class="text-xs text-gray-500 leading-relaxed">
+                                        No packages matched the search term <span class="font-semibold text-gray-700">"@searchQuery"</span>
+                                        @(selectedQuickFilter != "ALL" ? $" or category \"{selectedQuickFilter}\"" : "").
+                                    </p>
+                                    <button type="button" @onclick="ResetFilters"
+                                            class="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-gray-700 bg-gray-100 hover:bg-gray-200 rounded-lg transition-colors">
+                                        Reset Search &amp; Filters
+                                    </button>
+                                </div>
+                            </td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
     </div>
 </div>
 
-<div class="bg-white rounded-xl shadow-sm border border-gray-200 p-8 text-center">
-    <div class="max-w-md mx-auto text-gray-500">
-        <p class="text-base font-medium text-gray-700 mb-1">Package Services</p>
-        <p class="text-sm">Service package bundle configuration is ready for integration.</p>
-    </div>
-</div>
+<!-- Create Package Multi-Step Modal -->
+<CreatePackageModal @bind-IsOpen="isCreateModalOpen" OnPackageCreated="HandlePackageCreated" />
+
+@code {
+    private bool isCreateModalOpen = false;
+    private string? notificationMessage;
+
+    private string searchQuery = string.Empty;
+    private string selectedQuickFilter = "ALL";
+
+    private bool IsFiltered =>
+        !string.IsNullOrWhiteSpace(searchQuery) ||
+        selectedQuickFilter != "ALL";
+
+    private record CategoryFilter(string Name, string ColorTag);
+
+    private readonly List<CategoryFilter> categoryFilters = new()
+    {
+        new("Wedding Bundles", "Rose"),
+        new("Portrait Bundles", "Blue"),
+        new("Corporate Bundles", "Purple")
+    };
+
+    private List<PackageServiceItem> packages = new();
+
+    private void OpenCreateModal()
+    {
+        isCreateModalOpen = true;
+    }
+
+    private void HandlePackageCreated(PackageServiceItem newItem)
+    {
+        packages.Insert(0, newItem);
+        notificationMessage = $"Package \"{newItem.Title}\" ({newItem.Code}) has been successfully created and published.";
+    }
+
+    protected override void OnInitialized()
+    {
+        packages = new List<PackageServiceItem>
+        {
+            new()
+            {
+                Code = "PS-501", Title = "Ultimate Studio & Print Bundle",
+                BundleCategory = "Portrait Bundles",
+                Inclusions = new() { ("2-Hour Studio Session", "Blue"), ("20 Retouched Prints", "Emerald"), ("Full Digital Gallery", "Purple"), ("1 Canvas Print", "Amber") },
+                Price = "$499.00"
+            },
+            new()
+            {
+                Code = "PS-502", Title = "Pro Wedding Coverage",
+                BundleCategory = "Wedding Bundles",
+                Inclusions = new() { ("Full-Day Coverage", "Rose"), ("2 Photographers", "Blue"), ("Engagement Shoot", "Indigo"), ("Album Design", "Amber") },
+                Price = "$2,499.00"
+            },
+            new()
+            {
+                Code = "PS-503", Title = "Essential Wedding Package",
+                BundleCategory = "Wedding Bundles",
+                Inclusions = new() { ("8-Hour Coverage", "Rose"), ("1 Photographer", "Blue"), ("Online Gallery", "Purple") },
+                Price = "$1,299.00"
+            },
+            new()
+            {
+                Code = "PS-504", Title = "Intimate Wedding Collection",
+                BundleCategory = "Wedding Bundles",
+                Inclusions = new() { ("4-Hour Coverage", "Rose"), ("Highlight Reel", "Indigo"), ("50 Edited Photos", "Emerald") },
+                Price = "$899.00"
+            },
+            new()
+            {
+                Code = "PS-505", Title = "Family Portrait Package",
+                BundleCategory = "Portrait Bundles",
+                Inclusions = new() { ("1.5-Hour Session", "Blue"), ("15 Retouched Photos", "Emerald"), ("5x7 Print Set", "Amber") },
+                Price = "$399.00"
+            },
+            new()
+            {
+                Code = "PS-506", Title = "Executive Headshot Package",
+                BundleCategory = "Portrait Bundles",
+                Inclusions = new() { ("45-Min Session", "Blue"), ("5 Retouched Photos", "Emerald"), ("LinkedIn Optimized", "Purple") },
+                Price = "$299.00"
+            },
+            new()
+            {
+                Code = "PS-507", Title = "Corporate Event Bundle",
+                BundleCategory = "Corporate Bundles",
+                Inclusions = new() { ("Half-Day Coverage", "Purple"), ("Full Rights", "Amber"), ("Online Gallery", "Indigo") },
+                Price = "$1,199.00"
+            },
+            new()
+            {
+                Code = "PS-508", Title = "Brand Content Package",
+                BundleCategory = "Corporate Bundles",
+                Inclusions = new() { ("Full-Day Shoot", "Purple"), ("30 Product Shots", "Emerald"), ("Social Media Kit", "Blue") },
+                Price = "$899.00"
+            }
+        };
+    }
+
+    private IEnumerable<PackageServiceItem> FilteredPackages
+    {
+        get
+        {
+            var result = packages.AsEnumerable();
+
+            if (!string.IsNullOrWhiteSpace(searchQuery))
+            {
+                var q = searchQuery.Trim();
+                result = result.Where(p =>
+                    p.Title.Contains(q, StringComparison.OrdinalIgnoreCase) ||
+                    p.Code.Contains(q, StringComparison.OrdinalIgnoreCase) ||
+                    p.Inclusions.Any(i => i.Label.Contains(q, StringComparison.OrdinalIgnoreCase)));
+            }
+
+            if (selectedQuickFilter != "ALL")
+            {
+                result = result.Where(p => p.BundleCategory.Equals(selectedQuickFilter, StringComparison.OrdinalIgnoreCase));
+            }
+
+            return result;
+        }
+    }
+
+    private void FilterByTag(string tagName)
+    {
+        if (selectedQuickFilter.Equals(tagName, StringComparison.OrdinalIgnoreCase))
+        {
+            selectedQuickFilter = "ALL";
+        }
+        else
+        {
+            selectedQuickFilter = tagName;
+        }
+    }
+
+    private void ResetFilters()
+    {
+        searchQuery = string.Empty;
+        selectedQuickFilter = "ALL";
+    }
+}
