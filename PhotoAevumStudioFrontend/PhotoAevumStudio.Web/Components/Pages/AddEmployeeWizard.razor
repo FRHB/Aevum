@@ -73,9 +73,6 @@
                 <EditForm EditContext="_editContext">
                     <DataAnnotationsValidator />
 
-                    @* ==========================================
-                       STEP 1: Personal Information
-                       ========================================== *@
                     @if (currentStep == 1)
                     {
                         <div class="space-y-4">
@@ -114,9 +111,6 @@
                         </div>
                     }
 
-                    @* ==========================================
-                       STEP 2: Specializations
-                       ========================================== *@
                     @if (currentStep == 2)
                     {
                         <div class="space-y-5">
@@ -124,31 +118,45 @@
                                 <label for="emp-spec" class="block text-xs font-semibold uppercase tracking-wider text-slate-700 mb-1.5">
                                     Specialization <span class="text-rose-500">*</span>
                                 </label>
-                                <div class="flex gap-2">
-                                    <div class="relative flex-1">
-                                        <select id="emp-spec" @bind="pendingSpec" class="@InputClass cursor-pointer appearance-none pr-8">
-                                            <option value="">-- Choose a Specialization --</option>
-                                            @foreach (var s in AvailableSpecializations)
-                                            {
-                                                <option value="@s">@s</option>
-                                            }
-                                        </select>
-                                        <div class="pointer-events-none absolute inset-y-0 right-0 flex items-center px-3 text-slate-500">
-                                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" />
-                                            </svg>
-                                        </div>
+                                @if (!AvailableSpecializations.Any() && (allSpecializations?.Count ?? 0) == 0)
+                                {
+                                    <div class="flex gap-2">
+                                        <input id="emp-spec" type="text" @bind="pendingSpec" class="@InputClass flex-1" placeholder="Enter specialization name (no master records found in DB)..." />
+                                        <button type="button" 
+                                                class="inline-flex items-center px-4 py-2.5 bg-slate-900 hover:bg-black text-white text-xs font-semibold uppercase tracking-wider rounded-lg transition-colors shadow-sm"
+                                                @onclick="AddSpecialization">
+                                            Add
+                                        </button>
                                     </div>
-                                    <button type="button" 
-                                            class="inline-flex items-center px-4 py-2.5 bg-slate-900 hover:bg-black text-white text-xs font-semibold uppercase tracking-wider rounded-lg transition-colors shadow-sm disabled:opacity-50"
-                                            @onclick="AddSpecialization"
-                                            disabled="@(!AvailableSpecializations.Any())">
-                                        <svg class="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" />
-                                        </svg>
-                                        Add
-                                    </button>
-                                </div>
+                                }
+                                else
+                                {
+                                    <div class="flex gap-2">
+                                        <div class="relative flex-1">
+                                            <select id="emp-spec" @bind="pendingSpec" class="@InputClass cursor-pointer appearance-none pr-8">
+                                                <option value="">-- Choose a Specialization --</option>
+                                                @foreach (var s in AvailableSpecializations)
+                                                {
+                                                    <option value="@s">@s</option>
+                                                }
+                                            </select>
+                                            <div class="pointer-events-none absolute inset-y-0 right-0 flex items-center px-3 text-slate-500">
+                                                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" />
+                                                </svg>
+                                            </div>
+                                        </div>
+                                        <button type="button" 
+                                                class="inline-flex items-center px-4 py-2.5 bg-slate-900 hover:bg-black text-white text-xs font-semibold uppercase tracking-wider rounded-lg transition-colors shadow-sm disabled:opacity-50"
+                                                @onclick="AddSpecialization"
+                                                disabled="@(!AvailableSpecializations.Any())">
+                                            <svg class="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" />
+                                            </svg>
+                                            Add
+                                        </button>
+                                    </div>
+                                }
                                 @if (specError is not null)
                                 {
                                     <p class="text-xs text-rose-600 mt-2 font-medium" role="alert">@specError</p>
@@ -162,7 +170,7 @@
                                 </span>
                                 @if (model.Specializations.Count == 0)
                                 {
-                                    <p class="text-xs text-slate-400 italic">No skills added yet. Select a specialization above and click Add.</p>
+                                    <p class="text-xs text-slate-400 italic">No skills added yet. Select or enter a specialization above and click Add.</p>
                                 }
                                 else
                                 {
@@ -183,9 +191,6 @@
                         </div>
                     }
 
-                    @* ==========================================
-                       STEP 3: Overview & Credentials
-                       ========================================== *@
                     @if (currentStep == 3)
                     {
                         <div class="space-y-5">
@@ -216,7 +221,7 @@
                                     <label for="emp-id" class="block text-xs font-semibold uppercase tracking-wider text-slate-700 mb-1.5">
                                         Employee ID <span class="text-rose-500">*</span>
                                     </label>
-                                    <InputText id="emp-id" @bind-Value="model.EmployeeId" class="@MonoInputClass" placeholder="e.g. PA-001" autocomplete="off" />
+                                    <InputText id="emp-id" @bind-Value="model.EmployeeId" class="@MonoInputClass" placeholder="e.g. EMP-001" autocomplete="off" />
                                     <ValidationMessage For="() => model.EmployeeId" class="text-xs text-rose-600 mt-1" />
                                 </div>
 
@@ -314,7 +319,6 @@
     private const string GhostBtn =
         "bg-transparent hover:bg-slate-100 text-slate-700 border border-slate-300 px-5 py-2.5 rounded-lg text-xs font-semibold uppercase tracking-wider transition-colors disabled:opacity-50";
 
-    // Single unified form model
     private EmployeeRegistrationModel model = new();
     private EditContext _editContext = default!;
     private ValidationMessageStore _messageStore = default!;
@@ -326,16 +330,11 @@
     private bool isSaving;
     private bool showPassword;
 
-    private IReadOnlyList<string>? allSpecializations;
-    private static readonly string[] FallbackSpecializations = new[]
-    {
-        "Photographer", "Lighting Tech", "Editor", "Lead Photographer",
-        "Portrait Specialist", "Studio Assistant", "Videographer"
-    };
+    private IReadOnlyList<string> allSpecializations = Array.Empty<string>();
     private CancellationTokenSource? _cts;
 
     private IEnumerable<string> AvailableSpecializations =>
-        (allSpecializations ?? FallbackSpecializations).Except(model.Specializations);
+        allSpecializations.Except(model.Specializations, StringComparer.OrdinalIgnoreCase);
 
     protected override async Task OnInitializedAsync()
     {
@@ -344,18 +343,11 @@
         try
         {
             var specs = await Employees.GetSpecializationsAsync(_cts.Token);
-            if (specs != null && specs.Count > 0)
-            {
-                allSpecializations = specs;
-            }
-            else
-            {
-                allSpecializations = FallbackSpecializations;
-            }
+            allSpecializations = specs ?? Array.Empty<string>();
         }
         catch
         {
-            allSpecializations = FallbackSpecializations;
+            allSpecializations = Array.Empty<string>();
         }
     }
 
@@ -393,7 +385,7 @@
             return;
         }
 
-        model.Specializations.Add(pendingSpec);
+        model.Specializations.Add(pendingSpec.Trim());
         pendingSpec = null;
     }
 
@@ -402,7 +394,6 @@
         model.Specializations.Remove(spec);
     }
 
-    // Step 1 Validation -> Next
     private void GoToStep2()
     {
         _messageStore.Clear();
@@ -438,7 +429,6 @@
         }
     }
 
-    // Step 2 Validation -> Next
     private void GoToStep3()
     {
         if (!string.IsNullOrEmpty(pendingSpec))
@@ -456,7 +446,6 @@
         currentStep = 3;
     }
 
-    // Step 3 Validation -> Save
     private async Task SubmitCompleteSetup()
     {
         _messageStore.Clear();

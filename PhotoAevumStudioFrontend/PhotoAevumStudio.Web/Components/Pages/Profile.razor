@@ -22,35 +22,12 @@
         <p class="aev-page-header__subtitle">Manage your account information, role privileges, and security settings</p>
     </div>
     <div class="profile-header-actions">
-        @* Quick mock preview switcher to preview admin, staff, or customer roles (only when not authenticated) *@
-        @if (!isAuthenticatedUser)
+        @if (!string.IsNullOrWhiteSpace(profile.Id))
         {
-            <div class="profile-preview-switcher" role="group" aria-label="Role preview controls">
-                <span class="preview-label">Role Preview:</span>
-                <button type="button"
-                        class="btn-preview @(currentRoleKey == "admin" ? "is-active" : "")"
-                        @onclick='() => SwitchMockRole("admin")'
-                        title="Preview as Administrator">
-                    Admin
-                </button>
-                <button type="button"
-                        class="btn-preview @(currentRoleKey == "employee" ? "is-active" : "")"
-                        @onclick='() => SwitchMockRole("employee")'
-                        title="Preview as Staff / Employee">
-                    Staff
-                </button>
-                <button type="button"
-                        class="btn-preview @(currentRoleKey == "customer" ? "is-active" : "")"
-                        @onclick='() => SwitchMockRole("customer")'
-                        title="Preview as Customer">
-                    Customer
-                </button>
-            </div>
+            <span class="aev-badge @GetRoleBadgeClass(profile.Role, profile.IsSuperAdmin)">
+                @(profile.IsSuperAdmin ? "Root Super Admin" : (!string.IsNullOrWhiteSpace(profile.Role) ? profile.Role : "Authenticated User"))
+            </span>
         }
-
-        <span class="aev-badge @GetRoleBadgeClass(profile.Role, profile.IsSuperAdmin)">
-            @(profile.IsSuperAdmin ? "Root Super Admin" : (!string.IsNullOrWhiteSpace(profile.Role) ? profile.Role : "Authenticated User"))
-        </span>
     </div>
 </header>
 
@@ -59,6 +36,13 @@
     <div class="aev-card profile-loading-card">
         <LoadingSpinner />
         <p class="aev-muted-text mt-3">Loading profile data...</p>
+    </div>
+}
+else if (string.IsNullOrWhiteSpace(profile.Id))
+{
+    <div class="aev-card p-8 text-center">
+        <h2 class="text-lg font-semibold text-gray-800 mb-1">No Active Profile Found</h2>
+        <p class="text-sm text-gray-500">Please sign in to view your account details and security settings from the database.</p>
     </div>
 }
 else
@@ -437,34 +421,30 @@ else
                             <thead>
                                 <tr>
                                     <th>Activity Event</th>
-                                    <th>Device / Browser</th>
-                                    <th>IP Address</th>
+                                    <th>Entity</th>
                                     <th>Timestamp</th>
-                                    <th>Status</th>
                                 </tr>
                             </thead>
                             <tbody>
-                                <tr>
-                                    <td>Dashboard Session Active</td>
-                                    <td>Chrome 122 (Windows 11)</td>
-                                    <td>192.168.1.104</td>
-                                    <td>Today, @DateTime.Now.ToString("h:mm tt")</td>
-                                    <td><span class="aev-badge aev-badge--green">Current</span></td>
-                                </tr>
-                                <tr>
-                                    <td>Profile Security Check</td>
-                                    <td>Chrome 122 (Windows 11)</td>
-                                    <td>192.168.1.104</td>
-                                    <td>Today, @DateTime.Now.AddMinutes(-12).ToString("h:mm tt")</td>
-                                    <td><span class="aev-badge aev-badge--green">Verified</span></td>
-                                </tr>
-                                <tr>
-                                    <td>Account Sign-In</td>
-                                    <td>Safari 17 (macOS Sonoma)</td>
-                                    <td>112.198.74.22</td>
-                                    <td>Yesterday, 4:18 PM</td>
-                                    <td><span class="aev-badge aev-badge--violet">Completed</span></td>
-                                </tr>
+                                @if (!auditLogs.Any())
+                                {
+                                    <tr>
+                                        <td colspan="3" class="text-center text-gray-500 py-8">
+                                            No audit or session activity records found in the database.
+                                        </td>
+                                    </tr>
+                                }
+                                else
+                                {
+                                    @foreach (var log in auditLogs)
+                                    {
+                                        <tr>
+                                            <td>@log.Action</td>
+                                            <td>@log.EntityName (@log.EntityId)</td>
+                                            <td>@log.Timestamp.ToString("MMM dd, yyyy h:mm tt")</td>
+                                        </tr>
+                                    }
+                                }
                             </tbody>
                         </table>
                     </div>
@@ -478,13 +458,13 @@ else
 @code {
     private UserProfileModel profile = new();
     private PasswordUpdateModel passwordForm = new();
+    private List<AuditLogRow> auditLogs = new();
     private string currentRoleKey = "admin";
     private bool isLoading = true;
     private bool isUpdatingPassword = false;
     private bool isEditingProfile = false;
     private string passwordErrorMessage = "";
     private string passwordSuccessMessage = "";
-    private bool isAuthenticatedUser = false;
 
     // Edit fields
     private string editName = "";
@@ -503,81 +483,9 @@ else
             _openSections.Add(key);
     }
 
-    // ── Pre-configured Realistic Mock Profiles ──────────────────────────────
-    private static readonly UserProfileModel MockAdmin = new()
-    {
-        Id = "ADM-1082",
-        Name = "Alexandria Vance",
-        Email = "alexandria.vance@photoaevum.com",
-        Role = "Administrator",
-        Status = "Active",
-        Department = "Studio Operations",
-        Position = "Managing Director & Chief Studio Admin",
-        Phone = "(+63) 919-555-0142",
-        IsSuperAdmin = true,
-        MemberSince = new DateTime(2024, 1, 15)
-    };
-
-    private static readonly UserProfileModel MockEmployee = new()
-    {
-        Id = "EMP-0042",
-        Name = "Marcus Sterling",
-        Email = "marcus.sterling@photoaevum.com",
-        Role = "Employee",
-        Status = "Active",
-        Department = "Creative & Production",
-        Position = "Lead Studio Photographer",
-        Phone = "(+63) 919-555-0188",
-        IsSuperAdmin = false,
-        MemberSince = new DateTime(2024, 3, 10)
-    };
-
-    private static readonly UserProfileModel MockCustomer = new()
-    {
-        Id = "CUST-0042",
-        Name = "Elena Rostova",
-        Email = "elena.rostova@gmail.com",
-        Role = "Customer",
-        Status = "Active",
-        Department = "Private Client",
-        Position = "Gold Tier Member",
-        Phone = "(+63) 919-555-0299",
-        IsSuperAdmin = false,
-        MemberSince = new DateTime(2024, 5, 22)
-    };
-
     protected override async Task OnInitializedAsync()
     {
         await LoadUserDataAsync();
-    }
-
-    private void SwitchMockRole(string roleKey)
-    {
-        currentRoleKey = roleKey;
-        var template = roleKey switch
-        {
-            "employee" => MockEmployee,
-            "customer" => MockCustomer,
-            _          => MockAdmin
-        };
-
-        profile = new UserProfileModel
-        {
-            Id = template.Id,
-            Name = template.Name,
-            Email = template.Email,
-            Role = template.Role,
-            Status = template.Status,
-            Department = template.Department,
-            Position = template.Position,
-            Phone = template.Phone,
-            IsSuperAdmin = template.IsSuperAdmin,
-            MemberSince = template.MemberSince
-        };
-
-        isEditingProfile = false;
-        passwordSuccessMessage = "";
-        passwordErrorMessage = "";
     }
 
     private async Task LoadUserDataAsync()
@@ -596,8 +504,6 @@ else
 
             if (user.Identity?.IsAuthenticated == true)
             {
-                isAuthenticatedUser = true;
-
                 var claimId = user.FindFirst("studio_id")?.Value
                               ?? user.FindFirst(ClaimTypes.NameIdentifier)?.Value
                               ?? user.FindFirst("sub")?.Value
@@ -644,7 +550,7 @@ else
                     MemberSince = null
                 };
 
-                // Enrich from IUserService if backing store has extra details
+                // Enrich from IUserService SQL database
                 if (!string.IsNullOrWhiteSpace(profile.Id))
                 {
                     var admin = UserService.GetAdminById(profile.Id);
@@ -665,13 +571,26 @@ else
                             if (!string.IsNullOrWhiteSpace(employee.Department)) profile.Department = employee.Department;
                             if (!string.IsNullOrWhiteSpace(employee.Position)) profile.Position = employee.Position;
                         }
+                        else
+                        {
+                            var customer = UserService.GetCustomerById(profile.Id);
+                            if (customer != null)
+                            {
+                                if (!string.IsNullOrWhiteSpace(customer.Name)) profile.Name = customer.Name;
+                                if (!string.IsNullOrWhiteSpace(customer.Email)) profile.Email = customer.Email;
+                                profile.Phone = customer.Phone;
+                                profile.MemberSince = customer.JoinDate;
+                            }
+                        }
                     }
+
+                    auditLogs = UserService.GetAuditLogs(profile.Id);
                 }
             }
             else
             {
-                isAuthenticatedUser = false;
-                SwitchMockRole(currentRoleKey);
+                profile = new UserProfileModel();
+                auditLogs = new List<AuditLogRow>();
             }
         }
         finally

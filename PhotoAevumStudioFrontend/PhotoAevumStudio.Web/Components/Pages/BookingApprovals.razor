@@ -1,5 +1,8 @@
 @page "/admin/approvals"
 @layout AdminLayout
+@using PhotoAevumStudio.Web.Services
+@inject IUserService UserService
+@rendermode InteractiveServer
 @attribute [Authorize(Roles = "Admin")]
 
 <PageTitle>Booking Approvals</PageTitle>
@@ -15,29 +18,62 @@
                     <th class="px-6 py-4">Booking ID</th>
                     <th class="px-6 py-4">Client</th>
                     <th class="px-6 py-4">Requested Session</th>
-                    <th class="px-6 py-4">Date & Time</th>
-                    <th class="px-6 py-4">Payment Flag</th>
+                    <th class="px-6 py-4">Date &amp; Time</th>
+                    <th class="px-6 py-4">Status</th>
                     <th class="px-6 py-4 text-right">Action</th>
                 </tr>
             </thead>
             <tbody class="divide-y divide-gray-100">
-                <tr class="hover:bg-gray-50">
-                    <td class="px-6 py-4 font-medium text-gray-900">#BK-9021</td>
-                    <td class="px-6 py-4">Jane Doe</td>
-                    <td class="px-6 py-4 text-gray-500">Portrait Session</td>
-                    <td class="px-6 py-4 text-gray-500">Oct 12, 10:00 AM</td>
-                    <td class="px-6 py-4">
-                        <label class="flex items-center gap-2 cursor-pointer">
-                            <input type="checkbox" class="form-checkbox h-4 w-4 text-teal-600 rounded border-gray-300" />
-                            <span class="text-xs font-medium text-gray-600">Settled (In-Studio)</span>
-                        </label>
-                    </td>
-                    <td class="px-6 py-4 text-right">
-                        <button class="bg-teal-600 text-white px-4 py-2 rounded-md font-medium text-xs hover:bg-teal-700">Approve</button>
-                        <button class="bg-red-100 text-red-700 px-4 py-2 rounded-md font-medium text-xs hover:bg-red-200 ml-2">Decline</button>
-                    </td>
-                </tr>
+                @if (!PendingBookings.Any())
+                {
+                    <tr>
+                        <td colspan="6" class="px-6 py-12 text-center text-gray-500">
+                            No pending bookings require approval at this time.
+                        </td>
+                    </tr>
+                }
+                else
+                {
+                    @foreach (var booking in PendingBookings)
+                    {
+                        <tr class="hover:bg-gray-50">
+                            <td class="px-6 py-4 font-medium text-gray-900">#@booking.BookingId</td>
+                            <td class="px-6 py-4">@booking.ClientName</td>
+                            <td class="px-6 py-4 text-gray-500">@booking.ServiceTitle</td>
+                            <td class="px-6 py-4 text-gray-500">@booking.EventDateTime.ToString("MMM dd, hh:mm tt")</td>
+                            <td class="px-6 py-4">
+                                <span class="text-xs font-medium text-amber-700 bg-amber-100 px-2.5 py-1 rounded-full">@booking.Status</span>
+                            </td>
+                            <td class="px-6 py-4 text-right">
+                                <button @onclick='() => UpdateStatus(booking.BookingId, "Confirmed")' class="bg-teal-600 text-white px-4 py-2 rounded-md font-medium text-xs hover:bg-teal-700">Approve</button>
+                                <button @onclick='() => UpdateStatus(booking.BookingId, "Declined")' class="bg-red-100 text-red-700 px-4 py-2 rounded-md font-medium text-xs hover:bg-red-200 ml-2">Decline</button>
+                            </td>
+                        </tr>
+                    }
+                }
             </tbody>
         </table>
     </div>
 </div>
+
+@code {
+    private List<BookingRow> PendingBookings = new();
+
+    protected override void OnInitialized()
+    {
+        LoadPendingBookings();
+    }
+
+    private void LoadPendingBookings()
+    {
+        PendingBookings = UserService.GetBookings()
+            .Where(b => string.Equals(b.Status, "Pending", StringComparison.OrdinalIgnoreCase))
+            .ToList();
+    }
+
+    private void UpdateStatus(string bookingId, string status)
+    {
+        UserService.UpdateBookingStatus(bookingId, status);
+        LoadPendingBookings();
+    }
+}

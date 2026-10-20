@@ -20,8 +20,6 @@ public class BookingService : IBookingService
         CreateBookingRequest r,
         CancellationToken cancellationToken = default)
     {
-        // Reuses the connection string already configured for ApplicationDbContext
-        // appsettings.json -> ConnectionStrings:DefaultConnection.
         var connectionString = _db.Database.GetConnectionString();
 
         await using var conn = new SqlConnection(connectionString);
@@ -36,7 +34,6 @@ public class BookingService : IBookingService
         cmd.Parameters.Add("@EventDate", SqlDbType.Date).Value = r.EventDate.ToDateTime(TimeOnly.MinValue);
         cmd.Parameters.Add("@EventTime", SqlDbType.Time).Value = r.EventTime.ToTimeSpan();
 
-        // The procedure expects comma-separated ID lists.
         cmd.Parameters.Add("@ServicesIDs", SqlDbType.NVarChar, -1).Value = ToCsv(r.ServicesIds);
         cmd.Parameters.Add("@AdditionalServicesIDs", SqlDbType.NVarChar, -1).Value = ToCsv(r.AdditionalServicesIds);
         cmd.Parameters.Add("@ComboPackageIDs", SqlDbType.NVarChar, -1).Value = ToCsv(r.ComboPackageIds);
@@ -63,11 +60,57 @@ public class BookingService : IBookingService
                 EquipmentReserved = reader.GetInt32(reader.GetOrdinal("EquipmentReserved"))
             };
         }
-        // 50000-50099 are the custom errors raised by THROW in the stored procedure.
         catch (SqlException ex) when (ex.Number is >= 50000 and < 50100)
         {
             throw new BookingRuleException(ex.Message);
         }
+    }
+
+    public async Task<IReadOnlyList<BookingListItemDto>> GetBookingsAsync(
+        CancellationToken cancellationToken = default)
+    {
+        var connectionString = _db.Database.GetConnectionString();
+        var bookings = new List<BookingListItemDto>();
+
+        await using var conn = new SqlConnection(connectionString);
+        await conn.OpenAsync(cancellationToken);
+
+        const string sql = @"
+            IF OBJECT_ID(N'dbo.EventAppointment', N'U') IS NOT NULL
+            BEGIN
+                SELECT ea.EventAppointmentID,
+                       ea.EventName,
+                       ea.EventDescription,
+                       ea.CustomerID,
+                       COALESCE(c.CustomerFirstName + ' ' + c.CustomerLastName, ea.CustomerID) AS CustomerName,
+                       ea.EventDate,
+                       ea.EventTime,
+                       ea.EventStatus,
+                       ea.CreatedAt
+                FROM dbo.EventAppointment ea
+                LEFT JOIN dbo.Customer c ON c.CustomerID = ea.CustomerID
+                ORDER BY ea.EventDate DESC, ea.EventTime DESC;
+            END";
+
+        await using var cmd = new SqlCommand(sql, conn);
+        await using var reader = await cmd.ExecuteReaderAsync(cancellationToken);
+        while (await reader.ReadAsync(cancellationToken))
+        {
+            bookings.Add(new BookingListItemDto
+            {
+                EventAppointmentId = reader.GetString(0),
+                EventName = reader.GetString(1),
+                EventDescription = reader.IsDBNull(2) ? string.Empty : reader.GetString(2),
+                CustomerId = reader.IsDBNull(3) ? string.Empty : reader.GetString(3),
+                CustomerName = reader.IsDBNull(4) ? string.Empty : reader.GetString(4),
+                EventDate = DateOnly.FromDateTime(reader.GetDateTime(5)),
+                EventTime = TimeOnly.FromTimeSpan(reader.GetFieldValue<TimeSpan>(6)),
+                EventStatus = reader.IsDBNull(7) ? "Scheduled" : reader.GetString(7),
+                CreatedAt = reader.IsDBNull(8) ? DateTime.UtcNow : reader.GetDateTime(8)
+            });
+        }
+
+        return bookings;
     }
 
     private static object ToCsv(IEnumerable<string>? ids)

@@ -13,13 +13,13 @@ builder.Services.AddScoped<AuthenticationStateProvider>(sp => sp.GetRequiredServ
 builder.Services.AddCascadingAuthenticationState();
 builder.Services.AddAuthorizationCore();
 
-// Removed duplicate localhost:5000 clients
 builder.Services.AddTransient<AuthHttpHandler>();
 builder.Services.AddScoped<IAuthService, AuthService>();
 builder.Services.AddScoped<IEmployeeService, EmployeeService>();
-builder.Services.AddScoped<IUserService, UserService>();   // Mock user data service (Task 3.1)
+builder.Services.AddScoped<IUserService, UserService>();
 
 var apiBaseUrl = builder.Configuration["Api:BaseUrl"]
+    ?? builder.Configuration["ApiBaseUrl"]
     ?? throw new InvalidOperationException("Api:BaseUrl is missing from configuration.");
 
 builder.Services.AddHttpClient("AevumApi", client =>

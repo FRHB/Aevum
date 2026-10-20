@@ -1,4 +1,7 @@
 @attribute [Authorize(Roles = "Admin")]
+@using PhotoAevumStudio.Web.Models
+@inject IUserService UserService
+
 @if (IsOpen)
 {
     <div class="fixed inset-0 bg-gray-900/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
@@ -9,82 +12,69 @@
             </div>
             
             <div class="p-6 flex-1 overflow-y-auto">
-                <ul class="stepper">
-                    <li class="stepper__item @(currentStep >= 1 ? "is-done" : "") @(currentStep == 1 ? "is-current" : "")">
-                        <span class="stepper__dot">1</span><span class="stepper__label">Basic Info</span>
-                    </li>
-                    <li class="stepper__item @(currentStep >= 2 ? "is-done" : "") @(currentStep == 2 ? "is-current" : "")">
-                        <span class="stepper__dot">2</span><span class="stepper__label">Pricing</span>
-                    </li>
-                    <li class="stepper__item @(currentStep >= 3 ? "is-done" : "") @(currentStep == 3 ? "is-current" : "")">
-                        <span class="stepper__dot">3</span><span class="stepper__label">Details</span>
-                    </li>
-                    <li class="stepper__item @(currentStep >= 4 ? "is-done" : "") @(currentStep == 4 ? "is-current" : "")">
-                        <span class="stepper__dot">4</span><span class="stepper__label">Confirm</span>
-                    </li>
-                </ul>
-
-                <div class="form mt-6">
-                    @if (currentStep == 1) { 
-                        <div class="field"><label>Service Name</label><input type="text" placeholder="e.g. Express Headshot" class="w-full" /></div> 
-                    }
-                    @if (currentStep == 2) { 
-                        <div class="form__row">
-                            <div class="field"><label>Price (?)</label><input type="number" /></div>
-                            <div class="field"><label>Duration (mins)</label><input type="number" /></div>
-                        </div> 
-                    }
-                    @if (currentStep == 3) { 
-                        <div class="field">
-                            <label>Service Category</label>
-                            <select class="w-full p-2 border border-gray-200 rounded-md bg-white">
-                                <option>Service</option>
-                                <option>Combo Package</option>
-                            </select>
-                        </div> 
-                    }
-                    @if (currentStep == 4) { 
-                        <div class="alert bg-teal-50 text-teal-800 p-4 rounded-md">Review the details before saving this service to your catalog.</div> 
+                <div class="form space-y-4">
+                    <div class="field">
+                        <label>Service Name</label>
+                        <input type="text" @bind="_serviceName" placeholder="Enter service name" class="w-full" />
+                    </div>
+                    <div class="field">
+                        <label>Description</label>
+                        <input type="text" @bind="_description" placeholder="Enter service description" class="w-full" />
+                    </div>
+                    @if (!string.IsNullOrEmpty(_error))
+                    {
+                        <div class="alert" role="alert">@_error</div>
                     }
                 </div>
             </div>
 
             <div class="px-6 py-4 bg-gray-50 border-t border-gray-200 flex justify-between">
-                <button class="btn btn--ghost" @onclick="PrevStep" disabled="@(currentStep == 1)">Back</button>
-                @if (currentStep < 4) { 
-                    <button class="btn btn--primary" @onclick="NextStep">Next</button> 
-                }
-                else { 
-                    <button class="btn bg-teal-600 text-white hover:bg-teal-700" @onclick="CloseModal">Save Service</button> 
-                }
+                <button class="btn btn--ghost" @onclick="CloseModal">Cancel</button>
+                <button class="btn bg-teal-600 text-white hover:bg-teal-700" @onclick="SaveServiceAsync">Save Service</button>
             </div>
         </div>
     </div>
 }
 
 @code {
-    [Parameter] 
-    public bool IsOpen { get; set; }
+    [Parameter] public bool IsOpen { get; set; }
+    [Parameter] public EventCallback<bool> IsOpenChanged { get; set; }
+    [Parameter] public EventCallback OnServiceSaved { get; set; }
 
-    [Parameter] 
-    public EventCallback<bool> IsOpenChanged { get; set; }
-
-    private int currentStep = 1;
+    private string _serviceName = string.Empty;
+    private string _description = string.Empty;
+    private string? _error;
 
     private async Task CloseModal()
     {
         IsOpen = false;
-        currentStep = 1;
+        _serviceName = string.Empty;
+        _description = string.Empty;
+        _error = null;
         await IsOpenChanged.InvokeAsync(IsOpen);
     }
 
-    private void NextStep() 
-    { 
-        if (currentStep < 4) currentStep++; 
-    }
+    private async Task SaveServiceAsync()
+    {
+        if (string.IsNullOrWhiteSpace(_serviceName))
+        {
+            _error = "Service name is required.";
+            return;
+        }
 
-    private void PrevStep() 
-    { 
-        if (currentStep > 1) currentStep--; 
+        try
+        {
+            UserService.AddMainService(new MainServiceModel
+            {
+                Name = _serviceName.Trim(),
+                Description = _description.Trim()
+            });
+            await OnServiceSaved.InvokeAsync();
+            await CloseModal();
+        }
+        catch (Exception ex)
+        {
+            _error = ex.Message;
+        }
     }
 }

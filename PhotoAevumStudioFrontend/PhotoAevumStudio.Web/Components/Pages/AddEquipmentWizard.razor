@@ -1,3 +1,5 @@
+@using PhotoAevumStudio.Web.Services
+@inject IUserService UserService
 @attribute [Authorize(Roles = "Admin")]
 @if (IsOpen)
 {
@@ -24,21 +26,21 @@
                 <div class="form mt-6">
                     @if (currentStep == 1) { 
                         <div class="form__row">
-                            <div class="field"><label>Item Name</label><input type="text" /></div>
-                            <div class="field"><label>Serial Number</label><input type="text" /></div>
+                            <div class="field"><label>Item Name</label><input type="text" @bind="itemName" /></div>
+                            <div class="field"><label>Category</label><input type="text" @bind="categoryName" /></div>
                         </div> 
                     }
                     @if (currentStep == 2) { 
                         <div class="field">
                             <label>Condition/Status</label>
-                            <select class="w-full p-2 border border-gray-200 rounded-md bg-white">
-                                <option>Available</option>
-                                <option>Maintenance</option>
+                            <select class="w-full p-2 border border-gray-200 rounded-md bg-white" @bind="status">
+                                <option value="Available">Available</option>
+                                <option value="Maintenance">Maintenance</option>
                             </select>
                         </div> 
                     }
                     @if (currentStep == 3) { 
-                        <p class="text-sm text-gray-600">Equipment will be added directly to the active inventory.</p> 
+                        <p class="text-sm text-gray-600">Equipment will be added directly to the SQL database inventory.</p> 
                     }
                 </div>
             </div>
@@ -49,7 +51,7 @@
                     <button class="btn btn--primary" @onclick="NextStep">Next</button> 
                 }
                 else { 
-                    <button class="btn btn--primary" @onclick="CloseModal">Log Equipment</button> 
+                    <button class="btn btn--primary" @onclick="SaveEquipment">Log Equipment</button> 
                 }
             </div>
         </div>
@@ -63,12 +65,31 @@
     [Parameter] 
     public EventCallback<bool> IsOpenChanged { get; set; }
 
+    [Parameter]
+    public EventCallback OnEquipmentSaved { get; set; }
+
     private int currentStep = 1;
+    private string itemName = string.Empty;
+    private string categoryName = "General Gear";
+    private string status = "Available";
+
+    private async Task SaveEquipment()
+    {
+        if (!string.IsNullOrWhiteSpace(itemName))
+        {
+            UserService.AddEquipment(itemName.Trim(), categoryName.Trim(), 1, status);
+            await OnEquipmentSaved.InvokeAsync();
+        }
+        await CloseModal();
+    }
 
     private async Task CloseModal()
     {
         IsOpen = false;
         currentStep = 1;
+        itemName = string.Empty;
+        categoryName = "General Gear";
+        status = "Available";
         await IsOpenChanged.InvokeAsync(IsOpen);
     }
 

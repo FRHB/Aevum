@@ -1,5 +1,7 @@
 @page "/staff/assignments"
 @layout EmployeeLayout
+@using PhotoAevumStudio.Web.Services
+@inject IUserService UserService
 @attribute [Authorize(Roles = "Employee")]
 
 <PageTitle>My Assignments</PageTitle>
@@ -10,27 +12,42 @@
         <a href="/staff" class="text-teal-600 hover:underline">Back to Dashboard</a>
     </div>
 
-    <div class="space-y-4">
-        <div class="bg-white border rounded-xl p-6 shadow-sm">
-            <div class="flex justify-between items-start mb-4">
-                <div>
-                    <h2 class="text-xl font-bold">#BK-9011 - Pre-nup Shoot</h2>
-                    <p class="text-gray-500">Client: Alice & Bob</p>
-                </div>
-                <span class="bg-yellow-100 text-yellow-800 text-xs font-bold px-3 py-1 rounded-full">Upcoming</span>
-            </div>
-            
-            <div class="grid grid-cols-2 gap-4 text-sm text-gray-600 mb-6">
-                <div><strong>Call Time:</strong> Oct 14, 08:30 AM</div>
-                <div><strong>Shoot Start:</strong> Oct 14, 09:00 AM</div>
-                <div><strong>Location:</strong> Studio A</div>
-                <div><strong>Gear:</strong> Canon R5, 24-70mm, Godox AD600</div>
-            </div>
-
-            <div class="flex gap-3">
-                <button class="bg-teal-600 text-white px-4 py-2 rounded-md font-semibold text-sm hover:bg-teal-700">Accept</button>
-                <button class="bg-gray-100 text-gray-700 px-4 py-2 rounded-md font-semibold text-sm hover:bg-gray-200">Decline</button>
-            </div>
+    @if (!Assignments.Any())
+    {
+        <div class="bg-white border border-gray-200 rounded-xl p-12 text-center shadow-sm">
+            <h2 class="text-lg font-semibold text-gray-800 mb-1">No Active Assignments</h2>
+            <p class="text-sm text-gray-500">There are currently no studio assignments scheduled in the database.</p>
         </div>
-    </div>
+    }
+    else
+    {
+        <div class="space-y-4">
+            @foreach (var item in Assignments)
+            {
+                <div class="bg-white border rounded-xl p-6 shadow-sm">
+                    <div class="flex justify-between items-start mb-4">
+                        <div>
+                            <h2 class="text-xl font-bold">#@item.BookingId - @item.ServiceTitle</h2>
+                            <p class="text-gray-500">Client: @item.ClientName</p>
+                        </div>
+                        <span class="bg-yellow-100 text-yellow-800 text-xs font-bold px-3 py-1 rounded-full">@item.Status</span>
+                    </div>
+                    
+                    <div class="grid grid-cols-2 gap-4 text-sm text-gray-600 mb-6">
+                        <div><strong>Call Time:</strong> @item.EventDateTime.AddMinutes(-30).ToString("MMM dd, hh:mm tt")</div>
+                        <div><strong>Shoot Start:</strong> @item.EventDateTime.ToString("MMM dd, hh:mm tt")</div>
+                    </div>
+                </div>
+            }
+        </div>
+    }
 </div>
+
+@code {
+    private List<BookingRow> Assignments = new();
+
+    protected override void OnInitialized()
+    {
+        Assignments = UserService.GetBookings();
+    }
+}

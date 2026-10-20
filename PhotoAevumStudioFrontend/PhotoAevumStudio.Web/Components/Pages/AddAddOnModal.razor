@@ -1,468 +1,95 @@
 @using System.ComponentModel.DataAnnotations
 @using PhotoAevumStudio.Web.Models
+@inject IUserService UserService
 
 @if (IsOpen)
 {
-    <!-- Modal Backdrop -->
-    <div class="fixed inset-0 z-50 bg-black/50 backdrop-blur-xs flex items-center justify-center p-4 sm:p-6 overflow-y-auto animate-in fade-in duration-150"
+    <div class="fixed inset-0 z-50 bg-black/50 backdrop-blur-xs flex items-center justify-center p-4 sm:p-6 overflow-y-auto"
          role="dialog" aria-modal="true" aria-labelledby="addon-modal-title">
 
-        <!-- Modal Card Container -->
         <div class="relative w-full max-w-xl bg-white rounded-2xl shadow-2xl border border-gray-100 overflow-hidden flex flex-col max-h-[92vh]">
-
-            <!-- Modal Header -->
-            <div class="px-6 py-5 border-b border-gray-100 flex items-center justify-between bg-white sticky top-0 z-10">
-                <div class="flex items-center gap-3">
-                    <div class="w-10 h-10 rounded-xl bg-gray-900 text-white flex items-center justify-center font-bold text-sm shadow-sm">
-                        <!-- Tag / Add-On Icon -->
-                        <svg class="w-5 h-5 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 7h.01M7 3h5c.512 0 1.024.195 1.414.586l7 7a2 2 0 010 2.828l-7 7a2 2 0 01-2.828 0l-7-7A1.994 1.994 0 013 12V7a4 4 0 014-4z" />
-                        </svg>
-                    </div>
-                    <div>
-                        <h2 id="addon-modal-title" class="text-xl font-bold text-gray-900">Add New Add-On</h2>
-                        <p class="text-xs text-gray-500">Service upgrades, rentals, and add-on rates</p>
-                    </div>
+            <div class="px-6 py-5 border-b border-gray-100 flex items-center justify-between bg-white">
+                <div>
+                    <h2 id="addon-modal-title" class="text-xl font-bold text-gray-900">Add New Add-On</h2>
+                    <p class="text-xs text-gray-500">Service upgrades, rentals, and add-on rates</p>
                 </div>
                 <button type="button" @onclick="HandleClose" disabled="@isSaving"
-                        class="text-gray-400 hover:text-gray-600 rounded-lg p-1.5 hover:bg-gray-100 transition-colors focus:outline-none focus:ring-2 focus:ring-gray-900"
-                        aria-label="Close dialog">
-                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
-                    </svg>
+                        class="text-gray-400 hover:text-gray-600 rounded-lg p-1.5 hover:bg-gray-100">
+                    &times;
                 </button>
             </div>
 
-            <!-- Stepper Progress Bar -->
-            <div class="px-6 py-4 bg-gray-50/70 border-b border-gray-100">
-                <ol class="flex items-center justify-between w-full">
-                    @for (int i = 1; i <= TotalSteps; i++)
-                    {
-                        var stepNumber = i;
-                        var isCompleted = stepNumber < currentStep;
-                        var isCurrent = stepNumber == currentStep;
-
-                        <li class="flex items-center @(stepNumber < TotalSteps ? "w-full" : "")">
-                            <div class="flex items-center gap-2">
-                                <span class="w-7 h-7 rounded-full flex items-center justify-center text-xs font-semibold transition-all duration-200
-                                    @(isCurrent ? "bg-gray-900 text-white shadow-sm ring-2 ring-gray-900/20" :
-                                      isCompleted ? "bg-emerald-600 text-white" : "bg-gray-200 text-gray-600")">
-                                    @if (isCompleted)
-                                    {
-                                        <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M5 13l4 4L19 7" />
-                                        </svg>
-                                    }
-                                    else
-                                    {
-                                        @stepNumber
-                                    }
-                                </span>
-                                <span class="text-xs font-medium hidden sm:inline @(isCurrent ? "text-gray-900 font-bold" : isCompleted ? "text-gray-700" : "text-gray-400")">
-                                    @StepTitles[stepNumber - 1]
-                                </span>
-                            </div>
-
-                            @if (stepNumber < TotalSteps)
-                            {
-                                <div class="flex-1 mx-3 h-0.5 @(stepNumber < currentStep ? "bg-emerald-500" : "bg-gray-200")"></div>
-                            }
-                        </li>
-                    }
-                </ol>
-            </div>
-
-            <!-- Modal Body -->
             <div class="p-6 overflow-y-auto flex-1">
                 <EditForm EditContext="@editContext">
                     <DataAnnotationsValidator />
 
-                    @* ==========================================
-                       STEP 1: Add-On Details
-                       ========================================== *@
-                    @if (currentStep == 1)
-                    {
-                        <div class="space-y-5 animate-in fade-in duration-200">
-                            <div>
-                                <span class="inline-block text-[11px] font-semibold text-gray-500 uppercase tracking-wider mb-1">Step 1 of 3</span>
-                                <h3 class="text-lg font-bold text-gray-900">Add-On Details</h3>
-                                <p class="text-xs text-gray-500 mt-0.5">
-                                    Define extra services, rental gear, or expedited post-processing.
-                                </p>
-                            </div>
+                    <div class="space-y-4">
+                        <div>
+                            <label for="addon-title" class="block text-sm font-semibold text-gray-800 mb-1.5">
+                                Add-On Title <span class="text-red-500">*</span>
+                            </label>
+                            <InputText id="addon-title"
+                                       @bind-Value="model.Title"
+                                       placeholder="Enter add-on title"
+                                       class="w-full px-3.5 py-2.5 text-sm bg-white border border-gray-300 rounded-lg text-gray-900" />
+                        </div>
 
-                            <!-- Add-On Title -->
+                        <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
                             <div>
-                                <label for="addon-title" class="block text-sm font-semibold text-gray-800 mb-1.5">
-                                    Add-On Title <span class="text-red-500">*</span>
+                                <label for="addon-code" class="block text-sm font-semibold text-gray-800 mb-1.5">
+                                    Add-On Code <span class="text-red-500">*</span>
                                 </label>
-                                <InputText id="addon-title"
-                                           @bind-Value="model.Title"
-                                           placeholder="e.g., Express 24-Hour Delivery, Studio Wardrobe Rental"
-                                           class="w-full px-3.5 py-2.5 text-sm bg-white border border-gray-300 rounded-lg text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-gray-900 focus:border-transparent transition-all shadow-sm" />
-                                <ValidationMessage For="@(() => model.Title)" class="text-xs text-red-600 mt-1 font-medium" />
-                                <p class="text-[11px] text-gray-400 mt-1">This title will display on service add-on pickers during client booking.</p>
+                                <InputText id="addon-code"
+                                           @bind-Value="model.Code"
+                                           placeholder="e.g., ADD-001"
+                                           class="w-full px-3.5 py-2.5 text-sm bg-white border border-gray-300 rounded-lg text-gray-900 font-mono" />
                             </div>
 
-                            <!-- Code & Type Category Grid -->
-                            <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                                <!-- SKU / Code -->
-                                <div>
-                                    <label for="addon-code" class="block text-sm font-semibold text-gray-800 mb-1.5">
-                                        Add-On SKU / Code <span class="text-red-500">*</span>
-                                    </label>
-                                    <InputText id="addon-code"
-                                               @bind-Value="model.Code"
-                                               placeholder="e.g., AS-403"
-                                               class="w-full px-3.5 py-2.5 text-sm bg-white border border-gray-300 rounded-lg text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-gray-900 focus:border-transparent transition-all shadow-sm font-mono" />
-                                    <ValidationMessage For="@(() => model.Code)" class="text-xs text-red-600 mt-1 font-medium" />
-                                </div>
-
-                                <!-- Type Category -->
-                                <div>
-                                    <label for="addon-type" class="block text-sm font-semibold text-gray-800 mb-1.5">
-                                        Type Category <span class="text-red-500">*</span>
-                                    </label>
-                                    <InputSelect id="addon-type"
-                                                 @bind-Value="model.TypeCategory"
-                                                 @bind-Value:after="OnTypeCategoryChanged"
-                                                 class="w-full px-3.5 py-2.5 text-sm bg-white border border-gray-300 rounded-lg text-gray-900 focus:outline-none focus:ring-2 focus:ring-gray-900 focus:border-transparent transition-all shadow-sm">
-                                        <option value="Post-Processing">Post-Processing</option>
-                                        <option value="Retouching">Retouching</option>
-                                        <option value="Print & Frame">Print &amp; Frame</option>
-                                        <option value="Equipment">Equipment &amp; Props</option>
-                                    </InputSelect>
-                                </div>
-                            </div>
-
-                            <!-- Filter Grouping Category -->
                             <div>
-                                <label for="addon-filter-cat" class="block text-sm font-semibold text-gray-800 mb-1.5">
-                                    Filter Grouping Category <span class="text-red-500">*</span>
+                                <label for="addon-type" class="block text-sm font-semibold text-gray-800 mb-1.5">
+                                    Type Category
                                 </label>
-                                <InputSelect id="addon-filter-cat"
-                                             @bind-Value="model.FilterCategory"
-                                             class="w-full px-3.5 py-2.5 text-sm bg-white border border-gray-300 rounded-lg text-gray-900 focus:outline-none focus:ring-2 focus:ring-gray-900 focus:border-transparent transition-all shadow-sm">
-                                    <option value="Expedited Delivery">Expedited Delivery</option>
-                                    <option value="Extra Retouching">Extra Retouching</option>
-                                    <option value="Framing & Prints">Framing &amp; Prints</option>
-                                    <option value="Equipment & Props">Equipment &amp; Props</option>
+                                <InputSelect id="addon-type"
+                                             @bind-Value="model.TypeCategory"
+                                             class="w-full px-3.5 py-2.5 text-sm bg-white border border-gray-300 rounded-lg text-gray-900">
+                                    <option value="Post-Processing">Post-Processing</option>
+                                    <option value="Retouching">Retouching</option>
+                                    <option value="Print & Frame">Print &amp; Frame</option>
+                                    <option value="Equipment">Equipment &amp; Props</option>
                                 </InputSelect>
-                                <p class="text-[11px] text-gray-400 mt-1">Determines which quick filter tab this item is grouped under on the dashboard.</p>
-                            </div>
-
-                            <!-- Description (Optional) -->
-                            <div>
-                                <div class="flex justify-between items-center mb-1.5">
-                                    <label for="addon-desc" class="block text-sm font-semibold text-gray-800">
-                                        Description <span class="text-gray-400 font-normal text-xs">(Optional)</span>
-                                    </label>
-                                    <span class="text-[11px] text-gray-400">@((model.Description ?? string.Empty).Length)/300</span>
-                                </div>
-                                <InputTextArea id="addon-desc"
-                                               rows="3"
-                                               @bind-Value="model.Description"
-                                               placeholder="Describe turnaround guarantees, material specs, or client instructions..."
-                                               class="w-full px-3.5 py-2.5 text-sm bg-white border border-gray-300 rounded-lg text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-gray-900 focus:border-transparent transition-all shadow-sm resize-none" />
-                                <ValidationMessage For="@(() => model.Description)" class="text-xs text-red-600 mt-1 font-medium" />
-                            </div>
-
-                            <!-- Helper Callout Note -->
-                            <div class="p-3.5 bg-amber-50/80 border border-amber-200 rounded-xl flex items-start gap-3">
-                                <div class="text-amber-600 text-sm mt-0.5">💡</div>
-                                <div class="text-xs text-amber-900 leading-relaxed">
-                                    Add-ons enhance standard booking revenues with optional upgrades and physical products. In step 2, set unit rates and compatible services.
-                                </div>
                             </div>
                         </div>
-                    }
 
-                    @* ==========================================
-                       STEP 2: Pricing & Compatibility
-                       ========================================== *@
-                    @if (currentStep == 2)
-                    {
-                        <div class="space-y-5 animate-in fade-in duration-200">
-                            <div>
-                                <span class="inline-block text-[11px] font-semibold text-gray-500 uppercase tracking-wider mb-1">Step 2 of 3</span>
-                                <h3 class="text-lg font-bold text-gray-900">Pricing &amp; Compatibility</h3>
-                                <p class="text-xs text-gray-500 mt-0.5">
-                                    Set the add-on rate and select compatible primary services.
-                                </p>
-                            </div>
-
-                            <!-- Rate & Unit Grid -->
-                            <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                                <!-- Price Rate -->
-                                <div>
-                                    <label for="addon-rate" class="block text-sm font-semibold text-gray-800 mb-1.5">
-                                        Rate Amount ($) <span class="text-red-500">*</span>
-                                    </label>
-                                    <div class="relative">
-                                        <div class="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-gray-400 font-medium text-sm">
-                                            $
-                                        </div>
-                                        <InputNumber id="addon-rate"
-                                                     @bind-Value="model.Rate"
-                                                     step="5"
-                                                     min="0"
-                                                     class="w-full pl-8 pr-3.5 py-2.5 text-sm bg-white border border-gray-300 rounded-lg text-gray-900 focus:outline-none focus:ring-2 focus:ring-gray-900 focus:border-transparent transition-all shadow-sm font-semibold" />
-                                    </div>
-                                    <ValidationMessage For="@(() => model.Rate)" class="text-xs text-red-600 mt-1 font-medium" />
-                                </div>
-
-                                <!-- Rate Unit Dropdown -->
-                                <div>
-                                    <label for="addon-unit" class="block text-sm font-semibold text-gray-800 mb-1.5">
-                                        Billing Unit <span class="text-red-500">*</span>
-                                    </label>
-                                    <InputSelect id="addon-unit"
-                                                 @bind-Value="model.RateUnit"
-                                                 class="w-full px-3.5 py-2.5 text-sm bg-white border border-gray-300 rounded-lg text-gray-900 focus:outline-none focus:ring-2 focus:ring-gray-900 focus:border-transparent transition-all shadow-sm">
-                                        <option value="/ session">per session (/ session)</option>
-                                        <option value="/ photo">per photo (/ photo)</option>
-                                        <option value="/ unit">per unit (/ unit)</option>
-                                        <option value="/ hour">per hour (/ hour)</option>
-                                    </InputSelect>
-                                    <p class="text-[11px] text-gray-400 mt-1">Preview: <strong class="text-gray-700">$@model.Rate.ToString("F2") @model.RateUnit</strong></p>
-                                </div>
-                            </div>
-
-                            <!-- Compatible Main Services Multi-Select -->
-                            <div>
-                                <label class="block text-sm font-semibold text-gray-800 mb-1.5">
-                                    Compatible Main Services <span class="text-red-500">*</span>
-                                </label>
-                                <p class="text-xs text-gray-500 mb-3">
-                                    Click badges to toggle compatibility with studio service lines.
-                                </p>
-
-                                <div class="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
-                                    @foreach (var option in serviceCompatibilityOptions)
-                                    {
-                                        var isSelected = model.CompatibleServices.Any(c => c.Label.Equals(option.Label, StringComparison.OrdinalIgnoreCase));
-                                        var classes = SpecializationColorHelper.GetClasses(option.ColorTag);
-
-                                        <button type="button"
-                                                @onclick="() => ToggleCompatibility(option)"
-                                                class="flex items-center justify-between p-3 rounded-xl border text-left transition-all duration-150
-                                                       @(isSelected ? "border-gray-900 bg-gray-50 shadow-sm ring-2 ring-gray-900/10" : "border-gray-200 hover:border-gray-300 bg-white")">
-                                            <div class="flex items-center gap-2.5">
-                                                <span class="w-2.5 h-2.5 rounded-full @classes.DotClass shrink-0 shadow-xs"></span>
-                                                <span class="text-xs font-semibold text-gray-900">@option.Label</span>
-                                            </div>
-                                            <div class="flex items-center">
-                                                @if (isSelected)
-                                                {
-                                                    <span class="inline-flex items-center gap-1 text-[11px] font-bold text-gray-900 bg-gray-200/80 px-2 py-0.5 rounded-md">
-                                                        <svg class="w-3.5 h-3.5 text-gray-900" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M5 13l4 4L19 7" />
-                                                        </svg>
-                                                        Active
-                                                    </span>
-                                                }
-                                                else
-                                                {
-                                                    <span class="text-[11px] text-gray-400 font-medium px-2 py-0.5">
-                                                        + Enable
-                                                    </span>
-                                                }
-                                            </div>
-                                        </button>
-                                    }
-                                </div>
-                            </div>
-
-                            <!-- Live Selected Compatibility Badges -->
-                            <div class="p-3 bg-gray-50 border border-gray-200 rounded-xl">
-                                <span class="text-[11px] font-semibold text-gray-500 uppercase tracking-wider block mb-2">Selected Compatible Badges (@model.CompatibleServices.Count)</span>
-                                @if (model.CompatibleServices.Any())
-                                {
-                                    <div class="flex flex-wrap gap-1.5">
-                                        @foreach (var comp in model.CompatibleServices)
-                                        {
-                                            var classes = SpecializationColorHelper.GetClasses(comp.ColorTag);
-                                            <span class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium border @classes.BadgeClass shadow-2xs">
-                                                <span class="w-1.5 h-1.5 rounded-full @classes.DotClass"></span>
-                                                @comp.Label
-                                            </span>
-                                        }
-                                    </div>
-                                }
-                                else
-                                {
-                                    <p class="text-xs text-amber-700 italic">Please select at least one compatible service for this add-on.</p>
-                                }
-                            </div>
-
-                            <!-- Helper Note -->
-                            <div class="p-3.5 bg-amber-50/80 border border-amber-200 rounded-xl flex items-start gap-3">
-                                <div class="text-amber-600 text-sm mt-0.5">💡</div>
-                                <div class="text-xs text-amber-900 leading-relaxed">
-                                    Add-ons will only be recommended in the booking checkout when one of the selected compatible services is in the client's cart.
-                                </div>
-                            </div>
+                        <div>
+                            <label for="addon-desc" class="block text-sm font-semibold text-gray-800 mb-1.5">
+                                Description
+                            </label>
+                            <InputTextArea id="addon-desc"
+                                           rows="3"
+                                           @bind-Value="model.Description"
+                                           placeholder="Enter add-on description"
+                                           class="w-full px-3.5 py-2.5 text-sm bg-white border border-gray-300 rounded-lg text-gray-900 resize-none" />
                         </div>
-                    }
 
-                    @* ==========================================
-                       STEP 3: Overview & Save
-                       ========================================== *@
-                    @if (currentStep == 3)
-                    {
-                        <div class="space-y-5 animate-in fade-in duration-200">
-                            <div>
-                                <span class="inline-block text-[11px] font-semibold text-gray-500 uppercase tracking-wider mb-1">Step 3 of 3</span>
-                                <h3 class="text-lg font-bold text-gray-900">Overview &amp; Confirmation</h3>
-                                <p class="text-xs text-gray-500 mt-0.5">
-                                    Review the add-on configuration and compatibility before saving.
-                                </p>
+                        @if (!string.IsNullOrWhiteSpace(saveErrorMessage))
+                        {
+                            <div class="p-3 bg-red-50 border border-red-200 rounded-lg text-xs text-red-700 font-medium" role="alert">
+                                @saveErrorMessage
                             </div>
-
-                            <!-- Summary Card -->
-                            <div class="border border-gray-200 rounded-xl overflow-hidden divide-y divide-gray-100 text-sm bg-white shadow-xs">
-                                <!-- Header Preview -->
-                                <div class="p-4 bg-gray-50/70 flex items-center justify-between">
-                                    <div class="flex items-center gap-3">
-                                        <div class="w-10 h-10 rounded-full bg-gray-900 text-white font-bold text-xs flex items-center justify-center shrink-0 shadow-xs">
-                                            AS
-                                        </div>
-                                        <div>
-                                            <div class="font-bold text-gray-900">@model.Title</div>
-                                            <div class="font-mono text-xs text-gray-400">@model.Code &bull; @model.TypeCategory</div>
-                                        </div>
-                                    </div>
-                                    <div class="text-right">
-                                        <div class="text-base font-extrabold text-gray-900">+$@model.Rate.ToString("F2")</div>
-                                        <div class="text-[11px] text-gray-400">@model.RateUnit</div>
-                                    </div>
-                                </div>
-
-                                <!-- Filter Category -->
-                                <div class="flex items-center justify-between px-4 py-3">
-                                    <span class="text-xs font-semibold text-gray-500 uppercase tracking-wider">Filter Category</span>
-                                    <span class="font-medium text-gray-800">@model.FilterCategory</span>
-                                </div>
-
-                                <!-- Compatible Services -->
-                                <div class="px-4 py-3">
-                                    <span class="text-xs font-semibold text-gray-500 uppercase tracking-wider block mb-1.5">Compatible Services (@model.CompatibleServices.Count)</span>
-                                    @if (model.CompatibleServices.Any())
-                                    {
-                                        <div class="flex flex-wrap gap-1.5">
-                                            @foreach (var comp in model.CompatibleServices)
-                                            {
-                                                var classes = SpecializationColorHelper.GetClasses(comp.ColorTag);
-                                                <span class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium border @classes.BadgeClass shadow-2xs">
-                                                    <span class="w-1.5 h-1.5 rounded-full @classes.DotClass"></span>
-                                                    @comp.Label
-                                                </span>
-                                            }
-                                        </div>
-                                    }
-                                    else
-                                    {
-                                        <span class="text-xs text-gray-400 italic">None selected</span>
-                                    }
-                                </div>
-
-                                <!-- Description -->
-                                <div class="px-4 py-3">
-                                    <span class="text-xs font-semibold text-gray-500 uppercase tracking-wider block mb-1">Description</span>
-                                    <p class="text-xs text-gray-700 leading-relaxed italic">
-                                        @(string.IsNullOrWhiteSpace(model.Description) ? "No description provided." : model.Description)
-                                    </p>
-                                </div>
-
-                                <!-- Status Selection -->
-                                <div class="p-4 bg-gray-50/40 flex items-center justify-between">
-                                    <div>
-                                        <span class="text-xs font-semibold text-gray-800 block">Add-On Status</span>
-                                        <span class="text-[11px] text-gray-400">Control client availability</span>
-                                    </div>
-                                    <div class="flex items-center gap-2">
-                                        <button type="button"
-                                                @onclick='() => model.Status = "Active"'
-                                                class="px-3 py-1.5 rounded-lg text-xs font-semibold border transition-all
-                                                       @(model.Status == "Active" ? "bg-emerald-50 text-emerald-700 border-emerald-300 ring-2 ring-emerald-500/20" : "bg-white text-gray-600 border-gray-200")">
-                                            ● Active
-                                        </button>
-                                        <button type="button"
-                                                @onclick='() => model.Status = "Draft"'
-                                                class="px-3 py-1.5 rounded-lg text-xs font-semibold border transition-all
-                                                       @(model.Status == "Draft" ? "bg-gray-100 text-gray-800 border-gray-400 ring-2 ring-gray-900/10" : "bg-white text-gray-600 border-gray-200")">
-                                            ○ Draft
-                                        </button>
-                                    </div>
-                                </div>
-                            </div>
-
-                            @if (!string.IsNullOrWhiteSpace(saveErrorMessage))
-                            {
-                                <div class="p-3 bg-red-50 border border-red-200 rounded-lg text-xs text-red-700 font-medium" role="alert">
-                                    @saveErrorMessage
-                                </div>
-                            }
-                        </div>
-                    }
+                        }
+                    </div>
                 </EditForm>
             </div>
 
-            <!-- Modal Footer Controls -->
             <div class="px-6 py-4 bg-gray-50 border-t border-gray-100 flex items-center justify-between">
-                <div>
-                    @if (currentStep > 1)
-                    {
-                        <button type="button" @onclick="HandlePrevStep" disabled="@isSaving"
-                                class="inline-flex items-center gap-1.5 px-4 py-2.5 bg-white border border-gray-300 hover:bg-gray-100 text-gray-700 text-xs font-semibold rounded-lg shadow-xs transition-colors disabled:opacity-50">
-                            <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7" />
-                            </svg>
-                            Back
-                        </button>
-                    }
-                    else
-                    {
-                        <button type="button" @onclick="HandleClose" disabled="@isSaving"
-                                class="px-4 py-2.5 bg-white border border-gray-300 hover:bg-gray-100 text-gray-700 text-xs font-semibold rounded-lg shadow-xs transition-colors disabled:opacity-50">
-                            Cancel
-                        </button>
-                    }
-                </div>
-
-                <div class="flex items-center gap-3">
-                    @if (currentStep < TotalSteps)
-                    {
-                        <button type="button" @onclick="HandleNextStep"
-                                class="inline-flex items-center gap-1.5 px-5 py-2.5 bg-gray-900 hover:bg-black text-white text-xs font-semibold rounded-lg shadow-sm transition-all duration-150 active:scale-95">
-                            Next
-                            <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7" />
-                            </svg>
-                        </button>
-                    }
-                    else
-                    {
-                        <button type="button" @onclick="HandleSaveAsync" disabled="@isSaving"
-                                class="inline-flex items-center gap-2 px-6 py-2.5 bg-gray-900 hover:bg-black text-white text-xs font-semibold rounded-lg shadow-sm transition-all duration-150 disabled:opacity-60 active:scale-95">
-                            @if (isSaving)
-                            {
-                                <svg class="animate-spin -ml-1 mr-1 h-3.5 w-3.5 text-white" fill="none" viewBox="0 0 24 24">
-                                    <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
-                                    <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                                </svg>
-                                <span>Saving Add-On...</span>
-                            }
-                            else
-                            {
-                                <svg class="w-4 h-4 text-emerald-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7" />
-                                </svg>
-                                <span>Save Add-On</span>
-                            }
-                        </button>
-                    }
-                </div>
+                <button type="button" @onclick="HandleClose" disabled="@isSaving"
+                        class="px-4 py-2.5 bg-white border border-gray-300 hover:bg-gray-100 text-gray-700 text-xs font-semibold rounded-lg">
+                    Cancel
+                </button>
+                <button type="button" @onclick="HandleSaveAsync" disabled="@isSaving"
+                        class="px-6 py-2.5 bg-gray-900 hover:bg-black text-white text-xs font-semibold rounded-lg disabled:opacity-60">
+                    @(isSaving ? "Saving..." : "Save Add-On")
+                </button>
             </div>
         </div>
     </div>
@@ -473,160 +100,31 @@
     [Parameter] public EventCallback<bool> IsOpenChanged { get; set; }
     [Parameter] public EventCallback<AddOnServiceItem> OnAddOnCreated { get; set; }
 
-    private const int TotalSteps = 3;
-    private static readonly string[] StepTitles = { "Add-On Details", "Pricing & Compatibility", "Overview & Save" };
-
-    private int currentStep = 1;
     private bool isSaving = false;
     private string? saveErrorMessage;
-
     private AddOnServiceModel model = new();
     private EditContext editContext = null!;
-    private ValidationMessageStore messageStore = null!;
-
-    private record CompatibilityOption(string Label, string ColorTag);
-
-    private readonly List<CompatibilityOption> serviceCompatibilityOptions = new()
-    {
-        new("Portrait Specialist", "Blue"),
-        new("Commercial", "Purple"),
-        new("Event & Wedding", "Rose"),
-        new("Product", "Amber"),
-        new("Lead Retoucher", "Emerald")
-    };
 
     protected override void OnInitialized()
     {
         ResetWizard();
     }
 
-    protected override void OnParametersSet()
-    {
-        if (IsOpen && currentStep == 1 && string.IsNullOrWhiteSpace(model.Title))
-        {
-            ResetWizard();
-        }
-    }
-
     public void ResetWizard()
     {
-        currentStep = 1;
         isSaving = false;
         saveErrorMessage = null;
-
+        var nextNum = UserService.GetAdditionalServices().Count + 1;
         model = new AddOnServiceModel
         {
-            Code = $"AS-{new Random().Next(403, 499)}",
+            Code = $"ADD-{nextNum:D3}",
             TypeCategory = "Post-Processing",
             FilterCategory = "Expedited Delivery",
-            Rate = 50.00m,
+            Rate = 0m,
             RateUnit = "/ session",
-            Status = "Active",
-            CompatibleServices = new()
-            {
-                ("Portrait Specialist", "Blue")
-            }
+            Status = "Active"
         };
-
         editContext = new EditContext(model);
-        messageStore = new ValidationMessageStore(editContext);
-    }
-
-    private void OnTypeCategoryChanged()
-    {
-        // Suggest automatic filter category based on type category
-        model.FilterCategory = model.TypeCategory switch
-        {
-            "Post-Processing" => "Expedited Delivery",
-            "Retouching" => "Extra Retouching",
-            "Print & Frame" => "Framing & Prints",
-            "Equipment" => "Equipment & Props",
-            _ => "Expedited Delivery"
-        };
-
-        model.RateUnit = model.TypeCategory switch
-        {
-            "Retouching" => "/ photo",
-            "Print & Frame" => "/ unit",
-            _ => "/ session"
-        };
-    }
-
-    private void ToggleCompatibility(CompatibilityOption option)
-    {
-        var existing = model.CompatibleServices.FirstOrDefault(c => c.Label.Equals(option.Label, StringComparison.OrdinalIgnoreCase));
-        if (!string.IsNullOrEmpty(existing.Label))
-        {
-            model.CompatibleServices.Remove(existing);
-        }
-        else
-        {
-            model.CompatibleServices.Add((option.Label, option.ColorTag));
-        }
-    }
-
-    private void HandleNextStep()
-    {
-        saveErrorMessage = null;
-
-        if (currentStep == 1)
-        {
-            var titleField = editContext.Field(nameof(model.Title));
-            var codeField = editContext.Field(nameof(model.Code));
-
-            messageStore.Clear(titleField);
-            messageStore.Clear(codeField);
-
-            bool hasError = false;
-            if (string.IsNullOrWhiteSpace(model.Title))
-            {
-                messageStore.Add(titleField, "Add-On title is required.");
-                hasError = true;
-            }
-            else if (model.Title.Trim().Length < 2)
-            {
-                messageStore.Add(titleField, "Add-On title must be at least 2 characters.");
-                hasError = true;
-            }
-
-            if (string.IsNullOrWhiteSpace(model.Code))
-            {
-                messageStore.Add(codeField, "Add-On code is required.");
-                hasError = true;
-            }
-
-            if (hasError)
-            {
-                editContext.NotifyValidationStateChanged();
-                return;
-            }
-
-            currentStep = 2;
-        }
-        else if (currentStep == 2)
-        {
-            if (model.Rate < 0)
-            {
-                model.Rate = 0;
-            }
-
-            if (!model.CompatibleServices.Any())
-            {
-                // Default to at least one compatible service
-                model.CompatibleServices.Add(("Portrait Specialist", "Blue"));
-            }
-
-            currentStep = 3;
-        }
-    }
-
-    private void HandlePrevStep()
-    {
-        if (currentStep > 1)
-        {
-            currentStep--;
-            saveErrorMessage = null;
-        }
     }
 
     private async Task HandleClose()
@@ -640,7 +138,7 @@
     {
         if (string.IsNullOrWhiteSpace(model.Title) || string.IsNullOrWhiteSpace(model.Code))
         {
-            currentStep = 1;
+            saveErrorMessage = "Add-On title and code are required.";
             return;
         }
 
@@ -648,22 +146,8 @@
         {
             isSaving = true;
             saveErrorMessage = null;
-
-            var newItem = new AddOnServiceItem
-            {
-                Code = model.Code.Trim().ToUpperInvariant(),
-                Title = model.Title.Trim(),
-                TypeCategory = model.TypeCategory,
-                PriceText = $"${model.Rate:F2} {model.RateUnit}",
-                FilterCategory = model.FilterCategory,
-                CompatibleServices = new List<(string Label, string ColorTag)>(model.CompatibleServices),
-                Description = model.Description?.Trim(),
-                Status = model.Status
-            };
-
-            await Task.Delay(350);
-
-            await OnAddOnCreated.InvokeAsync(newItem);
+            var created = UserService.AddAdditionalService(model);
+            await OnAddOnCreated.InvokeAsync(created);
             await HandleClose();
         }
         catch (Exception ex)

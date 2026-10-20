@@ -2,6 +2,8 @@
 @page "/admin/equipment-types"
 @page "/equipment-types"
 @layout AdminLayout
+@using PhotoAevumStudio.Web.Services
+@inject IUserService UserService
 @rendermode InteractiveServer
 
 <PageTitle>Equipment Types - PhotoAevum</PageTitle>
@@ -13,9 +15,45 @@
     </div>
 </div>
 
-<div class="bg-white rounded-xl shadow-sm border border-gray-200 p-8 text-center">
-    <div class="max-w-md mx-auto text-gray-500">
-        <p class="text-base font-medium text-gray-700 mb-1">Equipment Types &amp; Categories</p>
-        <p class="text-sm">Hardware classification and category hierarchy is ready for integration.</p>
+@if (!EquipmentTypesList.Any())
+{
+    <div class="bg-white rounded-xl shadow-sm border border-gray-200 p-8 text-center">
+        <div class="max-w-md mx-auto text-gray-500">
+            <p class="text-base font-medium text-gray-700 mb-1">No Equipment Types Found</p>
+            <p class="text-sm">There are currently no equipment categories registered in the database.</p>
+        </div>
     </div>
-</div>
+}
+else
+{
+    <div class="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
+        <table class="w-full text-left text-sm">
+            <thead class="bg-gray-50 border-b border-gray-200 text-gray-500 uppercase text-xs font-semibold">
+                <tr>
+                    <th class="px-6 py-4">Type ID</th>
+                    <th class="px-6 py-4">Category Name</th>
+                    <th class="px-6 py-4">Description</th>
+                </tr>
+            </thead>
+            <tbody class="divide-y divide-gray-100">
+                @foreach (var type in EquipmentTypesList)
+                {
+                    <tr class="hover:bg-gray-50">
+                        <td class="px-6 py-4 font-mono text-xs text-gray-500">@type.Id</td>
+                        <td class="px-6 py-4 font-medium text-gray-900">@type.Name</td>
+                        <td class="px-6 py-4 text-gray-500">@type.Description</td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    </div>
+}
+
+@code {
+    private List<EquipmentTypeRow> EquipmentTypesList = new();
+
+    protected override void OnInitialized()
+    {
+        EquipmentTypesList = UserService.GetEquipmentTypes();
+    }
+}

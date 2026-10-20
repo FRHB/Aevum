@@ -1,22 +1,9 @@
-@* ============================================================
-   CustomerDashboard.razor  –  Role: Customer
-   Route: /my
-   ============================================================
-   Task 3.3 – Auth State Preparation
-   ──────────────────────────────────
-   Hardcoded UserRole="customer" is the mock value.
-   To swap in the real JWT role:
-       [CascadingParameter] Task<AuthenticationState> AuthState { get; set; }
-       protected override async Task OnInitializedAsync()
-       {
-           var state = await AuthState;
-           _userRole = state.User.FindFirst(ClaimTypes.Role)?.Value?.ToLower()
-                       ?? "customer";
-       }
-   ============================================================ *@
-
 @page "/my"
 @layout CustomerLayout
+@using System.Security.Claims
+@using Microsoft.AspNetCore.Components.Authorization
+@using PhotoAevumStudio.Web.Services
+@inject IUserService UserService
 @attribute [Authorize(Roles = "Customer")]
 @rendermode InteractiveServer
 
@@ -24,69 +11,103 @@
 
 @* ── Page header ─────────────────────────────────────────────────── *@
 <header class="aev-page-header">
-            <div>
-                <h1 class="aev-page-header__title">Welcome to Aevum</h1>
-                <p class="aev-page-header__subtitle">Your photography portal</p>
-            </div>
-            <a href="/my/book" class="btn btn--primary">Book a Session</a>
-        </header>
+    <div>
+        <h1 class="aev-page-header__title">Welcome to Aevum</h1>
+        <p class="aev-page-header__subtitle">Your photography portal</p>
+    </div>
+    <a href="/my/book" class="btn btn--primary">Book a Session</a>
+</header>
 
-        @* ── Pending tasks banner ─────────────────────────────────────────── *@
-        <div class="aev-alert-banner" role="status">
-            <span aria-hidden="true">🔔</span>
-            You have <strong>1 pending action</strong> — please complete your payment for your upcoming session.
-        </div>
+@if (PendingCount > 0)
+{
+    <div class="aev-alert-banner" role="status">
+        <span aria-hidden="true">🔔</span>
+        You have <strong>@PendingCount pending action(s)</strong> — please review your upcoming session status.
+    </div>
+}
 
-        @* ── Navigation cards ─────────────────────────────────────────────── *@
-        <div class="aev-content-row aev-content-row--wrap" aria-label="Portal sections">
+@* ── Navigation cards ─────────────────────────────────────────────── *@
+<div class="aev-content-row aev-content-row--wrap" aria-label="Portal sections">
 
-            <a href="/my/bookings" class="aev-nav-card">
-                <span class="aev-nav-card__icon" aria-hidden="true">📋</span>
-                <h2 class="aev-nav-card__title">My Appointments</h2>
-                <p class="aev-nav-card__desc">Track the status of your upcoming and past shoots.</p>
-            </a>
+    <a href="/my/bookings" class="aev-nav-card">
+        <span class="aev-nav-card__icon" aria-hidden="true">📋</span>
+        <h2 class="aev-nav-card__title">My Appointments</h2>
+        <p class="aev-nav-card__desc">Track the status of your upcoming and past shoots.</p>
+    </a>
 
-            <a href="/my/book" class="aev-nav-card">
-                <span class="aev-nav-card__icon" aria-hidden="true">➕</span>
-                <h2 class="aev-nav-card__title">Book a Schedule</h2>
-                <p class="aev-nav-card__desc">Request a new photography session with our team.</p>
-            </a>
+    <a href="/my/book" class="aev-nav-card">
+        <span class="aev-nav-card__icon" aria-hidden="true">➕</span>
+        <h2 class="aev-nav-card__title">Book a Schedule</h2>
+        <p class="aev-nav-card__desc">Request a new photography session with our team.</p>
+    </a>
 
-            <a href="/my/gallery/demo-gallery" class="aev-nav-card">
-                <span class="aev-nav-card__icon" aria-hidden="true">🖼</span>
-                <h2 class="aev-nav-card__title">Private Galleries</h2>
-                <p class="aev-nav-card__desc">View, favourite, and download your delivered photos.</p>
-            </a>
+    <a href="/my/bookings" class="aev-nav-card">
+        <span class="aev-nav-card__icon" aria-hidden="true">🖼</span>
+        <h2 class="aev-nav-card__title">Private Galleries</h2>
+        <p class="aev-nav-card__desc">View, favourite, and download your delivered photos.</p>
+    </a>
 
-        </div>
+</div>
 
-        @* ── Upcoming appointments mini-list ─────────────────────────────── *@
-        <section class="aev-card" aria-label="Upcoming appointments">
-            <header class="aev-card__header">
-                <h2 class="aev-card__heading">Upcoming Appointments</h2>
-                <a href="/my/bookings" class="aev-card__action-link">View All</a>
-            </header>
-            <div class="aev-table-wrap">
-                <table class="aev-table">
-                    <thead>
+@* ── Upcoming appointments mini-list ─────────────────────────────── *@
+<section class="aev-card" aria-label="Upcoming appointments">
+    <header class="aev-card__header">
+        <h2 class="aev-card__heading">Upcoming Appointments</h2>
+        <a href="/my/bookings" class="aev-card__action-link">View All</a>
+    </header>
+    <div class="aev-table-wrap">
+        <table class="aev-table">
+            <thead>
+                <tr>
+                    <th>Service</th>
+                    <th>Date &amp; Time</th>
+                    <th>Status</th>
+                </tr>
+            </thead>
+            <tbody>
+                @if (!UpcomingBookings.Any())
+                {
+                    <tr>
+                        <td colspan="3" class="text-center text-gray-500 py-8">No upcoming appointments found in the database.</td>
+                    </tr>
+                }
+                else
+                {
+                    @foreach (var booking in UpcomingBookings)
+                    {
                         <tr>
-                            <th>Service</th>
-                            <th>Date &amp; Time</th>
-                            <th>Status</th>
+                            <td>@booking.ServiceTitle</td>
+                            <td>@booking.EventDateTime.ToString("MMM dd, yyyy – h:mm tt")</td>
+                            <td>
+                                <span class="aev-badge @(booking.Status == "Confirmed" ? "aev-badge--green" : "aev-badge--amber")">
+                                    @booking.Status
+                                </span>
+                            </td>
                         </tr>
-                    </thead>
-                    <tbody>
-                        <tr>
-                            <td>Express Headshot</td>
-                            <td>Oct 15, 2026 – 2:00 PM</td>
-                            <td><span class="aev-badge aev-badge--amber">Awaiting Payment</span></td>
-                        </tr>
-                        <tr>
-                            <td>Couple Portrait</td>
-                            <td>Nov 3, 2026 – 10:00 AM</td>
-                            <td><span class="aev-badge aev-badge--green">Confirmed</span></td>
-                        </tr>
-                    </tbody>
-                </table>
-            </div>
-        </section>
+                    }
+                }
+            </tbody>
+        </table>
+    </div>
+</section>
+
+@code {
+    [CascadingParameter]
+    private Task<AuthenticationState>? AuthState { get; set; }
+
+    private List<BookingRow> UpcomingBookings = new();
+    private int PendingCount => UpcomingBookings.Count(b => string.Equals(b.Status, "Pending", StringComparison.OrdinalIgnoreCase));
+
+    protected override async Task OnInitializedAsync()
+    {
+        string? customerId = null;
+        if (AuthState != null)
+        {
+            var state = await AuthState;
+            customerId = state.User.FindFirst(ClaimTypes.NameIdentifier)?.Value
+                      ?? state.User.FindFirst("sub")?.Value;
+        }
+
+        UpcomingBookings = UserService.GetBookings(customerId);
+    }
+}

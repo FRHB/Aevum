@@ -1,6 +1,8 @@
 @page "/admin/schedules"
 @layout AdminLayout
 @using PhotoAevumStudio.Web.Models
+@using PhotoAevumStudio.Web.Services
+@inject IUserService UserService
 @rendermode InteractiveServer
 @attribute [Authorize(Roles = "Admin")]
 
@@ -15,9 +17,6 @@
         <button class="px-4 py-2.5 bg-white border border-gray-300 text-gray-700 rounded-lg font-medium hover:bg-gray-50 transition-colors flex items-center gap-2">
             <i data-lucide="calendar-days" class="w-4 h-4"></i> Month View
         </button>
-        <button class="px-4 py-2.5 bg-teal-600 text-white rounded-lg font-medium hover:bg-teal-700 shadow-sm transition-colors flex items-center gap-2">
-            <i data-lucide="plus" class="w-4 h-4"></i> New Booking
-        </button>
     </div>
 </div>
 
@@ -29,40 +28,51 @@
                     <th class="px-6 py-4">Booking ID</th>
                     <th class="px-6 py-4">Client Name</th>
                     <th class="px-6 py-4">Session Title</th>
-                    <th class="px-6 py-4">Date & Time</th>
+                    <th class="px-6 py-4">Date &amp; Time</th>
                     <th class="px-6 py-4 text-center">Status</th>
                     <th class="px-6 py-4 text-right">Actions</th>
                 </tr>
             </thead>
             <tbody class="divide-y divide-gray-200 text-sm">
-                @foreach (var schedule in SchedulesList)
+                @if (!SchedulesList.Any())
                 {
-                    <tr class="hover:bg-gray-50 transition-colors group">
-                        <td class="px-6 py-4 text-gray-500">#@schedule.Id</td>
-                        <td class="px-6 py-4 font-medium text-neutral-900 flex items-center gap-3">
-                            <div class="w-8 h-8 rounded-full bg-slate-100 flex items-center justify-center text-slate-600 text-xs font-bold">
-                                @schedule.ClientName.Substring(0, 1)
-                            </div>
-                            @schedule.ClientName
-                        </td>
-                        <td class="px-6 py-4 text-gray-600">@schedule.Title</td>
-                        <td class="px-6 py-4 text-gray-600">
-                            <div class="flex flex-col">
-                                <span class="font-medium text-neutral-900">@schedule.StartTime.ToString("MMM dd, yyyy")</span>
-                                <span class="text-xs">@schedule.StartTime.ToString("hh:mm tt")</span>
-                            </div>
-                        </td>
-                        <td class="px-6 py-4 text-center">
-                            <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
-                                Upcoming
-                            </span>
-                        </td>
-                        <td class="px-6 py-4 text-right">
-                            <button class="text-gray-400 hover:text-teal-600 transition-colors p-1">
-                                <i data-lucide="edit" class="w-4 h-4"></i>
-                            </button>
+                    <tr>
+                        <td colspan="6" class="px-6 py-12 text-center text-gray-500">
+                            No scheduled bookings found in the database.
                         </td>
                     </tr>
+                }
+                else
+                {
+                    @foreach (var schedule in SchedulesList)
+                    {
+                        <tr class="hover:bg-gray-50 transition-colors group">
+                            <td class="px-6 py-4 text-gray-500">#@schedule.BookingId</td>
+                            <td class="px-6 py-4 font-medium text-neutral-900 flex items-center gap-3">
+                                <div class="w-8 h-8 rounded-full bg-slate-100 flex items-center justify-center text-slate-600 text-xs font-bold">
+                                    @(string.IsNullOrWhiteSpace(schedule.ClientName) ? "?" : schedule.ClientName.Substring(0, 1))
+                                </div>
+                                @schedule.ClientName
+                            </td>
+                            <td class="px-6 py-4 text-gray-600">@schedule.ServiceTitle</td>
+                            <td class="px-6 py-4 text-gray-600">
+                                <div class="flex flex-col">
+                                    <span class="font-medium text-neutral-900">@schedule.EventDateTime.ToString("MMM dd, yyyy")</span>
+                                    <span class="text-xs">@schedule.EventDateTime.ToString("hh:mm tt")</span>
+                                </div>
+                            </td>
+                            <td class="px-6 py-4 text-center">
+                                <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
+                                    @schedule.Status
+                                </span>
+                            </td>
+                            <td class="px-6 py-4 text-right">
+                                <button class="text-gray-400 hover:text-teal-600 transition-colors p-1">
+                                    <i data-lucide="edit" class="w-4 h-4"></i>
+                                </button>
+                            </td>
+                        </tr>
+                    }
                 }
             </tbody>
         </table>
@@ -70,10 +80,10 @@
 </div>
 
 @code {
-    private List<ScheduleViewModel> SchedulesList = new()
+    private List<BookingRow> SchedulesList = new();
+
+    protected override void OnInitialized()
     {
-        new ScheduleViewModel { Id = 5021, Title = "Pre-nup Shoot", ClientName = "Alice & Bob", StartTime = DateTime.Today.AddHours(14) },
-        new ScheduleViewModel { Id = 5022, Title = "Family Portrait", ClientName = "Smith Family", StartTime = DateTime.Today.AddDays(1).AddHours(10) },
-        new ScheduleViewModel { Id = 5023, Title = "Corporate Headshots", ClientName = "Acme Corp", StartTime = DateTime.Today.AddDays(2).AddHours(9) }
-    };
+        SchedulesList = UserService.GetBookings();
+    }
 }

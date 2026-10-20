@@ -120,6 +120,10 @@ builder.Services.AddCors(options =>
         var origins = builder.Configuration
             .GetSection("Cors:AllowedOrigins")
             .Get<string[]>() ?? [
+                "https://site98282.siteasp.net",
+                "http://site98282.siteasp.net",
+                "https://site96971.siteasp.net",
+                "http://site96971.siteasp.net",
                 "https://localhost:7128",
                 "http://localhost:5181",
                 "https://localhost:7001",
@@ -130,9 +134,11 @@ builder.Services.AddCors(options =>
         policy.WithOrigins(origins)
               .AllowAnyHeader()
               .AllowAnyMethod()
-              .AllowCredentials()
               .SetIsOriginAllowed(origin =>
               {
+                  if (origins.Contains(origin, StringComparer.OrdinalIgnoreCase))
+                      return true;
+
                   if (Uri.TryCreate(origin, UriKind.Absolute, out var uri))
                   {
                       return uri.Host.Equals("localhost", StringComparison.OrdinalIgnoreCase)
@@ -269,15 +275,19 @@ app.MapGet("/health/db", async (ApplicationDbContext dbContext) =>
 
 await using (var scope = app.Services.CreateAsyncScope())
 {
-    var db     = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
-    var logger = scope.ServiceProvider.GetRequiredService<ILogger<Program>>();
+    var db          = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+    var roleManager = scope.ServiceProvider.GetRequiredService<RoleManager<IdentityRole>>();
+    var logger      = scope.ServiceProvider.GetRequiredService<ILogger<Program>>();
 
     try
     {
         if (await db.Database.CanConnectAsync())
         {
             logger.LogInformation("Successfully connected to the local SQL Server database.");
+            await DatabaseSeeder.ReconcileMigrationHistoryAsync(db);
+            await db.Database.MigrateAsync();
             await DatabaseSeeder.EnsureStoredProceduresAsync(db);
+            await DatabaseSeeder.SeedRolesAsync(roleManager);
         }
         else
         {
