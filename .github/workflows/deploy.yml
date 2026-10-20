@@ -1,29 +1,82 @@
-name: Deploy to MonsterASP
+name: CI/CD Pipeline
 
 on:
+  # 1. Runs tests automatically on every push to main
   push:
-    branches: [ "main" ] # Runs every time you push to main
+    branches: [ "main" ]
+  # 2. Manual trigger for when you actually want to deploy to MonsterASP
+  workflow_dispatch:
+    inputs:
+      deploy_target:
+        description: 'Choose what to deploy'
+        required: true
+        default: 'api_and_web'
+        type: choice
+        options:
+        - api_and_web
+        - api_only
+        - web_only
 
 jobs:
-  build-and-deploy:
+  build-and-test:
+    name: Build & Test
     runs-on: ubuntu-latest
-
     steps:
-    - name: Checkout Code
-      uses: actions/checkout@v3
-
-    - name: Setup .NET
-      uses: actions/setup-dotnet@v3
+    - uses: actions/checkout@v4
+    - uses: actions/setup-dotnet@v4
       with:
-        dotnet-version: '8.0.x' # Change to 9.0.x if you are using .NET 9
+        dotnet-version: '9.0.x'
+    - name: Run Tests
+      run: dotnet test PhotoAevumStudio.slnx -c Release
 
-    - name: Publish App
-      run: dotnet publish -c Release -o ./publish_output
-
-    - name: Deploy via FTP
+  deploy-api:
+    name: Deploy API to MonsterASP
+    needs: build-and-test
+    # 3. Conditional execution: Only runs if manually triggered AND includes API
+    if: github.event_name == 'workflow_dispatch' && (github.event.inputs.deploy_target == 'api_and_web' || github.event.inputs.deploy_target == 'api_only')
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+    - uses: actions/setup-dotnet@v4
+      with:
+        dotnet-version: '9.0.x'
+        
+    - name: Publish API
+      run: >
+        dotnet publish PhotoAevumStudioBackend/PhotoAevumStudio.Api/PhotoAevumStudio.Api.csproj
+        -c Release -o ./publish_api
+        
+    - name: FTP Deploy API
       uses: SamKirkland/FTP-Deploy-Action@v4.3.4
       with:
-        server: site98282.siteasp.net
-        username: site98282
-        password: T!z3hY9@8s-N
-        local-dir: ./publish_output/
+        server: ${{ secrets.API_FTP_SERVER }}
+        username: ${{ secrets.API_FTP_USERNAME }}
+        password: ${{ secrets.API_FTP_PASSWORD }}
+        server-dir: /wwwroot/
+        local-dir: ./publish_api/
+
+  deploy-web:
+    name: Deploy Web to MonsterASP
+    needs: build-and-test
+    # 4. Conditional execution: Only runs if manually triggered AND includes Web
+    if: github.event_name == 'workflow_dispatch' && (github.event.inputs.deploy_target == 'api_and_web' || github.event.inputs.deploy_target == 'web_only')
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+    - uses: actions/setup-dotnet@v4
+      with:
+        dotnet-version: '9.0.x'
+        
+    - name: Publish Web
+      run: >
+        dotnet publish PhotoAevumStudioFrontend/PhotoAevumStudio.Web/PhotoAevumStudio.Web.csproj
+        -c Release -o ./publish_web
+        
+    - name: FTP Deploy Web
+      uses: SamKirkland/FTP-Deploy-Action@v4.3.4
+      with:
+        server: ${{ secrets.WEB_FTP_SERVER }}
+        username: ${{ secrets.WEB_FTP_USERNAME }}
+        password: ${{ secrets.WEB_FTP_PASSWORD }}
+        server-dir: /wwwroot/
+        local-dir: ./publish_web/
