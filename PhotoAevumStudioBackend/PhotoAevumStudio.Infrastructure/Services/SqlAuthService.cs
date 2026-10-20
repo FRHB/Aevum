@@ -658,7 +658,7 @@ public class SqlAuthService : ISqlAuthService
 
                     IF COL_LENGTH(N'dbo.AspNetUsers', N'isFirstLogin') IS NOT NULL
                     BEGIN
-                        EXEC(N'UPDATE dbo.AspNetUsers SET isFirstLogin = 0 WHERE StudioId = @U OR UserName = @U OR Email = @U OR Id = @U OR UPPER(StudioId) = UPPER(@U) OR UPPER(UserName) = UPPER(@U) OR UPPER(Email) = UPPER(@U);', N'@U nvarchar(256)', @U = @UserId);
+                        EXEC sp_executesql N'UPDATE dbo.AspNetUsers SET isFirstLogin = 0 WHERE StudioId = @U OR UserName = @U OR Email = @U OR Id = @U OR UPPER(StudioId) = UPPER(@U) OR UPPER(UserName) = UPPER(@U) OR UPPER(Email) = UPPER(@U);', N'@U nvarchar(256)', @U = @UserId;
                     END;
                 END;";
             await using var cmd = new SqlCommand(syncSql, conn);
