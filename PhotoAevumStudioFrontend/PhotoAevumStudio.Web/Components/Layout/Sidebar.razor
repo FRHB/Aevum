@@ -142,7 +142,14 @@
                 <li>
                     <NavLink href="/admin" Match="NavLinkMatch.All"
                              class="aev-sidebar__link" ActiveClass="aev-sidebar__link--active">
-                        <span class="aev-sidebar__icon" aria-hidden="true">⊞</span>
+                        <span class="aev-sidebar__icon" aria-hidden="true">
+                            <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                <rect x="3" y="3" width="7" height="7"></rect>
+                                <rect x="14" y="3" width="7" height="7"></rect>
+                                <rect x="14" y="14" width="7" height="7"></rect>
+                                <rect x="3" y="14" width="7" height="7"></rect>
+                            </svg>
+                        </span>
                         Overview
                     </NavLink>
                 </li>
@@ -153,7 +160,14 @@
                             @onclick='() => Toggle("calendar")'
                             aria-expanded="@IsOpen("calendar")"
                             aria-controls="acc-calendar">
-                        <span class="aev-sidebar__icon" aria-hidden="true">📅</span>
+                        <span class="aev-sidebar__icon" aria-hidden="true">
+                            <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                <rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect>
+                                <line x1="16" y1="2" x2="16" y2="6"></line>
+                                <line x1="8" y1="2" x2="8" y2="6"></line>
+                                <line x1="3" y1="10" x2="21" y2="10"></line>
+                            </svg>
+                        </span>
                         Events Calendar
                         <span class="aev-sidebar__chevron" aria-hidden="true">›</span>
                     </button>
@@ -168,7 +182,14 @@
 
                 <li>
                     <NavLink href="/admin/clients" class="aev-sidebar__link" ActiveClass="aev-sidebar__link--active">
-                        <span class="aev-sidebar__icon" aria-hidden="true">👥</span>
+                        <span class="aev-sidebar__icon" aria-hidden="true">
+                            <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path>
+                                <circle cx="9" cy="7" r="4"></circle>
+                                <path d="M23 21v-2a4 4 0 0 0-3-3.87"></path>
+                                <path d="M16 3.13a4 4 0 0 1 0 7.75"></path>
+                            </svg>
+                        </span>
                         Clients
                     </NavLink>
                 </li>
@@ -179,7 +200,13 @@
                             @onclick='() => Toggle("services")'
                             aria-expanded="@IsOpen("services")"
                             aria-controls="acc-services">
-                        <span class="aev-sidebar__icon" aria-hidden="true">🗂</span>
+                        <span class="aev-sidebar__icon" aria-hidden="true">
+                            <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                <polygon points="12 2 2 7 12 12 22 7 12 2"></polygon>
+                                <polyline points="2 17 12 22 22 17"></polyline>
+                                <polyline points="2 12 12 17 22 12"></polyline>
+                            </svg>
+                        </span>
                         Services
                         <span class="aev-sidebar__chevron" aria-hidden="true">›</span>
                     </button>
@@ -206,7 +233,12 @@
                             @onclick='() => Toggle("employees")'
                             aria-expanded="@IsOpen("employees")"
                             aria-controls="acc-employees">
-                        <span class="aev-sidebar__icon" aria-hidden="true">👤</span>
+                        <span class="aev-sidebar__icon" aria-hidden="true">
+                            <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path>
+                                <circle cx="12" cy="7" r="4"></circle>
+                            </svg>
+                        </span>
                         Employees
                         <span class="aev-sidebar__chevron" aria-hidden="true">›</span>
                     </button>
@@ -224,7 +256,12 @@
                             @onclick='() => Toggle("equipment")'
                             aria-expanded="@IsOpen("equipment")"
                             aria-controls="acc-equipment">
-                        <span class="aev-sidebar__icon" aria-hidden="true">📷</span>
+                        <span class="aev-sidebar__icon" aria-hidden="true">
+                            <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"></path>
+                                <circle cx="12" cy="13" r="4"></circle>
+                            </svg>
+                        </span>
                         Equipment Inventory
                         <span class="aev-sidebar__chevron" aria-hidden="true">›</span>
                     </button>
@@ -247,7 +284,12 @@
             <ul class="aev-sidebar__list">
                 <li>
                     <NavLink href="/profile" class="aev-sidebar__link" ActiveClass="aev-sidebar__link--active">
-                        <span class="aev-sidebar__icon" aria-hidden="true">⚙</span>
+                        <span class="aev-sidebar__icon" aria-hidden="true">
+                            <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                <circle cx="12" cy="12" r="3"></circle>
+                                <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path>
+                            </svg>
+                        </span>
                         Profile
                     </NavLink>
                 </li>
@@ -268,7 +310,14 @@
                 <li>
                     <NavLink href="/staff" Match="NavLinkMatch.All"
                              class="aev-sidebar__link" ActiveClass="aev-sidebar__link--active">
-                        <span class="aev-sidebar__icon" aria-hidden="true">⊞</span>
+                        <span class="aev-sidebar__icon" aria-hidden="true">
+                            <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                <rect x="3" y="3" width="7" height="7"></rect>
+                                <rect x="14" y="3" width="7" height="7"></rect>
+                                <rect x="14" y="14" width="7" height="7"></rect>
+                                <rect x="3" y="14" width="7" height="7"></rect>
+                            </svg>
+                        </span>
                         Overview
                     </NavLink>
                 </li>
@@ -279,7 +328,14 @@
                             @onclick='() => Toggle("emp-calendar")'
                             aria-expanded="@IsOpen("emp-calendar")"
                             aria-controls="acc-emp-calendar">
-                        <span class="aev-sidebar__icon" aria-hidden="true">📅</span>
+                        <span class="aev-sidebar__icon" aria-hidden="true">
+                            <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                <rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect>
+                                <line x1="16" y1="2" x2="16" y2="6"></line>
+                                <line x1="8" y1="2" x2="8" y2="6"></line>
+                                <line x1="3" y1="10" x2="21" y2="10"></line>
+                            </svg>
+                        </span>
                         Events Calendar
                         <span class="aev-sidebar__chevron" aria-hidden="true">›</span>
                     </button>
@@ -298,7 +354,13 @@
                             @onclick='() => Toggle("emp-services")'
                             aria-expanded="@IsOpen("emp-services")"
                             aria-controls="acc-emp-services">
-                        <span class="aev-sidebar__icon" aria-hidden="true">🗂</span>
+                        <span class="aev-sidebar__icon" aria-hidden="true">
+                            <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                <polygon points="12 2 2 7 12 12 22 7 12 2"></polygon>
+                                <polyline points="2 17 12 22 22 17"></polyline>
+                                <polyline points="2 12 12 17 22 12"></polyline>
+                            </svg>
+                        </span>
                         Services
                         <span class="aev-sidebar__chevron" aria-hidden="true">›</span>
                     </button>
@@ -320,7 +382,12 @@
             <ul class="aev-sidebar__list">
                 <li>
                     <NavLink href="/staff/profile" class="aev-sidebar__link" ActiveClass="aev-sidebar__link--active">
-                        <span class="aev-sidebar__icon" aria-hidden="true">⚙</span>
+                        <span class="aev-sidebar__icon" aria-hidden="true">
+                            <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                <circle cx="12" cy="12" r="3"></circle>
+                                <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path>
+                            </svg>
+                        </span>
                         Profile
                     </NavLink>
                 </li>
@@ -342,7 +409,14 @@
                     <NavLink href="/my" Match="NavLinkMatch.All"
                              class="aev-sidebar__link" ActiveClass="aev-sidebar__link--active"
                              title="Pending tasks and home screen">
-                        <span class="aev-sidebar__icon" aria-hidden="true">⊞</span>
+                        <span class="aev-sidebar__icon" aria-hidden="true">
+                            <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                <rect x="3" y="3" width="7" height="7"></rect>
+                                <rect x="14" y="3" width="7" height="7"></rect>
+                                <rect x="14" y="14" width="7" height="7"></rect>
+                                <rect x="3" y="14" width="7" height="7"></rect>
+                            </svg>
+                        </span>
                         Overview
                     </NavLink>
                 </li>
@@ -351,7 +425,12 @@
                     <NavLink href="/my/bookings"
                              class="aev-sidebar__link" ActiveClass="aev-sidebar__link--active"
                              title="View existing and past bookings">
-                        <span class="aev-sidebar__icon" aria-hidden="true">📋</span>
+                        <span class="aev-sidebar__icon" aria-hidden="true">
+                            <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                <path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"></path>
+                                <rect x="8" y="2" width="8" height="4" rx="1" ry="1"></rect>
+                            </svg>
+                        </span>
                         Appointment
                     </NavLink>
                 </li>
@@ -360,7 +439,13 @@
                     <NavLink href="/my/book"
                              class="aev-sidebar__link" ActiveClass="aev-sidebar__link--active"
                              title="Request a new photography session">
-                        <span class="aev-sidebar__icon" aria-hidden="true">➕</span>
+                        <span class="aev-sidebar__icon" aria-hidden="true">
+                            <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                <circle cx="12" cy="12" r="10"></circle>
+                                <line x1="12" y1="8" x2="12" y2="16"></line>
+                                <line x1="8" y1="12" x2="16" y2="12"></line>
+                            </svg>
+                        </span>
                         Book Schedule
                     </NavLink>
                 </li>
@@ -374,7 +459,12 @@
             <ul class="aev-sidebar__list">
                 <li>
                     <NavLink href="/my/profile" class="aev-sidebar__link" ActiveClass="aev-sidebar__link--active">
-                        <span class="aev-sidebar__icon" aria-hidden="true">⚙</span>
+                        <span class="aev-sidebar__icon" aria-hidden="true">
+                            <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                <circle cx="12" cy="12" r="3"></circle>
+                                <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path>
+                            </svg>
+                        </span>
                         Profile
                     </NavLink>
                 </li>
