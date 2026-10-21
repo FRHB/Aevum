@@ -19,7 +19,7 @@ public class SqlAuthServiceTests
         var configBuilder = new ConfigurationBuilder()
             .AddInMemoryCollection(new Dictionary<string, string?>
             {
-                ["ConnectionStrings:DefaultConnection"] = "Server=localhost\\SQLEXPRESS; Database=PhotoAevumStudio; Trusted_Connection=True; TrustServerCertificate=True; MultipleActiveResultSets=True;"
+                ["ConnectionStrings:DefaultConnection"] = "Data Source=LAPTOP-VJQ60GP3\\SQLEXPRESS;Initial Catalog=PhotoAevumStudio;Integrated Security=True;Persist Security Info=False;Pooling=False;MultipleActiveResultSets=False;Encrypt=True;TrustServerCertificate=True;Application Name=\"SQL Server Management Studio\";Command Timeout=0"
             });
         _configuration = configBuilder.Build();
         _connectionString = _configuration.GetConnectionString("DefaultConnection")!;

@@ -17,6 +17,11 @@ public class MainServiceItem
     public string? Description { get; set; }
     public string Status { get; set; } = "Active";
     public bool IsActive => Status.Equals("Active", StringComparison.OrdinalIgnoreCase);
+
+    public string Id => Code;
+    public string Name => Title;
+    public decimal Price => BasePrice;
+    public string DurationHrs => Duration;
 }
 
 /// <summary>

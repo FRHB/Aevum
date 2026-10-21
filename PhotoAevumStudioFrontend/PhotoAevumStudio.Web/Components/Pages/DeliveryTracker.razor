@@ -1,5 +1,7 @@
 @page "/staff/pipeline"
 @layout EmployeeLayout
+@using PhotoAevumStudio.Web.Services
+@inject IUserService UserService
 @attribute [Authorize(Roles = "Employee")]
 
 <PageTitle>Delivery Pipeline Tracker</PageTitle>
@@ -20,25 +22,53 @@
                 </tr>
             </thead>
             <tbody class="divide-y divide-gray-100">
-                <tr class="hover:bg-gray-50">
-                    <td class="px-6 py-4">
-                        <div class="font-bold text-gray-900">#BK-9008 - Grad Shoot</div>
-                        <div class="text-gray-500 text-xs">Shot on Oct 01</div>
-                    </td>
-                    <td class="px-6 py-4 text-center">
-                        <span class="bg-purple-100 text-purple-800 text-xs font-bold px-3 py-1 rounded-full">Culling</span>
-                    </td>
-                    <td class="px-6 py-4 text-right">
-                        <select class="border rounded-md text-sm p-2 w-32 bg-white">
-                            <option>Shot</option>
-                            <option selected>Culling</option>
-                            <option>Editing</option>
-                            <option>Uploaded</option>
-                        </select>
-                        <button class="bg-slate-900 text-white px-3 py-2 rounded-md ml-2 text-sm font-semibold hover:bg-slate-800">Save</button>
-                    </td>
-                </tr>
+                @if (!PipelineBookings.Any())
+                {
+                    <tr>
+                        <td colspan="3" class="px-6 py-12 text-center text-gray-500">
+                            No delivery pipeline items found in the database.
+                        </td>
+                    </tr>
+                }
+                else
+                {
+                    @foreach (var item in PipelineBookings)
+                    {
+                        <tr class="hover:bg-gray-50">
+                            <td class="px-6 py-4">
+                                <div class="font-bold text-gray-900">#@item.BookingId - @item.ServiceTitle</div>
+                                <div class="text-gray-500 text-xs">Scheduled on @item.EventDateTime.ToString("MMM dd, yyyy")</div>
+                            </td>
+                            <td class="px-6 py-4 text-center">
+                                <span class="bg-purple-100 text-purple-800 text-xs font-bold px-3 py-1 rounded-full">@item.Status</span>
+                            </td>
+                            <td class="px-6 py-4 text-right">
+                                <select class="border rounded-md text-sm p-2 w-32 bg-white" @bind="item.Status">
+                                    <option value="Shot">Shot</option>
+                                    <option value="Culling">Culling</option>
+                                    <option value="Editing">Editing</option>
+                                    <option value="Uploaded">Uploaded</option>
+                                </select>
+                                <button @onclick="() => SaveStage(item)" class="bg-slate-900 text-white px-3 py-2 rounded-md ml-2 text-sm font-semibold hover:bg-slate-800">Save</button>
+                            </td>
+                        </tr>
+                    }
+                }
             </tbody>
         </table>
     </div>
 </div>
+
+@code {
+    private List<BookingRow> PipelineBookings = new();
+
+    protected override void OnInitialized()
+    {
+        PipelineBookings = UserService.GetBookings();
+    }
+
+    private void SaveStage(BookingRow item)
+    {
+        UserService.UpdateBookingStatus(item.BookingId, item.Status);
+    }
+}

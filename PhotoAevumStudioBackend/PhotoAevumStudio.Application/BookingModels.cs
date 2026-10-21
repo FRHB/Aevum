@@ -29,6 +29,19 @@ public class BookingResultDto
     public int EquipmentReserved { get; set; }
 }
 
+public class BookingListItemDto
+{
+    public string EventAppointmentId { get; set; } = string.Empty;
+    public string EventName { get; set; } = string.Empty;
+    public string EventDescription { get; set; } = string.Empty;
+    public string CustomerId { get; set; } = string.Empty;
+    public string CustomerName { get; set; } = string.Empty;
+    public DateOnly EventDate { get; set; }
+    public TimeOnly EventTime { get; set; }
+    public string EventStatus { get; set; } = string.Empty;
+    public DateTime CreatedAt { get; set; }
+}
+
 // Thrown when the stored procedure rejects a booking (past date, double-booked
 // employee, unknown ID, etc.). The message is safe to show to the user.
 public class BookingRuleException : Exception

@@ -101,7 +101,7 @@
                     {
                         <tr>
                             <td colspan="5" class="px-5 py-10 text-center text-slate-400">
-                                No employees found matching your search.
+                                @(employees.Count == 0 ? "No employees found in the database." : "No employees found matching your search.")
                             </td>
                         </tr>
                     }
@@ -143,7 +143,7 @@
                                     </span>
                                 </td>
                                 <td class="px-5 py-3.5 text-right">
-                                    <span class="text-slate-400 text-xs">Active</span>
+                                    <span class="text-slate-400 text-xs">@emp.Status</span>
                                 </td>
                             </tr>
                         }
@@ -183,19 +183,11 @@
         try
         {
             var data = await Employees.GetEmployeesAsync(_cts?.Token ?? CancellationToken.None);
-            if (data != null && data.Count > 0)
-            {
-                employees = data.ToList();
-            }
-            else
-            {
-                // Fallback studio mock data
-                employees = GetDefaultMockEmployees();
-            }
+            employees = data?.ToList() ?? new List<EmployeeViewModel>();
         }
         catch
         {
-            employees = GetDefaultMockEmployees();
+            employees = new List<EmployeeViewModel>();
         }
         finally
         {
@@ -207,40 +199,6 @@
     {
         await LoadEmployeesAsync();
     }
-
-    private static List<EmployeeViewModel> GetDefaultMockEmployees() => new()
-    {
-        new EmployeeViewModel
-        {
-            Id = 1,
-            EmployeeId = "PA-001",
-            FirstName = "Marcus",
-            LastName = "Vance",
-            Email = "m.vance@photoaevum.com",
-            Specializations = new() { "Lead Photographer", "Portrait Specialist" },
-            Status = "Active"
-        },
-        new EmployeeViewModel
-        {
-            Id = 2,
-            EmployeeId = "PA-002",
-            FirstName = "Elena",
-            LastName = "Rostova",
-            Email = "e.rostova@photoaevum.com",
-            Specializations = new() { "Lighting Tech", "Editor" },
-            Status = "Active"
-        },
-        new EmployeeViewModel
-        {
-            Id = 3,
-            EmployeeId = "PA-003",
-            FirstName = "Liam",
-            LastName = "Chen",
-            Email = "l.chen@photoaevum.com",
-            Specializations = new() { "Drone Operator", "Videographer" },
-            Status = "Active"
-        }
-    };
 
     public void Dispose()
     {

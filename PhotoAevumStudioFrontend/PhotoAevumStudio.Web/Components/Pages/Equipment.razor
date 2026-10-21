@@ -1,5 +1,7 @@
 @page "/admin/equipment"
 @layout AdminLayout
+@using PhotoAevumStudio.Web.Services
+@inject IUserService UserService
 @rendermode InteractiveServer
 @attribute [Authorize(Roles = "Admin")]
 
@@ -24,34 +26,58 @@
             </tr>
         </thead>
         <tbody class="divide-y divide-gray-100">
-            @foreach (var item in EquipmentList)
+            @if (!EquipmentList.Any())
             {
-                <tr class="hover:bg-gray-50">
-                    <td class="px-6 py-4 font-medium text-gray-900">@item.Name</td>
-                    <td class="px-6 py-4 text-gray-500 font-mono text-xs">@item.SerialNumber</td>
-                    <td class="px-6 py-4 text-gray-500">@item.Kind</td>
-                    <td class="px-6 py-4">
-                        <span class="px-2.5 py-1 rounded-full text-xs font-medium @(item.Status == "Available" ? "bg-green-100 text-green-800" : "bg-yellow-100 text-yellow-800")">
-                            @item.Status
-                        </span>
+                <tr>
+                    <td colspan="4" class="px-6 py-12 text-center text-gray-500">
+                        No equipment records found in the database.
                     </td>
                 </tr>
+            }
+            else
+            {
+                @foreach (var item in EquipmentList)
+                {
+                    <tr class="hover:bg-gray-50">
+                        <td class="px-6 py-4 font-medium text-gray-900">@item.Name</td>
+                        <td class="px-6 py-4 text-gray-500 font-mono text-xs">@item.SerialNumber</td>
+                        <td class="px-6 py-4 text-gray-500">@item.Kind</td>
+                        <td class="px-6 py-4">
+                            <span class="px-2.5 py-1 rounded-full text-xs font-medium @(item.Status == "Available" ? "bg-green-100 text-green-800" : "bg-yellow-100 text-yellow-800")">
+                                @item.Status
+                            </span>
+                        </td>
+                    </tr>
+                }
             }
         </tbody>
     </table>
 </div>
 
-<AddEquipmentWizard @bind-IsOpen="isWizardOpen" />
+<AddEquipmentWizard @bind-IsOpen="isWizardOpen" OnEquipmentSaved="LoadEquipment" />
 
 @code {
     private bool isWizardOpen = false;
 
-    protected List<EquipmentItem> EquipmentList { get; set; } = new()
+    protected List<EquipmentItem> EquipmentList { get; set; } = new();
+
+    protected override void OnInitialized()
     {
-        new EquipmentItem { Id = 2084, SerialNumber = "SN-99321", Name = "Godox AD600Pro", Kind = "Camera & Lighting Gear", Status = "Available" },
-        new EquipmentItem { Id = 2085, SerialNumber = "SN-44102", Name = "C-Stand Heavy", Kind = "Studio Support", Status = "In Use" },
-        new EquipmentItem { Id = 2086, SerialNumber = "SN-11883", Name = "Sony FX3 Body", Kind = "Camera & Lighting Gear", Status = "Maintenance" }
-    };
+        LoadEquipment();
+    }
+
+    private void LoadEquipment()
+    {
+        EquipmentList = UserService.GetEquipmentRows()
+            .Select(r => new EquipmentItem
+            {
+                SerialNumber = r.Id,
+                Name = r.Name,
+                Kind = r.Category,
+                Status = r.Status
+            })
+            .ToList();
+    }
 
     public class EquipmentItem
     {

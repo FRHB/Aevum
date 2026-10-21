@@ -1,15 +1,32 @@
+using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
+using PhotoAevumStudio.Application.Auth;
 using System.Data;
 
 namespace PhotoAevumStudio.Infrastructure.Data;
 
 /// <summary>
-/// Database maintenance and stored procedure management for local development.
-/// All hardcoded seed users and passwords have been removed to enforce strict reliance
-/// on the local SQL Server database.
+/// Database maintenance, role seeding, and stored procedure management.
+/// All hardcoded seed users, services, and equipment have been removed to enforce strict reliance
+/// on the SQL Server database.
 /// </summary>
 public static class DatabaseSeeder
 {
+    /// <summary>
+    /// Seeds the baseline application roles (Admin, Employee, Customer) into AspNetRoles.
+    /// Does not seed any mock users or domain entities.
+    /// </summary>
+    public static async Task SeedRolesAsync(RoleManager<IdentityRole> roleManager)
+    {
+        foreach (var role in AppRoles.All)
+        {
+            if (!await roleManager.RoleExistsAsync(role))
+            {
+                await roleManager.CreateAsync(new IdentityRole(role));
+            }
+        }
+    }
+
     /// <summary>
     /// Reconciles __EFMigrationsHistory if database tables already exist (e.g. from an imported SQL script or prior restore),
     /// preventing SqlException on machines with pre-existing schema.
@@ -43,9 +60,24 @@ public static class DatabaseSeeder
                 VALUES ('20261008081827_ExpandDomainModels', '10.0.12');
             END;
 
-            IF OBJECT_ID(N'dbo.Bookings', N'U') IS NOT NULL
+            IF (OBJECT_ID(N'dbo.Bookings', N'U') IS NOT NULL OR OBJECT_ID(N'dbo.EventAppointment', N'U') IS NOT NULL)
                AND NOT EXISTS (SELECT 1 FROM [__EFMigrationsHistory] WHERE [MigrationId] = '20261010090001_UpdateBookingKeysAndDate_FixCascade')
             BEGIN
+                IF OBJECT_ID(N'dbo.AuditLogs', N'U') IS NULL
+                BEGIN
+                    CREATE TABLE [dbo].[AuditLogs] (
+                        [Id] int NOT NULL IDENTITY,
+                        [UserId] nvarchar(max) NOT NULL,
+                        [UserEmail] nvarchar(max) NOT NULL,
+                        [Action] nvarchar(max) NOT NULL,
+                        [Resource] nvarchar(max) NOT NULL,
+                        [ResourceId] nvarchar(max) NULL,
+                        [Timestamp] datetime2 NOT NULL,
+                        [Details] nvarchar(max) NULL,
+                        CONSTRAINT [PK_AuditLogs] PRIMARY KEY ([Id])
+                    );
+                END;
+
                 INSERT INTO [__EFMigrationsHistory] ([MigrationId], [ProductVersion])
                 VALUES ('20261010090001_UpdateBookingKeysAndDate_FixCascade', '10.0.12');
             END;

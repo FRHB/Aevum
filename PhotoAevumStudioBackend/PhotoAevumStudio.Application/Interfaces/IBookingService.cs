@@ -9,4 +9,10 @@ public interface IBookingService
     Task<BookingResultDto> CreateEventAppointmentAsync(
         CreateBookingRequest request,
         CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Retrieves all event appointments from dbo.EventAppointment.
+    /// </summary>
+    Task<IReadOnlyList<BookingListItemDto>> GetBookingsAsync(
+        CancellationToken cancellationToken = default);
 }

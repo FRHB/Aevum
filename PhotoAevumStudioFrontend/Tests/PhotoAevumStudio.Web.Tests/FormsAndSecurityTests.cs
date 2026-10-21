@@ -146,41 +146,70 @@ public class FormsAndSecurityTests
     [Fact]
     public void Profile_EnrichesFromUserService_ForAdmin()
     {
-        var userService = new UserService();
-        var admin = new Admin
-        {
-            Id = "SADM-001",
-            Name = "Super Admin User",
-            Email = "sadm@photoaevum.com",
-            Role = "Super Admin"
-        };
-        userService.AddAdmin(admin);
+        const string connStr = "Data Source=LAPTOP-VJQ60GP3\\SQLEXPRESS;Initial Catalog=PhotoAevumStudio;Integrated Security=True;Persist Security Info=False;Pooling=False;MultipleActiveResultSets=False;Encrypt=True;TrustServerCertificate=True;Application Name=\"SQL Server Management Studio\";Command Timeout=0";
+        const string adminId = "SADM-998";
 
-        var retrieved = userService.GetAdminById("SADM-001");
-        Assert.NotNull(retrieved);
-        Assert.Equal("Super Admin User", retrieved.Name);
-        Assert.True(retrieved.IsSuperAdmin);
+        static void CleanupSuperAdmin()
+        {
+            using var conn = new Microsoft.Data.SqlClient.SqlConnection(connStr);
+            conn.Open();
+            using var cmd = new Microsoft.Data.SqlClient.SqlCommand("DELETE FROM dbo.Admin WHERE AdminID = @Id;", conn);
+            cmd.Parameters.AddWithValue("@Id", adminId);
+            cmd.ExecuteNonQuery();
+        }
+
+        CleanupSuperAdmin();
+        try
+        {
+            var userService = new UserService();
+            var admin = new Admin
+            {
+                Id = adminId,
+                Name = "Super Admin User",
+                Email = "sadm998@photoaevum.com",
+                Role = "Super Admin"
+            };
+            userService.AddAdmin(admin);
+
+            var retrieved = userService.GetAdminById(adminId);
+            Assert.NotNull(retrieved);
+            Assert.Equal("Super Admin User", retrieved.Name);
+            Assert.True(retrieved.IsSuperAdmin);
+        }
+        finally
+        {
+            CleanupSuperAdmin();
+        }
     }
 
     [Fact]
     public void Profile_EnrichesFromUserService_ForEmployee()
     {
         var userService = new UserService();
-        var emp = new PhotoAevumStudio.Web.Models.Employee
+        const string empId = "EMP-998";
+        userService.DeleteEmployee(empId);
+        try
         {
-            Id = "EMP-001",
-            Name = "Lead Photographer",
-            Email = "photographer@photoaevum.com",
-            Department = "Creative",
-            Position = "Senior Photographer"
-        };
-        userService.AddEmployee(emp);
+            var emp = new PhotoAevumStudio.Web.Models.Employee
+            {
+                Id = empId,
+                Name = "Lead Photographer",
+                Email = "emp998@photoaevum.com",
+                Department = "Creative",
+                Position = "Senior Photographer"
+            };
+            userService.AddEmployee(emp);
 
-        var retrieved = userService.GetEmployeeById("EMP-001");
-        Assert.NotNull(retrieved);
-        Assert.Equal("Lead Photographer", retrieved.Name);
-        Assert.Equal("Creative", retrieved.Department);
-        Assert.Equal("Senior Photographer", retrieved.Position);
+            var retrieved = userService.GetEmployeeById(empId);
+            Assert.NotNull(retrieved);
+            Assert.Equal("Lead Photographer", retrieved.Name);
+            Assert.Equal("Creative", retrieved.Department);
+            Assert.Equal("Senior Photographer", retrieved.Position);
+        }
+        finally
+        {
+            userService.DeleteEmployee(empId);
+        }
     }
 
     [Fact]
@@ -397,4 +426,3 @@ public class FormsAndSecurityTests
         Assert.True(isValid);
     }
 }
-

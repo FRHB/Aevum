@@ -30,12 +30,12 @@ public class BookingsController : ControllerBase
         return StatusCode(StatusCodes.Status201Created, result);
     }
 
-    // GET api/bookings — placeholder for listing (Phase 3 will expand this)
+    // GET api/bookings
     [HttpGet]
-    [Authorize(Roles = $"{AppRoles.Admin},{AppRoles.Employee}")]
-    public IActionResult GetAll()
+    [Authorize(Roles = $"{AppRoles.Admin},{AppRoles.Employee},{AppRoles.Customer}")]
+    public async Task<IActionResult> GetAll(CancellationToken cancellationToken)
     {
-        // Will be wired to a query service in Phase 3
-        return Ok(Array.Empty<object>());
+        var bookings = await _bookingService.GetBookingsAsync(cancellationToken);
+        return Ok(bookings);
     }
 }

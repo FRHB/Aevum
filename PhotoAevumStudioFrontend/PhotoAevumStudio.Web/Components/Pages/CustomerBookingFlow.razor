@@ -4,7 +4,7 @@
 @using PhotoAevumStudio.Web.Models
 @using PhotoAevumStudio.Web.Services
 @using Microsoft.AspNetCore.Components.Authorization
-@inject IEmployeeService EmployeeService
+@inject IUserService UserService
 
 <PageTitle>Book an Appointment</PageTitle>
 
@@ -14,19 +14,28 @@
     <div class="grid grid-cols-1 md:grid-cols-2 gap-8">
         <div>
             <h2 class="text-xl font-semibold mb-4">1. Select a Service</h2>
-            <div class="space-y-4">
-                @foreach (var svc in AvailableServices)
-                {
-                    <div class="p-4 border rounded-lg cursor-pointer @(SelectedService?.Id == svc.Id ? "border-black bg-gray-50" : "border-gray-200")"
-                         @onclick="() => SelectedService = svc">
-                        <div class="flex justify-between">
-                            <span class="font-medium">@svc.Name</span>
-                            <span class="font-semibold">?@svc.Price</span>
+            @if (!AvailableServices.Any())
+            {
+                <div class="p-6 border border-gray-200 rounded-lg text-center text-gray-500">
+                    No active studio services are currently available for booking.
+                </div>
+            }
+            else
+            {
+                <div class="space-y-4">
+                    @foreach (var svc in AvailableServices)
+                    {
+                        <div class="p-4 border rounded-lg cursor-pointer @(SelectedService?.Id == svc.Id ? "border-black bg-gray-50" : "border-gray-200")"
+                             @onclick="() => SelectedService = svc">
+                            <div class="flex justify-between">
+                                <span class="font-medium">@svc.Name</span>
+                                <span class="font-semibold">₱@svc.Price.ToString("N2")</span>
+                            </div>
+                            <p class="text-sm text-gray-600 mt-1">@svc.DurationHrs hr(s) • @svc.Description</p>
                         </div>
-                        <p class="text-sm text-gray-600 mt-1">@svc.Duration mins</p>
-                    </div>
-                }
-            </div>
+                    }
+                </div>
+            }
         </div>
 
         <div>
@@ -44,7 +53,7 @@
                 }
             </div>
             
-            <button class="w-full bg-black text-white py-3 rounded-md mt-8 font-semibold" disabled="@(!CanBook)">
+            <button class="w-full bg-black text-white py-3 rounded-md mt-8 font-semibold disabled:opacity-50" disabled="@(!CanBook)">
                 Confirm Booking
             </button>
         </div>
@@ -52,8 +61,8 @@
 </div>
 
 @code {
-    private List<ServiceViewModel> AvailableServices = new();
-    private ServiceViewModel? SelectedService;
+    private List<MainServiceItem> AvailableServices = new();
+    private MainServiceItem? SelectedService;
     private DateOnly SelectedDate = DateOnly.FromDateTime(DateTime.Today.AddDays(1));
     private TimeOnly? SelectedTime;
     
@@ -67,12 +76,8 @@
 
     protected override void OnInitialized()
     {
-        // Mock data for the UI until API is fully wired for services
-        AvailableServices = new List<ServiceViewModel>
-        {
-            new ServiceViewModel { Id = 1, Name = "Portrait Session", Price = 150, Duration = 60 },
-            new ServiceViewModel { Id = 2, Name = "Event Coverage", Price = 500, Duration = 240 },
-            new ServiceViewModel { Id = 3, Name = "Product Photography", Price = 300, Duration = 120 }
-        };
+        AvailableServices = UserService.GetMainServices()
+            .Where(s => s.IsActive)
+            .ToList();
     }
 }

@@ -1,14 +1,3 @@
-@* ============================================================
-   AdminUserList.razor  –  Task 2.3: UI Enforcement Guidance
-   
-   This component demonstrates how to integrate the Admin entity
-   model into a data table and enforce SADM-### delete protection
-   at the UI layer.
-
-   Drop this inside any admin page with:
-       <AdminUserList RequestingUserId="@_currentAdminId" />
-   ============================================================ *@
-
 @using PhotoAevumStudio.Web.Models
 @inject IUserService UserService
 
@@ -38,45 +27,46 @@
                 </tr>
             </thead>
             <tbody>
-                @foreach (var admin in _admins)
+                @if (_admins.Count == 0)
                 {
                     <tr>
-                        <td>
-                            @admin.Id
-                            @if (admin.IsSuperAdmin)
-                            {
-                                @* Visual badge – reinforces the UI lock *@
-                                <span class="aev-badge aev-badge--violet" title="Root Super Admin – cannot be deleted">Root</span>
-                            }
-                        </td>
-                        <td>@admin.Name</td>
-                        <td>@admin.Email</td>
-                        <td>@admin.Role</td>
-                        <td>
-                            @* ── Task 2.3 core snippet ────────────────────────────────────
-                               The Delete button is disabled/hidden when:
-                               1. The row targets an SADM-### account (admin.IsSuperAdmin).
-                               2. OR the requesting user is NOT an SADM (insufficient privilege).
-                               Both conditions match the service-layer business rules in UserService.
-                               ──────────────────────────────────────────────────────────────── *@
-
-                            @if (admin.IsSuperAdmin)
-                            {
-                                @* Completely hide the button for the Super Admin row *@
-                                <span class="aev-muted-text" title="Super Admin cannot be deleted">Protected</span>
-                            }
-                            else
-                            {
-                                @* Show the button, but disable it if requesting user lacks SADM privilege *@
-                                <button class="btn btn--ghost btn--sm"
-                                        disabled="@(!RequestingUserId.StartsWith("SADM-", StringComparison.OrdinalIgnoreCase))"
-                                        @onclick="() => TryDeleteAdmin(admin.Id)"
-                                        title="@(RequestingUserId.StartsWith("SADM-") ? "Delete admin" : "Only SADM can delete admins")">
-                                    Delete
-                                </button>
-                            }
+                        <td colspan="5" class="text-center py-6 text-slate-400">
+                            No administrator accounts found in the database.
                         </td>
                     </tr>
+                }
+                else
+                {
+                    @foreach (var admin in _admins)
+                    {
+                        <tr>
+                            <td>
+                                @admin.Id
+                                @if (admin.IsSuperAdmin)
+                                {
+                                    <span class="aev-badge aev-badge--violet" title="Root Super Admin – cannot be deleted">Root</span>
+                                }
+                            </td>
+                            <td>@admin.Name</td>
+                            <td>@admin.Email</td>
+                            <td>@admin.Role</td>
+                            <td>
+                                @if (admin.IsSuperAdmin)
+                                {
+                                    <span class="aev-muted-text" title="Super Admin cannot be deleted">Protected</span>
+                                }
+                                else
+                                {
+                                    <button class="btn btn--ghost btn--sm"
+                                            disabled="@(!RequestingUserId.StartsWith("SADM-", StringComparison.OrdinalIgnoreCase))"
+                                            @onclick="() => TryDeleteAdmin(admin.Id)"
+                                            title="@(RequestingUserId.StartsWith("SADM-") ? "Delete admin" : "Only SADM can delete admins")">
+                                        Delete
+                                    </button>
+                                }
+                            </td>
+                        </tr>
+                    }
                 }
             </tbody>
         </table>
@@ -84,11 +74,6 @@
 </section>
 
 @code {
-    /// <summary>
-    /// The ID of the currently logged-in user making the request.
-    /// Bind this from your AevumAuthenticationStateProvider claim when ready.
-    /// Example: state.User.FindFirst("sub")?.Value ?? string.Empty
-    /// </summary>
     [Parameter] public string RequestingUserId { get; set; } = string.Empty;
 
     private IReadOnlyList<Admin> _admins = Array.Empty<Admin>();
@@ -108,12 +93,11 @@
         try
         {
             UserService.DeleteAdmin(targetId, RequestingUserId);
-            _admins = UserService.GetAdmins(); // Refresh list
+            _admins = UserService.GetAdmins();
             _successMessage = $"Admin '{targetId}' has been removed.";
         }
         catch (InvalidOperationException ex)
         {
-            // Surface the service-layer rule message directly
             _errorMessage = ex.Message;
         }
         catch (KeyNotFoundException ex)

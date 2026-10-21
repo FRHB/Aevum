@@ -31,6 +31,13 @@
         <p class="aev-muted-text">Loading profile data...</p>
     </div>
 }
+else if (string.IsNullOrWhiteSpace(profile.Id))
+{
+    <div class="aev-card p-8 text-center">
+        <h2 class="text-lg font-semibold text-gray-800 mb-1">No Active Staff Profile</h2>
+        <p class="text-sm text-gray-500">Please sign in to view your staff profile from the database.</p>
+    </div>
+}
 else
 {
     <div class="profile-content-grid">
@@ -186,7 +193,6 @@ else
             var authState = await AuthStateProvider.GetAuthenticationStateAsync();
             var user = authState.User;
 
-            // 1. Read claims from currently logged-in user
             var claimId = user.FindFirst("studio_id")?.Value
                           ?? user.FindFirst(ClaimTypes.NameIdentifier)?.Value
                           ?? user.FindFirst("sub")?.Value
@@ -212,7 +218,6 @@ else
             profile.Role = !string.IsNullOrWhiteSpace(claimRole) ? claimRole : "Employee";
             profile.Status = "Active";
 
-            // 2. Enrich from IUserService if account exists in mock/backing store
             if (!string.IsNullOrWhiteSpace(profile.Id))
             {
                 var employee = UserService.GetEmployeeById(profile.Id);
@@ -225,13 +230,7 @@ else
                 }
             }
 
-            // Fallback display formatters if claims had missing pieces
-            if (string.IsNullOrWhiteSpace(profile.Id))
-            {
-                profile.Id = "EMP-001";
-            }
-
-            if (string.IsNullOrWhiteSpace(profile.Name))
+            if (string.IsNullOrWhiteSpace(profile.Name) && !string.IsNullOrWhiteSpace(profile.Id))
             {
                 profile.Name = !string.IsNullOrWhiteSpace(profile.Email)
                     ? profile.Email.Split('@')[0]

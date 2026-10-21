@@ -22,6 +22,7 @@ public class AuthControllerTests : IClassFixture<WebApplicationFactory<Program>>
         _factory = factory.WithWebHostBuilder(builder =>
         {
             builder.UseEnvironment("Testing");
+            builder.UseSetting("Jwt:Key", "TestOnly_JwtSigningKey_AtLeast32CharactersLong!");
         });
         _client = _factory.CreateClient();
 
