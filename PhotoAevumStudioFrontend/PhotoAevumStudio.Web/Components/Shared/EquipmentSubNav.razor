@@ -1,0 +1,105 @@
+@inject IEquipmentService EquipmentService
+@inject NavigationManager Nav
+@implements IDisposable
+
+<div class="flex items-center justify-between border-b border-slate-200 pb-3 mb-6 flex-wrap gap-3">
+    <!-- Module Subtitle / Breadcrumb -->
+    <div class="flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-slate-500">
+        <span>Equipment Logistics</span>
+        <span class="text-slate-300">/</span>
+        <span class="text-slate-900 font-bold">@ActiveTabLabel</span>
+    </div>
+
+    <!-- Cross-Navigation Navigation Pills -->
+    <nav class="flex items-center gap-1.5 bg-slate-100 p-1 rounded-xl text-xs font-medium" aria-label="Equipment Sub-navigation">
+        <NavLink href="/admin/equipments" Match="NavLinkMatch.All"
+                 class="inline-flex items-center gap-2 px-3 py-1.5 rounded-lg text-slate-600 hover:text-slate-900 transition-all font-semibold"
+                 ActiveClass="bg-white text-slate-950 shadow-xs ring-1 ring-slate-900/5 font-bold">
+            <svg class="w-3.5 h-3.5 text-slate-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z" />
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 13a3 3 0 11-6 0 3 3 0 016 0z" />
+            </svg>
+            <span>Hardware Catalog</span>
+            <span class="px-1.5 py-0.2 rounded-full text-[10px] bg-slate-200/80 text-slate-700 font-bold">@totalEquipment</span>
+        </NavLink>
+
+        <NavLink href="/admin/dispatch" Match="NavLinkMatch.Prefix"
+                 class="inline-flex items-center gap-2 px-3 py-1.5 rounded-lg text-slate-600 hover:text-slate-900 transition-all font-semibold"
+                 ActiveClass="bg-white text-slate-950 shadow-xs ring-1 ring-slate-900/5 font-bold">
+            <svg class="w-3.5 h-3.5 text-blue-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+            </svg>
+            <span>Dispatch & Checkout</span>
+            @if (activeDispatches > 0)
+            {
+                <span class="px-1.5 py-0.2 rounded-full text-[10px] bg-blue-100 text-blue-800 font-bold">@activeDispatches</span>
+            }
+        </NavLink>
+
+        <NavLink href="/admin/maintenance" Match="NavLinkMatch.Prefix"
+                 class="inline-flex items-center gap-2 px-3 py-1.5 rounded-lg text-slate-600 hover:text-slate-900 transition-all font-semibold"
+                 ActiveClass="bg-white text-slate-950 shadow-xs ring-1 ring-slate-900/5 font-bold">
+            <svg class="w-3.5 h-3.5 text-amber-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+            </svg>
+            <span>Maintenance</span>
+            @if (maintenanceCount > 0)
+            {
+                <span class="px-1.5 py-0.2 rounded-full text-[10px] bg-amber-100 text-amber-800 font-bold">@maintenanceCount</span>
+            }
+        </NavLink>
+
+        <NavLink href="/admin/equipment-types" Match="NavLinkMatch.Prefix"
+                 class="inline-flex items-center gap-2 px-3 py-1.5 rounded-lg text-slate-600 hover:text-slate-900 transition-all font-semibold"
+                 ActiveClass="bg-white text-slate-950 shadow-xs ring-1 ring-slate-900/5 font-bold">
+            <svg class="w-3.5 h-3.5 text-purple-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 7h.01M7 3h5c.512 0 1.024.195 1.414.586l7 7a2 2 0 010 2.828l-7 7a2 2 0 01-2.828 0l-7-7A1.994 1.994 0 013 12V7a4 4 0 014-4z" />
+            </svg>
+            <span>Equipment Types</span>
+            <span class="px-1.5 py-0.2 rounded-full text-[10px] bg-slate-200/80 text-slate-700 font-bold">@typesCount</span>
+        </NavLink>
+    </nav>
+</div>
+
+@code {
+    [Parameter]
+    public string ActiveTabLabel { get; set; } = "Hardware Catalog";
+
+    private int totalEquipment = 0;
+    private int activeDispatches = 0;
+    private int maintenanceCount = 0;
+    private int typesCount = 0;
+
+    protected override async Task OnInitializedAsync()
+    {
+        EquipmentService.OnChange += HandleStateChanged;
+        await LoadStatsAsync();
+    }
+
+    private async Task LoadStatsAsync()
+    {
+        var eqs = await EquipmentService.GetEquipmentsAsync();
+        var dispatches = await EquipmentService.GetDispatchesAsync();
+        var types = await EquipmentService.GetEquipmentTypesAsync();
+
+        totalEquipment = eqs.Count;
+        maintenanceCount = eqs.Count(e => e.IsMaintenance);
+        activeDispatches = dispatches.Count(d => d.IsActiveCheckout);
+        typesCount = types.Count;
+    }
+
+    private void HandleStateChanged()
+    {
+        _ = InvokeAsync(async () =>
+        {
+            await LoadStatsAsync();
+            StateHasChanged();
+        });
+    }
+
+    public void Dispose()
+    {
+        EquipmentService.OnChange -= HandleStateChanged;
+    }
+}

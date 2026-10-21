@@ -1,22 +1,1186 @@
+@page "/calendar-of-events"
 @page "/admin/calendar/events"
 @page "/admin/calendar-of-events"
-@page "/calendar-of-events"
 @page "/calendar/events"
 @layout AdminLayout
 @rendermode InteractiveServer
+@inject IScheduleService ScheduleService
 
-<PageTitle>Calendar of Events - PhotoAevum</PageTitle>
+<PageTitle>Calendar of Events | Aevum Studio</PageTitle>
 
-<div class="flex justify-between items-center mb-8">
-    <div>
-        <h1 class="text-3xl font-bold text-gray-900">Calendar of Events</h1>
-        <p class="text-gray-500 mt-1">Scheduled photography sessions, studio bookings, and special events.</p>
+<div class="space-y-6 pb-12">
+    <!-- ══════════════════════════════════════════════════════════════════════ -->
+    <!-- 1. PAGE HEADER                                                        -->
+    <!-- ══════════════════════════════════════════════════════════════════════ -->
+    <div class="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+        <div>
+            <div class="flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-gray-500 mb-1">
+                <span>Events Calendar</span>
+                <span class="text-gray-400">/</span>
+                <span class="text-gray-900 font-bold">Calendar of Events</span>
+            </div>
+            <h1 class="text-2xl sm:text-3xl font-extrabold text-gray-900 tracking-tight">Calendar of Events</h1>
+            <p class="text-sm text-gray-500 mt-1">
+                Scheduled photography sessions, studio room bookings, and special client events.
+            </p>
+        </div>
+
+        <div class="flex items-center gap-3">
+            <button type="button"
+                    @onclick="OpenCreateModal"
+                    class="inline-flex items-center gap-2 px-4 py-2.5 bg-gray-900 hover:bg-black text-white text-sm font-semibold rounded-lg shadow-sm hover:shadow transition-all duration-150 active:scale-95 focus:outline-none focus:ring-2 focus:ring-gray-900 focus:ring-offset-2">
+                <svg class="w-4 h-4 text-emerald-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M12 4v16m8-8H4" />
+                </svg>
+                <span>New Event</span>
+            </button>
+        </div>
     </div>
+
+    <!-- ══════════════════════════════════════════════════════════════════════ -->
+    <!-- 2. CONFLICT INDICATOR BAR (Summary Alert Bar)                        -->
+    <!-- ══════════════════════════════════════════════════════════════════════ -->
+    @if (ConflictCount > 0)
+    {
+        <div class="p-4 bg-rose-50 border border-rose-200 rounded-xl shadow-xs flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 animate-in fade-in duration-200">
+            <div class="flex items-center gap-3">
+                <span class="w-8 h-8 rounded-full bg-rose-100 text-rose-700 flex items-center justify-center shrink-0 text-base font-bold">
+                    ⚠️
+                </span>
+                <div>
+                    <h3 class="text-sm font-bold text-rose-900">
+                        @ConflictCount Scheduling Conflict(s) Detected
+                    </h3>
+                    <p class="text-xs text-rose-700 mt-0.5">
+                        Double-booking conflict detected! One or more studio spaces have overlapping photo sessions.
+                    </p>
+                </div>
+            </div>
+
+            <div class="flex items-center gap-2 shrink-0">
+                <button type="button"
+                        @onclick="ToggleConflictFilter"
+                        class="px-3 py-1.5 text-xs font-semibold rounded-lg border transition-colors @(_filterOnlyConflicts ? "bg-rose-600 text-white border-rose-600" : "bg-white text-rose-800 border-rose-300 hover:bg-rose-100")">
+                    @(_filterOnlyConflicts ? "Showing Conflicts Only" : "Filter Conflicts")
+                </button>
+            </div>
+        </div>
+    }
+
+    <!-- ══════════════════════════════════════════════════════════════════════ -->
+    <!-- 3. TOP SUMMARY STATS CARDS                                            -->
+    <!-- ══════════════════════════════════════════════════════════════════════ -->
+    <div class="grid grid-cols-2 lg:grid-cols-4 gap-4">
+        <div class="bg-white p-4 rounded-xl border border-gray-200 shadow-xs">
+            <div class="flex items-center justify-between">
+                <span class="text-xs font-semibold text-gray-500 uppercase tracking-wider">Total Bookings</span>
+                <span class="p-2 bg-blue-50 text-blue-600 rounded-lg text-sm">📅</span>
+            </div>
+            <p class="text-2xl font-bold text-gray-900 mt-2">@TotalBookingsCount</p>
+            <p class="text-xs text-gray-400 mt-1">Across all studio venues</p>
+        </div>
+
+        <div class="bg-white p-4 rounded-xl border border-gray-200 shadow-xs">
+            <div class="flex items-center justify-between">
+                <span class="text-xs font-semibold text-gray-500 uppercase tracking-wider">This Week</span>
+                <span class="p-2 bg-emerald-50 text-emerald-600 rounded-lg text-sm">✨</span>
+            </div>
+            <p class="text-2xl font-bold text-gray-900 mt-2">@ThisWeekBookingsCount</p>
+            <p class="text-xs text-emerald-600 font-medium mt-1">@ThisWeekHoursCount hrs scheduled</p>
+        </div>
+
+        <div class="bg-white p-4 rounded-xl border border-gray-200 shadow-xs">
+            <div class="flex items-center justify-between">
+                <span class="text-xs font-semibold text-gray-500 uppercase tracking-wider">Studio Spaces</span>
+                <span class="p-2 bg-purple-50 text-purple-600 rounded-lg text-sm">🏢</span>
+            </div>
+            <p class="text-2xl font-bold text-gray-900 mt-2">@StudioSpaces.Count</p>
+            <p class="text-xs text-gray-400 mt-1">Active shoot bays & sets</p>
+        </div>
+
+        <div class="bg-white p-4 rounded-xl border border-gray-200 shadow-xs">
+            <div class="flex items-center justify-between">
+                <span class="text-xs font-semibold text-gray-500 uppercase tracking-wider">Conflict Status</span>
+                <span class="p-2 @(ConflictCount > 0 ? "bg-rose-50 text-rose-600" : "bg-emerald-50 text-emerald-600") rounded-lg text-sm">
+                    @(ConflictCount > 0 ? "⚠️" : "🛡️")
+                </span>
+            </div>
+            <p class="text-2xl font-bold @(ConflictCount > 0 ? "text-rose-600" : "text-emerald-600") mt-2">
+                @(ConflictCount > 0 ? $"{ConflictCount} Overlap(s)" : "Clear")
+            </p>
+            <p class="text-xs text-gray-400 mt-1">Real-time room occupancy</p>
+        </div>
+    </div>
+
+    <!-- ══════════════════════════════════════════════════════════════════════ -->
+    <!-- 4. CONTROLS HEADER BAR (View Switcher, Navigator, Search, Filters)    -->
+    <!-- ══════════════════════════════════════════════════════════════════════ -->
+    <div class="bg-white p-4 rounded-xl border border-gray-200 shadow-xs space-y-4">
+        <div class="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
+            
+            <!-- Left: View Mode Switcher -->
+            <div class="inline-flex items-center p-1 bg-gray-100 rounded-lg border border-gray-200 self-start">
+                <button type="button"
+                        @onclick="() => SetViewMode(ScheduleViewMode.Day)"
+                        class="px-3 py-1.5 text-xs font-semibold rounded-md transition-all @(_currentView == ScheduleViewMode.Day ? "bg-white text-gray-900 shadow-xs" : "text-gray-600 hover:text-gray-900")">
+                    Day
+                </button>
+                <button type="button"
+                        @onclick="() => SetViewMode(ScheduleViewMode.Week)"
+                        class="px-3 py-1.5 text-xs font-semibold rounded-md transition-all @(_currentView == ScheduleViewMode.Week ? "bg-white text-gray-900 shadow-xs" : "text-gray-600 hover:text-gray-900")">
+                    Week
+                </button>
+                <button type="button"
+                        @onclick="() => SetViewMode(ScheduleViewMode.Month)"
+                        class="px-3 py-1.5 text-xs font-semibold rounded-md transition-all @(_currentView == ScheduleViewMode.Month ? "bg-white text-gray-900 shadow-xs" : "text-gray-600 hover:text-gray-900")">
+                    Month
+                </button>
+                <button type="button"
+                        @onclick="() => SetViewMode(ScheduleViewMode.Agenda)"
+                        class="px-3 py-1.5 text-xs font-semibold rounded-md transition-all @(_currentView == ScheduleViewMode.Agenda ? "bg-white text-gray-900 shadow-xs" : "text-gray-600 hover:text-gray-900")">
+                    Agenda
+                </button>
+            </div>
+
+            <!-- Center: Date Navigator -->
+            <div class="flex items-center gap-2 justify-between sm:justify-center">
+                <button type="button"
+                        @onclick="NavigatePrevious"
+                        class="p-2 rounded-lg border border-gray-200 bg-white hover:bg-gray-50 text-gray-700 transition-colors shadow-2xs"
+                        aria-label="Previous">
+                    <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7" />
+                    </svg>
+                </button>
+
+                <div class="px-3 py-1.5 bg-gray-50 border border-gray-200 rounded-lg text-xs sm:text-sm font-bold text-gray-900 min-w-[200px] text-center shadow-2xs">
+                    @FormattedDateRangeHeader
+                </div>
+
+                <button type="button"
+                        @onclick="NavigateNext"
+                        class="p-2 rounded-lg border border-gray-200 bg-white hover:bg-gray-50 text-gray-700 transition-colors shadow-2xs"
+                        aria-label="Next">
+                    <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7" />
+                    </svg>
+                </button>
+
+                <button type="button"
+                        @onclick="JumpToToday"
+                        class="px-3 py-2 text-xs font-bold rounded-lg border border-gray-200 bg-white hover:bg-gray-50 text-gray-700 transition-colors shadow-2xs">
+                    Today
+                </button>
+            </div>
+
+            <!-- Right: Search Input -->
+            <div class="relative w-full lg:w-72">
+                <svg class="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                </svg>
+                <input type="text"
+                       @bind="_searchQuery"
+                       @bind:event="oninput"
+                       placeholder="Quick search client, room..."
+                       class="w-full pl-9 pr-8 py-2 text-xs bg-gray-50 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-gray-900 focus:bg-white transition-all" />
+                @if (!string.IsNullOrEmpty(_searchQuery))
+                {
+                    <button type="button"
+                            @onclick="() => _searchQuery = string.Empty"
+                            class="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 text-xs">
+                        ✕
+                    </button>
+                }
+            </div>
+        </div>
+
+        <!-- Filter Row (Space & Status Filters) -->
+        <div class="flex flex-wrap items-center gap-3 pt-3 border-t border-gray-100 text-xs">
+            <span class="font-semibold text-gray-500">Filters:</span>
+
+            <!-- Studio Space Dropdown -->
+            <select @bind="_selectedSpaceFilter" class="px-2.5 py-1.5 bg-gray-50 border border-gray-200 rounded-lg text-gray-700 font-medium focus:outline-none focus:ring-2 focus:ring-gray-900">
+                <option value="">All Studio Spaces</option>
+                @foreach (var space in StudioSpaces)
+                {
+                    <option value="@space.Id">@space.Name</option>
+                }
+            </select>
+
+            <!-- Status Dropdown -->
+            <select @bind="_selectedStatusFilter" class="px-2.5 py-1.5 bg-gray-50 border border-gray-200 rounded-lg text-gray-700 font-medium focus:outline-none focus:ring-2 focus:ring-gray-900">
+                <option value="">All Statuses</option>
+                <option value="Confirmed">Confirmed</option>
+                <option value="Pending">Pending</option>
+                <option value="Completed">Completed</option>
+            </select>
+
+            <!-- Service Type Filter -->
+            <select @bind="_selectedServiceTypeFilter" class="px-2.5 py-1.5 bg-gray-50 border border-gray-200 rounded-lg text-gray-700 font-medium focus:outline-none focus:ring-2 focus:ring-gray-900">
+                <option value="">All Service Types</option>
+                <option value="Express Headshot">Express Headshot</option>
+                <option value="Full Studio Session">Full Studio Session</option>
+                <option value="Commercial Campaign">Commercial Campaign</option>
+                <option value="Bridal Prep">Bridal Prep</option>
+                <option value="Product Catalog">Product Catalog</option>
+            </select>
+
+            @if (HasActiveFilters)
+            {
+                <button type="button"
+                        @onclick="ClearFilters"
+                        class="text-xs text-rose-600 hover:text-rose-800 font-semibold underline underline-offset-2 ml-auto">
+                    Reset Filters
+                </button>
+            }
+        </div>
+    </div>
+
+    <!-- ══════════════════════════════════════════════════════════════════════ -->
+    <!-- 5. MAIN SCHEDULE MATRIX / VIEW RENDERER                               -->
+    <!-- ══════════════════════════════════════════════════════════════════════ -->
+    @if (_currentView == ScheduleViewMode.Week)
+    {
+        @* ── WEEK MATRIX VIEW ───────────────────────────────────────────── *@
+        <div class="bg-white rounded-xl border border-gray-200 shadow-xs overflow-hidden">
+            <div class="overflow-x-auto relative">
+                <table class="w-full text-left border-collapse min-w-[1000px]">
+                    <!-- Days Header Row -->
+                    <thead>
+                        <tr class="bg-gray-50 border-b border-gray-200 text-xs">
+                            <th class="w-64 sm:w-72 shrink-0 sticky left-0 z-20 bg-gray-50 border-r border-gray-200 px-4 py-3 text-gray-500 font-bold uppercase tracking-wider">
+                                Studio Space / Venue
+                            </th>
+                            @foreach (var day in WeekDays)
+                            {
+                                var isToday = day.Date == DateTime.Today;
+                                var dayEventsCount = GetEventsForDay(day).Count();
+                                <th class="px-3 py-3 text-center border-r border-gray-200 min-w-[170px] @(isToday ? "bg-amber-50/40" : "")">
+                                    <div class="flex flex-col items-center gap-1">
+                                        <div class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg @(isToday ? "bg-gray-900 text-white font-bold shadow-xs" : "bg-gray-100 text-gray-700 font-semibold")">
+                                            <span>@day.ToString("ddd")</span>
+                                            <span class="text-xs">@day.Day</span>
+                                        </div>
+                                        <span class="text-[10px] text-gray-400 font-normal">
+                                            @dayEventsCount @(dayEventsCount == 1 ? "event" : "events")
+                                        </span>
+                                    </div>
+                                </th>
+                            }
+                        </tr>
+                    </thead>
+
+                    <!-- Matrix Rows -->
+                    <tbody class="divide-y divide-gray-200 text-xs">
+                        @foreach (var space in FilteredStudioSpaces)
+                        {
+                            var spaceBookingsThisWeek = GetEventsForSpace(space.Id).Where(e => WeekDays.Any(d => d.Date == e.Date.Date)).ToList();
+                            var totalHours = spaceBookingsThisWeek.Sum(e => e.DurationHours);
+
+                            <tr class="hover:bg-gray-50/30 transition-colors">
+                                <!-- Sticky Left Column: Resource Item Info -->
+                                <td class="w-64 sm:w-72 shrink-0 sticky left-0 z-10 bg-white border-r border-gray-200 p-4 shadow-[2px_0_5px_rgba(0,0,0,0.03)] align-top">
+                                    <div class="space-y-1.5">
+                                        <div class="flex items-center gap-2">
+                                            <span class="w-2.5 h-2.5 rounded-full @GetSpaceDotColor(space.Id)"></span>
+                                            <h4 class="font-bold text-gray-900 text-sm leading-snug">@space.Name</h4>
+                                        </div>
+                                        <div class="flex flex-wrap gap-1 text-[11px]">
+                                            <span class="px-2 py-0.5 rounded-md @space.BadgeColor font-medium">
+                                                @space.Dimensions
+                                            </span>
+                                            <span class="px-2 py-0.5 rounded-md bg-gray-100 text-gray-600 font-medium">
+                                                Cap: @space.MaxCapacity
+                                            </span>
+                                        </div>
+                                        <p class="text-[11px] text-gray-500 line-clamp-2 leading-relaxed">
+                                            @space.Description
+                                        </p>
+                                        <div class="pt-1 text-[10px] text-gray-400 font-medium">
+                                            @spaceBookingsThisWeek.Count session(s) • @totalHours.ToString("0.#") hrs this week
+                                        </div>
+                                    </div>
+                                </td>
+
+                                <!-- 7 Grid Day Slots -->
+                                @foreach (var day in WeekDays)
+                                {
+                                    var dayBookings = FilteredBookings
+                                        .Where(b => b.StudioSpaceId == space.Id && b.Date.Date == day.Date)
+                                        .OrderBy(b => b.StartTime)
+                                        .ToList();
+
+                                    <td class="p-2 border-r border-gray-100 align-top min-w-[170px] relative group hover:bg-gray-50/50 transition-colors">
+                                        <div class="space-y-2 min-h-[90px] flex flex-col justify-between">
+                                            <div class="space-y-1.5">
+                                                @foreach (var booking in dayBookings)
+                                                {
+                                                    <div @onclick="() => OpenDetailDrawer(booking)"
+                                                         class="p-2.5 rounded-lg border text-left shadow-2xs hover:shadow-md hover:-translate-y-0.5 transition-all cursor-pointer relative @GetBookingCardStyle(booking)">
+                                                        
+                                                        @if (booking.HasConflict)
+                                                        {
+                                                            <div class="flex items-center gap-1 text-[10px] font-bold text-rose-700 bg-rose-100 px-1.5 py-0.5 rounded-sm mb-1 uppercase tracking-tight">
+                                                                <span>⚠️ Conflict</span>
+                                                            </div>
+                                                        }
+
+                                                        <!-- Time & Status Pill -->
+                                                        <div class="flex items-center justify-between text-[11px] font-medium mb-1">
+                                                            <span class="font-bold text-gray-900">@booking.FormattedTimeRange</span>
+                                                            <span class="px-1.5 py-0.2 rounded text-[10px] font-semibold @GetStatusBadgeStyle(booking.Status)">
+                                                                @booking.Status
+                                                            </span>
+                                                        </div>
+
+                                                        <!-- Service Type Pill -->
+                                                        <div class="mb-1">
+                                                            <span class="inline-block px-1.5 py-0.5 rounded text-[10px] font-semibold bg-white/80 border border-gray-200 text-gray-800">
+                                                                @booking.ServiceType
+                                                            </span>
+                                                        </div>
+
+                                                        <!-- Client Name -->
+                                                        <div class="font-bold text-gray-900 text-xs truncate">
+                                                            @booking.ClientName
+                                                        </div>
+
+                                                        <!-- Photographer Assigned -->
+                                                        <div class="text-[10px] text-gray-500 truncate mt-0.5 flex items-center gap-1">
+                                                            <span>📷</span>
+                                                            <span>@booking.AssignedPhotographer</span>
+                                                        </div>
+                                                    </div>
+                                                }
+                                            </div>
+
+                                            <!-- Subtle + Button in empty/slot area -->
+                                            <button type="button"
+                                                    @onclick="() => OpenCreateModalForSlot(space.Id, day)"
+                                                    class="w-full py-1 text-center border border-dashed border-gray-200 rounded-md text-[11px] text-gray-400 hover:text-gray-900 hover:border-gray-400 hover:bg-gray-100/70 transition-all opacity-0 group-hover:opacity-100 flex items-center justify-center gap-1">
+                                                <span>+</span>
+                                                <span>Add Event</span>
+                                            </button>
+                                        </div>
+                                    </td>
+                                }
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    }
+    else if (_currentView == ScheduleViewMode.Day)
+    {
+        @* ── DAY TIMELINE VIEW ───────────────────────────────────────────── *@
+        <div class="bg-white rounded-xl border border-gray-200 shadow-xs p-6 space-y-6">
+            <div class="flex items-center justify-between border-b border-gray-100 pb-4">
+                <div>
+                    <h3 class="text-lg font-bold text-gray-900">Day View: @_selectedDate.ToString("dddd, MMMM d, yyyy")</h3>
+                    <p class="text-xs text-gray-500">Comprehensive room-by-room session lineup for this day.</p>
+                </div>
+                <button type="button"
+                        @onclick="() => OpenCreateModalForSlot(StudioSpaces.FirstOrDefault()?.Id ?? string.Empty, _selectedDate)"
+                        class="px-3 py-1.5 bg-gray-900 hover:bg-black text-white text-xs font-semibold rounded-lg shadow-xs">
+                    + Add Session
+                </button>
+            </div>
+
+            <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                @foreach (var space in FilteredStudioSpaces)
+                {
+                    var dayEvents = FilteredBookings
+                        .Where(b => b.StudioSpaceId == space.Id && b.Date.Date == _selectedDate.Date)
+                        .OrderBy(b => b.StartTime)
+                        .ToList();
+
+                    <div class="p-4 rounded-xl border border-gray-200 bg-gray-50/50 space-y-3">
+                        <div class="flex items-center justify-between">
+                            <h4 class="font-bold text-gray-900 text-sm">@space.Name</h4>
+                            <span class="text-xs px-2 py-0.5 rounded-full @space.BadgeColor font-medium">@space.Dimensions</span>
+                        </div>
+
+                        @if (dayEvents.Any())
+                        {
+                            <div class="space-y-2">
+                                @foreach (var ev in dayEvents)
+                                {
+                                    <div @onclick="() => OpenDetailDrawer(ev)"
+                                         class="p-3 bg-white rounded-lg border shadow-2xs hover:shadow-md transition-all cursor-pointer @GetBookingCardStyle(ev)">
+                                        <div class="flex items-center justify-between text-xs font-semibold mb-1">
+                                            <span>@ev.FormattedTimeRange</span>
+                                            <span class="px-2 py-0.5 rounded text-[10px] @GetStatusBadgeStyle(ev.Status)">@ev.Status</span>
+                                        </div>
+                                        <h5 class="font-bold text-gray-900 text-sm">@ev.ClientName</h5>
+                                        <p class="text-xs text-gray-600 mt-0.5">@ev.ServiceType</p>
+                                        <div class="flex items-center justify-between mt-2 pt-2 border-t border-gray-100 text-[11px] text-gray-500">
+                                            <span>📷 @ev.AssignedPhotographer</span>
+                                            <span>$@ev.EstimatedPrice.ToString("F0")</span>
+                                        </div>
+                                    </div>
+                                }
+                            </div>
+                        }
+                        else
+                        {
+                            <div class="py-8 text-center border border-dashed border-gray-200 rounded-lg bg-white/70">
+                                <p class="text-xs text-gray-400">No sessions scheduled</p>
+                                <button type="button"
+                                        @onclick="() => OpenCreateModalForSlot(space.Id, _selectedDate)"
+                                        class="mt-2 text-xs font-semibold text-gray-900 hover:underline">
+                                    + Book This Room
+                                </button>
+                            </div>
+                        }
+                    </div>
+                }
+            </div>
+        </div>
+    }
+    else if (_currentView == ScheduleViewMode.Month)
+    {
+        @* ── MONTH CALENDAR VIEW ─────────────────────────────────────────── *@
+        <div class="bg-white rounded-xl border border-gray-200 shadow-xs overflow-hidden">
+            <div class="grid grid-cols-7 border-b border-gray-200 bg-gray-50 text-center text-xs font-bold text-gray-500 py-2.5">
+                <div>Mon</div>
+                <div>Tue</div>
+                <div>Wed</div>
+                <div>Thu</div>
+                <div>Fri</div>
+                <div>Sat</div>
+                <div>Sun</div>
+            </div>
+
+            <div class="grid grid-cols-7 auto-rows-fr divide-x divide-y divide-gray-100">
+                @foreach (var day in MonthCalendarDays)
+                {
+                    var isCurrentMonth = day.Month == _selectedDate.Month;
+                    var isToday = day.Date == DateTime.Today;
+                    var dayEvents = FilteredBookings.Where(b => b.Date.Date == day.Date).ToList();
+
+                    <div class="min-h-[110px] p-2 @(isCurrentMonth ? "bg-white" : "bg-gray-50/50 text-gray-400") hover:bg-gray-50/80 transition-colors flex flex-col justify-between">
+                        <div class="flex items-center justify-between">
+                            <span class="text-xs font-bold @(isToday ? "w-6 h-6 rounded-full bg-gray-900 text-white flex items-center justify-center" : "text-gray-700")">
+                                @day.Day
+                            </span>
+                            @if (dayEvents.Count > 0)
+                            {
+                                <span class="text-[10px] font-bold text-gray-400">@dayEvents.Count</span>
+                            }
+                        </div>
+
+                        <div class="space-y-1 my-1 overflow-hidden">
+                            @foreach (var ev in dayEvents.Take(2))
+                            {
+                                <div @onclick="() => OpenDetailDrawer(ev)"
+                                     class="px-1.5 py-0.5 rounded text-[10px] font-medium truncate cursor-pointer @(ev.HasConflict ? "bg-rose-100 text-rose-800 border border-rose-300" : "bg-blue-50 text-blue-800 border border-blue-200")">
+                                    @ev.StartTime.ToString(@"hh\:mm") @ev.ClientName
+                                </div>
+                            }
+                            @if (dayEvents.Count > 2)
+                            {
+                                <span class="text-[10px] text-gray-500 font-semibold pl-1">+@(dayEvents.Count - 2) more</span>
+                            }
+                        </div>
+
+                        <button type="button"
+                                @onclick="() => OpenCreateModalForSlot(StudioSpaces.FirstOrDefault()?.Id ?? string.Empty, day)"
+                                class="text-[10px] text-gray-300 hover:text-gray-900 text-left font-semibold">
+                            + Add
+                        </button>
+                    </div>
+                }
+            </div>
+        </div>
+    }
+    else
+    {
+        @* ── AGENDA VIEW ─────────────────────────────────────────────────── *@
+        <div class="bg-white rounded-xl border border-gray-200 shadow-xs p-6 space-y-6">
+            <div class="flex items-center justify-between border-b border-gray-100 pb-4">
+                <div>
+                    <h3 class="text-lg font-bold text-gray-900">Upcoming Events Agenda</h3>
+                    <p class="text-xs text-gray-500">Chronological feed of booked photography sessions and events.</p>
+                </div>
+            </div>
+
+            @if (AgendaGroupedBookings.Any())
+            {
+                <div class="space-y-6">
+                    @foreach (var group in AgendaGroupedBookings)
+                    {
+                        <div class="space-y-3">
+                            <div class="flex items-center gap-2">
+                                <span class="w-3 h-3 rounded-full bg-gray-900"></span>
+                                <h4 class="text-xs font-bold uppercase tracking-wider text-gray-700">
+                                    @group.Key.ToString("dddd, MMMM d, yyyy")
+                                </h4>
+                                <span class="text-xs text-gray-400">(@group.Count() session@(group.Count() == 1 ? "" : "s"))</span>
+                            </div>
+
+                            <div class="space-y-2 pl-5">
+                                @foreach (var ev in group)
+                                {
+                                    <div @onclick="() => OpenDetailDrawer(ev)"
+                                         class="p-4 rounded-xl border bg-white shadow-2xs hover:shadow-md transition-all cursor-pointer flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 @GetBookingCardStyle(ev)">
+                                        <div class="space-y-1">
+                                            <div class="flex items-center gap-2">
+                                                <span class="font-bold text-gray-900 text-sm">@ev.FormattedTimeRange</span>
+                                                <span class="px-2 py-0.5 rounded text-[10px] @GetStatusBadgeStyle(ev.Status)">@ev.Status</span>
+                                                @if (ev.HasConflict)
+                                                {
+                                                    <span class="px-2 py-0.5 rounded bg-rose-600 text-white font-bold text-[10px]">⚠️ Conflict</span>
+                                                }
+                                            </div>
+                                            <h5 class="text-base font-bold text-gray-900">@ev.ClientName</h5>
+                                            <p class="text-xs text-gray-500">@ev.StudioSpaceName • @ev.ServiceType</p>
+                                        </div>
+
+                                        <div class="flex items-center gap-4 text-xs">
+                                            <div class="text-right">
+                                                <p class="font-bold text-gray-900">📷 @ev.AssignedPhotographer</p>
+                                                <p class="text-emerald-700 font-semibold">$@ev.EstimatedPrice.ToString("F2")</p>
+                                            </div>
+                                            <span class="text-gray-400">›</span>
+                                        </div>
+                                    </div>
+                                }
+                            </div>
+                        </div>
+                    }
+                </div>
+            }
+            else
+            {
+                <div class="text-center py-12 text-gray-400">
+                    <p class="text-sm">No scheduled events match your search or filter criteria.</p>
+                </div>
+            }
+        </div>
+    }
+
+    <!-- ══════════════════════════════════════════════════════════════════════ -->
+    <!-- 6. SLIDE-OVER DETAIL DRAWER                                           -->
+    <!-- ══════════════════════════════════════════════════════════════════════ -->
+    @if (_selectedBooking != null)
+    {
+        <div class="fixed inset-0 z-50 overflow-hidden animate-in fade-in duration-200">
+            <!-- Backdrop -->
+            <div class="absolute inset-0 bg-black/40 backdrop-blur-xs transition-opacity"
+                 @onclick="CloseDetailDrawer"></div>
+
+            <div class="fixed inset-y-0 right-0 max-w-full flex pl-10">
+                <div class="w-screen max-w-md bg-white shadow-2xl flex flex-col justify-between overflow-y-auto">
+                    <!-- Drawer Header -->
+                    <div class="p-6 border-b border-gray-100 flex items-center justify-between bg-gray-50/50">
+                        <div>
+                            <span class="text-xs font-bold uppercase tracking-wider text-gray-400">Session Details</span>
+                            <h3 class="text-xl font-extrabold text-gray-900 mt-0.5">@_selectedBooking.ClientName</h3>
+                        </div>
+                        <button type="button"
+                                @onclick="CloseDetailDrawer"
+                                class="w-8 h-8 rounded-full border border-gray-200 flex items-center justify-center text-gray-400 hover:text-gray-700 hover:bg-gray-100 transition-colors">
+                            ✕
+                        </button>
+                    </div>
+
+                    <!-- Drawer Content -->
+                    <div class="p-6 space-y-6 flex-1">
+                        <!-- Conflict Alert Box -->
+                        @if (_selectedBooking.HasConflict)
+                        {
+                            <div class="p-3.5 bg-rose-50 border border-rose-200 rounded-xl text-rose-900 space-y-1">
+                                <div class="flex items-center gap-2 font-bold text-xs text-rose-700">
+                                    <span>⚠️</span>
+                                    <span>Double-Booking Conflict</span>
+                                </div>
+                                <p class="text-xs text-rose-800">
+                                    @_selectedBooking.ConflictMessage
+                                </p>
+                            </div>
+                        }
+
+                        <!-- Status & Service Type -->
+                        <div class="grid grid-cols-2 gap-4">
+                            <div>
+                                <label class="text-[11px] font-bold text-gray-400 uppercase tracking-wider block mb-1">Status</label>
+                                <span class="px-2.5 py-1 rounded-full text-xs font-semibold @GetStatusBadgeStyle(_selectedBooking.Status)">
+                                    @_selectedBooking.Status
+                                </span>
+                            </div>
+                            <div>
+                                <label class="text-[11px] font-bold text-gray-400 uppercase tracking-wider block mb-1">Service Type</label>
+                                <span class="px-2.5 py-1 rounded-full text-xs font-semibold bg-gray-100 text-gray-800 border border-gray-200">
+                                    @_selectedBooking.ServiceType
+                                </span>
+                            </div>
+                        </div>
+
+                        <!-- Date & Time Slot -->
+                        <div class="p-4 bg-gray-50 rounded-xl border border-gray-200 space-y-2">
+                            <div class="flex items-center justify-between text-xs">
+                                <span class="text-gray-500">Date:</span>
+                                <span class="font-bold text-gray-900">@_selectedBooking.Date.ToString("dddd, MMMM d, yyyy")</span>
+                            </div>
+                            <div class="flex items-center justify-between text-xs">
+                                <span class="text-gray-500">Time Slot:</span>
+                                <span class="font-bold text-gray-900">@_selectedBooking.FormattedTimeRange</span>
+                            </div>
+                            <div class="flex items-center justify-between text-xs">
+                                <span class="text-gray-500">Duration:</span>
+                                <span class="font-bold text-gray-900">@_selectedBooking.DurationHours.ToString("0.#") Hours</span>
+                            </div>
+                        </div>
+
+                        <!-- Venue & Resource Info -->
+                        <div class="space-y-1.5">
+                            <label class="text-[11px] font-bold text-gray-400 uppercase tracking-wider block">Studio Venue</label>
+                            <div class="p-3 bg-white border border-gray-200 rounded-xl flex items-center justify-between">
+                                <div>
+                                    <h4 class="font-bold text-gray-900 text-sm">@_selectedBooking.StudioSpaceName</h4>
+                                    <p class="text-xs text-gray-500">Assigned Studio Location</p>
+                                </div>
+                                <span class="w-3 h-3 rounded-full @GetSpaceDotColor(_selectedBooking.StudioSpaceId)"></span>
+                            </div>
+                        </div>
+
+                        <!-- Client Information -->
+                        <div class="space-y-2">
+                            <label class="text-[11px] font-bold text-gray-400 uppercase tracking-wider block">Client Contact</label>
+                            <div class="p-3 bg-gray-50 rounded-xl border border-gray-200 space-y-1.5 text-xs">
+                                <div class="flex items-center justify-between">
+                                    <span class="text-gray-500">Email:</span>
+                                    <span class="font-medium text-gray-900">@(_selectedBooking.ClientEmail.Length > 0 ? _selectedBooking.ClientEmail : "N/A")</span>
+                                </div>
+                                <div class="flex items-center justify-between">
+                                    <span class="text-gray-500">Phone:</span>
+                                    <span class="font-medium text-gray-900">@(_selectedBooking.ClientPhone.Length > 0 ? _selectedBooking.ClientPhone : "N/A")</span>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Photographer & Pricing -->
+                        <div class="grid grid-cols-2 gap-4">
+                            <div class="p-3 bg-gray-50 rounded-xl border border-gray-200">
+                                <span class="text-[10px] text-gray-400 uppercase font-bold block">Photographer</span>
+                                <span class="text-xs font-bold text-gray-900 mt-1 block">📷 @_selectedBooking.AssignedPhotographer</span>
+                            </div>
+                            <div class="p-3 bg-gray-50 rounded-xl border border-gray-200">
+                                <span class="text-[10px] text-gray-400 uppercase font-bold block">Rate / Quote</span>
+                                <span class="text-xs font-bold text-emerald-700 mt-1 block">$@_selectedBooking.EstimatedPrice.ToString("F2")</span>
+                            </div>
+                        </div>
+
+                        <!-- Notes -->
+                        @if (!string.IsNullOrWhiteSpace(_selectedBooking.Notes))
+                        {
+                            <div>
+                                <label class="text-[11px] font-bold text-gray-400 uppercase tracking-wider block mb-1">Production Notes</label>
+                                <p class="text-xs text-gray-600 bg-gray-50 p-3 rounded-xl border border-gray-200 leading-relaxed">
+                                    @_selectedBooking.Notes
+                                </p>
+                            </div>
+                        }
+
+                        <!-- Update Status Quick Action -->
+                        <div class="space-y-1.5">
+                            <label class="text-[11px] font-bold text-gray-400 uppercase tracking-wider block">Update Status</label>
+                            <div class="grid grid-cols-3 gap-2">
+                                <button type="button"
+                                        @onclick='() => UpdateBookingStatus("Confirmed")'
+                                        class="py-1.5 text-xs font-semibold rounded-lg border border-emerald-300 bg-emerald-50 text-emerald-800 hover:bg-emerald-100 transition-colors">
+                                    Confirm
+                                </button>
+                                <button type="button"
+                                        @onclick='() => UpdateBookingStatus("Pending")'
+                                        class="py-1.5 text-xs font-semibold rounded-lg border border-amber-300 bg-amber-50 text-amber-800 hover:bg-amber-100 transition-colors">
+                                    Pending
+                                </button>
+                                <button type="button"
+                                        @onclick='() => UpdateBookingStatus("Completed")'
+                                        class="py-1.5 text-xs font-semibold rounded-lg border border-gray-300 bg-gray-100 text-gray-800 hover:bg-gray-200 transition-colors">
+                                    Completed
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Drawer Footer Actions -->
+                    <div class="p-6 border-t border-gray-100 bg-gray-50/50 flex items-center justify-between gap-3">
+                        <button type="button"
+                                @onclick="DeleteSelectedBooking"
+                                class="px-4 py-2 border border-rose-300 text-rose-700 hover:bg-rose-50 text-xs font-bold rounded-lg transition-colors">
+                            Delete Event
+                        </button>
+                        <button type="button"
+                                @onclick="CloseDetailDrawer"
+                                class="px-5 py-2 bg-gray-900 hover:bg-black text-white text-xs font-bold rounded-lg shadow-xs transition-colors">
+                            Close
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    }
+
+    <!-- ══════════════════════════════════════════════════════════════════════ -->
+    <!-- 7. + NEW EVENT CREATION MODAL                                         -->
+    <!-- ══════════════════════════════════════════════════════════════════════ -->
+    @if (_isCreateModalOpen)
+    {
+        <div class="fixed inset-0 z-50 overflow-y-auto animate-in fade-in duration-200">
+            <div class="min-h-screen px-4 flex items-center justify-center">
+                <!-- Backdrop -->
+                <div class="fixed inset-0 bg-black/40 backdrop-blur-xs transition-opacity"
+                     @onclick="CloseCreateModal"></div>
+
+                <div class="relative bg-white rounded-2xl max-w-lg w-full p-6 shadow-2xl border border-gray-200 space-y-5 z-10">
+                    <div class="flex items-center justify-between border-b border-gray-100 pb-3">
+                        <div>
+                            <h3 class="text-lg font-bold text-gray-900">Create New Event Booking</h3>
+                            <p class="text-xs text-gray-500">Schedule photography sessions and reserve studio bays.</p>
+                        </div>
+                        <button type="button"
+                                @onclick="CloseCreateModal"
+                                class="text-gray-400 hover:text-gray-700 text-sm font-bold">
+                            ✕
+                        </button>
+                    </div>
+
+                    @if (!string.IsNullOrEmpty(_modalErrorMessage))
+                    {
+                        <div class="p-3 bg-rose-50 border border-rose-200 text-rose-800 rounded-lg text-xs font-medium">
+                            @_modalErrorMessage
+                        </div>
+                    }
+
+                    <div class="space-y-4 text-xs">
+                        <!-- Studio Space Selection -->
+                        <div>
+                            <label class="block font-bold text-gray-700 mb-1">Studio Space / Venue *</label>
+                            <select @bind="_newEvent.StudioSpaceId"
+                                    class="w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-gray-900 font-medium">
+                                @foreach (var space in StudioSpaces)
+                                {
+                                    <option value="@space.Id">@space.Name (@space.Dimensions)</option>
+                                }
+                            </select>
+                        </div>
+
+                        <!-- Client Name -->
+                        <div>
+                            <label class="block font-bold text-gray-700 mb-1">Client Name / Production *</label>
+                            <input type="text"
+                                   @bind="_newEvent.ClientName"
+                                   placeholder="e.g., Vogue Scandinavia or Alice & Bob"
+                                   class="w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-gray-900" />
+                        </div>
+
+                        <!-- Email & Phone -->
+                        <div class="grid grid-cols-2 gap-3">
+                            <div>
+                                <label class="block font-bold text-gray-700 mb-1">Client Email</label>
+                                <input type="email"
+                                       @bind="_newEvent.ClientEmail"
+                                       placeholder="client@example.com"
+                                       class="w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-gray-900" />
+                            </div>
+                            <div>
+                                <label class="block font-bold text-gray-700 mb-1">Client Phone</label>
+                                <input type="tel"
+                                       @bind="_newEvent.ClientPhone"
+                                       placeholder="+1 (555) 000-0000"
+                                       class="w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-gray-900" />
+                            </div>
+                        </div>
+
+                        <!-- Service Type & Status -->
+                        <div class="grid grid-cols-2 gap-3">
+                            <div>
+                                <label class="block font-bold text-gray-700 mb-1">Service Type</label>
+                                <select @bind="_newEvent.ServiceType"
+                                        class="w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-gray-900">
+                                    <option value="Express Headshot">Express Headshot</option>
+                                    <option value="Full Studio Session">Full Studio Session</option>
+                                    <option value="Commercial Campaign">Commercial Campaign</option>
+                                    <option value="Bridal Prep">Bridal Prep</option>
+                                    <option value="Product Catalog">Product Catalog</option>
+                                </select>
+                            </div>
+                            <div>
+                                <label class="block font-bold text-gray-700 mb-1">Status</label>
+                                <select @bind="_newEvent.Status"
+                                        class="w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-gray-900">
+                                    <option value="Confirmed">Confirmed</option>
+                                    <option value="Pending">Pending</option>
+                                    <option value="Completed">Completed</option>
+                                </select>
+                            </div>
+                        </div>
+
+                        <!-- Date & Time Range -->
+                        <div class="grid grid-cols-3 gap-3">
+                            <div>
+                                <label class="block font-bold text-gray-700 mb-1">Date</label>
+                                <input type="date"
+                                       @bind="_newEventDate"
+                                       class="w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-gray-900" />
+                            </div>
+                            <div>
+                                <label class="block font-bold text-gray-700 mb-1">Start Time</label>
+                                <input type="time"
+                                       @bind="_newStartTime"
+                                       class="w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-gray-900" />
+                            </div>
+                            <div>
+                                <label class="block font-bold text-gray-700 mb-1">End Time</label>
+                                <input type="time"
+                                       @bind="_newEndTime"
+                                       class="w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-gray-900" />
+                            </div>
+                        </div>
+
+                        <!-- Photographer & Price -->
+                        <div class="grid grid-cols-2 gap-3">
+                            <div>
+                                <label class="block font-bold text-gray-700 mb-1">Assigned Photographer</label>
+                                <select @bind="_newEvent.AssignedPhotographer"
+                                        class="w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-gray-900">
+                                    <option value="Elena Rostova">Elena Rostova</option>
+                                    <option value="Marcus Vance">Marcus Vance</option>
+                                    <option value="Alex Rivera">Alex Rivera</option>
+                                    <option value="Sophia Lin">Sophia Lin</option>
+                                    <option value="David Chen">David Chen</option>
+                                    <option value="Clara Oswald">Clara Oswald</option>
+                                </select>
+                            </div>
+                            <div>
+                                <label class="block font-bold text-gray-700 mb-1">Estimated Quote ($)</label>
+                                <input type="number"
+                                       step="50"
+                                       @bind="_newEvent.EstimatedPrice"
+                                       class="w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-gray-900" />
+                            </div>
+                        </div>
+
+                        <!-- Notes -->
+                        <div>
+                            <label class="block font-bold text-gray-700 mb-1">Production Notes</label>
+                            <textarea @bind="_newEvent.Notes"
+                                      rows="2"
+                                      placeholder="Specific lighting gear, backdrop preferences, or special requests..."
+                                      class="w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-gray-900"></textarea>
+                        </div>
+                    </div>
+
+                    <div class="flex items-center justify-end gap-3 pt-4 border-t border-gray-100">
+                        <button type="button"
+                                @onclick="CloseCreateModal"
+                                class="px-4 py-2 border border-gray-200 text-gray-700 hover:bg-gray-50 text-xs font-bold rounded-lg transition-colors">
+                            Cancel
+                        </button>
+                        <button type="button"
+                                @onclick="SaveNewEvent"
+                                class="px-5 py-2 bg-gray-900 hover:bg-black text-white text-xs font-bold rounded-lg shadow-sm transition-colors">
+                            Confirm & Save Event
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    }
 </div>
 
-<div class="bg-white rounded-xl shadow-sm border border-gray-200 p-8 text-center">
-    <div class="max-w-md mx-auto text-gray-500">
-        <p class="text-base font-medium text-gray-700 mb-1">Calendar of Events</p>
-        <p class="text-sm">Events schedule module is ready for integration.</p>
-    </div>
-</div>
+@code {
+    private ScheduleViewMode _currentView = ScheduleViewMode.Week;
+    private DateTime _selectedDate = DateTime.Today;
+    private string _searchQuery = string.Empty;
+    private string _selectedSpaceFilter = string.Empty;
+    private string _selectedStatusFilter = string.Empty;
+    private string _selectedServiceTypeFilter = string.Empty;
+    private bool _filterOnlyConflicts = false;
+
+    private EventBookingModel? _selectedBooking;
+    private bool _isCreateModalOpen;
+    private string? _modalErrorMessage;
+
+    // Creation model state
+    private EventBookingModel _newEvent = new();
+    private DateTime _newEventDate = DateTime.Today;
+    private TimeOnly _newStartTime = new(9, 0);
+    private TimeOnly _newEndTime = new(13, 0);
+
+    private List<StudioSpaceResource> StudioSpaces => ScheduleService.GetStudioSpaces();
+    private List<EventBookingModel> AllBookings => ScheduleService.GetEventBookings();
+
+    private int ConflictCount => ScheduleService.GetEventConflictCount();
+    private int TotalBookingsCount => AllBookings.Count;
+    private int ThisWeekBookingsCount => AllBookings.Count(b => WeekDays.Any(w => w.Date == b.Date.Date));
+    private double ThisWeekHoursCount => AllBookings.Where(b => WeekDays.Any(w => w.Date == b.Date.Date)).Sum(b => b.DurationHours);
+
+    private bool HasActiveFilters =>
+        !string.IsNullOrEmpty(_searchQuery) ||
+        !string.IsNullOrEmpty(_selectedSpaceFilter) ||
+        !string.IsNullOrEmpty(_selectedStatusFilter) ||
+        !string.IsNullOrEmpty(_selectedServiceTypeFilter) ||
+        _filterOnlyConflicts;
+
+    private List<DateTime> WeekDays
+    {
+        get
+        {
+            int diff = (7 + (_selectedDate.DayOfWeek - DayOfWeek.Monday)) % 7;
+            var monday = _selectedDate.AddDays(-1 * diff);
+            return Enumerable.Range(0, 7).Select(i => monday.AddDays(i)).ToList();
+        }
+    }
+
+    private List<DateTime> MonthCalendarDays
+    {
+        get
+        {
+            var firstOfMonth = new DateTime(_selectedDate.Year, _selectedDate.Month, 1);
+            int diff = (7 + (firstOfMonth.DayOfWeek - DayOfWeek.Monday)) % 7;
+            var start = firstOfMonth.AddDays(-1 * diff);
+            return Enumerable.Range(0, 35).Select(i => start.AddDays(i)).ToList();
+        }
+    }
+
+    private string FormattedDateRangeHeader => _currentView switch
+    {
+        ScheduleViewMode.Day => _selectedDate.ToString("MMMM d, yyyy"),
+        ScheduleViewMode.Week => $"{WeekDays.First():MMM d} – {WeekDays.Last():MMM d, yyyy}",
+        ScheduleViewMode.Month => _selectedDate.ToString("MMMM yyyy"),
+        ScheduleViewMode.Agenda => $"{_selectedDate:MMM d} – {_selectedDate.AddDays(14):MMM d, yyyy}",
+        _ => _selectedDate.ToString("MMMM yyyy")
+    };
+
+    private IEnumerable<StudioSpaceResource> FilteredStudioSpaces
+    {
+        get
+        {
+            if (string.IsNullOrEmpty(_selectedSpaceFilter))
+                return StudioSpaces;
+            return StudioSpaces.Where(s => s.Id == _selectedSpaceFilter);
+        }
+    }
+
+    private IEnumerable<EventBookingModel> FilteredBookings
+    {
+        get
+        {
+            var query = AllBookings.AsEnumerable();
+
+            if (!string.IsNullOrWhiteSpace(_searchQuery))
+            {
+                var q = _searchQuery.Trim().ToLowerInvariant();
+                query = query.Where(b =>
+                    b.ClientName.ToLowerInvariant().Contains(q) ||
+                    b.ServiceType.ToLowerInvariant().Contains(q) ||
+                    b.StudioSpaceName.ToLowerInvariant().Contains(q) ||
+                    b.AssignedPhotographer.ToLowerInvariant().Contains(q) ||
+                    b.Notes.ToLowerInvariant().Contains(q));
+            }
+
+            if (!string.IsNullOrEmpty(_selectedSpaceFilter))
+                query = query.Where(b => b.StudioSpaceId == _selectedSpaceFilter);
+
+            if (!string.IsNullOrEmpty(_selectedStatusFilter))
+                query = query.Where(b => b.Status.Equals(_selectedStatusFilter, StringComparison.OrdinalIgnoreCase));
+
+            if (!string.IsNullOrEmpty(_selectedServiceTypeFilter))
+                query = query.Where(b => b.ServiceType.Equals(_selectedServiceTypeFilter, StringComparison.OrdinalIgnoreCase));
+
+            if (_filterOnlyConflicts)
+                query = query.Where(b => b.HasConflict);
+
+            return query;
+        }
+    }
+
+    private IEnumerable<IGrouping<DateTime, EventBookingModel>> AgendaGroupedBookings =>
+        FilteredBookings
+            .Where(b => b.Date.Date >= _selectedDate.Date && b.Date.Date <= _selectedDate.Date.AddDays(14))
+            .OrderBy(b => b.Date)
+            .ThenBy(b => b.StartTime)
+            .GroupBy(b => b.Date.Date);
+
+    private IEnumerable<EventBookingModel> GetEventsForDay(DateTime day) =>
+        FilteredBookings.Where(b => b.Date.Date == day.Date);
+
+    private IEnumerable<EventBookingModel> GetEventsForSpace(string spaceId) =>
+        FilteredBookings.Where(b => b.StudioSpaceId == spaceId);
+
+    private void SetViewMode(ScheduleViewMode mode)
+    {
+        _currentView = mode;
+    }
+
+    private void NavigatePrevious()
+    {
+        _selectedDate = _currentView switch
+        {
+            ScheduleViewMode.Day => _selectedDate.AddDays(-1),
+            ScheduleViewMode.Week => _selectedDate.AddDays(-7),
+            ScheduleViewMode.Month => _selectedDate.AddMonths(-1),
+            ScheduleViewMode.Agenda => _selectedDate.AddDays(-14),
+            _ => _selectedDate.AddDays(-7)
+        };
+    }
+
+    private void NavigateNext()
+    {
+        _selectedDate = _currentView switch
+        {
+            ScheduleViewMode.Day => _selectedDate.AddDays(1),
+            ScheduleViewMode.Week => _selectedDate.AddDays(7),
+            ScheduleViewMode.Month => _selectedDate.AddMonths(1),
+            ScheduleViewMode.Agenda => _selectedDate.AddDays(14),
+            _ => _selectedDate.AddDays(7)
+        };
+    }
+
+    private void JumpToToday()
+    {
+        _selectedDate = DateTime.Today;
+    }
+
+    private void ToggleConflictFilter()
+    {
+        _filterOnlyConflicts = !_filterOnlyConflicts;
+    }
+
+    private void ClearFilters()
+    {
+        _searchQuery = string.Empty;
+        _selectedSpaceFilter = string.Empty;
+        _selectedStatusFilter = string.Empty;
+        _selectedServiceTypeFilter = string.Empty;
+        _filterOnlyConflicts = false;
+    }
+
+    private void OpenDetailDrawer(EventBookingModel booking)
+    {
+        _selectedBooking = booking;
+    }
+
+    private void CloseDetailDrawer()
+    {
+        _selectedBooking = null;
+    }
+
+    private void UpdateBookingStatus(string newStatus)
+    {
+        if (_selectedBooking != null)
+        {
+            _selectedBooking.Status = newStatus;
+            ScheduleService.UpdateEventBooking(_selectedBooking);
+        }
+    }
+
+    private void DeleteSelectedBooking()
+    {
+        if (_selectedBooking != null)
+        {
+            ScheduleService.DeleteEventBooking(_selectedBooking.Id);
+            _selectedBooking = null;
+        }
+    }
+
+    private void OpenCreateModal()
+    {
+        _newEvent = new EventBookingModel
+        {
+            StudioSpaceId = StudioSpaces.FirstOrDefault()?.Id ?? "studio-a",
+            ServiceType = "Full Studio Session",
+            Status = "Confirmed",
+            AssignedPhotographer = "Elena Rostova",
+            EstimatedPrice = 500.00m
+        };
+        _newEventDate = _selectedDate;
+        _newStartTime = new TimeOnly(9, 0);
+        _newEndTime = new TimeOnly(13, 0);
+        _modalErrorMessage = null;
+        _isCreateModalOpen = true;
+    }
+
+    private void OpenCreateModalForSlot(string spaceId, DateTime date)
+    {
+        _newEvent = new EventBookingModel
+        {
+            StudioSpaceId = spaceId,
+            Date = date,
+            ServiceType = "Express Headshot",
+            Status = "Confirmed",
+            AssignedPhotographer = "Elena Rostova",
+            EstimatedPrice = 350.00m
+        };
+        _newEventDate = date;
+        _newStartTime = new TimeOnly(10, 0);
+        _newEndTime = new TimeOnly(13, 0);
+        _modalErrorMessage = null;
+        _isCreateModalOpen = true;
+    }
+
+    private void CloseCreateModal()
+    {
+        _isCreateModalOpen = false;
+        _modalErrorMessage = null;
+    }
+
+    private void SaveNewEvent()
+    {
+        if (string.IsNullOrWhiteSpace(_newEvent.ClientName))
+        {
+            _modalErrorMessage = "Please enter a client or production name.";
+            return;
+        }
+
+        if (_newEndTime <= _newStartTime)
+        {
+            _modalErrorMessage = "Session end time must be after start time.";
+            return;
+        }
+
+        _newEvent.Date = _newEventDate;
+        _newEvent.StartTime = _newStartTime.ToTimeSpan();
+        _newEvent.EndTime = _newEndTime.ToTimeSpan();
+
+        ScheduleService.AddEventBooking(_newEvent);
+        _isCreateModalOpen = false;
+        _modalErrorMessage = null;
+    }
+
+    private string GetBookingCardStyle(EventBookingModel booking)
+    {
+        if (booking.HasConflict)
+            return "bg-rose-50/90 border-rose-300 text-rose-950 ring-1 ring-rose-400";
+
+        return booking.Status.ToLowerInvariant() switch
+        {
+            "confirmed" => "bg-emerald-50/70 border-emerald-200 text-emerald-950",
+            "pending" => "bg-amber-50/70 border-amber-200 text-amber-950",
+            "completed" => "bg-gray-100 border-gray-200 text-gray-800",
+            _ => "bg-blue-50/70 border-blue-200 text-blue-950"
+        };
+    }
+
+    private string GetStatusBadgeStyle(string status) => status.ToLowerInvariant() switch
+    {
+        "confirmed" => "bg-emerald-100 text-emerald-800 border border-emerald-300",
+        "pending" => "bg-amber-100 text-amber-800 border border-amber-300",
+        "completed" => "bg-gray-200 text-gray-700",
+        _ => "bg-blue-100 text-blue-800 border border-blue-300"
+    };
+
+    private string GetSpaceDotColor(string spaceId) => spaceId switch
+    {
+        "studio-a" => "bg-blue-500",
+        "studio-b" => "bg-indigo-500",
+        "studio-c" => "bg-emerald-500",
+        "outdoor-shoot" => "bg-amber-500",
+        "wedding-venue" => "bg-purple-500",
+        _ => "bg-gray-400"
+    };
+}

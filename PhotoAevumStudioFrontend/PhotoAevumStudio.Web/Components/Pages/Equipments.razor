@@ -2,19 +2,737 @@
 @page "/equipments"
 @layout AdminLayout
 @rendermode InteractiveServer
+@attribute [Authorize(Roles = "Admin")]
+@inject IEquipmentService EquipmentService
+@implements IDisposable
 
-<PageTitle>Equipments - PhotoAevum</PageTitle>
+<PageTitle>Equipments Catalogue | Photo Aevum Studio</PageTitle>
 
-<div class="flex justify-between items-center mb-8">
-    <div>
-        <h1 class="text-3xl font-bold text-gray-900">Equipments</h1>
-        <p class="text-gray-500 mt-1">Catalogue of studio cameras, lenses, stands, and lighting hardware.</p>
+<div class="space-y-6 pb-12">
+    <!-- Sub-navigation Tabs -->
+    <EquipmentSubNav ActiveTabLabel="Hardware Catalog" />
+
+    <!-- Header Section with Action Button -->
+    <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 pb-2 border-b border-slate-200">
+        <div>
+            <h1 class="text-2xl font-bold text-slate-900 tracking-tight">Equipments</h1>
+            <p class="text-sm text-slate-500 mt-0.5">Catalogue of studio cameras, lenses, stands, and lighting hardware.</p>
+        </div>
+
+        <div class="flex items-center gap-3">
+            <button type="button" 
+                    @onclick="OpenAddModal"
+                    class="inline-flex items-center justify-center gap-2 px-5 py-2.5 bg-slate-900 hover:bg-black text-white text-xs font-semibold uppercase tracking-wider rounded-lg shadow-sm transition-all focus:ring-2 focus:ring-slate-900 focus:ring-offset-2 active:scale-95">
+                <svg class="w-4 h-4 text-emerald-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M12 4v16m8-8H4" />
+                </svg>
+                <span>+ Add Equipment</span>
+            </button>
+        </div>
+    </div>
+
+    <!-- Toast Notification Banner -->
+    @if (!string.IsNullOrWhiteSpace(notificationMessage))
+    {
+        <div class="p-4 bg-emerald-50 border border-emerald-200 text-emerald-900 rounded-xl flex items-center justify-between shadow-xs animate-in fade-in duration-200">
+            <div class="flex items-center gap-3">
+                <span class="w-7 h-7 rounded-full bg-emerald-600 text-white flex items-center justify-center shrink-0">
+                    <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M5 13l4 4L19 7" />
+                    </svg>
+                </span>
+                <div>
+                    <p class="text-xs font-bold text-emerald-950">Inventory Updated</p>
+                    <p class="text-xs text-emerald-800">@notificationMessage</p>
+                </div>
+            </div>
+            <button type="button" @onclick="() => notificationMessage = null" class="text-emerald-700 hover:text-emerald-950 p-1 text-sm font-bold">&times;</button>
+        </div>
+    }
+
+    <!-- Summary Cards (Top Row) -->
+    <div class="grid grid-cols-1 sm:grid-cols-3 gap-4">
+        <!-- Card 1: Total Equipments -->
+        <div class="bg-white p-4 rounded-xl border border-slate-200 shadow-sm flex items-center gap-4 hover:shadow-md transition-shadow">
+            <div class="w-12 h-12 rounded-lg bg-slate-100 flex items-center justify-center text-slate-800 text-xl font-bold shrink-0">
+                📦
+            </div>
+            <div>
+                <p class="text-xs text-slate-500 font-medium uppercase tracking-wider">Total Equipments</p>
+                <p class="text-2xl font-extrabold text-slate-900 mt-0.5">@equipmentList.Count</p>
+                <p class="text-[11px] text-slate-400">Total registered studio hardware</p>
+            </div>
+        </div>
+
+        <!-- Card 2: Available Hardware -->
+        <div class="bg-white p-4 rounded-xl border border-slate-200 shadow-sm flex items-center gap-4 hover:shadow-md transition-shadow">
+            <div class="w-12 h-12 rounded-lg bg-emerald-50 flex items-center justify-center text-emerald-600 text-xl font-bold shrink-0">
+                ✓
+            </div>
+            <div>
+                <p class="text-xs text-slate-500 font-medium uppercase tracking-wider">Available Hardware</p>
+                <p class="text-2xl font-extrabold text-emerald-700 mt-0.5">@equipmentList.Count(e => e.IsAvailable && !e.IsDispatched)</p>
+                <p class="text-[11px] text-slate-400">Ready in studio rack for checkout</p>
+            </div>
+        </div>
+
+        <!-- Card 3: In Maintenance -->
+        <div class="bg-white p-4 rounded-xl border border-slate-200 shadow-sm flex items-center gap-4 hover:shadow-md transition-shadow">
+            <div class="w-12 h-12 rounded-lg bg-amber-50 flex items-center justify-center text-amber-600 text-xl font-bold shrink-0">
+                🔧
+            </div>
+            <div>
+                <p class="text-xs text-slate-500 font-medium uppercase tracking-wider">In Maintenance</p>
+                <p class="text-2xl font-extrabold text-amber-700 mt-0.5">@equipmentList.Count(e => e.IsMaintenance)</p>
+                <p class="text-[11px] text-slate-400">Under repair, calibration, or servicing</p>
+            </div>
+        </div>
+    </div>
+
+    <!-- Filter & Search Toolbar -->
+    <div class="bg-white p-4 rounded-xl border border-slate-200 shadow-sm flex flex-col md:flex-row gap-3 items-center justify-between">
+        <div class="flex flex-col sm:flex-row items-center gap-3 w-full md:w-auto flex-1">
+            <!-- Search Bar -->
+            <div class="relative w-full sm:w-80">
+                <input type="text" 
+                       @bind="searchQuery" 
+                       @bind:event="oninput"
+                       placeholder="Search by name, type, or serial no..." 
+                       class="w-full pl-9 pr-4 py-2 text-xs rounded-lg border border-slate-300 focus:outline-none focus:ring-1 focus:ring-slate-900 focus:border-slate-900 placeholder:text-slate-400" />
+                <svg class="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                </svg>
+            </div>
+
+            <!-- Equipment Type Filter Dropdown -->
+            <div class="w-full sm:w-48">
+                <select @bind="selectedTypeFilter"
+                        class="w-full px-3 py-2 text-xs rounded-lg border border-slate-300 bg-white text-slate-700 focus:outline-none focus:ring-1 focus:ring-slate-900">
+                    <option value="ALL">All Categories</option>
+                    @foreach (var type in equipmentTypes)
+                    {
+                        <option value="@type.EquipmentTypeID">@type.EquipmentTypeName</option>
+                    }
+                </select>
+            </div>
+
+            <!-- Status Filter Dropdown -->
+            <div class="w-full sm:w-40">
+                <select @bind="selectedStatusFilter"
+                        class="w-full px-3 py-2 text-xs rounded-lg border border-slate-300 bg-white text-slate-700 focus:outline-none focus:ring-1 focus:ring-slate-900">
+                    <option value="ALL">All Statuses</option>
+                    <option value="Available">Available Only</option>
+                    <option value="Dispatched">Dispatched / In Use</option>
+                    <option value="Maintenance">In Maintenance</option>
+                    <option value="Retired">Retired</option>
+                </select>
+            </div>
+
+            @if (IsFiltered)
+            {
+                <button type="button" 
+                        @onclick="ResetFilters"
+                        class="text-xs text-slate-600 hover:text-slate-900 hover:underline px-2 py-1">
+                    Clear Filters
+                </button>
+            }
+        </div>
+
+        <span class="text-xs text-slate-500 self-end md:self-center font-medium">
+            Showing <strong class="text-slate-900">@FilteredEquipments.Count()</strong> of <strong class="text-slate-900">@equipmentList.Count</strong> equipment items
+        </span>
+    </div>
+
+    <!-- Data Table Structure -->
+    <div class="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
+        <div class="overflow-x-auto">
+            <table class="w-full text-left border-collapse text-xs">
+                <thead>
+                    <tr class="bg-slate-50/75 border-b border-slate-200 text-slate-600 font-semibold uppercase tracking-wider text-[11px]">
+                        <th class="px-5 py-3.5">Equipment</th>
+                        <th class="px-5 py-3.5">Category (Type)</th>
+                        <th class="px-5 py-3.5">Status</th>
+                        <th class="px-5 py-3.5">Current Assignment</th>
+                        <th class="px-5 py-3.5 text-right">Actions</th>
+                    </tr>
+                </thead>
+                <tbody class="divide-y divide-slate-100">
+                    @if (isLoading)
+                    {
+                        <tr>
+                            <td colspan="5" class="px-5 py-12 text-center text-slate-400">
+                                <span class="inline-block w-4 h-4 border-2 border-slate-400/30 border-t-slate-600 rounded-full animate-spin mr-2"></span>
+                                Loading equipments catalog from database...
+                            </td>
+                        </tr>
+                    }
+                    else if (!FilteredEquipments.Any())
+                    {
+                        <tr>
+                            <td colspan="5" class="px-5 py-12 text-center text-slate-400">
+                                <div class="max-w-xs mx-auto space-y-2">
+                                    <p class="text-2xl">🔍</p>
+                                    <p class="font-medium text-slate-700">No equipment found matching criteria</p>
+                                    <p class="text-[11px]">Try searching with a different serial number, name, or clearing active filters.</p>
+                                </div>
+                            </td>
+                        </tr>
+                    }
+                    else
+                    {
+                        @foreach (var item in FilteredEquipments)
+                        {
+                            <tr class="hover:bg-slate-50/70 transition-colors">
+                                <!-- EQUIPMENT: Name & Serial No -->
+                                <td class="px-5 py-3.5">
+                                    <div class="flex items-center gap-3">
+                                        <div class="w-9 h-9 rounded-lg bg-slate-900 text-white flex items-center justify-center font-bold text-xs uppercase shrink-0 shadow-xs">
+                                            @GetInitials(item.EquipmentName)
+                                        </div>
+                                        <div>
+                                            <p class="font-semibold text-slate-900 leading-snug">@item.EquipmentName</p>
+                                            <div class="flex items-center gap-2 mt-0.5">
+                                                <span class="font-mono text-[11px] text-slate-500 font-medium">@item.EquipmentID</span>
+                                                @if (!string.IsNullOrWhiteSpace(item.SerialNo))
+                                                {
+                                                    <span class="text-slate-300">•</span>
+                                                    <span class="font-mono text-[11px] text-slate-400">SN: @item.SerialNo</span>
+                                                }
+                                            </div>
+                                        </div>
+                                    </div>
+                                </td>
+
+                                <!-- TYPE: Equipment Type Name -->
+                                <td class="px-5 py-3.5">
+                                    <span class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-medium bg-slate-100 text-slate-800 border border-slate-200">
+                                        <span class="w-1.5 h-1.5 rounded-full bg-slate-500"></span>
+                                        @item.EquipmentTypeName
+                                    </span>
+                                </td>
+
+                                <!-- STATUS: Available / Maintenance / Retired badge -->
+                                <td class="px-5 py-3.5">
+                                    @if (item.IsMaintenance)
+                                    {
+                                        <span class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold bg-amber-50 text-amber-800 border border-amber-200">
+                                            <span class="w-1.5 h-1.5 rounded-full bg-amber-500 animate-pulse"></span>
+                                            In Maintenance
+                                        </span>
+                                    }
+                                    else if (item.IsDispatched)
+                                    {
+                                        <span class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold bg-blue-50 text-blue-800 border border-blue-200">
+                                            <span class="w-1.5 h-1.5 rounded-full bg-blue-500"></span>
+                                            Checked Out / On Shoot
+                                        </span>
+                                    }
+                                    else if (item.IsAvailable)
+                                    {
+                                        <span class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold bg-emerald-50 text-emerald-800 border border-emerald-200">
+                                            <span class="w-1.5 h-1.5 rounded-full bg-emerald-500"></span>
+                                            Available
+                                        </span>
+                                    }
+                                    else
+                                    {
+                                        <span class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold bg-slate-100 text-slate-600 border border-slate-200">
+                                            <span class="w-1.5 h-1.5 rounded-full bg-slate-400"></span>
+                                            Retired
+                                        </span>
+                                    }
+                                </td>
+
+                                <!-- CURRENT ASSIGNMENT -->
+                                <td class="px-5 py-3.5">
+                                    @if (!string.IsNullOrEmpty(item.CurrentEventName))
+                                    {
+                                        <div class="text-xs">
+                                            <p class="font-medium text-slate-900 truncate max-w-[200px]" title="@item.CurrentEventName">
+                                                @item.CurrentEventName
+                                            </p>
+                                            <p class="text-[11px] text-slate-400 font-mono">Appt: @item.CurrentEventId</p>
+                                        </div>
+                                    }
+                                    else
+                                    {
+                                        <span class="text-slate-400 text-xs italic">In Studio Rack (Free)</span>
+                                    }
+                                </td>
+
+                                <!-- ACTIONS -->
+                                <td class="px-5 py-3.5 text-right whitespace-nowrap">
+                                    <div class="inline-flex items-center gap-1.5">
+                                        @if (item.IsMaintenance)
+                                        {
+                                            <button type="button"
+                                                    @onclick="() => QuickResolveMaintenance(item)"
+                                                    title="Mark maintenance resolved and return to service"
+                                                    class="px-2.5 py-1.5 text-xs font-semibold text-emerald-700 bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 rounded-md transition-all">
+                                                Resolve Servicing
+                                            </button>
+                                        }
+                                        else
+                                        {
+                                            <button type="button"
+                                                    @onclick="() => OpenSendToMaintenanceModal(item)"
+                                                    title="Flag hardware for repair or calibration"
+                                                    class="px-2.5 py-1.5 text-xs font-semibold text-amber-700 bg-amber-50 hover:bg-amber-100 border border-amber-200 rounded-md transition-all">
+                                                Send to Maintenance
+                                            </button>
+                                        }
+
+                                        <button type="button"
+                                                @onclick="() => ViewEquipmentDetails(item)"
+                                                class="px-2 py-1.5 text-xs text-slate-500 hover:text-slate-900 hover:bg-slate-100 rounded-md transition-colors"
+                                                title="View item details">
+                                                <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+                                                </svg>
+                                        </button>
+                                    </div>
+                                </td>
+                            </tr>
+                        }
+                    }
+                </tbody>
+            </table>
+        </div>
     </div>
 </div>
 
-<div class="bg-white rounded-xl shadow-sm border border-gray-200 p-8 text-center">
-    <div class="max-w-md mx-auto text-gray-500">
-        <p class="text-base font-medium text-gray-700 mb-1">Equipments Inventory</p>
-        <p class="text-sm">Extended equipments catalog is ready for integration.</p>
+<!-- ══════════════════════════════════════════════════════════════════════════ -->
+<!-- MODAL: ADD EQUIPMENT (Executes dbo.sp_AddEquipment)                        -->
+<!-- ══════════════════════════════════════════════════════════════════════════ -->
+@if (isAddModalOpen)
+{
+    <div class="fixed inset-0 z-50 overflow-y-auto bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4">
+        <div class="relative bg-white rounded-2xl shadow-xl border border-slate-200 w-full max-w-lg overflow-hidden animate-in fade-in zoom-in-95 duration-150">
+            <!-- Modal Header -->
+            <div class="px-6 py-4 bg-slate-900 text-white flex items-center justify-between">
+                <div class="flex items-center gap-2">
+                    <span class="w-7 h-7 rounded-lg bg-emerald-500 text-slate-950 flex items-center justify-center font-bold text-sm">
+                        +
+                    </span>
+                    <div>
+                        <h2 class="text-base font-bold text-white leading-tight">Add New Equipment</h2>
+                        <p class="text-[11px] text-slate-300">Executes stored procedure dbo.sp_AddEquipment</p>
+                    </div>
+                </div>
+                <button type="button" @onclick="CloseAddModal" class="text-slate-400 hover:text-white text-lg font-bold p-1">&times;</button>
+            </div>
+
+            <!-- Modal Body / Form -->
+            <EditForm Model="@newEquipment" OnValidSubmit="HandleAddEquipment">
+                <DataAnnotationsValidator />
+
+                <div class="p-6 space-y-4">
+                    @if (!string.IsNullOrEmpty(formErrorMessage))
+                    {
+                        <div class="p-3 bg-rose-50 border border-rose-200 text-rose-800 rounded-lg text-xs">
+                            @formErrorMessage
+                        </div>
+                    }
+
+                    <!-- Equipment Name -->
+                    <div>
+                        <label class="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1">
+                            Equipment Name <span class="text-rose-500">*</span>
+                        </label>
+                        <InputText @bind-Value="newEquipment.EquipmentName" 
+                                   placeholder="e.g. Sony FX3 Cinema Body (#3), Godox AD600Pro Strobe"
+                                   class="w-full px-3 py-2 text-xs rounded-lg border border-slate-300 focus:outline-none focus:ring-1 focus:ring-slate-900" />
+                        <ValidationMessage For="@(() => newEquipment.EquipmentName)" class="text-[11px] text-rose-600 mt-1" />
+                    </div>
+
+                    <!-- Category Type Dropdown (Populated directly from dbo.EquipmentType) -->
+                    <div>
+                        <label class="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1">
+                            Equipment Category (Type) <span class="text-rose-500">*</span>
+                        </label>
+                        <InputSelect @bind-Value="newEquipment.EquipmentTypeID"
+                                     class="w-full px-3 py-2 text-xs rounded-lg border border-slate-300 bg-white text-slate-800 focus:outline-none focus:ring-1 focus:ring-slate-900">
+                            <option value="">-- Select Category Type --</option>
+                            @foreach (var t in equipmentTypes)
+                            {
+                                <option value="@t.EquipmentTypeID">@t.EquipmentTypeName (@t.EquipmentTypeID)</option>
+                            }
+                        </InputSelect>
+                        <ValidationMessage For="@(() => newEquipment.EquipmentTypeID)" class="text-[11px] text-rose-600 mt-1" />
+                    </div>
+
+                    <!-- Serial Number -->
+                    <div>
+                        <label class="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1">
+                            Serial Number (Unique)
+                        </label>
+                        <InputText @bind-Value="newEquipment.SerialNo" 
+                                   placeholder="e.g. SN-FX3-99021 or leave blank for auto"
+                                   class="w-full px-3 py-2 text-xs font-mono rounded-lg border border-slate-300 focus:outline-none focus:ring-1 focus:ring-slate-900" />
+                        <p class="text-[11px] text-slate-400 mt-1">Enforced by SQL index UX_Equipment_SerialNo.</p>
+                        <ValidationMessage For="@(() => newEquipment.SerialNo)" class="text-[11px] text-rose-600 mt-1" />
+                    </div>
+
+                    <!-- Equipment ID Override (Optional) -->
+                    <div>
+                        <label class="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1">
+                            Hardware ID (Optional)
+                        </label>
+                        <InputText @bind-Value="newEquipment.EquipmentID" 
+                                   placeholder="Auto-generated (e.g. EQ-018) if left blank"
+                                   class="w-full px-3 py-2 text-xs font-mono rounded-lg border border-slate-300 focus:outline-none focus:ring-1 focus:ring-slate-900" />
+                    </div>
+
+                    <!-- Database Schema Note -->
+                    <div class="p-3 bg-slate-50 border border-slate-200 rounded-lg text-[11px] text-slate-600 space-y-1">
+                        <p class="font-semibold text-slate-800">SQL Schema Compliance:</p>
+                        <p>Newly inserted items are automatically defaulted to <strong class="text-emerald-700">'Available'</strong> status in <code class="font-mono text-slate-800">dbo.Equipment</code>.</p>
+                    </div>
+                </div>
+
+                <!-- Modal Footer -->
+                <div class="px-6 py-3.5 bg-slate-50 border-t border-slate-200 flex items-center justify-end gap-3">
+                    <button type="button" 
+                            @onclick="CloseAddModal"
+                            class="px-4 py-2 text-xs font-medium text-slate-600 hover:text-slate-900">
+                        Cancel
+                    </button>
+                    <button type="submit" 
+                            disabled="@isSubmitting"
+                            class="px-5 py-2 bg-slate-900 hover:bg-black text-white text-xs font-bold uppercase tracking-wider rounded-lg shadow-sm transition-all disabled:opacity-50 flex items-center gap-2">
+                        @if (isSubmitting)
+                        {
+                            <span class="inline-block w-3.5 h-3.5 border-2 border-white/30 border-t-white rounded-full animate-spin"></span>
+                            <span>Registering...</span>
+                        }
+                        else
+                        {
+                            <span>Commit to Inventory</span>
+                        }
+                    </button>
+                </div>
+            </EditForm>
+        </div>
     </div>
-</div>
+}
+
+<!-- ══════════════════════════════════════════════════════════════════════════ -->
+<!-- MODAL: QUICK SEND TO MAINTENANCE                                          -->
+<!-- ══════════════════════════════════════════════════════════════════════════ -->
+@if (isMaintenanceModalOpen && selectedEquipmentForMaintenance != null)
+{
+    <div class="fixed inset-0 z-50 overflow-y-auto bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4">
+        <div class="relative bg-white rounded-2xl shadow-xl border border-slate-200 w-full max-w-md overflow-hidden animate-in fade-in zoom-in-95 duration-150">
+            <div class="px-6 py-4 bg-amber-600 text-white flex items-center justify-between">
+                <div class="flex items-center gap-2">
+                    <span class="text-lg">🔧</span>
+                    <h3 class="font-bold text-sm text-white">Send to Maintenance</h3>
+                </div>
+                <button type="button" @onclick="() => isMaintenanceModalOpen = false" class="text-amber-200 hover:text-white font-bold">&times;</button>
+            </div>
+
+            <div class="p-6 space-y-4">
+                <div>
+                    <p class="text-xs text-slate-500 font-semibold uppercase">Selected Item:</p>
+                    <p class="text-sm font-bold text-slate-900">@selectedEquipmentForMaintenance.EquipmentName</p>
+                    <p class="text-xs font-mono text-slate-500">ID: @selectedEquipmentForMaintenance.EquipmentID | SN: @(selectedEquipmentForMaintenance.SerialNo ?? "N/A")</p>
+                </div>
+
+                <div>
+                    <label class="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1">
+                        Service Category
+                    </label>
+                    <select @bind="maintenanceServiceType" 
+                            class="w-full px-3 py-2 text-xs rounded-lg border border-slate-300 bg-white">
+                        <option value="Repair">Repair / Malfunction Fix</option>
+                        <option value="Calibration">Routine Sensor / Lens Calibration</option>
+                        <option value="Routine Servicing">Routine Inspection & Cleaning</option>
+                    </select>
+                </div>
+
+                <div>
+                    <label class="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1">
+                        Diagnosis &amp; Issue Notes <span class="text-rose-500">*</span>
+                    </label>
+                    <textarea @bind="maintenanceIssueNotes"
+                              rows="3"
+                              placeholder="Describe the issue, defect, or calibration requirements..."
+                              class="w-full px-3 py-2 text-xs rounded-lg border border-slate-300 focus:outline-none focus:ring-1 focus:ring-slate-900"></textarea>
+                </div>
+
+                <p class="text-[11px] text-amber-800 bg-amber-50 p-2.5 rounded-lg border border-amber-200">
+                    <strong>Note:</strong> Shifting this item to Maintenance will automatically write an audit log into <code class="font-mono">dbo.HistoryLog</code> and prevent it from being checked out in <code class="font-mono">Dispatch.razor</code>.
+                </p>
+            </div>
+
+            <div class="px-6 py-3.5 bg-slate-50 border-t border-slate-200 flex items-center justify-end gap-3">
+                <button type="button" 
+                        @onclick="() => isMaintenanceModalOpen = false"
+                        class="px-4 py-2 text-xs font-medium text-slate-600 hover:text-slate-900">
+                    Cancel
+                </button>
+                <button type="button" 
+                        @onclick="ConfirmSendToMaintenance"
+                        disabled="@(string.IsNullOrWhiteSpace(maintenanceIssueNotes))"
+                        class="px-5 py-2 bg-amber-600 hover:bg-amber-700 text-white text-xs font-bold uppercase tracking-wider rounded-lg shadow-sm transition-all disabled:opacity-50">
+                    Confirm Maintenance Shift
+                </button>
+            </div>
+        </div>
+    </div>
+}
+
+<!-- ══════════════════════════════════════════════════════════════════════════ -->
+<!-- MODAL: EQUIPMENT DETAILS                                                   -->
+<!-- ══════════════════════════════════════════════════════════════════════════ -->
+@if (detailsModalItem != null)
+{
+    <div class="fixed inset-0 z-50 overflow-y-auto bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4">
+        <div class="relative bg-white rounded-2xl shadow-xl border border-slate-200 w-full max-w-md overflow-hidden animate-in fade-in zoom-in-95 duration-150">
+            <div class="px-6 py-4 bg-slate-900 text-white flex items-center justify-between">
+                <h3 class="font-bold text-sm text-white">Equipment Profile</h3>
+                <button type="button" @onclick="() => detailsModalItem = null" class="text-slate-400 hover:text-white font-bold">&times;</button>
+            </div>
+            <div class="p-6 space-y-3 text-xs">
+                <div>
+                    <span class="text-slate-400 uppercase text-[10px] font-bold">Equipment Name</span>
+                    <p class="text-sm font-bold text-slate-900">@detailsModalItem.EquipmentName</p>
+                </div>
+                <div class="grid grid-cols-2 gap-2">
+                    <div>
+                        <span class="text-slate-400 uppercase text-[10px] font-bold">ID Code</span>
+                        <p class="font-mono font-bold text-slate-800">@detailsModalItem.EquipmentID</p>
+                    </div>
+                    <div>
+                        <span class="text-slate-400 uppercase text-[10px] font-bold">Serial Number</span>
+                        <p class="font-mono text-slate-800">@(detailsModalItem.SerialNo ?? "Unassigned")</p>
+                    </div>
+                </div>
+                <div>
+                    <span class="text-slate-400 uppercase text-[10px] font-bold">Category</span>
+                    <p class="font-medium text-slate-800">@detailsModalItem.EquipmentTypeName (@detailsModalItem.EquipmentTypeID)</p>
+                </div>
+                <div>
+                    <span class="text-slate-400 uppercase text-[10px] font-bold">Current Status</span>
+                    <p class="font-bold @(detailsModalItem.IsAvailable ? "text-emerald-700" : detailsModalItem.IsMaintenance ? "text-amber-700" : "text-blue-700")">
+                        @detailsModalItem.EquipmentStatus
+                    </p>
+                </div>
+                @if (!string.IsNullOrEmpty(detailsModalItem.CurrentEventName))
+                {
+                    <div class="p-3 bg-blue-50 border border-blue-200 rounded-lg">
+                        <span class="text-blue-900 uppercase text-[10px] font-bold">Active Shoot Assignment</span>
+                        <p class="font-bold text-blue-950 mt-0.5">@detailsModalItem.CurrentEventName</p>
+                        <p class="text-[11px] text-blue-800 font-mono">Event ID: @detailsModalItem.CurrentEventId</p>
+                    </div>
+                }
+            </div>
+            <div class="px-6 py-3 bg-slate-50 border-t border-slate-200 flex justify-end">
+                <button type="button" @onclick="() => detailsModalItem = null" class="px-4 py-2 bg-slate-900 text-white rounded-lg text-xs font-bold">Close</button>
+            </div>
+        </div>
+    </div>
+}
+
+@code {
+    private List<EquipmentItemModel> equipmentList = new();
+    private List<EquipmentTypeModel> equipmentTypes = new();
+
+    private bool isLoading = true;
+    private bool isSubmitting = false;
+    private bool isAddModalOpen = false;
+    private bool isMaintenanceModalOpen = false;
+
+    private string searchQuery = string.Empty;
+    private string selectedTypeFilter = "ALL";
+    private string selectedStatusFilter = "ALL";
+    private string? notificationMessage;
+    private string? formErrorMessage;
+
+    private NewEquipmentFormModel newEquipment = new();
+    private EquipmentItemModel? selectedEquipmentForMaintenance;
+    private EquipmentItemModel? detailsModalItem;
+    private string maintenanceServiceType = "Repair";
+    private string maintenanceIssueNotes = string.Empty;
+
+    protected override async Task OnInitializedAsync()
+    {
+        EquipmentService.OnChange += HandleExternalStateChange;
+        await LoadDataAsync();
+    }
+
+    private async Task LoadDataAsync()
+    {
+        isLoading = true;
+        equipmentTypes = (await EquipmentService.GetEquipmentTypesAsync()).ToList();
+        equipmentList = (await EquipmentService.GetEquipmentsAsync()).ToList();
+        isLoading = false;
+    }
+
+    private void HandleExternalStateChange()
+    {
+        _ = InvokeAsync(async () =>
+        {
+            await LoadDataAsync();
+            StateHasChanged();
+        });
+    }
+
+    private bool IsFiltered => 
+        !string.IsNullOrWhiteSpace(searchQuery) || 
+        selectedTypeFilter != "ALL" || 
+        selectedStatusFilter != "ALL";
+
+    private void ResetFilters()
+    {
+        searchQuery = string.Empty;
+        selectedTypeFilter = "ALL";
+        selectedStatusFilter = "ALL";
+    }
+
+    private IEnumerable<EquipmentItemModel> FilteredEquipments
+    {
+        get
+        {
+            var query = equipmentList.AsEnumerable();
+
+            // 1. Text Search Filter (Name, SerialNo, or EquipmentType)
+            if (!string.IsNullOrWhiteSpace(searchQuery))
+            {
+                var q = searchQuery.Trim();
+                query = query.Where(e =>
+                    e.EquipmentName.Contains(q, StringComparison.OrdinalIgnoreCase) ||
+                    e.EquipmentTypeName.Contains(q, StringComparison.OrdinalIgnoreCase) ||
+                    (!string.IsNullOrEmpty(e.SerialNo) && e.SerialNo.Contains(q, StringComparison.OrdinalIgnoreCase)) ||
+                    e.EquipmentID.Contains(q, StringComparison.OrdinalIgnoreCase));
+            }
+
+            // 2. Type Filter
+            if (selectedTypeFilter != "ALL")
+            {
+                query = query.Where(e => e.EquipmentTypeID.Equals(selectedTypeFilter, StringComparison.OrdinalIgnoreCase));
+            }
+
+            // 3. Status Filter
+            if (selectedStatusFilter != "ALL")
+            {
+                if (selectedStatusFilter == "Dispatched")
+                {
+                    query = query.Where(e => e.IsDispatched);
+                }
+                else
+                {
+                    query = query.Where(e => e.EquipmentStatus.Equals(selectedStatusFilter, StringComparison.OrdinalIgnoreCase));
+                }
+            }
+
+            return query;
+        }
+    }
+
+    private void OpenAddModal()
+    {
+        newEquipment = new NewEquipmentFormModel
+        {
+            EquipmentTypeID = equipmentTypes.FirstOrDefault()?.EquipmentTypeID ?? string.Empty
+        };
+        formErrorMessage = null;
+        isAddModalOpen = true;
+    }
+
+    private void CloseAddModal()
+    {
+        isAddModalOpen = false;
+        formErrorMessage = null;
+    }
+
+    /// <summary>
+    /// Calls sp_AddEquipment procedure logic and refreshes view.
+    /// </summary>
+    private async Task HandleAddEquipment()
+    {
+        isSubmitting = true;
+        formErrorMessage = null;
+
+        var (success, error) = await EquipmentService.AddEquipmentAsync(
+            newEquipment.EquipmentName,
+            newEquipment.EquipmentTypeID,
+            newEquipment.SerialNo,
+            newEquipment.EquipmentID);
+
+        isSubmitting = false;
+
+        if (success)
+        {
+            isAddModalOpen = false;
+            notificationMessage = $"Equipment '{newEquipment.EquipmentName}' was successfully added via dbo.sp_AddEquipment.";
+            await LoadDataAsync();
+        }
+        else
+        {
+            formErrorMessage = error ?? "Failed to add equipment. Please verify your inputs.";
+        }
+    }
+
+    private void OpenSendToMaintenanceModal(EquipmentItemModel item)
+    {
+        selectedEquipmentForMaintenance = item;
+        maintenanceServiceType = "Repair";
+        maintenanceIssueNotes = string.Empty;
+        isMaintenanceModalOpen = true;
+    }
+
+    private async Task ConfirmSendToMaintenance()
+    {
+        if (selectedEquipmentForMaintenance == null || string.IsNullOrWhiteSpace(maintenanceIssueNotes))
+            return;
+
+        var (success, error) = await EquipmentService.LogMaintenanceAsync(
+            selectedEquipmentForMaintenance.EquipmentID,
+            maintenanceServiceType,
+            maintenanceIssueNotes,
+            "ADM-001",
+            setUnderMaintenance: true);
+
+        isMaintenanceModalOpen = false;
+
+        if (success)
+        {
+            notificationMessage = $"Shifted '{selectedEquipmentForMaintenance.EquipmentName}' to Maintenance. Log entry created in dbo.HistoryLog.";
+            await LoadDataAsync();
+        }
+    }
+
+    private async Task QuickResolveMaintenance(EquipmentItemModel item)
+    {
+        var (success, _) = await EquipmentService.ResolveMaintenanceAsync(
+            item.EquipmentID,
+            "Quick resolution via hardware catalog. Bench diagnostics passed.",
+            "ADM-001");
+
+        if (success)
+        {
+            notificationMessage = $"Servicing resolved for '{item.EquipmentName}'. Equipment is now Available.";
+            await LoadDataAsync();
+        }
+    }
+
+    private void ViewEquipmentDetails(EquipmentItemModel item)
+    {
+        detailsModalItem = item;
+    }
+
+    private string GetInitials(string name)
+    {
+        if (string.IsNullOrWhiteSpace(name)) return "EQ";
+        var parts = name.Split(' ', StringSplitOptions.RemoveEmptyEntries);
+        if (parts.Length == 1) return parts[0][..Math.Min(2, parts[0].Length)].ToUpperInvariant();
+        return $"{parts[0][0]}{parts[1][0]}".ToUpperInvariant();
+    }
+
+    public void Dispose()
+    {
+        EquipmentService.OnChange -= HandleExternalStateChange;
+    }
+}

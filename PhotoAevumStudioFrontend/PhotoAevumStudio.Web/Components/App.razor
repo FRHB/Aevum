@@ -30,7 +30,9 @@
     <script src="_framework/blazor.web.js"></script>
     <script>
         // Global JS initialization
-        lucide.createIcons();
+        if (typeof lucide !== 'undefined' && lucide.createIcons) {
+            lucide.createIcons();
+        }
 
         // Navbar blur effect on scroll
         window.addEventListener('scroll', () => {

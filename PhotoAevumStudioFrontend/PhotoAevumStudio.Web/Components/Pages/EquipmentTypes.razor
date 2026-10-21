@@ -3,19 +3,510 @@
 @page "/equipment-types"
 @layout AdminLayout
 @rendermode InteractiveServer
+@attribute [Authorize(Roles = "Admin")]
+@inject IEquipmentService EquipmentService
+@inject NavigationManager Nav
+@implements IDisposable
 
-<PageTitle>Equipment Types - PhotoAevum</PageTitle>
+<PageTitle>Equipment Types Management | Photo Aevum Studio</PageTitle>
 
-<div class="flex justify-between items-center mb-8">
-    <div>
-        <h1 class="text-3xl font-bold text-gray-900">Equipment Types</h1>
-        <p class="text-gray-500 mt-1">Configure categories: Cameras, Lenses, Modifiers, Audio, Grips.</p>
+<div class="space-y-6 pb-12">
+    <!-- Sub-navigation Tabs -->
+    <EquipmentSubNav ActiveTabLabel="Equipment Types" />
+
+    <!-- Page Header & Action Controls (Matching Specializations Management) -->
+    <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 pb-2 border-b border-slate-200">
+        <div>
+            <div class="flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-slate-500 mb-1">
+                <span>EQUIPMENT INVENTORY</span>
+                <span class="text-slate-300">/</span>
+                <span class="text-slate-900 font-bold">TYPES</span>
+            </div>
+            <h1 class="text-2xl sm:text-3xl font-extrabold text-slate-900 tracking-tight">Equipment Types Management</h1>
+            <p class="text-sm text-slate-500 mt-1">
+                Configure categories such as Cameras, Lenses, Modifiers, Audio, and Grips.
+            </p>
+        </div>
+
+        <div class="flex items-center gap-3">
+            <button type="button" 
+                    @onclick="OpenAddModal"
+                    class="inline-flex items-center gap-2 px-5 py-2.5 bg-slate-900 hover:bg-black text-white text-xs font-bold uppercase tracking-wider rounded-lg shadow-sm transition-all focus:ring-2 focus:ring-slate-900 focus:ring-offset-2 active:scale-95">
+                <svg class="w-4 h-4 text-emerald-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M12 4v16m8-8H4" />
+                </svg>
+                <span>+ Add New Type</span>
+            </button>
+        </div>
+    </div>
+
+    <!-- Alert / Toast Banner -->
+    @if (!string.IsNullOrWhiteSpace(notificationMessage))
+    {
+        <div class="p-4 bg-emerald-50 border border-emerald-200 text-emerald-900 rounded-xl flex items-center justify-between shadow-xs animate-in fade-in duration-200">
+            <div class="flex items-center gap-3">
+                <span class="w-7 h-7 rounded-full bg-emerald-600 text-white flex items-center justify-center shrink-0">
+                    <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M5 13l4 4L19 7" />
+                    </svg>
+                </span>
+                <div>
+                    <p class="text-xs font-bold text-emerald-950">Master Category Registry Updated</p>
+                    <p class="text-xs text-emerald-800">@notificationMessage</p>
+                </div>
+            </div>
+            <button type="button" @onclick="() => notificationMessage = null" class="text-emerald-700 hover:text-emerald-950 p-1 text-sm font-bold">&times;</button>
+        </div>
+    }
+
+    <!-- Summary Cards (Top Row) -->
+    <div class="grid grid-cols-2 lg:grid-cols-4 gap-4">
+        <!-- Card 1: Total Types count -->
+        <div class="bg-white p-4 rounded-xl border border-slate-200 shadow-xs hover:shadow-md transition-shadow">
+            <div class="flex items-center justify-between">
+                <span class="text-xs font-semibold text-slate-500 uppercase tracking-wider">Total Types</span>
+                <span class="p-1.5 rounded-lg bg-slate-100 text-slate-700 font-bold">🏷️</span>
+            </div>
+            <p class="text-2xl font-extrabold text-slate-900 mt-2">@equipmentTypes.Count</p>
+            <p class="text-[11px] text-slate-400 mt-0.5">Master lookup categories in dbo.EquipmentType</p>
+        </div>
+
+        <!-- Card 2: Total Active Equipment associated -->
+        <div class="bg-white p-4 rounded-xl border border-slate-200 shadow-xs hover:shadow-md transition-shadow">
+            <div class="flex items-center justify-between">
+                <span class="text-xs font-semibold text-slate-500 uppercase tracking-wider">Active Equipment</span>
+                <span class="p-1.5 rounded-lg bg-emerald-50 text-emerald-700 font-bold">📦</span>
+            </div>
+            <p class="text-2xl font-extrabold text-emerald-700 mt-2">@equipmentList.Count(e => e.IsAvailable)</p>
+            <p class="text-[11px] text-slate-400 mt-0.5">Hardware items ready for assignment</p>
+        </div>
+
+        <!-- Card 3: Optical / Cameras Breakdown -->
+        <div class="bg-white p-4 rounded-xl border border-slate-200 shadow-xs hover:shadow-md transition-shadow">
+            <div class="flex items-center justify-between">
+                <span class="text-xs font-semibold text-slate-500 uppercase tracking-wider">Optical / Cameras</span>
+                <span class="p-1.5 rounded-lg bg-purple-50 text-purple-700 font-bold">📷</span>
+            </div>
+            <p class="text-2xl font-extrabold text-purple-700 mt-2">
+                @equipmentList.Count(e => e.EquipmentTypeID.Contains("CAM") || e.EquipmentTypeID.Contains("LEN"))
+            </p>
+            <p class="text-[11px] text-slate-400 mt-0.5">Bodies &amp; high-precision glass lenses</p>
+        </div>
+
+        <!-- Card 4: Support / Grips & Lighting Breakdown -->
+        <div class="bg-white p-4 rounded-xl border border-slate-200 shadow-xs hover:shadow-md transition-shadow">
+            <div class="flex items-center justify-between">
+                <span class="text-xs font-semibold text-slate-500 uppercase tracking-wider">Support &amp; Grips</span>
+                <span class="p-1.5 rounded-lg bg-amber-50 text-amber-700 font-bold">⚙️</span>
+            </div>
+            <p class="text-2xl font-extrabold text-amber-700 mt-2">
+                @equipmentList.Count(e => e.EquipmentTypeID.Contains("GRP") || e.EquipmentTypeID.Contains("GIM") || e.EquipmentTypeID.Contains("MOD"))
+            </p>
+            <p class="text-[11px] text-slate-400 mt-0.5">C-stands, gimbals &amp; softboxes</p>
+        </div>
+    </div>
+
+    <!-- Search & Quick Filter Bar -->
+    <div class="bg-white p-4 rounded-xl border border-slate-200 shadow-sm space-y-3">
+        <div class="flex flex-col sm:flex-row items-center justify-between gap-3">
+            <!-- Search Bar -->
+            <div class="relative w-full sm:w-80">
+                <input type="text" 
+                       @bind="searchQuery" 
+                       @bind:event="oninput"
+                       placeholder="Filter category names or IDs..." 
+                       class="w-full pl-9 pr-4 py-2 text-xs rounded-lg border border-slate-300 focus:outline-none focus:ring-1 focus:ring-slate-900 focus:border-slate-900 placeholder:text-slate-400" />
+                <svg class="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                </svg>
+            </div>
+
+            <div class="flex items-center gap-2">
+                @if (!string.IsNullOrEmpty(searchQuery) || selectedPillFilter != "ALL")
+                {
+                    <button type="button" 
+                            @onclick="ResetFilters"
+                            class="text-xs text-slate-600 hover:text-slate-900 hover:underline px-2 py-1">
+                        Reset Filters
+                    </button>
+                }
+                <span class="text-xs text-slate-500 font-medium">
+                    Showing <strong>@FilteredTypes.Count()</strong> of <strong>@equipmentTypes.Count</strong> types
+                </span>
+            </div>
+        </div>
+
+        <!-- Quick Filter Pill Buttons (Matching Specializations layout) -->
+        <div class="pt-2 border-t border-slate-100 flex items-center gap-2 flex-wrap">
+            <span class="text-[11px] font-semibold text-slate-400 uppercase tracking-wider mr-1">Quick Filter:</span>
+            
+            <button type="button"
+                    @onclick='() => selectedPillFilter = "ALL"'
+                    class="px-2.5 py-1 rounded-full text-xs font-medium transition-all @(selectedPillFilter == "ALL" ? "bg-slate-900 text-white font-bold" : "bg-slate-100 text-slate-600 hover:bg-slate-200")">
+                All (@equipmentTypes.Count)
+            </button>
+
+            @foreach (var type in equipmentTypes)
+            {
+                var isSelected = selectedPillFilter.Equals(type.EquipmentTypeName, StringComparison.OrdinalIgnoreCase);
+                var classes = GetPillClasses(type.ColorTag);
+
+                <button type="button"
+                        @onclick="() => FilterByPill(type.EquipmentTypeName)"
+                        class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium border transition-all duration-150 @(isSelected ? "ring-2 ring-slate-900 border-slate-900 font-bold" : "hover:opacity-80") @classes.BadgeClass">
+                    <span class="w-1.5 h-1.5 rounded-full @classes.DotClass"></span>
+                    <span>@type.EquipmentTypeName</span>
+                    <span class="text-[10px] opacity-80 font-bold">(@type.AssociatedItemsCount)</span>
+                </button>
+            }
+        </div>
+    </div>
+
+    <!-- Data Table Structure -->
+    <div class="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
+        <div class="overflow-x-auto">
+            <table class="w-full text-left border-collapse text-xs">
+                <thead>
+                    <tr class="bg-slate-50/75 border-b border-slate-200 text-slate-600 font-semibold uppercase tracking-wider text-[11px]">
+                        <th class="px-5 py-3.5">Equipment Type ID</th>
+                        <th class="px-5 py-3.5">Category Name</th>
+                        <th class="px-5 py-3.5">Associated Items Count</th>
+                        <th class="px-5 py-3.5">Availability Breakdown</th>
+                        <th class="px-5 py-3.5 text-right">Status / Actions</th>
+                    </tr>
+                </thead>
+                <tbody class="divide-y divide-slate-100">
+                    @if (isLoading)
+                    {
+                        <tr>
+                            <td colspan="5" class="px-5 py-12 text-center text-slate-400">
+                                <span class="inline-block w-4 h-4 border-2 border-slate-400/30 border-t-slate-600 rounded-full animate-spin mr-2"></span>
+                                Querying dbo.EquipmentType and linking foreign keys...
+                            </td>
+                        </tr>
+                    }
+                    else if (!FilteredTypes.Any())
+                    {
+                        <tr>
+                            <td colspan="5" class="px-5 py-12 text-center text-slate-400">
+                                <div class="max-w-xs mx-auto space-y-2">
+                                    <p class="text-2xl">🏷️</p>
+                                    <p class="font-medium text-slate-700">No equipment categories found</p>
+                                    <p class="text-[11px]">Click "+ Add New Type" to create a new category in dbo.EquipmentType.</p>
+                                </div>
+                            </td>
+                        </tr>
+                    }
+                    else
+                    {
+                        @foreach (var type in FilteredTypes)
+                        {
+                            var classes = GetPillClasses(type.ColorTag);
+
+                            <tr class="hover:bg-slate-50/70 transition-colors">
+                                <!-- EQUIPMENT TYPE ID -->
+                                <td class="px-5 py-3.5">
+                                    <div class="flex items-center gap-2">
+                                        <span class="w-2 h-2 rounded-full @classes.DotClass"></span>
+                                        <span class="font-mono font-bold text-slate-900 bg-slate-100 px-2 py-0.5 rounded border border-slate-200">
+                                            @type.EquipmentTypeID
+                                        </span>
+                                    </div>
+                                </td>
+
+                                <!-- CATEGORY NAME -->
+                                <td class="px-5 py-3.5">
+                                    <div class="flex items-center gap-2">
+                                        <span class="font-bold text-slate-900 text-sm">@type.EquipmentTypeName</span>
+                                        <span class="text-[10px] px-2 py-0.5 rounded-full font-semibold border @classes.BadgeClass">
+                                            @type.ColorTag Tag
+                                        </span>
+                                    </div>
+                                    <p class="text-[11px] text-slate-400 mt-0.5">Master lookup record in dbo.EquipmentType</p>
+                                </td>
+
+                                <!-- ASSOCIATED ITEMS COUNT (via Foreign Key in dbo.Equipment) -->
+                                <td class="px-5 py-3.5">
+                                    <div class="flex items-center gap-2">
+                                        <span class="text-base font-extrabold text-slate-900">@type.AssociatedItemsCount</span>
+                                        <span class="text-slate-400 text-xs font-normal">registered items</span>
+                                    </div>
+                                </td>
+
+                                <!-- AVAILABILITY BREAKDOWN -->
+                                <td class="px-5 py-3.5">
+                                    <div class="flex items-center gap-2">
+                                        <span class="inline-flex items-center gap-1 text-[11px] font-semibold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200">
+                                            <span>✓</span>
+                                            <span>@type.AvailableCount Available</span>
+                                        </span>
+                                        @if (type.MaintenanceCount > 0)
+                                        {
+                                            <span class="inline-flex items-center gap-1 text-[11px] font-semibold text-amber-700 bg-amber-50 px-2 py-0.5 rounded border border-amber-200">
+                                                <span>🔧</span>
+                                                <span>@type.MaintenanceCount In Repair</span>
+                                            </span>
+                                        }
+                                    </div>
+                                </td>
+
+                                <!-- STATUS / ACTIONS -->
+                                <td class="px-5 py-3.5 text-right whitespace-nowrap">
+                                    <div class="inline-flex items-center gap-2">
+                                        <NavLink href="@($"/admin/equipments")"
+                                                 class="px-2.5 py-1.5 text-xs font-bold text-slate-700 hover:text-slate-950 bg-slate-100 hover:bg-slate-200 rounded-md transition-colors">
+                                            View In Catalog &rarr;
+                                        </NavLink>
+                                    </div>
+                                </td>
+                            </tr>
+                        }
+                    }
+                </tbody>
+            </table>
+        </div>
     </div>
 </div>
 
-<div class="bg-white rounded-xl shadow-sm border border-gray-200 p-8 text-center">
-    <div class="max-w-md mx-auto text-gray-500">
-        <p class="text-base font-medium text-gray-700 mb-1">Equipment Types &amp; Categories</p>
-        <p class="text-sm">Hardware classification and category hierarchy is ready for integration.</p>
+<!-- ══════════════════════════════════════════════════════════════════════════ -->
+<!-- MODAL: ADD NEW EQUIPMENT TYPE (Inserts into dbo.EquipmentType)             -->
+<!-- ══════════════════════════════════════════════════════════════════════════ -->
+@if (isAddModalOpen)
+{
+    <div class="fixed inset-0 z-50 overflow-y-auto bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4">
+        <div class="relative bg-white rounded-2xl shadow-xl border border-slate-200 w-full max-w-md overflow-hidden animate-in fade-in zoom-in-95 duration-150">
+            <!-- Modal Header -->
+            <div class="px-6 py-4 bg-slate-900 text-white flex items-center justify-between">
+                <div class="flex items-center gap-2">
+                    <span class="w-7 h-7 rounded-lg bg-emerald-500 text-slate-950 flex items-center justify-center font-bold text-sm">
+                        +
+                    </span>
+                    <div>
+                        <h2 class="text-base font-bold text-white leading-tight">Add Equipment Type</h2>
+                        <p class="text-[11px] text-slate-300">Creates new record in dbo.EquipmentType</p>
+                    </div>
+                </div>
+                <button type="button" @onclick="CloseAddModal" class="text-slate-400 hover:text-white text-lg font-bold p-1">&times;</button>
+            </div>
+
+            <!-- Modal Form -->
+            <EditForm Model="@newTypeForm" OnValidSubmit="HandleSubmitNewType">
+                <DataAnnotationsValidator />
+
+                <div class="p-6 space-y-4">
+                    @if (!string.IsNullOrEmpty(formErrorMessage))
+                    {
+                        <div class="p-3 bg-rose-50 border border-rose-200 text-rose-800 rounded-lg text-xs">
+                            @formErrorMessage
+                        </div>
+                    }
+
+                    <!-- Category Type ID -->
+                    <div>
+                        <label class="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1">
+                            Equipment Type ID <span class="text-rose-500">*</span>
+                        </label>
+                        <InputText @bind-Value="newTypeForm.EquipmentTypeID"
+                                   placeholder="e.g. ET-CAM, ET-LEN, ET-DRN"
+                                   class="w-full px-3 py-2 text-xs font-mono uppercase rounded-lg border border-slate-300 focus:outline-none focus:ring-1 focus:ring-slate-900" />
+                        <p class="text-[10px] text-slate-400 mt-1">Unique primary key in <code class="font-mono">dbo.EquipmentType(EquipmentTypeID)</code>.</p>
+                        <ValidationMessage For="@(() => newTypeForm.EquipmentTypeID)" class="text-[11px] text-rose-600 mt-1" />
+                    </div>
+
+                    <!-- Category Name -->
+                    <div>
+                        <label class="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1">
+                            Category Display Name <span class="text-rose-500">*</span>
+                        </label>
+                        <InputText @bind-Value="newTypeForm.EquipmentTypeName"
+                                   placeholder="e.g. Drones & Aerial Rigs, Telephoto Optics"
+                                   class="w-full px-3 py-2 text-xs rounded-lg border border-slate-300 focus:outline-none focus:ring-1 focus:ring-slate-900" />
+                        <ValidationMessage For="@(() => newTypeForm.EquipmentTypeName)" class="text-[11px] text-rose-600 mt-1" />
+                    </div>
+
+                    <!-- UI Color Tag -->
+                    <div>
+                        <label class="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1">
+                            UI Color Tag
+                        </label>
+                        <InputSelect @bind-Value="newTypeForm.ColorTag"
+                                     class="w-full px-3 py-2 text-xs rounded-lg border border-slate-300 bg-white">
+                            <option value="Purple">Purple (Cameras)</option>
+                            <option value="Blue">Blue (Lenses)</option>
+                            <option value="Amber">Amber (Lighting)</option>
+                            <option value="Emerald">Emerald (Modifiers)</option>
+                            <option value="Rose">Rose (Audio)</option>
+                            <option value="Slate">Slate (Grips &amp; Stands)</option>
+                            <option value="Cyan">Cyan (Gimbals &amp; Drones)</option>
+                        </InputSelect>
+                    </div>
+
+                    <!-- Database Foreign Key Notice -->
+                    <div class="p-3 bg-slate-50 border border-slate-200 rounded-lg text-[11px] text-slate-600 space-y-1">
+                        <p class="font-bold text-slate-800">Database Integrity:</p>
+                        <p>Once registered, this category becomes immediately selectable across <code class="font-mono">Equipments.razor</code> and binds foreign keys via <code class="font-mono">FK_Equipment_EquipmentType</code>.</p>
+                    </div>
+                </div>
+
+                <!-- Modal Footer -->
+                <div class="px-6 py-3.5 bg-slate-50 border-t border-slate-200 flex items-center justify-end gap-3">
+                    <button type="button" 
+                            @onclick="CloseAddModal"
+                            class="px-4 py-2 text-xs font-medium text-slate-600 hover:text-slate-900">
+                        Cancel
+                    </button>
+                    <button type="submit" 
+                            disabled="@isSubmitting"
+                            class="px-5 py-2 bg-slate-900 hover:bg-black text-white text-xs font-bold uppercase tracking-wider rounded-lg shadow-sm transition-all disabled:opacity-50 flex items-center gap-2">
+                        @if (isSubmitting)
+                        {
+                            <span class="inline-block w-3.5 h-3.5 border-2 border-white/30 border-t-white rounded-full animate-spin"></span>
+                            <span>Registering...</span>
+                        }
+                        else
+                        {
+                            <span>Save Category Type</span>
+                        }
+                    </button>
+                </div>
+            </EditForm>
+        </div>
     </div>
-</div>
+}
+
+@code {
+    private List<EquipmentTypeModel> equipmentTypes = new();
+    private List<EquipmentItemModel> equipmentList = new();
+
+    private bool isLoading = true;
+    private bool isSubmitting = false;
+    private bool isAddModalOpen = false;
+
+    private string searchQuery = string.Empty;
+    private string selectedPillFilter = "ALL";
+    private string? notificationMessage;
+    private string? formErrorMessage;
+
+    private NewEquipmentTypeFormModel newTypeForm = new();
+
+    protected override async Task OnInitializedAsync()
+    {
+        EquipmentService.OnChange += HandleExternalStateChange;
+        await LoadDataAsync();
+    }
+
+    private async Task LoadDataAsync()
+    {
+        isLoading = true;
+        equipmentTypes = (await EquipmentService.GetEquipmentTypesAsync()).ToList();
+        equipmentList = (await EquipmentService.GetEquipmentsAsync()).ToList();
+        isLoading = false;
+    }
+
+    private void HandleExternalStateChange()
+    {
+        _ = InvokeAsync(async () =>
+        {
+            await LoadDataAsync();
+            StateHasChanged();
+        });
+    }
+
+    private void FilterByPill(string typeName)
+    {
+        if (selectedPillFilter.Equals(typeName, StringComparison.OrdinalIgnoreCase))
+        {
+            selectedPillFilter = "ALL";
+        }
+        else
+        {
+            selectedPillFilter = typeName;
+        }
+    }
+
+    private void ResetFilters()
+    {
+        searchQuery = string.Empty;
+        selectedPillFilter = "ALL";
+    }
+
+    private IEnumerable<EquipmentTypeModel> FilteredTypes
+    {
+        get
+        {
+            var query = equipmentTypes.AsEnumerable();
+
+            if (!string.IsNullOrWhiteSpace(searchQuery))
+            {
+                var q = searchQuery.Trim();
+                query = query.Where(t =>
+                    t.EquipmentTypeName.Contains(q, StringComparison.OrdinalIgnoreCase) ||
+                    t.EquipmentTypeID.Contains(q, StringComparison.OrdinalIgnoreCase));
+            }
+
+            if (selectedPillFilter != "ALL")
+            {
+                query = query.Where(t => t.EquipmentTypeName.Equals(selectedPillFilter, StringComparison.OrdinalIgnoreCase));
+            }
+
+            return query;
+        }
+    }
+
+    private void OpenAddModal()
+    {
+        newTypeForm = new NewEquipmentTypeFormModel();
+        formErrorMessage = null;
+        isAddModalOpen = true;
+    }
+
+    private void CloseAddModal()
+    {
+        isAddModalOpen = false;
+        formErrorMessage = null;
+    }
+
+    private async Task HandleSubmitNewType()
+    {
+        isSubmitting = true;
+        formErrorMessage = null;
+
+        var (success, error) = await EquipmentService.AddEquipmentTypeAsync(
+            newTypeForm.EquipmentTypeID,
+            newTypeForm.EquipmentTypeName,
+            newTypeForm.ColorTag);
+
+        isSubmitting = false;
+
+        if (success)
+        {
+            isAddModalOpen = false;
+            notificationMessage = $"Category Type '{newTypeForm.EquipmentTypeName}' ({newTypeForm.EquipmentTypeID}) was registered successfully in dbo.EquipmentType.";
+            selectedPillFilter = newTypeForm.EquipmentTypeName;
+            await LoadDataAsync();
+        }
+        else
+        {
+            formErrorMessage = error ?? "Failed to add equipment type.";
+        }
+    }
+
+    private (string BadgeClass, string DotClass) GetPillClasses(string? colorTag)
+    {
+        return (colorTag?.ToLowerInvariant()) switch
+        {
+            "purple" => ("bg-purple-50 text-purple-700 border-purple-200", "bg-purple-500"),
+            "blue" => ("bg-blue-50 text-blue-700 border-blue-200", "bg-blue-500"),
+            "amber" => ("bg-amber-50 text-amber-700 border-amber-200", "bg-amber-500"),
+            "emerald" => ("bg-emerald-50 text-emerald-700 border-emerald-200", "bg-emerald-500"),
+            "rose" => ("bg-rose-50 text-rose-700 border-rose-200", "bg-rose-500"),
+            "cyan" => ("bg-cyan-50 text-cyan-700 border-cyan-200", "bg-cyan-500"),
+            _ => ("bg-slate-100 text-slate-700 border-slate-200", "bg-slate-500")
+        };
+    }
+
+    public void Dispose()
+    {
+        EquipmentService.OnChange -= HandleExternalStateChange;
+    }
+}

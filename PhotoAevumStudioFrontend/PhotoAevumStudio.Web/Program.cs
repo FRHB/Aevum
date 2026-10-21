@@ -18,6 +18,8 @@ builder.Services.AddTransient<AuthHttpHandler>();
 builder.Services.AddScoped<IAuthService, AuthService>();
 builder.Services.AddScoped<IEmployeeService, EmployeeService>();
 builder.Services.AddScoped<IUserService, UserService>();   // Mock user data service (Task 3.1)
+builder.Services.AddScoped<IScheduleService, ScheduleService>();
+builder.Services.AddSingleton<IEquipmentService, EquipmentService>();
 
 var apiBaseUrl = builder.Configuration["Api:BaseUrl"]
     ?? throw new InvalidOperationException("Api:BaseUrl is missing from configuration.");

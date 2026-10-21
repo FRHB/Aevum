@@ -142,3 +142,63 @@ public class AddOnServiceModel
 
     public string Status { get; set; } = "Active";
 }
+
+
+/// <summary>
+/// Data item representing a service category in the master catalog.
+/// </summary>
+public class ServiceCategoryItem
+{
+    public string Id { get; set; } = string.Empty;
+    public string Code { get; set; } = string.Empty; // e.g. "CAT-001" or "CAT-PORT"
+    public string Name { get; set; } = string.Empty; // e.g. "Portrait Photography"
+    public string? Description { get; set; }
+    public string Type { get; set; } = "Main Services"; // "Main Services", "Packages", "Add-Ons", "Specialty"
+    public string Status { get; set; } = "Active"; // "Active", "Draft", "Inactive", "Archived"
+    public bool IsFeatured { get; set; } = false;
+    public string ColorTag { get; set; } = "Blue"; // "Blue", "Rose", "Purple", "Emerald", "Amber", "Indigo", "Cyan"
+    public List<string> AssociatedServices { get; set; } = new();
+    public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
+
+    public bool IsActive => Status.Equals("Active", StringComparison.OrdinalIgnoreCase);
+
+    public string Initials
+    {
+        get
+        {
+            var parts = Name.Split(new[] { ' ', '-', '&', '/' }, StringSplitOptions.RemoveEmptyEntries);
+            if (parts.Length == 0) return "SC";
+            if (parts.Length == 1) return parts[0].Length >= 2 ? parts[0][..2].ToUpperInvariant() : parts[0].ToUpperInvariant();
+            return $"{parts[0][0]}{parts[1][0]}".ToUpperInvariant();
+        }
+    }
+}
+
+/// <summary>
+/// Form model for creating or updating a Service Category.
+/// </summary>
+public class CategoryModel
+{
+    [Required(ErrorMessage = "Category name is required.")]
+    [StringLength(80, MinimumLength = 2, ErrorMessage = "Category name must be between 2 and 80 characters.")]
+    public string Name { get; set; } = string.Empty;
+
+    [Required(ErrorMessage = "Category code is required.")]
+    [StringLength(20, MinimumLength = 3, ErrorMessage = "Category code must be between 3 and 20 characters.")]
+    public string Code { get; set; } = string.Empty;
+
+    [Required(ErrorMessage = "Please select a category type.")]
+    public string Type { get; set; } = "Main Services";
+
+    [StringLength(300, ErrorMessage = "Description cannot exceed 300 characters.")]
+    public string? Description { get; set; }
+
+    [Required(ErrorMessage = "Please select a color tag.")]
+    public string ColorTag { get; set; } = "Blue";
+
+    public string Status { get; set; } = "Active";
+
+    public bool IsFeatured { get; set; } = false;
+
+    public string ServicesRaw { get; set; } = string.Empty;
+}

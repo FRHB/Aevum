@@ -7,6 +7,7 @@
   <Folder Name="/Frontend/">
     <Project Path="PhotoAevumStudioFrontend/PhotoAevumStudio.Web/PhotoAevumStudio.Web.csproj" />
   </Folder>
+  <Folder Name="/Frontend/Employee/" />
   <Folder Name="/Tests/">
     <Project Path="PhotoAevumStudioBackend/Tests/PhotoAevumStudio.Api.Tests/PhotoAevumStudio.Api.Tests.csproj" />
     <Project Path="PhotoAevumStudioBackend/Tests/PhotoAevumStudio.Application.Tests/PhotoAevumStudio.Application.Tests.csproj" />
