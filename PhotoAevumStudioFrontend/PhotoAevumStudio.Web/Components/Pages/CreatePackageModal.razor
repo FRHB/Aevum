@@ -1,0 +1,157 @@
+@inject IUserService UserService
+
+@if (IsOpen)
+{
+    <div class="fixed inset-0 z-50 bg-black/50 backdrop-blur-xs flex items-center justify-center p-4 sm:p-6 overflow-y-auto"
+         role="dialog" aria-modal="true" aria-labelledby="package-modal-title">
+
+        <div class="relative w-full max-w-xl bg-white rounded-2xl shadow-2xl border border-gray-100 overflow-hidden flex flex-col max-h-[92vh]">
+            <div class="px-6 py-5 border-b border-gray-100 flex items-center justify-between bg-white">
+                <div>
+                    <h2 id="package-modal-title" class="text-xl font-bold text-gray-900">Create New Package</h2>
+                    <p class="text-xs text-gray-500">Tiered service bundle configuration</p>
+                </div>
+                <button type="button" @onclick="HandleClose" disabled="@isSaving"
+                        class="text-gray-400 hover:text-gray-600 rounded-lg p-1.5 hover:bg-gray-100">
+                    &times;
+                </button>
+            </div>
+
+            <div class="p-6 overflow-y-auto flex-1">
+                <EditForm EditContext="@editContext">
+                    <DataAnnotationsValidator />
+
+                    <div class="space-y-4">
+                        <div>
+                            <label for="pkg-name" class="block text-sm font-semibold text-gray-800 mb-1.5">
+                                Package Name <span class="text-red-500">*</span>
+                            </label>
+                            <InputText id="pkg-name"
+                                       @bind-Value="model.Name"
+                                       placeholder="Enter package name"
+                                       class="w-full px-3.5 py-2.5 text-sm bg-white border border-gray-300 rounded-lg text-gray-900" />
+                        </div>
+
+                        <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                            <div>
+                                <label for="pkg-code" class="block text-sm font-semibold text-gray-800 mb-1.5">
+                                    Package Code <span class="text-red-500">*</span>
+                                </label>
+                                <InputText id="pkg-code"
+                                           @bind-Value="model.Code"
+                                           placeholder="e.g., PKG-001"
+                                           class="w-full px-3.5 py-2.5 text-sm bg-white border border-gray-300 rounded-lg text-gray-900 font-mono" />
+                            </div>
+
+                            <div>
+                                <label for="pkg-category" class="block text-sm font-semibold text-gray-800 mb-1.5">
+                                    Target Category
+                                </label>
+                                <InputSelect id="pkg-category"
+                                             @bind-Value="model.TargetCategory"
+                                             class="w-full px-3.5 py-2.5 text-sm bg-white border border-gray-300 rounded-lg text-gray-900">
+                                    <option value="Portrait Bundles">Portrait Bundles</option>
+                                    <option value="Wedding Bundles">Wedding Bundles</option>
+                                    <option value="Corporate Bundles">Corporate Bundles</option>
+                                </InputSelect>
+                            </div>
+                        </div>
+
+                        <div>
+                            <label for="pkg-desc" class="block text-sm font-semibold text-gray-800 mb-1.5">
+                                Package Summary &amp; Scope
+                            </label>
+                            <InputTextArea id="pkg-desc"
+                                           rows="3"
+                                           @bind-Value="model.Description"
+                                           placeholder="Enter package description"
+                                           class="w-full px-3.5 py-2.5 text-sm bg-white border border-gray-300 rounded-lg text-gray-900 resize-none" />
+                        </div>
+
+                        @if (!string.IsNullOrWhiteSpace(saveErrorMessage))
+                        {
+                            <div class="p-3 bg-red-50 border border-red-200 rounded-lg text-xs text-red-700 font-medium" role="alert">
+                                @saveErrorMessage
+                            </div>
+                        }
+                    </div>
+                </EditForm>
+            </div>
+
+            <div class="px-6 py-4 bg-gray-50 border-t border-gray-100 flex items-center justify-between">
+                <button type="button" @onclick="HandleClose" disabled="@isSaving"
+                        class="px-4 py-2.5 bg-white border border-gray-300 hover:bg-gray-100 text-gray-700 text-xs font-semibold rounded-lg">
+                    Cancel
+                </button>
+                <button type="button" @onclick="HandleSaveAsync" disabled="@isSaving"
+                        class="px-6 py-2.5 bg-gray-900 hover:bg-black text-white text-xs font-semibold rounded-lg disabled:opacity-60">
+                    @(isSaving ? "Saving..." : "Save Package")
+                </button>
+            </div>
+        </div>
+    </div>
+}
+
+@code {
+    [Parameter] public bool IsOpen { get; set; }
+    [Parameter] public EventCallback<bool> IsOpenChanged { get; set; }
+    [Parameter] public EventCallback<PackageServiceItem> OnPackageCreated { get; set; }
+
+    private bool isSaving = false;
+    private string? saveErrorMessage;
+    private PackageServiceModel model = new();
+    private EditContext editContext = null!;
+
+    protected override void OnInitialized()
+    {
+        ResetWizard();
+    }
+
+    public void ResetWizard()
+    {
+        isSaving = false;
+        saveErrorMessage = null;
+        var nextNum = UserService.GetPackageServices().Count + 1;
+        model = new PackageServiceModel
+        {
+            Code = $"PKG-{nextNum:D3}",
+            TargetCategory = "Wedding Bundles",
+            Price = 0m,
+            Status = "Active"
+        };
+        editContext = new EditContext(model);
+    }
+
+    private async Task HandleClose()
+    {
+        if (isSaving) return;
+        ResetWizard();
+        await IsOpenChanged.InvokeAsync(false);
+    }
+
+    private async Task HandleSaveAsync()
+    {
+        if (string.IsNullOrWhiteSpace(model.Name) || string.IsNullOrWhiteSpace(model.Code))
+        {
+            saveErrorMessage = "Package name and code are required.";
+            return;
+        }
+
+        try
+        {
+            isSaving = true;
+            saveErrorMessage = null;
+            var created = UserService.AddPackageService(model);
+            await OnPackageCreated.InvokeAsync(created);
+            await HandleClose();
+        }
+        catch (Exception ex)
+        {
+            saveErrorMessage = $"Error creating package: {ex.Message}";
+        }
+        finally
+        {
+            isSaving = false;
+        }
+    }
+}

@@ -1,0 +1,52 @@
+<!DOCTYPE html>
+<html lang="en" class="scroll-smooth">
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <base href="/" />
+    <link rel="stylesheet" href="app.css" />
+    <!-- Blazor specific CSS isolation (adjust name to match your assembly) -->
+    <link rel="stylesheet" href="PhotoAevumStudio.Web.styles.css" />
+    
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    fontFamily: { sans: ['Inter', 'sans-serif'] },
+                    colors: { brand: { 50: '#f6f6f6', 100: '#e7e7e7', 500: '#1a1a1a', 600: '#000000', 900: '#000000' } }
+                }
+            }
+        }
+    </script>
+    <HeadOutlet @rendermode="new InteractiveServerRenderMode(prerender: false)" />
+</head>
+<body class="antialiased min-h-screen flex flex-col selection:bg-gray-200 selection:text-black">
+    <Routes @rendermode="new InteractiveServerRenderMode(prerender: false)" />
+    <script src="_framework/blazor.web.js"></script>
+    <script>
+        // Global JS initialization
+        if (typeof lucide !== 'undefined' && lucide.createIcons) {
+            lucide.createIcons();
+        }
+
+        // Navbar blur effect on scroll
+        window.addEventListener('scroll', () => {
+            const nav = document.getElementById('navbar');
+            if (nav) {
+                if (window.scrollY > 10) {
+                    nav.classList.add('shadow-sm');
+                    nav.style.background = 'rgba(255, 255, 255, 0.98)';
+                } else {
+                    nav.classList.remove('shadow-sm');
+                    nav.style.background = 'rgba(255, 255, 255, 0.95)';
+                }
+            }
+        });
+    </script>
+</body>
+</html>

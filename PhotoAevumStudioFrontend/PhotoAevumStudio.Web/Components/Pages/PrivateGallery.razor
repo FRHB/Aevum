@@ -1,0 +1,77 @@
+@page "/my/gallery/{GalleryId}"
+@layout CustomerLayout
+@using PhotoAevumStudio.Web.Services
+@inject IUserService UserService
+@attribute [Authorize(Roles = "Customer")]
+
+<PageTitle>Private Gallery</PageTitle>
+
+<div class="max-w-6xl mx-auto py-10 px-6">
+    <div class="flex justify-between items-center mb-8">
+        <div>
+            <h1 class="text-3xl font-bold">Private Gallery (@GalleryId)</h1>
+            <p class="text-gray-500 mt-1">Select your favorites for retouching or download the full resolution files.</p>
+        </div>
+        <div class="flex gap-3">
+            <button class="bg-white border border-gray-300 text-gray-700 px-4 py-2 rounded-md font-semibold text-sm hover:bg-gray-50" disabled="@(!Photos.Any())">
+                <i data-lucide="heart" class="w-4 h-4 inline mr-2"></i> Submit Favorites (@Favorites.Count)
+            </button>
+            <button class="bg-teal-600 text-white px-4 py-2 rounded-md font-semibold text-sm hover:bg-teal-700 disabled:opacity-50" disabled="@(!Photos.Any())">
+                <i data-lucide="download" class="w-4 h-4 inline mr-2"></i> Download All
+            </button>
+        </div>
+    </div>
+
+    @if (!Photos.Any())
+    {
+        <div class="bg-white border border-gray-200 rounded-xl p-12 text-center shadow-sm">
+            <h2 class="text-lg font-semibold text-gray-800 mb-1">No Photos Available</h2>
+            <p class="text-sm text-gray-500">No photos have been uploaded to this gallery yet.</p>
+        </div>
+    }
+    else
+    {
+        <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
+            @foreach (var photo in Photos)
+            {
+                <div class="relative group aspect-[4/5] bg-gray-200 rounded-lg overflow-hidden border border-gray-200">
+                    @if (!string.IsNullOrWhiteSpace(photo.Url))
+                    {
+                        <img src="@photo.Url" alt="@photo.FileName" class="w-full h-full object-cover" />
+                    }
+                    <div class="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex flex-col justify-between p-4">
+                        <div class="flex justify-end">
+                            <button class="text-white hover:text-red-500 transition-colors" @onclick="() => ToggleFavorite(photo.PhotoId)">
+                                <i data-lucide="heart" class="w-6 h-6 @(Favorites.Contains(photo.PhotoId) ? "fill-red-500 text-red-500" : "")"></i>
+                            </button>
+                        </div>
+                        <div class="flex justify-between items-end">
+                            <span class="text-white text-xs font-mono">@photo.FileName</span>
+                        </div>
+                    </div>
+                </div>
+            }
+        </div>
+    }
+</div>
+
+@code {
+    [Parameter]
+    public string GalleryId { get; set; } = string.Empty;
+
+    private List<PhotoRow> Photos = new();
+    private HashSet<string> Favorites = new();
+
+    protected override void OnParametersSet()
+    {
+        Photos = UserService.GetPhotos(GalleryId);
+    }
+
+    private void ToggleFavorite(string id)
+    {
+        if (Favorites.Contains(id))
+            Favorites.Remove(id);
+        else
+            Favorites.Add(id);
+    }
+}

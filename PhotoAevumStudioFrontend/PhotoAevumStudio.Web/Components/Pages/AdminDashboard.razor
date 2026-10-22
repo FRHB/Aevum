@@ -1,0 +1,145 @@
+@page "/admin"
+@layout AdminLayout
+@attribute [Authorize(Roles = "Admin")]
+@rendermode InteractiveServer
+@inject IUserService UserService
+@inject IEmployeeService EmployeeService
+
+<PageTitle>Admin Dashboard | Photo Aevum Studio</PageTitle>
+
+<header class="aev-page-header">
+    <div>
+        <h1 class="aev-page-header__title">Dashboard Overview</h1>
+        <p class="aev-page-header__subtitle">@DateTime.Today.ToString("dddd, MMMM d, yyyy")</p>
+    </div>
+</header>
+
+<section class="aev-stat-grid" aria-label="Summary statistics">
+    <article class="aev-stat-card">
+        <div class="aev-stat-card__icon aev-stat-card__icon--teal" aria-hidden="true">📅</div>
+        <div>
+            <p class="aev-stat-card__label">Appointments Today</p>
+            <h2 class="aev-stat-card__value">@_appointmentsToday</h2>
+        </div>
+    </article>
+
+    <article class="aev-stat-card">
+        <div class="aev-stat-card__icon aev-stat-card__icon--blue" aria-hidden="true">👥</div>
+        <div>
+            <p class="aev-stat-card__label">Active Employees</p>
+            <h2 class="aev-stat-card__value">@_activeEmployees</h2>
+        </div>
+    </article>
+
+    <article class="aev-stat-card">
+        <div class="aev-stat-card__icon aev-stat-card__icon--amber" aria-hidden="true">📷</div>
+        <div>
+            <p class="aev-stat-card__label">Equipment In Use</p>
+            <h2 class="aev-stat-card__value">@_equipmentInUse</h2>
+        </div>
+    </article>
+
+    <article class="aev-stat-card">
+        <div class="aev-stat-card__icon aev-stat-card__icon--violet" aria-hidden="true">📊</div>
+        <div>
+            <p class="aev-stat-card__label">Bookings This Week</p>
+            <h2 class="aev-stat-card__value">@_bookingsThisWeek</h2>
+        </div>
+    </article>
+</section>
+
+<div class="aev-content-row">
+    <section class="aev-card aev-card--wide" aria-label="Recent bookings">
+        <header class="aev-card__header">
+            <h2 class="aev-card__heading">Recent Bookings</h2>
+            <a href="/Schedules" class="aev-card__action-link">View All</a>
+        </header>
+        <div class="aev-table-wrap">
+            <table class="aev-table">
+                <thead>
+                    <tr>
+                        <th>Client</th>
+                        <th>Service</th>
+                        <th>Date &amp; Time</th>
+                        <th>Status</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @if (_recentBookings.Count == 0)
+                    {
+                        <tr>
+                            <td colspan="4" class="text-center py-6 text-slate-400">
+                                No bookings found in the database.
+                            </td>
+                        </tr>
+                    }
+                    else
+                    {
+                        @foreach (var booking in _recentBookings)
+                        {
+                            <tr>
+                                <td>@booking.CustomerName</td>
+                                <td>@booking.EventName</td>
+                                <td>@booking.EventDate.ToString("MMM d, yyyy") &bull; @(DateTime.Today.Add(booking.EventTime).ToString("h:mm tt"))</td>
+                                <td>
+                                    <span class="aev-badge @(booking.Status.Equals("Confirmed", StringComparison.OrdinalIgnoreCase) || booking.Status.Equals("Scheduled", StringComparison.OrdinalIgnoreCase) ? "aev-badge--green" : "aev-badge--amber")">
+                                        @booking.Status
+                                    </span>
+                                </td>
+                            </tr>
+                        }
+                    }
+                </tbody>
+            </table>
+        </div>
+    </section>
+
+    <section class="aev-card" aria-label="Quick actions">
+        <header class="aev-card__header">
+            <h2 class="aev-card__heading">Quick Actions</h2>
+        </header>
+        <div class="aev-quick-actions">
+            <a href="/Services" class="aev-quick-action">
+                <span class="aev-quick-action__icon" aria-hidden="true">🗂</span>
+                <span>Manage Services</span>
+                <span class="aev-quick-action__arrow" aria-hidden="true">›</span>
+            </a>
+            <a href="/Equipment" class="aev-quick-action">
+                <span class="aev-quick-action__icon" aria-hidden="true">📷</span>
+                <span>Track Equipment</span>
+                <span class="aev-quick-action__arrow" aria-hidden="true">›</span>
+            </a>
+            <a href="/Employee" class="aev-quick-action">
+                <span class="aev-quick-action__icon" aria-hidden="true">👤</span>
+                <span>Manage Staff</span>
+                <span class="aev-quick-action__arrow" aria-hidden="true">›</span>
+            </a>
+            <a href="/admin/clients" class="aev-quick-action">
+                <span class="aev-quick-action__icon" aria-hidden="true">👥</span>
+                <span>View Clients</span>
+                <span class="aev-quick-action__arrow" aria-hidden="true">›</span>
+            </a>
+        </div>
+    </section>
+</div>
+
+@code {
+    private int _appointmentsToday;
+    private int _activeEmployees;
+    private int _equipmentInUse;
+    private int _bookingsThisWeek;
+    private IReadOnlyList<BookingRowDto> _recentBookings = Array.Empty<BookingRowDto>();
+
+    protected override async Task OnInitializedAsync()
+    {
+        var stats = await EmployeeService.GetDashboardStatsAsync();
+        _appointmentsToday = stats.AppointmentsToday;
+        _activeEmployees = stats.ActiveEmployees;
+        _bookingsThisWeek = stats.BookedThisWeek;
+
+        var equipment = UserService.GetEquipmentRows();
+        _equipmentInUse = equipment.Count(e => e.Status.Equals("In Use", StringComparison.OrdinalIgnoreCase) || e.Status.Equals("Reserved", StringComparison.OrdinalIgnoreCase));
+
+        _recentBookings = UserService.GetBookings().Take(5).ToList();
+    }
+}

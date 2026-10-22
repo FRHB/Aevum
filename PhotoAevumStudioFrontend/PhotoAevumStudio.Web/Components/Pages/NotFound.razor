@@ -1,0 +1,28 @@
+﻿@page "/not-found"
+@rendermode InteractiveServer
+
+<div class="min-h-screen bg-gray-50 font-sans flex flex-col items-center justify-center p-4">
+    <div class="max-w-md w-full text-center">
+        <!-- Icon -->
+        <div class="w-24 h-24 bg-teal-50 rounded-full flex items-center justify-center mx-auto mb-8 shadow-sm">
+            <i data-lucide="camera-off" class="w-12 h-12 text-teal-600"></i>
+        </div>
+        
+        <!-- Error Text -->
+        <h1 class="text-7xl font-bold text-slate-900 mb-4 tracking-tight">404</h1>
+        <h2 class="text-2xl font-semibold text-slate-800 mb-3">Page Not Found</h2>
+        <p class="text-gray-500 mb-8 leading-relaxed">
+            Oops! The page or resource you are looking for doesn't exist, has been removed, or is temporarily unavailable.
+        </p>
+        
+        <!-- Action Buttons -->
+        <div class="flex flex-col sm:flex-row items-center justify-center gap-3">
+            <a href="/Dashboard" class="w-full sm:w-auto px-6 py-3 bg-teal-600 text-white rounded-lg font-medium hover:bg-teal-700 shadow-sm transition-colors flex items-center justify-center gap-2">
+                <i data-lucide="home" class="w-4 h-4"></i> Return to Dashboard
+            </a>
+            <button onclick="history.back()" class="w-full sm:w-auto px-6 py-3 bg-white border border-gray-300 text-gray-700 rounded-lg font-medium hover:bg-gray-50 transition-colors flex items-center justify-center gap-2">
+                <i data-lucide="arrow-left" class="w-4 h-4"></i> Go Back
+            </button>
+        </div>
+    </div>
+</div>

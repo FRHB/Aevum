@@ -1,0 +1,90 @@
+@page "/admin/equipment"
+@layout AdminLayout
+@using PhotoAevumStudio.Web.Services
+@inject IUserService UserService
+@rendermode InteractiveServer
+@attribute [Authorize(Roles = "Admin")]
+
+<div class="flex justify-between items-center mb-8">
+    <div>
+        <h1 class="text-3xl font-bold text-gray-900">Equipment Tracker</h1>
+        <p class="text-gray-500 mt-1">Manage physical hardware and studio gear.</p>
+    </div>
+    <button @onclick="() => isWizardOpen = true" class="btn btn--primary flex items-center gap-2">
+        <i data-lucide="plus" class="w-4 h-4"></i> Add Gear
+    </button>
+</div>
+
+<div class="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
+    <table class="w-full text-left text-sm">
+        <thead class="bg-gray-50 border-b border-gray-200 text-gray-500 uppercase text-xs font-semibold">
+            <tr>
+                <th class="px-6 py-4">Item Name</th>
+                <th class="px-6 py-4">Serial Number</th>
+                <th class="px-6 py-4">Category</th>
+                <th class="px-6 py-4">Status</th>
+            </tr>
+        </thead>
+        <tbody class="divide-y divide-gray-100">
+            @if (!EquipmentList.Any())
+            {
+                <tr>
+                    <td colspan="4" class="px-6 py-12 text-center text-gray-500">
+                        No equipment records found in the database.
+                    </td>
+                </tr>
+            }
+            else
+            {
+                @foreach (var item in EquipmentList)
+                {
+                    <tr class="hover:bg-gray-50">
+                        <td class="px-6 py-4 font-medium text-gray-900">@item.Name</td>
+                        <td class="px-6 py-4 text-gray-500 font-mono text-xs">@item.SerialNumber</td>
+                        <td class="px-6 py-4 text-gray-500">@item.Kind</td>
+                        <td class="px-6 py-4">
+                            <span class="px-2.5 py-1 rounded-full text-xs font-medium @(item.Status == "Available" ? "bg-green-100 text-green-800" : "bg-yellow-100 text-yellow-800")">
+                                @item.Status
+                            </span>
+                        </td>
+                    </tr>
+                }
+            }
+        </tbody>
+    </table>
+</div>
+
+<AddEquipmentWizard @bind-IsOpen="isWizardOpen" OnEquipmentSaved="LoadEquipment" />
+
+@code {
+    private bool isWizardOpen = false;
+
+    protected List<EquipmentItem> EquipmentList { get; set; } = new();
+
+    protected override void OnInitialized()
+    {
+        LoadEquipment();
+    }
+
+    private void LoadEquipment()
+    {
+        EquipmentList = UserService.GetEquipmentRows()
+            .Select(r => new EquipmentItem
+            {
+                SerialNumber = r.Id,
+                Name = r.Name,
+                Kind = r.Category,
+                Status = r.Status
+            })
+            .ToList();
+    }
+
+    public class EquipmentItem
+    {
+        public int Id { get; set; }
+        public string SerialNumber { get; set; } = string.Empty;
+        public string Name { get; set; } = string.Empty;
+        public string Kind { get; set; } = string.Empty;
+        public string Status { get; set; } = "Available";
+    }
+}

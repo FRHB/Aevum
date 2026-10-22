@@ -1,0 +1,105 @@
+@using PhotoAevumStudio.Web.Services
+@inject IUserService UserService
+@attribute [Authorize(Roles = "Admin")]
+@if (IsOpen)
+{
+    <div class="fixed inset-0 bg-gray-900/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+        <div class="bg-white rounded-2xl shadow-xl w-full max-w-2xl overflow-hidden flex flex-col">
+            <div class="px-6 py-5 border-b border-gray-200 flex justify-between items-center">
+                <h3 class="font-bold text-xl">Register Equipment</h3>
+                <button @onclick="CloseModal" class="text-gray-400 hover:text-gray-600"><i data-lucide="x" class="w-5 h-5"></i></button>
+            </div>
+            
+            <div class="p-6">
+                <ul class="stepper">
+                    <li class="stepper__item @(currentStep >= 1 ? "is-done" : "") @(currentStep == 1 ? "is-current" : "")">
+                        <span class="stepper__dot">1</span><span class="stepper__label">Identification</span>
+                    </li>
+                    <li class="stepper__item @(currentStep >= 2 ? "is-done" : "") @(currentStep == 2 ? "is-current" : "")">
+                        <span class="stepper__dot">2</span><span class="stepper__label">Classification</span>
+                    </li>
+                    <li class="stepper__item @(currentStep >= 3 ? "is-done" : "") @(currentStep == 3 ? "is-current" : "")">
+                        <span class="stepper__dot">3</span><span class="stepper__label">Confirm</span>
+                    </li>
+                </ul>
+
+                <div class="form mt-6">
+                    @if (currentStep == 1) { 
+                        <div class="form__row">
+                            <div class="field"><label>Item Name</label><input type="text" @bind="itemName" /></div>
+                            <div class="field"><label>Category</label><input type="text" @bind="categoryName" /></div>
+                        </div> 
+                    }
+                    @if (currentStep == 2) { 
+                        <div class="field">
+                            <label>Condition/Status</label>
+                            <select class="w-full p-2 border border-gray-200 rounded-md bg-white" @bind="status">
+                                <option value="Available">Available</option>
+                                <option value="Maintenance">Maintenance</option>
+                            </select>
+                        </div> 
+                    }
+                    @if (currentStep == 3) { 
+                        <p class="text-sm text-gray-600">Equipment will be added directly to the SQL database inventory.</p> 
+                    }
+                </div>
+            </div>
+
+            <div class="px-6 py-4 bg-gray-50 border-t border-gray-200 flex justify-between">
+                <button class="btn btn--ghost" @onclick="PrevStep" disabled="@(currentStep == 1)">Back</button>
+                @if (currentStep < 3) { 
+                    <button class="btn btn--primary" @onclick="NextStep">Next</button> 
+                }
+                else { 
+                    <button class="btn btn--primary" @onclick="SaveEquipment">Log Equipment</button> 
+                }
+            </div>
+        </div>
+    </div>
+}
+
+@code {
+    [Parameter] 
+    public bool IsOpen { get; set; }
+
+    [Parameter] 
+    public EventCallback<bool> IsOpenChanged { get; set; }
+
+    [Parameter]
+    public EventCallback OnEquipmentSaved { get; set; }
+
+    private int currentStep = 1;
+    private string itemName = string.Empty;
+    private string categoryName = "General Gear";
+    private string status = "Available";
+
+    private async Task SaveEquipment()
+    {
+        if (!string.IsNullOrWhiteSpace(itemName))
+        {
+            UserService.AddEquipment(itemName.Trim(), categoryName.Trim(), 1, status);
+            await OnEquipmentSaved.InvokeAsync();
+        }
+        await CloseModal();
+    }
+
+    private async Task CloseModal()
+    {
+        IsOpen = false;
+        currentStep = 1;
+        itemName = string.Empty;
+        categoryName = "General Gear";
+        status = "Available";
+        await IsOpenChanged.InvokeAsync(IsOpen);
+    }
+
+    private void NextStep() 
+    { 
+        if (currentStep < 3) currentStep++; 
+    }
+
+    private void PrevStep() 
+    { 
+        if (currentStep > 1) currentStep--; 
+    }
+}

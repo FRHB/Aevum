@@ -1,0 +1,183 @@
+/* --- Aevum Studio Minimalistic Responsive Login Styles --- */
+.login-page-wrapper {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    min-height: 100vh;
+    padding: 1rem;
+    background-color: #fafafa;
+    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+    box-sizing: border-box;
+}
+
+.login-card {
+    background-color: #ffffff;
+    padding: 3rem 2.5rem;
+    border-radius: 12px;
+    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.04);
+    width: 100%;
+    max-width: 400px;
+    border: 1px solid #f0f0f0;
+    box-sizing: border-box;
+}
+
+.logo-wrapper {
+    display: flex;
+    justify-content: center;
+    margin-bottom: 2rem;
+}
+
+.aevum-logo {
+    max-width: 140px;
+    height: auto;
+    object-fit: contain;
+    transition: max-width 0.3s ease;
+}
+
+.login-header {
+    text-align: center;
+    font-weight: 500;
+    font-size: 1.25rem;
+    color: #333;
+    margin-bottom: 2rem;
+    letter-spacing: 0.5px;
+}
+
+/* --- Updated Input Group & Labels --- */
+.input-group {
+    margin-bottom: 1.5rem;
+    display: flex;
+    flex-direction: column;
+}
+
+    .input-group label {
+        font-size: 0.85rem;
+        color: #111;
+        font-weight: 600;
+        margin-bottom: 0.5rem;
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+    }
+
+/* --- Updated Text Fields --- */
+.minimal-input {
+    padding: 0.85rem 1rem;
+    border: 1px solid #b3b3b3;
+    border-radius: 6px;
+    background-color: #fafafa;
+    font-size: 1rem;
+    color: #111;
+    width: 100%;
+    box-sizing: border-box;
+    transition: all 0.2s ease;
+}
+
+    .minimal-input:focus {
+        outline: none;
+        border-color: #111;
+        background-color: #ffffff;
+        box-shadow: 0 0 0 1px #111;
+    }
+
+    .minimal-input::placeholder {
+        color: #6c757d;
+    }
+
+/* --- Password Toggle & Wrapper --- */
+.password-input-wrapper {
+    position: relative;
+    display: flex;
+    align-items: center;
+    width: 100%;
+}
+
+    .password-input-wrapper .minimal-input {
+        padding-right: 2.75rem;
+    }
+
+.password-toggle-btn {
+    position: absolute;
+    right: 0.75rem;
+    top: 50%;
+    transform: translateY(-50%);
+    background: transparent;
+    border: none;
+    cursor: pointer;
+    color: #6b7280;
+    padding: 0.25rem;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: color 0.2s ease;
+    z-index: 2;
+}
+
+    .password-toggle-btn:hover {
+        color: #111;
+    }
+
+    .password-toggle-btn:focus-visible {
+        outline: 2px solid #111;
+        border-radius: 4px;
+    }
+
+    .password-toggle-btn:disabled {
+        opacity: 0.5;
+        cursor: not-allowed;
+    }
+
+/* --- Buttons & Links --- */
+.forgot-password-container {
+    text-align: right;
+    margin-bottom: 2rem;
+}
+
+.forgot-password-link {
+    font-size: 0.85rem;
+    color: #888;
+    text-decoration: none;
+    transition: color 0.3s ease;
+}
+
+    .forgot-password-link:hover {
+        color: #111;
+    }
+
+.login-button {
+    width: 100%;
+    background-color: #111;
+    color: #fff;
+    border: none;
+    padding: 0.85rem;
+    border-radius: 6px;
+    font-size: 1rem;
+    cursor: pointer;
+    transition: background-color 0.3s ease, transform 0.1s ease;
+    letter-spacing: 1px;
+}
+
+    .login-button:hover {
+        background-color: #333;
+    }
+
+    .login-button:active {
+        transform: scale(0.98);
+    }
+
+/* --- Mobile Responsiveness --- */
+@media (max-width: 480px) {
+    .login-card {
+        padding: 2rem 1.5rem;
+        border-radius: 8px;
+        box-shadow: 0 4px 15px rgba(0, 0, 0, 0.03);
+    }
+
+    .aevum-logo {
+        max-width: 110px;
+    }
+
+    .login-header {
+        font-size: 1.15rem;
+        margin-bottom: 1.5rem;
+    }
+}

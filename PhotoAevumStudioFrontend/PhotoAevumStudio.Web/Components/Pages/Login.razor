@@ -1,0 +1,99 @@
+@page "/login"
+@layout EmptyLayout
+@using PhotoAevumStudio.Web.Models
+@using PhotoAevumStudio.Web.Services
+@inject NavigationManager NavManager
+@inject IAuthService AuthService
+@inject AuthenticationStateProvider AuthStateProvider
+
+<div class="login-page-wrapper">
+    <div class="login-card">
+        <!-- Logo Section -->
+        <div class="logo-wrapper">
+            <img src="images/AevumLogo.jpg" alt="Aevum Studio Logo" class="aevum-logo" />
+        </div>
+
+        <h2 class="login-header font-bold text-xl tracking-tight uppercase tracking-widest text-gray-900">Log In</h2>
+
+        <!-- Blazor EditForm for Data Binding -->
+        <EditForm Model="@loginModel" OnValidSubmit="HandleLogin">
+           <div class="input-group">
+                <label for="userId">ID</label>
+                <!-- Change from <InputText> to a standard <input> -->
+                <input type="text" id="userId" class="minimal-input" @bind="loginModel.UserId" placeholder="Enter your ID or Email" />
+            </div>
+
+            <div class="input-group">
+                <label for="password">Password</label>
+                <PasswordInput Id="password"
+                               Name="password"
+                               Autocomplete="current-password"
+                               @bind-Value="loginModel.Password"
+                               Placeholder="Enter your password"
+                               Disabled="@isSubmitting" />
+            </div>
+
+            <div class="forgot-password-container">
+                <a href="/forgot-password" class="forgot-password-link">Forgot password?</a>
+            </div>
+
+            <!-- Display error message if login fails -->
+            @if (!string.IsNullOrEmpty(errorMessage))
+            {
+                <div style="color: #dc3545; margin-bottom: 10px; font-size: 0.9em;">
+                    @errorMessage
+                </div>
+            }
+
+            <button type="submit" class="login-button" disabled="@isSubmitting">
+                @if (isSubmitting) { <span>Logging in...</span> } else { <span>Login</span> }
+            </button>
+        </EditForm>
+    </div>
+</div>
+
+@code {
+    private LoginCredentials loginModel = new LoginCredentials();
+    private string errorMessage = ""; // Variable to hold login errors
+    private bool isSubmitting = false;
+
+    private async Task HandleLogin()
+    {
+        isSubmitting = true;
+        errorMessage = "";
+        StateHasChanged();
+
+        var result = await AuthService.LoginAsync(loginModel.UserId, loginModel.Password, CancellationToken.None);
+
+        if (result.RequiresPasswordChange)
+        {
+            NavManager.NavigateTo($"/change-password?userId={Uri.EscapeDataString(result.UserId ?? loginModel.UserId)}");
+            return;
+        }
+
+        if (result.Success)
+        {
+            var authState = await AuthStateProvider.GetAuthenticationStateAsync();
+            var user = authState.User;
+
+            if (user.IsInRole("Admin"))
+                NavManager.NavigateTo("/admin");
+            else if (user.IsInRole("Employee"))
+                NavManager.NavigateTo("/staff");
+            else
+                NavManager.NavigateTo("/my");
+        }
+        else
+        {
+            errorMessage = result.Error ?? "Invalid ID or password. Please try again.";
+        }
+        
+        isSubmitting = false;
+    }
+
+    public class LoginCredentials
+    {
+        public string UserId { get; set; } = string.Empty;
+        public string Password { get; set; } = string.Empty;
+    }
+}

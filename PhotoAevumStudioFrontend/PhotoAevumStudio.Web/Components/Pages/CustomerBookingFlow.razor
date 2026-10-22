@@ -1,0 +1,83 @@
+@page "/my/book"
+@layout CustomerLayout
+@attribute [Authorize(Roles = "Customer")]
+@using PhotoAevumStudio.Web.Models
+@using PhotoAevumStudio.Web.Services
+@using Microsoft.AspNetCore.Components.Authorization
+@inject IUserService UserService
+
+<PageTitle>Book an Appointment</PageTitle>
+
+<div class="max-w-4xl mx-auto py-10 px-6">
+    <h1 class="text-3xl font-bold mb-6">Book your session</h1>
+    
+    <div class="grid grid-cols-1 md:grid-cols-2 gap-8">
+        <div>
+            <h2 class="text-xl font-semibold mb-4">1. Select a Service</h2>
+            @if (!AvailableServices.Any())
+            {
+                <div class="p-6 border border-gray-200 rounded-lg text-center text-gray-500">
+                    No active studio services are currently available for booking.
+                </div>
+            }
+            else
+            {
+                <div class="space-y-4">
+                    @foreach (var svc in AvailableServices)
+                    {
+                        <div class="p-4 border rounded-lg cursor-pointer @(SelectedService?.Id == svc.Id ? "border-black bg-gray-50" : "border-gray-200")"
+                             @onclick="() => SelectedService = svc">
+                            <div class="flex justify-between">
+                                <span class="font-medium">@svc.Name</span>
+                                <span class="font-semibold">₱@svc.Price.ToString("N2")</span>
+                            </div>
+                            <p class="text-sm text-gray-600 mt-1">@svc.DurationHrs hr(s) • @svc.Description</p>
+                        </div>
+                    }
+                </div>
+            }
+        </div>
+
+        <div>
+            <h2 class="text-xl font-semibold mb-4">2. Select a Date</h2>
+            <input type="date" @bind="SelectedDate" class="w-full p-2 border rounded-md mb-6" />
+
+            <h2 class="text-xl font-semibold mb-4">3. Select a Time</h2>
+            <div class="grid grid-cols-3 gap-3">
+                @foreach (var time in AvailableTimes)
+                {
+                    <button class="p-2 border rounded-md @(SelectedTime == time ? "bg-black text-white" : "bg-white text-black")"
+                            @onclick="() => SelectedTime = time">
+                        @time.ToString("h:mm tt")
+                    </button>
+                }
+            </div>
+            
+            <button class="w-full bg-black text-white py-3 rounded-md mt-8 font-semibold disabled:opacity-50" disabled="@(!CanBook)">
+                Confirm Booking
+            </button>
+        </div>
+    </div>
+</div>
+
+@code {
+    private List<MainServiceItem> AvailableServices = new();
+    private MainServiceItem? SelectedService;
+    private DateOnly SelectedDate = DateOnly.FromDateTime(DateTime.Today.AddDays(1));
+    private TimeOnly? SelectedTime;
+    
+    private List<TimeOnly> AvailableTimes = new()
+    {
+        new TimeOnly(9, 0), new TimeOnly(10, 0), new TimeOnly(11, 0),
+        new TimeOnly(13, 0), new TimeOnly(14, 0), new TimeOnly(15, 0)
+    };
+
+    private bool CanBook => SelectedService != null && SelectedTime != null;
+
+    protected override void OnInitialized()
+    {
+        AvailableServices = UserService.GetMainServices()
+            .Where(s => s.IsActive)
+            .ToList();
+    }
+}

@@ -1,0 +1,21 @@
+<div class="bg-red-50 border-l-4 border-red-400 p-4 rounded-r-md">
+    <div class="flex">
+        <div class="flex-shrink-0">
+            <i data-lucide="alert-circle" class="h-5 w-5 text-red-400"></i>
+        </div>
+        <div class="ml-3">
+            <h3 class="text-sm font-medium text-red-800">@Title</h3>
+            @if (!string.IsNullOrEmpty(Message))
+            {
+                <div class="mt-2 text-sm text-red-700">
+                    <p>@Message</p>
+                </div>
+            }
+        </div>
+    </div>
+</div>
+
+@code {
+    [Parameter] public string Title { get; set; } = "Error";
+    [Parameter] public string Message { get; set; } = string.Empty;
+}

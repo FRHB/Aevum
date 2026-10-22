@@ -1,0 +1,53 @@
+@page "/staff/assignments"
+@layout EmployeeLayout
+@using PhotoAevumStudio.Web.Services
+@inject IUserService UserService
+@attribute [Authorize(Roles = "Employee")]
+
+<PageTitle>My Assignments</PageTitle>
+
+<div class="max-w-4xl mx-auto py-10 px-6">
+    <div class="flex justify-between items-center mb-8">
+        <h1 class="text-3xl font-bold">My Assignments</h1>
+        <a href="/staff" class="text-teal-600 hover:underline">Back to Dashboard</a>
+    </div>
+
+    @if (!Assignments.Any())
+    {
+        <div class="bg-white border border-gray-200 rounded-xl p-12 text-center shadow-sm">
+            <h2 class="text-lg font-semibold text-gray-800 mb-1">No Active Assignments</h2>
+            <p class="text-sm text-gray-500">There are currently no studio assignments scheduled in the database.</p>
+        </div>
+    }
+    else
+    {
+        <div class="space-y-4">
+            @foreach (var item in Assignments)
+            {
+                <div class="bg-white border rounded-xl p-6 shadow-sm">
+                    <div class="flex justify-between items-start mb-4">
+                        <div>
+                            <h2 class="text-xl font-bold">#@item.BookingId - @item.ServiceTitle</h2>
+                            <p class="text-gray-500">Client: @item.ClientName</p>
+                        </div>
+                        <span class="bg-yellow-100 text-yellow-800 text-xs font-bold px-3 py-1 rounded-full">@item.Status</span>
+                    </div>
+                    
+                    <div class="grid grid-cols-2 gap-4 text-sm text-gray-600 mb-6">
+                        <div><strong>Call Time:</strong> @item.EventDateTime.AddMinutes(-30).ToString("MMM dd, hh:mm tt")</div>
+                        <div><strong>Shoot Start:</strong> @item.EventDateTime.ToString("MMM dd, hh:mm tt")</div>
+                    </div>
+                </div>
+            }
+        </div>
+    }
+</div>
+
+@code {
+    private List<BookingRow> Assignments = new();
+
+    protected override void OnInitialized()
+    {
+        Assignments = UserService.GetBookings();
+    }
+}

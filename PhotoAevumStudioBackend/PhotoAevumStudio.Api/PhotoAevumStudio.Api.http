@@ -1,0 +1,6 @@
+@PhotoAevumStudio.Api_HostAddress = http://localhost:5001
+
+GET {{PhotoAevumStudio.Api_HostAddress}}/weatherforecast/
+Accept: application/json
+
+###

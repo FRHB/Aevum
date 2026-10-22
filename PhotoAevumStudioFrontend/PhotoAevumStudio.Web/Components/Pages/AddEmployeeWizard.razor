@@ -1,0 +1,523 @@
+@using System.ComponentModel.DataAnnotations
+@using PhotoAevumStudio.Web.Models
+@attribute [Authorize(Roles = "Admin")]
+@inject IEmployeeService Employees
+@implements IDisposable
+
+@if (IsOpen)
+{
+    <div class="fixed inset-0 bg-slate-950/60 backdrop-blur-sm z-50 flex items-center justify-center p-4"
+         role="dialog" aria-modal="true" aria-labelledby="wizard-title">
+        <div class="bg-white rounded-2xl shadow-2xl border border-slate-200 w-full max-w-2xl overflow-hidden flex flex-col max-h-[90vh]">
+            <!-- Header -->
+            <div class="px-6 py-5 border-b border-slate-100 flex items-center justify-between bg-slate-50/50">
+                <div>
+                    <h2 id="wizard-title" class="text-xl font-bold text-slate-900 tracking-tight">Add Studio Employee</h2>
+                    <p class="text-xs text-slate-500 mt-0.5">Photo Aevum Studio &bull; Staff Onboarding</p>
+                </div>
+                <button type="button" 
+                        class="text-slate-400 hover:text-slate-700 p-1.5 rounded-lg hover:bg-slate-100 transition-colors"
+                        aria-label="Close"
+                        @onclick="CloseModal" 
+                        disabled="@isSaving">
+                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+                    </svg>
+                </button>
+            </div>
+
+            <!-- Stepper Progress Bar -->
+            <div class="px-6 pt-5 pb-2 bg-white">
+                <nav aria-label="Progress" class="flex items-center justify-between">
+                    <!-- Step 1 -->
+                    <div class="flex items-center gap-2.5">
+                        <span class="w-7 h-7 rounded-full flex items-center justify-center text-xs font-semibold transition-all
+                            @(currentStep >= 1 ? "bg-slate-900 text-white shadow-sm ring-4 ring-slate-100" : "bg-slate-100 text-slate-400")">
+                            @(currentStep > 1 ? "✓" : "1")
+                        </span>
+                        <span class="text-xs font-medium @(currentStep == 1 ? "text-slate-900 font-bold" : "text-slate-500")">
+                            Personal Info
+                        </span>
+                    </div>
+
+                    <div class="flex-1 h-0.5 mx-3 @(currentStep > 1 ? "bg-slate-900" : "bg-slate-200") transition-colors"></div>
+
+                    <!-- Step 2 -->
+                    <div class="flex items-center gap-2.5">
+                        <span class="w-7 h-7 rounded-full flex items-center justify-center text-xs font-semibold transition-all
+                            @(currentStep >= 2 ? "bg-slate-900 text-white shadow-sm ring-4 ring-slate-100" : "bg-slate-100 text-slate-400")">
+                            @(currentStep > 2 ? "✓" : "2")
+                        </span>
+                        <span class="text-xs font-medium @(currentStep == 2 ? "text-slate-900 font-bold" : "text-slate-500")">
+                            Specializations
+                        </span>
+                    </div>
+
+                    <div class="flex-1 h-0.5 mx-3 @(currentStep > 2 ? "bg-slate-900" : "bg-slate-200") transition-colors"></div>
+
+                    <!-- Step 3 -->
+                    <div class="flex items-center gap-2.5">
+                        <span class="w-7 h-7 rounded-full flex items-center justify-center text-xs font-semibold transition-all
+                            @(currentStep == 3 ? "bg-slate-900 text-white shadow-sm ring-4 ring-slate-100" : "bg-slate-100 text-slate-400")">
+                            3
+                        </span>
+                        <span class="text-xs font-medium @(currentStep == 3 ? "text-slate-900 font-bold" : "text-slate-500")">
+                            Overview & Credentials
+                        </span>
+                    </div>
+                </nav>
+            </div>
+
+            <!-- Form Content -->
+            <div class="p-6 overflow-y-auto flex-1">
+                <EditForm EditContext="_editContext">
+                    <DataAnnotationsValidator />
+
+                    @if (currentStep == 1)
+                    {
+                        <div class="space-y-4">
+                            <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                                <div>
+                                    <label for="emp-first" class="block text-xs font-semibold uppercase tracking-wider text-slate-700 mb-1.5">
+                                        First Name <span class="text-rose-500">*</span>
+                                    </label>
+                                    <InputText id="emp-first" @bind-Value="model.FirstName" class="@InputClass" placeholder="e.g. John" autocomplete="off" />
+                                    <ValidationMessage For="() => model.FirstName" class="text-xs text-rose-600 mt-1" />
+                                </div>
+                                <div>
+                                    <label for="emp-last" class="block text-xs font-semibold uppercase tracking-wider text-slate-700 mb-1.5">
+                                        Last Name <span class="text-rose-500">*</span>
+                                    </label>
+                                    <InputText id="emp-last" @bind-Value="model.LastName" class="@InputClass" placeholder="e.g. Doe" autocomplete="off" />
+                                    <ValidationMessage For="() => model.LastName" class="text-xs text-rose-600 mt-1" />
+                                </div>
+                            </div>
+
+                            <div>
+                                <label for="emp-middle" class="block text-xs font-semibold uppercase tracking-wider text-slate-700 mb-1.5">
+                                    Middle Name <span class="text-slate-400 font-normal lowercase">(optional)</span>
+                                </label>
+                                <InputText id="emp-middle" @bind-Value="model.MiddleName" class="@InputClass" placeholder="e.g. Alexander" autocomplete="off" />
+                                <ValidationMessage For="() => model.MiddleName" class="text-xs text-rose-600 mt-1" />
+                            </div>
+
+                            <div>
+                                <label for="emp-email" class="block text-xs font-semibold uppercase tracking-wider text-slate-700 mb-1.5">
+                                    Employee Email <span class="text-rose-500">*</span>
+                                </label>
+                                <InputText id="emp-email" type="email" @bind-Value="model.Email" class="@InputClass" placeholder="j.doe@photoaevum.com" autocomplete="off" />
+                                <ValidationMessage For="() => model.Email" class="text-xs text-rose-600 mt-1" />
+                            </div>
+                        </div>
+                    }
+
+                    @if (currentStep == 2)
+                    {
+                        <div class="space-y-5">
+                            <div>
+                                <label for="emp-spec" class="block text-xs font-semibold uppercase tracking-wider text-slate-700 mb-1.5">
+                                    Specialization <span class="text-rose-500">*</span>
+                                </label>
+                                @if (!AvailableSpecializations.Any() && (allSpecializations?.Count ?? 0) == 0)
+                                {
+                                    <div class="flex gap-2">
+                                        <input id="emp-spec" type="text" @bind="pendingSpec" class="@InputClass flex-1" placeholder="Enter specialization name (no master records found in DB)..." />
+                                        <button type="button" 
+                                                class="inline-flex items-center px-4 py-2.5 bg-slate-900 hover:bg-black text-white text-xs font-semibold uppercase tracking-wider rounded-lg transition-colors shadow-sm"
+                                                @onclick="AddSpecialization">
+                                            Add
+                                        </button>
+                                    </div>
+                                }
+                                else
+                                {
+                                    <div class="flex gap-2">
+                                        <div class="relative flex-1">
+                                            <select id="emp-spec" @bind="pendingSpec" class="@InputClass cursor-pointer appearance-none pr-8">
+                                                <option value="">-- Choose a Specialization --</option>
+                                                @foreach (var s in AvailableSpecializations)
+                                                {
+                                                    <option value="@s">@s</option>
+                                                }
+                                            </select>
+                                            <div class="pointer-events-none absolute inset-y-0 right-0 flex items-center px-3 text-slate-500">
+                                                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" />
+                                                </svg>
+                                            </div>
+                                        </div>
+                                        <button type="button" 
+                                                class="inline-flex items-center px-4 py-2.5 bg-slate-900 hover:bg-black text-white text-xs font-semibold uppercase tracking-wider rounded-lg transition-colors shadow-sm disabled:opacity-50"
+                                                @onclick="AddSpecialization"
+                                                disabled="@(!AvailableSpecializations.Any())">
+                                            <svg class="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" />
+                                            </svg>
+                                            Add
+                                        </button>
+                                    </div>
+                                }
+                                @if (specError is not null)
+                                {
+                                    <p class="text-xs text-rose-600 mt-2 font-medium" role="alert">@specError</p>
+                                }
+                            </div>
+
+                            <!-- Dismissible Chips -->
+                            <div class="p-4 bg-slate-50 rounded-xl border border-slate-200">
+                                <span class="block text-xs font-semibold uppercase tracking-wider text-slate-600 mb-2">
+                                    Assigned Specializations (@model.Specializations.Count)
+                                </span>
+                                @if (model.Specializations.Count == 0)
+                                {
+                                    <p class="text-xs text-slate-400 italic">No skills added yet. Select or enter a specialization above and click Add.</p>
+                                }
+                                else
+                                {
+                                    <div class="flex flex-wrap gap-2">
+                                        @foreach (var s in model.Specializations)
+                                        {
+                                            <span class="inline-flex items-center gap-1.5 bg-slate-900 text-white text-xs font-medium pl-3 pr-2 py-1.5 rounded-full shadow-sm">
+                                                @s
+                                                <button type="button" 
+                                                        class="w-4 h-4 flex items-center justify-center rounded-full hover:bg-slate-700 text-slate-300 hover:text-white transition-colors"
+                                                        aria-label="Remove @s" 
+                                                        @onclick="() => RemoveSpecialization(s)">&times;</button>
+                                            </span>
+                                        }
+                                    </div>
+                                }
+                            </div>
+                        </div>
+                    }
+
+                    @if (currentStep == 3)
+                    {
+                        <div class="space-y-5">
+                            <!-- Read-only Summary -->
+                            <div class="bg-slate-50 border border-slate-200 rounded-xl p-4 divide-y divide-slate-200 text-xs">
+                                <div class="pb-2.5 flex justify-between items-center">
+                                    <span class="text-slate-500 font-medium">Full Name</span>
+                                    <span class="text-slate-900 font-semibold text-right">@model.FullName</span>
+                                </div>
+                                <div class="py-2.5 flex justify-between items-center">
+                                    <span class="text-slate-500 font-medium">Email Address</span>
+                                    <span class="text-slate-900 font-semibold text-right">@model.Email</span>
+                                </div>
+                                <div class="pt-2.5 flex flex-col sm:flex-row sm:justify-between sm:items-start gap-1">
+                                    <span class="text-slate-500 font-medium shrink-0">Specializations</span>
+                                    <div class="flex flex-wrap gap-1.5 sm:justify-end">
+                                        @foreach (var s in model.Specializations)
+                                        {
+                                            <span class="bg-white border border-slate-300 text-slate-800 text-[11px] px-2.5 py-0.5 rounded-md font-medium">@s</span>
+                                        }
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- Credentials -->
+                            <div class="space-y-4 pt-1">
+                                <div>
+                                    <label for="emp-id" class="block text-xs font-semibold uppercase tracking-wider text-slate-700 mb-1.5">
+                                        Employee ID <span class="text-rose-500">*</span>
+                                    </label>
+                                    <InputText id="emp-id" @bind-Value="model.EmployeeId" class="@MonoInputClass" placeholder="e.g. EMP-001" autocomplete="off" />
+                                    <ValidationMessage For="() => model.EmployeeId" class="text-xs text-rose-600 mt-1" />
+                                </div>
+
+                                <div>
+                                    <label for="emp-pw" class="block text-xs font-semibold uppercase tracking-wider text-slate-700 mb-1.5">
+                                        Starting Password <span class="text-rose-500">*</span>
+                                    </label>
+                                    <div class="relative">
+                                        <InputText id="emp-pw" @bind-Value="model.Password" class="@PasswordInputClass"
+                                                   type="@(showPassword ? "text" : "password")" placeholder="••••••••" autocomplete="new-password" />
+                                        <button type="button" class="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-slate-500 hover:text-slate-900 font-medium underline"
+                                                @onclick="() => showPassword = !showPassword">@(showPassword ? "Hide" : "Show")</button>
+                                    </div>
+                                    <ValidationMessage For="() => model.Password" class="text-xs text-rose-600 mt-1" />
+                                    <p class="text-[11px] text-slate-400 mt-1">At least 8 characters with at least one letter and one number.</p>
+                                </div>
+                            </div>
+
+                            @if (saveError is not null)
+                            {
+                                <div class="p-3 bg-rose-50 border border-rose-200 rounded-lg text-xs text-rose-700 font-medium" role="alert">
+                                    @saveError
+                                </div>
+                            }
+                        </div>
+                    }
+                </EditForm>
+            </div>
+
+            <!-- Modal Footer -->
+            <div class="px-6 py-4 bg-slate-50 border-t border-slate-200 flex items-center justify-between">
+                @if (currentStep == 1)
+                {
+                    <button type="button" class="@GhostBtn" @onclick="CloseModal">Cancel</button>
+                    <button type="button" class="@PrimaryBtn flex items-center gap-1.5" @onclick="GoToStep2">
+                        Next
+                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7" />
+                        </svg>
+                    </button>
+                }
+                else if (currentStep == 2)
+                {
+                    <button type="button" class="@GhostBtn flex items-center gap-1.5" @onclick="() => currentStep = 1">
+                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7" />
+                        </svg>
+                        Back
+                    </button>
+                    <button type="button" class="@PrimaryBtn flex items-center gap-1.5" @onclick="GoToStep3">
+                        Next
+                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7" />
+                        </svg>
+                    </button>
+                }
+                else if (currentStep == 3)
+                {
+                    <button type="button" class="@GhostBtn" @onclick="() => currentStep = 2" disabled="@isSaving">Back</button>
+                    <button type="button" class="px-6 py-2.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-semibold uppercase tracking-wider shadow-sm transition-colors disabled:opacity-50 flex items-center gap-2" 
+                            @onclick="SubmitCompleteSetup" disabled="@isSaving">
+                        @if (isSaving)
+                        {
+                            <span class="w-3.5 h-3.5 border-2 border-white/30 border-t-white rounded-full animate-spin"></span>
+                            <span>Saving...</span>
+                        }
+                        else
+                        {
+                            <span>Complete Setup</span>
+                        }
+                    </button>
+                }
+            </div>
+        </div>
+    </div>
+}
+
+@code {
+    [Parameter] public bool IsOpen { get; set; }
+    [Parameter] public EventCallback<bool> IsOpenChanged { get; set; }
+    [Parameter] public EventCallback OnSaved { get; set; }
+    [Parameter] public EventCallback OnCancel { get; set; }
+
+    private const string InputClass =
+        "w-full rounded-lg border border-slate-300 bg-white px-3.5 py-2.5 text-sm text-slate-900 placeholder-slate-400 " +
+        "focus:border-slate-900 focus:outline-none focus:ring-1 focus:ring-slate-900 transition-colors";
+    private const string MonoInputClass =
+        "w-full rounded-lg border border-slate-300 bg-white px-3.5 py-2.5 text-sm text-slate-900 placeholder-slate-400 font-mono " +
+        "focus:border-slate-900 focus:outline-none focus:ring-1 focus:ring-slate-900 transition-colors";
+    private const string PasswordInputClass =
+        "w-full rounded-lg border border-slate-300 bg-white px-3.5 py-2.5 text-sm text-slate-900 placeholder-slate-400 pr-16 " +
+        "focus:border-slate-900 focus:outline-none focus:ring-1 focus:ring-slate-900 transition-colors";
+    private const string PrimaryBtn =
+        "bg-slate-900 hover:bg-black text-white px-6 py-2.5 rounded-lg text-xs font-semibold uppercase tracking-wider transition-colors shadow-sm disabled:opacity-50";
+    private const string GhostBtn =
+        "bg-transparent hover:bg-slate-100 text-slate-700 border border-slate-300 px-5 py-2.5 rounded-lg text-xs font-semibold uppercase tracking-wider transition-colors disabled:opacity-50";
+
+    private EmployeeRegistrationModel model = new();
+    private EditContext _editContext = default!;
+    private ValidationMessageStore _messageStore = default!;
+
+    private int currentStep = 1;
+    private string? pendingSpec;
+    private string? specError;
+    private string? saveError;
+    private bool isSaving;
+    private bool showPassword;
+
+    private IReadOnlyList<string> allSpecializations = Array.Empty<string>();
+    private CancellationTokenSource? _cts;
+
+    private IEnumerable<string> AvailableSpecializations =>
+        allSpecializations.Except(model.Specializations, StringComparer.OrdinalIgnoreCase);
+
+    protected override async Task OnInitializedAsync()
+    {
+        InitializeContext();
+        _cts = new CancellationTokenSource();
+        try
+        {
+            var specs = await Employees.GetSpecializationsAsync(_cts.Token);
+            allSpecializations = specs ?? Array.Empty<string>();
+        }
+        catch
+        {
+            allSpecializations = Array.Empty<string>();
+        }
+    }
+
+    private void InitializeContext()
+    {
+        _editContext = new EditContext(model);
+        _messageStore = new ValidationMessageStore(_editContext);
+        _editContext.OnFieldChanged += (s, e) => _messageStore.Clear(e.FieldIdentifier);
+    }
+
+    private async Task CloseModal()
+    {
+        IsOpen = false;
+        currentStep = 1;
+        model = new EmployeeRegistrationModel();
+        specError = null;
+        saveError = null;
+        InitializeContext();
+        await IsOpenChanged.InvokeAsync(IsOpen);
+        await OnCancel.InvokeAsync();
+    }
+
+    private void AddSpecialization()
+    {
+        specError = null;
+        if (string.IsNullOrWhiteSpace(pendingSpec))
+        {
+            specError = "Choose a specialization first.";
+            return;
+        }
+
+        if (model.Specializations.Contains(pendingSpec, StringComparer.OrdinalIgnoreCase))
+        {
+            specError = "This specialization has already been added.";
+            return;
+        }
+
+        model.Specializations.Add(pendingSpec.Trim());
+        pendingSpec = null;
+    }
+
+    private void RemoveSpecialization(string spec)
+    {
+        model.Specializations.Remove(spec);
+    }
+
+    private void GoToStep2()
+    {
+        _messageStore.Clear();
+        bool isValid = true;
+
+        var step1Properties = new[]
+        {
+            new { Name = nameof(model.FirstName), Value = (object)model.FirstName },
+            new { Name = nameof(model.LastName), Value = (object)model.LastName },
+            new { Name = nameof(model.Email), Value = (object)model.Email }
+        };
+
+        foreach (var prop in step1Properties)
+        {
+            var results = new List<ValidationResult>();
+            var context = new ValidationContext(model) { MemberName = prop.Name };
+            if (!Validator.TryValidateProperty(prop.Value, context, results))
+            {
+                isValid = false;
+                var fieldId = new FieldIdentifier(model, prop.Name);
+                foreach (var res in results)
+                {
+                    _messageStore.Add(fieldId, res.ErrorMessage ?? "Invalid value.");
+                }
+            }
+        }
+
+        _editContext.NotifyValidationStateChanged();
+
+        if (isValid)
+        {
+            currentStep = 2;
+        }
+    }
+
+    private void GoToStep3()
+    {
+        if (!string.IsNullOrEmpty(pendingSpec))
+        {
+            AddSpecialization();
+        }
+
+        if (model.Specializations.Count == 0)
+        {
+            specError = "Add at least one specialization.";
+            return;
+        }
+
+        specError = null;
+        currentStep = 3;
+    }
+
+    private async Task SubmitCompleteSetup()
+    {
+        _messageStore.Clear();
+        bool isValid = true;
+
+        var step3Properties = new[]
+        {
+            new { Name = nameof(model.EmployeeId), Value = (object)model.EmployeeId },
+            new { Name = nameof(model.Password), Value = (object)model.Password }
+        };
+
+        foreach (var prop in step3Properties)
+        {
+            var results = new List<ValidationResult>();
+            var context = new ValidationContext(model) { MemberName = prop.Name };
+            if (!Validator.TryValidateProperty(prop.Value, context, results))
+            {
+                isValid = false;
+                var fieldId = new FieldIdentifier(model, prop.Name);
+                foreach (var res in results)
+                {
+                    _messageStore.Add(fieldId, res.ErrorMessage ?? "Invalid value.");
+                }
+            }
+        }
+
+        _editContext.NotifyValidationStateChanged();
+
+        if (!isValid) return;
+
+        isSaving = true;
+        saveError = null;
+
+        try
+        {
+            var request = new NewEmployeeRequest(
+                model.EmployeeId,
+                model.FirstName,
+                model.LastName,
+                model.MiddleName,
+                model.Email,
+                model.Specializations.ToList(),
+                model.Password);
+
+            var result = await Employees.CreateEmployeeAsync(request, _cts!.Token);
+
+            if (!result.Success)
+            {
+                saveError = result.Error;
+                return;
+            }
+
+            await OnSaved.InvokeAsync();
+            await CloseModal();
+        }
+        catch (OperationCanceledException)
+        {
+            // Cancelled
+        }
+        catch
+        {
+            saveError = "Something went wrong while saving. Try again in a moment.";
+        }
+        finally
+        {
+            isSaving = false;
+        }
+    }
+
+    public void Dispose()
+    {
+        _cts?.Cancel();
+        _cts?.Dispose();
+    }
+}

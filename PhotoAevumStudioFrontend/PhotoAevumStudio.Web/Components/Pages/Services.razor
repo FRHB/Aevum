@@ -1,0 +1,68 @@
+@page "/admin/services"
+@layout AdminLayout
+@rendermode InteractiveServer
+@attribute [Authorize(Roles = "Admin")]
+@using PhotoAevumStudio.Web.Models
+@inject IUserService UserService
+
+<div class="flex justify-between items-center mb-8">
+    <div>
+        <h1 class="text-3xl font-bold text-gray-900">Services</h1>
+        <p class="text-gray-500 mt-1">Manage studio offerings and combo packages.</p>
+    </div>
+    <button @onclick="() => isWizardOpen = true" class="btn btn--primary flex items-center gap-2">
+        <i data-lucide="plus" class="w-4 h-4"></i> Add Service
+    </button>
+</div>
+
+<div class="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
+    <table class="w-full text-left text-sm">
+        <thead class="bg-gray-50 border-b border-gray-200 text-gray-500 uppercase text-xs font-semibold">
+            <tr>
+                <th class="px-6 py-4">Code</th>
+                <th class="px-6 py-4">Service Name</th>
+                <th class="px-6 py-4">Description</th>
+                <th class="px-6 py-4 text-right">Status</th>
+            </tr>
+        </thead>
+        <tbody class="divide-y divide-gray-100">
+            @if (_services.Count == 0)
+            {
+                <tr>
+                    <td colspan="4" class="px-6 py-8 text-center text-gray-400">
+                        No services found in the database.
+                    </td>
+                </tr>
+            }
+            else
+            {
+                @foreach (var service in _services)
+                {
+                    <tr class="hover:bg-gray-50">
+                        <td class="px-6 py-4 font-mono text-xs text-gray-600">@service.Code</td>
+                        <td class="px-6 py-4 font-medium text-gray-900">@service.Title</td>
+                        <td class="px-6 py-4 text-gray-500">@(string.IsNullOrWhiteSpace(service.Description) ? service.Category : service.Description)</td>
+                        <td class="px-6 py-4 text-right font-semibold text-gray-900">@service.Status</td>
+                    </tr>
+                }
+            }
+        </tbody>
+    </table>
+</div>
+
+<AddServicesWizard @bind-IsOpen="isWizardOpen" OnServiceSaved="LoadServices" />
+
+@code {
+    private bool isWizardOpen = false;
+    private IReadOnlyList<MainServiceItem> _services = Array.Empty<MainServiceItem>();
+
+    protected override void OnInitialized()
+    {
+        LoadServices();
+    }
+
+    private void LoadServices()
+    {
+        _services = UserService.GetMainServices();
+    }
+}

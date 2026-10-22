@@ -1,0 +1,108 @@
+@using PhotoAevumStudio.Web.Models
+@inject IUserService UserService
+
+<section class="aev-card" aria-label="Admin user list">
+    <header class="aev-card__header">
+        <h2 class="aev-card__heading">Admin Accounts</h2>
+    </header>
+
+    @if (!string.IsNullOrEmpty(_errorMessage))
+    {
+        <div class="alert" role="alert">@_errorMessage</div>
+    }
+    @if (!string.IsNullOrEmpty(_successMessage))
+    {
+        <div class="aev-alert-banner" role="status">@_successMessage</div>
+    }
+
+    <div class="aev-table-wrap">
+        <table class="aev-table">
+            <thead>
+                <tr>
+                    <th>ID</th>
+                    <th>Name</th>
+                    <th>Email</th>
+                    <th>Role</th>
+                    <th>Actions</th>
+                </tr>
+            </thead>
+            <tbody>
+                @if (_admins.Count == 0)
+                {
+                    <tr>
+                        <td colspan="5" class="text-center py-6 text-slate-400">
+                            No administrator accounts found in the database.
+                        </td>
+                    </tr>
+                }
+                else
+                {
+                    @foreach (var admin in _admins)
+                    {
+                        <tr>
+                            <td>
+                                @admin.Id
+                                @if (admin.IsSuperAdmin)
+                                {
+                                    <span class="aev-badge aev-badge--violet" title="Root Super Admin – cannot be deleted">Root</span>
+                                }
+                            </td>
+                            <td>@admin.Name</td>
+                            <td>@admin.Email</td>
+                            <td>@admin.Role</td>
+                            <td>
+                                @if (admin.IsSuperAdmin)
+                                {
+                                    <span class="aev-muted-text" title="Super Admin cannot be deleted">Protected</span>
+                                }
+                                else
+                                {
+                                    <button class="btn btn--ghost btn--sm"
+                                            disabled="@(!RequestingUserId.StartsWith("SADM-", StringComparison.OrdinalIgnoreCase))"
+                                            @onclick="() => TryDeleteAdmin(admin.Id)"
+                                            title="@(RequestingUserId.StartsWith("SADM-") ? "Delete admin" : "Only SADM can delete admins")">
+                                        Delete
+                                    </button>
+                                }
+                            </td>
+                        </tr>
+                    }
+                }
+            </tbody>
+        </table>
+    </div>
+</section>
+
+@code {
+    [Parameter] public string RequestingUserId { get; set; } = string.Empty;
+
+    private IReadOnlyList<Admin> _admins = Array.Empty<Admin>();
+    private string _errorMessage   = string.Empty;
+    private string _successMessage = string.Empty;
+
+    protected override void OnInitialized()
+    {
+        _admins = UserService.GetAdmins();
+    }
+
+    private void TryDeleteAdmin(string targetId)
+    {
+        _errorMessage   = string.Empty;
+        _successMessage = string.Empty;
+
+        try
+        {
+            UserService.DeleteAdmin(targetId, RequestingUserId);
+            _admins = UserService.GetAdmins();
+            _successMessage = $"Admin '{targetId}' has been removed.";
+        }
+        catch (InvalidOperationException ex)
+        {
+            _errorMessage = ex.Message;
+        }
+        catch (KeyNotFoundException ex)
+        {
+            _errorMessage = ex.Message;
+        }
+    }
+}

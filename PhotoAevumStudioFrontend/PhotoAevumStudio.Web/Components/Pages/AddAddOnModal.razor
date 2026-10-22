@@ -1,0 +1,160 @@
+@inject IUserService UserService
+
+@if (IsOpen)
+{
+    <div class="fixed inset-0 z-50 bg-black/50 backdrop-blur-xs flex items-center justify-center p-4 sm:p-6 overflow-y-auto"
+         role="dialog" aria-modal="true" aria-labelledby="addon-modal-title">
+
+        <div class="relative w-full max-w-xl bg-white rounded-2xl shadow-2xl border border-gray-100 overflow-hidden flex flex-col max-h-[92vh]">
+            <div class="px-6 py-5 border-b border-gray-100 flex items-center justify-between bg-white">
+                <div>
+                    <h2 id="addon-modal-title" class="text-xl font-bold text-gray-900">Add New Add-On</h2>
+                    <p class="text-xs text-gray-500">Service upgrades, rentals, and add-on rates</p>
+                </div>
+                <button type="button" @onclick="HandleClose" disabled="@isSaving"
+                        class="text-gray-400 hover:text-gray-600 rounded-lg p-1.5 hover:bg-gray-100">
+                    &times;
+                </button>
+            </div>
+
+            <div class="p-6 overflow-y-auto flex-1">
+                <EditForm EditContext="@editContext">
+                    <DataAnnotationsValidator />
+
+                    <div class="space-y-4">
+                        <div>
+                            <label for="addon-title" class="block text-sm font-semibold text-gray-800 mb-1.5">
+                                Add-On Title <span class="text-red-500">*</span>
+                            </label>
+                            <InputText id="addon-title"
+                                       @bind-Value="model.Title"
+                                       placeholder="Enter add-on title"
+                                       class="w-full px-3.5 py-2.5 text-sm bg-white border border-gray-300 rounded-lg text-gray-900" />
+                        </div>
+
+                        <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                            <div>
+                                <label for="addon-code" class="block text-sm font-semibold text-gray-800 mb-1.5">
+                                    Add-On Code <span class="text-red-500">*</span>
+                                </label>
+                                <InputText id="addon-code"
+                                           @bind-Value="model.Code"
+                                           placeholder="e.g., ADD-001"
+                                           class="w-full px-3.5 py-2.5 text-sm bg-white border border-gray-300 rounded-lg text-gray-900 font-mono" />
+                            </div>
+
+                            <div>
+                                <label for="addon-type" class="block text-sm font-semibold text-gray-800 mb-1.5">
+                                    Type Category
+                                </label>
+                                <InputSelect id="addon-type"
+                                             @bind-Value="model.TypeCategory"
+                                             class="w-full px-3.5 py-2.5 text-sm bg-white border border-gray-300 rounded-lg text-gray-900">
+                                    <option value="Post-Processing">Post-Processing</option>
+                                    <option value="Retouching">Retouching</option>
+                                    <option value="Print & Frame">Print &amp; Frame</option>
+                                    <option value="Equipment">Equipment &amp; Props</option>
+                                </InputSelect>
+                            </div>
+                        </div>
+
+                        <div>
+                            <label for="addon-desc" class="block text-sm font-semibold text-gray-800 mb-1.5">
+                                Description
+                            </label>
+                            <InputTextArea id="addon-desc"
+                                           rows="3"
+                                           @bind-Value="model.Description"
+                                           placeholder="Enter add-on description"
+                                           class="w-full px-3.5 py-2.5 text-sm bg-white border border-gray-300 rounded-lg text-gray-900 resize-none" />
+                        </div>
+
+                        @if (!string.IsNullOrWhiteSpace(saveErrorMessage))
+                        {
+                            <div class="p-3 bg-red-50 border border-red-200 rounded-lg text-xs text-red-700 font-medium" role="alert">
+                                @saveErrorMessage
+                            </div>
+                        }
+                    </div>
+                </EditForm>
+            </div>
+
+            <div class="px-6 py-4 bg-gray-50 border-t border-gray-100 flex items-center justify-between">
+                <button type="button" @onclick="HandleClose" disabled="@isSaving"
+                        class="px-4 py-2.5 bg-white border border-gray-300 hover:bg-gray-100 text-gray-700 text-xs font-semibold rounded-lg">
+                    Cancel
+                </button>
+                <button type="button" @onclick="HandleSaveAsync" disabled="@isSaving"
+                        class="px-6 py-2.5 bg-gray-900 hover:bg-black text-white text-xs font-semibold rounded-lg disabled:opacity-60">
+                    @(isSaving ? "Saving..." : "Save Add-On")
+                </button>
+            </div>
+        </div>
+    </div>
+}
+
+@code {
+    [Parameter] public bool IsOpen { get; set; }
+    [Parameter] public EventCallback<bool> IsOpenChanged { get; set; }
+    [Parameter] public EventCallback<AddOnServiceItem> OnAddOnCreated { get; set; }
+
+    private bool isSaving = false;
+    private string? saveErrorMessage;
+    private AddOnServiceModel model = new();
+    private EditContext editContext = null!;
+
+    protected override void OnInitialized()
+    {
+        ResetWizard();
+    }
+
+    public void ResetWizard()
+    {
+        isSaving = false;
+        saveErrorMessage = null;
+        var nextNum = UserService.GetAdditionalServices().Count + 1;
+        model = new AddOnServiceModel
+        {
+            Code = $"ADD-{nextNum:D3}",
+            TypeCategory = "Post-Processing",
+            FilterCategory = "Expedited Delivery",
+            Rate = 0m,
+            RateUnit = "/ session",
+            Status = "Active"
+        };
+        editContext = new EditContext(model);
+    }
+
+    private async Task HandleClose()
+    {
+        if (isSaving) return;
+        ResetWizard();
+        await IsOpenChanged.InvokeAsync(false);
+    }
+
+    private async Task HandleSaveAsync()
+    {
+        if (string.IsNullOrWhiteSpace(model.Title) || string.IsNullOrWhiteSpace(model.Code))
+        {
+            saveErrorMessage = "Add-On title and code are required.";
+            return;
+        }
+
+        try
+        {
+            isSaving = true;
+            saveErrorMessage = null;
+            var created = UserService.AddAdditionalService(model);
+            await OnAddOnCreated.InvokeAsync(created);
+            await HandleClose();
+        }
+        catch (Exception ex)
+        {
+            saveErrorMessage = $"Error saving add-on: {ex.Message}";
+        }
+        finally
+        {
+            isSaving = false;
+        }
+    }
+}

@@ -1,0 +1,341 @@
+@using System.ComponentModel.DataAnnotations
+@using PhotoAevumStudio.Web.Models
+@attribute [Authorize(Roles = "Admin")]
+@inject IUserService UserService
+
+@if (IsOpen)
+{
+    <div class="fixed inset-0 z-50 bg-gray-900/60 backdrop-blur-sm flex items-center justify-center p-4 sm:p-6 overflow-y-auto animate-in fade-in duration-150"
+         role="dialog" aria-modal="true" aria-labelledby="wizard-modal-title">
+        
+        <div class="relative w-full max-w-xl bg-white rounded-2xl shadow-2xl border border-gray-100 overflow-hidden flex flex-col max-h-[92vh]">
+            
+            <div class="px-6 py-5 border-b border-gray-100 flex items-center justify-between bg-white sticky top-0 z-10">
+                <div class="flex items-center gap-3">
+                    <div class="w-10 h-10 rounded-xl bg-gray-900 text-white flex items-center justify-center font-bold text-sm shadow-sm">
+                        <svg class="w-5 h-5 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19.428 15.428a2 2 0 00-1.022-.547l-2.387-.477a6 6 0 00-3.86.517l-.318.158a6 6 0 01-3.86.517L6.05 15.21a2 2 0 00-1.806.547M8 4h8l-1 1v5.172a2 2 0 00.586 1.414l5 5c1.26 1.26.367 3.414-1.415 3.414H4.828c-1.782 0-2.674-2.154-1.414-3.414l5-5A2 2 0 009 10.172V5L8 4z" />
+                        </svg>
+                    </div>
+                    <div>
+                        <h2 id="wizard-modal-title" class="text-xl font-bold text-gray-900">Add New Specialization</h2>
+                        <p class="text-xs text-gray-500">Master lookup catalogue configuration</p>
+                    </div>
+                </div>
+                <button type="button" @onclick="HandleClose" disabled="@isSaving"
+                        class="text-gray-400 hover:text-gray-600 rounded-lg p-1.5 hover:bg-gray-100 transition-colors focus:outline-none focus:ring-2 focus:ring-gray-900"
+                        aria-label="Close dialog">
+                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+                    </svg>
+                </button>
+            </div>
+
+            <div class="px-6 py-4 bg-gray-50/70 border-b border-gray-100">
+                <ol class="flex items-center justify-between w-full">
+                    @for (int i = 1; i <= TotalSteps; i++)
+                    {
+                        var stepNumber = i;
+                        var isCompleted = stepNumber < currentStep;
+                        var isCurrent = stepNumber == currentStep;
+                        
+                        <li class="flex items-center @(stepNumber < TotalSteps ? "w-full" : "")">
+                            <div class="flex items-center gap-2">
+                                <span class="w-7 h-7 rounded-full flex items-center justify-center text-xs font-semibold transition-all duration-200
+                                    @(isCurrent ? "bg-gray-900 text-white shadow-sm ring-2 ring-gray-900/20" : 
+                                      isCompleted ? "bg-emerald-600 text-white" : "bg-gray-200 text-gray-600")">
+                                    @(isCompleted ? "✓" : stepNumber.ToString())
+                                </span>
+                                <span class="text-xs font-medium hidden sm:inline @(isCurrent ? "text-gray-900 font-bold" : isCompleted ? "text-gray-700" : "text-gray-400")">
+                                    @StepTitles[stepNumber - 1]
+                                </span>
+                            </div>
+
+                            @if (stepNumber < TotalSteps)
+                            {
+                                <div class="flex-1 mx-3 h-0.5 @(stepNumber < currentStep ? "bg-emerald-500" : "bg-gray-200")"></div>
+                            }
+                        </li>
+                    }
+                </ol>
+            </div>
+
+            <div class="p-6 overflow-y-auto flex-1">
+                <EditForm EditContext="@editContext">
+                    <DataAnnotationsValidator />
+
+                    @if (currentStep == 1)
+                    {
+                        <div class="space-y-5">
+                            <div>
+                                <span class="inline-block text-[11px] font-semibold text-gray-500 uppercase tracking-wider mb-1">Step 1 of 3</span>
+                                <h3 class="text-lg font-bold text-gray-900">Specialization Details</h3>
+                            </div>
+
+                            <div>
+                                <label for="spec-name" class="block text-sm font-semibold text-gray-800 mb-1.5">
+                                    Specialization Name <span class="text-red-500">*</span>
+                                </label>
+                                <InputText id="spec-name" 
+                                           @bind-Value="model.Name" 
+                                           placeholder="Enter specialization name"
+                                           class="w-full px-3.5 py-2.5 text-sm bg-white border border-gray-300 rounded-lg text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-gray-900" />
+                                <ValidationMessage For="@(() => model.Name)" class="text-xs text-red-600 mt-1 font-medium" />
+                            </div>
+
+                            <div>
+                                <label for="spec-desc" class="block text-sm font-semibold text-gray-800 mb-1.5">
+                                    Description <span class="text-gray-400 font-normal text-xs">(Optional)</span>
+                                </label>
+                                <InputTextArea id="spec-desc" 
+                                               rows="3" 
+                                               @bind-Value="model.Description" 
+                                               placeholder="Describe responsibilities..."
+                                               class="w-full px-3.5 py-2.5 text-sm bg-white border border-gray-300 rounded-lg text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-gray-900 resize-none" />
+                                <ValidationMessage For="@(() => model.Description)" class="text-xs text-red-600 mt-1 font-medium" />
+                            </div>
+                        </div>
+                    }
+
+                    @if (currentStep == 2)
+                    {
+                        <div class="space-y-6">
+                            <div>
+                                <span class="inline-block text-[11px] font-semibold text-gray-500 uppercase tracking-wider mb-1">Step 2 of 3</span>
+                                <h3 class="text-lg font-bold text-gray-900">Display Settings & Department</h3>
+                            </div>
+
+                            <div>
+                                <label for="spec-dept" class="block text-sm font-semibold text-gray-800 mb-1.5">
+                                    Department / Category <span class="text-red-500">*</span>
+                                </label>
+                                <InputSelect id="spec-dept" 
+                                             @bind-Value="model.Department"
+                                             class="w-full px-3.5 py-2.5 text-sm bg-white border border-gray-300 rounded-lg text-gray-900">
+                                    <option value="Photography">Photography</option>
+                                    <option value="Videography">Videography</option>
+                                    <option value="Post-Processing">Post-Processing & Editing</option>
+                                    <option value="Studio Staff">Studio Staff & Operations</option>
+                                </InputSelect>
+                            </div>
+
+                            <div>
+                                <label class="block text-sm font-semibold text-gray-800 mb-2">
+                                    UI Color Tag <span class="text-red-500">*</span>
+                                </label>
+                                <div class="grid grid-cols-2 sm:grid-cols-3 gap-2.5">
+                                    @foreach (var colorOption in ColorOptions)
+                                    {
+                                        var isSelected = model.ColorTag.Equals(colorOption.Key, StringComparison.OrdinalIgnoreCase);
+                                        var classes = SpecializationColorHelper.GetClasses(colorOption.Key);
+
+                                        <button type="button" 
+                                                @onclick="() => model.ColorTag = colorOption.Key"
+                                                class="flex items-center gap-2.5 p-2.5 rounded-xl border text-left transition-all duration-150 @(isSelected ? "border-gray-900 bg-gray-50 shadow-sm ring-2 ring-gray-900/10" : "border-gray-200 hover:border-gray-300 bg-white")">
+                                            <span class="w-4 h-4 rounded-full @classes.DotClass shrink-0 shadow-xs"></span>
+                                            <div class="flex-1 min-w-0">
+                                                <p class="text-xs font-semibold text-gray-900 truncate">@colorOption.Label</p>
+                                            </div>
+                                        </button>
+                                    }
+                                </div>
+                            </div>
+                        </div>
+                    }
+
+                    @if (currentStep == 3)
+                    {
+                        <div class="space-y-5">
+                            <div>
+                                <span class="inline-block text-[11px] font-semibold text-gray-500 uppercase tracking-wider mb-1">Step 3 of 3</span>
+                                <h3 class="text-lg font-bold text-gray-900">Overview & Confirmation</h3>
+                            </div>
+
+                            <div class="border border-gray-200 rounded-xl overflow-hidden divide-y divide-gray-100 text-sm bg-white shadow-xs">
+                                <div class="flex items-center justify-between px-4 py-3 bg-gray-50/60">
+                                    <span class="text-xs font-semibold text-gray-500 uppercase tracking-wider">Specialization Title</span>
+                                    <span class="font-bold text-gray-900">@model.Name</span>
+                                </div>
+                                <div class="flex items-center justify-between px-4 py-3">
+                                    <span class="text-xs font-semibold text-gray-500 uppercase tracking-wider">Department</span>
+                                    <span class="font-medium text-gray-800">@model.Department</span>
+                                </div>
+                                <div class="px-4 py-3">
+                                    <span class="text-xs font-semibold text-gray-500 uppercase tracking-wider block mb-1">Description</span>
+                                    <p class="text-xs text-gray-700 leading-relaxed italic">
+                                        @(string.IsNullOrWhiteSpace(model.Description) ? "No description provided." : model.Description)
+                                    </p>
+                                </div>
+                            </div>
+
+                            @if (!string.IsNullOrWhiteSpace(saveErrorMessage))
+                            {
+                                <div class="p-3 bg-red-50 border border-red-200 rounded-lg text-xs text-red-700 font-medium" role="alert">
+                                    @saveErrorMessage
+                                </div>
+                            }
+                        </div>
+                    }
+                </EditForm>
+            </div>
+
+            <div class="px-6 py-4 bg-gray-50 border-t border-gray-100 flex items-center justify-between">
+                <div>
+                    @if (currentStep > 1)
+                    {
+                        <button type="button" @onclick="HandlePrevStep" disabled="@isSaving"
+                                class="inline-flex items-center gap-1.5 px-4 py-2.5 bg-white border border-gray-300 hover:bg-gray-100 text-gray-700 text-xs font-semibold rounded-lg shadow-xs">
+                            Back
+                        </button>
+                    }
+                    else
+                    {
+                        <button type="button" @onclick="HandleClose" disabled="@isSaving"
+                                class="px-4 py-2.5 bg-white border border-gray-300 hover:bg-gray-100 text-gray-700 text-xs font-semibold rounded-lg shadow-xs">
+                            Cancel
+                        </button>
+                    }
+                </div>
+
+                <div class="flex items-center gap-3">
+                    @if (currentStep < TotalSteps)
+                    {
+                        <button type="button" @onclick="HandleNextStep"
+                                class="inline-flex items-center gap-1.5 px-5 py-2.5 bg-gray-900 hover:bg-black text-white text-xs font-semibold rounded-lg shadow-sm">
+                            Next
+                        </button>
+                    }
+                    else
+                    {
+                        <button type="button" @onclick="HandleSaveAsync" disabled="@isSaving"
+                                class="inline-flex items-center gap-2 px-6 py-2.5 bg-gray-900 hover:bg-black text-white text-xs font-semibold rounded-lg shadow-sm disabled:opacity-60">
+                            <span>@(isSaving ? "Saving..." : "Save Specialization")</span>
+                        </button>
+                    }
+                </div>
+            </div>
+        </div>
+    </div>
+}
+
+@code {
+    [Parameter] public bool IsOpen { get; set; }
+    [Parameter] public EventCallback<bool> IsOpenChanged { get; set; }
+    [Parameter] public EventCallback<SpecializationLookupItem> OnSpecializationCreated { get; set; }
+
+    private const int TotalSteps = 3;
+    private static readonly string[] StepTitles = { "Details", "Category & Display", "Overview & Save" };
+
+    private int currentStep = 1;
+    private bool isSaving = false;
+    private string? saveErrorMessage;
+
+    private SpecializationModel model = new();
+    private EditContext editContext = null!;
+    private ValidationMessageStore messageStore = null!;
+
+    private record ColorChoice(string Key, string Label);
+
+    private static readonly List<ColorChoice> ColorOptions = new()
+    {
+        new("Blue", "Studio Blue"),
+        new("Emerald", "Emerald Green"),
+        new("Purple", "Studio Purple"),
+        new("Amber", "Warm Amber"),
+        new("Rose", "Rose Red"),
+        new("Indigo", "Deep Indigo"),
+        new("Cyan", "Cyan Modern")
+    };
+
+    protected override void OnInitialized()
+    {
+        ResetWizard();
+    }
+
+    protected override void OnParametersSet()
+    {
+        if (IsOpen && currentStep == 1 && string.IsNullOrWhiteSpace(model.Name))
+        {
+            ResetWizard();
+        }
+    }
+
+    private void ResetWizard()
+    {
+        currentStep = 1;
+        isSaving = false;
+        saveErrorMessage = null;
+        model = new SpecializationModel();
+        editContext = new EditContext(model);
+        messageStore = new ValidationMessageStore(editContext);
+    }
+
+    private void HandleNextStep()
+    {
+        saveErrorMessage = null;
+
+        if (currentStep == 1)
+        {
+            var nameField = editContext.Field(nameof(model.Name));
+            editContext.NotifyFieldChanged(nameField);
+            messageStore.Clear(nameField);
+
+            if (string.IsNullOrWhiteSpace(model.Name) || model.Name.Length < 2)
+            {
+                messageStore.Add(nameField, "Specialization name must be at least 2 characters.");
+                editContext.NotifyValidationStateChanged();
+                return;
+            }
+
+            currentStep = 2;
+        }
+        else if (currentStep == 2)
+        {
+            currentStep = 3;
+        }
+    }
+
+    private void HandlePrevStep()
+    {
+        if (currentStep > 1)
+        {
+            currentStep--;
+            saveErrorMessage = null;
+        }
+    }
+
+    private async Task HandleClose()
+    {
+        if (isSaving) return;
+        ResetWizard();
+        await IsOpenChanged.InvokeAsync(false);
+    }
+
+    private async Task HandleSaveAsync()
+    {
+        if (!editContext.Validate())
+        {
+            currentStep = 1;
+            return;
+        }
+
+        try
+        {
+            isSaving = true;
+            saveErrorMessage = null;
+
+            var newMasterItem = UserService.AddSpecialization(model);
+
+            await OnSpecializationCreated.InvokeAsync(newMasterItem);
+            await HandleClose();
+        }
+        catch (Exception ex)
+        {
+            saveErrorMessage = $"An error occurred while creating the specialization: {ex.Message}";
+        }
+        finally
+        {
+            isSaving = false;
+        }
+    }
+}
