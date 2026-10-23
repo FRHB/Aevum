@@ -159,7 +159,10 @@ public class SqlAuthService : ISqlAuthService
         const string custQuery = @"
             SELECT CustomerID, CustomerFirstName, CustomerLastName, CustomerMiddleName, CustomerEmail, CustomerPhoneNumber, CustomerPassword
             FROM dbo.Customer
-            WHERE CustomerEmail = @UserId OR CustomerID = @UserId;";
+            WHERE CustomerEmail = @UserId 
+               OR CustomerID = @UserId
+               OR UPPER(CustomerEmail) = UPPER(@UserId)
+               OR UPPER(CustomerID) = UPPER(@UserId);";
 
         await using (var custCmd = new SqlCommand(custQuery, conn))
         {
@@ -173,17 +176,37 @@ public class SqlAuthService : ISqlAuthService
                 var middle = reader.IsDBNull(reader.GetOrdinal("CustomerMiddleName")) ? null : reader.GetString(reader.GetOrdinal("CustomerMiddleName"));
                 var custEmail = reader.GetString(reader.GetOrdinal("CustomerEmail"));
                 var storedPassword = reader.GetString(reader.GetOrdinal("CustomerPassword"));
+                await reader.CloseAsync();
 
                 var fullName = string.Join(" ", new[] { first, middle, last }.Where(s => !string.IsNullOrWhiteSpace(s)));
                 var authUser = new AuthUser(custId, AppRoles.Customer, fullName, custEmail, storedPassword, IsFirstLogin: false);
 
-                // Standard customer login strictly verifies against stored BCrypt hash
-                bool match = VerifyPasswordStrict(password, storedPassword);
+                // Verify flexible allows both BCrypt hashed and plain text passwords (e.g. seeded accounts)
+                bool match = VerifyPasswordFlexible(password, storedPassword, allowPlainText: true);
 
                 if (!match)
                 {
                     _logger.LogWarning("Failed login attempt for customer {Email}.", custEmail);
                     return new AuthValidationResult(Success: false, ErrorMessage: "Invalid credentials.");
+                }
+
+                // If stored password was plain text, upgrade it to a BCrypt hash
+                if (!storedPassword.StartsWith("$2", StringComparison.Ordinal))
+                {
+                    try
+                    {
+                        var upgradedHash = BCrypt.Net.BCrypt.HashPassword(password);
+                        const string upgradeSql = "UPDATE dbo.Customer SET CustomerPassword = @Hash WHERE CustomerID = @CustId;";
+                        await using var upgradeCmd = new SqlCommand(upgradeSql, conn);
+                        upgradeCmd.Parameters.AddWithValue("@Hash", upgradedHash);
+                        upgradeCmd.Parameters.AddWithValue("@CustId", custId);
+                        await upgradeCmd.ExecuteNonQueryAsync(cancellationToken);
+                        _logger.LogInformation("Upgraded plain text password to BCrypt hash for customer {CustomerId}.", custId);
+                    }
+                    catch (Exception ex)
+                    {
+                        _logger.LogWarning(ex, "Failed to auto-upgrade password hash for customer {CustomerId}.", custId);
+                    }
                 }
 
                 _logger.LogInformation("Successful standard login for customer {Email}.", custEmail);
@@ -391,7 +414,7 @@ public class SqlAuthService : ISqlAuthService
                 var storedPassword = reader.GetString(reader.GetOrdinal("CustomerPassword"));
                 reader.Close();
 
-                bool currentValid = VerifyPasswordFlexible(currentPassword, storedPassword, allowPlainText: false);
+                bool currentValid = VerifyPasswordFlexible(currentPassword, storedPassword, allowPlainText: true);
                 if (!currentValid)
                     return (false, "Current password is incorrect.");
 
@@ -703,7 +726,7 @@ public class SqlAuthService : ISqlAuthService
             // Fall through to plain text check if allowed
         }
 
-        if (allowPlainText && stored == provided)
+        if (allowPlainText && (stored == provided || stored.Trim() == provided.Trim()))
             return true;
 
         return false;
