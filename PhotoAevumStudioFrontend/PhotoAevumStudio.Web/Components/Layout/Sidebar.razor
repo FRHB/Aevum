@@ -1,3 +1,4 @@
+<<<<<<< Updated upstream
 
 @using Microsoft.AspNetCore.Components.Authorization
 @using Microsoft.AspNetCore.Components.Routing
@@ -475,3 +476,477 @@
         </div>
     </text>;
 }
+=======
+@implements IDisposable
+@inject NavigationManager Nav
+
+@* ── Mobile Hamburger Toggle ──────────────────────────────────────────────── *@
+<button type="button"
+        class="aev-sidebar__mobile-toggle"
+        @onclick="ToggleMobile"
+        aria-label="Toggle navigation menu"
+        aria-expanded="@_isMobileOpen">
+    <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <line x1="3" y1="12" x2="21" y2="12"></line>
+        <line x1="3" y1="6" x2="21" y2="6"></line>
+        <line x1="3" y1="18" x2="21" y2="18"></line>
+    </svg>
+</button>
+
+@* ── Mobile Drawer Backdrop ───────────────────────────────────────────────── *@
+@if (_isMobileOpen)
+{
+    <div class="aev-sidebar__backdrop" @onclick="() => _isMobileOpen = false" aria-hidden="true"></div>
+}
+
+<nav class="aev-sidebar @(_isMobileOpen ? "is-open" : "")" aria-label="Primary navigation">
+
+    @* ── Brand ─────────────────────────────────────────────────────────── *@
+    <div class="aev-sidebar__brand">
+        <img src="images/AevumLogo.jpg" alt="Photo Aevum" class="aev-sidebar__logo" />
+        <span class="aev-sidebar__brand-text">Aevum Studio</span>
+        <button type="button"
+                class="aev-sidebar__mobile-close"
+                @onclick="() => _isMobileOpen = false"
+                aria-label="Close sidebar">
+            ✕
+        </button>
+    </div>
+
+    @RenderNav()
+
+</nav>
+
+@code {
+    [CascadingParameter] Task<AuthenticationState> AuthState { get; set; } = default!;
+    [Parameter] public string UserRole { get; set; } = string.Empty;
+
+    private bool _isMobileOpen;
+    private readonly HashSet<string> _openAccordions = new();
+
+    protected override void OnInitialized()
+    {
+        Nav.LocationChanged += OnLocationChanged;
+    }
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (string.IsNullOrWhiteSpace(UserRole) && AuthState != null)
+        {
+            var state = await AuthState;
+            var roleClaim = state.User.FindFirst(System.Security.Claims.ClaimTypes.Role) ?? state.User.FindFirst("role");
+            UserRole = roleClaim?.Value?.ToLower() ?? string.Empty;
+        }
+
+        if (string.IsNullOrWhiteSpace(UserRole))
+        {
+            UserRole = "admin";
+        }
+
+        AutoExpandActiveAccordion();
+    }
+
+    private void OnLocationChanged(object? sender, LocationChangedEventArgs e)
+    {
+        _isMobileOpen = false;
+        AutoExpandActiveAccordion();
+        InvokeAsync(StateHasChanged);
+    }
+
+    public void Dispose()
+    {
+        Nav.LocationChanged -= OnLocationChanged;
+    }
+
+    private void ToggleMobile()
+    {
+        _isMobileOpen = !_isMobileOpen;
+    }
+
+    private void AutoExpandActiveAccordion()
+    {
+        var path = Nav.ToBaseRelativePath(Nav.Uri).ToLowerInvariant();
+
+        if (path.StartsWith("admin/schedules") || path.StartsWith("admin/calendar") || path.StartsWith("calendar") || path.StartsWith("staff-schedule") || path.StartsWith("equipment-schedule") || path.StartsWith("equipments-schedule"))
+            _openAccordions.Add("calendar");
+        else if (path.StartsWith("staff/calendar"))
+            _openAccordions.Add("emp-calendar");
+
+        if (path.StartsWith("admin/services") || path.StartsWith("services") || path.StartsWith("main-services") || path.StartsWith("package-services") || path.StartsWith("additional-services"))
+        {
+            _openAccordions.Add("services");
+            _openAccordions.Add("emp-services");
+        }
+        else if (path.StartsWith("staff/services"))
+        {
+            _openAccordions.Add("emp-services");
+        }
+
+        if (path.StartsWith("admin/employees") || path.StartsWith("employees") || path.StartsWith("specialization"))
+            _openAccordions.Add("employees");
+
+        if (path.StartsWith("admin/equipment") || path.StartsWith("equipment") || path.StartsWith("equipments") || path.StartsWith("dispatch") || path.StartsWith("maintenance") || path.StartsWith("equipment-types"))
+            _openAccordions.Add("equipment");
+    }
+
+    private bool IsOpen(string key) => _openAccordions.Contains(key);
+
+    private void Toggle(string key)
+    {
+        if (!_openAccordions.Remove(key))
+            _openAccordions.Add(key);
+    }
+
+    // ── Role dispatcher ──────────────────────────────────────────────────────
+    private RenderFragment RenderNav() => UserRole switch
+    {
+        "admin"    => RenderAdminNav(),
+        "employee" => RenderEmployeeNav(),
+        "customer" => RenderCustomerNav(),
+        _          => RenderAdminNav()
+    };
+
+    // ════════════════════════════════════════════════════════════════════════
+    // ADMIN nav
+    // ════════════════════════════════════════════════════════════════════════
+    private RenderFragment RenderAdminNav() =>
+    @<text>
+        @* ── MANAGEMENT ─────────────────────────────────────────────────── *@
+        <div class="aev-sidebar__section">
+            <p class="aev-sidebar__section-label">Management</p>
+            <ul class="aev-sidebar__list">
+
+                <li>
+                    <NavLink href="/admin" Match="NavLinkMatch.All"
+                             class="aev-sidebar__link" ActiveClass="aev-sidebar__link--active">
+                        <span class="aev-sidebar__icon" aria-hidden="true">
+                            <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                <rect x="3" y="3" width="7" height="7"></rect>
+                                <rect x="14" y="3" width="7" height="7"></rect>
+                                <rect x="14" y="14" width="7" height="7"></rect>
+                                <rect x="3" y="14" width="7" height="7"></rect>
+                            </svg>
+                        </span>
+                        Overview
+                    </NavLink>
+                </li>
+
+                @* Events Calendar – collapsible *@
+                <li>
+                    <button class="aev-sidebar__link aev-sidebar__accordion-toggle @(IsOpen("calendar") ? "is-open" : "")"
+                            @onclick='() => Toggle("calendar")'
+                            aria-expanded="@IsOpen("calendar")"
+                            aria-controls="acc-calendar">
+                        <span class="aev-sidebar__icon" aria-hidden="true">
+                            <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                <rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect>
+                                <line x1="16" y1="2" x2="16" y2="6"></line>
+                                <line x1="8" y1="2" x2="8" y2="6"></line>
+                                <line x1="3" y1="10" x2="21" y2="10"></line>
+                            </svg>
+                        </span>
+                        Events Calendar
+                        <span class="aev-sidebar__chevron" aria-hidden="true">›</span>
+                    </button>
+                    <ul id="acc-calendar"
+                        class="aev-sidebar__sub @(IsOpen("calendar") ? "is-expanded" : "")"
+                        aria-hidden="@(!IsOpen("calendar"))">
+                        <li><NavLink href="/admin/calendar/events" class="aev-sidebar__sub-link" Match="NavLinkMatch.All" ActiveClass="aev-sidebar__link--active">Calendar of Events</NavLink></li>
+                        <li><NavLink href="/admin/calendar/staff" class="aev-sidebar__sub-link" ActiveClass="aev-sidebar__link--active">Staff Schedule</NavLink></li>
+                        <li><NavLink href="/admin/calendar/equipment" class="aev-sidebar__sub-link" ActiveClass="aev-sidebar__link--active">Equipments schedule</NavLink></li>
+                    </ul>
+                </li>
+
+                <li>
+                    <NavLink href="/admin/clients" class="aev-sidebar__link" ActiveClass="aev-sidebar__link--active">
+                        <span class="aev-sidebar__icon" aria-hidden="true">
+                            <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path>
+                                <circle cx="9" cy="7" r="4"></circle>
+                                <path d="M23 21v-2a4 4 0 0 0-3-3.87"></path>
+                                <path d="M16 3.13a4 4 0 0 1 0 7.75"></path>
+                            </svg>
+                        </span>
+                        Clients
+                    </NavLink>
+                </li>
+
+                @* Services – collapsible *@
+                <li>
+                    <button class="aev-sidebar__link aev-sidebar__accordion-toggle @(IsOpen("services") ? "is-open" : "")"
+                            @onclick='() => Toggle("services")'
+                            aria-expanded="@IsOpen("services")"
+                            aria-controls="acc-services">
+                        <span class="aev-sidebar__icon" aria-hidden="true">
+                            <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                <polygon points="12 2 2 7 12 12 22 7 12 2"></polygon>
+                                <polyline points="2 17 12 22 22 17"></polyline>
+                                <polyline points="2 12 12 17 22 12"></polyline>
+                            </svg>
+                        </span>
+                        Services
+                        <span class="aev-sidebar__chevron" aria-hidden="true">›</span>
+                    </button>
+                    <ul id="acc-services"
+                        class="aev-sidebar__sub @(IsOpen("services") ? "is-expanded" : "")"
+                        aria-hidden="@(!IsOpen("services"))">
+                        <li><NavLink href="/admin/services/main" class="aev-sidebar__sub-link" Match="NavLinkMatch.All" ActiveClass="aev-sidebar__link--active">Main Services</NavLink></li>
+                        <li><NavLink href="/admin/services/packages" class="aev-sidebar__sub-link" ActiveClass="aev-sidebar__link--active">Package Services</NavLink></li>
+                        <li><NavLink href="/admin/services/additional" class="aev-sidebar__sub-link" ActiveClass="aev-sidebar__link--active">Additional Services</NavLink></li>
+                    </ul>
+                </li>
+
+            </ul>
+        </div>
+
+        @* ── RESOURCES & LOGISTICS ──────────────────────────────────────── *@
+        <div class="aev-sidebar__section">
+            <p class="aev-sidebar__section-label">Resources &amp; Logistics</p>
+            <ul class="aev-sidebar__list">
+
+                @* Employees – collapsible *@
+                <li>
+                    <button class="aev-sidebar__link aev-sidebar__accordion-toggle @(IsOpen("employees") ? "is-open" : "")"
+                            @onclick='() => Toggle("employees")'
+                            aria-expanded="@IsOpen("employees")"
+                            aria-controls="acc-employees">
+                        <span class="aev-sidebar__icon" aria-hidden="true">
+                            <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path>
+                                <circle cx="12" cy="7" r="4"></circle>
+                            </svg>
+                        </span>
+                        Employees
+                        <span class="aev-sidebar__chevron" aria-hidden="true">›</span>
+                    </button>
+                    <ul id="acc-employees"
+                        class="aev-sidebar__sub @(IsOpen("employees") ? "is-expanded" : "")"
+                        aria-hidden="@(!IsOpen("employees"))">
+                        <li><NavLink href="/admin/employees" class="aev-sidebar__sub-link" Match="NavLinkMatch.All" ActiveClass="aev-sidebar__link--active">Staff List</NavLink></li>
+                        <li><NavLink href="/admin/employees/specialization" class="aev-sidebar__sub-link" ActiveClass="aev-sidebar__link--active">Specialization</NavLink></li>
+                    </ul>
+                </li>
+
+                @* Equipment Inventory – collapsible *@
+                <li>
+                    <button class="aev-sidebar__link aev-sidebar__accordion-toggle @(IsOpen("equipment") ? "is-open" : "")"
+                            @onclick='() => Toggle("equipment")'
+                            aria-expanded="@IsOpen("equipment")"
+                            aria-controls="acc-equipment">
+                        <span class="aev-sidebar__icon" aria-hidden="true">
+                            <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"></path>
+                                <circle cx="12" cy="13" r="4"></circle>
+                            </svg>
+                        </span>
+                        Equipment Inventory
+                        <span class="aev-sidebar__chevron" aria-hidden="true">›</span>
+                    </button>
+                    <ul id="acc-equipment"
+                        class="aev-sidebar__sub @(IsOpen("equipment") ? "is-expanded" : "")"
+                        aria-hidden="@(!IsOpen("equipment"))">
+                        <li><NavLink href="/admin/equipments" class="aev-sidebar__sub-link" Match="NavLinkMatch.All" ActiveClass="aev-sidebar__link--active">Equipments</NavLink></li>
+                        <li><NavLink href="/admin/equipment/dispatch" class="aev-sidebar__sub-link" ActiveClass="aev-sidebar__link--active">Dispatch</NavLink></li>
+                        <li><NavLink href="/admin/equipment/maintenance" class="aev-sidebar__sub-link" ActiveClass="aev-sidebar__link--active">Maintenance</NavLink></li>
+                        <li><NavLink href="/admin/equipment/types" class="aev-sidebar__sub-link" ActiveClass="aev-sidebar__link--active">Equipment Types</NavLink></li>
+                    </ul>
+                </li>
+
+            </ul>
+        </div>
+
+        @* ── ACCOUNT ─────────────────────────────────────────────────────── *@
+        <div class="aev-sidebar__section aev-sidebar__section--footer">
+            <p class="aev-sidebar__section-label">Account</p>
+            <ul class="aev-sidebar__list">
+                <li>
+                    <NavLink href="/profile" class="aev-sidebar__link" ActiveClass="aev-sidebar__link--active">
+                        <span class="aev-sidebar__icon" aria-hidden="true">
+                            <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                <circle cx="12" cy="12" r="3"></circle>
+                                <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path>
+                            </svg>
+                        </span>
+                        Profile
+                    </NavLink>
+                </li>
+            </ul>
+        </div>
+    </text>;
+
+    // ════════════════════════════════════════════════════════════════════════
+    // EMPLOYEE nav
+    // ════════════════════════════════════════════════════════════════════════
+    private RenderFragment RenderEmployeeNav() =>
+    @<text>
+        @* ── MANAGEMENT ─────────────────────────────────────────────────── *@
+        <div class="aev-sidebar__section">
+            <p class="aev-sidebar__section-label">Management</p>
+            <ul class="aev-sidebar__list">
+
+                <li>
+                    <NavLink href="/staff" Match="NavLinkMatch.All"
+                             class="aev-sidebar__link" ActiveClass="aev-sidebar__link--active">
+                        <span class="aev-sidebar__icon" aria-hidden="true">
+                            <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                <rect x="3" y="3" width="7" height="7"></rect>
+                                <rect x="14" y="3" width="7" height="7"></rect>
+                                <rect x="14" y="14" width="7" height="7"></rect>
+                                <rect x="3" y="14" width="7" height="7"></rect>
+                            </svg>
+                        </span>
+                        Overview
+                    </NavLink>
+                </li>
+
+                @* Events Calendar – collapsible *@
+                <li>
+                    <button class="aev-sidebar__link aev-sidebar__accordion-toggle @(IsOpen("emp-calendar") ? "is-open" : "")"
+                            @onclick='() => Toggle("emp-calendar")'
+                            aria-expanded="@IsOpen("emp-calendar")"
+                            aria-controls="acc-emp-calendar">
+                        <span class="aev-sidebar__icon" aria-hidden="true">
+                            <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                <rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect>
+                                <line x1="16" y1="2" x2="16" y2="6"></line>
+                                <line x1="8" y1="2" x2="8" y2="6"></line>
+                                <line x1="3" y1="10" x2="21" y2="10"></line>
+                            </svg>
+                        </span>
+                        Events Calendar
+                        <span class="aev-sidebar__chevron" aria-hidden="true">›</span>
+                    </button>
+                    <ul id="acc-emp-calendar"
+                        class="aev-sidebar__sub @(IsOpen("emp-calendar") ? "is-expanded" : "")"
+                        aria-hidden="@(!IsOpen("emp-calendar"))">
+                        <li><NavLink href="/staff/calendar/master" class="aev-sidebar__sub-link" Match="NavLinkMatch.All" ActiveClass="aev-sidebar__link--active">Calendar of Events</NavLink></li>
+                        <li><NavLink href="/staff/calendar/staff" class="aev-sidebar__sub-link" ActiveClass="aev-sidebar__link--active">Staff Schedule</NavLink></li>
+                        <li><NavLink href="/staff/calendar/equipment" class="aev-sidebar__sub-link" ActiveClass="aev-sidebar__link--active">Equipments schedule</NavLink></li>
+                    </ul>
+                </li>
+
+                @* Services – collapsible *@
+                <li>
+                    <button class="aev-sidebar__link aev-sidebar__accordion-toggle @(IsOpen("emp-services") ? "is-open" : "")"
+                            @onclick='() => Toggle("emp-services")'
+                            aria-expanded="@IsOpen("emp-services")"
+                            aria-controls="acc-emp-services">
+                        <span class="aev-sidebar__icon" aria-hidden="true">
+                            <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                <polygon points="12 2 2 7 12 12 22 7 12 2"></polygon>
+                                <polyline points="2 17 12 22 22 17"></polyline>
+                                <polyline points="2 12 12 17 22 12"></polyline>
+                            </svg>
+                        </span>
+                        Services
+                        <span class="aev-sidebar__chevron" aria-hidden="true">›</span>
+                    </button>
+                    <ul id="acc-emp-services"
+                        class="aev-sidebar__sub @(IsOpen("emp-services") ? "is-expanded" : "")"
+                        aria-hidden="@(!IsOpen("emp-services"))">
+                        <li><NavLink href="/staff/services" class="aev-sidebar__sub-link" Match="NavLinkMatch.All" ActiveClass="aev-sidebar__link--active">Main Services</NavLink></li>
+                        <li><NavLink href="/staff/services/packages" class="aev-sidebar__sub-link" ActiveClass="aev-sidebar__link--active">Package Services</NavLink></li>
+                        <li><NavLink href="/staff/services/additional" class="aev-sidebar__sub-link" ActiveClass="aev-sidebar__link--active">Additional Services</NavLink></li>
+                    </ul>
+                </li>
+
+            </ul>
+        </div>
+
+        @* ── ACCOUNT ─────────────────────────────────────────────────────── *@
+        <div class="aev-sidebar__section aev-sidebar__section--footer">
+            <p class="aev-sidebar__section-label">Account</p>
+            <ul class="aev-sidebar__list">
+                <li>
+                    <NavLink href="/staff/profile" class="aev-sidebar__link" ActiveClass="aev-sidebar__link--active">
+                        <span class="aev-sidebar__icon" aria-hidden="true">
+                            <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                <circle cx="12" cy="12" r="3"></circle>
+                                <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path>
+                            </svg>
+                        </span>
+                        Profile
+                    </NavLink>
+                </li>
+            </ul>
+        </div>
+    </text>;
+
+    // ════════════════════════════════════════════════════════════════════════
+    // CUSTOMER nav
+    // ════════════════════════════════════════════════════════════════════════
+    private RenderFragment RenderCustomerNav() =>
+    @<text>
+        @* ── DASHBOARD ───────────────────────────────────────────────────── *@
+        <div class="aev-sidebar__section">
+            <p class="aev-sidebar__section-label">Dashboard</p>
+            <ul class="aev-sidebar__list">
+
+                <li>
+                    <NavLink href="/my" Match="NavLinkMatch.All"
+                             class="aev-sidebar__link" ActiveClass="aev-sidebar__link--active"
+                             title="Pending tasks and home screen">
+                        <span class="aev-sidebar__icon" aria-hidden="true">
+                            <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                <rect x="3" y="3" width="7" height="7"></rect>
+                                <rect x="14" y="3" width="7" height="7"></rect>
+                                <rect x="14" y="14" width="7" height="7"></rect>
+                                <rect x="3" y="14" width="7" height="7"></rect>
+                            </svg>
+                        </span>
+                        Overview
+                    </NavLink>
+                </li>
+
+                <li>
+                    <NavLink href="/my/bookings"
+                             class="aev-sidebar__link" ActiveClass="aev-sidebar__link--active"
+                             title="View existing and past bookings">
+                        <span class="aev-sidebar__icon" aria-hidden="true">
+                            <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                <path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"></path>
+                                <rect x="8" y="2" width="8" height="4" rx="1" ry="1"></rect>
+                            </svg>
+                        </span>
+                        Appointment
+                    </NavLink>
+                </li>
+
+                <li>
+                    <NavLink href="/my/book"
+                             class="aev-sidebar__link" ActiveClass="aev-sidebar__link--active"
+                             title="Request a new photography session">
+                        <span class="aev-sidebar__icon" aria-hidden="true">
+                            <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                <circle cx="12" cy="12" r="10"></circle>
+                                <line x1="12" y1="8" x2="12" y2="16"></line>
+                                <line x1="8" y1="12" x2="16" y2="12"></line>
+                            </svg>
+                        </span>
+                        Book Schedule
+                    </NavLink>
+                </li>
+
+            </ul>
+        </div>
+
+        @* ── ACCOUNT ─────────────────────────────────────────────────────── *@
+        <div class="aev-sidebar__section aev-sidebar__section--footer">
+            <p class="aev-sidebar__section-label">Account</p>
+            <ul class="aev-sidebar__list">
+                <li>
+                    <NavLink href="/my/profile" class="aev-sidebar__link" ActiveClass="aev-sidebar__link--active">
+                        <span class="aev-sidebar__icon" aria-hidden="true">
+                            <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                <circle cx="12" cy="12" r="3"></circle>
+                                <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path>
+                            </svg>
+                        </span>
+                        Profile
+                    </NavLink>
+                </li>
+            </ul>
+        </div>
+    </text>;
+}
+>>>>>>> Stashed changes

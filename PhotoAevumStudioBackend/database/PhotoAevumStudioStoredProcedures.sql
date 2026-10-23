@@ -55,6 +55,35 @@ BEGIN
 END;
 GO
 
+-- Complete Employee First Login
+CREATE OR ALTER PROCEDURE dbo.sp_CompleteEmployeeFirstLogin
+    @EmployeeID nvarchar(30),
+    @NewPassword nvarchar(255) = NULL
+AS
+BEGIN
+    SET NOCOUNT ON;
+
+    UPDATE dbo.Employee
+    SET isFirstLogin = 0,
+        EmployeePassword = COALESCE(@NewPassword, EmployeePassword)
+    WHERE EmployeeID = @EmployeeID;
+END;
+GO
+
+-- Complete Admin First Login
+CREATE OR ALTER PROCEDURE dbo.sp_CompleteAdminFirstLogin
+    @AdminID nvarchar(30),
+    @NewPassword nvarchar(255) = NULL
+AS
+BEGIN
+    SET NOCOUNT ON;
+
+    UPDATE dbo.Admin
+    SET isFirstLogin = 0,
+        AdminPassword = COALESCE(@NewPassword, AdminPassword)
+    WHERE AdminID = @AdminID;
+END;
+GO
 
 /* =====================================================================
    2. EVENT & BOOKING MANAGEMENT
@@ -163,7 +192,33 @@ GO
 
 
 /* =====================================================================
-   4. STATUS UPDATES & AUDIT LOGGING (HistoryLog Integration)
+   4. CATALOG & CATEGORY MANAGEMENT
+   ===================================================================== */
+
+-- Assign a Service, Additional Service, or Combo Package to a Service Category
+CREATE OR ALTER PROCEDURE dbo.sp_AddServiceCategoryJoin
+    @ServiceCategoryJoinID nvarchar(30),
+    @ServiceCategoryID nvarchar(30),
+    @ServicesID nvarchar(30) = NULL,
+    @AdditionalServicesID nvarchar(30) = NULL,
+    @ComboPackageID nvarchar(30) = NULL
+AS
+BEGIN
+    SET NOCOUNT ON;
+
+    -- Note: Table constraint CK_ServiceCategoryJoins_ExactlyOne ensures only one of the three item IDs is NOT NULL
+    INSERT INTO dbo.ServiceCategoryJoins (
+        ServiceCategoryJoinID, ServiceCategoryID, ServicesID, AdditionalServicesID, ComboPackageID
+    )
+    VALUES (
+        @ServiceCategoryJoinID, @ServiceCategoryID, @ServicesID, @AdditionalServicesID, @ComboPackageID
+    );
+END;
+GO
+
+
+/* =====================================================================
+   5. STATUS UPDATES & AUDIT LOGGING (HistoryLog Integration)
    ===================================================================== */
 
 -- Update Event Status (Automatically handles the complex HistoryLog requirements)
@@ -231,33 +286,5 @@ BEGIN
             THROW;
         END CATCH
     END
-END;
-GO
-
-CREATE OR ALTER PROCEDURE dbo.sp_CompleteEmployeeFirstLogin
-    @EmployeeID nvarchar(30),
-    @NewPassword nvarchar(255) = NULL
-AS
-BEGIN
-    SET NOCOUNT ON;
-
-    UPDATE dbo.Employee
-    SET isFirstLogin = 0,
-        EmployeePassword = COALESCE(@NewPassword, EmployeePassword)
-    WHERE EmployeeID = @EmployeeID;
-END;
-GO
-
-CREATE OR ALTER PROCEDURE dbo.sp_CompleteAdminFirstLogin
-    @AdminID nvarchar(30),
-    @NewPassword nvarchar(255) = NULL
-AS
-BEGIN
-    SET NOCOUNT ON;
-
-    UPDATE dbo.Admin
-    SET isFirstLogin = 0,
-        AdminPassword = COALESCE(@NewPassword, AdminPassword)
-    WHERE AdminID = @AdminID;
 END;
 GO

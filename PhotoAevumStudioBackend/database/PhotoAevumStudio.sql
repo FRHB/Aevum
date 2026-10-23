@@ -35,8 +35,6 @@ CREATE TABLE dbo.Customer (
     CustomerPassword nvarchar(255) NOT NULL
 );
 
-
-
 CREATE TABLE dbo.EmployeeSpecialization (
     SpecializationID nvarchar(30) NOT NULL PRIMARY KEY,
     SpecializationName nvarchar(255) NOT NULL,
@@ -63,7 +61,27 @@ CREATE TABLE dbo.AdditionalServices (
 CREATE TABLE dbo.Services (
     ServicesID nvarchar(30) NOT NULL PRIMARY KEY,
     ServiceName nvarchar(255) NOT NULL,
-    ServicesDescription nvarchar(255) NOT NULL
+    ServicesDescription nvarchar(255) NOT NULL,
+    ServicePrice Money Not Null
+);
+
+CREATE TABLE dbo.ServiceCategory ( 
+    ServiceCategoryID nvarchar(30) NOT NULL Primary Key,
+    ServiceCategoryName nvarchar(255) NOT NULL,
+    ServiceCategoryDescription nvarchar(255) NOT NULL
+);
+
+CREATE TABLE dbo.ServiceCategoryJoins(
+    ServiceCategoryJoinID nvarchar(30) NOT NULL PRIMARY KEY,
+    ServiceCategoryID nvarchar(30) NOT NULL,
+    ServicesID nvarchar(30) NULL,
+    AdditionalServicesID nvarchar(30) NULL,
+    ComboPackageID nvarchar(30) NULL,
+    CONSTRAINT CK_ServiceCategoryJoins_ExactlyOne CHECK (
+        (CASE WHEN ServicesID IS NOT NULL THEN 1 ELSE 0 END) +
+        (CASE WHEN AdditionalServicesID IS NOT NULL THEN 1 ELSE 0 END) +
+        (CASE WHEN ComboPackageID IS NOT NULL THEN 1 ELSE 0 END) = 1
+    )
 );
 
 CREATE UNIQUE INDEX UX_Employee_Email ON dbo.Employee(EmployeeEmail) WHERE EmployeeEmail IS NOT NULL;
@@ -195,6 +213,12 @@ ALTER TABLE dbo.EventLineItem ADD CONSTRAINT FK_EventLineItem_EventAppointment F
 ALTER TABLE dbo.EventLineItem ADD CONSTRAINT FK_EventLineItem_ComboPackage FOREIGN KEY (ComboPackageID) REFERENCES dbo.ComboPackage(ComboPackageID);
 ALTER TABLE dbo.EventEmployee ADD CONSTRAINT FK_EventEmployee_EventAppointment FOREIGN KEY (EventAppointmentID) REFERENCES dbo.EventAppointment(EventAppointmentID) ON DELETE CASCADE;
 ALTER TABLE dbo.EventEquipment ADD CONSTRAINT FK_EventEquipment_EventAppointment FOREIGN KEY (EventAppointmentID) REFERENCES dbo.EventAppointment(EventAppointmentID) ON DELETE CASCADE;
+
+-- ServiceCategoryJoins Foreign Keys
+ALTER TABLE dbo.ServiceCategoryJoins ADD CONSTRAINT FK_ServiceCategoryJoins_ServiceCategory FOREIGN KEY (ServiceCategoryID) REFERENCES dbo.ServiceCategory(ServiceCategoryID) ON DELETE CASCADE;
+ALTER TABLE dbo.ServiceCategoryJoins ADD CONSTRAINT FK_ServiceCategoryJoins_Services FOREIGN KEY (ServicesID) REFERENCES dbo.Services(ServicesID);
+ALTER TABLE dbo.ServiceCategoryJoins ADD CONSTRAINT FK_ServiceCategoryJoins_AdditionalServices FOREIGN KEY (AdditionalServicesID) REFERENCES dbo.AdditionalServices(AdditionalServicesID);
+ALTER TABLE dbo.ServiceCategoryJoins ADD CONSTRAINT FK_ServiceCategoryJoins_ComboPackage FOREIGN KEY (ComboPackageID) REFERENCES dbo.ComboPackage(ComboPackageID);
 
 ALTER TABLE dbo.HistoryLog ADD CONSTRAINT FK_HistoryLog_EventAppointment FOREIGN KEY (EventAppointmentID) REFERENCES dbo.EventAppointment(EventAppointmentID);
 ALTER TABLE dbo.HistoryLog ADD CONSTRAINT FK_HistoryLog_BookingNegotiation FOREIGN KEY (NegotiationID) REFERENCES dbo.BookingNegotiation(NegotiationID);
