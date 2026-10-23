@@ -14,4 +14,5 @@ public interface IAuthService
     Task<bool> SendVerificationCodeAsync(string email, CancellationToken cancellationToken = default);
     Task<bool> VerifyCodeAsync(string email, string code, CancellationToken cancellationToken = default);
     Task<bool> ForgotPasswordAsync(string email, CancellationToken cancellationToken = default);
+    Task<bool> ResetPasswordAsync(string email, string code, string newPassword, CancellationToken cancellationToken = default);
 }

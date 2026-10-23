@@ -10,295 +10,127 @@
 
 <PageTitle>Equipments Schedule | Aevum Studio</PageTitle>
 
-<div class="space-y-6 pb-12">
-    <!-- ══════════════════════════════════════════════════════════════════════ -->
-    <!-- 1. PAGE HEADER                                                        -->
-    <!-- ══════════════════════════════════════════════════════════════════════ -->
-    <div class="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+<div class="space-y-4 pb-10">
+    @* ── 1. COMPACT PAGE HEADER & STATUS STRIP ────────────────────────── *@
+    <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 border-b border-gray-200 pb-3">
         <div>
-            <div class="flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-gray-500 mb-1">
-                <span>Events Calendar</span>
-                <span class="text-gray-400">/</span>
-                <span class="text-gray-900 font-bold">Equipments Schedule</span>
+            <div class="flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-gray-400">
+                <span>Gear Inventory</span>
+                <span>/</span>
+                <span class="text-gray-900 font-bold">Equipment Schedule</span>
             </div>
-            <h1 class="text-2xl sm:text-3xl font-extrabold text-gray-900 tracking-tight">Equipments Schedule</h1>
-            <p class="text-sm text-gray-500 mt-1">
-                Timeline, reservations, dispatch, and availability for cameras, lenses, lighting gear, and kits.
-            </p>
+            <h1 class="text-xl sm:text-2xl font-extrabold text-gray-900 tracking-tight">Equipment Timeline & Dispatch</h1>
         </div>
 
-        <div class="flex items-center gap-3">
-            <button type="button"
-                    @onclick="OpenCreateModal"
-                    class="inline-flex items-center gap-2 px-4 py-2.5 bg-gray-900 hover:bg-black text-white text-sm font-semibold rounded-lg shadow-sm hover:shadow transition-all duration-150 active:scale-95 focus:outline-none focus:ring-2 focus:ring-gray-900 focus:ring-offset-2">
-                <svg class="w-4 h-4 text-emerald-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M12 4v16m8-8H4" />
-                </svg>
-                <span>Reserve Equipment</span>
+        <div class="flex items-center gap-2 flex-wrap">
+            <span class="px-2.5 py-1 text-xs font-semibold rounded-full bg-gray-100 text-gray-700 border border-gray-200">
+                📷 @EquipmentResources.Count Units
+            </span>
+            <span class="px-2.5 py-1 text-xs font-semibold rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200">
+                ✓ @ThisWeekReservationsCount Dispatches Active
+            </span>
+            @if (InMaintenanceCount > 0)
+            {
+                <span class="px-2.5 py-1 text-xs font-semibold rounded-full bg-amber-50 text-amber-700 border border-amber-200">
+                    🛠 @InMaintenanceCount Bench Tech
+                </span>
+            }
+            @if (ConflictCount > 0)
+            {
+                <button type="button" @onclick="ToggleConflictFilter" class="px-2.5 py-1 text-xs font-bold rounded-full bg-rose-600 text-white cursor-pointer">
+                    ⚠️ @ConflictCount Overbooked
+                </button>
+            }
+            else
+            {
+                <span class="px-2.5 py-1 text-xs font-semibold rounded-full bg-teal-50 text-teal-700 border border-teal-200">
+                    ✓ All Gear Available
+                </span>
+            }
+
+            <button type="button" @onclick="OpenCreateModal" class="px-3 py-1.5 bg-gray-900 hover:bg-black text-white text-xs font-semibold rounded-lg shadow-xs ml-2">
+                + Reserve Gear
             </button>
         </div>
     </div>
 
-    <!-- ══════════════════════════════════════════════════════════════════════ -->
-    <!-- 2. CONFLICT INDICATOR BAR (Summary Alert Bar)                        -->
-    <!-- ══════════════════════════════════════════════════════════════════════ -->
-    @if (ConflictCount > 0)
-    {
-        <div class="p-4 bg-rose-50 border border-rose-200 rounded-xl shadow-xs flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 animate-in fade-in duration-200">
-            <div class="flex items-center gap-3">
-                <span class="w-8 h-8 rounded-full bg-rose-100 text-rose-700 flex items-center justify-center shrink-0 text-base font-bold">
-                    ⚠️
-                </span>
-                <div>
-                    <h3 class="text-sm font-bold text-rose-900">
-                        @ConflictCount Equipment Scheduling Conflict(s) Detected
-                    </h3>
-                    <p class="text-xs text-rose-700 mt-0.5">
-                        Double-reservation detected! Gear items have overlapping project schedules and require dispatch resolution.
-                    </p>
-                </div>
+    @* ── 2. COMPACT TOOLBAR & FILTERS ─────────────────────────────────── *@
+    <div class="bg-white p-3 rounded-lg border border-gray-200 shadow-2xs flex flex-wrap items-center justify-between gap-3 text-xs">
+        <div class="flex items-center gap-2">
+            <div class="inline-flex bg-gray-100 p-0.5 rounded-md border border-gray-200">
+                <button type="button" @onclick="() => SetViewMode(ScheduleViewMode.Day)" class="px-2.5 py-1 font-semibold rounded @(_currentView == ScheduleViewMode.Day ? "bg-white shadow-2xs text-gray-900" : "text-gray-500")">Day</button>
+                <button type="button" @onclick="() => SetViewMode(ScheduleViewMode.Week)" class="px-2.5 py-1 font-semibold rounded @(_currentView == ScheduleViewMode.Week ? "bg-white shadow-2xs text-gray-900" : "text-gray-500")">Week</button>
+                <button type="button" @onclick="() => SetViewMode(ScheduleViewMode.Month)" class="px-2.5 py-1 font-semibold rounded @(_currentView == ScheduleViewMode.Month ? "bg-white shadow-2xs text-gray-900" : "text-gray-500")">Month</button>
+                <button type="button" @onclick="() => SetViewMode(ScheduleViewMode.Agenda)" class="px-2.5 py-1 font-semibold rounded @(_currentView == ScheduleViewMode.Agenda ? "bg-white shadow-2xs text-gray-900" : "text-gray-500")">Agenda</button>
             </div>
 
-            <div class="flex items-center gap-2 shrink-0">
-                <button type="button"
-                        @onclick="ToggleConflictFilter"
-                        class="px-3 py-1.5 text-xs font-semibold rounded-lg border transition-colors @(_filterOnlyConflicts ? "bg-rose-600 text-white border-rose-600" : "bg-white text-rose-800 border-rose-300 hover:bg-rose-100")">
-                    @(_filterOnlyConflicts ? "Showing Conflicts Only" : "Filter Conflicts")
-                </button>
-            </div>
-        </div>
-    }
-
-    <!-- ══════════════════════════════════════════════════════════════════════ -->
-    <!-- 3. TOP SUMMARY STATS CARDS                                            -->
-    <!-- ══════════════════════════════════════════════════════════════════════ -->
-    <div class="grid grid-cols-2 lg:grid-cols-4 gap-4">
-        <div class="bg-white p-4 rounded-xl border border-gray-200 shadow-xs">
-            <div class="flex items-center justify-between">
-                <span class="text-xs font-semibold text-gray-500 uppercase tracking-wider">Gear Inventory</span>
-                <span class="p-2 bg-blue-50 text-blue-600 rounded-lg text-sm">📷</span>
-            </div>
-            <p class="text-2xl font-bold text-gray-900 mt-2">@EquipmentResources.Count</p>
-            <p class="text-xs text-gray-400 mt-1">Cataloged cameras, lighting & optics</p>
-        </div>
-
-        <div class="bg-white p-4 rounded-xl border border-gray-200 shadow-xs">
-            <div class="flex items-center justify-between">
-                <span class="text-xs font-semibold text-gray-500 uppercase tracking-wider">Active Reservations</span>
-                <span class="p-2 bg-emerald-50 text-emerald-600 rounded-lg text-sm">📦</span>
-            </div>
-            <p class="text-2xl font-bold text-gray-900 mt-2">@ThisWeekReservationsCount</p>
-            <p class="text-xs text-emerald-600 font-medium mt-1">@ThisWeekHoursCount.ToString("0.#") hrs in production</p>
-        </div>
-
-        <div class="bg-white p-4 rounded-xl border border-gray-200 shadow-xs">
-            <div class="flex items-center justify-between">
-                <span class="text-xs font-semibold text-gray-500 uppercase tracking-wider">Maintenance / Tech</span>
-                <span class="p-2 bg-amber-50 text-amber-600 rounded-lg text-sm">🛠️</span>
-            </div>
-            <p class="text-2xl font-bold text-amber-700 mt-2">@InMaintenanceCount</p>
-            <p class="text-xs text-gray-400 mt-1">Units on calibration bench</p>
-        </div>
-
-        <div class="bg-white p-4 rounded-xl border border-gray-200 shadow-xs">
-            <div class="flex items-center justify-between">
-                <span class="text-xs font-semibold text-gray-500 uppercase tracking-wider">Conflict Status</span>
-                <span class="p-2 @(ConflictCount > 0 ? "bg-rose-50 text-rose-600" : "bg-emerald-50 text-emerald-600") rounded-lg text-sm">
-                    @(ConflictCount > 0 ? "⚠️" : "🛡️")
-                </span>
-            </div>
-            <p class="text-2xl font-bold @(ConflictCount > 0 ? "text-rose-600" : "text-emerald-600") mt-2">
-                @(ConflictCount > 0 ? $"{ConflictCount} Overlap(s)" : "Clear")
-            </p>
-            <p class="text-xs text-gray-400 mt-1">Dispatch overlap check</p>
-        </div>
-    </div>
-
-    <!-- ══════════════════════════════════════════════════════════════════════ -->
-    <!-- 4. CONTROLS HEADER BAR (View Switcher, Navigator, Search, Filters)    -->
-    <!-- ══════════════════════════════════════════════════════════════════════ -->
-    <div class="bg-white p-4 rounded-xl border border-gray-200 shadow-xs space-y-4">
-        <div class="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
-            
-            <!-- Left: View Mode Switcher -->
-            <div class="inline-flex items-center p-1 bg-gray-100 rounded-lg border border-gray-200 self-start">
-                <button type="button"
-                        @onclick="() => SetViewMode(ScheduleViewMode.Day)"
-                        class="px-3 py-1.5 text-xs font-semibold rounded-md transition-all @(_currentView == ScheduleViewMode.Day ? "bg-white text-gray-900 shadow-xs" : "text-gray-600 hover:text-gray-900")">
-                    Day
-                </button>
-                <button type="button"
-                        @onclick="() => SetViewMode(ScheduleViewMode.Week)"
-                        class="px-3 py-1.5 text-xs font-semibold rounded-md transition-all @(_currentView == ScheduleViewMode.Week ? "bg-white text-gray-900 shadow-xs" : "text-gray-600 hover:text-gray-900")">
-                    Week
-                </button>
-                <button type="button"
-                        @onclick="() => SetViewMode(ScheduleViewMode.Month)"
-                        class="px-3 py-1.5 text-xs font-semibold rounded-md transition-all @(_currentView == ScheduleViewMode.Month ? "bg-white text-gray-900 shadow-xs" : "text-gray-600 hover:text-gray-900")">
-                    Month
-                </button>
-                <button type="button"
-                        @onclick="() => SetViewMode(ScheduleViewMode.Agenda)"
-                        class="px-3 py-1.5 text-xs font-semibold rounded-md transition-all @(_currentView == ScheduleViewMode.Agenda ? "bg-white text-gray-900 shadow-xs" : "text-gray-600 hover:text-gray-900")">
-                    Agenda
-                </button>
-            </div>
-
-            <!-- Center: Date Navigator -->
-            <div class="flex items-center gap-2 justify-between sm:justify-center">
-                <button type="button"
-                        @onclick="NavigatePrevious"
-                        class="p-2 rounded-lg border border-gray-200 bg-white hover:bg-gray-50 text-gray-700 transition-colors shadow-2xs"
-                        aria-label="Previous">
-                    <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7" />
-                    </svg>
-                </button>
-
-                <div class="px-3 py-1.5 bg-gray-50 border border-gray-200 rounded-lg text-xs sm:text-sm font-bold text-gray-900 min-w-[200px] text-center shadow-2xs">
-                    @FormattedDateRangeHeader
-                </div>
-
-                <button type="button"
-                        @onclick="NavigateNext"
-                        class="p-2 rounded-lg border border-gray-200 bg-white hover:bg-gray-50 text-gray-700 transition-colors shadow-2xs"
-                        aria-label="Next">
-                    <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7" />
-                    </svg>
-                </button>
-
-                <button type="button"
-                        @onclick="JumpToToday"
-                        class="px-3 py-2 text-xs font-bold rounded-lg border border-gray-200 bg-white hover:bg-gray-50 text-gray-700 transition-colors shadow-2xs">
-                    Today
-                </button>
-            </div>
-
-            <!-- Right: Search Input -->
-            <div class="relative w-full lg:w-72">
-                <svg class="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
-                </svg>
-                <input type="text"
-                       @bind="_searchQuery"
-                       @bind:event="oninput"
-                       placeholder="Quick search gear, SN, client..."
-                       class="w-full pl-9 pr-8 py-2 text-xs bg-gray-50 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-gray-900 focus:bg-white transition-all" />
-                @if (!string.IsNullOrEmpty(_searchQuery))
-                {
-                    <button type="button"
-                            @onclick="() => _searchQuery = string.Empty"
-                            class="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 text-xs">
-                        ✕
-                    </button>
-                }
+            <div class="flex items-center gap-1">
+                <button type="button" @onclick="NavigatePrevious" class="px-2 py-1 bg-white border border-gray-200 rounded font-bold">‹</button>
+                <span class="font-bold px-2 text-gray-800">@FormattedDateRangeHeader</span>
+                <button type="button" @onclick="NavigateNext" class="px-2 py-1 bg-white border border-gray-200 rounded font-bold">›</button>
+                <button type="button" @onclick="JumpToToday" class="px-2 py-1 bg-gray-50 border border-gray-200 rounded font-medium">Today</button>
             </div>
         </div>
 
-        <!-- Filter Row (Category & Maintenance Status) -->
-        <div class="flex flex-wrap items-center gap-3 pt-3 border-t border-gray-100 text-xs">
-            <span class="font-semibold text-gray-500">Filters:</span>
-
-            <!-- Category Dropdown -->
-            <select @bind="_selectedCategoryFilter" class="px-2.5 py-1.5 bg-gray-50 border border-gray-200 rounded-lg text-gray-700 font-medium focus:outline-none focus:ring-2 focus:ring-gray-900">
+        <div class="flex items-center gap-2">
+            <select @bind="_selectedCategoryFilter" class="p-1.5 bg-gray-50 border border-gray-200 rounded text-xs">
                 <option value="">All Categories</option>
-                <option value="Camera Bodies">Camera Bodies</option>
-                <option value="Cinema Rigs">Cinema Rigs</option>
-                <option value="Strobe Lighting">Strobe Lighting</option>
-                <option value="Lenses">Lenses</option>
-                <option value="Grip & Audio">Grip & Audio</option>
+                <option value="Cameras & Bodies">Cameras & Bodies</option>
+                <option value="Lenses & Optics">Lenses & Optics</option>
+                <option value="Strobe & Continuous Lighting">Lighting</option>
+                <option value="Audio & Microphones">Audio</option>
             </select>
 
-            <!-- Status Dropdown -->
-            <select @bind="_selectedStatusFilter" class="px-2.5 py-1.5 bg-gray-50 border border-gray-200 rounded-lg text-gray-700 font-medium focus:outline-none focus:ring-2 focus:ring-gray-900">
-                <option value="">All Hardware Statuses</option>
+            <select @bind="_selectedStatusFilter" class="p-1.5 bg-gray-50 border border-gray-200 rounded text-xs">
+                <option value="">All Statuses</option>
                 <option value="Ready">Ready</option>
                 <option value="In-Use">In-Use</option>
                 <option value="In-Maintenance">In-Maintenance</option>
             </select>
 
+            <input type="text" @bind="_searchQuery" @bind:event="oninput" placeholder="Search gear / serial..." class="p-1.5 bg-gray-50 border border-gray-200 rounded text-xs w-36 focus:w-48 transition-all" />
+
             @if (HasActiveFilters)
             {
-                <button type="button"
-                        @onclick="ClearFilters"
-                        class="text-xs text-rose-600 hover:text-rose-800 font-semibold underline underline-offset-2 ml-auto">
-                    Reset Filters
-                </button>
+                <button type="button" @onclick="ClearFilters" class="text-rose-600 font-semibold underline">Reset</button>
             }
         </div>
     </div>
 
-    <!-- ══════════════════════════════════════════════════════════════════════ -->
-    <!-- 5. MAIN SCHEDULE MATRIX / VIEW RENDERER                               -->
-    <!-- ══════════════════════════════════════════════════════════════════════ -->
+    @* ── 3. MAIN COMPACT TIMELINE MATRIX ──────────────────────────────── *@
     @if (_currentView == ScheduleViewMode.Week)
     {
-        @* ── WEEK MATRIX VIEW ───────────────────────────────────────────── *@
-        <div class="bg-white rounded-xl border border-gray-200 shadow-xs overflow-hidden">
-            <div class="overflow-x-auto relative">
-                <table class="w-full text-left border-collapse min-w-[1000px]">
-                    <!-- Days Header Row -->
+        <div class="bg-white rounded-lg border border-gray-200 shadow-2xs overflow-hidden">
+            <div class="overflow-x-auto">
+                <table class="w-full text-left border-collapse text-xs">
                     <thead>
-                        <tr class="bg-gray-50 border-b border-gray-200 text-xs">
-                            <th class="w-64 sm:w-72 shrink-0 sticky left-0 z-20 bg-gray-50 border-r border-gray-200 px-4 py-3 text-gray-500 font-bold uppercase tracking-wider">
-                                Equipment Unit & Specs
-                            </th>
+                        <tr class="bg-gray-50 border-b border-gray-200 font-bold text-gray-500 uppercase">
+                            <th class="w-56 p-2.5 border-r border-gray-200">Equipment & Serial</th>
                             @foreach (var day in WeekDays)
                             {
                                 var isToday = day.Date == DateTime.Today;
-                                var dayResCount = GetReservationsForDay(day).Count();
-                                <th class="px-3 py-3 text-center border-r border-gray-200 min-w-[170px] @(isToday ? "bg-amber-50/40" : "")">
-                                    <div class="flex flex-col items-center gap-1">
-                                        <div class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg @(isToday ? "bg-gray-900 text-white font-bold shadow-xs" : "bg-gray-100 text-gray-700 font-semibold")">
-                                            <span>@day.ToString("ddd")</span>
-                                            <span class="text-xs">@day.Day</span>
-                                        </div>
-                                        <span class="text-[10px] text-gray-400 font-normal">
-                                            @dayResCount @(dayResCount == 1 ? "reserved" : "reserved")
-                                        </span>
-                                    </div>
+                                <th class="p-2 border-r border-gray-200 text-center @(isToday ? "bg-amber-50" : "")">
+                                    <div>@day.ToString("ddd") <span class="font-extrabold text-gray-900">@day.Day</span></div>
                                 </th>
                             }
                         </tr>
                     </thead>
-
-                    <!-- Matrix Rows -->
-                    <tbody class="divide-y divide-gray-200 text-xs">
+                    <tbody class="divide-y divide-gray-100">
                         @foreach (var eq in FilteredEquipment)
                         {
-                            var eqResThisWeek = GetReservationsForEquipment(eq.Id).Where(r => WeekDays.Any(d => d.Date == r.Date.Date)).ToList();
-                            var totalHours = eqResThisWeek.Sum(r => r.DurationHours);
-
-                            <tr class="hover:bg-gray-50/30 transition-colors">
-                                <!-- Sticky Left Column: Equipment Resource Info -->
-                                <td class="w-64 sm:w-72 shrink-0 sticky left-0 z-10 bg-white border-r border-gray-200 p-4 shadow-[2px_0_5px_rgba(0,0,0,0.03)] align-top">
-                                    <div class="space-y-1.5">
-                                        <div class="flex items-center gap-2">
-                                            <span class="w-2.5 h-2.5 rounded-full @GetEquipmentStatusDot(eq.Status)"></span>
-                                            <h4 class="font-bold text-gray-900 text-sm leading-snug">@eq.Name</h4>
-                                        </div>
-
-                                        <div class="flex flex-wrap gap-1 text-[11px]">
-                                            <span class="px-2 py-0.5 rounded-md @eq.BadgeColor font-medium">
-                                                @eq.Category
-                                            </span>
-                                            <span class="px-2 py-0.5 rounded-md @GetEquipmentStatusBadge(eq.Status) font-medium">
-                                                @eq.Status
-                                            </span>
-                                        </div>
-
-                                        <p class="text-[11px] text-gray-400 font-medium font-mono">
-                                            @eq.SerialNumber • @eq.StorageBay
-                                        </p>
-
-                                        <div class="pt-1 text-[10px] text-gray-500 font-medium">
-                                            @eqResThisWeek.Count booking(s) • @totalHours.ToString("0.#") hrs this week
-                                        </div>
+                            <tr class="hover:bg-gray-50/50">
+                                <td class="p-2.5 border-r border-gray-200">
+                                    <div class="flex items-center justify-between">
+                                        <div class="font-bold text-gray-900">@eq.Name</div>
+                                        <span class="text-[9px] px-1.5 py-0.2 rounded font-bold @(eq.Status == "Ready" ? "bg-emerald-100 text-emerald-800" : "bg-amber-100 text-amber-800")">
+                                            @(eq.Status == "Ready" ? "✓ Ready" : eq.Status)
+                                        </span>
+                                    </div>
+                                    <div class="text-[10px] text-gray-500">
+                                        <code>@eq.SerialNumber</code> &bull; @eq.Category
                                     </div>
                                 </td>
 
-                                <!-- 7 Grid Day Slots -->
                                 @foreach (var day in WeekDays)
                                 {
                                     var dayReservations = FilteredReservations
@@ -306,56 +138,26 @@
                                         .OrderBy(r => r.StartTime)
                                         .ToList();
 
-                                    <td class="p-2 border-r border-gray-100 align-top min-w-[170px] relative group hover:bg-gray-50/50 transition-colors">
-                                        <div class="space-y-2 min-h-[90px] flex flex-col justify-between">
-                                            <div class="space-y-1.5">
-                                                @foreach (var res in dayReservations)
-                                                {
-                                                    <div @onclick="() => OpenDetailDrawer(res)"
-                                                         class="p-2.5 rounded-lg border text-left shadow-2xs hover:shadow-md hover:-translate-y-0.5 transition-all cursor-pointer relative @GetReservationCardStyle(res)">
-                                                        
+                                    <td class="p-1 border-r border-gray-100 align-top">
+                                        <div class="space-y-1 min-h-[48px]">
+                                            @foreach (var res in dayReservations)
+                                            {
+                                                <div @onclick="() => OpenDetailDrawer(res)"
+                                                     class="p-1.5 rounded border text-[11px] cursor-pointer transition-all @GetReservationCardStyle(res)">
+                                                    <div class="flex items-center justify-between font-bold">
+                                                        <span>@res.FormattedTimeRange</span>
                                                         @if (res.HasConflict)
                                                         {
-                                                            <div class="flex items-center gap-1 text-[10px] font-bold text-rose-700 bg-rose-100 px-1.5 py-0.5 rounded-sm mb-1 uppercase tracking-tight">
-                                                                <span>⚠️ Conflict</span>
-                                                            </div>
+                                                            <span class="text-rose-700 font-extrabold text-[10px]" title="Conflict!">⚠️</span>
                                                         }
-
-                                                        <!-- Time Slot -->
-                                                        <div class="flex items-center justify-between text-[11px] font-medium mb-1">
-                                                            <span class="font-bold text-gray-900">@res.FormattedTimeRange</span>
-                                                            <span class="px-1.5 py-0.2 rounded text-[10px] font-semibold @GetMaintenanceBadgeStyle(res.MaintenanceStatus)">
-                                                                @res.MaintenanceStatus
-                                                            </span>
-                                                        </div>
-
-                                                        <!-- Project / Client -->
-                                                        <div class="font-bold text-gray-900 text-xs truncate">
-                                                            @res.ProjectOrClient
-                                                        </div>
-
-                                                        <!-- Technician in Charge -->
-                                                        <div class="text-[10px] text-gray-500 truncate mt-0.5 flex items-center gap-1">
-                                                            <span>👤</span>
-                                                            <span>@res.TechnicianInCharge</span>
-                                                        </div>
-
-                                                        <!-- Location tag -->
-                                                        <div class="text-[10px] text-gray-400 mt-1 flex items-center gap-1">
-                                                            <span>📍</span>
-                                                            <span>@res.Location</span>
-                                                        </div>
+                                                        else
+                                                        {
+                                                            <span class="text-emerald-700 font-bold text-[10px]" title="Verified Booking">✓</span>
+                                                        }
                                                     </div>
-                                                }
-                                            </div>
-
-                                            <!-- Subtle + Button -->
-                                            <button type="button"
-                                                    @onclick="() => OpenCreateModalForSlot(eq.Id, day)"
-                                                    class="w-full py-1 text-center border border-dashed border-gray-200 rounded-md text-[11px] text-gray-400 hover:text-gray-900 hover:border-gray-400 hover:bg-gray-100/70 transition-all opacity-0 group-hover:opacity-100 flex items-center justify-center gap-1">
-                                                <span>+</span>
-                                                <span>Reserve</span>
-                                            </button>
+                                                    <div class="text-[10px] truncate">@res.ProjectOrClient &bull; 👤 @res.TechnicianInCharge</div>
+                                                </div>
+                                            }
                                         </div>
                                     </td>
                                 }
@@ -366,473 +168,98 @@
             </div>
         </div>
     }
-    else if (_currentView == ScheduleViewMode.Day)
-    {
-        @* ── DAY VIEW ────────────────────────────────────────────────────── *@
-        <div class="bg-white rounded-xl border border-gray-200 shadow-xs p-6 space-y-6">
-            <div class="flex items-center justify-between border-b border-gray-100 pb-4">
-                <div>
-                    <h3 class="text-lg font-bold text-gray-900">Equipment Dispatch: @_selectedDate.ToString("dddd, MMMM d, yyyy")</h3>
-                    <p class="text-xs text-gray-500">Live hardware checkout schedule and field equipment assignments.</p>
-                </div>
-                <button type="button"
-                        @onclick="() => OpenCreateModalForSlot(EquipmentResources.FirstOrDefault()?.Id ?? string.Empty, _selectedDate)"
-                        class="px-3 py-1.5 bg-gray-900 hover:bg-black text-white text-xs font-semibold rounded-lg shadow-xs">
-                    + Reserve Gear
-                </button>
-            </div>
-
-            <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                @foreach (var eq in FilteredEquipment)
-                {
-                    var dayRes = FilteredReservations
-                        .Where(r => r.EquipmentId == eq.Id && r.Date.Date == _selectedDate.Date)
-                        .OrderBy(r => r.StartTime)
-                        .ToList();
-
-                    <div class="p-4 rounded-xl border border-gray-200 bg-gray-50/50 space-y-3">
-                        <div class="flex items-center justify-between">
-                            <div>
-                                <h4 class="font-bold text-gray-900 text-sm">@eq.Name</h4>
-                                <p class="text-[11px] text-gray-400 font-mono">@eq.SerialNumber</p>
-                            </div>
-                            <span class="text-xs px-2 py-0.5 rounded-full @GetEquipmentStatusBadge(eq.Status) font-medium">@eq.Status</span>
-                        </div>
-
-                        @if (dayRes.Any())
-                        {
-                            <div class="space-y-2">
-                                @foreach (var r in dayRes)
-                                {
-                                    <div @onclick="() => OpenDetailDrawer(r)"
-                                         class="p-3 bg-white rounded-lg border shadow-2xs hover:shadow-md transition-all cursor-pointer @GetReservationCardStyle(r)">
-                                        <div class="flex items-center justify-between text-xs font-semibold mb-1">
-                                            <span>@r.FormattedTimeRange</span>
-                                            <span class="px-2 py-0.5 rounded text-[10px] @GetMaintenanceBadgeStyle(r.MaintenanceStatus)">@r.MaintenanceStatus</span>
-                                        </div>
-                                        <h5 class="font-bold text-gray-900 text-sm">@r.ProjectOrClient</h5>
-                                        <div class="flex items-center justify-between mt-2 pt-2 border-t border-gray-100 text-[11px] text-gray-500">
-                                            <span>👤 Tech: @r.TechnicianInCharge</span>
-                                            <span>📍 @r.Location</span>
-                                        </div>
-                                    </div>
-                                }
-                            </div>
-                        }
-                        else
-                        {
-                            <div class="py-6 text-center border border-dashed border-gray-200 rounded-lg bg-white/70">
-                                <p class="text-xs text-gray-400">Available in locker / storage</p>
-                                <button type="button"
-                                        @onclick="() => OpenCreateModalForSlot(eq.Id, _selectedDate)"
-                                        class="mt-2 text-xs font-semibold text-gray-900 hover:underline">
-                                    + Reserve Unit
-                                </button>
-                            </div>
-                        }
-                    </div>
-                }
-            </div>
-        </div>
-    }
-    else if (_currentView == ScheduleViewMode.Month)
-    {
-        @* ── MONTH VIEW ──────────────────────────────────────────────────── *@
-        <div class="bg-white rounded-xl border border-gray-200 shadow-xs overflow-hidden">
-            <div class="grid grid-cols-7 border-b border-gray-200 bg-gray-50 text-center text-xs font-bold text-gray-500 py-2.5">
-                <div>Mon</div>
-                <div>Tue</div>
-                <div>Wed</div>
-                <div>Thu</div>
-                <div>Fri</div>
-                <div>Sat</div>
-                <div>Sun</div>
-            </div>
-
-            <div class="grid grid-cols-7 auto-rows-fr divide-x divide-y divide-gray-100">
-                @foreach (var day in MonthCalendarDays)
-                {
-                    var isCurrentMonth = day.Month == _selectedDate.Month;
-                    var isToday = day.Date == DateTime.Today;
-                    var dayRes = FilteredReservations.Where(r => r.Date.Date == day.Date).ToList();
-
-                    <div class="min-h-[110px] p-2 @(isCurrentMonth ? "bg-white" : "bg-gray-50/50 text-gray-400") hover:bg-gray-50/80 transition-colors flex flex-col justify-between">
-                        <div class="flex items-center justify-between">
-                            <span class="text-xs font-bold @(isToday ? "w-6 h-6 rounded-full bg-gray-900 text-white flex items-center justify-center" : "text-gray-700")">
-                                @day.Day
-                            </span>
-                            @if (dayRes.Count > 0)
-                            {
-                                <span class="text-[10px] font-bold text-gray-400">@dayRes.Count</span>
-                            }
-                        </div>
-
-                        <div class="space-y-1 my-1 overflow-hidden">
-                            @foreach (var r in dayRes.Take(2))
-                            {
-                                <div @onclick="() => OpenDetailDrawer(r)"
-                                     class="px-1.5 py-0.5 rounded text-[10px] font-medium truncate cursor-pointer @(r.HasConflict ? "bg-rose-100 text-rose-800 border border-rose-300" : "bg-blue-50 text-blue-800 border border-blue-200")">
-                                    @r.EquipmentName.Split(' ').FirstOrDefault(): @r.ProjectOrClient
-                                </div>
-                            }
-                            @if (dayRes.Count > 2)
-                            {
-                                <span class="text-[10px] text-gray-500 font-semibold pl-1">+@(dayRes.Count - 2) more</span>
-                            }
-                        </div>
-
-                        <button type="button"
-                                @onclick="() => OpenCreateModalForSlot(EquipmentResources.FirstOrDefault()?.Id ?? string.Empty, day)"
-                                class="text-[10px] text-gray-300 hover:text-gray-900 text-left font-semibold">
-                            + Add
-                        </button>
-                    </div>
-                }
-            </div>
-        </div>
-    }
     else
     {
-        @* ── AGENDA VIEW ─────────────────────────────────────────────────── *@
-        <div class="bg-white rounded-xl border border-gray-200 shadow-xs p-6 space-y-6">
-            <div class="flex items-center justify-between border-b border-gray-100 pb-4">
-                <div>
-                    <h3 class="text-lg font-bold text-gray-900">Upcoming Equipment Dispatch Agenda</h3>
-                    <p class="text-xs text-gray-500">Chronological feed of hardware checkout schedules and project reservations.</p>
-                </div>
-            </div>
-
-            @if (AgendaGroupedReservations.Any())
-            {
-                <div class="space-y-6">
-                    @foreach (var group in AgendaGroupedReservations)
-                    {
-                        <div class="space-y-3">
-                            <div class="flex items-center gap-2">
-                                <span class="w-3 h-3 rounded-full bg-gray-900"></span>
-                                <h4 class="text-xs font-bold uppercase tracking-wider text-gray-700">
-                                    @group.Key.ToString("dddd, MMMM d, yyyy")
-                                </h4>
-                                <span class="text-xs text-gray-400">(@group.Count() reservation@(group.Count() == 1 ? "" : "s"))</span>
-                            </div>
-
-                            <div class="space-y-2 pl-5">
-                                @foreach (var r in group)
-                                {
-                                    <div @onclick="() => OpenDetailDrawer(r)"
-                                         class="p-4 rounded-xl border bg-white shadow-2xs hover:shadow-md transition-all cursor-pointer flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 @GetReservationCardStyle(r)">
-                                        <div class="space-y-1">
-                                            <div class="flex items-center gap-2">
-                                                <span class="font-bold text-gray-900 text-sm">@r.FormattedTimeRange</span>
-                                                <span class="px-2 py-0.5 rounded text-[10px] @GetMaintenanceBadgeStyle(r.MaintenanceStatus)">@r.MaintenanceStatus</span>
-                                                @if (r.HasConflict)
-                                                {
-                                                    <span class="px-2 py-0.5 rounded bg-rose-600 text-white font-bold text-[10px]">⚠️ Conflict</span>
-                                                }
-                                            </div>
-                                            <h5 class="text-base font-bold text-gray-900">@r.EquipmentName</h5>
-                                            <p class="text-xs text-gray-500">Project: @r.ProjectOrClient • 📍 @r.Location</p>
-                                        </div>
-
-                                        <div class="flex items-center gap-4 text-xs">
-                                            <div class="text-right">
-                                                <p class="font-bold text-gray-900">👤 @r.TechnicianInCharge</p>
-                                                <p class="text-gray-400">@r.DurationHours.ToString("0.#") hrs</p>
-                                            </div>
-                                            <span class="text-gray-400">›</span>
-                                        </div>
-                                    </div>
-                                }
-                            </div>
+        <div class="bg-white p-4 rounded-lg border border-gray-200">
+            <h3 class="font-bold text-sm mb-3">Reservations for @FormattedDateRangeHeader</h3>
+            <div class="space-y-2">
+                @foreach (var res in FilteredReservations.Where(r => r.Date.Date == _selectedDate.Date))
+                {
+                    <div @onclick="() => OpenDetailDrawer(res)" class="p-2 border rounded flex items-center justify-between cursor-pointer hover:bg-gray-50">
+                        <div class="flex items-center gap-3">
+                            <span class="font-bold text-xs">@res.FormattedTimeRange</span>
+                            <span class="font-bold text-xs">@res.EquipmentName</span>
+                            <span class="text-xs text-gray-500">@res.ProjectOrClient &bull; 👤 @res.TechnicianInCharge</span>
                         </div>
-                    }
-                </div>
-            }
-            else
-            {
-                <div class="text-center py-12 text-gray-400">
-                    <p class="text-sm">No equipment reservations match your search or filter criteria.</p>
-                </div>
-            }
+                        <span class="text-xs px-2 py-0.5 rounded bg-emerald-50 text-emerald-800 font-semibold">✓ Dispatched</span>
+                    </div>
+                }
+            </div>
         </div>
     }
 
-    <!-- ══════════════════════════════════════════════════════════════════════ -->
-    <!-- 6. SLIDE-OVER DETAIL DRAWER                                           -->
-    <!-- ══════════════════════════════════════════════════════════════════════ -->
+    @* ── DETAIL DRAWER & CREATE MODAL ─────────────────────────────────── *@
     @if (_selectedReservation != null)
     {
-        <div class="fixed inset-0 z-50 overflow-hidden animate-in fade-in duration-200">
-            <!-- Backdrop -->
-            <div class="absolute inset-0 bg-black/40 backdrop-blur-xs transition-opacity"
-                 @onclick="CloseDetailDrawer"></div>
-
-            <div class="fixed inset-y-0 right-0 max-w-full flex pl-10">
-                <div class="w-screen max-w-md bg-white shadow-2xl flex flex-col justify-between overflow-y-auto">
-                    <!-- Drawer Header -->
-                    <div class="p-6 border-b border-gray-100 flex items-center justify-between bg-gray-50/50">
-                        <div>
-                            <span class="text-xs font-bold uppercase tracking-wider text-gray-400">Reservation Details</span>
-                            <h3 class="text-xl font-extrabold text-gray-900 mt-0.5">@_selectedReservation.EquipmentName</h3>
-                        </div>
-                        <button type="button"
-                                @onclick="CloseDetailDrawer"
-                                class="w-8 h-8 rounded-full border border-gray-200 flex items-center justify-center text-gray-400 hover:text-gray-700 hover:bg-gray-100 transition-colors">
-                            ✕
-                        </button>
+        <div class="fixed inset-0 bg-black/40 z-50 flex justify-end" @onclick="CloseDetailDrawer">
+            <div class="w-80 bg-white h-full p-5 shadow-xl flex flex-col justify-between" @onclick:stopPropagation="true">
+                <div>
+                    <div class="flex items-center justify-between border-b pb-3 mb-3">
+                        <h3 class="font-bold text-sm">Reservation Details</h3>
+                        <button type="button" @onclick="CloseDetailDrawer" class="text-gray-400 font-bold">✕</button>
                     </div>
-
-                    <!-- Drawer Content -->
-                    <div class="p-6 space-y-6 flex-1">
-                        <!-- Conflict Alert Box -->
-                        @if (_selectedReservation.HasConflict)
-                        {
-                            <div class="p-3.5 bg-rose-50 border border-rose-200 rounded-xl text-rose-900 space-y-1">
-                                <div class="flex items-center gap-2 font-bold text-xs text-rose-700">
-                                    <span>⚠️</span>
-                                    <span>Gear Double-Booking Conflict</span>
-                                </div>
-                                <p class="text-xs text-rose-800">
-                                    @_selectedReservation.ConflictMessage
-                                </p>
-                            </div>
-                        }
-
-                        <!-- Maintenance & Category -->
-                        <div class="grid grid-cols-2 gap-4">
-                            <div>
-                                <label class="text-[11px] font-bold text-gray-400 uppercase tracking-wider block mb-1">Condition Status</label>
-                                <span class="px-2.5 py-1 rounded-full text-xs font-semibold @GetMaintenanceBadgeStyle(_selectedReservation.MaintenanceStatus)">
-                                    @_selectedReservation.MaintenanceStatus
-                                </span>
-                            </div>
-                            <div>
-                                <label class="text-[11px] font-bold text-gray-400 uppercase tracking-wider block mb-1">Category</label>
-                                <span class="px-2.5 py-1 rounded-full text-xs font-semibold bg-gray-100 text-gray-800 border border-gray-200">
-                                    @_selectedReservation.Category
-                                </span>
-                            </div>
-                        </div>
-
-                        <!-- Date & Time Slot -->
-                        <div class="p-4 bg-gray-50 rounded-xl border border-gray-200 space-y-2">
-                            <div class="flex items-center justify-between text-xs">
-                                <span class="text-gray-500">Date:</span>
-                                <span class="font-bold text-gray-900">@_selectedReservation.Date.ToString("dddd, MMMM d, yyyy")</span>
-                            </div>
-                            <div class="flex items-center justify-between text-xs">
-                                <span class="text-gray-500">Time Slot:</span>
-                                <span class="font-bold text-gray-900">@_selectedReservation.FormattedTimeRange</span>
-                            </div>
-                            <div class="flex items-center justify-between text-xs">
-                                <span class="text-gray-500">Duration:</span>
-                                <span class="font-bold text-gray-900">@_selectedReservation.DurationHours.ToString("0.#") Hours</span>
-                            </div>
-                        </div>
-
-                        <!-- Project & Client Info -->
-                        <div class="space-y-1.5">
-                            <label class="text-[11px] font-bold text-gray-400 uppercase tracking-wider block">Production / Project</label>
-                            <div class="p-3 bg-white border border-gray-200 rounded-xl space-y-1">
-                                <h4 class="font-bold text-gray-900 text-sm">@_selectedReservation.ProjectOrClient</h4>
-                                <p class="text-xs text-gray-500">📍 Location: @_selectedReservation.Location</p>
-                            </div>
-                        </div>
-
-                        <!-- Technician in Charge -->
-                        <div class="p-3 bg-gray-50 rounded-xl border border-gray-200">
-                            <span class="text-[10px] text-gray-400 uppercase font-bold block">Technician In Charge</span>
-                            <span class="text-xs font-bold text-gray-900 mt-1 block">👤 @_selectedReservation.TechnicianInCharge</span>
-                        </div>
-
-                        <!-- Notes -->
-                        @if (!string.IsNullOrWhiteSpace(_selectedReservation.Notes))
-                        {
-                            <div>
-                                <label class="text-[11px] font-bold text-gray-400 uppercase tracking-wider block mb-1">Check-out Notes</label>
-                                <p class="text-xs text-gray-600 bg-gray-50 p-3 rounded-xl border border-gray-200 leading-relaxed">
-                                    @_selectedReservation.Notes
-                                </p>
-                            </div>
-                        }
-
-                        <!-- Update Maintenance Status Action -->
-                        <div class="space-y-1.5">
-                            <label class="text-[11px] font-bold text-gray-400 uppercase tracking-wider block">Update Gear Condition</label>
-                            <div class="grid grid-cols-3 gap-2">
-                                <button type="button"
-                                        @onclick='() => UpdateMaintenanceStatus("Ready")'
-                                        class="py-1.5 text-xs font-semibold rounded-lg border border-emerald-300 bg-emerald-50 text-emerald-800 hover:bg-emerald-100 transition-colors">
-                                    Ready
-                                </button>
-                                <button type="button"
-                                        @onclick='() => UpdateMaintenanceStatus("In-Use")'
-                                        class="py-1.5 text-xs font-semibold rounded-lg border border-blue-300 bg-blue-50 text-blue-800 hover:bg-blue-100 transition-colors">
-                                    In-Use
-                                </button>
-                                <button type="button"
-                                        @onclick='() => UpdateMaintenanceStatus("In-Maintenance")'
-                                        class="py-1.5 text-xs font-semibold rounded-lg border border-rose-300 bg-rose-50 text-rose-800 hover:bg-rose-100 transition-colors">
-                                    Maintenance
-                                </button>
-                            </div>
-                        </div>
+                    <div class="space-y-2 text-xs">
+                        <div><strong class="text-gray-500">Equipment:</strong> @_selectedReservation.EquipmentName</div>
+                        <div><strong class="text-gray-500">Project / Client:</strong> @_selectedReservation.ProjectOrClient</div>
+                        <div><strong class="text-gray-500">Technician:</strong> @_selectedReservation.TechnicianInCharge</div>
+                        <div><strong class="text-gray-500">Schedule:</strong> @_selectedReservation.Date.ToString("ddd, MMM d") (@_selectedReservation.FormattedTimeRange)</div>
+                        <div><strong class="text-gray-500">Location:</strong> @_selectedReservation.Location</div>
                     </div>
-
-                    <!-- Drawer Footer Actions -->
-                    <div class="p-6 border-t border-gray-100 bg-gray-50/50 flex items-center justify-between gap-3">
-                        <button type="button"
-                                @onclick="DeleteSelectedReservation"
-                                class="px-4 py-2 border border-rose-300 text-rose-700 hover:bg-rose-50 text-xs font-bold rounded-lg transition-colors">
-                            Cancel Reservation
-                        </button>
-                        <button type="button"
-                                @onclick="CloseDetailDrawer"
-                                class="px-5 py-2 bg-gray-900 hover:bg-black text-white text-xs font-bold rounded-lg shadow-xs transition-colors">
-                            Close
-                        </button>
-                    </div>
+                </div>
+                <div class="pt-3 border-t">
+                    <button type="button" @onclick="DeleteSelectedReservation" class="w-full py-1.5 bg-rose-50 text-rose-700 font-semibold rounded text-xs border border-rose-200">Cancel Reservation</button>
                 </div>
             </div>
         </div>
     }
 
-    <!-- ══════════════════════════════════════════════════════════════════════ -->
-    <!-- 7. + RESERVE EQUIPMENT CREATION MODAL                                 -->
-    <!-- ══════════════════════════════════════════════════════════════════════ -->
     @if (_isCreateModalOpen)
     {
-        <div class="fixed inset-0 z-50 overflow-y-auto animate-in fade-in duration-200">
-            <div class="min-h-screen px-4 flex items-center justify-center">
-                <!-- Backdrop -->
-                <div class="fixed inset-0 bg-black/40 backdrop-blur-xs transition-opacity"
-                     @onclick="CloseCreateModal"></div>
-
-                <div class="relative bg-white rounded-2xl max-w-lg w-full p-6 shadow-2xl border border-gray-200 space-y-5 z-10">
-                    <div class="flex items-center justify-between border-b border-gray-100 pb-3">
-                        <div>
-                            <h3 class="text-lg font-bold text-gray-900">Reserve Equipment Item</h3>
-                            <p class="text-xs text-gray-500">Book camera bodies, lighting rigs, and lenses for upcoming shoots.</p>
-                        </div>
-                        <button type="button"
-                                @onclick="CloseCreateModal"
-                                class="text-gray-400 hover:text-gray-700 text-sm font-bold">
-                            ✕
-                        </button>
+        <div class="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4" @onclick="CloseCreateModal">
+            <div class="w-96 bg-white rounded-lg shadow-xl p-5" @onclick:stopPropagation="true">
+                <h3 class="font-bold text-sm mb-3">Reserve Equipment</h3>
+                @if (!string.IsNullOrEmpty(_modalErrorMessage))
+                {
+                    <div class="p-2 mb-2 bg-rose-50 text-rose-700 text-xs rounded">@_modalErrorMessage</div>
+                }
+                <div class="space-y-2 text-xs">
+                    <div>
+                        <label class="block font-semibold mb-1">Equipment Unit</label>
+                        <select @bind="_newReservation.EquipmentId" class="w-full p-1.5 border rounded">
+                            @foreach (var eq in EquipmentResources)
+                            {
+                                <option value="@eq.Id">@eq.Name (@eq.SerialNumber)</option>
+                            }
+                        </select>
                     </div>
-
-                    @if (!string.IsNullOrEmpty(_modalErrorMessage))
-                    {
-                        <div class="p-3 bg-rose-50 border border-rose-200 text-rose-800 rounded-lg text-xs font-medium">
-                            @_modalErrorMessage
-                        </div>
-                    }
-
-                    <div class="space-y-4 text-xs">
-                        <!-- Equipment Selection -->
+                    <div>
+                        <label class="block font-semibold mb-1">Project / Production</label>
+                        <input type="text" @bind="_newReservation.ProjectOrClient" class="w-full p-1.5 border rounded" placeholder="e.g. Vogue Editorial" />
+                    </div>
+                    <div class="grid grid-cols-2 gap-2">
                         <div>
-                            <label class="block font-bold text-gray-700 mb-1">Equipment Unit *</label>
-                            <select @bind="_newReservation.EquipmentId"
-                                    class="w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-gray-900 font-medium">
-                                @foreach (var eq in EquipmentResources)
-                                {
-                                    <option value="@eq.Id">@eq.Name (@eq.SerialNumber) - @eq.Category</option>
-                                }
-                            </select>
+                            <label class="block font-semibold mb-1">Date</label>
+                            <input type="date" @bind="_newReservationDate" class="w-full p-1.5 border rounded" />
                         </div>
-
-                        <!-- Project / Client Name -->
                         <div>
-                            <label class="block font-bold text-gray-700 mb-1">Project / Production *</label>
-                            <input type="text"
-                                   @bind="_newReservation.ProjectOrClient"
-                                   placeholder="e.g., Vogue Scandinavia or Nike Commercial"
-                                   class="w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-gray-900" />
-                        </div>
-
-                        <!-- Technician in Charge & Location -->
-                        <div class="grid grid-cols-2 gap-3">
-                            <div>
-                                <label class="block font-bold text-gray-700 mb-1">Technician in Charge</label>
-                                <select @bind="_newReservation.TechnicianInCharge"
-                                        class="w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-gray-900">
-                                    <option value="Elena Rostova">Elena Rostova</option>
-                                    <option value="Marcus Vance">Marcus Vance</option>
-                                    <option value="Alex Rivera">Alex Rivera</option>
-                                    <option value="Sophia Lin">Sophia Lin</option>
-                                    <option value="David Chen">David Chen</option>
-                                    <option value="Clara Oswald">Clara Oswald</option>
-                                </select>
-                            </div>
-                            <div>
-                                <label class="block font-bold text-gray-700 mb-1">Location / Set</label>
-                                <select @bind="_newReservation.Location"
-                                        class="w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-gray-900">
-                                    <option value="Studio A">Studio A</option>
-                                    <option value="Studio B">Studio B</option>
-                                    <option value="Studio C">Studio C</option>
-                                    <option value="Outdoor Shoot">Outdoor Shoot</option>
-                                    <option value="Wedding Venue">Wedding Venue</option>
-                                    <option value="Tech Bench 3">Tech Bench 3</option>
-                                </select>
-                            </div>
-                        </div>
-
-                        <!-- Date & Time Range -->
-                        <div class="grid grid-cols-3 gap-3">
-                            <div>
-                                <label class="block font-bold text-gray-700 mb-1">Date</label>
-                                <input type="date"
-                                       @bind="_newReservationDate"
-                                       class="w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-gray-900" />
-                            </div>
-                            <div>
-                                <label class="block font-bold text-gray-700 mb-1">Start Time</label>
-                                <input type="time"
-                                       @bind="_newStartTime"
-                                       class="w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-gray-900" />
-                            </div>
-                            <div>
-                                <label class="block font-bold text-gray-700 mb-1">End Time</label>
-                                <input type="time"
-                                       @bind="_newEndTime"
-                                       class="w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-gray-900" />
-                            </div>
-                        </div>
-
-                        <!-- Maintenance Condition -->
-                        <div>
-                            <label class="block font-bold text-gray-700 mb-1">Condition Status</label>
-                            <select @bind="_newReservation.MaintenanceStatus"
-                                    class="w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-gray-900">
-                                <option value="Ready">Ready</option>
-                                <option value="In-Use">In-Use</option>
-                                <option value="In-Maintenance">In-Maintenance</option>
-                            </select>
-                        </div>
-
-                        <!-- Notes -->
-                        <div>
-                            <label class="block font-bold text-gray-700 mb-1">Accessories / Notes</label>
-                            <textarea @bind="_newReservation.Notes"
-                                      rows="2"
-                                      placeholder="Extra batteries, specific mounts, CFexpress memory cards required..."
-                                      class="w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-gray-900"></textarea>
+                            <label class="block font-semibold mb-1">Tech in Charge</label>
+                            <input type="text" @bind="_newReservation.TechnicianInCharge" class="w-full p-1.5 border rounded" />
                         </div>
                     </div>
-
-                    <div class="flex items-center justify-end gap-3 pt-4 border-t border-gray-100">
-                        <button type="button"
-                                @onclick="CloseCreateModal"
-                                class="px-4 py-2 border border-gray-200 text-gray-700 hover:bg-gray-50 text-xs font-bold rounded-lg transition-colors">
-                            Cancel
-                        </button>
-                        <button type="button"
-                                @onclick="SaveNewReservation"
-                                class="px-5 py-2 bg-gray-900 hover:bg-black text-white text-xs font-bold rounded-lg shadow-sm transition-colors">
-                            Confirm Reservation
-                        </button>
+                    <div class="grid grid-cols-2 gap-2">
+                        <div>
+                            <label class="block font-semibold mb-1">Start Time</label>
+                            <input type="time" @bind="_newStartTime" class="w-full p-1.5 border rounded" />
+                        </div>
+                        <div>
+                            <label class="block font-semibold mb-1">End Time</label>
+                            <input type="time" @bind="_newEndTime" class="w-full p-1.5 border rounded" />
+                        </div>
                     </div>
+                </div>
+                <div class="flex justify-end gap-2 mt-4 pt-3 border-t">
+                    <button type="button" @onclick="CloseCreateModal" class="px-3 py-1 text-xs border rounded">Cancel</button>
+                    <button type="button" @onclick="SaveNewReservation" class="px-3 py-1 text-xs bg-gray-900 text-white rounded font-bold">Reserve</button>
                 </div>
             </div>
         </div>
@@ -851,7 +278,6 @@
     private bool _isCreateModalOpen;
     private string? _modalErrorMessage;
 
-    // Creation model state
     private EquipmentReservationModel _newReservation = new();
     private DateTime _newReservationDate = DateTime.Today;
     private TimeOnly _newStartTime = new(9, 0);
@@ -861,9 +287,9 @@
     private List<EquipmentReservationModel> AllReservations => ScheduleService.GetEquipmentReservations();
 
     private int ConflictCount => ScheduleService.GetEquipmentConflictCount();
+    private int InMaintenanceCount => EquipmentResources.Count(e => e.Status == "In-Maintenance" || e.Status == "Calibration Due");
     private int ThisWeekReservationsCount => AllReservations.Count(r => WeekDays.Any(w => w.Date == r.Date.Date));
     private double ThisWeekHoursCount => AllReservations.Where(r => WeekDays.Any(w => w.Date == r.Date.Date)).Sum(r => r.DurationHours);
-    private int InMaintenanceCount => EquipmentResources.Count(e => e.Status == "In-Maintenance" || e.Status == "Calibration Due");
 
     private bool HasActiveFilters =>
         !string.IsNullOrEmpty(_searchQuery) ||
@@ -881,17 +307,6 @@
         }
     }
 
-    private List<DateTime> MonthCalendarDays
-    {
-        get
-        {
-            var firstOfMonth = new DateTime(_selectedDate.Year, _selectedDate.Month, 1);
-            int diff = (7 + (firstOfMonth.DayOfWeek - DayOfWeek.Monday)) % 7;
-            var start = firstOfMonth.AddDays(-1 * diff);
-            return Enumerable.Range(0, 35).Select(i => start.AddDays(i)).ToList();
-        }
-    }
-
     private string FormattedDateRangeHeader => _currentView switch
     {
         ScheduleViewMode.Day => _selectedDate.ToString("MMMM d, yyyy"),
@@ -906,13 +321,15 @@
         get
         {
             var query = EquipmentResources.AsEnumerable();
-
             if (!string.IsNullOrEmpty(_selectedCategoryFilter))
                 query = query.Where(e => e.Category.Equals(_selectedCategoryFilter, StringComparison.OrdinalIgnoreCase));
-
             if (!string.IsNullOrEmpty(_selectedStatusFilter))
                 query = query.Where(e => e.Status.Equals(_selectedStatusFilter, StringComparison.OrdinalIgnoreCase));
-
+            if (!string.IsNullOrWhiteSpace(_searchQuery))
+            {
+                var q = _searchQuery.Trim().ToLowerInvariant();
+                query = query.Where(e => e.Name.ToLowerInvariant().Contains(q) || e.SerialNumber.ToLowerInvariant().Contains(q));
+            }
             return query;
         }
     }
@@ -922,49 +339,15 @@
         get
         {
             var query = AllReservations.AsEnumerable();
-
-            if (!string.IsNullOrWhiteSpace(_searchQuery))
-            {
-                var q = _searchQuery.Trim().ToLowerInvariant();
-                query = query.Where(r =>
-                    r.EquipmentName.ToLowerInvariant().Contains(q) ||
-                    r.Category.ToLowerInvariant().Contains(q) ||
-                    r.ProjectOrClient.ToLowerInvariant().Contains(q) ||
-                    r.TechnicianInCharge.ToLowerInvariant().Contains(q) ||
-                    r.Location.ToLowerInvariant().Contains(q) ||
-                    r.Notes.ToLowerInvariant().Contains(q));
-            }
-
-            if (!string.IsNullOrEmpty(_selectedCategoryFilter))
-                query = query.Where(r => r.Category.Equals(_selectedCategoryFilter, StringComparison.OrdinalIgnoreCase));
-
             if (!string.IsNullOrEmpty(_selectedStatusFilter))
                 query = query.Where(r => r.MaintenanceStatus.Equals(_selectedStatusFilter, StringComparison.OrdinalIgnoreCase));
-
             if (_filterOnlyConflicts)
                 query = query.Where(r => r.HasConflict);
-
             return query;
         }
     }
 
-    private IEnumerable<IGrouping<DateTime, EquipmentReservationModel>> AgendaGroupedReservations =>
-        FilteredReservations
-            .Where(r => r.Date.Date >= _selectedDate.Date && r.Date.Date <= _selectedDate.Date.AddDays(14))
-            .OrderBy(r => r.Date)
-            .ThenBy(r => r.StartTime)
-            .GroupBy(r => r.Date.Date);
-
-    private IEnumerable<EquipmentReservationModel> GetReservationsForDay(DateTime day) =>
-        FilteredReservations.Where(r => r.Date.Date == day.Date);
-
-    private IEnumerable<EquipmentReservationModel> GetReservationsForEquipment(string eqId) =>
-        FilteredReservations.Where(r => r.EquipmentId == eqId);
-
-    private void SetViewMode(ScheduleViewMode mode)
-    {
-        _currentView = mode;
-    }
+    private void SetViewMode(ScheduleViewMode mode) => _currentView = mode;
 
     private void NavigatePrevious()
     {
@@ -973,7 +356,6 @@
             ScheduleViewMode.Day => _selectedDate.AddDays(-1),
             ScheduleViewMode.Week => _selectedDate.AddDays(-7),
             ScheduleViewMode.Month => _selectedDate.AddMonths(-1),
-            ScheduleViewMode.Agenda => _selectedDate.AddDays(-14),
             _ => _selectedDate.AddDays(-7)
         };
     }
@@ -985,20 +367,13 @@
             ScheduleViewMode.Day => _selectedDate.AddDays(1),
             ScheduleViewMode.Week => _selectedDate.AddDays(7),
             ScheduleViewMode.Month => _selectedDate.AddMonths(1),
-            ScheduleViewMode.Agenda => _selectedDate.AddDays(14),
             _ => _selectedDate.AddDays(7)
         };
     }
 
-    private void JumpToToday()
-    {
-        _selectedDate = DateTime.Today;
-    }
+    private void JumpToToday() => _selectedDate = DateTime.Today;
 
-    private void ToggleConflictFilter()
-    {
-        _filterOnlyConflicts = !_filterOnlyConflicts;
-    }
+    private void ToggleConflictFilter() => _filterOnlyConflicts = !_filterOnlyConflicts;
 
     private void ClearFilters()
     {
@@ -1008,24 +383,8 @@
         _filterOnlyConflicts = false;
     }
 
-    private void OpenDetailDrawer(EquipmentReservationModel reservation)
-    {
-        _selectedReservation = reservation;
-    }
-
-    private void CloseDetailDrawer()
-    {
-        _selectedReservation = null;
-    }
-
-    private void UpdateMaintenanceStatus(string newStatus)
-    {
-        if (_selectedReservation != null)
-        {
-            _selectedReservation.MaintenanceStatus = newStatus;
-            ScheduleService.UpdateEquipmentReservation(_selectedReservation);
-        }
-    }
+    private void OpenDetailDrawer(EquipmentReservationModel res) => _selectedReservation = res;
+    private void CloseDetailDrawer() => _selectedReservation = null;
 
     private void DeleteSelectedReservation()
     {
@@ -1052,23 +411,6 @@
         _isCreateModalOpen = true;
     }
 
-    private void OpenCreateModalForSlot(string eqId, DateTime date)
-    {
-        _newReservation = new EquipmentReservationModel
-        {
-            EquipmentId = eqId,
-            Date = date,
-            TechnicianInCharge = "Elena Rostova",
-            Location = "Studio A",
-            MaintenanceStatus = "Ready"
-        };
-        _newReservationDate = date;
-        _newStartTime = new TimeOnly(9, 0);
-        _newEndTime = new TimeOnly(14, 0);
-        _modalErrorMessage = null;
-        _isCreateModalOpen = true;
-    }
-
     private void CloseCreateModal()
     {
         _isCreateModalOpen = false;
@@ -1077,12 +419,6 @@
 
     private void SaveNewReservation()
     {
-        if (string.IsNullOrWhiteSpace(_newReservation.ProjectOrClient))
-        {
-            _modalErrorMessage = "Please enter a project, campaign, or client name.";
-            return;
-        }
-
         if (_newEndTime <= _newStartTime)
         {
             _modalErrorMessage = "Reservation end time must be after start time.";
@@ -1098,44 +434,10 @@
         _modalErrorMessage = null;
     }
 
-    private string GetReservationCardStyle(EquipmentReservationModel reservation)
+    private string GetReservationCardStyle(EquipmentReservationModel res)
     {
-        if (reservation.HasConflict)
-            return "bg-rose-50/90 border-rose-300 text-rose-950 ring-1 ring-rose-400";
-
-        return reservation.MaintenanceStatus.ToLowerInvariant() switch
-        {
-            "in-maintenance" => "bg-rose-50/70 border-rose-200 text-rose-950",
-            "in-use" => "bg-blue-50/70 border-blue-200 text-blue-950",
-            "calibration due" => "bg-amber-50/70 border-amber-200 text-amber-950",
-            _ => "bg-emerald-50/70 border-emerald-200 text-emerald-950"
-        };
+        if (res.HasConflict)
+            return "bg-rose-50 border-rose-300 text-rose-950";
+        return "bg-blue-50/70 border-blue-200 text-blue-950";
     }
-
-    private string GetMaintenanceBadgeStyle(string status) => status.ToLowerInvariant() switch
-    {
-        "ready" => "bg-emerald-100 text-emerald-800 border border-emerald-200",
-        "in-use" => "bg-blue-100 text-blue-800 border border-blue-200",
-        "in-maintenance" => "bg-rose-100 text-rose-800 border border-rose-200",
-        "calibration due" => "bg-amber-100 text-amber-800 border border-amber-200",
-        _ => "bg-gray-100 text-gray-700"
-    };
-
-    private string GetEquipmentStatusDot(string status) => status.ToLowerInvariant() switch
-    {
-        "ready" => "bg-emerald-500",
-        "in-use" => "bg-blue-500",
-        "in-maintenance" => "bg-rose-500",
-        "calibration due" => "bg-amber-500",
-        _ => "bg-gray-400"
-    };
-
-    private string GetEquipmentStatusBadge(string status) => status.ToLowerInvariant() switch
-    {
-        "ready" => "bg-emerald-50 text-emerald-700 border border-emerald-200",
-        "in-use" => "bg-blue-50 text-blue-700 border border-blue-200",
-        "in-maintenance" => "bg-rose-50 text-rose-700 border border-rose-200",
-        "calibration due" => "bg-amber-50 text-amber-700 border border-amber-200",
-        _ => "bg-gray-100 text-gray-600 border border-gray-200"
-    };
 }

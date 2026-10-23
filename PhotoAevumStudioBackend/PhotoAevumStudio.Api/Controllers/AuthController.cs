@@ -144,9 +144,6 @@ public class AuthController : ControllerBase
 
         var user = authResult.User!;
 
-        // 1. First-time login check for Admin and Employee accounts:
-        // Do not issue the standard JWT or grant access to the system.
-        // Instead, return RequiresPasswordChange directing frontend to "Change Password" screen.
         if (authResult.RequiresPasswordChange || authResult.IsFirstLogin)
         {
             _logger.LogInformation("Account {UserId} requires initial password change. JWT withheld.", user.Id);
@@ -161,9 +158,14 @@ public class AuthController : ControllerBase
                 IsFirstLogin: true));
         }
 
-        // 2. Standard login verified against stored hashes rather than plain text.
         var roles = new List<string> { user.Role };
+        if (user.Role == AppRoles.SystemAdmin)
+        {
+            roles.Add(AppRoles.Admin);
+        }
+
         var token = BuildJwt(user.Id, user.Email, user.FullName, user.Id, roles);
+        await _sqlAuthService.LogActivityAsync("LOGIN", "Session", user.Id, "Successful login session established", user.Role, user.Id);
 
         _logger.LogInformation("Successful login for {UserId} ({Role})", user.Id, user.Role);
 
@@ -176,6 +178,25 @@ public class AuthController : ControllerBase
             RequiresPasswordChange: false,
             UserId: user.Id,
             IsFirstLogin: false));
+    }
+
+    [HttpPost("logout")]
+    [AllowAnonymous]
+    public async Task<IActionResult> Logout()
+    {
+        string? userId = User.FindFirstValue("studio_id")
+                         ?? User.FindFirstValue(ClaimTypes.NameIdentifier)
+                         ?? User.FindFirstValue(ClaimTypes.Name);
+
+        string role = User.FindFirstValue(ClaimTypes.Role) ?? "User";
+
+        if (!string.IsNullOrWhiteSpace(userId))
+        {
+            _logger.LogInformation("Global logout requested for {UserId} ({Role})", userId, role);
+            await _sqlAuthService.LogActivityAsync("LOGOUT", "Session", userId, "Global user sign-out and session revocation", role, userId);
+        }
+
+        return Ok(new { Success = true, Message = "Global session successfully terminated." });
     }
 
     private IActionResult InvalidCredentials() =>
@@ -219,7 +240,7 @@ public class AuthController : ControllerBase
         => InitialPasswordChange(request);
 
     [HttpPost("register")]
-    [Authorize(Roles = AppRoles.Admin)]
+    [Authorize(Roles = $"{AppRoles.Admin},{AppRoles.SystemAdmin}")]
     public async Task<IActionResult> Register([FromBody] RegisterRequest request)
     {
         if (request.Role == AppRoles.Admin && !System.Text.RegularExpressions.Regex.IsMatch(request.StudioId ?? "", @"^(SADM|ADM)-\d{3}$"))
@@ -238,6 +259,44 @@ public class AuthController : ControllerBase
                 Detail = $"Role must be one of: {string.Join(", ", AppRoles.All)}",
                 Status = StatusCodes.Status400BadRequest
             });
+
+        string? requesterId = User.FindFirstValue("studio_id")
+                              ?? User.FindFirstValue(ClaimTypes.NameIdentifier)
+                              ?? User.FindFirstValue(ClaimTypes.Name);
+
+        // RESTRICT CREATION OF NEW ADMIN ACCOUNTS EXCLUSIVELY TO SYSTEMADMIN ROLE
+        if (request.Role == AppRoles.Admin || request.Role == AppRoles.SystemAdmin)
+        {
+            bool isSystemAdmin = User.IsInRole(AppRoles.SystemAdmin)
+                                 || (!string.IsNullOrEmpty(requesterId) && requesterId.StartsWith("SADM-", StringComparison.OrdinalIgnoreCase));
+
+            if (!isSystemAdmin)
+            {
+                return StatusCode(StatusCodes.Status403Forbidden, new ProblemDetails
+                {
+                    Title = "Forbidden",
+                    Detail = "Permission Denied: Only a SystemAdmin (SADM-###) is authorized to create new Admin accounts.",
+                    Status = StatusCodes.Status403Forbidden
+                });
+            }
+
+            var (adminSuccess, adminMsg) = await _sqlAuthService.RegisterAdminAsync(
+                request.StudioId!,
+                request.Role,
+                request.FirstName,
+                request.LastName,
+                request.MiddleName,
+                request.Email,
+                request.Password,
+                requesterId ?? "SADM-001");
+
+            if (!adminSuccess)
+                return BadRequest(new ProblemDetails { Title = "Registration failed", Detail = adminMsg, Status = 400 });
+
+            _logger.LogInformation("SystemAdmin {RequesterId} created new Admin account {AdminId}", requesterId, request.StudioId);
+            return StatusCode(StatusCodes.Status201Created,
+                new { Id = request.StudioId, Email = request.Email, Role = request.Role });
+        }
 
         if (request.Role == AppRoles.Employee)
         {
@@ -303,8 +362,8 @@ public class AuthController : ControllerBase
     [Authorize]
     public async Task<IActionResult> ChangePassword([FromBody] ChangePasswordRequest request)
     {
-        string? userId = User.FindFirstValue(ClaimTypes.NameIdentifier)
-                         ?? User.FindFirstValue("studio_id")
+        string? userId = User.FindFirstValue("studio_id")
+                         ?? User.FindFirstValue(ClaimTypes.NameIdentifier)
                          ?? User.FindFirstValue(ClaimTypes.Name);
 
         if (string.IsNullOrWhiteSpace(userId))

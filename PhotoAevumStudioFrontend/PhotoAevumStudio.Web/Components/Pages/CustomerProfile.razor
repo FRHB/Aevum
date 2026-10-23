@@ -16,7 +16,7 @@
 <header class="aev-page-header">
     <div>
         <h1 class="aev-page-header__title">Customer Profile</h1>
-        <p class="aev-page-header__subtitle">Manage your contact details, booking preferences, and security settings.</p>
+        <p class="aev-page-header__subtitle">Manage your personal details, booking account, and security settings</p>
     </div>
     <div class="profile-header-badge">
         <span class="aev-badge aev-badge--amber">
@@ -28,27 +28,39 @@
 @if (isLoading)
 {
     <div class="aev-card profile-loading-card">
-        <p class="aev-muted-text">Loading profile data...</p>
+        <div class="spinner-border text-primary" role="status">
+            <span class="visually-hidden">Loading...</span>
+        </div>
+        <p class="aev-muted-text mt-3">Loading profile data...</p>
     </div>
 }
 else if (string.IsNullOrWhiteSpace(profile.Id))
 {
-    <div class="aev-card p-8 text-center">
-        <h2 class="text-lg font-semibold text-gray-800 mb-1">No Active Customer Profile</h2>
-        <p class="text-sm text-gray-500">Please sign in to view your customer profile from the database.</p>
+    <div class="aev-card p-8 text-center empty-state-card">
+        <div class="empty-icon">👤</div>
+        <h2 class="text-lg font-semibold text-gray-800 mb-1">No Active Customer Profile Found</h2>
+        <p class="text-sm text-gray-500 mb-4">Please sign in to access your customer profile and booking records.</p>
+        <a href="/login" class="btn btn--primary">Sign In</a>
     </div>
 }
 else
 {
-    <div class="profile-content-grid">
-        @* ── User Data Card ───────────────────────────────────────────── *@
+    <div class="customer-profile-container">
+        @* ── Left Column: Account Details Card ────────────────────────── *@
         <section class="aev-card profile-info-card" aria-label="Customer Account Details">
             <header class="aev-card__header">
-                <h2 class="aev-card__heading">Account Details</h2>
+                <div class="header-title-group">
+                    <span class="section-icon">📋</span>
+                    <div>
+                        <h2 class="aev-card__heading">Account Information</h2>
+                        <span class="section-subtitle">Verified studio client profile</span>
+                    </div>
+                </div>
                 <span class="aev-badge aev-badge--teal">@profile.Status</span>
             </header>
 
             <div class="profile-card-body">
+                @* Hero Avatar & Identity Summary *@
                 <div class="profile-hero">
                     <div class="profile-avatar customer-avatar" aria-hidden="true">
                         @GetInitials(profile.Name, profile.Id)
@@ -56,94 +68,114 @@ else
                     <div class="profile-hero-text">
                         <h3 class="profile-name">@profile.Name</h3>
                         <p class="profile-email">@profile.Email</p>
-                        <span class="profile-id-chip">ID: @profile.Id</span>
+                        <span class="profile-id-chip">Customer ID: @profile.Id</span>
                     </div>
                 </div>
 
-                <div class="profile-fields-grid">
-                    <div class="profile-field">
-                        <span class="profile-field__label">Customer ID</span>
-                        <span class="profile-field__value" id="profile-id">@profile.Id</span>
+                @* Aligned Data Grid *@
+                <div class="profile-fields-list">
+                    <div class="profile-row">
+                        <div class="profile-row__label">Customer ID</div>
+                        <div class="profile-row__value" id="profile-id">@profile.Id</div>
                     </div>
 
-                    <div class="profile-field">
-                        <span class="profile-field__label">Full Name</span>
-                        <span class="profile-field__value" id="profile-name">@profile.Name</span>
+                    <div class="profile-row">
+                        <div class="profile-row__label">Full Name</div>
+                        <div class="profile-row__value" id="profile-name">@profile.Name</div>
                     </div>
 
-                    <div class="profile-field">
-                        <span class="profile-field__label">Role</span>
-                        <span class="profile-field__value" id="profile-role">@profile.Role</span>
-                    </div>
-
-                    <div class="profile-field">
-                        <span class="profile-field__label">Email Address</span>
-                        <span class="profile-field__value" id="profile-email">@profile.Email</span>
-                    </div>
-
-                    @if (!string.IsNullOrWhiteSpace(profile.Phone))
-                    {
-                        <div class="profile-field">
-                            <span class="profile-field__label">Phone</span>
-                            <span class="profile-field__value">@profile.Phone</span>
+                    <div class="profile-row">
+                        <div class="profile-row__label">Account Type</div>
+                        <div class="profile-row__value" id="profile-role">
+                            <span class="badge-role">@profile.Role</span>
                         </div>
-                    }
-
-                    @if (profile.MemberSince.HasValue)
-                    {
-                        <div class="profile-field">
-                            <span class="profile-field__label">Member Since</span>
-                            <span class="profile-field__value">@profile.MemberSince.Value.ToString("MMMM d, yyyy")</span>
-                        </div>
-                    }
-
-                    <div class="profile-field">
-                        <span class="profile-field__label">Status</span>
-                        <span class="profile-field__value status-active">@profile.Status</span>
                     </div>
+
+                    <div class="profile-row">
+                        <div class="profile-row__label">Email Address</div>
+                        <div class="profile-row__value" id="profile-email">@profile.Email</div>
+                    </div>
+
+                    <div class="profile-row">
+                        <div class="profile-row__label">Phone Number</div>
+                        <div class="profile-row__value" id="profile-phone">
+                            @(!string.IsNullOrWhiteSpace(profile.Phone) ? profile.Phone : "Not specified")
+                        </div>
+                    </div>
+
+                    <div class="profile-row">
+                        <div class="profile-row__label">Member Since</div>
+                        <div class="profile-row__value" id="profile-joined">
+                            @(profile.MemberSince.HasValue ? profile.MemberSince.Value.ToString("MMMM d, yyyy") : "Active Member")
+                        </div>
+                    </div>
+
+                    <div class="profile-row">
+                        <div class="profile-row__label">Account Status</div>
+                        <div class="profile-row__value status-active" id="profile-status">
+                            <span class="status-indicator"></span> @profile.Status
+                        </div>
+                    </div>
+                </div>
+
+                <div class="profile-quick-actions mt-4 pt-3 border-top">
+                    <a href="/my/bookings" class="btn btn-outline-secondary btn-sm">
+                        <span>📅</span> View My Bookings
+                    </a>
+                    <a href="/schedule" class="btn btn--primary btn-sm">
+                        <span>✨</span> Book New Session
+                    </a>
                 </div>
             </div>
         </section>
 
-        @* ── Security / Settings Card ─────────────────────────────────── *@
+        @* ── Right Column: Security / Change Password Card ────────────── *@
         <section class="aev-card profile-settings-card" aria-label="Security Settings">
             <header class="aev-card__header">
-                <h2 class="aev-card__heading">Security Settings</h2>
-                <span class="aev-muted-text">Change Password</span>
+                <div class="header-title-group">
+                    <span class="section-icon">🔒</span>
+                    <div>
+                        <h2 class="aev-card__heading">Security Settings</h2>
+                        <span class="section-subtitle">Manage your account credentials</span>
+                    </div>
+                </div>
+                <span class="aev-badge aev-badge--blue">Password</span>
             </header>
 
             <div class="profile-card-body">
                 <p class="settings-intro">
-                    Ensure your account stays secure by choosing a strong, unique password.
+                    Ensure your account stays secure by using a strong password with at least 8 characters, letters, and numbers.
                 </p>
 
                 @if (!string.IsNullOrEmpty(passwordSuccessMessage))
                 {
-                    <div class="success-banner" role="status">
-                        @passwordSuccessMessage
+                    <div class="alert alert-success alert-dismissible" role="status">
+                        <span class="alert-icon">✓</span>
+                        <span>@passwordSuccessMessage</span>
                     </div>
                 }
 
                 @if (!string.IsNullOrEmpty(passwordErrorMessage))
                 {
-                    <div class="error-message" role="alert">
-                        @passwordErrorMessage
+                    <div class="alert alert-danger" role="alert">
+                        <span class="alert-icon">⚠️</span>
+                        <span>@passwordErrorMessage</span>
                     </div>
                 }
 
                 <EditForm Model="@passwordForm" OnValidSubmit="HandleUpdatePassword">
-                    <div class="input-group">
-                        <label for="cust-current-password">Current Password</label>
+                    <div class="form-group mb-3">
+                        <label for="cust-current-password" class="form-label">Current Password</label>
                         <PasswordInput Id="cust-current-password"
                                        Name="currentPassword"
                                        Autocomplete="current-password"
                                        @bind-Value="passwordForm.CurrentPassword"
-                                       Placeholder="Enter current password"
+                                       Placeholder="Enter your current password"
                                        Disabled="@isUpdatingPassword" />
                     </div>
 
-                    <div class="input-group">
-                        <label for="cust-new-password">New Password</label>
+                    <div class="form-group mb-3">
+                        <label for="cust-new-password" class="form-label">New Password</label>
                         <PasswordInput Id="cust-new-password"
                                        Name="newPassword"
                                        Autocomplete="new-password"
@@ -152,19 +184,20 @@ else
                                        Disabled="@isUpdatingPassword" />
                     </div>
 
-                    <div class="input-group">
-                        <label for="cust-confirm-password">Confirm Password</label>
+                    <div class="form-group mb-4">
+                        <label for="cust-confirm-password" class="form-label">Confirm New Password</label>
                         <PasswordInput Id="cust-confirm-password"
                                        Name="confirmPassword"
                                        Autocomplete="new-password"
                                        @bind-Value="passwordForm.ConfirmPassword"
-                                       Placeholder="Re-enter new password"
+                                       Placeholder="Re-enter your new password"
                                        Disabled="@isUpdatingPassword" />
                     </div>
 
-                    <button type="submit" class="btn btn--primary profile-btn" disabled="@isUpdatingPassword">
+                    <button type="submit" class="btn btn--primary w-100" disabled="@isUpdatingPassword">
                         @if (isUpdatingPassword)
                         {
+                            <span class="spinner-border spinner-border-sm me-2" role="status" aria-hidden="true"></span>
                             <span>Updating password...</span>
                         }
                         else
@@ -242,6 +275,10 @@ else
                     ? profile.Email.Split('@')[0]
                     : profile.Id;
             }
+        }
+        catch
+        {
+            // Defensive error handling
         }
         finally
         {

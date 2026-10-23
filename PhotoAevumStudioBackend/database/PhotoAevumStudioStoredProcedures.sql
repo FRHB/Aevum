@@ -4,7 +4,7 @@ SET QUOTED_IDENTIFIER ON;
 GO
 
 /* =====================================================================
-   1. USER MANAGEMENT (Customer & Employee)
+   1. USER MANAGEMENT (Customer, Employee, Admin & SystemAdmin)
    ===================================================================== */
 
 -- Create a new Customer
@@ -85,6 +85,66 @@ BEGIN
 END;
 GO
 
+-- Create Admin: Restricted EXCLUSIVELY to SystemAdmin role (SADM-###)
+CREATE OR ALTER PROCEDURE dbo.sp_CreateAdmin
+    @AdminID          nvarchar(30),
+    @AdminRole        nvarchar(15),
+    @AdminFirstName   nvarchar(255),
+    @AdminLastName    nvarchar(255),
+    @AdminMiddleName  nvarchar(255) = NULL,
+    @AdminEmail       nvarchar(255) = NULL,
+    @AdminPassword    nvarchar(255),
+    @RequestingUserID nvarchar(30)
+AS
+BEGIN
+    SET NOCOUNT ON;
+
+    DECLARE @RequesterRole nvarchar(15) = NULL;
+    SELECT @RequesterRole = AdminRole FROM dbo.Admin WHERE AdminID = @RequestingUserID;
+
+    -- Strict authorization check: Only SystemAdmin accounts can create new Admin users
+    IF (@RequestingUserID NOT LIKE 'SADM-%' 
+        AND ISNULL(@RequesterRole, '') NOT IN ('SystemAdmin', 'Super Admin')
+        AND NOT EXISTS (SELECT 1 FROM dbo.SystemAdmin WHERE SystemAdminID = @RequestingUserID))
+    BEGIN
+        RAISERROR('Permission Denied: Only a SystemAdmin (SADM-###) is authorized to create new Admin accounts.', 16, 1);
+        RETURN;
+    END
+
+    -- Regular Admin accounts require an Email
+    IF (@AdminRole <> 'SystemAdmin' AND @AdminID NOT LIKE 'SADM-%' AND (@AdminEmail IS NULL OR LTRIM(RTRIM(@AdminEmail)) = ''))
+    BEGIN
+        RAISERROR('Validation Error: Email address is required for regular Admin accounts.', 16, 1);
+        RETURN;
+    END
+
+    INSERT INTO dbo.Admin (
+        AdminID, AdminRole, AdminFirstName, AdminLastName, AdminMiddleName, Email, AdminPassword, isFirstLogin
+    )
+    VALUES (
+        @AdminID, @AdminRole, @AdminFirstName, @AdminLastName, @AdminMiddleName, @AdminEmail, @AdminPassword, 1
+    );
+
+    IF (@AdminRole = 'SystemAdmin' OR @AdminID LIKE 'SADM-%')
+    BEGIN
+        IF NOT EXISTS (SELECT 1 FROM dbo.SystemAdmin WHERE SystemAdminID = @AdminID)
+        BEGIN
+            INSERT INTO dbo.SystemAdmin (SystemAdminID, FirstName, LastName, MiddleName, PasswordHash)
+            VALUES (@AdminID, @AdminFirstName, @AdminLastName, @AdminMiddleName, @AdminPassword);
+        END
+    END
+
+    -- Log action in HistoryLog
+    INSERT INTO dbo.HistoryLog (
+        ActionType, EntityName, EntityID, ActionDetails, ChangedByType, ChangedByAdminID
+    )
+    VALUES (
+        'INSERT', 'Admin', @AdminID, CONCAT('Created new Admin user ', @AdminID, ' (Role: ', @AdminRole, ')'),
+        'SystemAdmin', @RequestingUserID
+    );
+END;
+GO
+
 /* =====================================================================
    2. EVENT & BOOKING MANAGEMENT
    ===================================================================== */
@@ -123,7 +183,6 @@ AS
 BEGIN
     SET NOCOUNT ON;
 
-    -- Note: Table constraint CK_EventLineItem_ExactlyOne ensures only one of the three IDs is NOT NULL
     INSERT INTO dbo.EventLineItem (
         EventLineItemID, EventAppointmentID, ServicesID, AdditionalServicesID, ComboPackageID
     )
@@ -141,7 +200,6 @@ AS
 BEGIN
     SET NOCOUNT ON;
 
-    -- Avoid duplicate assignments gracefully
     IF NOT EXISTS (SELECT 1 FROM dbo.EventEmployee WHERE EventAppointmentID = @EventAppointmentID AND EmployeeID = @EmployeeID)
     BEGIN
         INSERT INTO dbo.EventEmployee (EventAppointmentID, EmployeeID)
@@ -149,7 +207,6 @@ BEGIN
     END
 END;
 GO
-
 
 /* =====================================================================
    3. EQUIPMENT MANAGEMENT
@@ -190,12 +247,10 @@ BEGIN
 END;
 GO
 
-
 /* =====================================================================
    4. CATALOG & CATEGORY MANAGEMENT
    ===================================================================== */
 
--- Assign a Service, Additional Service, or Combo Package to a Service Category
 CREATE OR ALTER PROCEDURE dbo.sp_AddServiceCategoryJoin
     @ServiceCategoryJoinID nvarchar(30),
     @ServiceCategoryID nvarchar(30),
@@ -206,7 +261,6 @@ AS
 BEGIN
     SET NOCOUNT ON;
 
-    -- Note: Table constraint CK_ServiceCategoryJoins_ExactlyOne ensures only one of the three item IDs is NOT NULL
     INSERT INTO dbo.ServiceCategoryJoins (
         ServiceCategoryJoinID, ServiceCategoryID, ServicesID, AdditionalServicesID, ComboPackageID
     )
@@ -216,17 +270,298 @@ BEGIN
 END;
 GO
 
-
 /* =====================================================================
-   5. STATUS UPDATES & AUDIT LOGGING (HistoryLog Integration)
+   5. SERVICE IMAGES (Summary vs Detail with Binaries)
    ===================================================================== */
 
--- Update Event Status (Automatically handles the complex HistoryLog requirements)
+-- 5.1 Main Services
+CREATE OR ALTER PROCEDURE dbo.sp_GetServicesSummary
+AS
+BEGIN
+    SET NOCOUNT ON;
+    -- Crucial Rule: Do NOT load heavy binary data on initial list/grid
+    SELECT 
+        ServicesID, 
+        ServiceName, 
+        ServicesDescription, 
+        ServicePrice,
+        CAST(CASE WHEN ServiceImage IS NOT NULL THEN 1 ELSE 0 END AS bit) AS HasImage
+    FROM dbo.Services
+    ORDER BY ServicesID;
+END;
+GO
+
+CREATE OR ALTER PROCEDURE dbo.sp_GetServiceDetailWithImage
+    @ServicesID nvarchar(30)
+AS
+BEGIN
+    SET NOCOUNT ON;
+    -- Fetch heavy image binary only when user opens detail view
+    SELECT 
+        ServicesID, 
+        ServiceName, 
+        ServicesDescription, 
+        ServicePrice,
+        ServiceImage,
+        ISNULL(ServiceImageMimeType, 'image/jpeg') AS ServiceImageMimeType,
+        CAST(CASE WHEN ServiceImage IS NOT NULL THEN 1 ELSE 0 END AS bit) AS HasImage
+    FROM dbo.Services
+    WHERE ServicesID = @ServicesID;
+END;
+GO
+
+CREATE OR ALTER PROCEDURE dbo.sp_UpdateServiceImage
+    @ServicesID           nvarchar(30),
+    @ServiceImage         varbinary(max),
+    @ServiceImageMimeType nvarchar(100) = 'image/jpeg',
+    @UpdatedByAdminID     nvarchar(30)  = NULL
+AS
+BEGIN
+    SET NOCOUNT ON;
+
+    UPDATE dbo.Services
+    SET ServiceImage = @ServiceImage,
+        ServiceImageMimeType = @ServiceImageMimeType
+    WHERE ServicesID = @ServicesID;
+
+    IF @UpdatedByAdminID IS NOT NULL
+    BEGIN
+        DECLARE @ActorType nvarchar(20) = CASE WHEN @UpdatedByAdminID LIKE 'SADM-%' THEN 'SystemAdmin' ELSE 'Admin' END;
+        EXEC dbo.sp_AddHistoryLog 
+            @ActionType = 'IMAGE_UPLOAD', 
+            @EntityName = 'Services', 
+            @EntityID = @ServicesID, 
+            @ActionDetails = 'Updated service hero image.',
+            @ChangedByType = @ActorType, 
+            @ActorID = @UpdatedByAdminID;
+    END
+END;
+GO
+
+-- 5.2 Additional Services
+CREATE OR ALTER PROCEDURE dbo.sp_GetAdditionalServicesSummary
+AS
+BEGIN
+    SET NOCOUNT ON;
+    SELECT 
+        AdditionalServicesID, 
+        AdditionalServiceName, 
+        AdditionalServicesDescription,
+        CAST(CASE WHEN AdditionalServiceImage IS NOT NULL THEN 1 ELSE 0 END AS bit) AS HasImage
+    FROM dbo.AdditionalServices
+    ORDER BY AdditionalServicesID;
+END;
+GO
+
+CREATE OR ALTER PROCEDURE dbo.sp_GetAdditionalServiceDetailWithImage
+    @AdditionalServicesID nvarchar(30)
+AS
+BEGIN
+    SET NOCOUNT ON;
+    SELECT 
+        AdditionalServicesID, 
+        AdditionalServiceName, 
+        AdditionalServicesDescription,
+        AdditionalServiceImage,
+        ISNULL(AdditionalServiceImageMimeType, 'image/jpeg') AS AdditionalServiceImageMimeType,
+        CAST(CASE WHEN AdditionalServiceImage IS NOT NULL THEN 1 ELSE 0 END AS bit) AS HasImage
+    FROM dbo.AdditionalServices
+    WHERE AdditionalServicesID = @AdditionalServicesID;
+END;
+GO
+
+CREATE OR ALTER PROCEDURE dbo.sp_UpdateAdditionalServiceImage
+    @AdditionalServicesID           nvarchar(30),
+    @AdditionalServiceImage         varbinary(max),
+    @AdditionalServiceImageMimeType nvarchar(100) = 'image/jpeg',
+    @UpdatedByAdminID               nvarchar(30)  = NULL
+AS
+BEGIN
+    SET NOCOUNT ON;
+
+    UPDATE dbo.AdditionalServices
+    SET AdditionalServiceImage = @AdditionalServiceImage,
+        AdditionalServiceImageMimeType = @AdditionalServiceImageMimeType
+    WHERE AdditionalServicesID = @AdditionalServicesID;
+
+    IF @UpdatedByAdminID IS NOT NULL
+    BEGIN
+        DECLARE @ActorType nvarchar(20) = CASE WHEN @UpdatedByAdminID LIKE 'SADM-%' THEN 'SystemAdmin' ELSE 'Admin' END;
+        EXEC dbo.sp_AddHistoryLog 
+            @ActionType = 'IMAGE_UPLOAD', 
+            @EntityName = 'AdditionalServices', 
+            @EntityID = @AdditionalServicesID, 
+            @ActionDetails = 'Updated additional service image.',
+            @ChangedByType = @ActorType, 
+            @ActorID = @UpdatedByAdminID;
+    END
+END;
+GO
+
+-- 5.3 Combo Packages
+CREATE OR ALTER PROCEDURE dbo.sp_GetComboPackagesSummary
+AS
+BEGIN
+    SET NOCOUNT ON;
+    SELECT 
+        ComboPackageID, 
+        ComboPackageName, 
+        ComboPackageDescription,
+        CAST(CASE WHEN ComboPackageImage IS NOT NULL THEN 1 ELSE 0 END AS bit) AS HasImage
+    FROM dbo.ComboPackage
+    ORDER BY ComboPackageID;
+END;
+GO
+
+CREATE OR ALTER PROCEDURE dbo.sp_GetComboPackageDetailWithImage
+    @ComboPackageID nvarchar(30)
+AS
+BEGIN
+    SET NOCOUNT ON;
+    SELECT 
+        ComboPackageID, 
+        ComboPackageName, 
+        ComboPackageDescription,
+        ComboPackageImage,
+        ISNULL(ComboPackageImageMimeType, 'image/jpeg') AS ComboPackageImageMimeType,
+        CAST(CASE WHEN ComboPackageImage IS NOT NULL THEN 1 ELSE 0 END AS bit) AS HasImage
+    FROM dbo.ComboPackage
+    WHERE ComboPackageID = @ComboPackageID;
+END;
+GO
+
+CREATE OR ALTER PROCEDURE dbo.sp_UpdateComboPackageImage
+    @ComboPackageID           nvarchar(30),
+    @ComboPackageImage         varbinary(max),
+    @ComboPackageImageMimeType nvarchar(100) = 'image/jpeg',
+    @UpdatedByAdminID         nvarchar(30)  = NULL
+AS
+BEGIN
+    SET NOCOUNT ON;
+
+    UPDATE dbo.ComboPackage
+    SET ComboPackageImage = @ComboPackageImage,
+        ComboPackageImageMimeType = @ComboPackageImageMimeType
+    WHERE ComboPackageID = @ComboPackageID;
+
+    IF @UpdatedByAdminID IS NOT NULL
+    BEGIN
+        DECLARE @ActorType nvarchar(20) = CASE WHEN @UpdatedByAdminID LIKE 'SADM-%' THEN 'SystemAdmin' ELSE 'Admin' END;
+        EXEC dbo.sp_AddHistoryLog 
+            @ActionType = 'IMAGE_UPLOAD', 
+            @EntityName = 'ComboPackage', 
+            @EntityID = @ComboPackageID, 
+            @ActionDetails = 'Updated combo package hero image.',
+            @ChangedByType = @ActorType, 
+            @ActorID = @UpdatedByAdminID;
+    END
+END;
+GO
+
+/* =====================================================================
+   6. STATUS UPDATES & AUDIT LOGGING (HistoryLog Integration)
+   ===================================================================== */
+
+-- Add record to HistoryLog
+CREATE OR ALTER PROCEDURE dbo.sp_AddHistoryLog
+    @ActionType          nvarchar(20),
+    @EntityName          nvarchar(128),
+    @EntityID            nvarchar(30)  = NULL,
+    @ActionDetails       nvarchar(max) = NULL,
+    @EventAppointmentID  nvarchar(30)  = NULL,
+    @NegotiationID       nvarchar(30)  = NULL,
+    @CustomerID          nvarchar(30)  = NULL,
+    @EmployeeID          nvarchar(30)  = NULL,
+    @ChangedByType       nvarchar(20), -- 'Customer', 'Employee', 'Admin', 'SystemAdmin', 'System'
+    @ActorID             nvarchar(30)  = NULL
+AS
+BEGIN
+    SET NOCOUNT ON;
+
+    DECLARE @ChangedByCustomer nvarchar(30) = NULL;
+    DECLARE @ChangedByEmployee nvarchar(30) = NULL;
+    DECLARE @ChangedByAdmin    nvarchar(30) = NULL;
+
+    IF @ChangedByType = 'Customer' SET @ChangedByCustomer = @ActorID;
+    ELSE IF @ChangedByType = 'Employee' SET @ChangedByEmployee = @ActorID;
+    ELSE IF @ChangedByType IN ('Admin', 'SystemAdmin') SET @ChangedByAdmin = @ActorID;
+
+    INSERT INTO dbo.HistoryLog (
+        ActionType, EntityName, EntityID, ActionDetails, 
+        EventAppointmentID, NegotiationID, CustomerID, EmployeeID, 
+        ChangedByType, ChangedByCustomerID, ChangedByEmployeeID, ChangedByAdminID
+    )
+    VALUES (
+        @ActionType, @EntityName, @EntityID, @ActionDetails,
+        @EventAppointmentID, @NegotiationID, @CustomerID, @EmployeeID,
+        @ChangedByType, @ChangedByCustomer, @ChangedByEmployee, @ChangedByAdmin
+    );
+END;
+GO
+
+-- Retrieve History Logs (Full access for SystemAdmin)
+CREATE OR ALTER PROCEDURE dbo.sp_GetHistoryLogs
+    @RequestingUserID nvarchar(30),
+    @TopCount         int = 100
+AS
+BEGIN
+    SET NOCOUNT ON;
+
+    DECLARE @IsSystemAdmin bit = 0;
+    IF (@RequestingUserID LIKE 'SADM-%' 
+        OR EXISTS (SELECT 1 FROM dbo.Admin WHERE AdminID = @RequestingUserID AND AdminRole IN ('SystemAdmin', 'Super Admin'))
+        OR EXISTS (SELECT 1 FROM dbo.SystemAdmin WHERE SystemAdminID = @RequestingUserID))
+    BEGIN
+        SET @IsSystemAdmin = 1;
+    END
+
+    IF @IsSystemAdmin = 1
+    BEGIN
+        SELECT TOP (@TopCount)
+            HistoryLogID,
+            ActionType,
+            EntityName,
+            EntityID,
+            ActionDetails,
+            EventAppointmentID,
+            NegotiationID,
+            CustomerID,
+            EmployeeID,
+            ChangedByType,
+            ChangedBy,
+            LoggedAt
+        FROM dbo.HistoryLog
+        ORDER BY LoggedAt DESC;
+    END
+    ELSE
+    BEGIN
+        SELECT TOP (@TopCount)
+            HistoryLogID,
+            ActionType,
+            EntityName,
+            EntityID,
+            ActionDetails,
+            EventAppointmentID,
+            NegotiationID,
+            CustomerID,
+            EmployeeID,
+            ChangedByType,
+            ChangedBy,
+            LoggedAt
+        FROM dbo.HistoryLog
+        WHERE ChangedByAdminID = @RequestingUserID
+           OR EntityName IN ('Services', 'AdditionalServices', 'ComboPackage', 'Equipment', 'EventAppointment')
+        ORDER BY LoggedAt DESC;
+    END
+END;
+GO
+
+-- Update Event Status
 CREATE OR ALTER PROCEDURE dbo.sp_UpdateEventStatus
     @EventAppointmentID nvarchar(30),
     @NewStatus nvarchar(30),
-    @ChangedByType nvarchar(10),  -- 'Customer', 'Employee', 'Admin', or 'System'
-    @ActorID nvarchar(30) = NULL  -- The ID of the person making the change (Pass NULL if System)
+    @ChangedByType nvarchar(20),  -- 'Customer', 'Employee', 'Admin', 'SystemAdmin', or 'System'
+    @ActorID nvarchar(30) = NULL
 AS
 BEGIN
     SET NOCOUNT ON;
@@ -234,7 +569,6 @@ BEGIN
     DECLARE @OldStatus nvarchar(30);
     DECLARE @CustomerID nvarchar(30);
     
-    -- Get current status and associated customer to log properly
     SELECT @OldStatus = EventStatus, @CustomerID = CustomerID 
     FROM dbo.EventAppointment 
     WHERE EventAppointmentID = @EventAppointmentID;
@@ -245,39 +579,26 @@ BEGIN
         RETURN;
     END
 
-    -- Only update and log if the status is actually changing
     IF @OldStatus <> @NewStatus
     BEGIN
         BEGIN TRY
             BEGIN TRANSACTION;
 
-            -- 1. Update the Status
             UPDATE dbo.EventAppointment
             SET EventStatus = @NewStatus
             WHERE EventAppointmentID = @EventAppointmentID;
 
-            -- 2. Prepare variables for Audit Log constraints
-            DECLARE @ChangedByCustomer nvarchar(30) = NULL;
-            DECLARE @ChangedByEmployee nvarchar(30) = NULL;
-            DECLARE @ChangedByAdmin nvarchar(30) = NULL;
-
-            IF @ChangedByType = 'Customer' SET @ChangedByCustomer = @ActorID;
-            ELSE IF @ChangedByType = 'Employee' SET @ChangedByEmployee = @ActorID;
-            ELSE IF @ChangedByType = 'Admin' SET @ChangedByAdmin = @ActorID;
-
             DECLARE @ActionDetails nvarchar(max) = CONCAT('Status changed from ', @OldStatus, ' to ', @NewStatus);
 
-            -- 3. Insert into HistoryLog
-            INSERT INTO dbo.HistoryLog (
-                ActionType, EntityName, EntityID, ActionDetails, 
-                EventAppointmentID, CustomerID, 
-                ChangedByType, ChangedByCustomerID, ChangedByEmployeeID, ChangedByAdminID
-            )
-            VALUES (
-                'STATUS_CHANGE', 'EventAppointment', @EventAppointmentID, @ActionDetails,
-                @EventAppointmentID, @CustomerID,
-                @ChangedByType, @ChangedByCustomer, @ChangedByEmployee, @ChangedByAdmin
-            );
+            EXEC dbo.sp_AddHistoryLog
+                @ActionType = 'STATUS_CHANGE',
+                @EntityName = 'EventAppointment',
+                @EntityID = @EventAppointmentID,
+                @ActionDetails = @ActionDetails,
+                @EventAppointmentID = @EventAppointmentID,
+                @CustomerID = @CustomerID,
+                @ChangedByType = @ChangedByType,
+                @ActorID = @ActorID;
 
             COMMIT TRANSACTION;
         END TRY

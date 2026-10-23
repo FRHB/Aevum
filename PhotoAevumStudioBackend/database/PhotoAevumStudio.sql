@@ -3,14 +3,29 @@ GO
 SET QUOTED_IDENTIFIER ON;
 GO
 
+/* =====================================================================
+   1. USER AND ACCESS MANAGEMENT TABLES
+   ===================================================================== */
+
 CREATE TABLE dbo.Admin (
     AdminID nvarchar(30) NOT NULL PRIMARY KEY,
     AdminRole nvarchar(15) NOT NULL,
     AdminFirstName nvarchar(255) NOT NULL,
     AdminLastName nvarchar(255) NOT NULL,
     AdminMiddleName nvarchar(255),
+    Email nvarchar(255) NULL,
     AdminPassword nvarchar(255) NOT NULL,
     isFirstLogin bit NOT NULL CONSTRAINT DF_Admin_isFirstLogin DEFAULT 1
+);
+
+CREATE TABLE dbo.SystemAdmin (
+    SystemAdminID nvarchar(30) NOT NULL PRIMARY KEY,
+    FirstName nvarchar(255) NOT NULL,
+    LastName nvarchar(255) NOT NULL,
+    MiddleName nvarchar(255) NULL,
+    PasswordHash nvarchar(255) NOT NULL,
+    CreatedAt datetime2 NOT NULL CONSTRAINT DF_SystemAdmin_CreatedAt DEFAULT SYSUTCDATETIME()
+    -- Explicitly NO email column required for SystemAdmin
 );
 
 CREATE TABLE dbo.Employee (
@@ -35,6 +50,13 @@ CREATE TABLE dbo.Customer (
     CustomerPassword nvarchar(255) NOT NULL
 );
 
+CREATE UNIQUE INDEX UX_Admin_Email ON dbo.Admin(Email) WHERE Email IS NOT NULL;
+CREATE UNIQUE INDEX UX_Employee_Email ON dbo.Employee(EmployeeEmail) WHERE EmployeeEmail IS NOT NULL;
+
+/* =====================================================================
+   2. CATALOG AND INVENTORY TABLES (Includes VARBINARY(MAX) Service Images)
+   ===================================================================== */
+
 CREATE TABLE dbo.EmployeeSpecialization (
     SpecializationID nvarchar(30) NOT NULL PRIMARY KEY,
     SpecializationName nvarchar(255) NOT NULL,
@@ -49,20 +71,26 @@ CREATE TABLE dbo.EquipmentType (
 CREATE TABLE dbo.ComboPackage (
     ComboPackageID nvarchar(30) NOT NULL PRIMARY KEY,
     ComboPackageName nvarchar(255) NOT NULL,
-    ComboPackageDescription nvarchar(255) NOT NULL
+    ComboPackageDescription nvarchar(255) NOT NULL,
+    ComboPackageImage varbinary(max) NULL,
+    ComboPackageImageMimeType nvarchar(100) NULL CONSTRAINT DF_ComboPackage_MimeType DEFAULT 'image/jpeg'
 );
 
 CREATE TABLE dbo.AdditionalServices (
     AdditionalServicesID nvarchar(30) NOT NULL PRIMARY KEY,
     AdditionalServiceName nvarchar(255),
-    AdditionalServicesDescription nvarchar(255)
+    AdditionalServicesDescription nvarchar(255),
+    AdditionalServiceImage varbinary(max) NULL,
+    AdditionalServiceImageMimeType nvarchar(100) NULL CONSTRAINT DF_AdditionalServices_MimeType DEFAULT 'image/jpeg'
 );
 
 CREATE TABLE dbo.Services (
     ServicesID nvarchar(30) NOT NULL PRIMARY KEY,
     ServiceName nvarchar(255) NOT NULL,
     ServicesDescription nvarchar(255) NOT NULL,
-    ServicePrice Money Not Null
+    ServicePrice Money Not Null,
+    ServiceImage varbinary(max) NULL,
+    ServiceImageMimeType nvarchar(100) NULL CONSTRAINT DF_Services_MimeType DEFAULT 'image/jpeg'
 );
 
 CREATE TABLE dbo.ServiceCategory ( 
@@ -71,7 +99,7 @@ CREATE TABLE dbo.ServiceCategory (
     ServiceCategoryDescription nvarchar(255) NOT NULL
 );
 
-CREATE TABLE dbo.ServiceCategoryJoins(
+CREATE TABLE dbo.ServiceCategoryJoins (
     ServiceCategoryJoinID nvarchar(30) NOT NULL PRIMARY KEY,
     ServiceCategoryID nvarchar(30) NOT NULL,
     ServicesID nvarchar(30) NULL,
@@ -84,8 +112,6 @@ CREATE TABLE dbo.ServiceCategoryJoins(
     )
 );
 
-CREATE UNIQUE INDEX UX_Employee_Email ON dbo.Employee(EmployeeEmail) WHERE EmployeeEmail IS NOT NULL;
-
 CREATE TABLE dbo.Equipment (
     EquipmentID nvarchar(30) NOT NULL PRIMARY KEY,
     EquipmentName nvarchar(100) NOT NULL,
@@ -96,6 +122,10 @@ CREATE TABLE dbo.Equipment (
     CONSTRAINT CK_Equipment_Status CHECK (EquipmentStatus IN ('Available','Maintenance','Retired'))
 );
 CREATE UNIQUE INDEX UX_Equipment_SerialNo ON dbo.Equipment(SerialNo) WHERE SerialNo IS NOT NULL;
+
+/* =====================================================================
+   3. BOOKINGS AND APPOINTMENTS TABLES
+   ===================================================================== */
 
 CREATE TABLE dbo.EventAppointment (
     EventAppointmentID nvarchar(30) NOT NULL PRIMARY KEY,
@@ -158,6 +188,10 @@ CREATE TABLE dbo.ComboPackageJoin (
     ServicesID nvarchar(30) NOT NULL
 );
 
+/* =====================================================================
+   4. AUDIT & HISTORY LOGGING TABLE (Supports SystemAdmin and Admin tracking)
+   ===================================================================== */
+
 CREATE TABLE dbo.HistoryLog (
     HistoryLogID        bigint        IDENTITY(1,1) NOT NULL CONSTRAINT PK_HistoryLog PRIMARY KEY,
     ActionType          nvarchar(20)  NOT NULL,
@@ -168,7 +202,7 @@ CREATE TABLE dbo.HistoryLog (
     NegotiationID       nvarchar(30)  NULL,
     CustomerID          nvarchar(30)  NULL,
     EmployeeID          nvarchar(30)  NULL,
-    ChangedByType       nvarchar(10)  NOT NULL,
+    ChangedByType       nvarchar(20)  NOT NULL,
     ChangedByCustomerID nvarchar(30)  NULL,
     ChangedByEmployeeID nvarchar(30)  NULL,
     ChangedByAdminID    nvarchar(30)  NULL,
@@ -176,24 +210,19 @@ CREATE TABLE dbo.HistoryLog (
     LoggedAt            datetime2     NOT NULL CONSTRAINT DF_HistoryLog_LoggedAt DEFAULT SYSUTCDATETIME(),
 
     CONSTRAINT CK_HistoryLog_ActionType
-        CHECK (ActionType IN ('INSERT','UPDATE','DELETE','NEGOTIATE','STATUS_CHANGE')),
+        CHECK (ActionType IN ('INSERT','UPDATE','DELETE','NEGOTIATE','STATUS_CHANGE','LOGIN','LOGOUT','PASSWORD_CHANGE','PASSWORD_RESET','IMAGE_UPLOAD')),
     CONSTRAINT CK_HistoryLog_ChangedByType
-        CHECK (ChangedByType IN ('Customer','Employee','Admin','System')),
+        CHECK (ChangedByType IN ('Customer','Employee','Admin','SystemAdmin','System')),
     CONSTRAINT CK_HistoryLog_Actor CHECK (
         (ChangedByType = 'Customer' AND ChangedByCustomerID IS NOT NULL AND ChangedByEmployeeID IS NULL     AND ChangedByAdminID IS NULL)
      OR (ChangedByType = 'Employee' AND ChangedByEmployeeID IS NOT NULL AND ChangedByCustomerID IS NULL     AND ChangedByAdminID IS NULL)
-     OR (ChangedByType = 'Admin'    AND ChangedByAdminID    IS NOT NULL AND ChangedByCustomerID IS NULL     AND ChangedByEmployeeID IS NULL)
-     OR (ChangedByType = 'System'   AND ChangedByCustomerID IS NULL     AND ChangedByEmployeeID IS NULL     AND ChangedByAdminID IS NULL)),
-    CONSTRAINT CK_HistoryLog_AdminScope CHECK (
-        ChangedByType <> 'Admin'
-        OR EntityName IN (N'Equipment', N'EquipmentType',
-                          N'Employee', N'EmployeeSpecialization', N'EmployeeJointSpecialization',
-                          N'Services', N'AdditionalServices', N'ComboPackage', N'ComboPackageJoin'))
+     OR (ChangedByType IN ('Admin', 'SystemAdmin') AND ChangedByAdminID IS NOT NULL AND ChangedByCustomerID IS NULL AND ChangedByEmployeeID IS NULL)
+     OR (ChangedByType = 'System'   AND ChangedByCustomerID IS NULL     AND ChangedByEmployeeID IS NULL     AND ChangedByAdminID IS NULL))
 );
 GO
 
 /* =====================================================================
-   3. FOREIGN KEY RELATIONSHIPS
+   5. FOREIGN KEY RELATIONSHIPS
    ===================================================================== */
 ALTER TABLE dbo.Equipment ADD CONSTRAINT FK_Equipment_EquipmentType FOREIGN KEY (EquipmentTypeID) REFERENCES dbo.EquipmentType(EquipmentTypeID);
 ALTER TABLE dbo.BookingNegotiation ADD CONSTRAINT FK_BookingNegotiation_Employee FOREIGN KEY (EmployeeID) REFERENCES dbo.Employee(EmployeeID);
@@ -214,7 +243,6 @@ ALTER TABLE dbo.EventLineItem ADD CONSTRAINT FK_EventLineItem_ComboPackage FOREI
 ALTER TABLE dbo.EventEmployee ADD CONSTRAINT FK_EventEmployee_EventAppointment FOREIGN KEY (EventAppointmentID) REFERENCES dbo.EventAppointment(EventAppointmentID) ON DELETE CASCADE;
 ALTER TABLE dbo.EventEquipment ADD CONSTRAINT FK_EventEquipment_EventAppointment FOREIGN KEY (EventAppointmentID) REFERENCES dbo.EventAppointment(EventAppointmentID) ON DELETE CASCADE;
 
--- ServiceCategoryJoins Foreign Keys
 ALTER TABLE dbo.ServiceCategoryJoins ADD CONSTRAINT FK_ServiceCategoryJoins_ServiceCategory FOREIGN KEY (ServiceCategoryID) REFERENCES dbo.ServiceCategory(ServiceCategoryID) ON DELETE CASCADE;
 ALTER TABLE dbo.ServiceCategoryJoins ADD CONSTRAINT FK_ServiceCategoryJoins_Services FOREIGN KEY (ServicesID) REFERENCES dbo.Services(ServicesID);
 ALTER TABLE dbo.ServiceCategoryJoins ADD CONSTRAINT FK_ServiceCategoryJoins_AdditionalServices FOREIGN KEY (AdditionalServicesID) REFERENCES dbo.AdditionalServices(AdditionalServicesID);
@@ -230,7 +258,7 @@ ALTER TABLE dbo.HistoryLog ADD CONSTRAINT FK_HistoryLog_ChangedByAdmin FOREIGN K
 GO
 
 /* =====================================================================
-   4. INDEXES FOR COMMON AUDIT LOOKUPS
+   6. INDEXES FOR COMMON AUDIT & HISTORY LOOKUPS
    ===================================================================== */
 CREATE INDEX IX_HistoryLog_EventAppointment ON dbo.HistoryLog (EventAppointmentID, LoggedAt DESC);
 CREATE INDEX IX_HistoryLog_Entity           ON dbo.HistoryLog (EntityName, EntityID, LoggedAt DESC);

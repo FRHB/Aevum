@@ -13,7 +13,7 @@ namespace PhotoAevumStudio.Infrastructure.Data;
 public static class DatabaseSeeder
 {
     /// <summary>
-    /// Seeds the baseline application roles (Admin, Employee, Customer) into AspNetRoles.
+    /// Seeds the baseline application roles (Admin, Employee, Customer, SystemAdmin) into AspNetRoles.
     /// Does not seed any mock users or domain entities.
     /// </summary>
     public static async Task SeedRolesAsync(RoleManager<IdentityRole> roleManager)
@@ -108,7 +108,7 @@ public static class DatabaseSeeder
     }
 
     /// <summary>
-    /// Ensures that all required stored procedures from PhotoAevumStudioStoredProcedures.sql exist in the database.
+    /// Ensures that all required schema updates and stored procedures exist in the database.
     /// </summary>
     public static async Task EnsureStoredProceduresAsync(ApplicationDbContext db)
     {
@@ -128,11 +128,23 @@ public static class DatabaseSeeder
                     IF COL_LENGTH(N'dbo.Admin', N'isFirstLogin') IS NULL
                     BEGIN
                         ALTER TABLE dbo.Admin ADD isFirstLogin bit NOT NULL CONSTRAINT DF_Admin_isFirstLogin DEFAULT 1;
-                    END
-                    ELSE
+                    END;
+                    IF COL_LENGTH(N'dbo.Admin', N'Email') IS NULL
                     BEGIN
-                        UPDATE dbo.Admin SET isFirstLogin = 1 WHERE isFirstLogin IS NULL;
-                    END
+                        ALTER TABLE dbo.Admin ADD Email nvarchar(255) NULL;
+                    END;
+                END;
+
+                IF OBJECT_ID(N'dbo.SystemAdmin', N'U') IS NULL
+                BEGIN
+                    CREATE TABLE dbo.SystemAdmin (
+                        SystemAdminID nvarchar(30) NOT NULL PRIMARY KEY,
+                        FirstName nvarchar(255) NOT NULL,
+                        LastName nvarchar(255) NOT NULL,
+                        MiddleName nvarchar(255) NULL,
+                        PasswordHash nvarchar(255) NOT NULL,
+                        CreatedAt datetime2 NOT NULL CONSTRAINT DF_SystemAdmin_CreatedAt DEFAULT SYSUTCDATETIME()
+                    );
                 END;
 
                 IF OBJECT_ID(N'dbo.Employee', N'U') IS NOT NULL
@@ -140,102 +152,71 @@ public static class DatabaseSeeder
                     IF COL_LENGTH(N'dbo.Employee', N'isFirstLogin') IS NULL
                     BEGIN
                         ALTER TABLE dbo.Employee ADD isFirstLogin bit NOT NULL CONSTRAINT DF_Employee_isFirstLogin DEFAULT 1;
-                    END
-                    ELSE
-                    BEGIN
-                        UPDATE dbo.Employee SET isFirstLogin = 1 WHERE isFirstLogin IS NULL;
-                    END
+                    END;
                 END;
 
-                IF OBJECT_ID(N'dbo.sp_CompleteEmployeeFirstLogin', N'P') IS NULL
+                IF OBJECT_ID(N'dbo.Services', N'U') IS NOT NULL
                 BEGIN
-                    EXEC(N'CREATE PROCEDURE dbo.sp_CompleteEmployeeFirstLogin
-                        @EmployeeID nvarchar(30),
-                        @NewPassword nvarchar(255) = NULL
-                    AS
-                    BEGIN
-                        SET NOCOUNT ON;
-                        UPDATE dbo.Employee
-                        SET isFirstLogin = 0,
-                            EmployeePassword = COALESCE(@NewPassword, EmployeePassword)
-                        WHERE EmployeeID = @EmployeeID;
-                    END;');
+                    IF COL_LENGTH(N'dbo.Services', N'ServiceImage') IS NULL
+                        ALTER TABLE dbo.Services ADD ServiceImage varbinary(max) NULL;
+                    IF COL_LENGTH(N'dbo.Services', N'ServiceImageMimeType') IS NULL
+                        ALTER TABLE dbo.Services ADD ServiceImageMimeType nvarchar(100) NULL CONSTRAINT DF_Services_MimeType DEFAULT 'image/jpeg';
                 END;
 
-                IF OBJECT_ID(N'dbo.sp_CompleteAdminFirstLogin', N'P') IS NULL
+                IF OBJECT_ID(N'dbo.AdditionalServices', N'U') IS NOT NULL
                 BEGIN
-                    EXEC(N'CREATE PROCEDURE dbo.sp_CompleteAdminFirstLogin
-                        @AdminID nvarchar(30),
-                        @NewPassword nvarchar(255) = NULL
-                    AS
-                    BEGIN
-                        SET NOCOUNT ON;
-                        UPDATE dbo.Admin
-                        SET isFirstLogin = 0,
-                            AdminPassword = COALESCE(@NewPassword, AdminPassword)
-                        WHERE AdminID = @AdminID;
-                    END;');
-                END;";
+                    IF COL_LENGTH(N'dbo.AdditionalServices', N'AdditionalServiceImage') IS NULL
+                        ALTER TABLE dbo.AdditionalServices ADD AdditionalServiceImage varbinary(max) NULL;
+                    IF COL_LENGTH(N'dbo.AdditionalServices', N'AdditionalServiceImageMimeType') IS NULL
+                        ALTER TABLE dbo.AdditionalServices ADD AdditionalServiceImageMimeType nvarchar(100) NULL CONSTRAINT DF_AdditionalServices_MimeType DEFAULT 'image/jpeg';
+                END;
+
+                IF OBJECT_ID(N'dbo.ComboPackage', N'U') IS NOT NULL
+                BEGIN
+                    IF COL_LENGTH(N'dbo.ComboPackage', N'ComboPackageImage') IS NULL
+                        ALTER TABLE dbo.ComboPackage ADD ComboPackageImage varbinary(max) NULL;
+                    IF COL_LENGTH(N'dbo.ComboPackage', N'ComboPackageImageMimeType') IS NULL
+                        ALTER TABLE dbo.ComboPackage ADD ComboPackageImageMimeType nvarchar(100) NULL CONSTRAINT DF_ComboPackage_MimeType DEFAULT 'image/jpeg';
+                END;
+            ";
             await setCmd.ExecuteNonQueryAsync();
 
-            await using var checkCmd = conn.CreateCommand();
-            checkCmd.CommandText = @"
-                SELECT COUNT(1) 
-                FROM sys.sql_modules 
-                WHERE object_id IN (
-                    OBJECT_ID(N'dbo.sp_CreateCustomer', N'P'),
-                    OBJECT_ID(N'dbo.sp_CreateEmployee', N'P'),
-                    OBJECT_ID(N'dbo.sp_CreateEventAppointment', N'P'),
-                    OBJECT_ID(N'dbo.sp_AddEventLineItem', N'P'),
-                    OBJECT_ID(N'dbo.sp_AssignEmployeeToEvent', N'P'),
-                    OBJECT_ID(N'dbo.sp_AddEquipment', N'P'),
-                    OBJECT_ID(N'dbo.sp_AssignEquipmentToEvent', N'P'),
-                    OBJECT_ID(N'dbo.sp_UpdateEventStatus', N'P'),
-                    OBJECT_ID(N'dbo.sp_CompleteEmployeeFirstLogin', N'P'),
-                    OBJECT_ID(N'dbo.sp_CompleteAdminFirstLogin', N'P')
-                )
-                AND uses_quoted_identifier = 1;";
-            var count = Convert.ToInt32(await checkCmd.ExecuteScalarAsync());
-
-            if (count < 10)
+            var candidatePaths = new[]
             {
-                var candidatePaths = new[]
-                {
-                    Path.Combine(AppContext.BaseDirectory, "database", "PhotoAevumStudioStoredProcedures.sql"),
-                    Path.Combine(Directory.GetCurrentDirectory(), "database", "PhotoAevumStudioStoredProcedures.sql"),
-                    Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "database", "PhotoAevumStudioStoredProcedures.sql")),
-                    Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "..", "database", "PhotoAevumStudioStoredProcedures.sql")),
-                    Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "..", "PhotoAevumStudioBackend", "database", "PhotoAevumStudioStoredProcedures.sql")),
-                    Path.GetFullPath(Path.Combine(Directory.GetCurrentDirectory(), "..", "PhotoAevumStudioBackend", "database", "PhotoAevumStudioStoredProcedures.sql")),
-                    @"c:\Aevum\PhotoAevumStudioBackend\database\PhotoAevumStudioStoredProcedures.sql"
-                };
+                Path.Combine(AppContext.BaseDirectory, "database", "PhotoAevumStudioStoredProcedures.sql"),
+                Path.Combine(Directory.GetCurrentDirectory(), "database", "PhotoAevumStudioStoredProcedures.sql"),
+                Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "database", "PhotoAevumStudioStoredProcedures.sql")),
+                Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "..", "database", "PhotoAevumStudioStoredProcedures.sql")),
+                Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "..", "PhotoAevumStudioBackend", "database", "PhotoAevumStudioStoredProcedures.sql")),
+                Path.GetFullPath(Path.Combine(Directory.GetCurrentDirectory(), "..", "PhotoAevumStudioBackend", "database", "PhotoAevumStudioStoredProcedures.sql")),
+                @"c:\Aevum\PhotoAevumStudioBackend\database\PhotoAevumStudioStoredProcedures.sql"
+            };
 
-                string? script = null;
-                foreach (var p in candidatePaths)
+            string? script = null;
+            foreach (var p in candidatePaths)
+            {
+                if (File.Exists(p))
                 {
-                    if (File.Exists(p))
-                    {
-                        script = await File.ReadAllTextAsync(p);
-                        break;
-                    }
+                    script = await File.ReadAllTextAsync(p);
+                    break;
                 }
+            }
 
-                if (!string.IsNullOrWhiteSpace(script))
+            if (!string.IsNullOrWhiteSpace(script))
+            {
+                var batches = System.Text.RegularExpressions.Regex.Split(
+                    script,
+                    @"^\s*GO\s*$",
+                    System.Text.RegularExpressions.RegexOptions.Multiline | System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+
+                foreach (var batch in batches)
                 {
-                    var batches = System.Text.RegularExpressions.Regex.Split(
-                        script,
-                        @"^\s*GO\s*$",
-                        System.Text.RegularExpressions.RegexOptions.Multiline | System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+                    var trimmed = batch.Trim();
+                    if (string.IsNullOrWhiteSpace(trimmed)) continue;
 
-                    foreach (var batch in batches)
-                    {
-                        var trimmed = batch.Trim();
-                        if (string.IsNullOrWhiteSpace(trimmed)) continue;
-
-                        await using var cmd = conn.CreateCommand();
-                        cmd.CommandText = "SET QUOTED_IDENTIFIER ON;\nSET ANSI_NULLS ON;\n" + trimmed;
-                        await cmd.ExecuteNonQueryAsync();
-                    }
+                    await using var cmd = conn.CreateCommand();
+                    cmd.CommandText = "SET QUOTED_IDENTIFIER ON;\nSET ANSI_NULLS ON;\n" + trimmed;
+                    await cmd.ExecuteNonQueryAsync();
                 }
             }
         }

@@ -1,7 +1,9 @@
 @using Microsoft.AspNetCore.Components.Authorization
 @using Microsoft.AspNetCore.Components.Routing
+@using PhotoAevumStudio.Web.Services
 @implements IDisposable
 @inject NavigationManager Nav
+@inject IAuthService AuthService
 
 @* ── Mobile Hamburger Toggle ──────────────────────────────────────────────── *@
 <button type="button"
@@ -98,17 +100,16 @@
         if (path.StartsWith("admin/services") || path.StartsWith("services") || path.StartsWith("main-services") || path.StartsWith("package-services") || path.StartsWith("additional-services"))
         {
             _openAccordions.Add("services");
-            _openAccordions.Add("emp-services");
         }
         else if (path.StartsWith("staff/services"))
         {
             _openAccordions.Add("emp-services");
         }
 
-        if (path.StartsWith("admin/employees") || path.StartsWith("employees") || path.StartsWith("specialization"))
+        if (path.StartsWith("admin/employees") || path.StartsWith("admin/staff"))
             _openAccordions.Add("employees");
 
-        if (path.StartsWith("admin/equipment") || path.StartsWith("equipment") || path.StartsWith("equipments") || path.StartsWith("dispatch") || path.StartsWith("maintenance") || path.StartsWith("equipment-types"))
+        if (path.StartsWith("admin/equipments") || path.StartsWith("admin/equipment"))
             _openAccordions.Add("equipment");
     }
 
@@ -120,23 +121,30 @@
             _openAccordions.Add(key);
     }
 
-    // ── Role dispatcher ──────────────────────────────────────────────────────
-    private RenderFragment RenderNav() => UserRole switch
+    private async Task HandleLogoutAsync()
     {
-        "admin" => RenderAdminNav(),
-        "employee" => RenderEmployeeNav(),
-        "customer" => RenderCustomerNav(),
-        _ => RenderAdminNav()
-    };
+        await AuthService.LogoutAsync();
+        Nav.NavigateTo("/login", forceLoad: true);
+    }
+
+    private RenderFragment RenderNav()
+    {
+        var role = (UserRole ?? "").Trim().ToLowerInvariant();
+        if (role == "customer" || role == "client")
+            return RenderCustomerNav();
+        if (role == "employee" || role == "staff")
+            return RenderEmployeeNav();
+        return RenderAdminNav();
+    }
 
     // ════════════════════════════════════════════════════════════════════════
     // ADMIN nav
     // ════════════════════════════════════════════════════════════════════════
     private RenderFragment RenderAdminNav() =>
     @<text>
-        @* ── MANAGEMENT ─────────────────────────────────────────────────── *@
+        @* ── GENERAL ─────────────────────────────────────────────────────── *@
         <div class="aev-sidebar__section">
-            <p class="aev-sidebar__section-label">Management</p>
+            <p class="aev-sidebar__section-label">General</p>
             <ul class="aev-sidebar__list">
 
                 <li>
@@ -217,6 +225,7 @@
                         <li><NavLink href="/admin/services/packages" class="aev-sidebar__sub-link" ActiveClass="aev-sidebar__link--active">Package Services</NavLink></li>
                         <li><NavLink href="/admin/services/additional" class="aev-sidebar__sub-link" ActiveClass="aev-sidebar__link--active">Additional Services</NavLink></li>
                         <li><NavLink href="/admin/services/category" class="aev-sidebar__sub-link" ActiveClass="aev-sidebar__link--active">Service Category</NavLink></li>
+                        <li><NavLink href="/admin/services/image-wizard" class="aev-sidebar__sub-link" ActiveClass="aev-sidebar__link--active">Image Wizard</NavLink></li>
                     </ul>
                 </li>
 
@@ -293,6 +302,12 @@
                         </span>
                         Profile
                     </NavLink>
+                </li>
+                <li>
+                    <button type="button" @onclick="HandleLogoutAsync" class="aev-sidebar__link text-rose-600 hover:text-rose-800" style="background:none;border:none;width:100%;text-align:left;cursor:pointer;">
+                        <span class="aev-sidebar__icon" aria-hidden="true">🚪</span>
+                        Log Out
+                    </button>
                 </li>
             </ul>
         </div>
@@ -393,6 +408,12 @@
                         Profile
                     </NavLink>
                 </li>
+                <li>
+                    <button type="button" @onclick="HandleLogoutAsync" class="aev-sidebar__link text-rose-600 hover:text-rose-800" style="background:none;border:none;width:100%;text-align:left;cursor:pointer;">
+                        <span class="aev-sidebar__icon" aria-hidden="true">🚪</span>
+                        Log Out
+                    </button>
+                </li>
             </ul>
         </div>
     </text>;
@@ -469,6 +490,12 @@
                         </span>
                         Profile
                     </NavLink>
+                </li>
+                <li>
+                    <button type="button" @onclick="HandleLogoutAsync" class="aev-sidebar__link text-rose-600 hover:text-rose-800" style="background:none;border:none;width:100%;text-align:left;cursor:pointer;">
+                        <span class="aev-sidebar__icon" aria-hidden="true">🚪</span>
+                        Log Out
+                    </button>
                 </li>
             </ul>
         </div>

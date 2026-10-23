@@ -96,6 +96,14 @@ public sealed class AuthService : IAuthService
 
     public async Task LogoutAsync(CancellationToken cancellationToken = default)
     {
+        try
+        {
+            await _http.PostAsync("api/auth/logout", null, cancellationToken);
+        }
+        catch
+        {
+            // Ignore API connectivity issues so the local user session is always guaranteed to be cleared
+        }
         await _authStateProvider.NotifyUserLogoutAsync();
     }
 
@@ -149,6 +157,19 @@ public sealed class AuthService : IAuthService
         try
         {
             var response = await _http.PostAsJsonAsync("api/auth/forgot-password", new { Email = email }, cancellationToken);
+            return response.IsSuccessStatusCode;
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
+    public async Task<bool> ResetPasswordAsync(string email, string verificationCode, string newPassword, CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            var response = await _http.PostAsJsonAsync("api/auth/reset-password", new { Email = email, VerificationCode = verificationCode, NewPassword = newPassword }, cancellationToken);
             return response.IsSuccessStatusCode;
         }
         catch

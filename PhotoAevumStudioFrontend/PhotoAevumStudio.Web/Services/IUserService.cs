@@ -105,7 +105,7 @@ public interface IUserService
     // ── Admins ──────────────────────────────────────────────────────────────
     IReadOnlyList<Admin> GetAdmins();
     Admin? GetAdminById(string id);
-    void AddAdmin(Admin admin);
+    void AddAdmin(Admin admin, string? requestingUserId = null);
     void DeleteAdmin(string targetId, string requestingUserId);
 
     // ── Employees ───────────────────────────────────────────────────────────
@@ -127,10 +127,22 @@ public interface IUserService
 
     // ── Studio Services & Packages ──────────────────────────────────────────
     IReadOnlyList<MainServiceItem> GetMainServices();
+    IReadOnlyList<MainServiceItem> GetMainServicesSummary();
+    (byte[]? Image, string? MimeType) GetServiceImage(string code);
+    void UpdateServiceImage(string code, byte[] imageBytes, string mimeType, string? requestingAdminId = null);
+
     MainServiceItem AddMainService(MainServiceModel model);
+
     IReadOnlyList<PackageServiceItem> GetPackageServices();
+    IReadOnlyList<PackageServiceItem> GetPackageServicesSummary();
+    (byte[]? Image, string? MimeType) GetComboPackageImage(string code);
+    void UpdateComboPackageImage(string code, byte[] imageBytes, string mimeType, string? requestingAdminId = null);
     PackageServiceItem AddPackageService(PackageServiceModel model);
+
     IReadOnlyList<AddOnServiceItem> GetAdditionalServices();
+    IReadOnlyList<AddOnServiceItem> GetAdditionalServicesSummary();
+    (byte[]? Image, string? MimeType) GetAdditionalServiceImage(string code);
+    void UpdateAdditionalServiceImage(string code, byte[] imageBytes, string mimeType, string? requestingAdminId = null);
     AddOnServiceItem AddAdditionalService(AddOnServiceModel model);
 
     // ── Equipment ───────────────────────────────────────────────────────────
@@ -145,4 +157,5 @@ public interface IUserService
     void UpdateBookingStatus(string eventAppointmentId, string newStatus);
     List<PhotoRowDto> GetPhotos(string? bookingId = null);
     List<AuditLogRowDto> GetAuditLogs(string? userId = null);
+    IReadOnlyList<AuditLogRowDto> GetHistoryLogs(string requestingUserId, int topCount = 100);
 }
