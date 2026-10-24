@@ -1,0 +1,97 @@
+@using PhotoAevumStudio.Web.Models
+@using PhotoAevumStudio.Web.Services
+@inject IScheduleService ScheduleService
+
+@*
+    Edits a CategoryAssociationProfile in place (the parent owns the instance and reads it on save).
+    Whatever is chosen here is auto-assigned to a new event when this category is selected on the calendar.
+*@
+
+<div class="space-y-4">
+
+    <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+        <div>
+            <label class="block text-xs font-semibold text-gray-700 uppercase tracking-wider mb-1">Default Studio Space</label>
+            <select @bind="Profile.DefaultSpaceId"
+                    class="w-full px-3 py-2 text-sm bg-gray-50/70 border border-gray-200 rounded-lg text-gray-900 focus:bg-white focus:outline-none focus:ring-2 focus:ring-gray-900 cursor-pointer">
+                <option value="">— No default —</option>
+                @foreach (var space in ScheduleService.GetStudioSpaces())
+                {
+                    <option value="@space.Id">@space.Name</option>
+                }
+            </select>
+        </div>
+
+        <div>
+            <label class="block text-xs font-semibold text-gray-700 uppercase tracking-wider mb-1">Default Service Type</label>
+            <select @bind="Profile.DefaultServiceType"
+                    class="w-full px-3 py-2 text-sm bg-gray-50/70 border border-gray-200 rounded-lg text-gray-900 focus:bg-white focus:outline-none focus:ring-2 focus:ring-gray-900 cursor-pointer">
+                <option value="">— No default —</option>
+                @foreach (var type in EventServiceTypes.All)
+                {
+                    <option value="@type">@type</option>
+                }
+            </select>
+        </div>
+
+        <div>
+            <label class="block text-xs font-semibold text-gray-700 uppercase tracking-wider mb-1">Typical Duration (hours)</label>
+            <input type="number" step="0.25" min="0.25" max="48" @bind="Profile.DefaultDurationHours"
+                   class="w-full px-3 py-2 text-sm bg-gray-50/70 border border-gray-200 rounded-lg text-gray-900 focus:bg-white focus:outline-none focus:ring-2 focus:ring-gray-900" />
+        </div>
+
+        <div>
+            <label class="block text-xs font-semibold text-gray-700 uppercase tracking-wider mb-1">Estimated Price ($)</label>
+            <input type="number" step="1" min="0" @bind="Profile.DefaultPrice"
+                   class="w-full px-3 py-2 text-sm bg-gray-50/70 border border-gray-200 rounded-lg text-gray-900 focus:bg-white focus:outline-none focus:ring-2 focus:ring-gray-900" />
+        </div>
+    </div>
+
+    <div>
+        <div class="flex items-center justify-between mb-1.5">
+            <label class="block text-xs font-semibold text-gray-700 uppercase tracking-wider">Default Staff</label>
+            <span class="text-[11px] text-gray-400">@Profile.StaffIds.Count selected</span>
+        </div>
+        <div class="flex flex-wrap gap-1.5">
+            @foreach (var s in ScheduleService.GetStaffMembers())
+            {
+                var on = Profile.StaffIds.Contains(s.Id);
+                <button type="button" @onclick="() => Toggle(Profile.StaffIds, s.Id)"
+                        class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium border transition-colors cursor-pointer @(on ? "bg-gray-900 text-white border-gray-900" : "bg-white text-gray-700 border-gray-200 hover:bg-gray-50")">
+                    @s.FullName
+                    <span class="@(on ? "text-gray-300" : "text-gray-400") text-[10px]">@s.Role</span>
+                </button>
+            }
+        </div>
+        <p class="text-[11px] text-gray-400 mt-1">The first photographer selected becomes the event's lead.</p>
+    </div>
+
+    <div>
+        <div class="flex items-center justify-between mb-1.5">
+            <label class="block text-xs font-semibold text-gray-700 uppercase tracking-wider">Default Equipment</label>
+            <span class="text-[11px] text-gray-400">@Profile.EquipmentIds.Count selected</span>
+        </div>
+        <div class="flex flex-wrap gap-1.5">
+            @foreach (var e in ScheduleService.GetEquipmentResources())
+            {
+                var on = Profile.EquipmentIds.Contains(e.Id);
+                <button type="button" @onclick="() => Toggle(Profile.EquipmentIds, e.Id)"
+                        class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium border transition-colors cursor-pointer @(on ? "bg-gray-900 text-white border-gray-900" : "bg-white text-gray-700 border-gray-200 hover:bg-gray-50")">
+                    @e.Name
+                    <span class="@(on ? "text-gray-300" : "text-gray-400") text-[10px]">@e.Category</span>
+                </button>
+            }
+        </div>
+        <p class="text-[11px] text-gray-400 mt-1">Reserved automatically for the event's time slot, so double-booked gear shows up as a conflict.</p>
+    </div>
+</div>
+
+@code {
+    [Parameter, EditorRequired] public CategoryAssociationProfile Profile { get; set; } = new();
+
+    private static void Toggle(List<string> list, string id)
+    {
+        if (!list.Remove(id))
+            list.Add(id);
+    }
+}

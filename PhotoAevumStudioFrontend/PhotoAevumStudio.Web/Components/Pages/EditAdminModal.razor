@@ -1,0 +1,206 @@
+@using System.ComponentModel.DataAnnotations
+@using PhotoAevumStudio.Web.Models
+@using PhotoAevumStudio.Web.Services
+@attribute [Authorize(Roles = "SystemAdmin,System Admin,Super Admin,Admin")]
+@inject IAdminService AdminService
+@implements IDisposable
+
+@if (IsOpen && Admin != null)
+{
+    <div class="fixed inset-0 bg-slate-950/60 backdrop-blur-sm z-50 flex items-center justify-center p-4"
+         role="dialog" aria-modal="true" aria-labelledby="edit-admin-title">
+        <div class="bg-white rounded-2xl shadow-2xl border border-slate-200 w-full max-w-lg overflow-hidden flex flex-col max-h-[90vh]">
+            
+            <!-- Header -->
+            <div class="px-6 py-5 border-b border-slate-100 flex items-center justify-between bg-slate-50/50">
+                <div>
+                    <h2 id="edit-admin-title" class="text-xl font-bold text-slate-900 tracking-tight">Edit Administrator</h2>
+                    <p class="text-xs text-slate-500 mt-0.5">Update administrator contact &amp; account details</p>
+                </div>
+                <button type="button" 
+                        class="text-slate-400 hover:text-slate-700 p-1.5 rounded-lg hover:bg-slate-100 transition-colors"
+                        aria-label="Close"
+                        @onclick="CloseModal" 
+                        disabled="@isSaving">
+                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+                    </svg>
+                </button>
+            </div>
+
+            <!-- Form Content -->
+            <div class="p-6 overflow-y-auto flex-1">
+                <EditForm EditContext="_editContext">
+                    <DataAnnotationsValidator />
+
+                    <div class="space-y-4">
+                        <!-- Read-only Identifiers -->
+                        <div class="grid grid-cols-2 gap-3 p-3 bg-slate-50 rounded-xl border border-slate-200 text-xs">
+                            <div>
+                                <span class="text-slate-500 font-medium block">Admin ID</span>
+                                <span class="font-mono font-bold text-slate-900">@Admin.Id</span>
+                            </div>
+                            <div>
+                                <span class="text-slate-500 font-medium block">Role</span>
+                                <span class="inline-flex items-center px-2 py-0.5 rounded text-[11px] font-semibold @(Admin.IsSuperAdmin ? "bg-purple-100 text-purple-800" : "bg-slate-200 text-slate-800")">
+                                    @Admin.Role
+                                </span>
+                            </div>
+                        </div>
+
+                        <!-- Name Fields -->
+                        <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                            <div>
+                                <label for="edit-adm-first" class="block text-xs font-semibold uppercase tracking-wider text-slate-700 mb-1.5">
+                                    First Name <span class="text-rose-500">*</span>
+                                </label>
+                                <InputText id="edit-adm-first" @bind-Value="model.FirstName" class="@InputClass" autocomplete="off" />
+                                <ValidationMessage For="() => model.FirstName" class="text-xs text-rose-600 mt-1" />
+                            </div>
+                            <div>
+                                <label for="edit-adm-last" class="block text-xs font-semibold uppercase tracking-wider text-slate-700 mb-1.5">
+                                    Last Name <span class="text-rose-500">*</span>
+                                </label>
+                                <InputText id="edit-adm-last" @bind-Value="model.LastName" class="@InputClass" autocomplete="off" />
+                                <ValidationMessage For="() => model.LastName" class="text-xs text-rose-600 mt-1" />
+                            </div>
+                        </div>
+
+                        <div>
+                            <label for="edit-adm-middle" class="block text-xs font-semibold uppercase tracking-wider text-slate-700 mb-1.5">
+                                Middle Name <span class="text-slate-400 font-normal lowercase">(optional)</span>
+                            </label>
+                            <InputText id="edit-adm-middle" @bind-Value="model.MiddleName" class="@InputClass" autocomplete="off" />
+                            <ValidationMessage For="() => model.MiddleName" class="text-xs text-rose-600 mt-1" />
+                        </div>
+
+                        <div>
+                            <label for="edit-adm-email" class="block text-xs font-semibold uppercase tracking-wider text-slate-700 mb-1.5">
+                                Email Address <span class="text-rose-500">*</span>
+                            </label>
+                            <InputText id="edit-adm-email" type="email" @bind-Value="model.Email" class="@InputClass" autocomplete="off" />
+                            <ValidationMessage For="() => model.Email" class="text-xs text-rose-600 mt-1" />
+                        </div>
+
+                        @if (!string.IsNullOrEmpty(saveError))
+                        {
+                            <div class="p-3 bg-rose-50 border border-rose-200 rounded-lg text-xs text-rose-700 font-medium flex items-center gap-2" role="alert">
+                                <svg class="w-4 h-4 shrink-0 text-rose-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                                </svg>
+                                <span>@saveError</span>
+                            </div>
+                        }
+                    </div>
+
+                </EditForm>
+            </div>
+
+            <!-- Footer -->
+            <div class="px-6 py-4 bg-slate-50 border-t border-slate-200 flex items-center justify-between">
+                <button type="button" class="@GhostBtn" @onclick="CloseModal" disabled="@isSaving">Cancel</button>
+                <button type="button" 
+                        class="px-6 py-2.5 rounded-lg bg-slate-900 hover:bg-black text-white text-xs font-semibold uppercase tracking-wider shadow-sm transition-colors disabled:opacity-50 flex items-center gap-2" 
+                        @onclick="SubmitUpdateAsync" 
+                        disabled="@isSaving">
+                    @if (isSaving)
+                    {
+                        <span class="w-3.5 h-3.5 border-2 border-white/30 border-t-white rounded-full animate-spin"></span>
+                        <span>Saving...</span>
+                    }
+                    else
+                    {
+                        <span>Save Changes</span>
+                    }
+                </button>
+            </div>
+
+        </div>
+    </div>
+}
+
+@code {
+    [Parameter] public bool IsOpen { get; set; }
+    [Parameter] public EventCallback<bool> IsOpenChanged { get; set; }
+    [Parameter] public AdminViewModel? Admin { get; set; }
+    [Parameter] public EventCallback OnSaved { get; set; }
+
+    private const string InputClass =
+        "w-full rounded-lg border border-slate-300 bg-white px-3.5 py-2.5 text-sm text-slate-900 placeholder-slate-400 " +
+        "focus:border-slate-900 focus:outline-none focus:ring-1 focus:ring-slate-900 transition-colors";
+    private const string GhostBtn =
+        "bg-transparent hover:bg-slate-100 text-slate-700 border border-slate-300 px-5 py-2.5 rounded-lg text-xs font-semibold uppercase tracking-wider transition-colors disabled:opacity-50";
+
+    private EditAdminModel model = new();
+    private EditContext _editContext = default!;
+    private string? saveError;
+    private bool isSaving = false;
+    private CancellationTokenSource? _cts;
+
+    protected override void OnParametersSet()
+    {
+        if (Admin != null)
+        {
+            model = new EditAdminModel
+            {
+                Id = Admin.Id,
+                Role = Admin.Role,
+                IsSuperAdmin = Admin.IsSuperAdmin,
+                FirstName = Admin.FirstName,
+                LastName = Admin.LastName,
+                MiddleName = Admin.MiddleName,
+                Email = Admin.Email
+            };
+            _editContext = new EditContext(model);
+            saveError = null;
+        }
+    }
+
+    protected override void OnInitialized()
+    {
+        _cts = new CancellationTokenSource();
+    }
+
+    private async Task SubmitUpdateAsync()
+    {
+        if (!_editContext.Validate() || Admin == null) return;
+
+        saveError = null;
+        isSaving = true;
+
+        try
+        {
+            var result = await AdminService.UpdateAdminAsync(Admin.Id, model, _cts?.Token ?? CancellationToken.None);
+            if (result.Success)
+            {
+                await OnSaved.InvokeAsync();
+                await CloseModal();
+            }
+            else
+            {
+                saveError = result.ErrorMessage ?? "Failed to update administrator record.";
+            }
+        }
+        catch (Exception ex)
+        {
+            saveError = ex.Message;
+        }
+        finally
+        {
+            isSaving = false;
+        }
+    }
+
+    private async Task CloseModal()
+    {
+        if (isSaving) return;
+        saveError = null;
+        await IsOpenChanged.InvokeAsync(false);
+    }
+
+    public void Dispose()
+    {
+        _cts?.Cancel();
+        _cts?.Dispose();
+    }
+}

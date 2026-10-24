@@ -1,0 +1,652 @@
+@page "/privacy"
+@rendermode InteractiveServer
+@inject NavigationManager NavigationManager
+@inject IJSRuntime JS
+
+<PageTitle>Privacy Policy | Photo Aevum Studio</PageTitle>
+
+@* ── Minimalist Sticky Sub-Header ────────────────────────────────────────── *@
+<header class="sticky top-0 z-40 bg-white/95 backdrop-blur-md border-b border-slate-200/80 transition-all">
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-20 flex items-center justify-between">
+        @* Studio Brand Logo & Title *@
+        <a href="/" class="flex items-center gap-3 group">
+            <img src="images/AevumLogo.jpg" alt="Photo Aevum Logo" class="h-9 w-auto rounded-full transition-transform group-hover:scale-105" />
+            <span class="font-bold text-lg tracking-tight uppercase tracking-widest text-slate-900">Photo Aevum Studio</span>
+        </a>
+
+        @* Header Actions *@
+        <div class="flex items-center gap-3">
+            <a href="/"
+               class="inline-flex items-center gap-2 border border-slate-300 text-slate-700 hover:border-slate-900 hover:text-slate-900 px-4 py-2 rounded-none font-medium text-xs uppercase tracking-wider transition-colors bg-white">
+                <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <line x1="19" y1="12" x2="5" y2="12"></line>
+                    <polyline points="12 19 5 12 12 5"></polyline>
+                </svg>
+                <span>Back to Home</span>
+            </a>
+            <a href="/schedule"
+               class="hidden sm:inline-flex items-center gap-1.5 bg-slate-900 hover:bg-black text-white px-5 py-2 rounded-none font-medium text-xs uppercase tracking-wider transition-colors">
+                <span>Book Session</span>
+                <span aria-hidden="true">&rarr;</span>
+            </a>
+        </div>
+    </div>
+</header>
+
+@* ── Main Privacy Policy Content Canvas ──────────────────────────────────── *@
+<div class="bg-[#FAF9F6] min-h-screen text-slate-900">
+    <div class="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-16 sm:py-24">
+
+        @* ── Breadcrumb Navigation ────────────────────────────────────────── *@
+        <nav class="flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-slate-500 mb-8" aria-label="Breadcrumb">
+            <a href="/" class="hover:text-slate-900 transition-colors">Home</a>
+            <span class="text-slate-400">/</span>
+            <span class="text-slate-500">Legal</span>
+            <span class="text-slate-400">/</span>
+            <span class="text-slate-900 font-bold">Privacy Policy</span>
+        </nav>
+
+        @* ── SECTION 1: Minimalist Hero Header ────────────────────────────── *@
+        <header class="mb-12 sm:mb-16">
+            <div class="inline-flex items-center gap-2 px-3 py-1 bg-slate-900 text-white text-[11px] font-semibold uppercase tracking-widest rounded-none mb-6">
+                <svg class="w-3.5 h-3.5 text-emerald-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path>
+                    <polyline points="9 12 11 14 15 10"></polyline>
+                </svg>
+                <span>Studio Transparency &amp; Trust</span>
+            </div>
+
+            <h1 class="text-4xl sm:text-5xl lg:text-6xl font-bold tracking-tight text-slate-900 leading-tight mb-6 uppercase tracking-widest">
+                Privacy Policy
+            </h1>
+
+            <p class="text-lg sm:text-xl text-slate-600 font-light leading-relaxed mb-8 max-w-3xl">
+                At Photo Aevum Studio, we respect your artistic vision and personal privacy. This policy outlines our uncompromising commitment to protecting your personal information, booking details, and visual media assets from capture to final delivery.
+            </p>
+
+            @* Metadata Row & Top Back Link *@
+            <div class="pt-6 border-t border-slate-200 flex flex-wrap items-center justify-between gap-4 text-xs">
+                <div class="flex flex-wrap items-center gap-6 text-slate-500 font-medium">
+                    <div class="flex items-center gap-2">
+                        <svg class="w-4 h-4 text-slate-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect>
+                            <line x1="16" y1="2" x2="16" y2="6"></line>
+                            <line x1="8" y1="2" x2="8" y2="6"></line>
+                            <line x1="3" y1="10" x2="21" y2="10"></line>
+                        </svg>
+                        <span>Last Updated: <strong class="text-slate-800">October 24, 2026</strong></span>
+                    </div>
+                    <div class="flex items-center gap-2">
+                        <svg class="w-4 h-4 text-slate-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
+                            <polyline points="14 2 14 8 20 8"></polyline>
+                            <polyline points="9 15 11 17 15 13"></polyline>
+                        </svg>
+                        <span>Effective: <strong class="text-slate-800">January 1, 2026</strong></span>
+                    </div>
+                    <div class="flex items-center gap-2">
+                        <svg class="w-4 h-4 text-slate-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <circle cx="12" cy="12" r="10"></circle>
+                            <line x1="2" y1="12" x2="22" y2="12"></line>
+                            <path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"></path>
+                        </svg>
+                        <span>Applies to: <strong class="text-slate-800">Global &amp; On-Site Clients</strong></span>
+                    </div>
+                </div>
+
+                <a href="/"
+                   class="inline-flex items-center gap-2 border border-slate-300 text-slate-700 hover:border-slate-900 hover:text-slate-900 px-4 py-2 rounded-none font-medium text-xs uppercase tracking-wider transition-colors bg-white shadow-xs">
+                    <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <line x1="19" y1="12" x2="5" y2="12"></line>
+                        <polyline points="12 19 5 12 12 5"></polyline>
+                    </svg>
+                    <span>Back to Home</span>
+                </a>
+            </div>
+        </header>
+
+     
+        @* ── Sectioned Content Container ──────────────────────────────────── *@
+        <div class="bg-white border border-slate-200 rounded-xl shadow-xs p-8 sm:p-12 space-y-14">
+
+            @* ── SECTION 1: Information We Collect ────────────────────────── *@
+            <section id="collect" class="scroll-mt-28">
+                <div class="flex items-center gap-3 mb-4">
+                    <div class="w-9 h-9 rounded-lg bg-slate-100 text-slate-900 flex items-center justify-center shrink-0">
+                        <svg class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <ellipse cx="12" cy="5" rx="9" ry="3"></ellipse>
+                            <path d="M21 12c0 1.66-4 3-9 3s-9-1.34-9-3"></path>
+                            <path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5"></path>
+                        </svg>
+                    </div>
+                    <div>
+                        <span class="text-xs font-semibold uppercase tracking-widest text-slate-400">Section 01</span>
+                        <h2 class="text-2xl sm:text-3xl font-bold tracking-tight text-slate-900">Information We Collect</h2>
+                    </div>
+                </div>
+
+                <p class="text-slate-600 leading-relaxed mb-6 font-light">
+                    To deliver bespoke photography services and seamlessly manage studio reservations, Photo Aevum Studio collects only the information necessary for executing professional photo sessions and fulfilling client orders:
+                </p>
+
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div class="p-5 rounded-lg border border-slate-100 bg-slate-50/60 hover:bg-slate-50 transition-colors">
+                        <div class="flex items-center gap-2.5 font-semibold text-slate-900 text-sm mb-2">
+                            <svg class="w-4 h-4 text-slate-700" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path>
+                                <circle cx="12" cy="7" r="4"></circle>
+                            </svg>
+                            <span>Client Identification &amp; Contact</span>
+                        </div>
+                        <p class="text-xs text-slate-600 leading-relaxed font-light">
+                            Full legal name, email address, mobile phone number, and physical mailing address (for physical fine-art print deliveries or on-location shoot arrangements).
+                        </p>
+                    </div>
+
+                    <div class="p-5 rounded-lg border border-slate-100 bg-slate-50/60 hover:bg-slate-50 transition-colors">
+                        <div class="flex items-center gap-2.5 font-semibold text-slate-900 text-sm mb-2">
+                            <svg class="w-4 h-4 text-slate-700" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                <rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect>
+                                <line x1="16" y1="2" x2="16" y2="6"></line>
+                                <line x1="8" y1="2" x2="8" y2="6"></line>
+                                <line x1="3" y1="10" x2="21" y2="10"></line>
+                            </svg>
+                            <span>Booking &amp; Event Logistics</span>
+                        </div>
+                        <p class="text-xs text-slate-600 leading-relaxed font-light">
+                            Desired appointment date and time slots, session package preferences, shoot venue or studio bay selections, creative mood boards, and aesthetic shot lists.
+                        </p>
+                    </div>
+
+                    <div class="p-5 rounded-lg border border-slate-100 bg-slate-50/60 hover:bg-slate-50 transition-colors">
+                        <div class="flex items-center gap-2.5 font-semibold text-slate-900 text-sm mb-2">
+                            <svg class="w-4 h-4 text-slate-700" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"></path>
+                                <circle cx="12" cy="13" r="4"></circle>
+                            </svg>
+                            <span>Studio Photos &amp; Visual Media Assets</span>
+                        </div>
+                        <p class="text-xs text-slate-600 leading-relaxed font-light">
+                            High-resolution RAW camera files, proof contact sheets, retouching notes, client favorite selections, and finalized color-graded digital master photographs.
+                        </p>
+                    </div>
+
+                    <div class="p-5 rounded-lg border border-slate-100 bg-slate-50/60 hover:bg-slate-50 transition-colors">
+                        <div class="flex items-center gap-2.5 font-semibold text-slate-900 text-sm mb-2">
+                            <svg class="w-4 h-4 text-slate-700" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                <rect x="1" y="4" width="22" height="16" rx="2" ry="2"></rect>
+                                <line x1="1" y1="10" x2="23" y2="10"></line>
+                            </svg>
+                            <span>Payment &amp; Billing Records</span>
+                        </div>
+                        <p class="text-xs text-slate-600 leading-relaxed font-light">
+                            Transaction reference IDs, deposit amounts, and invoice statuses. Payment cards are tokenized directly via PCI-DSS certified gateways—our servers never store raw card numbers.
+                        </p>
+                    </div>
+                </div>
+            </section>
+
+            <hr class="border-slate-100" />
+
+            @* ── SECTION 2: How We Use Your Information ─────────────────────── *@
+            <section id="use" class="scroll-mt-28">
+                <div class="flex items-center gap-3 mb-4">
+                    <div class="w-9 h-9 rounded-lg bg-slate-100 text-slate-900 flex items-center justify-center shrink-0">
+                        <svg class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <rect x="2" y="7" width="20" height="14" rx="2" ry="2"></rect>
+                            <path d="M16 21V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v16"></path>
+                        </svg>
+                    </div>
+                    <div>
+                        <span class="text-xs font-semibold uppercase tracking-widest text-slate-400">Section 02</span>
+                        <h2 class="text-2xl sm:text-3xl font-bold tracking-tight text-slate-900">How We Use Your Information</h2>
+                    </div>
+                </div>
+
+                <p class="text-slate-600 leading-relaxed mb-6 font-light">
+                    We process client data solely for lawful, transparent operational and creative workflows:
+                </p>
+
+                <div class="space-y-4">
+                    <div class="flex items-start gap-3.5 p-4 rounded-lg bg-white border border-slate-200">
+                        <span class="w-6 h-6 rounded-full bg-slate-900 text-white flex items-center justify-center text-xs font-bold shrink-0 mt-0.5">1</span>
+                        <div>
+                            <h3 class="text-sm font-semibold text-slate-900 mb-1">Appointment Management &amp; Scheduling</h3>
+                            <p class="text-xs sm:text-sm text-slate-600 font-light leading-relaxed">
+                                Reserving studio bays, assigning dedicated photographers, scheduling pre-shoot creative consultations, and preventing double-booking conflicts across studio equipment and rooms.
+                            </p>
+                        </div>
+                    </div>
+
+                    <div class="flex items-start gap-3.5 p-4 rounded-lg bg-white border border-slate-200">
+                        <span class="w-6 h-6 rounded-full bg-slate-900 text-white flex items-center justify-center text-xs font-bold shrink-0 mt-0.5">2</span>
+                        <div>
+                            <h3 class="text-sm font-semibold text-slate-900 mb-1">Private Client Gallery Delivery &amp; Proofing</h3>
+                            <p class="text-xs sm:text-sm text-slate-600 font-light leading-relaxed">
+                                Generating authenticated, password-protected private gallery portals where you can securely preview unedited proofs, favorite selections for retouching, and download full-resolution master files.
+                            </p>
+                        </div>
+                    </div>
+
+                    <div class="flex items-start gap-3.5 p-4 rounded-lg bg-white border border-slate-200">
+                        <span class="w-6 h-6 rounded-full bg-slate-900 text-white flex items-center justify-center text-xs font-bold shrink-0 mt-0.5">3</span>
+                        <div>
+                            <h3 class="text-sm font-semibold text-slate-900 mb-1">Customer Support &amp; Studio Inquiries</h3>
+                            <p class="text-xs sm:text-sm text-slate-600 font-light leading-relaxed">
+                                Responding promptly to your date-change inquiries, custom pricing requests, equipment logistics, and post-session fulfillment questions.
+                            </p>
+                        </div>
+                    </div>
+
+                    <div class="flex items-start gap-3.5 p-4 rounded-lg bg-white border border-slate-200">
+                        <span class="w-6 h-6 rounded-full bg-slate-900 text-white flex items-center justify-center text-xs font-bold shrink-0 mt-0.5">4</span>
+                        <div>
+                            <h3 class="text-sm font-semibold text-slate-900 mb-1">Studio Communications &amp; Direct Alerts</h3>
+                            <p class="text-xs sm:text-sm text-slate-600 font-light leading-relaxed">
+                                Sending essential booking confirmations, digital invoices, gallery readiness notifications, and important weather/schedule updates for outdoor sessions.
+                            </p>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <hr class="border-slate-100" />
+
+            @* ── SECTION 3: Media Rights & Photography Portfolios ────────────── *@
+            <section id="rights" class="scroll-mt-28">
+                <div class="flex items-center gap-3 mb-4">
+                    <div class="w-9 h-9 rounded-lg bg-slate-100 text-slate-900 flex items-center justify-center shrink-0">
+                        <svg class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect>
+                            <circle cx="8.5" cy="8.5" r="1.5"></circle>
+                            <polyline points="21 15 16 10 5 21"></polyline>
+                        </svg>
+                    </div>
+                    <div>
+                        <span class="text-xs font-semibold uppercase tracking-widest text-slate-400">Section 03</span>
+                        <h2 class="text-2xl sm:text-3xl font-bold tracking-tight text-slate-900">Media Rights &amp; Photography Portfolios</h2>
+                    </div>
+                </div>
+
+                <p class="text-slate-600 leading-relaxed mb-6 font-light">
+                    Visual privacy is the cornerstone of our studio culture. We respect the dignity, privacy, and personal boundaries of every individual who steps into our studio or hires us for an event.
+                </p>
+
+                @* Highlighted Callout Box *@
+                <div class="p-6 bg-slate-900 text-white rounded-xl mb-6">
+                    <div class="flex items-center gap-3 mb-2">
+                        <svg class="w-5 h-5 text-amber-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"></polygon>
+                        </svg>
+                        <h3 class="text-base font-bold uppercase tracking-wider">Zero Portfolio Surprises Policy</h3>
+                    </div>
+                    <p class="text-xs sm:text-sm text-slate-300 font-light leading-relaxed">
+                        We never publish, display, or share client photographs on our public website, social media, or marketing materials without your explicit, voluntary written consent or a signed Model Release agreement. Your session stays 100% private by default.
+                    </p>
+                </div>
+
+                <div class="space-y-4">
+                    <div class="border-l-2 border-slate-900 pl-4 py-1">
+                        <h4 class="text-sm font-semibold text-slate-900 mb-1">Studio Privacy During Sessions</h4>
+                        <p class="text-xs sm:text-sm text-slate-600 font-light leading-relaxed">
+                            All portrait, boudoir, and commercial sessions operate in private closed-set environments. Unauthorized staff, third-party visitors, or behind-the-scenes recording are strictly prohibited during your session.
+                        </p>
+                    </div>
+
+                    <div class="border-l-2 border-slate-900 pl-4 py-1">
+                        <h4 class="text-sm font-semibold text-slate-900 mb-1">Portfolio Showcase &amp; Marketing Opt-In</h4>
+                        <p class="text-xs sm:text-sm text-slate-600 font-light leading-relaxed">
+                            Clients who wish to have their editorial portraits featured in our curated portfolio may choose to sign an opt-in release. You retain the absolute right to revoke this consent at any point in the future by notifying us in writing.
+                        </p>
+                    </div>
+
+                    <div class="border-l-2 border-slate-900 pl-4 py-1">
+                        <h4 class="text-sm font-semibold text-slate-900 mb-1">Copyright &amp; Personal Usage License</h4>
+                        <p class="text-xs sm:text-sm text-slate-600 font-light leading-relaxed">
+                            Under standard copyright law, Photo Aevum Studio retains authorship copyright of captured photographs. Upon settling your balance, clients receive a perpetual, royalty-free Personal Usage License allowing unlimited personal printing, archiving, and social media posting.
+                        </p>
+                    </div>
+                </div>
+            </section>
+
+            <hr class="border-slate-100" />
+
+            @* ── SECTION 4: Data Security & Storage ──────────────────────────── *@
+            <section id="security" class="scroll-mt-28">
+                <div class="flex items-center gap-3 mb-4">
+                    <div class="w-9 h-9 rounded-lg bg-slate-100 text-slate-900 flex items-center justify-center shrink-0">
+                        <svg class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect>
+                            <path d="M7 11V7a5 5 0 0 1 10 0v4"></path>
+                        </svg>
+                    </div>
+                    <div>
+                        <span class="text-xs font-semibold uppercase tracking-widest text-slate-400">Section 04</span>
+                        <h2 class="text-2xl sm:text-3xl font-bold tracking-tight text-slate-900">Data Security &amp; Storage</h2>
+                    </div>
+                </div>
+
+                <p class="text-slate-600 leading-relaxed mb-6 font-light">
+                    We employ enterprise-grade digital and physical security protocols to safeguard both personal client records and intellectual digital photographic assets:
+                </p>
+
+                <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <div class="p-5 border border-slate-200 rounded-lg">
+                        <div class="flex items-center gap-2 mb-2 font-semibold text-slate-900 text-sm">
+                            <svg class="w-4 h-4 text-slate-700" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                <rect x="4" y="4" width="16" height="16" rx="2" ry="2"></rect>
+                                <rect x="9" y="9" width="6" height="6"></rect>
+                                <line x1="9" y1="1" x2="9" y2="4"></line>
+                                <line x1="15" y1="1" x2="15" y2="4"></line>
+                                <line x1="9" y1="20" x2="9" y2="23"></line>
+                                <line x1="15" y1="20" x2="15" y2="23"></line>
+                                <line x1="20" y1="9" x2="23" y2="9"></line>
+                                <line x1="20" y1="14" x2="23" y2="14"></line>
+                                <line x1="1" y1="9" x2="4" y2="9"></line>
+                                <line x1="1" y1="14" x2="4" y2="14"></line>
+                            </svg>
+                            <span>Encryption in Transit &amp; at Rest</span>
+                        </div>
+                        <p class="text-xs text-slate-600 font-light leading-relaxed">
+                            All web traffic and private gallery interactions are encrypted via modern TLS 1.3 / SSL. Stored customer files and cold backups are protected by AES-256 bit encryption.
+                        </p>
+                    </div>
+
+                    <div class="p-5 border border-slate-200 rounded-lg">
+                        <div class="flex items-center gap-2 mb-2 font-semibold text-slate-900 text-sm">
+                            <svg class="w-4 h-4 text-slate-700" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                <line x1="22" y1="12" x2="2" y2="12"></line>
+                                <path d="M5.45 5.11L2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z"></path>
+                                <line x1="6" y1="16" x2="6.01" y2="16"></line>
+                                <line x1="10" y1="16" x2="10.01" y2="16"></line>
+                            </svg>
+                            <span>Dual Redundant Visual Backups</span>
+                        </div>
+                        <p class="text-xs text-slate-600 font-light leading-relaxed">
+                            Images are dual-recorded onto twin high-speed memory cards during shoots, backed up locally to encrypted studio RAID arrays, and synchronized to secure cloud repositories.
+                        </p>
+                    </div>
+
+                    <div class="p-5 border border-slate-200 rounded-lg">
+                        <div class="flex items-center gap-2 mb-2 font-semibold text-slate-900 text-sm">
+                            <svg class="w-4 h-4 text-slate-700" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                <path d="M21 2l-2 2m-1-1l-3 3m2 2l-3 3m-2-2l-3 3m-3-3a5 5 0 1 0 7 7l11-11a5 5 0 0 0-7-7z"></path>
+                            </svg>
+                            <span>Strict Role-Based Access</span>
+                        </div>
+                        <p class="text-xs text-slate-600 font-light leading-relaxed">
+                            Only assigned lead photographers and certified retouchers working directly on your project have authorized credential access to your visual assets and contact records.
+                        </p>
+                    </div>
+
+                    <div class="p-5 border border-slate-200 rounded-lg">
+                        <div class="flex items-center gap-2 mb-2 font-semibold text-slate-900 text-sm">
+                            <svg class="w-4 h-4 text-slate-700" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                <polyline points="21 8 21 21 3 21 3 8"></polyline>
+                                <rect x="1" y="3" width="22" height="5"></rect>
+                                <line x1="10" y1="12" x2="14" y2="12"></line>
+                            </svg>
+                            <span>Disciplined Asset Retention</span>
+                        </div>
+                        <p class="text-xs text-slate-600 font-light leading-relaxed">
+                            Delivered master galleries are archived in your private client portal for 12 months. Unselected RAW files are retained for 90 days after delivery before being securely wiped.
+                        </p>
+                    </div>
+                </div>
+            </section>
+
+            <hr class="border-slate-100" />
+
+            @* ── SECTION 5: Third-Party Services ────────────────────────────── *@
+            <section id="thirdparty" class="scroll-mt-28">
+                <div class="flex items-center gap-3 mb-4">
+                    <div class="w-9 h-9 rounded-lg bg-slate-100 text-slate-900 flex items-center justify-center shrink-0">
+                        <svg class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <polygon points="12 2 2 7 12 12 22 7 12 2"></polygon>
+                            <polyline points="2 17 12 22 22 17"></polyline>
+                            <polyline points="2 12 12 17 22 12"></polyline>
+                        </svg>
+                    </div>
+                    <div>
+                        <span class="text-xs font-semibold uppercase tracking-widest text-slate-400">Section 05</span>
+                        <h2 class="text-2xl sm:text-3xl font-bold tracking-tight text-slate-900">Third-Party Services</h2>
+                    </div>
+                </div>
+
+                <p class="text-slate-600 leading-relaxed mb-6 font-light">
+                    We partner only with verified, industry-certified external vendors who adhere to rigorous international data privacy standards. We will never sell, rent, or trade your personal information:
+                </p>
+
+                <div class="divide-y divide-slate-100 border border-slate-200 rounded-lg overflow-hidden text-xs sm:text-sm">
+                    <div class="p-4 bg-slate-50/50 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                        <div class="font-semibold text-slate-900 flex items-center gap-2">
+                            <svg class="w-4 h-4 text-slate-600" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                <rect x="1" y="4" width="22" height="16" rx="2" ry="2"></rect>
+                                <line x1="1" y1="10" x2="23" y2="10"></line>
+                            </svg>
+                            <span>External Payment Gateways</span>
+                        </div>
+                        <span class="text-xs text-slate-500 font-light">Stripe, GCash, Maya &amp; Bank Transfer (PCI-DSS Level 1 compliant)</span>
+                    </div>
+
+                    <div class="p-4 bg-white flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                        <div class="font-semibold text-slate-900 flex items-center gap-2">
+                            <svg class="w-4 h-4 text-slate-600" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                <path d="M18 10h-1.26A8 8 0 1 0 9 20h9a5 5 0 0 0 0-10z"></path>
+                            </svg>
+                            <span>Cloud Hosting &amp; CDN Vaults</span>
+                        </div>
+                        <span class="text-xs text-slate-500 font-light">Encrypted cloud delivery networks for instant private gallery asset downloads</span>
+                    </div>
+
+                    <div class="p-4 bg-slate-50/50 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                        <div class="font-semibold text-slate-900 flex items-center gap-2">
+                            <svg class="w-4 h-4 text-slate-600" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                <polyline points="6 9 6 2 18 2 18 9"></polyline>
+                                <path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"></path>
+                                <rect x="6" y="14" width="12" height="8"></rect>
+                            </svg>
+                            <span>Professional Fine-Art Print Labs</span>
+                        </div>
+                        <span class="text-xs text-slate-500 font-light">Certified labs bound by non-disclosure agreements to purge files post-printing</span>
+                    </div>
+
+                    <div class="p-4 bg-white flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                        <div class="font-semibold text-slate-900 flex items-center gap-2">
+                            <svg class="w-4 h-4 text-slate-600" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                <line x1="18" y1="20" x2="18" y2="10"></line>
+                                <line x1="12" y1="20" x2="12" y2="4"></line>
+                                <line x1="6" y1="20" x2="6" y2="14"></line>
+                            </svg>
+                            <span>Analytics Protocols</span>
+                        </div>
+                        <span class="text-xs text-slate-500 font-light">Anonymized, privacy-preserving performance metrics with zero behavioral ad tracking</span>
+                    </div>
+                </div>
+            </section>
+
+            <hr class="border-slate-100" />
+
+            @* ── SECTION 6: Your Rights & Contact Information ────────────────── *@
+            <section id="yourrights" class="scroll-mt-28">
+                <div class="flex items-center gap-3 mb-4">
+                    <div class="w-9 h-9 rounded-lg bg-slate-100 text-slate-900 flex items-center justify-center shrink-0">
+                        <svg class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"></path>
+                            <polyline points="22,6 12,13 2,6"></polyline>
+                        </svg>
+                    </div>
+                    <div>
+                        <span class="text-xs font-semibold uppercase tracking-widest text-slate-400">Section 06</span>
+                        <h2 class="text-2xl sm:text-3xl font-bold tracking-tight text-slate-900">Your Rights &amp; Contact Information</h2>
+                    </div>
+                </div>
+
+                <p class="text-slate-600 leading-relaxed mb-6 font-light">
+                    You maintain complete ownership of your personal profile and image rights under applicable data protection laws, including:
+                </p>
+
+                <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-8 text-xs sm:text-sm">
+                    <div class="flex items-start gap-2.5 p-3.5 bg-slate-50 rounded-lg border border-slate-100">
+                        <svg class="w-4 h-4 text-emerald-600 shrink-0 mt-0.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <polyline points="20 6 9 17 4 12"></polyline>
+                        </svg>
+                        <div>
+                            <strong class="text-slate-900 font-medium">Right to Access:</strong>
+                            <p class="text-xs text-slate-500 font-light mt-0.5">Request a copy of all personal records and visual media in our possession.</p>
+                        </div>
+                    </div>
+
+                    <div class="flex items-start gap-2.5 p-3.5 bg-slate-50 rounded-lg border border-slate-100">
+                        <svg class="w-4 h-4 text-emerald-600 shrink-0 mt-0.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <polyline points="20 6 9 17 4 12"></polyline>
+                        </svg>
+                        <div>
+                            <strong class="text-slate-900 font-medium">Right to Rectification:</strong>
+                            <p class="text-xs text-slate-500 font-light mt-0.5">Promptly correct inaccurate contact details or update billing addresses.</p>
+                        </div>
+                    </div>
+
+                    <div class="flex items-start gap-2.5 p-3.5 bg-slate-50 rounded-lg border border-slate-100">
+                        <svg class="w-4 h-4 text-emerald-600 shrink-0 mt-0.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <polyline points="20 6 9 17 4 12"></polyline>
+                        </svg>
+                        <div>
+                            <strong class="text-slate-900 font-medium">Right to Erasure ("Forget Me"):</strong>
+                            <p class="text-xs text-slate-500 font-light mt-0.5">Request permanent deletion of all stored gallery files, RAWs, and user accounts.</p>
+                        </div>
+                    </div>
+
+                    <div class="flex items-start gap-2.5 p-3.5 bg-slate-50 rounded-lg border border-slate-100">
+                        <svg class="w-4 h-4 text-emerald-600 shrink-0 mt-0.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <polyline points="20 6 9 17 4 12"></polyline>
+                        </svg>
+                        <div>
+                            <strong class="text-slate-900 font-medium">Right to Withdraw Consent:</strong>
+                            <p class="text-xs text-slate-500 font-light mt-0.5">Revoke any previously granted marketing or social media display permissions.</p>
+                        </div>
+                    </div>
+                </div>
+
+                @* Contact Card *@
+                <div class="p-6 sm:p-8 bg-slate-900 text-white rounded-xl">
+                    <div class="max-w-xl">
+                        <span class="text-xs font-semibold uppercase tracking-widest text-slate-400 mb-2 block">Direct Studio Privacy Inquiries</span>
+                        <h3 class="text-xl sm:text-2xl font-bold tracking-tight text-white mb-3">
+                            Have questions or want to request data deletion?
+                        </h3>
+                        <p class="text-xs sm:text-sm text-slate-300 font-light leading-relaxed mb-6">
+                            Our studio management handles all privacy inquiries directly. Please reach out with your session reference number or registered email address.
+                        </p>
+
+                        <div class="space-y-3 mb-6 text-xs sm:text-sm">
+                            <div class="flex items-center gap-3">
+                                <div class="w-7 h-7 rounded-full bg-white/10 flex items-center justify-center shrink-0">
+                                    <svg class="w-3.5 h-3.5 text-slate-200" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                        <path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"></path>
+                                        <polyline points="22,6 12,13 2,6"></polyline>
+                                    </svg>
+                                </div>
+                                <a href="mailto:photoaevumstudio@gmail.com" class="text-white hover:text-slate-200 font-medium underline underline-offset-4">
+                                    photoaevumstudio@gmail.com
+                                </a>
+                            </div>
+
+                            <div class="flex items-center gap-3">
+                                <div class="w-7 h-7 rounded-full bg-white/10 flex items-center justify-center shrink-0">
+                                    <svg class="w-3.5 h-3.5 text-slate-200" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                        <path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z"></path>
+                                    </svg>
+                                </div>
+                                <span class="text-slate-300">(+63) 919-578-93124</span>
+                            </div>
+
+                            <div class="flex items-center gap-3">
+                                <div class="w-7 h-7 rounded-full bg-white/10 flex items-center justify-center shrink-0">
+                                    <svg class="w-3.5 h-3.5 text-slate-200" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                        <circle cx="12" cy="12" r="10"></circle>
+                                        <polyline points="12 6 12 12 16 14"></polyline>
+                                    </svg>
+                                </div>
+                                <span class="text-slate-300">Response time: Within 24-48 business hours</span>
+                            </div>
+                        </div>
+
+                        <div class="flex flex-wrap gap-3">
+                            <a href="mailto:photoaevumstudio@gmail.com?subject=Privacy%20Policy%20Inquiry%20-%20Photo%20Aevum%20Studio"
+                               class="inline-flex items-center gap-2 bg-white text-slate-900 hover:bg-slate-100 px-5 py-2.5 rounded-none font-medium text-xs uppercase tracking-wider transition-colors shadow-xs">
+                                <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                    <line x1="22" y1="2" x2="11" y2="13"></line>
+                                    <polygon points="22 2 15 22 11 13 2 9 22 2"></polygon>
+                                </svg>
+                                <span>Send Privacy Email</span>
+                            </a>
+                            <a href="/"
+                               class="inline-flex items-center gap-2 border border-slate-700 hover:border-slate-500 text-white px-5 py-2.5 rounded-none font-medium text-xs uppercase tracking-wider transition-colors">
+                                <span>Back to Home</span>
+                            </a>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+        </div>
+
+        @* ── Bottom Navigation & Quick Actions ────────────────────────────── *@
+        <div class="mt-12 flex flex-col sm:flex-row items-center justify-between gap-6 pt-8 border-t border-slate-200">
+            <a href="/"
+               class="w-full sm:w-auto inline-flex items-center justify-center gap-2 border border-slate-300 text-slate-700 hover:border-slate-900 hover:text-slate-900 px-6 py-3 rounded-none font-medium text-xs uppercase tracking-wider transition-colors bg-white shadow-xs">
+                <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <line x1="19" y1="12" x2="5" y2="12"></line>
+                    <polyline points="12 19 5 12 12 5"></polyline>
+                </svg>
+                <span>Back to Home</span>
+            </a>
+
+            <div class="flex items-center gap-3 w-full sm:w-auto justify-end">
+                <button type="button"
+                        @onclick="ScrollToTop"
+                        class="w-full sm:w-auto inline-flex items-center justify-center gap-2 border border-slate-300 text-slate-700 hover:border-slate-900 hover:text-slate-900 px-5 py-3 rounded-none font-medium text-xs uppercase tracking-wider transition-colors bg-white shadow-xs cursor-pointer">
+                    <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <line x1="12" y1="19" x2="12" y2="5"></line>
+                        <polyline points="5 12 12 5 19 12"></polyline>
+                    </svg>
+                    <span>Back to Top</span>
+                </button>
+
+                <a href="/schedule"
+                   class="w-full sm:w-auto inline-flex items-center justify-center gap-2 bg-slate-900 hover:bg-black text-white px-6 py-3 rounded-none font-medium text-xs uppercase tracking-wider transition-colors shadow-xs">
+                    <span>Schedule Appointment</span>
+                    <span aria-hidden="true">&rarr;</span>
+                </a>
+            </div>
+        </div>
+
+    </div>
+</div>
+
+@code {
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        try
+        {
+            await JS.InvokeVoidAsync("lucide.createIcons");
+        }
+        catch
+        {
+            // Fail gracefully if Lucide or JS runtime is not available
+        }
+    }
+
+    private async Task ScrollToTop()
+    {
+        try
+        {
+            await JS.InvokeVoidAsync("window.scrollTo", new { top = 0, behavior = "smooth" });
+        }
+        catch
+        {
+            // Fail gracefully
+        }
+    }
+}

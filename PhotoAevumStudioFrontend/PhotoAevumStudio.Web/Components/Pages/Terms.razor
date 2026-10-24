@@ -1,0 +1,433 @@
+@page "/terms"
+@rendermode InteractiveServer
+@inject NavigationManager NavigationManager
+@inject IJSRuntime JS
+
+<PageTitle>Terms of Service | Photo Aevum Studio</PageTitle>
+
+@* ── Minimalist Sticky Sub-Header ────────────────────────────────────────── *@
+<header class="sticky top-0 z-40 bg-white/95 backdrop-blur-md border-b border-slate-200/80 transition-all">
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-20 flex items-center justify-between">
+        @* Studio Brand Logo & Title *@
+        <a href="/" class="flex items-center gap-3 group">
+            <img src="images/AevumLogo.jpg" alt="Photo Aevum Logo" class="h-9 w-auto rounded-full transition-transform group-hover:scale-105" />
+            <span class="font-bold text-lg tracking-tight uppercase tracking-widest text-slate-900">Photo Aevum Studio</span>
+        </a>
+
+        @* Header Actions *@
+        <div class="flex items-center gap-3">
+            <a href="/"
+               class="inline-flex items-center gap-2 border border-slate-300 text-slate-700 hover:border-slate-900 hover:text-slate-900 px-4 py-2 rounded-none font-medium text-xs uppercase tracking-wider transition-colors bg-white">
+                <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <line x1="19" y1="12" x2="5" y2="12"></line>
+                    <polyline points="12 19 5 12 12 5"></polyline>
+                </svg>
+                <span>Back to Home</span>
+            </a>
+            <a href="/schedule"
+               class="hidden sm:inline-flex items-center gap-1.5 bg-slate-900 hover:bg-black text-white px-5 py-2 rounded-none font-medium text-xs uppercase tracking-wider transition-colors">
+                <span>Book Session</span>
+                <span aria-hidden="true">&rarr;</span>
+            </a>
+        </div>
+    </div>
+</header>
+
+@* ── Main Terms of Service Content Canvas ────────────────────────────────── *@
+<div class="bg-[#FAF9F6] min-h-screen text-slate-900">
+    <div class="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-16 sm:py-24">
+
+        @* ── Breadcrumb Navigation ────────────────────────────────────────── *@
+        <nav class="flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-slate-500 mb-8" aria-label="Breadcrumb">
+            <a href="/" class="hover:text-slate-900 transition-colors">Home</a>
+            <span class="text-slate-400">/</span>
+            <span class="text-slate-500">Legal</span>
+            <span class="text-slate-400">/</span>
+            <span class="text-slate-900 font-bold">Terms of Service</span>
+        </nav>
+
+        @* ── Minimalist Hero Header ───────────────────────────────────────── *@
+        <header class="mb-12 sm:mb-16">
+            <div class="inline-flex items-center gap-2 px-3 py-1 bg-slate-900 text-white text-[11px] font-semibold uppercase tracking-widest rounded-none mb-6">
+                <svg class="w-3.5 h-3.5 text-amber-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
+                    <polyline points="14 2 14 8 20 8"></polyline>
+                    <line x1="16" y1="13" x2="8" y2="13"></line>
+                    <line x1="16" y1="17" x2="8" y2="17"></line>
+                    <polyline points="10 9 9 9 8 9"></polyline>
+                </svg>
+                <span>Studio Legal Agreement</span>
+            </div>
+
+            <h1 class="text-4xl sm:text-5xl lg:text-6xl font-bold tracking-tight text-slate-900 leading-tight mb-6 uppercase tracking-widest">
+                Terms of Service
+            </h1>
+
+            <p class="text-lg sm:text-xl text-slate-600 font-light leading-relaxed mb-8 max-w-3xl">
+                These Terms of Service govern your relationship with Photo Aevum Studio. By booking a photography session, reserving studio bays, commissioning creative visual works, or utilizing our private client portals, you agree to these transparent terms.
+            </p>
+
+            @* Metadata Row & Top Back Link *@
+            <div class="pt-6 border-t border-slate-200 flex flex-wrap items-center justify-between gap-4 text-xs">
+                <div class="flex flex-wrap items-center gap-6 text-slate-500 font-medium">
+                    <div class="flex items-center gap-2">
+                        <svg class="w-4 h-4 text-slate-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect>
+                            <line x1="16" y1="2" x2="16" y2="6"></line>
+                            <line x1="8" y1="2" x2="8" y2="6"></line>
+                            <line x1="3" y1="10" x2="21" y2="10"></line>
+                        </svg>
+                        <span>Last Updated: <strong class="text-slate-800">October 24, 2026</strong></span>
+                    </div>
+                    <div class="flex items-center gap-2">
+                        <svg class="w-4 h-4 text-slate-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
+                            <polyline points="14 2 14 8 20 8"></polyline>
+                        </svg>
+                        <span>Effective: <strong class="text-slate-800">January 1, 2026</strong></span>
+                    </div>
+                    <div class="flex items-center gap-2">
+                        <svg class="w-4 h-4 text-slate-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <circle cx="12" cy="12" r="10"></circle>
+                            <line x1="2" y1="12" x2="22" y2="12"></line>
+                            <path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"></path>
+                        </svg>
+                        <span>Applies to: <strong class="text-slate-800">All Clients &amp; Bookings</strong></span>
+                    </div>
+                </div>
+
+                <a href="/"
+                   class="inline-flex items-center gap-2 border border-slate-300 text-slate-700 hover:border-slate-900 hover:text-slate-900 px-4 py-2 rounded-none font-medium text-xs uppercase tracking-wider transition-colors bg-white shadow-xs">
+                    <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <line x1="19" y1="12" x2="5" y2="12"></line>
+                        <polyline points="12 19 5 12 12 5"></polyline>
+                    </svg>
+                    <span>Back to Home</span>
+                </a>
+            </div>
+        </header>
+
+        @* ── Table of Contents Pill Bar ───────────────────────────────────── *@
+        <div class="bg-white border border-slate-200 rounded-none p-4 sm:p-5 mb-10 shadow-xs">
+            <p class="text-xs font-bold uppercase tracking-widest text-slate-400 mb-3 flex items-center gap-2">
+                <svg class="w-3.5 h-3.5 text-slate-500" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <line x1="8" y1="6" x2="21" y2="6"></line>
+                    <line x1="8" y1="12" x2="21" y2="12"></line>
+                    <line x1="8" y1="18" x2="21" y2="18"></line>
+                    <line x1="3" y1="6" x2="3.01" y2="6"></line>
+                    <line x1="3" y1="12" x2="3.01" y2="12"></line>
+                    <line x1="3" y1="18" x2="3.01" y2="18"></line>
+                </svg>
+                Table of Contents
+            </p>
+            <div class="flex flex-wrap gap-2 text-xs">
+                <a href="#services" class="px-3 py-1.5 bg-slate-50 hover:bg-slate-900 hover:text-white text-slate-700 font-medium rounded-none transition-colors border border-slate-200">1. Studio Services &amp; Booking</a>
+                <a href="#cancellation" class="px-3 py-1.5 bg-slate-50 hover:bg-slate-900 hover:text-white text-slate-700 font-medium rounded-none transition-colors border border-slate-200">2. Cancellation &amp; Refund Policy</a>
+                <a href="#copyright" class="px-3 py-1.5 bg-slate-50 hover:bg-slate-900 hover:text-white text-slate-700 font-medium rounded-none transition-colors border border-slate-200">3. Copyright &amp; Usage Rights</a>
+                <a href="#liability" class="px-3 py-1.5 bg-slate-50 hover:bg-slate-900 hover:text-white text-slate-700 font-medium rounded-none transition-colors border border-slate-200">4. Client Conduct &amp; Liability</a>
+                <a href="#delivery" class="px-3 py-1.5 bg-slate-50 hover:bg-slate-900 hover:text-white text-slate-700 font-medium rounded-none transition-colors border border-slate-200">5. Digital Delivery &amp; Archival</a>
+            </div>
+        </div>
+
+        @* ── Sectioned Content Container ──────────────────────────────────── *@
+        <div class="bg-white border border-slate-200 rounded-none shadow-xs p-8 sm:p-12 space-y-14">
+
+            @* ── SECTION 1: Studio Services & Booking Policy ──────────────── *@
+            <section id="services" class="scroll-mt-28">
+                <div class="flex items-center gap-3 mb-4">
+                    <div class="w-9 h-9 rounded-none bg-slate-100 text-slate-900 flex items-center justify-center shrink-0">
+                        <svg class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect>
+                            <line x1="16" y1="2" x2="16" y2="6"></line>
+                            <line x1="8" y1="2" x2="8" y2="6"></line>
+                            <line x1="3" y1="10" x2="21" y2="10"></line>
+                        </svg>
+                    </div>
+                    <div>
+                        <span class="text-xs font-semibold uppercase tracking-widest text-slate-400">Section 01</span>
+                        <h2 class="text-2xl sm:text-3xl font-bold tracking-tight text-slate-900">Studio Services &amp; Booking Policy</h2>
+                    </div>
+                </div>
+
+                <p class="text-slate-600 leading-relaxed mb-6 font-light">
+                    Every session at Photo Aevum Studio is crafted with meticulous preparation, equipment staging, and dedicated studio time.
+                </p>
+
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div class="p-5 rounded-none border border-slate-200 bg-slate-50/60 hover:bg-slate-50 transition-colors">
+                        <div class="flex items-center gap-2.5 font-semibold text-slate-900 text-sm mb-2">
+                            <svg class="w-4 h-4 text-slate-700" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                <rect x="1" y="4" width="22" height="16" rx="2" ry="2"></rect>
+                                <line x1="1" y1="10" x2="23" y2="10"></line>
+                            </svg>
+                            <span>50% Retainer Deposit</span>
+                        </div>
+                        <p class="text-xs text-slate-600 leading-relaxed font-light">
+                            A non-refundable retainer deposit of 50% of the session package price is required at booking to lock in the calendar date, bay allocation, and primary photographer.
+                        </p>
+                    </div>
+
+                    <div class="p-5 rounded-none border border-slate-200 bg-slate-50/60 hover:bg-slate-50 transition-colors">
+                        <div class="flex items-center gap-2.5 font-semibold text-slate-900 text-sm mb-2">
+                            <svg class="w-4 h-4 text-slate-700" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                <circle cx="12" cy="12" r="10"></circle>
+                                <polyline points="12 6 12 12 16 14"></polyline>
+                            </svg>
+                            <span>Punctuality &amp; Session Duration</span>
+                        </div>
+                        <p class="text-xs text-slate-600 leading-relaxed font-light">
+                            Sessions start promptly at the scheduled time. Arriving late reduces the active shooting window. Additional overtime, if available, is billed at ₱1,500 per 30 minutes.
+                        </p>
+                    </div>
+
+                    <div class="p-5 rounded-none border border-slate-200 bg-slate-50/60 hover:bg-slate-50 transition-colors">
+                        <div class="flex items-center gap-2.5 font-semibold text-slate-900 text-sm mb-2">
+                            <svg class="w-4 h-4 text-slate-700" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                <path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.57-8.38l6-6.19"></path>
+                            </svg>
+                            <span>Complimentary Rescheduling</span>
+                        </div>
+                        <p class="text-xs text-slate-600 leading-relaxed font-light">
+                            Clients receive one complimentary reschedule when requested at least 48 hours in advance. New dates must occur within 60 calendar days of the original date.
+                        </p>
+                    </div>
+
+                    <div class="p-5 rounded-none border border-slate-200 bg-slate-50/60 hover:bg-slate-50 transition-colors">
+                        <div class="flex items-center gap-2.5 font-semibold text-slate-900 text-sm mb-2">
+                            <svg class="w-4 h-4 text-slate-700" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path>
+                                <polyline points="22 4 12 14.01 9 11.01"></polyline>
+                            </svg>
+                            <span>Balance Settlement</span>
+                        </div>
+                        <p class="text-xs text-slate-600 leading-relaxed font-light">
+                            The remaining 50% balance must be settled upon arrival at the studio or prior to shooting for on-location and commercial assignments.
+                        </p>
+                    </div>
+                </div>
+            </section>
+
+            <hr class="border-slate-100" />
+
+            @* ── SECTION 2: Cancellation & Refund Policy ──────────────────── *@
+            <section id="cancellation" class="scroll-mt-28">
+                <div class="flex items-center gap-3 mb-4">
+                    <div class="w-9 h-9 rounded-none bg-slate-100 text-slate-900 flex items-center justify-center shrink-0">
+                        <svg class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <circle cx="12" cy="12" r="10"></circle>
+                            <line x1="15" y1="9" x2="9" y2="15"></line>
+                            <line x1="9" y1="9" x2="15" y2="15"></line>
+                        </svg>
+                    </div>
+                    <div>
+                        <span class="text-xs font-semibold uppercase tracking-widest text-slate-400">Section 02</span>
+                        <h2 class="text-2xl sm:text-3xl font-bold tracking-tight text-slate-900">Cancellation &amp; Refund Policy</h2>
+                    </div>
+                </div>
+
+                <div class="space-y-4">
+                    <div class="p-5 border border-slate-200 rounded-none bg-white">
+                        <h3 class="text-sm font-semibold text-slate-900 mb-1">Notice of Cancellation</h3>
+                        <p class="text-xs sm:text-sm text-slate-600 font-light leading-relaxed">
+                            Cancellations made more than 7 days prior to the session date can transfer the deposit toward future studio credit valid for 6 months. Cancellations made fewer than 48 hours prior or no-shows forfeit the retainer deposit entirely to offset staging costs and unbookable studio time.
+                        </p>
+                    </div>
+
+                    <div class="p-5 border border-slate-200 rounded-none bg-white">
+                        <h3 class="text-sm font-semibold text-slate-900 mb-1">Studio Cancellation &amp; Force Majeure</h3>
+                        <p class="text-xs sm:text-sm text-slate-600 font-light leading-relaxed">
+                            If Photo Aevum Studio cannot fulfill a booking due to emergency, severe weather, or force majeure, the client will be offered an immediate priority reschedule or a 100% full refund of all payments made.
+                        </p>
+                    </div>
+
+                    <div class="p-5 border border-slate-200 rounded-none bg-white">
+                        <h3 class="text-sm font-semibold text-slate-900 mb-1">Custom Print Products &amp; Post-Production</h3>
+                        <p class="text-xs sm:text-sm text-slate-600 font-light leading-relaxed">
+                            Retouching hours and custom manufactured items (such as fine-art albums, acrylic frames, and canvas prints) are custom made and cannot be refunded once processing or printing has begun.
+                        </p>
+                    </div>
+                </div>
+            </section>
+
+            <hr class="border-slate-100" />
+
+            @* ── SECTION 3: Copyright & Image Usage Rights ────────────────── *@
+            <section id="copyright" class="scroll-mt-28">
+                <div class="flex items-center gap-3 mb-4">
+                    <div class="w-9 h-9 rounded-none bg-slate-100 text-slate-900 flex items-center justify-center shrink-0">
+                        <svg class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <circle cx="12" cy="12" r="10"></circle>
+                            <path d="M14.83 14.83a4 4 0 1 1 0-5.66"></path>
+                        </svg>
+                    </div>
+                    <div>
+                        <span class="text-xs font-semibold uppercase tracking-widest text-slate-400">Section 03</span>
+                        <h2 class="text-2xl sm:text-3xl font-bold tracking-tight text-slate-900">Copyright &amp; Image Usage Rights</h2>
+                    </div>
+                </div>
+
+                @* Highlighted Callout Box *@
+                <div class="p-6 bg-slate-900 text-white rounded-none mb-6">
+                    <div class="flex items-center gap-3 mb-2">
+                        <svg class="w-5 h-5 text-amber-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"></polygon>
+                        </svg>
+                        <h3 class="text-base font-bold uppercase tracking-wider">Clear Licensing Principles</h3>
+                    </div>
+                    <p class="text-xs sm:text-sm text-slate-300 font-light leading-relaxed">
+                        Under international copyright law, Photo Aevum Studio holds the statutory copyright to all original creative captures. Our clients receive generous personal display licenses, while commercial campaigns require specific written licensing agreements.
+                    </p>
+                </div>
+
+                <div class="space-y-4">
+                    <div class="border-l-2 border-slate-900 pl-4 py-1">
+                        <h4 class="text-sm font-semibold text-slate-900 mb-1">Personal Usage License</h4>
+                        <p class="text-xs sm:text-sm text-slate-600 font-light leading-relaxed">
+                            Clients receive a non-exclusive, perpetual license for personal printing, framing, and social media posting. You are free to share your images with friends and family. Commercial resale or transferring images to third-party brands is prohibited without an explicit commercial license.
+                        </p>
+                    </div>
+
+                    <div class="border-l-2 border-slate-900 pl-4 py-1">
+                        <h4 class="text-sm font-semibold text-slate-900 mb-1">Commercial &amp; Editorial Licensing</h4>
+                        <p class="text-xs sm:text-sm text-slate-600 font-light leading-relaxed">
+                            For corporate branding, lookbooks, merchandise, digital advertisements, or billboard placements, custom commercial licensing agreements detailing duration and geographic distribution will be executed.
+                        </p>
+                    </div>
+
+                    <div class="border-l-2 border-slate-900 pl-4 py-1">
+                        <h4 class="text-sm font-semibold text-slate-900 mb-1">Portfolio &amp; Model Release</h4>
+                        <p class="text-xs sm:text-sm text-slate-600 font-light leading-relaxed">
+                            We value your artistic privacy. We only showcase client portraits in our studio portfolio or social media when the client signs an opt-in release. You retain the right to request removal of your images from our public gallery at any time.
+                        </p>
+                    </div>
+                </div>
+            </section>
+
+            <hr class="border-slate-100" />
+
+            @* ── SECTION 4: Client Conduct & Studio Liability ─────────────── *@
+            <section id="liability" class="scroll-mt-28">
+                <div class="flex items-center gap-3 mb-4">
+                    <div class="w-9 h-9 rounded-none bg-slate-100 text-slate-900 flex items-center justify-center shrink-0">
+                        <svg class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path>
+                        </svg>
+                    </div>
+                    <div>
+                        <span class="text-xs font-semibold uppercase tracking-widest text-slate-400">Section 04</span>
+                        <h2 class="text-2xl sm:text-3xl font-bold tracking-tight text-slate-900">Client Conduct &amp; Studio Liability</h2>
+                    </div>
+                </div>
+
+                <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <div class="p-5 border border-slate-200 rounded-none bg-white">
+                        <h3 class="text-sm font-semibold text-slate-900 mb-1">Studio Gear &amp; Property</h3>
+                        <p class="text-xs text-slate-600 font-light leading-relaxed">
+                            Clients agree to treat studio lighting rigs, cameras, and physical props with care. Any damage caused by willful negligence will be billed to the primary booking client at replacement cost.
+                        </p>
+                    </div>
+
+                    <div class="p-5 border border-slate-200 rounded-none bg-white">
+                        <h3 class="text-sm font-semibold text-slate-900 mb-1">Minors &amp; Chaperones</h3>
+                        <p class="text-xs text-slate-600 font-light leading-relaxed">
+                            Clients under 18 years of age must be accompanied by a legal parent or guardian throughout the session. Studio staff will maintain a safe, welcoming, and professional atmosphere.
+                        </p>
+                    </div>
+
+                    <div class="p-5 border border-slate-200 rounded-none bg-white">
+                        <h3 class="text-sm font-semibold text-slate-900 mb-1">Personal Valuables</h3>
+                        <p class="text-xs text-slate-600 font-light leading-relaxed">
+                            Photo Aevum Studio cannot assume responsibility for personal belongings, jewelry, wardrobe pieces, or electronics brought onto the premises. Clients are encouraged to keep valuables attended.
+                        </p>
+                    </div>
+
+                    <div class="p-5 border border-slate-200 rounded-none bg-white">
+                        <h3 class="text-sm font-semibold text-slate-900 mb-1">Limitation of Liability</h3>
+                        <p class="text-xs text-slate-600 font-light leading-relaxed">
+                            In any dispute arising from a session or media delivery, the maximum aggregate financial liability of Photo Aevum Studio is limited to the total fees paid by the client for that specific booking.
+                        </p>
+                    </div>
+                </div>
+            </section>
+
+            <hr class="border-slate-100" />
+
+            @* ── SECTION 5: Digital Delivery & Archive Retention ──────────── *@
+            <section id="delivery" class="scroll-mt-28">
+                <div class="flex items-center gap-3 mb-4">
+                    <div class="w-9 h-9 rounded-none bg-slate-100 text-slate-900 flex items-center justify-center shrink-0">
+                        <svg class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                            <polyline points="7 10 12 15 17 10"></polyline>
+                            <line x1="12" y1="15" x2="12" y2="3"></line>
+                        </svg>
+                    </div>
+                    <div>
+                        <span class="text-xs font-semibold uppercase tracking-widest text-slate-400">Section 05</span>
+                        <h2 class="text-2xl sm:text-3xl font-bold tracking-tight text-slate-900">Digital Delivery &amp; Archival Retention</h2>
+                    </div>
+                </div>
+
+                <div class="space-y-4 text-xs sm:text-sm text-slate-600 font-light leading-relaxed">
+                    <p>
+                        <strong>Proofing Gallery:</strong> Watermarked proof contact sheets are uploaded to your private client portal within <strong>3 to 5 business days</strong> following the photo session.
+                    </p>
+                    <p>
+                        <strong>Master Retouched Deliverables:</strong> High-resolution, color-graded master images are delivered within <strong>10 to 14 business days</strong> following receipt of your final image selections.
+                    </p>
+                    <p>
+                        <strong>Archive Guarantee:</strong> Digital client galleries remain online and downloadable for <strong>12 months</strong>. Unselected RAW camera files are archived for 90 days before permanent deletion.
+                    </p>
+                </div>
+            </section>
+
+            @* Direct Inquiries Card *@
+            <div class="p-6 sm:p-8 bg-slate-900 text-white rounded-none">
+                <div class="max-w-xl">
+                    <span class="text-xs font-semibold uppercase tracking-widest text-slate-400 mb-2 block">Direct Studio Legal Inquiries</span>
+                    <h3 class="text-xl sm:text-2xl font-bold tracking-tight text-white mb-3">
+                        Have questions regarding our terms or custom commercial contracts?
+                    </h3>
+                    <p class="text-xs sm:text-sm text-slate-300 font-light leading-relaxed mb-6">
+                        Our studio team is available to assist with custom commercial licensing, model release agreements, and shoot scheduling.
+                    </p>
+
+                    <div class="space-y-3 mb-6 text-xs sm:text-sm">
+                        <div class="flex items-center gap-3">
+                            <div class="w-7 h-7 rounded-none bg-white/10 flex items-center justify-center shrink-0">
+                                <svg class="w-3.5 h-3.5 text-slate-200" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                    <path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"></path>
+                                    <polyline points="22,6 12,13 2,6"></polyline>
+                                </svg>
+                            </div>
+                            <a href="mailto:photoaevumstudio@gmail.com" class="text-white hover:text-slate-200 font-medium underline underline-offset-4">
+                                photoaevumstudio@gmail.com
+                            </a>
+                        </div>
+                        <div class="flex items-center gap-3">
+                            <div class="w-7 h-7 rounded-none bg-white/10 flex items-center justify-center shrink-0">
+                                <svg class="w-3.5 h-3.5 text-slate-200" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                    <path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z"></path>
+                                </svg>
+                            </div>
+                            <span class="text-slate-200 font-medium">(+63) 919-578-93124</span>
+                        </div>
+                    </div>
+
+                    <div class="pt-4 border-t border-white/10 flex flex-wrap gap-4">
+                        <a href="/schedule"
+                           class="inline-flex items-center gap-2 bg-white text-slate-900 hover:bg-slate-100 px-6 py-2.5 rounded-none font-medium text-xs uppercase tracking-wider transition-colors">
+                            <span>Book a Session</span>
+                            <span aria-hidden="true">&rarr;</span>
+                        </a>
+                        <a href="/privacy"
+                           class="inline-flex items-center gap-2 border border-slate-700 text-slate-300 hover:text-white hover:border-white px-6 py-2.5 rounded-none font-medium text-xs uppercase tracking-wider transition-colors">
+                            <span>View Privacy Policy</span>
+                        </a>
+                    </div>
+                </div>
+            </div>
+
+        </div>
+    </div>
+</div>

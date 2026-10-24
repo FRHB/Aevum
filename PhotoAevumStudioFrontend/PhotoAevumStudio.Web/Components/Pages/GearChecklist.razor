@@ -1,0 +1,75 @@
+@page "/staff/gear"
+@layout EmployeeLayout
+@using PhotoAevumStudio.Web.Services
+@inject IUserService UserService
+@attribute [Authorize(Roles = "Employee")]
+
+<PageTitle>Gear Checklist</PageTitle>
+
+<div class="max-w-4xl mx-auto py-10 px-6">
+    <div class="flex justify-between items-center mb-8">
+        <h1 class="text-3xl font-bold">Gear Checklist</h1>
+        <a href="/staff" class="text-teal-600 hover:underline">Back to Dashboard</a>
+    </div>
+
+    <div class="bg-white border rounded-xl overflow-hidden shadow-sm p-6 mb-6">
+        <h2 class="text-xl font-bold mb-4">Checkout Gear</h2>
+        <div class="flex gap-4 mb-4">
+            <select class="border rounded-md text-sm p-2 flex-1 bg-white" @bind="selectedEquipmentId">
+                <option value="">Select Equipment...</option>
+                @foreach (var eq in EquipmentItems.Where(e => e.Status == "Available"))
+                {
+                    <option value="@eq.Id">@eq.Name (ID: @eq.Id)</option>
+                }
+            </select>
+            <button class="bg-teal-600 text-white px-6 py-2 rounded-md font-semibold text-sm hover:bg-teal-700" disabled="@(!EquipmentItems.Any())">Checkout</button>
+        </div>
+    </div>
+
+    <div class="bg-white border rounded-xl overflow-hidden shadow-sm">
+        <table class="w-full text-left text-sm border-collapse">
+            <thead class="bg-gray-50 border-b border-gray-200 text-gray-500 uppercase text-xs font-semibold">
+                <tr>
+                    <th class="px-6 py-4">Item</th>
+                    <th class="px-6 py-4">Category</th>
+                    <th class="px-6 py-4 text-right">Status</th>
+                </tr>
+            </thead>
+            <tbody class="divide-y divide-gray-100">
+                @if (!EquipmentItems.Any())
+                {
+                    <tr>
+                        <td colspan="3" class="px-6 py-12 text-center text-gray-500">
+                            No equipment records found in the database.
+                        </td>
+                    </tr>
+                }
+                else
+                {
+                    @foreach (var item in EquipmentItems)
+                    {
+                        <tr class="hover:bg-gray-50">
+                            <td class="px-6 py-4 font-bold text-gray-900">@item.Name</td>
+                            <td class="px-6 py-4 text-gray-500">@item.Category</td>
+                            <td class="px-6 py-4 text-right">
+                                <span class="px-2.5 py-1 rounded-full text-xs font-medium @(item.Status == "Available" ? "bg-green-100 text-green-800" : "bg-yellow-100 text-yellow-800")">
+                                    @item.Status
+                                </span>
+                            </td>
+                        </tr>
+                    }
+                }
+            </tbody>
+        </table>
+    </div>
+</div>
+
+@code {
+    private string selectedEquipmentId = string.Empty;
+    private List<EquipmentRow> EquipmentItems = new();
+
+    protected override void OnInitialized()
+    {
+        EquipmentItems = UserService.GetEquipmentRows();
+    }
+}

@@ -1,0 +1,889 @@
+@using System.Net.Http.Headers
+@using System.Text.RegularExpressions
+@using Microsoft.AspNetCore.Components.Forms
+@using PhotoAevumStudio.Web.Models
+@using PhotoAevumStudio.Web.Services
+@inject IHttpClientFactory HttpClientFactory
+@inject IEquipmentService EquipmentService
+@inject ILogger<AddEquipmentWizard> Logger
+@attribute [Authorize(Roles = "Admin")]
+
+@if (IsOpen)
+{
+    <div class="fixed inset-0 z-50 overflow-y-auto bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 animate-in fade-in duration-150">
+        <div class="relative bg-white rounded-2xl shadow-2xl border border-slate-200 w-full max-w-2xl overflow-hidden animate-in zoom-in-95 duration-150 flex flex-col">
+            
+            <!-- ══════════════════════════════════════════════════════════════════ -->
+            <!-- MODAL HEADER                                                       -->
+            <!-- ══════════════════════════════════════════════════════════════════ -->
+            <div class="px-6 py-4 bg-slate-900 text-white flex items-center justify-between">
+                <div class="flex items-center gap-3">
+                    <div class="w-8 h-8 rounded-lg bg-emerald-500 text-slate-950 flex items-center justify-center font-bold text-sm shadow-xs">
+                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M12 4v16m8-8H4" />
+                        </svg>
+                    </div>
+                    <div>
+                        <h2 class="text-base font-bold text-white leading-tight">Register New Equipment</h2>
+                        <p class="text-[11px] text-slate-300">Studio hardware inventory registration wizard</p>
+                    </div>
+                </div>
+
+                <div class="flex items-center gap-3">
+                    <span class="text-[11px] font-semibold uppercase tracking-wider px-2.5 py-0.5 rounded-full bg-slate-800 text-slate-300 border border-slate-700">
+                        Step @currentStep of 3
+                    </span>
+                    <button type="button" 
+                            @onclick="CloseModalAsync" 
+                            disabled="@isSubmitting"
+                            class="text-slate-400 hover:text-white text-lg font-bold p-1 transition-colors disabled:opacity-40">
+                        &times;
+                    </button>
+                </div>
+            </div>
+
+            <!-- ══════════════════════════════════════════════════════════════════ -->
+            <!-- PROGRESS STEPPER                                                   -->
+            <!-- ══════════════════════════════════════════════════════════════════ -->
+            <div class="px-6 py-3.5 bg-slate-50/90 border-b border-slate-200">
+                <div class="flex items-center justify-between max-w-lg mx-auto">
+                    
+                    <!-- Stepper Item 1 -->
+                    <div class="flex items-center gap-2">
+                        <div class="w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold transition-all @(currentStep == 1 ? "bg-slate-900 text-white ring-2 ring-slate-900/20" : (currentStep > 1 ? "bg-emerald-600 text-white" : "bg-slate-200 text-slate-500"))">
+                            @if (currentStep > 1)
+                            {
+                                <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="3" d="M5 13l4 4L19 7" />
+                                </svg>
+                            }
+                            else
+                            {
+                                <span>1</span>
+                            }
+                        </div>
+                        <span class="text-xs font-semibold @(currentStep == 1 ? "text-slate-900" : (currentStep > 1 ? "text-emerald-700" : "text-slate-400"))">
+                            Details
+                        </span>
+                    </div>
+
+                    <div class="flex-1 h-0.5 mx-3 @(currentStep > 1 ? "bg-emerald-500" : "bg-slate-200")"></div>
+
+                    <!-- Stepper Item 2 -->
+                    <div class="flex items-center gap-2">
+                        <div class="w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold transition-all @(currentStep == 2 ? "bg-slate-900 text-white ring-2 ring-slate-900/20" : (currentStep > 2 ? "bg-emerald-600 text-white" : "bg-slate-200 text-slate-500"))">
+                            @if (currentStep > 2)
+                            {
+                                <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="3" d="M5 13l4 4L19 7" />
+                                </svg>
+                            }
+                            else
+                            {
+                                <span>2</span>
+                            }
+                        </div>
+                        <span class="text-xs font-semibold @(currentStep == 2 ? "text-slate-900" : (currentStep > 2 ? "text-emerald-700" : "text-slate-400"))">
+                            Media
+                        </span>
+                    </div>
+
+                    <div class="flex-1 h-0.5 mx-3 @(currentStep > 2 ? "bg-emerald-500" : "bg-slate-200")"></div>
+
+                    <!-- Stepper Item 3 -->
+                    <div class="flex items-center gap-2">
+                        <div class="w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold transition-all @(currentStep == 3 ? "bg-slate-900 text-white ring-2 ring-slate-900/20" : "bg-slate-200 text-slate-500")">
+                            <span>3</span>
+                        </div>
+                        <span class="text-xs font-semibold @(currentStep == 3 ? "text-slate-900" : "text-slate-400")">
+                            Overview &amp; Save
+                        </span>
+                    </div>
+
+                </div>
+            </div>
+
+            <!-- ══════════════════════════════════════════════════════════════════ -->
+            <!-- MODAL BODY / WIZARD CONTENT                                        -->
+            <!-- ══════════════════════════════════════════════════════════════════ -->
+            <div class="p-6 overflow-y-auto max-h-[calc(85vh-180px)]">
+
+                <!-- Global Error Message Banner -->
+                @if (!string.IsNullOrEmpty(submissionErrorMessage))
+                {
+                    <div class="mb-4 p-3.5 bg-rose-50 border border-rose-200 text-rose-800 rounded-xl text-xs flex items-start gap-2.5 shadow-xs">
+                        <svg class="w-4 h-4 text-rose-600 shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                        </svg>
+                        <div class="flex-1">
+                            <p class="font-bold">Registration Alert</p>
+                            <p class="mt-0.5">@submissionErrorMessage</p>
+                        </div>
+                        <button type="button" @onclick="() => submissionErrorMessage = null" class="text-rose-500 hover:text-rose-700 font-bold">&times;</button>
+                    </div>
+                }
+
+                <!-- ────────────────────────────────────────────────────────────── -->
+                <!-- WIZARD PAGE 1: DETAILS INPUT                                  -->
+                <!-- ────────────────────────────────────────────────────────────── -->
+                @if (currentStep == 1)
+                {
+                    <div class="space-y-4 animate-in fade-in duration-150">
+                        <div>
+                            <h3 class="text-sm font-bold text-slate-900">Hardware Identification</h3>
+                            <p class="text-xs text-slate-500">Provide the primary specification and manufacturer identifiers.</p>
+                        </div>
+
+                        <!-- Field 1: Equipment Name (Text input) -->
+                        <div>
+                            <label class="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1">
+                                Equipment Name <span class="text-rose-500">*</span>
+                            </label>
+                            <input type="text"
+                                   @bind="formModel.EquipmentName"
+                                   @bind:event="oninput"
+                                   placeholder="e.g. Sony Alpha 7 IV Mirrorless Camera, Godox AD600Pro Strobe"
+                                   class="w-full px-3.5 py-2.5 text-xs rounded-lg border @(HasError(nameof(formModel.EquipmentName)) ? "border-rose-400 focus:ring-rose-500" : "border-slate-300 focus:ring-slate-900") focus:outline-none focus:ring-2 focus:border-transparent transition-all placeholder:text-slate-400" />
+                            @if (HasError(nameof(formModel.EquipmentName)))
+                            {
+                                <p class="text-[11px] text-rose-600 font-medium mt-1">@GetError(nameof(formModel.EquipmentName))</p>
+                            }
+                        </div>
+
+                        <!-- Field 2: Equipment Description (TextArea) -->
+                        <div>
+                            <div class="flex items-center justify-between mb-1">
+                                <label class="block text-xs font-bold text-slate-700 uppercase tracking-wider">
+                                    Equipment Description
+                                </label>
+                                <span class="text-[10px] text-slate-400 font-mono">
+                                    @(formModel.EquipmentDescription?.Length ?? 0)/1000
+                                </span>
+                            </div>
+                            <textarea @bind="formModel.EquipmentDescription"
+                                      rows="3"
+                                      maxlength="1000"
+                                      placeholder="Technical specifications, mounting bracket, included batteries, filter size, or notes..."
+                                      class="w-full px-3.5 py-2.5 text-xs rounded-lg border border-slate-300 focus:outline-none focus:ring-2 focus:ring-slate-900 focus:border-transparent transition-all placeholder:text-slate-400 resize-none"></textarea>
+                            <p class="text-[11px] text-slate-400 mt-0.5">Optional notes to assist staff during shoot dispatch and gear inspection.</p>
+                        </div>
+
+                        <!-- Field 3: Equipment Type (Dropdown / Text input) -->
+                        <div>
+                            <label class="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1">
+                                Equipment Type (Category) <span class="text-rose-500">*</span>
+                            </label>
+                            <div class="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                                <select @bind="formModel.EquipmentType"
+                                        class="w-full px-3.5 py-2.5 text-xs rounded-lg border @(HasError(nameof(formModel.EquipmentType)) ? "border-rose-400" : "border-slate-300") bg-white text-slate-800 focus:outline-none focus:ring-2 focus:ring-slate-900">
+                                    <option value="">-- Choose Category --</option>
+                                    @if (AvailableTypes != null && AvailableTypes.Any())
+                                    {
+                                        @foreach (var type in AvailableTypes)
+                                        {
+                                            <option value="@type.EquipmentTypeID">@type.EquipmentTypeName (@type.EquipmentTypeID)</option>
+                                        }
+                                    }
+                                    <option value="Cameras">Cameras (Bodies)</option>
+                                    <option value="Lenses">Lenses (Optics)</option>
+                                    <option value="Lighting">Lighting &amp; Strobes</option>
+                                    <option value="Audio">Audio &amp; Microphones</option>
+                                    <option value="Stands">Stands &amp; Grip</option>
+                                    <option value="Stabilizers">Gimbals &amp; Stabilizers</option>
+                                    <option value="Accessories">Studio Accessories</option>
+                                    <option value="__CUSTOM__">+ Add Custom Category...</option>
+                                </select>
+
+                                @if (formModel.EquipmentType == "__CUSTOM__" || isCustomTypeActive)
+                                {
+                                    <input type="text"
+                                           @bind="customTypeName"
+                                           placeholder="Enter custom category name..."
+                                           class="w-full px-3.5 py-2.5 text-xs rounded-lg border border-slate-300 focus:outline-none focus:ring-2 focus:ring-slate-900" />
+                                }
+                            </div>
+                            @if (HasError(nameof(formModel.EquipmentType)))
+                            {
+                                <p class="text-[11px] text-rose-600 font-medium mt-1">@GetError(nameof(formModel.EquipmentType))</p>
+                            }
+                        </div>
+
+                        <!-- Field 4: Equipment Serial No. (Text Input) -->
+                        <div>
+                            <label class="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1">
+                                Equipment Serial Number
+                            </label>
+                            <div class="relative">
+                                <input type="text"
+                                       @bind="formModel.SerialNo"
+                                       @bind:event="oninput"
+                                       placeholder="e.g. SN-A74-884021"
+                                       class="w-full pl-8 pr-4 py-2.5 text-xs font-mono rounded-lg border @(HasError(nameof(formModel.SerialNo)) ? "border-rose-400 focus:ring-rose-500" : "border-slate-300 focus:ring-slate-900") focus:outline-none focus:ring-2 focus:border-transparent transition-all uppercase placeholder:normal-case placeholder:text-slate-400" />
+                                <span class="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400 text-xs font-mono">#</span>
+                            </div>
+                            <p class="text-[11px] text-slate-400 mt-1">
+                                Enforced by SQL unique index <code class="font-mono text-slate-600">UX_Equipment_SerialNo</code>. Leave blank if hardware has no serial number.
+                            </p>
+                            @if (HasError(nameof(formModel.SerialNo)))
+                            {
+                                <p class="text-[11px] text-rose-600 font-medium mt-1">@GetError(nameof(formModel.SerialNo))</p>
+                            }
+                        </div>
+                    </div>
+                }
+
+                <!-- ────────────────────────────────────────────────────────────── -->
+                <!-- WIZARD PAGE 2: MEDIA (IMAGE UPLOAD)                           -->
+                <!-- ────────────────────────────────────────────────────────────── -->
+                @if (currentStep == 2)
+                {
+                    <div class="space-y-4 animate-in fade-in duration-150">
+                        <div>
+                            <h3 class="text-sm font-bold text-slate-900">Equipment Media &amp; Imagery</h3>
+                            <p class="text-xs text-slate-500">Upload high-resolution photography of the item for checkout identification.</p>
+                        </div>
+
+                        <!-- File Input (Hidden, triggered by styled dropzone) -->
+                        <InputFile id="wizard-equipment-file-input"
+                                   OnChange="HandleFileSelected"
+                                   accept=".jpg,.jpeg,.png,.webp"
+                                   class="hidden" />
+
+                        @if (string.IsNullOrEmpty(imagePreviewDataUrl))
+                        {
+                            <!-- Empty State Upload Dropzone -->
+                            <label for="wizard-equipment-file-input"
+                                   class="flex flex-col items-center justify-center p-8 border-2 border-dashed border-slate-300 hover:border-slate-600 rounded-2xl bg-slate-50/60 hover:bg-slate-100/70 transition-all cursor-pointer group text-center">
+                                <div class="w-12 h-12 rounded-xl bg-white border border-slate-200 text-slate-600 group-hover:text-slate-900 group-hover:scale-105 flex items-center justify-center transition-all shadow-xs mb-3">
+                                    <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                                    </svg>
+                                </div>
+                                <p class="text-xs font-bold text-slate-800">
+                                    <span class="text-slate-900 underline underline-offset-2">Click to choose an image</span> or drag and drop
+                                </p>
+                                <p class="text-[11px] text-slate-500 mt-1">Supported formats: JPG, PNG, WEBP (Max 10 MB)</p>
+                                <span class="mt-3 inline-flex items-center gap-1.5 px-3 py-1 rounded-md text-[11px] font-semibold bg-white border border-slate-200 text-slate-700 shadow-2xs group-hover:border-slate-400">
+                                    Browse Disk...
+                                </span>
+                            </label>
+                        }
+                        else
+                        {
+                            <!-- Active Image Preview Card -->
+                            <div class="bg-slate-50 border border-slate-200 rounded-2xl p-4 space-y-3">
+                                <div class="relative w-full h-56 rounded-xl overflow-hidden bg-slate-900 flex items-center justify-center border border-slate-200 shadow-inner">
+                                    <img src="@imagePreviewDataUrl" 
+                                         alt="Equipment Preview" 
+                                         class="max-h-full max-w-full object-contain" />
+                                    
+                                    <span class="absolute top-3 left-3 px-2 py-0.5 rounded-md bg-black/70 backdrop-blur-xs text-[10px] font-bold text-white uppercase tracking-wider">
+                                        Preview Ready
+                                    </span>
+                                </div>
+
+                                <div class="flex items-center justify-between text-xs pt-1">
+                                    <div class="flex items-center gap-2">
+                                        <svg class="w-4 h-4 text-emerald-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M5 13l4 4L19 7" />
+                                        </svg>
+                                        <div>
+                                            <p class="font-bold text-slate-900 truncate max-w-xs">@selectedFileName</p>
+                                            <p class="text-[10px] text-slate-500">@FormatFileSize(selectedFileSizeBytes)</p>
+                                        </div>
+                                    </div>
+
+                                    <div class="flex items-center gap-2">
+                                        <label for="wizard-equipment-file-input"
+                                               class="px-2.5 py-1.5 bg-white hover:bg-slate-100 text-slate-700 text-xs font-semibold rounded-lg border border-slate-300 transition-colors cursor-pointer">
+                                            Change Photo
+                                        </label>
+                                        <button type="button" 
+                                                @onclick="RemoveImage"
+                                                class="px-2.5 py-1.5 bg-rose-50 hover:bg-rose-100 text-rose-700 text-xs font-semibold rounded-lg border border-rose-200 transition-colors">
+                                            Remove
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
+                        }
+
+                        @if (HasError(nameof(imageFile)))
+                        {
+                            <div class="p-3 bg-rose-50 border border-rose-200 rounded-lg text-xs text-rose-700">
+                                @GetError(nameof(imageFile))
+                            </div>
+                        }
+
+                        <div class="p-3 bg-slate-50 border border-slate-200 rounded-lg text-[11px] text-slate-600 flex items-start gap-2">
+                            <svg class="w-4 h-4 text-slate-400 shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                            </svg>
+                            <p>
+                                Images are streamed as <code class="font-mono text-slate-700">multipart/form-data</code> to the Web API and archived in the server uploads repository.
+                            </p>
+                        </div>
+                    </div>
+                }
+
+                <!-- ────────────────────────────────────────────────────────────── -->
+                <!-- WIZARD PAGE 3: OVERVIEW & SAVE                                -->
+                <!-- ────────────────────────────────────────────────────────────── -->
+                @if (currentStep == 3)
+                {
+                    <div class="space-y-4 animate-in fade-in duration-150">
+                        <div>
+                            <h3 class="text-sm font-bold text-slate-900">Inventory Confirmation &amp; Overview</h3>
+                            <p class="text-xs text-slate-500">Verify all entered specifications prior to committing to the SQL Server database.</p>
+                        </div>
+
+                        <!-- System-Generated Equipment ID Badge (Strictly Read-Only) -->
+                        <div class="p-4 bg-gradient-to-r from-slate-900 to-slate-800 text-white rounded-xl shadow-md border border-slate-700 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+                            <div>
+                                <div class="flex items-center gap-2">
+                                    <span class="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
+                                    <span class="text-[10px] font-bold uppercase tracking-wider text-slate-300">
+                                        System-Assigned Equipment ID (Strictly Read-Only)
+                                    </span>
+                                </div>
+                                <p class="text-2xl font-black font-mono tracking-tight text-emerald-400 mt-1">
+                                    @(string.IsNullOrEmpty(systemGeneratedId) ? "Generating..." : systemGeneratedId)
+                                </p>
+                                <p class="text-[11px] text-slate-300 mt-0.5">
+                                    Generated via backend SQL sequence <code class="font-mono text-emerald-300">dbo.EquipmentIdSequence</code> to prevent race conditions.
+                                </p>
+                            </div>
+                            <div class="shrink-0">
+                                <span class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-800 text-slate-200 border border-slate-600 text-xs font-mono font-bold">
+                                    <svg class="w-3.5 h-3.5 text-slate-400" fill="currentColor" viewBox="0 0 20 20">
+                                        <path fill-rule="evenodd" d="M5 9V7a5 5 0 0110 0v2a2 2 0 012 2v5a2 2 0 01-2 2H5a2 2 0 01-2-2v-5a2 2 0 012-2zm8-2v2H7V7a3 3 0 016 0z" clip-rule="evenodd" />
+                                    </svg>
+                                    READ-ONLY
+                                </span>
+                            </div>
+                        </div>
+
+                        <!-- Summary Spec Cards Grid -->
+                        <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
+                            
+                            <!-- Equipment Details Card -->
+                            <div class="p-4 bg-white border border-slate-200 rounded-xl space-y-2.5 shadow-2xs">
+                                <div>
+                                    <span class="text-[10px] uppercase font-bold text-slate-400 tracking-wider">Item Name</span>
+                                    <p class="text-sm font-bold text-slate-900 leading-snug">@formModel.EquipmentName</p>
+                                </div>
+
+                                <div class="grid grid-cols-2 gap-2 pt-1 border-t border-slate-100">
+                                    <div>
+                                        <span class="text-[10px] uppercase font-bold text-slate-400 tracking-wider">Category</span>
+                                        <p class="font-semibold text-slate-800">@EffectiveCategoryName</p>
+                                    </div>
+                                    <div>
+                                        <span class="text-[10px] uppercase font-bold text-slate-400 tracking-wider">Initial Status</span>
+                                        <p class="font-bold text-emerald-700">Available</p>
+                                    </div>
+                                </div>
+
+                                <div class="pt-1 border-t border-slate-100">
+                                    <span class="text-[10px] uppercase font-bold text-slate-400 tracking-wider">Serial Number</span>
+                                    <p class="font-mono font-bold text-slate-800">
+                                        @(string.IsNullOrWhiteSpace(formModel.SerialNo) ? "Unassigned / Auto" : formModel.SerialNo)
+                                    </p>
+                                </div>
+
+                                @if (!string.IsNullOrWhiteSpace(formModel.EquipmentDescription))
+                                {
+                                    <div class="pt-1 border-t border-slate-100">
+                                        <span class="text-[10px] uppercase font-bold text-slate-400 tracking-wider">Description</span>
+                                        <p class="text-slate-600 line-clamp-3 text-[11px] mt-0.5">@formModel.EquipmentDescription</p>
+                                    </div>
+                                }
+                            </div>
+
+                            <!-- Media / Image Card -->
+                            <div class="p-4 bg-white border border-slate-200 rounded-xl space-y-2.5 shadow-2xs flex flex-col">
+                                <span class="text-[10px] uppercase font-bold text-slate-400 tracking-wider">Equipment Media</span>
+                                
+                                @if (!string.IsNullOrEmpty(imagePreviewDataUrl))
+                                {
+                                    <div class="flex-1 w-full rounded-lg overflow-hidden bg-slate-900 flex items-center justify-center max-h-36 border border-slate-200">
+                                        <img src="@imagePreviewDataUrl" 
+                                             alt="Attached Media" 
+                                             class="max-h-36 max-w-full object-contain" />
+                                    </div>
+                                    <div class="flex items-center justify-between text-[11px] text-slate-500 pt-1">
+                                        <span class="truncate max-w-[150px] font-medium">@selectedFileName</span>
+                                        <span class="font-mono text-emerald-700 font-bold">Attached</span>
+                                    </div>
+                                }
+                                else
+                                {
+                                    <div class="flex-1 w-full rounded-lg bg-slate-50 border border-slate-200 flex flex-col items-center justify-center p-4 text-center">
+                                        <svg class="w-8 h-8 text-slate-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                                        </svg>
+                                        <p class="text-slate-400 text-xs mt-1">No image attached</p>
+                                        <p class="text-[10px] text-slate-400">Default catalogue placeholder will be used.</p>
+                                    </div>
+                                }
+                            </div>
+
+                        </div>
+
+                        <!-- Compliance note -->
+                        <div class="p-3 bg-emerald-50/70 border border-emerald-200 rounded-xl text-[11px] text-emerald-950 flex items-start gap-2">
+                            <svg class="w-4 h-4 text-emerald-600 shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                            </svg>
+                            <div>
+                                <p class="font-bold">Ready to commit to inventory</p>
+                                <p class="text-emerald-800">
+                                    Clicking "Save Equipment" submits the multipart payload, stores the media file on the server, and inserts the record into <code class="font-mono">dbo.Equipment</code>.
+                                </p>
+                            </div>
+                        </div>
+
+                    </div>
+                }
+
+            </div>
+
+            <!-- ══════════════════════════════════════════════════════════════════ -->
+            <!-- MODAL FOOTER / NAVIGATION CONTROLS                                 -->
+            <!-- ══════════════════════════════════════════════════════════════════ -->
+            <div class="px-6 py-4 bg-slate-50 border-t border-slate-200 flex items-center justify-between">
+                
+                <!-- Left Action: Cancel / Close -->
+                <button type="button" 
+                        @onclick="CloseModalAsync" 
+                        disabled="@isSubmitting"
+                        class="px-4 py-2 text-xs font-semibold text-slate-600 hover:text-slate-900 transition-colors disabled:opacity-40">
+                    Cancel
+                </button>
+
+                <!-- Right Action: Back, Next, or Save -->
+                <div class="flex items-center gap-2.5">
+                    @if (currentStep > 1)
+                    {
+                        <button type="button" 
+                                @onclick="PrevStep" 
+                                disabled="@isSubmitting"
+                                class="inline-flex items-center gap-1.5 px-4 py-2 bg-white hover:bg-slate-100 text-slate-700 text-xs font-bold rounded-lg border border-slate-300 transition-all shadow-2xs disabled:opacity-40">
+                            <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M15 19l-7-7 7-7" />
+                            </svg>
+                            <span>Back</span>
+                        </button>
+                    }
+
+                    @if (currentStep < 3)
+                    {
+                        <button type="button" 
+                                @onclick="NextStep" 
+                                class="inline-flex items-center gap-1.5 px-5 py-2 bg-slate-900 hover:bg-black text-white text-xs font-bold uppercase tracking-wider rounded-lg shadow-sm transition-all focus:ring-2 focus:ring-slate-900 active:scale-95">
+                            <span>Next: @(currentStep == 1 ? "Media Upload" : "Review & Save")</span>
+                            <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M9 5l7 7-7 7" />
+                            </svg>
+                        </button>
+                    }
+                    else
+                    {
+                        <button type="button" 
+                                @onclick="SaveEquipmentAsync" 
+                                disabled="@isSubmitting"
+                                class="inline-flex items-center gap-2 px-6 py-2 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold uppercase tracking-wider rounded-lg shadow-md transition-all focus:ring-2 focus:ring-emerald-500 active:scale-95 disabled:opacity-50">
+                            @if (isSubmitting)
+                            {
+                                <span class="w-3.5 h-3.5 border-2 border-white/30 border-t-white rounded-full animate-spin"></span>
+                                <span>Saving to Inventory...</span>
+                            }
+                            else
+                            {
+                                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M5 13l4 4L19 7" />
+                                </svg>
+                                <span>Save Equipment</span>
+                            }
+                        </button>
+                    }
+                </div>
+
+            </div>
+
+        </div>
+    </div>
+}
+
+@code {
+    [Parameter]
+    public bool IsOpen { get; set; }
+
+    [Parameter]
+    public EventCallback<bool> IsOpenChanged { get; set; }
+
+    [Parameter]
+    public EventCallback OnEquipmentSaved { get; set; }
+
+    [Parameter]
+    public IReadOnlyList<EquipmentTypeModel>? AvailableTypes { get; set; }
+
+    // ── Form State Management ────────────────────────────────────────────────
+    private int currentStep = 1;
+    private bool isSubmitting = false;
+    private string? submissionErrorMessage;
+
+    private EquipmentWizardModel formModel = new();
+    private string customTypeName = string.Empty;
+    private bool isCustomTypeActive => formModel.EquipmentType == "__CUSTOM__";
+
+    // ── Media State ──────────────────────────────────────────────────────────
+    private IBrowserFile? imageFile;
+    private string? imagePreviewDataUrl;
+    private string? selectedFileName;
+    private long selectedFileSizeBytes;
+    private const long MaxFileSizeBytes = 10 * 1024 * 1024; // 10 MB
+
+    // ── Step 3 System Assigned ID (Strictly Read-Only) ────────────────────────
+    private string systemGeneratedId = string.Empty;
+
+    // ── Validation Errors Dictionary ─────────────────────────────────────────
+    private readonly Dictionary<string, string> errors = new(StringComparer.OrdinalIgnoreCase);
+
+    protected override async Task OnParametersSetAsync()
+    {
+        if (IsOpen && string.IsNullOrEmpty(systemGeneratedId))
+        {
+            await PreloadNextEquipmentIdAsync();
+        }
+    }
+
+    private string EffectiveCategoryName
+    {
+        get
+        {
+            if (formModel.EquipmentType == "__CUSTOM__")
+            {
+                return string.IsNullOrWhiteSpace(customTypeName) ? "General Hardware" : customTypeName.Trim();
+            }
+
+            var matched = AvailableTypes?.FirstOrDefault(t => t.EquipmentTypeID.Equals(formModel.EquipmentType, StringComparison.OrdinalIgnoreCase));
+            return matched?.EquipmentTypeName ?? formModel.EquipmentType;
+        }
+    }
+
+    private async Task PreloadNextEquipmentIdAsync()
+    {
+        try
+        {
+            // 1. Try querying the backend API
+            var client = HttpClientFactory.CreateClient("AevumApi");
+            var response = await client.GetAsync("api/equipments/next-id");
+            if (response.IsSuccessStatusCode)
+            {
+                var content = await response.Content.ReadFromJsonAsync<NextIdDto>();
+                if (!string.IsNullOrWhiteSpace(content?.NextEquipmentId))
+                {
+                    systemGeneratedId = content.NextEquipmentId;
+                    return;
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            Logger.LogDebug(ex, "API call to fetch next ID preview failed. Falling back to local equipment service sequence.");
+        }
+
+        // 2. Fallback to in-memory / direct service sequence
+        try
+        {
+            systemGeneratedId = await EquipmentService.GetNextEquipmentIdPreviewAsync();
+        }
+        catch
+        {
+            systemGeneratedId = "EQP-0001";
+        }
+    }
+
+    private async Task HandleFileSelected(InputFileChangeEventArgs e)
+    {
+        errors.Remove(nameof(imageFile));
+        submissionErrorMessage = null;
+
+        var file = e.File;
+        if (file == null) return;
+
+        // Size check
+        if (file.Size > MaxFileSizeBytes)
+        {
+            errors[nameof(imageFile)] = "Selected image exceeds maximum allowed limit of 10 MB.";
+            return;
+        }
+
+        // Extension check
+        var ext = Path.GetExtension(file.Name).ToLowerInvariant();
+        if (ext is not (".jpg" or ".jpeg" or ".png" or ".webp"))
+        {
+            errors[nameof(imageFile)] = "Unsupported image format. Please select a JPG, PNG, or WEBP file.";
+            return;
+        }
+
+        imageFile = file;
+        selectedFileName = file.Name;
+        selectedFileSizeBytes = file.Size;
+
+        // Generate base64 preview URL for immediate client-side rendering
+        try
+        {
+            using var stream = file.OpenReadStream(MaxFileSizeBytes);
+            using var ms = new MemoryStream();
+            await stream.CopyToAsync(ms);
+            var base64 = Convert.ToBase64String(ms.ToArray());
+            var mime = file.ContentType;
+            if (string.IsNullOrEmpty(mime))
+            {
+                mime = ext switch
+                {
+                    ".png" => "image/png",
+                    ".webp" => "image/webp",
+                    _ => "image/jpeg"
+                };
+            }
+            imagePreviewDataUrl = $"data:{mime};base64,{base64}";
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Failed to generate thumbnail preview for uploaded file.");
+            errors[nameof(imageFile)] = "Could not generate preview for selected file.";
+        }
+    }
+
+    private void RemoveImage()
+    {
+        imageFile = null;
+        imagePreviewDataUrl = null;
+        selectedFileName = null;
+        selectedFileSizeBytes = 0;
+        errors.Remove(nameof(imageFile));
+    }
+
+    private async Task NextStep()
+    {
+        submissionErrorMessage = null;
+
+        if (currentStep == 1)
+        {
+            if (!ValidateStep1())
+                return;
+
+            currentStep = 2;
+        }
+        else if (currentStep == 2)
+        {
+            // Advance to Step 3 and ensure the system ID is loaded
+            if (string.IsNullOrEmpty(systemGeneratedId))
+            {
+                await PreloadNextEquipmentIdAsync();
+            }
+            currentStep = 3;
+        }
+    }
+
+    private void PrevStep()
+    {
+        submissionErrorMessage = null;
+        if (currentStep > 1)
+        {
+            currentStep--;
+        }
+    }
+
+    private bool ValidateStep1()
+    {
+        errors.Clear();
+
+        if (string.IsNullOrWhiteSpace(formModel.EquipmentName))
+        {
+            errors[nameof(formModel.EquipmentName)] = "Equipment Name is required.";
+        }
+        else if (formModel.EquipmentName.Trim().Length < 2)
+        {
+            errors[nameof(formModel.EquipmentName)] = "Equipment Name must be at least 2 characters.";
+        }
+        else if (formModel.EquipmentName.Trim().Length > 100)
+        {
+            errors[nameof(formModel.EquipmentName)] = "Equipment Name cannot exceed 100 characters.";
+        }
+
+        if (string.IsNullOrWhiteSpace(formModel.EquipmentType))
+        {
+            errors[nameof(formModel.EquipmentType)] = "Please select an Equipment Type category.";
+        }
+        else if (formModel.EquipmentType == "__CUSTOM__" && string.IsNullOrWhiteSpace(customTypeName))
+        {
+            errors[nameof(formModel.EquipmentType)] = "Please enter the custom category name.";
+        }
+
+        if (!string.IsNullOrWhiteSpace(formModel.SerialNo))
+        {
+            var trimmedSerial = formModel.SerialNo.Trim();
+            if (!Regex.IsMatch(trimmedSerial, @"^[a-zA-Z0-9\-_./\s]+$"))
+            {
+                errors[nameof(formModel.SerialNo)] = "Serial number contains invalid characters (allowed: alphanumeric, dashes, slashes).";
+            }
+        }
+
+        return errors.Count == 0;
+    }
+
+    private async Task SaveEquipmentAsync()
+    {
+        isSubmitting = true;
+        submissionErrorMessage = null;
+
+        var finalCategory = formModel.EquipmentType == "__CUSTOM__" 
+            ? customTypeName.Trim() 
+            : formModel.EquipmentType.Trim();
+
+        try
+        {
+            // 1. Prepare MultipartFormDataContent for API submission
+            using var content = new MultipartFormDataContent();
+            content.Add(new StringContent(formModel.EquipmentName.Trim()), "EquipmentName");
+
+            if (!string.IsNullOrWhiteSpace(formModel.EquipmentDescription))
+            {
+                content.Add(new StringContent(formModel.EquipmentDescription.Trim()), "EquipmentDescription");
+            }
+
+            content.Add(new StringContent(finalCategory), "EquipmentType");
+
+            if (!string.IsNullOrWhiteSpace(formModel.SerialNo))
+            {
+                content.Add(new StringContent(formModel.SerialNo.Trim()), "SerialNo");
+            }
+
+            // Stream image file if present
+            if (imageFile != null)
+            {
+                var fileStream = imageFile.OpenReadStream(MaxFileSizeBytes);
+                var streamContent = new StreamContent(fileStream);
+                var contentType = string.IsNullOrWhiteSpace(imageFile.ContentType) ? "application/octet-stream" : imageFile.ContentType;
+                streamContent.Headers.ContentType = new MediaTypeHeaderValue(contentType);
+                content.Add(streamContent, "ImageFile", imageFile.Name);
+            }
+
+            // 2. Submit to Web API
+            var client = HttpClientFactory.CreateClient("AevumApi");
+            var response = await client.PostAsync("api/equipments", content);
+
+            if (response.IsSuccessStatusCode)
+            {
+                var createdDto = await response.Content.ReadFromJsonAsync<CreatedEquipmentDto>();
+                
+                // Also notify local singleton service so state stays synchronized
+                await EquipmentService.CreateEquipmentAsync(
+                    formModel.EquipmentName,
+                    formModel.EquipmentDescription,
+                    finalCategory,
+                    formModel.SerialNo,
+                    createdDto?.ImagePath);
+
+                await OnEquipmentSaved.InvokeAsync();
+                await CloseModalAsync();
+                return;
+            }
+
+            // Handle API error
+            var errorBody = await response.Content.ReadAsStringAsync();
+            try
+            {
+                var jsonError = System.Text.Json.JsonDocument.Parse(errorBody);
+                if (jsonError.RootElement.TryGetProperty("message", out var msgProp))
+                {
+                    submissionErrorMessage = msgProp.GetString();
+                }
+                else
+                {
+                    submissionErrorMessage = $"Server returned HTTP {response.StatusCode}: {errorBody}";
+                }
+            }
+            catch
+            {
+                submissionErrorMessage = $"Failed to register equipment ({response.StatusCode}).";
+            }
+        }
+        catch (Exception ex)
+        {
+            Logger.LogWarning(ex, "API POST /api/equipments encountered an error. Attempting in-memory service fallback.");
+
+            var (success, error, _) = await EquipmentService.CreateEquipmentAsync(
+                formModel.EquipmentName,
+                formModel.EquipmentDescription,
+                finalCategory,
+                formModel.SerialNo,
+                imagePreviewDataUrl);
+
+            if (success)
+            {
+                await OnEquipmentSaved.InvokeAsync();
+                await CloseModalAsync();
+                return;
+            }
+
+            submissionErrorMessage = error ?? ex.Message;
+        }
+        finally
+        {
+            isSubmitting = false;
+        }
+    }
+
+    private async Task CloseModalAsync()
+    {
+        IsOpen = false;
+        currentStep = 1;
+        formModel = new EquipmentWizardModel();
+        customTypeName = string.Empty;
+        imageFile = null;
+        imagePreviewDataUrl = null;
+        selectedFileName = null;
+        selectedFileSizeBytes = 0;
+        systemGeneratedId = string.Empty;
+        errors.Clear();
+        submissionErrorMessage = null;
+
+        await IsOpenChanged.InvokeAsync(IsOpen);
+    }
+
+    private bool HasError(string field) => errors.ContainsKey(field);
+    private string GetError(string field) => errors.TryGetValue(field, out var err) ? err : string.Empty;
+
+    private static string FormatFileSize(long bytes)
+    {
+        if (bytes <= 0) return "0 KB";
+        if (bytes < 1024 * 1024)
+            return $"{bytes / 1024.0:F1} KB";
+        return $"{bytes / (1024.0 * 1024.0):F2} MB";
+    }
+
+    public class EquipmentWizardModel
+    {
+        public string EquipmentName { get; set; } = string.Empty;
+        public string? EquipmentDescription { get; set; }
+        public string EquipmentType { get; set; } = string.Empty;
+        public string? SerialNo { get; set; }
+    }
+
+    private record NextIdDto(string NextEquipmentId);
+    private record CreatedEquipmentDto(
+        string EquipmentId,
+        string EquipmentName,
+        string? EquipmentDescription,
+        string EquipmentType,
+        string EquipmentStatus,
+        string? SerialNo,
+        string? ImagePath,
+        DateTime CreatedAt
+    );
+}

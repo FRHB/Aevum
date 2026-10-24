@@ -1,0 +1,614 @@
+@inject IBookScheduleClient ScheduleClient
+@inject BookScheduleState State
+
+@if (IsOpen)
+{
+    <div class="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4"
+         role="dialog" aria-modal="true" aria-labelledby="book-schedule-title">
+        <div class="bg-white rounded-2xl shadow-2xl w-full max-w-3xl max-h-[90vh] flex flex-col overflow-hidden border border-gray-200">
+
+            @* ── Header + 5-step indicator (step names only — no summary UI outside Step 5) ── *@
+            <header class="px-6 pt-5 pb-4 border-b border-gray-200 bg-gray-50">
+                <div class="flex items-center justify-between">
+                    <div>
+                        <span class="text-xs font-semibold uppercase tracking-wider text-gray-500">Schedule Consultation</span>
+                        <h2 id="book-schedule-title" class="text-xl font-bold text-gray-900">Book Schedule</h2>
+                    </div>
+                    <button type="button" @onclick="CloseAsync" disabled="@_submitting"
+                            class="rounded-lg p-2 text-gray-400 hover:text-gray-700 hover:bg-gray-200/60 transition"
+                            aria-label="Close modal">
+                        ✕
+                    </button>
+                </div>
+
+                @if (_completedResult is null)
+                {
+                    <nav class="mt-4 grid grid-cols-5 gap-2" aria-label="Booking steps">
+                        @foreach (var s in Steps)
+                        {
+                            var active = State.Step == s.Number;
+                            var done = State.Step > s.Number && CanReachStep(s.Number);
+                            var reachable = CanReachStep(s.Number);
+                            <button type="button"
+                                    disabled="@(!reachable || _submitting)"
+                                    @onclick="() => GoToStepAsync(s.Number)"
+                                    class="flex items-center gap-2 px-3 py-2 rounded-lg text-left text-xs font-medium border transition
+                                           @(active ? "bg-black text-white border-black"
+                                             : done ? "bg-white text-gray-900 border-gray-300 hover:border-black"
+                                             : "bg-gray-100 text-gray-400 border-transparent cursor-not-allowed")">
+                                <span class="w-5 h-5 rounded-full flex items-center justify-center text-[11px] font-bold shrink-0
+                                             @(active ? "bg-white text-black" : done ? "bg-emerald-600 text-white" : "bg-gray-200 text-gray-500")">
+                                    @(done ? "✓" : s.Number.ToString())
+                                </span>
+                                <span class="truncate">@s.Label</span>
+                            </button>
+                        }
+                    </nav>
+                }
+            </header>
+
+            @* ── Body ── *@
+            <div class="p-6 overflow-y-auto flex-1 space-y-4">
+                @if (!string.IsNullOrWhiteSpace(_conflictAlert))
+                {
+                    <div role="alert" class="rounded-xl border border-red-300 bg-red-50 p-4 text-sm text-red-900 flex items-start justify-between gap-3">
+                        <div>
+                            <p class="font-semibold">Slot no longer available — changes rolled back</p>
+                            <p class="mt-0.5 text-red-800">@_conflictAlert</p>
+                        </div>
+                        <button type="button" class="text-xs font-semibold underline shrink-0" @onclick="() => _conflictAlert = null">Dismiss</button>
+                    </div>
+                }
+
+                @if (!string.IsNullOrWhiteSpace(_errorBanner))
+                {
+                    <div role="alert" class="rounded-xl border border-amber-300 bg-amber-50 p-4 text-sm text-amber-900 flex items-start justify-between gap-3">
+                        <span>@_errorBanner</span>
+                        <button type="button" class="text-xs font-semibold underline shrink-0" @onclick="() => _errorBanner = null">Dismiss</button>
+                    </div>
+                }
+
+                @if (_completedResult is not null)
+                {
+                    @* Post-confirmation screen (still Step 5 context) *@
+                    <div class="py-6 text-center space-y-4" data-testid="booking-confirmed">
+                        <div class="w-12 h-12 rounded-full bg-emerald-100 text-emerald-700 mx-auto flex items-center justify-center text-xl font-bold">✓</div>
+                        <div>
+                            <h3 class="text-lg font-bold text-gray-900">Appointment Confirmed</h3>
+                            <p class="text-sm text-gray-600 mt-1">
+                                Reference <span class="font-mono font-semibold">#@_completedResult.AppointmentId</span> •
+                                @_completedResult.Date.ToString("MMMM d, yyyy") (@_completedResult.SlotStart.ToString("h:mm tt") – @_completedResult.SlotEnd.ToString("h:mm tt"))
+                            </p>
+                        </div>
+                        <div class="max-w-md mx-auto rounded-xl bg-gray-50 border border-gray-200 p-4 text-left text-xs space-y-1.5">
+                            <div class="flex justify-between"><span class="text-gray-500">Platform</span><span class="font-semibold">@FormatPlatform(_completedResult.Platform)</span></div>
+                            <div class="flex justify-between gap-3"><span class="text-gray-500 shrink-0">Meeting Link</span><a href="@_completedResult.MeetingLink" target="_blank" rel="noopener noreferrer" class="font-mono text-black underline truncate">@_completedResult.MeetingLink</a></div>
+                            <div class="flex justify-between"><span class="text-gray-500">Confirmation Email</span><span class="font-semibold">@(_completedResult.ConfirmationEmailSent ? "Sent" : "Queued / Simulated")</span></div>
+                        </div>
+                    </div>
+                }
+                else if (State.Step == 1)
+                {
+                    @* ── STEP 1: Multi-select Services ── *@
+                    <div>
+                        <h3 class="text-base font-semibold text-gray-900">Select Services</h3>
+                        <p class="text-xs text-gray-500 mt-0.5">Choose one or more photography services for this schedule.</p>
+                    </div>
+
+                    @if (_loadingServices)
+                    {
+                        <div class="py-12 text-center text-sm text-gray-500">Loading available services…</div>
+                    }
+                    else if (_services.Count == 0)
+                    {
+                        <div class="rounded-xl border border-gray-200 p-6 text-center text-sm text-gray-500">
+                            No services are currently published.
+                        </div>
+                    }
+                    else
+                    {
+                        <div class="grid grid-cols-1 sm:grid-cols-2 gap-3" data-testid="step-services">
+                            @foreach (var svc in _services)
+                            {
+                                var selected = State.ServiceIds.Contains(svc.ServicesId);
+                                <button type="button"
+                                        @onclick="() => ToggleService(svc.ServicesId)"
+                                        aria-pressed="@selected"
+                                        class="text-left rounded-xl p-4 border transition flex items-start justify-between gap-3
+                                               @(selected ? "border-black bg-gray-900 text-white shadow-sm" : "border-gray-200 bg-white hover:border-gray-400 text-gray-900")">
+                                    <div class="min-w-0">
+                                        <p class="font-semibold text-sm truncate">@svc.Name</p>
+                                        <p class="text-xs mt-1 line-clamp-2 @(selected ? "text-gray-300" : "text-gray-500")">@svc.Description</p>
+                                        <p class="text-xs font-bold mt-2">₱@svc.Price.ToString("N2")</p>
+                                    </div>
+                                    <span class="w-5 h-5 rounded border flex items-center justify-center text-xs shrink-0 mt-0.5
+                                                 @(selected ? "bg-white text-black border-white" : "border-gray-300")">
+                                        @(selected ? "✓" : "")
+                                    </span>
+                                </button>
+                            }
+                        </div>
+                    }
+                }
+                else if (State.Step == 2)
+                {
+                    @* ── STEP 2: Calendar (highlight only available dates) & available slots ── *@
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-6" data-testid="step-datetime">
+                        <div>
+                            <div class="flex items-center justify-between mb-3">
+                                <h3 class="text-sm font-semibold text-gray-900">@State.VisibleMonth.ToString("MMMM yyyy")</h3>
+                                <div class="flex items-center gap-1">
+                                    <button type="button" @onclick="() => ChangeMonthAsync(-1)" disabled="@_loadingMonth"
+                                            class="px-2.5 py-1 rounded border border-gray-200 text-xs hover:bg-gray-100" aria-label="Previous month">‹</button>
+                                    <button type="button" @onclick="() => ChangeMonthAsync(1)" disabled="@_loadingMonth"
+                                            class="px-2.5 py-1 rounded border border-gray-200 text-xs hover:bg-gray-100" aria-label="Next month">›</button>
+                                </div>
+                            </div>
+
+                            <div class="grid grid-cols-7 text-center text-[11px] font-semibold text-gray-400 mb-1">
+                                <span>Su</span><span>Mo</span><span>Tu</span><span>We</span><span>Th</span><span>Fr</span><span>Sa</span>
+                            </div>
+
+                            @if (_loadingMonth)
+                            {
+                                <div class="py-12 text-center text-xs text-gray-500">Checking slot availability…</div>
+                            }
+                            else
+                            {
+                                <div class="grid grid-cols-7 gap-1">
+                                    @for (var i = 0; i < LeadingBlankDays(); i++)
+                                    {
+                                        <span class="h-9"></span>
+                                    }
+                                    @foreach (var day in _monthDays)
+                                    {
+                                        var isSelected = State.Date == day.Date;
+                                        var available = day.HasAvailability;
+                                        <button type="button"
+                                                disabled="@(!available)"
+                                                @onclick="() => SelectDate(day.Date)"
+                                                class="h-9 rounded-lg text-xs font-semibold transition
+                                                       @(isSelected ? "bg-black text-white ring-2 ring-black ring-offset-1"
+                                                         : available ? "bg-emerald-50 text-emerald-900 border border-emerald-300 hover:bg-emerald-100"
+                                                         : "bg-gray-50 text-gray-300 cursor-not-allowed")">
+                                            @day.Date.Day
+                                        </button>
+                                    }
+                                </div>
+                                <p class="mt-2 text-[11px] text-gray-500 flex items-center gap-2">
+                                    <span class="inline-block w-2.5 h-2.5 rounded bg-emerald-100 border border-emerald-400"></span>
+                                    Highlighted dates have open slots.
+                                </p>
+                            }
+                        </div>
+
+                        <div>
+                            <h3 class="text-sm font-semibold text-gray-900 mb-1">Available Time Slots</h3>
+                            <p class="text-xs text-gray-500 mb-3">Morning (9:00–11:00 AM) • Afternoon (1:00–5:00 PM) • 1 client per slot</p>
+
+                            @if (State.Date is null)
+                            {
+                                <div class="rounded-xl border border-dashed border-gray-300 p-6 text-center text-xs text-gray-500">
+                                    Select a highlighted date on the calendar to view open slots.
+                                </div>
+                            }
+                            else
+                            {
+                                var slots = SlotsForSelectedDate();
+                                <div class="grid grid-cols-2 gap-2">
+                                    @foreach (var slot in slots)
+                                    {
+                                        var chosen = State.SlotStart == slot.Start;
+                                        <button type="button"
+                                                disabled="@(!slot.IsAvailable)"
+                                                @onclick="() => State.SelectSlot(slot.Start, slot.End)"
+                                                class="px-3 py-2.5 rounded-xl border text-xs font-semibold transition text-left
+                                                       @(chosen ? "bg-black text-white border-black"
+                                                         : slot.IsAvailable ? "bg-white text-gray-900 border-gray-200 hover:border-black"
+                                                         : "bg-gray-100 text-gray-400 border-gray-100 line-through cursor-not-allowed")">
+                                            <div>@slot.Start.ToString("h:mm tt") – @slot.End.ToString("h:mm tt")</div>
+                                            <div class="text-[10px] font-normal @(chosen ? "text-gray-300" : "text-gray-500")">
+                                                @(slot.IsAvailable ? "Available" : "Booked")
+                                            </div>
+                                        </button>
+                                    }
+                                </div>
+                            }
+                        </div>
+                    </div>
+                }
+                else if (State.Step == 3)
+                {
+                    @* ── STEP 3: Confirm Date/Time & Optional Event Location (no Services/Platform summary here) ── *@
+                    <div class="space-y-4" data-testid="step-details">
+                        <div>
+                            <h3 class="text-base font-semibold text-gray-900">Schedule Details</h3>
+                            <p class="text-xs text-gray-500 mt-0.5">Verify your chosen slot and optionally share an event location.</p>
+                        </div>
+
+                        <label class="flex items-start gap-3 rounded-xl border border-gray-200 bg-gray-50 p-4 cursor-pointer">
+                            <input type="checkbox" @bind="State.DateTimeConfirmed"
+                                   class="mt-1 h-4 w-4 rounded border-gray-300 text-black focus:ring-black" />
+                            <span class="text-sm text-gray-800">
+                                I confirm the selected schedule slot:
+                                <strong class="text-gray-900">
+                                    @State.Date?.ToString("dddd, MMMM d, yyyy") • @State.SlotStart?.ToString("h:mm tt") – @State.SlotEnd?.ToString("h:mm tt")
+                                </strong>
+                            </span>
+                        </label>
+
+                        <div>
+                            <label for="event-location-input" class="block text-xs font-semibold uppercase tracking-wider text-gray-600 mb-1.5">
+                                Event Location <span class="text-gray-400 font-normal">(optional)</span>
+                            </label>
+                            <input id="event-location-input" type="text" maxlength="300"
+                                   @bind="State.EventLocation" @bind:event="oninput"
+                                   placeholder="e.g., Aevum Makati Studio or client venue address"
+                                   class="w-full rounded-xl border border-gray-300 px-3.5 py-2.5 text-sm focus:border-black focus:outline-none" />
+                        </div>
+                    </div>
+                }
+                else if (State.Step == 4)
+                {
+                    @* ── STEP 4: Select Zoom, GMeet, or Teams ── *@
+                    <div class="space-y-3" data-testid="step-platform">
+                        <div>
+                            <h3 class="text-base font-semibold text-gray-900">Meeting Platform</h3>
+                            <p class="text-xs text-gray-500 mt-0.5">Pick where we should host your virtual consultation link.</p>
+                        </div>
+
+                        <div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                            @foreach (var p in Platforms)
+                            {
+                                var chosen = State.Platform == p.Value;
+                                <button type="button"
+                                        @onclick="() => State.SelectPlatform(p.Value)"
+                                        aria-pressed="@chosen"
+                                        class="rounded-xl border p-4 text-left transition
+                                               @(chosen ? "border-black bg-gray-900 text-white" : "border-gray-200 bg-white hover:border-gray-400 text-gray-900")">
+                                    <p class="font-semibold text-sm">@p.Title</p>
+                                    <p class="text-xs mt-1 @(chosen ? "text-gray-300" : "text-gray-500")">@p.Subtitle</p>
+                                </button>
+                            }
+                        </div>
+                    </div>
+                }
+                else if (State.Step == 5)
+                {
+                    @* ── STEP 5: Read-only Booking Summary + Mock Meeting Link + Confirm button ── *@
+                    <div class="space-y-4" data-testid="step-confirm-summary">
+                        <div>
+                            <h3 class="text-base font-semibold text-gray-900">Booking Summary</h3>
+                            <p class="text-xs text-gray-500 mt-0.5">Review your read-only booking details before confirming.</p>
+                        </div>
+
+                        <div class="rounded-xl border border-gray-200 divide-y divide-gray-200 text-sm">
+                            <div class="p-4">
+                                <p class="text-xs font-semibold uppercase tracking-wider text-gray-500 mb-2">Selected Services</p>
+                                <ul class="space-y-1">
+                                    @foreach (var svc in SelectedServices())
+                                    {
+                                        <li class="flex justify-between">
+                                            <span class="text-gray-800">@svc.Name</span>
+                                            <span class="font-medium text-gray-900">₱@svc.Price.ToString("N2")</span>
+                                        </li>
+                                    }
+                                </ul>
+                                <div class="mt-3 pt-2 border-t border-gray-100 flex justify-between font-bold text-gray-900">
+                                    <span>Total</span>
+                                    <span>₱@SelectedServices().Sum(s => s.Price).ToString("N2")</span>
+                                </div>
+                            </div>
+
+                            <div class="p-4 grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
+                                <div>
+                                    <span class="text-gray-500 block">Date &amp; Time</span>
+                                    <span class="font-semibold text-gray-900">
+                                        @State.Date?.ToString("MMM d, yyyy") • @State.SlotStart?.ToString("h:mm tt") – @State.SlotEnd?.ToString("h:mm tt")
+                                    </span>
+                                </div>
+                                <div>
+                                    <span class="text-gray-500 block">Event Location</span>
+                                    <span class="font-semibold text-gray-900">
+                                        @(string.IsNullOrWhiteSpace(State.EventLocation) ? "Online only (not specified)" : State.EventLocation)
+                                    </span>
+                                </div>
+                                <div>
+                                    <span class="text-gray-500 block">Platform</span>
+                                    <span class="font-semibold text-gray-900">@(State.Platform is { } pf ? FormatPlatform(pf) : "—")</span>
+                                </div>
+                                <div>
+                                    <span class="text-gray-500 block">Meeting Link (Mock)</span>
+                                    @if (_loadingLink)
+                                    {
+                                        <span class="text-gray-400">Generating link…</span>
+                                    }
+                                    else if (!string.IsNullOrWhiteSpace(State.MeetingLink))
+                                    {
+                                        <span class="font-mono text-gray-900 break-all" data-testid="mock-meeting-link">@State.MeetingLink</span>
+                                    }
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                }
+            </div>
+
+            @* ── Footer ── *@
+            <footer class="px-6 py-4 border-t border-gray-200 bg-gray-50 flex items-center justify-between">
+                @if (_completedResult is not null)
+                {
+                    <button type="button" @onclick="StartAnotherAsync"
+                            class="px-4 py-2 rounded-xl border border-gray-300 text-xs font-semibold text-gray-700 hover:bg-gray-100">
+                        Book Another
+                    </button>
+                    <button type="button" @onclick="CloseAsync"
+                            class="px-5 py-2 rounded-xl bg-black text-white text-xs font-semibold hover:bg-gray-800">
+                        Done
+                    </button>
+                }
+                else
+                {
+                    <button type="button"
+                            disabled="@(State.Step == 1 || _submitting)"
+                            @onclick="PrevStep"
+                            class="px-4 py-2 rounded-xl border border-gray-300 text-xs font-semibold text-gray-700 hover:bg-gray-100 disabled:opacity-40 disabled:cursor-not-allowed">
+                        Back
+                    </button>
+
+                    @if (State.Step < 5)
+                    {
+                        <button type="button"
+                                disabled="@(!CanAdvanceFromCurrentStep() || _submitting)"
+                                @onclick="NextStepAsync"
+                                class="px-5 py-2 rounded-xl bg-black text-white text-xs font-semibold hover:bg-gray-800 disabled:opacity-40 disabled:cursor-not-allowed">
+                            Continue
+                        </button>
+                    }
+                    else
+                    {
+                        <button type="button"
+                                data-testid="confirm-booking-btn"
+                                disabled="@(_submitting || _loadingLink || string.IsNullOrWhiteSpace(State.MeetingLink))"
+                                @onclick="ConfirmBookingAsync"
+                                class="px-5 py-2 rounded-xl bg-emerald-600 text-white text-xs font-semibold hover:bg-emerald-700 disabled:opacity-40 disabled:cursor-not-allowed">
+                            @(_submitting ? "Confirming…" : "Confirm")
+                        </button>
+                    }
+                }
+            </footer>
+        </div>
+    </div>
+}
+
+@code {
+    [Parameter] public bool IsOpen { get; set; }
+    [Parameter] public EventCallback<bool> IsOpenChanged { get; set; }
+    [Parameter] public EventCallback<ScheduleBookingResult> OnBooked { get; set; }
+
+    private static readonly (int Number, string Label)[] Steps =
+    [
+        (1, "Services"),
+        (2, "Date & Time"),
+        (3, "Details"),
+        (4, "Platform"),
+        (5, "Confirm"),
+    ];
+
+    private static readonly (MeetingPlatform Value, string Title, string Subtitle)[] Platforms =
+    [
+        (MeetingPlatform.Zoom, "Zoom", "HD video room with passcode"),
+        (MeetingPlatform.GoogleMeet, "Google Meet", "Browser-ready instant meet link"),
+        (MeetingPlatform.MicrosoftTeams, "Microsoft Teams", "Teams meeting lobby link"),
+    ];
+
+    private IReadOnlyList<global::PhotoAevumStudio.Web.Models.ScheduleServiceOption> _services = [];
+    private IReadOnlyList<DayAvailability> _monthDays = [];
+    private ScheduleBookingResult? _completedResult;
+    private bool _wasOpen;
+    private bool _loadingServices;
+    private bool _loadingMonth;
+    private bool _loadingLink;
+    private bool _submitting;
+    private string? _errorBanner;
+    private string? _conflictAlert;
+
+    protected override async Task OnParametersSetAsync()
+    {
+        if (IsOpen && !_wasOpen)
+        {
+            _wasOpen = true;
+            _errorBanner = null;
+            await EnsureLoadedForCurrentStepAsync();
+        }
+        else if (!IsOpen && _wasOpen)
+        {
+            _wasOpen = false;
+        }
+    }
+
+    private async Task EnsureLoadedForCurrentStepAsync()
+    {
+        if (_services.Count == 0)
+            await LoadServicesAsync();
+
+        if (State.Step == 2 && _monthDays.Count == 0)
+            await LoadMonthAsync(State.VisibleMonth);
+
+        if (State.Step == 5 && string.IsNullOrWhiteSpace(State.MeetingLink))
+            await EnsureMeetingLinkPreviewAsync();
+    }
+
+    private async Task LoadServicesAsync()
+    {
+        _loadingServices = true;
+        var res = await ScheduleClient.GetServicesAsync();
+        _loadingServices = false;
+
+        if (res.IsSuccess) _services = res.Value!;
+        else _errorBanner = res.Error!.Message;
+    }
+
+    private async Task LoadMonthAsync(DateOnly month)
+    {
+        _loadingMonth = true;
+        var res = await ScheduleClient.GetAvailabilityAsync(month.Year, month.Month);
+        _loadingMonth = false;
+
+        if (!res.IsSuccess)
+        {
+            _errorBanner = res.Error!.Message;
+            return;
+        }
+
+        _monthDays = res.Value!.Days;
+
+        // If the previously selected slot became unavailable, clear it so the user re-picks.
+        if (State.Date is { } d && d.Year == month.Year && d.Month == month.Month && State.SlotStart is { } st)
+        {
+            var slotStillOpen = _monthDays
+                .FirstOrDefault(x => x.Date == d)?.Slots
+                .Any(s => s.Start == st && s.IsAvailable) == true;
+            if (!slotStillOpen) State.ClearSlot();
+        }
+    }
+
+    private async Task EnsureMeetingLinkPreviewAsync()
+    {
+        if (State.Platform is not { } platform || State.Date is not { } date || State.SlotStart is not { } start)
+            return;
+
+        _loadingLink = true;
+        var res = await ScheduleClient.PreviewMeetingLinkAsync(platform, date, start);
+        _loadingLink = false;
+
+        if (res.IsSuccess) State.MeetingLink = res.Value!.MeetingLink;
+        else _errorBanner = res.Error!.Message;
+    }
+
+    private void ToggleService(string id)
+    {
+        if (!State.ServiceIds.Remove(id))
+            State.ServiceIds.Add(id);
+    }
+
+    private void SelectDate(DateOnly date) => State.SelectDate(date);
+
+    private async Task ChangeMonthAsync(int delta)
+    {
+        State.VisibleMonth = State.VisibleMonth.AddMonths(delta);
+        await LoadMonthAsync(State.VisibleMonth);
+    }
+
+    private int LeadingBlankDays() => (int)new DateOnly(State.VisibleMonth.Year, State.VisibleMonth.Month, 1).DayOfWeek;
+
+    private IReadOnlyList<SlotAvailability> SlotsForSelectedDate() =>
+        _monthDays.FirstOrDefault(d => d.Date == State.Date)?.Slots ?? [];
+
+    private IReadOnlyList<global::PhotoAevumStudio.Web.Models.ScheduleServiceOption> SelectedServices() =>
+        _services.Where(s => State.ServiceIds.Contains(s.ServicesId)).ToList();
+
+    private bool CanReachStep(int target) => target switch
+    {
+        1 => true,
+        2 => State.ServiceIds.Count > 0,
+        3 => State.ServiceIds.Count > 0 && State.Date is not null && State.SlotStart is not null,
+        4 => State.ServiceIds.Count > 0 && State.Date is not null && State.SlotStart is not null && State.DateTimeConfirmed,
+        5 => State.ServiceIds.Count > 0 && State.Date is not null && State.SlotStart is not null && State.DateTimeConfirmed && State.Platform is not null,
+        _ => false
+    };
+
+    private bool CanAdvanceFromCurrentStep() => CanReachStep(State.Step + 1);
+
+    private async Task GoToStepAsync(int step)
+    {
+        if (!CanReachStep(step)) return;
+        _errorBanner = null;
+        State.Step = step;
+        await EnsureLoadedForCurrentStepAsync();
+    }
+
+    private async Task NextStepAsync()
+    {
+        if (!CanAdvanceFromCurrentStep()) return;
+        await GoToStepAsync(State.Step + 1);
+    }
+
+    private void PrevStep()
+    {
+        if (State.Step > 1)
+        {
+            _errorBanner = null;
+            State.Step--;
+        }
+    }
+
+    private async Task ConfirmBookingAsync()
+    {
+        if (!CanReachStep(5) || State.Date is not { } date || State.SlotStart is not { } slot || State.Platform is not { } platform)
+            return;
+
+        _submitting = true;
+        _errorBanner = null;
+        _conflictAlert = null;
+
+        var res = await ScheduleClient.BookAsync(new ScheduleBookingRequest
+        {
+            ServiceIds = State.ServiceIds.ToList(),
+            Date = date,
+            SlotStart = slot,
+            EventLocation = State.EventLocation,
+            Platform = platform,
+            MeetingLink = State.MeetingLink
+        });
+
+        _submitting = false;
+
+        if (res.IsSuccess)
+        {
+            _completedResult = res.Value!;
+            if (OnBooked.HasDelegate)
+                await OnBooked.InvokeAsync(_completedResult);
+            return;
+        }
+
+        if (res.Error!.Kind == ApiErrorKind.SlotTaken)
+        {
+            // Race condition rollback: alert the UI and send the user back to Step 2 with fresh slots.
+            _conflictAlert = res.Error.Message;
+            State.ClearSlot();
+            State.Step = 2;
+            State.VisibleMonth = BookScheduleState.FirstOfMonth(date);
+            await LoadMonthAsync(State.VisibleMonth);
+            return;
+        }
+
+        _errorBanner = res.Error.Message;
+    }
+
+    private async Task StartAnotherAsync()
+    {
+        _completedResult = null;
+        _conflictAlert = null;
+        _errorBanner = null;
+        State.Reset();
+        await EnsureLoadedForCurrentStepAsync();
+    }
+
+    private async Task CloseAsync()
+    {
+        if (_completedResult is not null)
+        {
+            _completedResult = null;
+            State.Reset();
+        }
+        await IsOpenChanged.InvokeAsync(false);
+    }
+
+    private static string FormatPlatform(MeetingPlatform platform) => platform switch
+    {
+        MeetingPlatform.GoogleMeet => "Google Meet",
+        MeetingPlatform.MicrosoftTeams => "Microsoft Teams",
+        _ => "Zoom"
+    };
+}

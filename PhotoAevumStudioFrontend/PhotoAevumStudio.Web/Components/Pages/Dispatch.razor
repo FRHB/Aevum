@@ -1,0 +1,781 @@
+@page "/admin/equipment/dispatch"
+@page "/admin/dispatch"
+@page "/dispatch"
+@layout AdminLayout
+@rendermode InteractiveServer
+@attribute [Authorize(Roles = "Admin")]
+@inject IEquipmentService EquipmentService
+@implements IDisposable
+
+<PageTitle>Gear Dispatch &amp; Checkout | Photo Aevum Studio</PageTitle>
+
+<div class="space-y-6 pb-12">
+    <!-- Sub-navigation Tabs -->
+    <EquipmentSubNav ActiveTabLabel="Dispatch & Checkout" />
+
+    <!-- Header Section with Action Button -->
+    <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 pb-2 border-b border-slate-200">
+        <div>
+            <h1 class="text-2xl font-bold text-slate-900 tracking-tight">Dispatch</h1>
+            <p class="text-sm text-slate-500 mt-0.5">Gear checkout, on-location kits dispatch, and return verification.</p>
+        </div>
+
+        <div class="flex items-center gap-3">
+            <button type="button" 
+                    @onclick="OpenCheckoutModal"
+                    class="inline-flex items-center justify-center gap-2 px-5 py-2.5 bg-slate-900 hover:bg-black text-white text-xs font-semibold uppercase tracking-wider rounded-lg shadow-sm transition-all focus:ring-2 focus:ring-slate-900 focus:ring-offset-2 active:scale-95">
+                <svg class="w-4 h-4 text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M12 4v16m8-8H4" />
+                </svg>
+                <span>New Checkout / Dispatch Kit</span>
+            </button>
+        </div>
+    </div>
+
+    <!-- Alert / Toast Banner -->
+    @if (!string.IsNullOrWhiteSpace(notificationMessage))
+    {
+        <div class="p-4 bg-emerald-50 border border-emerald-200 text-emerald-900 rounded-xl flex items-center justify-between shadow-xs animate-in fade-in duration-200">
+            <div class="flex items-center gap-3">
+                <span class="w-7 h-7 rounded-full bg-emerald-600 text-white flex items-center justify-center shrink-0">
+                    <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M5 13l4 4L19 7" />
+                    </svg>
+                </span>
+                <div>
+                    <p class="text-xs font-bold text-emerald-950">Dispatch State Synchronized</p>
+                    <p class="text-xs text-emerald-800">@notificationMessage</p>
+                </div>
+            </div>
+            <button type="button" @onclick="() => notificationMessage = null" class="text-emerald-700 hover:text-emerald-950 p-1 text-sm font-bold">&times;</button>
+        </div>
+    }
+
+    <!-- Summary Cards (Top Row) -->
+    <div class="grid grid-cols-1 sm:grid-cols-3 gap-4">
+        <!-- Card 1: Active Dispatches -->
+        <div class="bg-white p-4 rounded-xl border border-slate-200 shadow-sm flex items-center gap-4 hover:shadow-md transition-shadow">
+            <div class="w-12 h-12 rounded-lg bg-blue-50 flex items-center justify-center text-blue-600 text-xl font-bold shrink-0">
+                🚀
+            </div>
+            <div>
+                <p class="text-xs text-slate-500 font-medium uppercase tracking-wider">Active Dispatches</p>
+                <p class="text-2xl font-extrabold text-blue-700 mt-0.5">@dispatches.Count(d => d.IsActiveCheckout)</p>
+                <p class="text-[11px] text-slate-400">Currently deployed on-location & shoots</p>
+            </div>
+        </div>
+
+        <!-- Card 2: Scheduled Checkouts -->
+        <div class="bg-white p-4 rounded-xl border border-slate-200 shadow-sm flex items-center gap-4 hover:shadow-md transition-shadow">
+            <div class="w-12 h-12 rounded-lg bg-amber-50 flex items-center justify-center text-amber-600 text-xl font-bold shrink-0">
+                📅
+            </div>
+            <div>
+                <p class="text-xs text-slate-500 font-medium uppercase tracking-wider">Scheduled Checkouts</p>
+                <p class="text-2xl font-extrabold text-amber-700 mt-0.5">@dispatches.Count(d => d.IsScheduled)</p>
+                <p class="text-[11px] text-slate-400">Allocated to upcoming event appointments</p>
+            </div>
+        </div>
+
+        <!-- Card 3: Completed Returns -->
+        <div class="bg-white p-4 rounded-xl border border-slate-200 shadow-sm flex items-center gap-4 hover:shadow-md transition-shadow">
+            <div class="w-12 h-12 rounded-lg bg-emerald-50 flex items-center justify-center text-emerald-600 text-xl font-bold shrink-0">
+                🔄
+            </div>
+            <div>
+                <p class="text-xs text-slate-500 font-medium uppercase tracking-wider">Completed Returns</p>
+                <p class="text-2xl font-extrabold text-emerald-700 mt-0.5">
+                    @dispatches.Count(d => d.IsReturned && d.ReturnedAt.HasValue && d.ReturnedAt.Value.Date == DateTime.UtcNow.Date)
+                </p>
+                <p class="text-[11px] text-slate-400">Verified and returned back to rack today</p>
+            </div>
+        </div>
+    </div>
+
+    <!-- Filter & Search Toolbar -->
+    <div class="bg-white p-4 rounded-xl border border-slate-200 shadow-sm flex flex-col md:flex-row gap-3 items-center justify-between">
+        <div class="flex flex-col sm:flex-row items-center gap-3 w-full md:w-auto flex-1">
+            <!-- Search Bar -->
+            <div class="relative w-full sm:w-80">
+                <input type="text" 
+                       @bind="searchQuery" 
+                       @bind:event="oninput"
+                       placeholder="Search by event, client, equipment, or serial no..." 
+                       class="w-full pl-9 pr-4 py-2 text-xs rounded-lg border border-slate-300 focus:outline-none focus:ring-1 focus:ring-slate-900 focus:border-slate-900 placeholder:text-slate-400" />
+                <svg class="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                </svg>
+            </div>
+
+            <!-- Status Filter Dropdown -->
+            <div class="w-full sm:w-48">
+                <select @bind="selectedStatusFilter"
+                        class="w-full px-3 py-2 text-xs rounded-lg border border-slate-300 bg-white text-slate-700 focus:outline-none focus:ring-1 focus:ring-slate-900">
+                    <option value="ALL">All Statuses</option>
+                    <option value="Dispatched">Dispatched (Active On-Location)</option>
+                    <option value="Scheduled">Scheduled Checkouts</option>
+                    <option value="Returned">Completed Returns</option>
+                </select>
+            </div>
+
+            @if (IsFiltered)
+            {
+                <button type="button" 
+                        @onclick="ResetFilters"
+                        class="text-xs text-slate-600 hover:text-slate-900 hover:underline px-2 py-1">
+                    Clear Filters
+                </button>
+            }
+        </div>
+
+        <span class="text-xs text-slate-500 self-end md:self-center font-medium">
+            Showing <strong class="text-slate-900">@FilteredDispatches.Count()</strong> of <strong class="text-slate-900">@dispatches.Count</strong> dispatch manifests
+        </span>
+    </div>
+
+    <!-- Data Table: Dispatch Manifests -->
+    <div class="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
+        <div class="overflow-x-auto">
+            <table class="w-full text-left border-collapse text-xs">
+                <thead>
+                    <tr class="bg-slate-50/75 border-b border-slate-200 text-slate-600 font-semibold uppercase tracking-wider text-[11px]">
+                        <th class="px-5 py-3.5">Event &amp; Client</th>
+                        <th class="px-5 py-3.5">Assigned Equipment</th>
+                        <th class="px-5 py-3.5">Dispatch Status</th>
+                        <th class="px-5 py-3.5">Checkout Timestamp</th>
+                        <th class="px-5 py-3.5 text-right">Actions</th>
+                    </tr>
+                </thead>
+                <tbody class="divide-y divide-slate-100">
+                    @if (isLoading)
+                    {
+                        <tr>
+                            <td colspan="5" class="px-5 py-12 text-center text-slate-400">
+                                <span class="inline-block w-4 h-4 border-2 border-slate-400/30 border-t-slate-600 rounded-full animate-spin mr-2"></span>
+                                Loading dispatch manifests from dbo.EventEquipment...
+                            </td>
+                        </tr>
+                    }
+                    else if (!FilteredDispatches.Any())
+                    {
+                        <tr>
+                            <td colspan="5" class="px-5 py-12 text-center text-slate-400">
+                                <div class="max-w-xs mx-auto space-y-2">
+                                    <p class="text-2xl">📋</p>
+                                    <p class="font-medium text-slate-700">No dispatch records found</p>
+                                    <p class="text-[11px]">Use "+ New Checkout" to assign and dispatch hardware for upcoming shoots.</p>
+                                </div>
+                            </td>
+                        </tr>
+                    }
+                    else
+                    {
+                        @foreach (var item in FilteredDispatches)
+                        {
+                            <tr class="hover:bg-slate-50/70 transition-colors">
+                                <!-- EVENT & CLIENT (from dbo.EventAppointment) -->
+                                <td class="px-5 py-3.5">
+                                    <div class="flex items-start gap-3">
+                                        <div class="w-8 h-8 rounded-lg bg-slate-900 text-white flex items-center justify-center font-bold text-xs uppercase shrink-0 mt-0.5 shadow-xs">
+                                            @GetInitials(item.EventName)
+                                        </div>
+                                        <div>
+                                            <p class="font-bold text-slate-900 leading-snug">@item.EventName</p>
+                                            <p class="text-[11px] text-slate-500 mt-0.5">
+                                                <span>Client: <strong>@item.CustomerName</strong></span>
+                                                <span class="font-mono text-slate-400">(@item.CustomerID)</span>
+                                            </p>
+                                            <p class="text-[10px] text-slate-400 flex items-center gap-1 mt-0.5">
+                                                <svg class="w-3 h-3 text-slate-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                                                </svg>
+                                                <span>@item.FormattedEventSchedule</span>
+                                            </p>
+                                        </div>
+                                    </div>
+                                </td>
+
+                                <!-- ASSIGNED EQUIPMENT (dbo.Equipment via dbo.EventEquipment) -->
+                                <td class="px-5 py-3.5">
+                                    <div class="space-y-1">
+                                        <div class="flex items-center gap-2">
+                                            <span class="font-bold text-slate-900">@item.EquipmentName</span>
+                                            <span class="text-[10px] px-1.5 py-0.5 rounded bg-slate-100 text-slate-600 font-medium">@item.EquipmentTypeName</span>
+                                        </div>
+                                        <div class="flex items-center gap-2 font-mono text-[11px] text-slate-500">
+                                            <span>ID: @item.EquipmentID</span>
+                                            @if (!string.IsNullOrEmpty(item.SerialNo))
+                                            {
+                                                <span class="text-slate-300">•</span>
+                                                <span class="text-slate-400">SN: @item.SerialNo</span>
+                                            }
+                                        </div>
+                                        @if (!string.IsNullOrWhiteSpace(item.Notes))
+                                        {
+                                            <p class="text-[10px] text-slate-400 italic max-w-xs truncate" title="@item.Notes">
+                                                Note: @item.Notes
+                                            </p>
+                                        }
+                                    </div>
+                                </td>
+
+                                <!-- DISPATCH STATUS BADGE -->
+                                <td class="px-5 py-3.5">
+                                    @if (item.IsActiveCheckout)
+                                    {
+                                        <span class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold bg-blue-50 text-blue-800 border border-blue-200">
+                                            <span class="w-1.5 h-1.5 rounded-full bg-blue-500 animate-pulse"></span>
+                                            Dispatched (Active)
+                                        </span>
+                                    }
+                                    else if (item.IsScheduled)
+                                    {
+                                        <span class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold bg-amber-50 text-amber-800 border border-amber-200">
+                                            <span class="w-1.5 h-1.5 rounded-full bg-amber-500"></span>
+                                            Scheduled
+                                        </span>
+                                    }
+                                    else
+                                    {
+                                        <span class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold bg-emerald-50 text-emerald-800 border border-emerald-200">
+                                            <span class="w-1.5 h-1.5 rounded-full bg-emerald-500"></span>
+                                            Returned &amp; Verified
+                                        </span>
+                                    }
+                                </td>
+
+                                <!-- CHECKOUT / RETURN TIMESTAMP -->
+                                <td class="px-5 py-3.5 text-slate-600 text-[11px]">
+                                    <div>
+                                        <span class="text-slate-400">Out:</span> @item.DispatchedAt.ToLocalTime().ToString("MMM dd, hh:mm tt")
+                                    </div>
+                                    @if (item.ReturnedAt.HasValue)
+                                    {
+                                        <div class="text-emerald-700 mt-0.5">
+                                            <span class="text-emerald-500">In:</span> @item.ReturnedAt.Value.ToLocalTime().ToString("MMM dd, hh:mm tt")
+                                        </div>
+                                    }
+                                </td>
+
+                                <!-- ACTIONS -->
+                                <td class="px-5 py-3.5 text-right whitespace-nowrap">
+                                    <div class="inline-flex items-center gap-1.5">
+                                        @if (item.IsActiveCheckout)
+                                        {
+                                            <button type="button" 
+                                                    @onclick="() => OpenVerifyReturnModal(item)"
+                                                    class="px-2.5 py-1.5 text-xs font-bold text-emerald-700 bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 rounded-md transition-all shadow-2xs">
+                                                Verify Return
+                                            </button>
+                                        }
+                                        else if (item.IsScheduled)
+                                        {
+                                            <button type="button" 
+                                                    @onclick="() => QuickDispatchNow(item)"
+                                                    class="px-2.5 py-1.5 text-xs font-bold text-blue-700 bg-blue-50 hover:bg-blue-100 border border-blue-200 rounded-md transition-all shadow-2xs">
+                                                Dispatch Now
+                                            </button>
+                                        }
+
+                                        <button type="button"
+                                                @onclick="() => ViewManifestDetails(item)"
+                                                class="px-2 py-1.5 text-xs text-slate-500 hover:text-slate-900 hover:bg-slate-100 rounded-md transition-colors"
+                                                title="View manifest details">
+                                            <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+                                            </svg>
+                                        </button>
+                                    </div>
+                                </td>
+                            </tr>
+                        }
+                    }
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+<!-- ══════════════════════════════════════════════════════════════════════════ -->
+<!-- MODAL: NEW CHECKOUT / DISPATCH KIT (Calls sp_AssignEquipmentToEvent)       -->
+<!-- ══════════════════════════════════════════════════════════════════════════ -->
+@if (isCheckoutModalOpen)
+{
+    <div class="fixed inset-0 z-50 overflow-y-auto bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4">
+        <div class="relative bg-white rounded-2xl shadow-xl border border-slate-200 w-full max-w-xl overflow-hidden animate-in fade-in zoom-in-95 duration-150">
+            <!-- Modal Header -->
+            <div class="px-6 py-4 bg-slate-900 text-white flex items-center justify-between">
+                <div class="flex items-center gap-2">
+                    <span class="w-7 h-7 rounded-lg bg-blue-500 text-white flex items-center justify-center font-bold text-sm">
+                        🚀
+                    </span>
+                    <div>
+                        <h2 class="text-base font-bold text-white leading-tight">New Equipment Checkout</h2>
+                        <p class="text-[11px] text-slate-300">Executes stored procedure dbo.sp_AssignEquipmentToEvent</p>
+                    </div>
+                </div>
+                <button type="button" @onclick="CloseCheckoutModal" class="text-slate-400 hover:text-white text-lg font-bold p-1">&times;</button>
+            </div>
+
+            <!-- Modal Form -->
+            <div class="p-6 space-y-4">
+                @if (!string.IsNullOrEmpty(checkoutErrorMessage))
+                {
+                    <div class="p-3 bg-rose-50 border border-rose-200 text-rose-800 rounded-lg text-xs">
+                        @checkoutErrorMessage
+                    </div>
+                }
+
+                <!-- Select Event Appointment -->
+                <div>
+                    <label class="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1">
+                        Select Target Event Shoot <span class="text-rose-500">*</span>
+                    </label>
+                    <select @bind="selectedEventId" 
+                            class="w-full px-3 py-2 text-xs rounded-lg border border-slate-300 bg-white text-slate-900 focus:outline-none focus:ring-1 focus:ring-slate-900">
+                        <option value="">-- Choose Event Appointment --</option>
+                        @foreach (var evt in upcomingEvents)
+                        {
+                            <option value="@evt.EventAppointmentID">
+                                @evt.EventName — @evt.FormattedDateTime (@evt.CustomerName)
+                            </option>
+                        }
+                    </select>
+                </div>
+
+                <!-- Select Hardware Items to Dispatch -->
+                <div>
+                    <div class="flex items-center justify-between mb-1">
+                        <label class="text-xs font-bold text-slate-700 uppercase tracking-wider">
+                            Available Hardware Items <span class="text-rose-500">*</span>
+                        </label>
+                        <span class="text-[11px] text-slate-500">
+                            Selected: <strong class="text-blue-700">@selectedEquipmentIdsForCheckout.Count</strong> items
+                        </span>
+                    </div>
+
+                    <!-- Search filter for equipment inside modal -->
+                    <input type="text"
+                           @bind="modalGearSearch"
+                           @bind:event="oninput"
+                           placeholder="Filter gear by name, type, or serial..."
+                           class="w-full mb-2 px-3 py-1.5 text-xs rounded-lg border border-slate-200 placeholder:text-slate-400" />
+
+                    <div class="max-h-52 overflow-y-auto border border-slate-200 rounded-lg divide-y divide-slate-100 bg-slate-50/50 p-1">
+                        @if (!AvailableHardwareForModal.Any())
+                        {
+                            <p class="text-center py-4 text-xs text-slate-400 italic">
+                                No available equipment matches search.
+                            </p>
+                        }
+                        else
+                        {
+                            @foreach (var eq in AvailableHardwareForModal)
+                            {
+                                var isChecked = selectedEquipmentIdsForCheckout.Contains(eq.EquipmentID);
+                                <label class="flex items-center justify-between p-2 rounded-md hover:bg-white cursor-pointer transition-colors text-xs @(isChecked ? "bg-blue-50/70 border border-blue-200" : "")">
+                                    <div class="flex items-center gap-2.5">
+                                        <input type="checkbox"
+                                               checked="@isChecked"
+                                               @onchange="(e) => ToggleEquipmentSelection(eq.EquipmentID, (bool)(e.Value ?? false))"
+                                               class="rounded border-slate-300 text-slate-900 focus:ring-slate-900" />
+                                        <div>
+                                            <p class="font-bold text-slate-900">@eq.EquipmentName</p>
+                                            <p class="text-[10px] text-slate-500 font-mono">
+                                                @eq.EquipmentID • @eq.EquipmentTypeName @(!string.IsNullOrEmpty(eq.SerialNo) ? $"• SN: {eq.SerialNo}" : "")
+                                            </p>
+                                        </div>
+                                    </div>
+                                    <span class="px-2 py-0.5 rounded text-[10px] font-semibold bg-emerald-100 text-emerald-800">Available</span>
+                                </label>
+                            }
+                        }
+                    </div>
+                </div>
+
+                <!-- Checkout Notes / Package details -->
+                <div>
+                    <label class="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1">
+                        Dispatch Notes / Kit Manifest
+                    </label>
+                    <textarea @bind="checkoutNotes"
+                              rows="2"
+                              placeholder="e.g. Include backup batteries, tethering cable, and hardcase lock keys..."
+                              class="w-full px-3 py-2 text-xs rounded-lg border border-slate-300 focus:outline-none focus:ring-1 focus:ring-slate-900"></textarea>
+                </div>
+
+                <!-- Database Procedure Notice -->
+                <div class="p-3 bg-blue-50/70 border border-blue-200 rounded-lg text-[11px] text-blue-900 space-y-1">
+                    <p class="font-bold">Database Mapping:</p>
+                    <p>Executing checkout will invoke <code class="font-mono font-bold">dbo.sp_AssignEquipmentToEvent</code> to bind the hardware to <code class="font-mono">dbo.EventEquipment</code> and mark items in active dispatch.</p>
+                </div>
+            </div>
+
+            <!-- Modal Footer -->
+            <div class="px-6 py-3.5 bg-slate-50 border-t border-slate-200 flex items-center justify-end gap-3">
+                <button type="button" 
+                        @onclick="CloseCheckoutModal"
+                        class="px-4 py-2 text-xs font-medium text-slate-600 hover:text-slate-900">
+                    Cancel
+                </button>
+                <button type="button" 
+                        @onclick="HandleSubmitCheckout"
+                        disabled="@(string.IsNullOrEmpty(selectedEventId) || !selectedEquipmentIdsForCheckout.Any() || isSubmitting)"
+                        class="px-5 py-2 bg-slate-900 hover:bg-black text-white text-xs font-bold uppercase tracking-wider rounded-lg shadow-sm transition-all disabled:opacity-50 flex items-center gap-2">
+                    @if (isSubmitting)
+                    {
+                        <span class="inline-block w-3.5 h-3.5 border-2 border-white/30 border-t-white rounded-full animate-spin"></span>
+                        <span>Dispatching...</span>
+                    }
+                    else
+                    {
+                        <span>Dispatch Kit (@selectedEquipmentIdsForCheckout.Count)</span>
+                    }
+                </button>
+            </div>
+        </div>
+    </div>
+}
+
+<!-- ══════════════════════════════════════════════════════════════════════════ -->
+<!-- MODAL: VERIFY RETURN                                                      -->
+<!-- ══════════════════════════════════════════════════════════════════════════ -->
+@if (isVerifyReturnModalOpen && verifyingItem != null)
+{
+    <div class="fixed inset-0 z-50 overflow-y-auto bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4">
+        <div class="relative bg-white rounded-2xl shadow-xl border border-slate-200 w-full max-w-md overflow-hidden animate-in fade-in zoom-in-95 duration-150">
+            <div class="px-6 py-4 bg-emerald-700 text-white flex items-center justify-between">
+                <div class="flex items-center gap-2">
+                    <span class="text-lg">🔄</span>
+                    <h3 class="font-bold text-sm text-white">Verify Equipment Return</h3>
+                </div>
+                <button type="button" @onclick="() => isVerifyReturnModalOpen = false" class="text-emerald-200 hover:text-white font-bold">&times;</button>
+            </div>
+
+            <div class="p-6 space-y-4 text-xs">
+                <div>
+                    <span class="text-slate-400 uppercase text-[10px] font-bold">Equipment</span>
+                    <p class="text-sm font-bold text-slate-900">@verifyingItem.EquipmentName</p>
+                    <p class="font-mono text-slate-500">ID: @verifyingItem.EquipmentID | SN: @(verifyingItem.SerialNo ?? "N/A")</p>
+                </div>
+
+                <div>
+                    <span class="text-slate-400 uppercase text-[10px] font-bold">Returning From Shoot</span>
+                    <p class="font-bold text-slate-800">@verifyingItem.EventName</p>
+                    <p class="text-slate-500">Client: @verifyingItem.CustomerName</p>
+                </div>
+
+                <div>
+                    <label class="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1">
+                        Return Verification Inspection Notes
+                    </label>
+                    <textarea @bind="returnInspectionNotes"
+                              rows="2"
+                              placeholder="e.g. Lens front element clean, battery recharged, no visible damage..."
+                              class="w-full px-3 py-2 text-xs rounded-lg border border-slate-300 focus:outline-none focus:ring-1 focus:ring-slate-900"></textarea>
+                </div>
+
+                <!-- Condition Option: Flag Maintenance -->
+                <div class="p-3 border rounded-lg bg-slate-50 border-slate-200 space-y-2">
+                    <label class="flex items-start gap-2.5 cursor-pointer">
+                        <input type="checkbox" 
+                               @bind="flagForMaintenanceOnReturn"
+                               class="rounded border-slate-300 text-amber-600 focus:ring-amber-500 mt-0.5" />
+                        <div>
+                            <span class="font-bold text-amber-900">Flag Hardware for Maintenance / Repair</span>
+                            <p class="text-[11px] text-slate-500">
+                                Check this if gear experienced damage, sensor dust, shutter error, or requires calibration. It will transition directly to Maintenance and log in <code class="font-mono">dbo.HistoryLog</code>.
+                            </p>
+                        </div>
+                    </label>
+                </div>
+            </div>
+
+            <div class="px-6 py-3.5 bg-slate-50 border-t border-slate-200 flex items-center justify-end gap-3">
+                <button type="button" 
+                        @onclick="() => isVerifyReturnModalOpen = false"
+                        class="px-4 py-2 text-xs font-medium text-slate-600 hover:text-slate-900">
+                    Cancel
+                </button>
+                <button type="button" 
+                        @onclick="ConfirmVerifyReturn"
+                        class="px-5 py-2 bg-emerald-700 hover:bg-emerald-800 text-white text-xs font-bold uppercase tracking-wider rounded-lg shadow-sm transition-all">
+                    Verify &amp; Accept Return
+                </button>
+            </div>
+        </div>
+    </div>
+}
+
+<!-- ══════════════════════════════════════════════════════════════════════════ -->
+<!-- MODAL: MANIFEST DETAILS                                                   -->
+<!-- ══════════════════════════════════════════════════════════════════════════ -->
+@if (detailsModalDispatch != null)
+{
+    <div class="fixed inset-0 z-50 overflow-y-auto bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4">
+        <div class="relative bg-white rounded-2xl shadow-xl border border-slate-200 w-full max-w-md overflow-hidden animate-in fade-in zoom-in-95 duration-150">
+            <div class="px-6 py-4 bg-slate-900 text-white flex items-center justify-between">
+                <h3 class="font-bold text-sm text-white">Dispatch Manifest Details</h3>
+                <button type="button" @onclick="() => detailsModalDispatch = null" class="text-slate-400 hover:text-white font-bold">&times;</button>
+            </div>
+            <div class="p-6 space-y-3 text-xs">
+                <div>
+                    <span class="text-slate-400 uppercase text-[10px] font-bold">Event Appointment</span>
+                    <p class="text-sm font-bold text-slate-900">@detailsModalDispatch.EventName</p>
+                    <p class="font-mono text-slate-500">ID: @detailsModalDispatch.EventAppointmentID</p>
+                </div>
+                <div>
+                    <span class="text-slate-400 uppercase text-[10px] font-bold">Client</span>
+                    <p class="font-bold text-slate-800">@detailsModalDispatch.CustomerName (@detailsModalDispatch.CustomerID)</p>
+                </div>
+                <div>
+                    <span class="text-slate-400 uppercase text-[10px] font-bold">Equipment</span>
+                    <p class="font-bold text-slate-900">@detailsModalDispatch.EquipmentName</p>
+                    <p class="font-mono text-slate-500">ID: @detailsModalDispatch.EquipmentID | SN: @(detailsModalDispatch.SerialNo ?? "N/A")</p>
+                </div>
+                <div>
+                    <span class="text-slate-400 uppercase text-[10px] font-bold">Current Status</span>
+                    <p class="font-bold text-blue-700">@detailsModalDispatch.DispatchStatus</p>
+                </div>
+                <div>
+                    <span class="text-slate-400 uppercase text-[10px] font-bold">Checkout Notes</span>
+                    <p class="text-slate-700 bg-slate-50 p-2.5 rounded-lg border border-slate-200">
+                        @(string.IsNullOrWhiteSpace(detailsModalDispatch.Notes) ? "Standard kit checkout." : detailsModalDispatch.Notes)
+                    </p>
+                </div>
+            </div>
+            <div class="px-6 py-3 bg-slate-50 border-t border-slate-200 flex justify-end">
+                <button type="button" @onclick="() => detailsModalDispatch = null" class="px-4 py-2 bg-slate-900 text-white rounded-lg text-xs font-bold">Close</button>
+            </div>
+        </div>
+    </div>
+}
+
+@code {
+    private List<DispatchItemModel> dispatches = new();
+    private List<EventAppointmentModel> upcomingEvents = new();
+    private List<EquipmentItemModel> allEquipments = new();
+
+    private bool isLoading = true;
+    private bool isSubmitting = false;
+    private bool isCheckoutModalOpen = false;
+    private bool isVerifyReturnModalOpen = false;
+
+    private string searchQuery = string.Empty;
+    private string selectedStatusFilter = "ALL";
+    private string? notificationMessage;
+    private string? checkoutErrorMessage;
+
+    // Modal state for New Checkout
+    private string selectedEventId = string.Empty;
+    private string checkoutNotes = string.Empty;
+    private string modalGearSearch = string.Empty;
+    private HashSet<string> selectedEquipmentIdsForCheckout = new();
+
+    // Modal state for Verify Return
+    private DispatchItemModel? verifyingItem;
+    private string returnInspectionNotes = string.Empty;
+    private bool flagForMaintenanceOnReturn = false;
+
+    // Details Modal
+    private DispatchItemModel? detailsModalDispatch;
+
+    protected override async Task OnInitializedAsync()
+    {
+        EquipmentService.OnChange += HandleExternalStateChange;
+        await LoadDataAsync();
+    }
+
+    private async Task LoadDataAsync()
+    {
+        isLoading = true;
+        dispatches = (await EquipmentService.GetDispatchesAsync()).ToList();
+        upcomingEvents = (await EquipmentService.GetUpcomingEventsAsync()).ToList();
+        allEquipments = (await EquipmentService.GetEquipmentsAsync()).ToList();
+        isLoading = false;
+    }
+
+    private void HandleExternalStateChange()
+    {
+        _ = InvokeAsync(async () =>
+        {
+            await LoadDataAsync();
+            StateHasChanged();
+        });
+    }
+
+    private bool IsFiltered => 
+        !string.IsNullOrWhiteSpace(searchQuery) || 
+        selectedStatusFilter != "ALL";
+
+    private void ResetFilters()
+    {
+        searchQuery = string.Empty;
+        selectedStatusFilter = "ALL";
+    }
+
+    private IEnumerable<DispatchItemModel> FilteredDispatches
+    {
+        get
+        {
+            var query = dispatches.AsEnumerable();
+
+            if (!string.IsNullOrWhiteSpace(searchQuery))
+            {
+                var q = searchQuery.Trim();
+                query = query.Where(d =>
+                    d.EventName.Contains(q, StringComparison.OrdinalIgnoreCase) ||
+                    d.CustomerName.Contains(q, StringComparison.OrdinalIgnoreCase) ||
+                    d.CustomerID.Contains(q, StringComparison.OrdinalIgnoreCase) ||
+                    d.EquipmentName.Contains(q, StringComparison.OrdinalIgnoreCase) ||
+                    (!string.IsNullOrEmpty(d.SerialNo) && d.SerialNo.Contains(q, StringComparison.OrdinalIgnoreCase)) ||
+                    d.EquipmentID.Contains(q, StringComparison.OrdinalIgnoreCase));
+            }
+
+            if (selectedStatusFilter != "ALL")
+            {
+                query = query.Where(d => d.DispatchStatus.Equals(selectedStatusFilter, StringComparison.OrdinalIgnoreCase));
+            }
+
+            return query;
+        }
+    }
+
+    private IEnumerable<EquipmentItemModel> AvailableHardwareForModal
+    {
+        get
+        {
+            // Only available equipment NOT under maintenance and NOT currently checked out!
+            var query = allEquipments.Where(e => e.IsAvailable && !e.IsDispatched);
+
+            if (!string.IsNullOrWhiteSpace(modalGearSearch))
+            {
+                var q = modalGearSearch.Trim();
+                query = query.Where(e =>
+                    e.EquipmentName.Contains(q, StringComparison.OrdinalIgnoreCase) ||
+                    e.EquipmentTypeName.Contains(q, StringComparison.OrdinalIgnoreCase) ||
+                    (!string.IsNullOrEmpty(e.SerialNo) && e.SerialNo.Contains(q, StringComparison.OrdinalIgnoreCase)));
+            }
+
+            return query;
+        }
+    }
+
+    private void OpenCheckoutModal()
+    {
+        selectedEventId = upcomingEvents.FirstOrDefault()?.EventAppointmentID ?? string.Empty;
+        selectedEquipmentIdsForCheckout.Clear();
+        checkoutNotes = string.Empty;
+        modalGearSearch = string.Empty;
+        checkoutErrorMessage = null;
+        isCheckoutModalOpen = true;
+    }
+
+    private void CloseCheckoutModal()
+    {
+        isCheckoutModalOpen = false;
+        checkoutErrorMessage = null;
+    }
+
+    private void ToggleEquipmentSelection(string equipmentId, bool isChecked)
+    {
+        if (isChecked) selectedEquipmentIdsForCheckout.Add(equipmentId);
+        else selectedEquipmentIdsForCheckout.Remove(equipmentId);
+    }
+
+    /// <summary>
+    /// Executes dbo.sp_AssignEquipmentToEvent for each selected gear item.
+    /// </summary>
+    private async Task HandleSubmitCheckout()
+    {
+        if (string.IsNullOrEmpty(selectedEventId) || !selectedEquipmentIdsForCheckout.Any())
+        {
+            checkoutErrorMessage = "Please select a target event and at least one hardware item.";
+            return;
+        }
+
+        isSubmitting = true;
+        checkoutErrorMessage = null;
+
+        var (success, error) = await EquipmentService.AssignMultipleEquipmentToEventAsync(
+            selectedEventId,
+            selectedEquipmentIdsForCheckout,
+            "ADM-001");
+
+        isSubmitting = false;
+
+        if (success)
+        {
+            var targetEvent = upcomingEvents.FirstOrDefault(e => e.EventAppointmentID == selectedEventId);
+            isCheckoutModalOpen = false;
+            notificationMessage = $"Successfully checked out {selectedEquipmentIdsForCheckout.Count} gear items for '{targetEvent?.EventName ?? selectedEventId}' via sp_AssignEquipmentToEvent.";
+            await LoadDataAsync();
+        }
+        else
+        {
+            checkoutErrorMessage = error ?? "Failed to assign equipment to event.";
+        }
+    }
+
+    private async Task QuickDispatchNow(DispatchItemModel item)
+    {
+        item.DispatchStatus = "Dispatched";
+        item.DispatchedAt = DateTime.UtcNow;
+        EquipmentService.NotifyStateChanged();
+        notificationMessage = $"Gear '{item.EquipmentName}' is now flagged as active Dispatched on-location.";
+        await Task.CompletedTask;
+    }
+
+    private void OpenVerifyReturnModal(DispatchItemModel item)
+    {
+        verifyingItem = item;
+        returnInspectionNotes = "Clean inspection. Equipment verified and returned to studio rack.";
+        flagForMaintenanceOnReturn = false;
+        isVerifyReturnModalOpen = true;
+    }
+
+    private async Task ConfirmVerifyReturn()
+    {
+        if (verifyingItem == null) return;
+
+        var (success, _) = await EquipmentService.VerifyReturnAsync(
+            verifyingItem.EventEquipmentID,
+            returnInspectionNotes,
+            "ADM-001",
+            flagForMaintenanceOnReturn);
+
+        isVerifyReturnModalOpen = false;
+
+        if (success)
+        {
+            if (flagForMaintenanceOnReturn)
+            {
+                notificationMessage = $"Return processed: '{verifyingItem.EquipmentName}' was flagged and sent directly to Maintenance. Audit log created in dbo.HistoryLog.";
+            }
+            else
+            {
+                notificationMessage = $"Return verified: '{verifyingItem.EquipmentName}' is back in rack and Available for new bookings.";
+            }
+            await LoadDataAsync();
+        }
+    }
+
+    private void ViewManifestDetails(DispatchItemModel item)
+    {
+        detailsModalDispatch = item;
+    }
+
+    private string GetInitials(string name)
+    {
+        if (string.IsNullOrWhiteSpace(name)) return "EV";
+        var parts = name.Split(' ', StringSplitOptions.RemoveEmptyEntries);
+        if (parts.Length == 1) return parts[0][..Math.Min(2, parts[0].Length)].ToUpperInvariant();
+        return $"{parts[0][0]}{parts[1][0]}".ToUpperInvariant();
+    }
+
+    public void Dispose()
+    {
+        EquipmentService.OnChange -= HandleExternalStateChange;
+    }
+}

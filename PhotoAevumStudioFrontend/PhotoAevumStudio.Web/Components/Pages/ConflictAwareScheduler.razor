@@ -1,0 +1,123 @@
+@page "/scheduler"
+@using PhotoAevumStudio.Web.Models
+@using PhotoAevumStudio.Web.Services
+@inject IUserService UserService
+@attribute [Authorize(Roles = "Admin,Employee")]
+
+<PageTitle>Internal Scheduler</PageTitle>
+
+<div class="max-w-6xl mx-auto py-10 px-6">
+    <h1 class="text-3xl font-bold mb-6">Master Schedule</h1>
+
+    <div class="overflow-x-auto border rounded-lg">
+        <table class="w-full text-left border-collapse">
+            <thead>
+                <tr class="bg-gray-100">
+                    <th class="p-4 border-b font-medium">Time</th>
+                    <th class="p-4 border-b font-medium">Studio A</th>
+                    <th class="p-4 border-b font-medium">Studio B</th>
+                    <th class="p-4 border-b font-medium">On Location</th>
+                </tr>
+            </thead>
+            <tbody>
+                @if (!ScheduleSlots.Any())
+                {
+                    <tr>
+                        <td colspan="4" class="p-8 text-center text-gray-500">
+                            No scheduled bookings found in the database.
+                        </td>
+                    </tr>
+                }
+                else
+                {
+                    @foreach (var slot in ScheduleSlots)
+                    {
+                        <tr>
+                            <td class="p-4 border-b font-medium bg-gray-50 whitespace-nowrap w-32">@slot.Time</td>
+                            
+                            <!-- Studio A -->
+                            <td class="p-4 border-b @GetConflictClass(slot.StudioA)">
+                                @if(slot.StudioA != null)
+                                {
+                                    <div class="font-medium">@slot.StudioA.ClientName</div>
+                                    <div class="text-sm text-gray-600">@slot.StudioA.Title</div>
+                                    @if(slot.StudioA.HasConflict)
+                                    {
+                                        <div class="text-xs font-bold text-red-600 mt-1 uppercase">Double Booked</div>
+                                    }
+                                }
+                            </td>
+                            
+                            <!-- Studio B -->
+                            <td class="p-4 border-b @GetConflictClass(slot.StudioB)">
+                                @if(slot.StudioB != null)
+                                {
+                                    <div class="font-medium">@slot.StudioB.ClientName</div>
+                                    <div class="text-sm text-gray-600">@slot.StudioB.Title</div>
+                                    @if(slot.StudioB.HasConflict)
+                                    {
+                                        <div class="text-xs font-bold text-red-600 mt-1 uppercase">Double Booked</div>
+                                    }
+                                }
+                            </td>
+                            
+                            <!-- On Location -->
+                            <td class="p-4 border-b">
+                            </td>
+                        </tr>
+                    }
+                }
+            </tbody>
+        </table>
+    </div>
+</div>
+
+@code {
+    private List<TimeSlotData> ScheduleSlots = new();
+
+    protected override void OnInitialized()
+    {
+        var bookings = UserService.GetBookings();
+        ScheduleSlots = bookings
+            .GroupBy(b => b.EventDateTime.ToString("hh:mm tt"))
+            .Select(g =>
+            {
+                var items = g.ToList();
+                var hasConflict = items.Count > 1;
+                return new TimeSlotData
+                {
+                    Time = g.Key,
+                    StudioA = items.Count > 0 ? new BookingInfo(items[0].ClientName, items[0].ServiceTitle, hasConflict) : null,
+                    StudioB = items.Count > 1 ? new BookingInfo(items[1].ClientName, items[1].ServiceTitle, hasConflict) : null
+                };
+            })
+            .ToList();
+    }
+
+    private string GetConflictClass(BookingInfo? info)
+    {
+        if (info == null) return "";
+        return info.HasConflict ? "bg-red-50 border-red-200" : "bg-green-50 border-green-200";
+    }
+
+    private class TimeSlotData
+    {
+        public string Time { get; set; } = string.Empty;
+        public BookingInfo? StudioA { get; set; }
+        public BookingInfo? StudioB { get; set; }
+    }
+
+    private class BookingInfo
+    {
+        public string ClientName { get; }
+        public string Title { get; }
+        public bool HasConflict { get; }
+
+        public BookingInfo(string clientName, string title, bool hasConflict = false)
+        {
+            ClientName = clientName;
+            Title = title;
+            HasConflict = hasConflict;
+        }
+    }
+}

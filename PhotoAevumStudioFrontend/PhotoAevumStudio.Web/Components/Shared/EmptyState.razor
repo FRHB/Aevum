@@ -1,0 +1,12 @@
+<div class="text-center p-8 border-2 border-dashed border-gray-200 rounded-lg">
+    <i data-lucide="inbox" class="w-12 h-12 text-gray-400 mx-auto mb-4"></i>
+    <h3 class="text-lg font-medium text-gray-900">@Title</h3>
+    <p class="mt-1 text-gray-500">@Description</p>
+    @ChildContent
+</div>
+
+@code {
+    [Parameter] public string Title { get; set; } = "No records found";
+    [Parameter] public string Description { get; set; } = string.Empty;
+    [Parameter] public RenderFragment? ChildContent { get; set; }
+}

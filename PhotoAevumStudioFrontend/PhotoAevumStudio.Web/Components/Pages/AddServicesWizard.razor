@@ -1,0 +1,80 @@
+@attribute [Authorize(Roles = "Admin")]
+@using PhotoAevumStudio.Web.Models
+@inject IUserService UserService
+
+@if (IsOpen)
+{
+    <div class="fixed inset-0 bg-gray-900/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+        <div class="bg-white rounded-2xl shadow-xl w-full max-w-2xl overflow-hidden flex flex-col max-h-[90vh]">
+            <div class="px-6 py-5 border-b border-gray-200 flex justify-between items-center">
+                <h3 class="font-bold text-xl">Add New Service</h3>
+                <button @onclick="CloseModal" class="text-gray-400 hover:text-gray-600"><i data-lucide="x" class="w-5 h-5"></i></button>
+            </div>
+            
+            <div class="p-6 flex-1 overflow-y-auto">
+                <div class="form space-y-4">
+                    <div class="field">
+                        <label>Service Name</label>
+                        <input type="text" @bind="_serviceName" placeholder="Enter service name" class="w-full" />
+                    </div>
+                    <div class="field">
+                        <label>Description</label>
+                        <input type="text" @bind="_description" placeholder="Enter service description" class="w-full" />
+                    </div>
+                    @if (!string.IsNullOrEmpty(_error))
+                    {
+                        <div class="alert" role="alert">@_error</div>
+                    }
+                </div>
+            </div>
+
+            <div class="px-6 py-4 bg-gray-50 border-t border-gray-200 flex justify-between">
+                <button class="btn btn--ghost" @onclick="CloseModal">Cancel</button>
+                <button class="btn bg-teal-600 text-white hover:bg-teal-700" @onclick="SaveServiceAsync">Save Service</button>
+            </div>
+        </div>
+    </div>
+}
+
+@code {
+    [Parameter] public bool IsOpen { get; set; }
+    [Parameter] public EventCallback<bool> IsOpenChanged { get; set; }
+    [Parameter] public EventCallback OnServiceSaved { get; set; }
+
+    private string _serviceName = string.Empty;
+    private string _description = string.Empty;
+    private string? _error;
+
+    private async Task CloseModal()
+    {
+        IsOpen = false;
+        _serviceName = string.Empty;
+        _description = string.Empty;
+        _error = null;
+        await IsOpenChanged.InvokeAsync(IsOpen);
+    }
+
+    private async Task SaveServiceAsync()
+    {
+        if (string.IsNullOrWhiteSpace(_serviceName))
+        {
+            _error = "Service name is required.";
+            return;
+        }
+
+        try
+        {
+            UserService.AddMainService(new MainServiceModel
+            {
+                Name = _serviceName.Trim(),
+                Description = _description.Trim()
+            });
+            await OnServiceSaved.InvokeAsync();
+            await CloseModal();
+        }
+        catch (Exception ex)
+        {
+            _error = ex.Message;
+        }
+    }
+}

@@ -1,0 +1,662 @@
+@using System.Globalization
+@using Microsoft.AspNetCore.Components.Forms
+@using PhotoAevumStudio.Web.Models
+@using PhotoAevumStudio.Web.Services
+@inject IServicesApiClient ServicesApi
+@inject ILogger<AddAddOnModal> Logger
+
+@if (IsOpen)
+{
+    <div class="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4 sm:p-6 overflow-y-auto animate-in fade-in duration-200"
+         role="dialog" aria-modal="true" aria-labelledby="addon-wizard-title">
+
+        <div class="relative w-full max-w-2xl bg-white rounded-2xl shadow-2xl border border-gray-100 overflow-hidden flex flex-col max-h-[92vh] animate-in zoom-in-95 duration-200">
+            
+            <!-- Modal Header with Stepper Progress Bar -->
+            <div class="px-6 pt-5 pb-4 border-b border-gray-100 bg-white">
+                <div class="flex items-center justify-between mb-4">
+                    <div class="flex items-center gap-3">
+                        <div class="w-10 h-10 rounded-xl bg-gray-900 text-white flex items-center justify-center font-bold shadow-xs">
+                            <svg class="w-5 h-5 text-emerald-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
+                            </svg>
+                        </div>
+                        <div>
+                            <h2 id="addon-wizard-title" class="text-lg font-bold text-gray-900">Add New Additional Service</h2>
+                            <p class="text-xs text-gray-500">Service upgrades, equipment rentals, and specialized add-ons</p>
+                        </div>
+                    </div>
+                    <button type="button" @onclick="HandleClose" disabled="@isSubmitting"
+                            class="text-gray-400 hover:text-gray-600 rounded-lg p-2 hover:bg-gray-100 transition-colors disabled:opacity-40"
+                            aria-label="Close dialog">
+                        <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+                        </svg>
+                    </button>
+                </div>
+
+                <!-- Stepper Progress Indicator -->
+                <div class="grid grid-cols-3 gap-2 pt-1">
+                    <!-- Step 1 Tab -->
+                    <div class="flex items-center gap-2 pb-2 border-b-2 @(currentStep >= 1 ? "border-gray-900 text-gray-900" : "border-gray-200 text-gray-400") transition-colors">
+                        <span class="w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold @(currentStep > 1 ? "bg-emerald-600 text-white" : currentStep == 1 ? "bg-gray-900 text-white" : "bg-gray-100 text-gray-400")">
+                            @if (currentStep > 1)
+                            {
+                                <svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="3" d="M5 13l4 4L19 7" />
+                                </svg>
+                            }
+                            else
+                            {
+                                <span>1</span>
+                            }
+                        </span>
+                        <div class="text-left">
+                            <p class="text-[11px] font-bold tracking-tight">Step 1</p>
+                            <p class="text-[10px] text-gray-500 hidden sm:block">Details Input</p>
+                        </div>
+                    </div>
+
+                    <!-- Step 2 Tab -->
+                    <div class="flex items-center gap-2 pb-2 border-b-2 @(currentStep >= 2 ? "border-gray-900 text-gray-900" : "border-gray-200 text-gray-400") transition-colors">
+                        <span class="w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold @(currentStep > 2 ? "bg-emerald-600 text-white" : currentStep == 2 ? "bg-gray-900 text-white" : "bg-gray-100 text-gray-400")">
+                            @if (currentStep > 2)
+                            {
+                                <svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="3" d="M5 13l4 4L19 7" />
+                                </svg>
+                            }
+                            else
+                            {
+                                <span>2</span>
+                            }
+                        </span>
+                        <div class="text-left">
+                            <p class="text-[11px] font-bold tracking-tight">Step 2</p>
+                            <p class="text-[10px] text-gray-500 hidden sm:block">Media</p>
+                        </div>
+                    </div>
+
+                    <!-- Step 3 Tab -->
+                    <div class="flex items-center gap-2 pb-2 border-b-2 @(currentStep == 3 ? "border-gray-900 text-gray-900" : "border-gray-200 text-gray-400") transition-colors">
+                        <span class="w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold @(currentStep == 3 ? "bg-gray-900 text-white" : "bg-gray-100 text-gray-400")">
+                            3
+                        </span>
+                        <div class="text-left">
+                            <p class="text-[11px] font-bold tracking-tight">Step 3</p>
+                            <p class="text-[10px] text-gray-500 hidden sm:block">Overview &amp; Save</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Modal Body (Content for Active Step) -->
+            <div class="p-6 overflow-y-auto flex-1 bg-white">
+                <EditForm EditContext="@editContext">
+                    <DataAnnotationsValidator />
+
+                    @if (!string.IsNullOrWhiteSpace(generalErrorMessage))
+                    {
+                        <div class="mb-5 p-3.5 bg-red-50 border border-red-200 rounded-xl text-xs text-red-700 font-medium flex items-center gap-2.5" role="alert">
+                            <svg class="w-4 h-4 text-red-600 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                            </svg>
+                            <span>@generalErrorMessage</span>
+                        </div>
+                    }
+
+                    <!-- ══════════════════════════════════════════════════════════ -->
+                    <!-- PAGE 1: DETAILS INPUT                                     -->
+                    <!-- ══════════════════════════════════════════════════════════ -->
+                    @if (currentStep == 1)
+                    {
+                        <div class="space-y-4 animate-in fade-in duration-150">
+                            <div class="bg-gray-50/70 border border-gray-100 rounded-xl p-3.5 mb-2">
+                                <p class="text-xs text-gray-600 font-medium">
+                                    Configure the identity, category assignment, and baseline pricing for this additional service.
+                                </p>
+                            </div>
+
+                            <!-- Service Category Name (Add-On Name) -->
+                            <div>
+                                <label for="addon-name" class="block text-xs font-bold text-gray-800 uppercase tracking-wider mb-1.5">
+                                    Service Category Name (Add-On Name) <span class="text-red-500">*</span>
+                                </label>
+                                <InputText id="addon-name"
+                                           @bind-Value="formModel.ServiceCategoryName"
+                                           placeholder="e.g., Drone 4K Aerial Video B-Roll"
+                                           class="w-full px-3.5 py-2.5 text-sm bg-white border border-gray-300 rounded-lg text-gray-900 focus:outline-none focus:ring-2 focus:ring-gray-900 focus:border-transparent transition-all" />
+                                <ValidationMessage For="@(() => formModel.ServiceCategoryName)" class="text-[11px] text-red-600 font-medium mt-1" />
+                            </div>
+
+                            <!-- Service Category Dropdown & Price in 2-Column Grid -->
+                            <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                                <!-- Service Category Dropdown -->
+                                <div>
+                                    <label for="addon-category" class="block text-xs font-bold text-gray-800 uppercase tracking-wider mb-1.5">
+                                        Service Category <span class="text-red-500">*</span>
+                                    </label>
+                                    <InputSelect id="addon-category"
+                                                 @bind-Value="formModel.ServiceCategory"
+                                                 class="w-full px-3.5 py-2.5 text-sm bg-white border border-gray-300 rounded-lg text-gray-900 focus:outline-none focus:ring-2 focus:ring-gray-900 focus:border-transparent transition-all">
+                                        @if (availableCategories.Count == 0)
+                                        {
+                                            <option value="Portrait Photography">Portrait Photography</option>
+                                        }
+                                        else
+                                        {
+                                            @foreach (var cat in availableCategories)
+                                            {
+                                                <option value="@cat">@cat</option>
+                                            }
+                                        }
+                                    </InputSelect>
+                                    <ValidationMessage For="@(() => formModel.ServiceCategory)" class="text-[11px] text-red-600 font-medium mt-1" />
+                                </div>
+
+                                <!-- Service Price -->
+                                <div>
+                                    <label for="addon-price" class="block text-xs font-bold text-gray-800 uppercase tracking-wider mb-1.5">
+                                        Service Price ($) <span class="text-red-500">*</span>
+                                    </label>
+                                    <div class="relative">
+                                        <span class="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-gray-500 text-sm font-semibold">$</span>
+                                        <InputNumber id="addon-price"
+                                                     @bind-Value="formModel.ServicePrice"
+                                                     step="0.01"
+                                                     min="0.00"
+                                                     placeholder="0.00"
+                                                     class="w-full pl-8 pr-3.5 py-2.5 text-sm bg-white border border-gray-300 rounded-lg text-gray-900 focus:outline-none focus:ring-2 focus:ring-gray-900 focus:border-transparent transition-all" />
+                                    </div>
+                                    <ValidationMessage For="@(() => formModel.ServicePrice)" class="text-[11px] text-red-600 font-medium mt-1" />
+                                </div>
+                            </div>
+
+                            <!-- Service Category Description -->
+                            <div>
+                                <label for="addon-desc" class="block text-xs font-bold text-gray-800 uppercase tracking-wider mb-1.5">
+                                    Service Category Description <span class="text-red-500">*</span>
+                                </label>
+                                <InputTextArea id="addon-desc"
+                                               rows="3"
+                                               @bind-Value="formModel.ServiceCategoryDescription"
+                                               placeholder="Provide a detailed explanation of what this add-on entails, client deliverables, or equipment included..."
+                                               class="w-full px-3.5 py-2.5 text-sm bg-white border border-gray-300 rounded-lg text-gray-900 focus:outline-none focus:ring-2 focus:ring-gray-900 focus:border-transparent transition-all resize-none" />
+                                <ValidationMessage For="@(() => formModel.ServiceCategoryDescription)" class="text-[11px] text-red-600 font-medium mt-1" />
+                            </div>
+                        </div>
+                    }
+
+                    <!-- ══════════════════════════════════════════════════════════ -->
+                    <!-- PAGE 2: MEDIA                                             -->
+                    <!-- ══════════════════════════════════════════════════════════ -->
+                    @if (currentStep == 2)
+                    {
+                        <div class="space-y-4 animate-in fade-in duration-150">
+                            <div>
+                                <label class="block text-xs font-bold text-gray-800 uppercase tracking-wider mb-1.5">
+                                    Choose an Image <span class="text-gray-400 font-normal normal-case">(Multipart/form-data upload)</span>
+                                </label>
+                                <p class="text-xs text-gray-500 mb-3">
+                                    Upload an illustrative showcase photo or icon for this service add-on. Recommended ratio 16:9 or 1:1, max 10MB (.JPG, .PNG, .WebP).
+                                </p>
+                            </div>
+
+                            @if (!string.IsNullOrWhiteSpace(mediaErrorMessage))
+                            {
+                                <div class="p-3 bg-red-50 border border-red-200 rounded-lg text-xs text-red-700 font-medium">
+                                    @mediaErrorMessage
+                                </div>
+                            }
+
+                            <!-- Upload Box / Drag & Drop Zone -->
+                            <div class="relative border-2 border-dashed @(formModel.ImageBytes != null ? "border-emerald-300 bg-emerald-50/20" : "border-gray-300 bg-gray-50 hover:bg-gray-100/60") rounded-xl p-6 text-center transition-all">
+                                <InputFile OnChange="HandleFileSelected"
+                                           accept=".jpg,.jpeg,.png,.webp"
+                                           class="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10" />
+
+                                @if (formModel.ImageBytes != null && !string.IsNullOrWhiteSpace(formModel.ImagePreviewUrl))
+                                {
+                                    <div class="flex flex-col items-center">
+                                        <div class="relative w-48 h-32 rounded-lg overflow-hidden border border-gray-200 shadow-sm mb-3 bg-gray-100">
+                                            <img src="@formModel.ImagePreviewUrl"
+                                                 alt="Uploaded preview"
+                                                 class="w-full h-full object-cover" />
+                                        </div>
+                                        <p class="text-xs font-bold text-gray-900">@formModel.ImageFileName</p>
+                                        <p class="text-[11px] text-gray-500 mt-0.5">
+                                            @(formModel.ImageFileSize / 1024) KB &bull; @formModel.ImageMimeType
+                                        </p>
+                                        <div class="mt-3 flex items-center gap-2 relative z-20">
+                                            <button type="button"
+                                                    @onclick="RemoveImage"
+                                                    class="px-3 py-1 bg-red-50 hover:bg-red-100 text-red-700 text-xs font-semibold rounded-md transition-colors">
+                                                Remove Image
+                                            </button>
+                                            <span class="text-xs text-gray-400">or click to replace</span>
+                                        </div>
+                                    </div>
+                                }
+                                else
+                                {
+                                    <div class="py-4">
+                                        <div class="w-12 h-12 mx-auto rounded-full bg-gray-200/70 flex items-center justify-center text-gray-500 mb-3">
+                                            <svg class="w-6 h-6 text-gray-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                                            </svg>
+                                        </div>
+                                        <p class="text-sm font-semibold text-gray-900">Click to upload or drag &amp; drop</p>
+                                        <p class="text-xs text-gray-500 mt-1">PNG, JPG, or WebP up to 10MB</p>
+                                    </div>
+                                }
+                            </div>
+
+                            @if (isReadingFile)
+                            {
+                                <div class="flex items-center justify-center gap-2 text-xs text-gray-500 py-1">
+                                    <svg class="animate-spin w-4 h-4 text-gray-900" fill="none" viewBox="0 0 24 24">
+                                        <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                                        <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z"></path>
+                                    </svg>
+                                    <span>Processing image stream...</span>
+                                </div>
+                            }
+                        </div>
+                    }
+
+                    <!-- ══════════════════════════════════════════════════════════ -->
+                    <!-- PAGE 3: OVERVIEW & SAVE                                   -->
+                    <!-- ══════════════════════════════════════════════════════════ -->
+                    @if (currentStep == 3)
+                    {
+                        <div class="space-y-5 animate-in fade-in duration-150">
+                            <!-- System Auto-Generated Sequential ID Card -->
+                            <div class="p-4 bg-gradient-to-r from-gray-900 to-gray-800 text-white rounded-xl shadow-sm border border-gray-700 flex items-center justify-between">
+                                <div>
+                                    <span class="text-[10px] font-bold uppercase tracking-wider text-emerald-400">System Auto-Generated ID</span>
+                                    <div class="flex items-center gap-2 mt-0.5">
+                                        <h3 class="text-2xl font-mono font-extrabold tracking-wider text-white">@formModel.GeneratedId</h3>
+                                        <span class="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">
+                                            Strictly Read-Only
+                                        </span>
+                                    </div>
+                                    <p class="text-[11px] text-gray-300 mt-1">
+                                        Assigned automatically by backend sequence logic to ensure concurrency safety.
+                                    </p>
+                                </div>
+                                <div class="w-12 h-12 rounded-xl bg-white/10 flex items-center justify-center text-white shrink-0">
+                                    <svg class="w-6 h-6 text-emerald-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" />
+                                    </svg>
+                                </div>
+                            </div>
+
+                            <!-- Read-only Summary Cards -->
+                            <div class="border border-gray-200 rounded-xl overflow-hidden divide-y divide-gray-100 bg-gray-50/50">
+                                <!-- Details Row -->
+                                <div class="p-4 bg-white grid grid-cols-1 sm:grid-cols-2 gap-4">
+                                    <div>
+                                        <p class="text-[11px] font-bold text-gray-500 uppercase tracking-wider">Service Category Name</p>
+                                        <p class="text-sm font-bold text-gray-900 mt-0.5">@formModel.ServiceCategoryName</p>
+                                    </div>
+                                    <div>
+                                        <p class="text-[11px] font-bold text-gray-500 uppercase tracking-wider">Service Category</p>
+                                        <p class="text-sm font-semibold text-gray-800 mt-0.5">
+                                            <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-50 text-blue-800 border border-blue-200">
+                                                @formModel.ServiceCategory
+                                            </span>
+                                        </p>
+                                    </div>
+                                </div>
+
+                                <!-- Price Row -->
+                                <div class="p-4 bg-white flex items-center justify-between">
+                                    <div>
+                                        <p class="text-[11px] font-bold text-gray-500 uppercase tracking-wider">Service Price</p>
+                                        <p class="text-xs text-gray-500">Standard rate added to base package</p>
+                                    </div>
+                                    <div class="text-right">
+                                        <p class="text-xl font-extrabold text-emerald-700">@formModel.ServicePrice.ToString("C2", CultureInfo.CreateSpecificCulture("en-US"))</p>
+                                    </div>
+                                </div>
+
+                                <!-- Description Row -->
+                                <div class="p-4 bg-white">
+                                    <p class="text-[11px] font-bold text-gray-500 uppercase tracking-wider mb-1">Service Description</p>
+                                    <p class="text-xs text-gray-700 whitespace-pre-wrap leading-relaxed bg-gray-50 p-3 rounded-lg border border-gray-100">
+                                        @formModel.ServiceCategoryDescription
+                                    </p>
+                                </div>
+
+                                <!-- Media Preview Row -->
+                                <div class="p-4 bg-white">
+                                    <p class="text-[11px] font-bold text-gray-500 uppercase tracking-wider mb-2">Media Attachment</p>
+                                    @if (formModel.ImageBytes != null && !string.IsNullOrWhiteSpace(formModel.ImagePreviewUrl))
+                                    {
+                                        <div class="flex items-center gap-4 bg-gray-50 p-3 rounded-xl border border-gray-200">
+                                            <img src="@formModel.ImagePreviewUrl"
+                                                 alt="Add-on preview"
+                                                 class="w-20 h-14 rounded-lg object-cover border border-gray-300 shrink-0" />
+                                            <div class="min-w-0 flex-1">
+                                                <p class="text-xs font-bold text-gray-900 truncate">@formModel.ImageFileName</p>
+                                                <p class="text-[11px] text-gray-500">
+                                                    @(formModel.ImageFileSize / 1024) KB &bull; @formModel.ImageMimeType
+                                                </p>
+                                                <span class="inline-flex items-center gap-1 text-[10px] font-semibold text-emerald-700 mt-0.5">
+                                                    <svg class="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M5 13l4 4L19 7" />
+                                                    </svg>
+                                                    Ready for multipart stream upload
+                                                </span>
+                                            </div>
+                                        </div>
+                                    }
+                                    else
+                                    {
+                                        <div class="flex items-center gap-2 p-3 bg-gray-50 rounded-lg border border-dashed border-gray-300 text-xs text-gray-500">
+                                            <svg class="w-4 h-4 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                                            </svg>
+                                            <span>No custom image attached. Default studio placeholder will be applied.</span>
+                                        </div>
+                                    }
+                                </div>
+                            </div>
+                        </div>
+                    }
+                </EditForm>
+            </div>
+
+            <!-- Modal Footer: Navigation Controls (Back, Next, Save) -->
+            <div class="px-6 py-4 bg-gray-50 border-t border-gray-100 flex items-center justify-between">
+                <div>
+                    @if (currentStep > 1)
+                    {
+                        <button type="button"
+                                @onclick="HandleBack"
+                                disabled="@isSubmitting"
+                                class="inline-flex items-center gap-1.5 px-4 py-2 bg-white border border-gray-300 hover:bg-gray-100 text-gray-700 text-xs font-semibold rounded-lg shadow-2xs transition-colors disabled:opacity-40">
+                            <svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M15 19l-7-7 7-7" />
+                            </svg>
+                            <span>Back</span>
+                        </button>
+                    }
+                    else
+                    {
+                        <button type="button"
+                                @onclick="HandleClose"
+                                disabled="@isSubmitting"
+                                class="px-4 py-2 bg-white border border-gray-300 hover:bg-gray-100 text-gray-700 text-xs font-semibold rounded-lg shadow-2xs transition-colors disabled:opacity-40">
+                            Cancel
+                        </button>
+                    }
+                </div>
+
+                <div class="flex items-center gap-2">
+                    @if (currentStep < 3)
+                    {
+                        <button type="button"
+                                @onclick="HandleNext"
+                                disabled="@(isReadingFile || isSubmitting)"
+                                class="inline-flex items-center gap-1.5 px-5 py-2.5 bg-gray-900 hover:bg-black text-white text-xs font-semibold rounded-lg shadow-sm transition-all duration-150 active:scale-95 disabled:opacity-60">
+                            <span>Next Step</span>
+                            <svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M9 5l7 7-7 7" />
+                            </svg>
+                        </button>
+                    }
+                    else
+                    {
+                        <button type="button"
+                                @onclick="HandleSaveAsync"
+                                disabled="@isSubmitting"
+                                class="inline-flex items-center gap-2 px-6 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-semibold rounded-lg shadow-sm transition-all duration-150 active:scale-95 disabled:opacity-60">
+                            @if (isSubmitting)
+                            {
+                                <svg class="animate-spin w-4 h-4 text-white" fill="none" viewBox="0 0 24 24">
+                                    <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                                    <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z"></path>
+                                </svg>
+                                <span>Saving Add-On...</span>
+                            }
+                            else
+                            {
+                                <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7" />
+                                </svg>
+                                <span>Save Additional Service</span>
+                            }
+                        </button>
+                    }
+                </div>
+            </div>
+        </div>
+    </div>
+}
+
+@code {
+    [Parameter] public bool IsOpen { get; set; }
+    [Parameter] public EventCallback<bool> IsOpenChanged { get; set; }
+    [Parameter] public EventCallback<AddOnServiceItem> OnAddOnCreated { get; set; }
+
+    private int currentStep = 1;
+    private bool isSubmitting = false;
+    private bool isReadingFile = false;
+    private string? generalErrorMessage;
+    private string? mediaErrorMessage;
+
+    private AdditionalServiceWizardFormModel formModel = new();
+    private EditContext editContext = default!;
+    private List<string> availableCategories = new();
+
+    protected override void OnInitialized()
+    {
+        InitializeForm();
+    }
+
+    protected override async Task OnParametersSetAsync()
+    {
+        if (IsOpen && (!formModel.IsIdLoaded || availableCategories.Count == 0))
+        {
+            await LoadCategoriesAndNextIdAsync();
+        }
+    }
+
+    private void InitializeForm()
+    {
+        formModel = new AdditionalServiceWizardFormModel();
+        editContext = new EditContext(formModel);
+        currentStep = 1;
+        generalErrorMessage = null;
+        mediaErrorMessage = null;
+        isSubmitting = false;
+        isReadingFile = false;
+    }
+
+    private async Task LoadCategoriesAndNextIdAsync()
+    {
+        try
+        {
+            // 1. Fetch available categories
+            var cats = await ServicesApi.GetAdditionalServiceCategoriesAsync();
+            if (cats != null && cats.Count > 0)
+            {
+                availableCategories = cats.ToList();
+                if (!availableCategories.Contains(formModel.ServiceCategory))
+                {
+                    formModel.ServiceCategory = availableCategories[0];
+                }
+            }
+
+            // 2. Fetch the read-only next ID via backend sequence logic
+            var nextId = await ServicesApi.GetNextAdditionalServiceIdAsync();
+            if (!string.IsNullOrWhiteSpace(nextId))
+            {
+                formModel.GeneratedId = nextId;
+                formModel.IsIdLoaded = true;
+            }
+        }
+        catch (Exception ex)
+        {
+            Logger.LogWarning(ex, "Failed to pre-load categories or next ID for Add-On wizard.");
+        }
+    }
+
+    private async Task HandleFileSelected(InputFileChangeEventArgs e)
+    {
+        mediaErrorMessage = null;
+        var file = e.File;
+        if (file == null) return;
+
+        const long maxFileSize = 10 * 1024 * 1024; // 10MB
+        if (file.Size > maxFileSize)
+        {
+            mediaErrorMessage = "File size exceeds the 10 MB limit. Please select a smaller image.";
+            return;
+        }
+
+        var allowedExtensions = new[] { ".jpg", ".jpeg", ".png", ".webp" };
+        var extension = Path.GetExtension(file.Name).ToLowerInvariant();
+        if (!allowedExtensions.Contains(extension))
+        {
+            mediaErrorMessage = "Only .jpg, .jpeg, .png, and .webp images are allowed.";
+            return;
+        }
+
+        isReadingFile = true;
+        try
+        {
+            await using var stream = file.OpenReadStream(maxAllowedSize: maxFileSize);
+            using var ms = new MemoryStream();
+            await stream.CopyToAsync(ms);
+
+            formModel.ImageBytes = ms.ToArray();
+            formModel.ImageMimeType = string.IsNullOrWhiteSpace(file.ContentType) ? "image/jpeg" : file.ContentType;
+            formModel.ImageFileName = file.Name;
+            formModel.ImageFileSize = file.Size;
+            formModel.ImagePreviewUrl = $"data:{formModel.ImageMimeType};base64,{Convert.ToBase64String(formModel.ImageBytes)}";
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Failed to read image stream.");
+            mediaErrorMessage = $"Failed to read file: {ex.Message}";
+        }
+        finally
+        {
+            isReadingFile = false;
+        }
+    }
+
+    private void RemoveImage()
+    {
+        formModel.ImageBytes = null;
+        formModel.ImageMimeType = null;
+        formModel.ImageFileName = null;
+        formModel.ImageFileSize = 0;
+        formModel.ImagePreviewUrl = null;
+        mediaErrorMessage = null;
+    }
+
+    private void HandleNext()
+    {
+        generalErrorMessage = null;
+        if (currentStep == 1)
+        {
+            // Validate Step 1 details
+            var nameField = editContext.Field(nameof(formModel.ServiceCategoryName));
+            var descField = editContext.Field(nameof(formModel.ServiceCategoryDescription));
+            var catField = editContext.Field(nameof(formModel.ServiceCategory));
+            var priceField = editContext.Field(nameof(formModel.ServicePrice));
+
+            editContext.NotifyFieldChanged(nameField);
+            editContext.NotifyFieldChanged(descField);
+            editContext.NotifyFieldChanged(catField);
+            editContext.NotifyFieldChanged(priceField);
+
+            if (!editContext.Validate())
+            {
+                generalErrorMessage = "Please resolve the highlighted validation errors before proceeding.";
+                return;
+            }
+
+            currentStep = 2;
+        }
+        else if (currentStep == 2)
+        {
+            currentStep = 3;
+        }
+    }
+
+    private void HandleBack()
+    {
+        generalErrorMessage = null;
+        if (currentStep > 1)
+        {
+            currentStep--;
+        }
+    }
+
+    private async Task HandleSaveAsync()
+    {
+        if (isSubmitting) return;
+
+        generalErrorMessage = null;
+        if (!editContext.Validate())
+        {
+            generalErrorMessage = "Please ensure all required fields are valid before saving.";
+            currentStep = 1;
+            return;
+        }
+
+        isSubmitting = true;
+        try
+        {
+            var result = await ServicesApi.CreateAdditionalServiceAsync(formModel);
+            if (!result.Success)
+            {
+                generalErrorMessage = result.ErrorMessage ?? "Failed to save additional service. Please try again.";
+                return;
+            }
+
+            var finalId = result.CreatedId ?? formModel.GeneratedId;
+
+            // Notify parent component
+            var createdItem = new AddOnServiceItem
+            {
+                Code = finalId,
+                Title = formModel.ServiceCategoryName.Trim(),
+                TypeCategory = formModel.ServiceCategory.Trim(),
+                FilterCategory = formModel.ServiceCategory.Trim(),
+                PriceText = formModel.ServicePrice.ToString("C2", CultureInfo.CreateSpecificCulture("en-US")),
+                Description = formModel.ServiceCategoryDescription.Trim(),
+                Status = "Active"
+            };
+
+            await OnAddOnCreated.InvokeAsync(createdItem);
+            await CloseModal();
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Error while saving Additional Service Add-On.");
+            generalErrorMessage = $"An unexpected error occurred: {ex.Message}";
+        }
+        finally
+        {
+            isSubmitting = false;
+        }
+    }
+
+    private async Task HandleClose()
+    {
+        if (isSubmitting) return;
+        await CloseModal();
+    }
+
+    private async Task CloseModal()
+    {
+        InitializeForm();
+        IsOpen = false;
+        await IsOpenChanged.InvokeAsync(false);
+    }
+}

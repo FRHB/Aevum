@@ -1,0 +1,1148 @@
+@page "/admin/services/category"
+@page "/admin/services/categories"
+@page "/staff/services/category"
+@page "/services/category"
+@page "/services/categories"
+@page "/category-services"
+@layout AdminLayout
+@rendermode InteractiveServer
+@attribute [Authorize]
+@using PhotoAevumStudio.Web.Models
+@using PhotoAevumStudio.Web.Services
+@inject IServicesApiClient ServicesApi
+@inject IScheduleService ScheduleService
+
+<PageTitle>Service Categories Management | Photo Aevum Studio</PageTitle>
+
+<div class="space-y-6">
+    <!-- Header Section: Breadcrumbs, Title, Subtitle, and Add Action -->
+    <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 pb-2">
+        <div>
+            <div class="flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-gray-500 mb-1">
+                <span>SERVICES MODULE</span>
+                <span class="text-gray-300">/</span>
+                <span class="text-gray-900 font-bold">SERVICE CATEGORIES</span>
+            </div>
+            <h1 class="text-2xl sm:text-3xl font-extrabold text-gray-900 tracking-tight">Service Categories Management</h1>
+            <p class="text-sm text-gray-500 mt-1">
+                Monitor category distribution, search service categories, and manage the master catalog registry.
+            </p>
+        </div>
+
+        <div class="flex items-center gap-3">
+            <button type="button" 
+                    @onclick="OpenAddModal"
+                    class="inline-flex items-center gap-2 px-4 py-2.5 bg-gray-900 hover:bg-black text-white text-sm font-semibold rounded-lg shadow-sm hover:shadow transition-all duration-150 active:scale-95 focus:outline-none focus:ring-2 focus:ring-gray-900 focus:ring-offset-2 cursor-pointer">
+                <svg class="w-4 h-4 text-emerald-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M12 4v16m8-8H4" />
+                </svg>
+                <span>Add New Category</span>
+            </button>
+        </div>
+    </div>
+
+    <!-- Alert / Toast Banner for Category Registry Updates -->
+    @if (!string.IsNullOrWhiteSpace(notificationMessage))
+    {
+        <div class="p-4 bg-emerald-50 border border-emerald-200 text-emerald-900 rounded-xl flex items-center justify-between shadow-xs animate-in fade-in duration-200">
+            <div class="flex items-center gap-3">
+                <span class="w-7 h-7 rounded-full bg-emerald-600 text-white flex items-center justify-center shrink-0">
+                    <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M5 13l4 4L19 7" />
+                    </svg>
+                </span>
+                <div>
+                    <p class="text-xs font-bold text-emerald-950">Master Category Registry Updated</p>
+                    <p class="text-xs text-emerald-800">@notificationMessage</p>
+                </div>
+            </div>
+            <button type="button" @onclick="() => notificationMessage = null" class="text-emerald-700 hover:text-emerald-950 p-1 text-sm font-bold cursor-pointer">&times;</button>
+        </div>
+    }
+
+    <!-- Summary Metric Cards (Top Row - 4 responsive KPI cards matching reference style) -->
+    <div class="grid grid-cols-2 lg:grid-cols-4 gap-4">
+        <!-- Card 1: TOTAL CATEGORIES -->
+        <div class="bg-white p-4 rounded-xl border border-gray-200 shadow-xs hover:shadow-md transition-shadow">
+            <div class="flex items-center justify-between">
+                <span class="text-xs font-semibold text-gray-500 uppercase tracking-wider">Total Categories</span>
+                <span class="p-1.5 rounded-lg bg-gray-100 text-gray-700 text-sm">📁</span>
+            </div>
+            <p class="text-2xl font-bold text-gray-900 mt-2">@categories.Count</p>
+            <p class="text-[11px] text-gray-400 mt-0.5">Master lookup catalog</p>
+        </div>
+
+        <!-- Card 2: ACTIVE SERVICES -->
+        <div class="bg-white p-4 rounded-xl border border-gray-200 shadow-xs hover:shadow-md transition-shadow">
+            <div class="flex items-center justify-between">
+                <span class="text-xs font-semibold text-gray-500 uppercase tracking-wider">Active Services</span>
+                <span class="p-1.5 rounded-lg bg-blue-50 text-blue-700 text-sm">⚡</span>
+            </div>
+            <p class="text-2xl font-bold text-gray-900 mt-2">@TotalActiveServicesCount</p>
+            <p class="text-[11px] text-gray-400 mt-0.5">Live catalog offerings</p>
+        </div>
+
+        <!-- Card 3: FEATURED CATEGORIES -->
+        <div class="bg-white p-4 rounded-xl border border-gray-200 shadow-xs hover:shadow-md transition-shadow">
+            <div class="flex items-center justify-between">
+                <span class="text-xs font-semibold text-gray-500 uppercase tracking-wider">Featured Categories</span>
+                <span class="p-1.5 rounded-lg bg-purple-50 text-purple-700 text-sm">⭐</span>
+            </div>
+            <p class="text-2xl font-bold text-gray-900 mt-2">
+                @categories.Count(c => c.IsFeatured)
+            </p>
+            <p class="text-[11px] text-gray-400 mt-0.5">Primary studio showcases</p>
+        </div>
+
+        <!-- Card 4: ARCHIVED / DRAFT -->
+        <div class="bg-white p-4 rounded-xl border border-gray-200 shadow-xs hover:shadow-md transition-shadow">
+            <div class="flex items-center justify-between">
+                <span class="text-xs font-semibold text-gray-500 uppercase tracking-wider">Archived / Draft</span>
+                <span class="p-1.5 rounded-lg bg-emerald-50 text-emerald-700 text-sm">📦</span>
+            </div>
+            <p class="text-2xl font-bold text-gray-900 mt-2">
+                @categories.Count(c => !c.IsActive)
+            </p>
+            <p class="text-[11px] text-gray-400 mt-0.5">Inactive & pending review</p>
+        </div>
+    </div>
+
+    <!-- Search & Filter Toolbar -->
+    <div class="bg-white p-4 rounded-xl border border-gray-200 shadow-xs space-y-3">
+        <div class="flex flex-col md:flex-row gap-3 items-stretch md:items-center justify-between">
+            
+            <!-- Search Bar: Search category by name or code -->
+            <div class="relative flex-1 min-w-[240px]">
+                <div class="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-gray-400">
+                    <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                    </svg>
+                </div>
+                <input type="text"
+                       @bind="searchQuery"
+                       @bind:event="oninput"
+                       placeholder="Search category by name or code..."
+                       class="w-full pl-10 pr-10 py-2.5 text-sm bg-gray-50/70 border border-gray-200 rounded-lg text-gray-900 placeholder-gray-400 focus:bg-white focus:outline-none focus:ring-2 focus:ring-gray-900 focus:border-transparent transition-all" />
+                @if (!string.IsNullOrWhiteSpace(searchQuery))
+                {
+                    <button type="button" 
+                            @onclick="() => searchQuery = string.Empty"
+                            class="absolute inset-y-0 right-0 pr-3 flex items-center text-gray-400 hover:text-gray-700 cursor-pointer">
+                        <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+                        </svg>
+                    </button>
+                }
+            </div>
+
+            <!-- Filter Dropdown Selectors: Type & Status Filters -->
+            <div class="flex flex-wrap sm:flex-nowrap items-center gap-3">
+                <!-- Type Filter Dropdown -->
+                <div class="relative min-w-[190px]">
+                    <div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-gray-400">
+                        <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2.586a1 1 0 01-.293.707l-6.414 6.414a1 1 0 00-.293.707V17l-4 4v-6.586a1 1 0 00-.293-.707L3.293 7.293A1 1 0 013 6.586V4z" />
+                        </svg>
+                    </div>
+                    <select @bind="selectedTypeFilter"
+                            class="w-full pl-9 pr-8 py-2.5 text-sm bg-gray-50/70 border border-gray-200 rounded-lg text-gray-800 focus:bg-white focus:outline-none focus:ring-2 focus:ring-gray-900 focus:border-transparent cursor-pointer transition-all">
+                        <option value="ALL">All Categories (@categories.Count)</option>
+                        <option value="Main Services">Main Services (@categories.Count(c => c.Type == "Main Services"))</option>
+                        <option value="Packages">Packages (@categories.Count(c => c.Type == "Packages"))</option>
+                        <option value="Add-Ons">Add-Ons (@categories.Count(c => c.Type == "Add-Ons"))</option>
+                        <option value="Specialty">Specialty (@categories.Count(c => c.Type == "Specialty"))</option>
+                    </select>
+                </div>
+
+                <!-- Status Filter Dropdown -->
+                <div class="relative min-w-[160px]">
+                    <select @bind="selectedStatusFilter"
+                            class="w-full px-3 py-2.5 text-sm bg-gray-50/70 border border-gray-200 rounded-lg text-gray-800 focus:bg-white focus:outline-none focus:ring-2 focus:ring-gray-900 focus:border-transparent cursor-pointer transition-all">
+                        <option value="ALL">All Statuses</option>
+                        <option value="Active">Active</option>
+                        <option value="Draft">Draft</option>
+                        <option value="Inactive">Inactive / Archived</option>
+                    </select>
+                </div>
+
+                @if (IsFiltered)
+                {
+                    <button type="button" 
+                            @onclick="ResetFilters"
+                            class="px-3 py-2.5 text-xs font-semibold text-gray-600 hover:text-gray-900 hover:bg-gray-100 rounded-lg border border-gray-200 transition-colors whitespace-nowrap cursor-pointer">
+                        Reset Filters
+                    </button>
+                }
+            </div>
+        </div>
+
+        <!-- Quick Filter Tag Pills Bar (Matching reference image style) -->
+        <div class="pt-2 border-t border-gray-100 flex items-center gap-2 flex-wrap">
+            <span class="text-[11px] font-semibold text-gray-400 uppercase tracking-wider mr-1">Quick Filter:</span>
+            
+            <button type="button"
+                    @onclick='() => selectedTypeFilter = "ALL"'
+                    class="px-2.5 py-1 rounded-full text-xs font-medium transition-all cursor-pointer @(selectedTypeFilter == "ALL" ? "bg-gray-900 text-white shadow-xs" : "bg-gray-100 text-gray-600 hover:bg-gray-200")">
+                All (@categories.Count)
+            </button>
+
+            <!-- Main Services Pill -->
+            <button type="button"
+                    @onclick='() => FilterByType("Main Services")'
+                    class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium border transition-all duration-150 cursor-pointer @(selectedTypeFilter == "Main Services" ? "ring-2 ring-gray-900 border-gray-900 font-bold bg-blue-50 text-blue-800" : "bg-blue-50/70 text-blue-700 border-blue-200 hover:opacity-85")">
+                <span class="w-1.5 h-1.5 rounded-full bg-blue-500"></span>
+                <span>Main Services</span>
+                <span class="text-[10px] opacity-75 font-semibold">(@categories.Count(c => c.Type == "Main Services"))</span>
+            </button>
+
+            <!-- Packages Pill -->
+            <button type="button"
+                    @onclick='() => FilterByType("Packages")'
+                    class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium border transition-all duration-150 cursor-pointer @(selectedTypeFilter == "Packages" ? "ring-2 ring-gray-900 border-gray-900 font-bold bg-rose-50 text-rose-800" : "bg-rose-50/70 text-rose-700 border-rose-200 hover:opacity-85")">
+                <span class="w-1.5 h-1.5 rounded-full bg-rose-500"></span>
+                <span>Packages</span>
+                <span class="text-[10px] opacity-75 font-semibold">(@categories.Count(c => c.Type == "Packages"))</span>
+            </button>
+
+            <!-- Add-Ons Pill -->
+            <button type="button"
+                    @onclick='() => FilterByType("Add-Ons")'
+                    class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium border transition-all duration-150 cursor-pointer @(selectedTypeFilter == "Add-Ons" ? "ring-2 ring-gray-900 border-gray-900 font-bold bg-emerald-50 text-emerald-800" : "bg-emerald-50/70 text-emerald-700 border-emerald-200 hover:opacity-85")">
+                <span class="w-1.5 h-1.5 rounded-full bg-emerald-500"></span>
+                <span>Add-Ons</span>
+                <span class="text-[10px] opacity-75 font-semibold">(@categories.Count(c => c.Type == "Add-Ons"))</span>
+            </button>
+
+            <!-- Specialty Pill -->
+            <button type="button"
+                    @onclick='() => FilterByType("Specialty")'
+                    class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium border transition-all duration-150 cursor-pointer @(selectedTypeFilter == "Specialty" ? "ring-2 ring-gray-900 border-gray-900 font-bold bg-purple-50 text-purple-800" : "bg-purple-50/70 text-purple-700 border-purple-200 hover:opacity-85")">
+                <span class="w-1.5 h-1.5 rounded-full bg-purple-500"></span>
+                <span>Specialty</span>
+                <span class="text-[10px] opacity-75 font-semibold">(@categories.Count(c => c.Type == "Specialty"))</span>
+            </button>
+        </div>
+    </div>
+
+    <!-- Data Table Layout: Category Name, Description & Code, Associated Services, Status, Actions -->
+    <div class="bg-white rounded-xl shadow-xs border border-gray-200 overflow-hidden">
+        
+        <!-- Table Metadata Bar -->
+        <div class="px-6 py-3.5 bg-gray-50/50 border-b border-gray-200 flex items-center justify-between text-xs text-gray-500 font-medium">
+            <div>
+                Showing <span class="font-bold text-gray-900">@FilteredCategories.Count()</span> of <span class="font-bold text-gray-900">@categories.Count</span> categories
+            </div>
+            @if (IsFiltered)
+            {
+                <span class="inline-flex items-center gap-1 text-emerald-700 bg-emerald-50 px-2.5 py-0.5 rounded-full text-[11px] font-semibold border border-emerald-200">
+                    <span class="w-1.5 h-1.5 rounded-full bg-emerald-500"></span>
+                    <span>Active Filters Applied</span>
+                </span>
+            }
+        </div>
+
+        <div class="overflow-x-auto">
+            <table class="w-full text-left border-collapse">
+                <thead>
+                    <tr class="bg-gray-50/80 border-b border-gray-200 text-[11px] font-semibold uppercase tracking-wider text-gray-500">
+                        <th scope="col" class="py-3.5 px-6">Category Name</th>
+                        <th scope="col" class="py-3.5 px-6">Description &amp; Code</th>
+                        <th scope="col" class="py-3.5 px-6">Associated Services</th>
+                        <th scope="col" class="py-3.5 px-6">Status</th>
+                        <th scope="col" class="py-3.5 px-6 text-right">Actions</th>
+                    </tr>
+                </thead>
+                <tbody class="divide-y divide-gray-100 text-sm">
+                    @if (FilteredCategories.Any())
+                    {
+                        @foreach (var cat in FilteredCategories)
+                        {
+                            var classes = SpecializationColorHelper.GetClasses(cat.ColorTag);
+                            var catProfile = ScheduleService.GetCategoryProfile(cat.Code, cat.Name);
+
+                            <tr class="hover:bg-gray-50/60 transition-colors duration-100">
+                                
+                                <!-- Category Name & Initials Avatar Chip -->
+                                <td class="py-4 px-6">
+                                    <div class="flex items-center gap-3">
+                                        <div class="w-10 h-10 rounded-full bg-gray-900 text-white font-bold text-xs flex items-center justify-center shrink-0 shadow-xs">
+                                            @cat.Initials
+                                        </div>
+                                        <div>
+                                            <div class="font-semibold text-gray-900 flex items-center gap-1.5">
+                                                <span>@cat.Name</span>
+                                                @if (cat.IsFeatured)
+                                                {
+                                                    <span class="inline-flex items-center text-[10px] font-bold text-amber-700 bg-amber-50 px-1.5 py-0.2 rounded border border-amber-200" title="Featured Category">
+                                                        ★ Featured
+                                                    </span>
+                                                }
+                                                @if (cat.ShowInPortfolio)
+                                                {
+                                                    <span class="inline-flex items-center text-[10px] font-bold text-indigo-700 bg-indigo-50 px-1.5 py-0.2 rounded border border-indigo-200" title="Shown in the public Portfolio under @cat.PortfolioSection">
+                                                        🖼 Portfolio · @cat.PortfolioSection
+                                                    </span>
+                                                }
+                                            </div>
+                                            <div class="text-[11px] text-gray-400 mt-0.5 flex items-center gap-2">
+                                                <span>@cat.Type</span>
+                                                <span>&bull;</span>
+                                                <span>@cat.AssociatedServices.Count Services</span>
+                                                @if (catProfile is not null)
+                                                {
+                                                    <span>&bull;</span>
+                                                    <span title="Auto-assigned to events in this category">⚙ @catProfile.StaffIds.Count staff · @catProfile.EquipmentIds.Count gear</span>
+                                                }
+                                            </div>
+                                        </div>
+                                    </div>
+                                </td>
+
+                                <!-- Description & Monospace Code -->
+                                <td class="py-4 px-6">
+                                    <div class="text-xs text-gray-700 font-medium max-w-sm line-clamp-2">
+                                        @(string.IsNullOrWhiteSpace(cat.Description) ? "No description provided." : cat.Description)
+                                    </div>
+                                    <div class="font-mono text-[11px] text-gray-400 mt-1">@cat.Code</div>
+                                </td>
+
+                                <!-- Associated Services Pills (Matching reference image chips) -->
+                                <td class="py-4 px-6">
+                                    @if (cat.AssociatedServices.Any())
+                                    {
+                                        <div class="flex flex-wrap gap-1.5 max-w-md">
+                                            @foreach (var service in cat.AssociatedServices)
+                                            {
+                                                <span class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium border @classes.BadgeClass shadow-2xs">
+                                                    <span class="w-1.5 h-1.5 rounded-full @classes.DotClass"></span>
+                                                    @service
+                                                </span>
+                                            }
+                                        </div>
+                                    }
+                                    else
+                                    {
+                                        <span class="text-xs text-gray-400 italic">No services linked</span>
+                                    }
+                                </td>
+
+                                <!-- Status Badge with Dot -->
+                                <td class="py-4 px-6 whitespace-nowrap">
+                                    @if (cat.Status == "Active")
+                                    {
+                                        <span class="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200">
+                                            <span class="w-1.5 h-1.5 rounded-full bg-emerald-500"></span>
+                                            Active
+                                        </span>
+                                    }
+                                    else if (cat.Status == "Draft")
+                                    {
+                                        <span class="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-semibold bg-amber-50 text-amber-700 border border-amber-200">
+                                            <span class="w-1.5 h-1.5 rounded-full bg-amber-500"></span>
+                                            Draft
+                                        </span>
+                                    }
+                                    else
+                                    {
+                                        <span class="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-semibold bg-gray-100 text-gray-600 border border-gray-200">
+                                            <span class="w-1.5 h-1.5 rounded-full bg-gray-400"></span>
+                                            @cat.Status
+                                        </span>
+                                    }
+                                </td>
+
+                                <!-- Action Links (View Details -> and Edit) -->
+                                <td class="py-4 px-6 text-right whitespace-nowrap">
+                                    <div class="inline-flex items-center gap-3">
+                                        <button type="button" 
+                                                @onclick="() => OpenEditModal(cat)"
+                                                class="text-xs font-medium text-gray-500 hover:text-gray-900 transition-colors cursor-pointer"
+                                                title="Edit category">
+                                            Edit
+                                        </button>
+                                        <span class="text-gray-200">|</span>
+                                        <button type="button"
+                                                @onclick="() => OpenDetailsModal(cat)"
+                                                class="text-xs font-semibold text-gray-700 hover:text-gray-900 hover:underline transition-colors cursor-pointer">
+                                            View Details &rarr;
+                                        </button>
+                                    </div>
+                                </td>
+                            </tr>
+                        }
+                    }
+                    else
+                    {
+                        <!-- Empty Search & Filter State -->
+                        <tr>
+                            <td colspan="5" class="py-12 px-6 text-center">
+                                <div class="max-w-sm mx-auto space-y-3">
+                                    <div class="w-12 h-12 mx-auto rounded-full bg-gray-100 text-gray-400 flex items-center justify-center">
+                                        <svg class="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9.172 16.172a4 4 0 015.656 0M9 10h.01M15 10h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                                        </svg>
+                                    </div>
+                                    <h4 class="text-sm font-bold text-gray-900">No matching categories found</h4>
+                                    <p class="text-xs text-gray-500 leading-relaxed">
+                                        No categories matched your search criteria
+                                        @if (!string.IsNullOrWhiteSpace(searchQuery))
+                                        {
+                                            <span> for <span class="font-semibold text-gray-700">"@searchQuery"</span></span>
+                                        }
+                                        @(selectedTypeFilter != "ALL" ? $" in type \"{selectedTypeFilter}\"" : "").
+                                    </p>
+                                    <button type="button" @onclick="ResetFilters"
+                                            class="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-gray-700 bg-gray-100 hover:bg-gray-200 rounded-lg transition-colors cursor-pointer">
+                                        Reset Search &amp; Filters
+                                    </button>
+                                </div>
+                            </td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+<!-- 2-Step Service Category Wizard Modal -->
+<CategoryWizardModal @bind-IsOpen="isCategoryWizardOpen" OnCategorySaved="HandleCategoryWizardSaved" />
+
+<!-- Add / Edit Category Modal Dialog -->
+@if (isModalOpen)
+{
+    <div class="fixed inset-0 z-50 bg-black/50 backdrop-blur-xs flex items-center justify-center p-4 sm:p-6 overflow-y-auto animate-in fade-in duration-150"
+         role="dialog" aria-modal="true">
+        <div class="relative w-full max-w-lg bg-white rounded-2xl shadow-2xl border border-gray-100 overflow-hidden flex flex-col">
+            
+            <!-- Modal Header -->
+            <div class="px-6 py-5 border-b border-gray-100 flex items-center justify-between bg-white">
+                <div class="flex items-center gap-3">
+                    <div class="w-10 h-10 rounded-xl bg-gray-900 text-white flex items-center justify-center font-bold text-sm shadow-sm">
+                        📁
+                    </div>
+                    <div>
+                        <h2 class="text-lg font-bold text-gray-900">
+                            @(isEditMode ? "Edit Service Category" : "Add New Service Category")
+                        </h2>
+                        <p class="text-xs text-gray-500">Master service catalog classification registry</p>
+                    </div>
+                </div>
+                <button type="button" @onclick="CloseModal"
+                        class="text-gray-400 hover:text-gray-600 rounded-lg p-1.5 hover:bg-gray-100 transition-colors cursor-pointer">
+                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+                    </svg>
+                </button>
+            </div>
+
+            <!-- Modal Form Body -->
+            <EditForm Model="formModel" OnValidSubmit="HandleSaveCategory">
+                <DataAnnotationsValidator />
+                
+                <div class="p-6 space-y-4 max-h-[70vh] overflow-y-auto">
+                    <!-- Validation Summary -->
+                    <ValidationSummary class="text-xs text-red-600 space-y-1 bg-red-50 p-3 rounded-lg border border-red-200" />
+
+                    <!-- Category Name -->
+                    <div>
+                        <label class="block text-xs font-semibold text-gray-700 uppercase tracking-wider mb-1">
+                            Category Name <span class="text-red-500">*</span>
+                        </label>
+                        <InputText @bind-Value="formModel.Name" 
+                                   placeholder="e.g. Portrait Photography, Commercial & Branding"
+                                   class="w-full px-3.5 py-2 text-sm bg-gray-50/70 border border-gray-200 rounded-lg text-gray-900 placeholder-gray-400 focus:bg-white focus:outline-none focus:ring-2 focus:ring-gray-900" />
+                        <ValidationMessage For="() => formModel.Name" class="text-[11px] text-red-500 mt-1" />
+                    </div>
+
+                    <!-- Category Code & Type Row -->
+                    <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                        <div>
+                            <label class="block text-xs font-semibold text-gray-700 uppercase tracking-wider mb-1">
+                                Category Code <span class="text-red-500">*</span>
+                            </label>
+                            <InputText @bind-Value="formModel.Code" 
+                                       placeholder="e.g. CAT-PORT"
+                                       class="w-full px-3.5 py-2 text-sm font-mono bg-gray-50/70 border border-gray-200 rounded-lg text-gray-900 placeholder-gray-400 focus:bg-white focus:outline-none focus:ring-2 focus:ring-gray-900" />
+                            <ValidationMessage For="() => formModel.Code" class="text-[11px] text-red-500 mt-1" />
+                        </div>
+                        <div>
+                            <label class="block text-xs font-semibold text-gray-700 uppercase tracking-wider mb-1">
+                                Category Type <span class="text-red-500">*</span>
+                            </label>
+                            <InputSelect @bind-Value="formModel.Type"
+                                         class="w-full px-3.5 py-2 text-sm bg-gray-50/70 border border-gray-200 rounded-lg text-gray-900 focus:bg-white focus:outline-none focus:ring-2 focus:ring-gray-900 cursor-pointer">
+                                <option value="Main Services">Main Services</option>
+                                <option value="Packages">Packages</option>
+                                <option value="Add-Ons">Add-Ons</option>
+                                <option value="Specialty">Specialty</option>
+                            </InputSelect>
+                        </div>
+                    </div>
+
+                    <!-- Description -->
+                    <div>
+                        <label class="block text-xs font-semibold text-gray-700 uppercase tracking-wider mb-1">
+                            Description
+                        </label>
+                        <InputTextArea @bind-Value="formModel.Description" 
+                                       rows="3"
+                                       placeholder="Brief description of the service category scope and offerings..."
+                                       class="w-full px-3.5 py-2 text-sm bg-gray-50/70 border border-gray-200 rounded-lg text-gray-900 placeholder-gray-400 focus:bg-white focus:outline-none focus:ring-2 focus:ring-gray-900" />
+                        <ValidationMessage For="() => formModel.Description" class="text-[11px] text-red-500 mt-1" />
+                    </div>
+
+                    <!-- Associated Services (Comma-delimited string input for rapid entry) -->
+                    <div>
+                        <label class="block text-xs font-semibold text-gray-700 uppercase tracking-wider mb-1">
+                            Associated Services (Comma-separated)
+                        </label>
+                        <InputText @bind-Value="formModel.ServicesRaw" 
+                                   placeholder="e.g. Studio Portraits, Corporate Headshots, Family Shoot"
+                                   class="w-full px-3.5 py-2 text-sm bg-gray-50/70 border border-gray-200 rounded-lg text-gray-900 placeholder-gray-400 focus:bg-white focus:outline-none focus:ring-2 focus:ring-gray-900" />
+                        <p class="text-[11px] text-gray-400 mt-1">Separate service offerings with commas to auto-generate pill tags.</p>
+                    </div>
+
+                    <!-- Color Tag Selection & Status -->
+                    <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                        <div>
+                            <label class="block text-xs font-semibold text-gray-700 uppercase tracking-wider mb-1">
+                                Accent Tag Color
+                            </label>
+                            <InputSelect @bind-Value="formModel.ColorTag"
+                                         class="w-full px-3.5 py-2 text-sm bg-gray-50/70 border border-gray-200 rounded-lg text-gray-900 focus:bg-white focus:outline-none focus:ring-2 focus:ring-gray-900 cursor-pointer">
+                                <option value="Blue">Blue (Sky / Classic)</option>
+                                <option value="Rose">Rose (Warm / Wedding)</option>
+                                <option value="Purple">Purple (Creative / Studio)</option>
+                                <option value="Emerald">Emerald (Active / Green)</option>
+                                <option value="Amber">Amber (Golden / Highlight)</option>
+                                <option value="Indigo">Indigo (Deep Navy)</option>
+                                <option value="Cyan">Cyan (Modern Tech)</option>
+                            </InputSelect>
+                        </div>
+                        <div>
+                            <label class="block text-xs font-semibold text-gray-700 uppercase tracking-wider mb-1">
+                                Publication Status
+                            </label>
+                            <InputSelect @bind-Value="formModel.Status"
+                                         class="w-full px-3.5 py-2 text-sm bg-gray-50/70 border border-gray-200 rounded-lg text-gray-900 focus:bg-white focus:outline-none focus:ring-2 focus:ring-gray-900 cursor-pointer">
+                                <option value="Active">Active</option>
+                                <option value="Draft">Draft</option>
+                                <option value="Inactive">Inactive / Archived</option>
+                            </InputSelect>
+                        </div>
+                    </div>
+
+                    <!-- Featured Checkbox -->
+                    <div class="pt-2">
+                        <label class="inline-flex items-center gap-2 cursor-pointer select-none">
+                            <InputCheckbox @bind-Value="formModel.IsFeatured" class="w-4 h-4 rounded text-gray-900 border-gray-300 focus:ring-gray-900" />
+                            <span class="text-xs font-medium text-gray-700">Feature this category on the public studio booking flow</span>
+                        </label>
+                    </div>
+
+                    <!-- Public Portfolio placement -->
+                    <div class="pt-3 mt-1 border-t border-gray-100 space-y-3">
+                        <label class="inline-flex items-center gap-2 cursor-pointer select-none">
+                            <InputCheckbox @bind-Value="formModel.ShowInPortfolio" class="w-4 h-4 rounded text-gray-900 border-gray-300 focus:ring-gray-900" />
+                            <span class="text-xs font-medium text-gray-700">Show this category in the public Portfolio</span>
+                        </label>
+
+                        @if (formModel.ShowInPortfolio)
+                        {
+                            <div>
+                                <label class="block text-xs font-semibold text-gray-700 uppercase tracking-wider mb-1">
+                                    Portfolio Folder
+                                </label>
+                                <InputSelect @bind-Value="formModel.PortfolioSection"
+                                             class="w-full px-3.5 py-2 text-sm bg-gray-50/70 border border-gray-200 rounded-lg text-gray-900 focus:bg-white focus:outline-none focus:ring-2 focus:ring-gray-900 cursor-pointer">
+                                    @foreach (var section in PortfolioSections.All)
+                                    {
+                                        <option value="@section">@section</option>
+                                    }
+                                </InputSelect>
+                                <p class="text-[11px] text-gray-400 mt-1">
+                                    The category appears under this folder in the portfolio sidebar, listing the services named in "Associated Services" (plus any whose category matches this name). Only Active categories are visible to the public.
+                                </p>
+                            </div>
+                        }
+                    </div>
+
+                    <!-- Default event associations (auto-assigned when this category is picked for an event) -->
+                    <div class="pt-3 mt-1 border-t border-gray-100 space-y-3">
+                        <div>
+                            <h4 class="text-xs font-bold text-gray-700 uppercase tracking-wider">Default Event Associations</h4>
+                            <p class="text-[11px] text-gray-400 mt-0.5">
+                                Space, service type, staff and equipment that are filled in automatically when this category is selected for an event on the calendar.
+                            </p>
+                        </div>
+                        <CategoryAssociationPicker Profile="formProfile" />
+                    </div>
+                </div>
+
+                <!-- Modal Footer -->
+                <div class="px-6 py-4 bg-gray-50 border-t border-gray-100 flex items-center justify-end gap-3">
+                    <button type="button" @onclick="CloseModal"
+                            class="px-4 py-2 text-xs font-semibold text-gray-700 bg-white border border-gray-200 hover:bg-gray-50 rounded-lg transition-colors cursor-pointer">
+                        Cancel
+                    </button>
+                    <button type="submit"
+                            class="px-5 py-2 text-xs font-bold text-white bg-gray-900 hover:bg-black rounded-lg shadow-sm transition-all cursor-pointer">
+                        @(isEditMode ? "Update Category" : "Save Category")
+                    </button>
+                </div>
+            </EditForm>
+        </div>
+    </div>
+}
+
+<!-- Category Details Modal Dialog -->
+@if (isDetailsModalOpen && selectedCategoryForDetails != null)
+{
+    var detailClasses = SpecializationColorHelper.GetClasses(selectedCategoryForDetails.ColorTag);
+
+    <div class="fixed inset-0 z-50 bg-black/50 backdrop-blur-xs flex items-center justify-center p-4 sm:p-6 overflow-y-auto animate-in fade-in duration-150"
+         role="dialog" aria-modal="true">
+        <div class="relative w-full max-w-lg bg-white rounded-2xl shadow-2xl border border-gray-100 overflow-hidden flex flex-col">
+            
+            <!-- Modal Header -->
+            <div class="px-6 py-5 border-b border-gray-100 flex items-center justify-between bg-white">
+                <div class="flex items-center gap-3">
+                    <div class="w-10 h-10 rounded-full bg-gray-900 text-white flex items-center justify-center font-bold text-xs shadow-xs">
+                        @selectedCategoryForDetails.Initials
+                    </div>
+                    <div>
+                        <div class="flex items-center gap-2">
+                            <h2 class="text-lg font-bold text-gray-900">@selectedCategoryForDetails.Name</h2>
+                            @if (selectedCategoryForDetails.IsFeatured)
+                            {
+                                <span class="text-[10px] font-bold text-amber-700 bg-amber-50 px-1.5 py-0.2 rounded border border-amber-200">
+                                    ★ Featured
+                                </span>
+                            }
+                        </div>
+                        <p class="font-mono text-xs text-gray-400">@selectedCategoryForDetails.Code &bull; @selectedCategoryForDetails.Type</p>
+                    </div>
+                </div>
+                <button type="button" @onclick="() => isDetailsModalOpen = false"
+                        class="text-gray-400 hover:text-gray-600 rounded-lg p-1.5 hover:bg-gray-100 transition-colors cursor-pointer">
+                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+                    </svg>
+                </button>
+            </div>
+
+            <!-- Details Content -->
+            <div class="p-6 space-y-5 text-sm">
+                <!-- Status & Metadata Bar -->
+                <div class="flex items-center justify-between p-3.5 bg-gray-50/80 rounded-xl border border-gray-100">
+                    <div>
+                        <span class="text-[11px] font-semibold text-gray-400 uppercase tracking-wider block">Registry Status</span>
+                        <div class="mt-1">
+                            @if (selectedCategoryForDetails.Status == "Active")
+                            {
+                                <span class="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200">
+                                    <span class="w-1.5 h-1.5 rounded-full bg-emerald-500"></span>
+                                    Active
+                                </span>
+                            }
+                            else
+                            {
+                                <span class="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-semibold bg-amber-50 text-amber-700 border border-amber-200">
+                                    <span class="w-1.5 h-1.5 rounded-full bg-amber-500"></span>
+                                    @selectedCategoryForDetails.Status
+                                </span>
+                            }
+                        </div>
+                    </div>
+                    <div>
+                        <span class="text-[11px] font-semibold text-gray-400 uppercase tracking-wider block">Associated Count</span>
+                        <span class="text-sm font-bold text-gray-900 mt-1 block">@selectedCategoryForDetails.AssociatedServices.Count Services</span>
+                    </div>
+                    <div>
+                        <span class="text-[11px] font-semibold text-gray-400 uppercase tracking-wider block">Registry Date</span>
+                        <span class="text-xs text-gray-600 mt-1 block">@selectedCategoryForDetails.CreatedAt.ToString("MMM dd, yyyy")</span>
+                    </div>
+                </div>
+
+                <!-- Description -->
+                <div>
+                    <h3 class="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-1.5">Description</h3>
+                    <p class="text-xs text-gray-700 leading-relaxed bg-gray-50/50 p-3 rounded-lg border border-gray-100">
+                        @(string.IsNullOrWhiteSpace(selectedCategoryForDetails.Description) ? "No detailed description provided for this category." : selectedCategoryForDetails.Description)
+                    </p>
+                </div>
+
+                <!-- Associated Services List -->
+                <div>
+                    <h3 class="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2">Associated Services Catalog</h3>
+                    @if (selectedCategoryForDetails.AssociatedServices.Any())
+                    {
+                        <div class="flex flex-wrap gap-2">
+                            @foreach (var s in selectedCategoryForDetails.AssociatedServices)
+                            {
+                                <span class="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-medium border @detailClasses.BadgeClass">
+                                    <span class="w-1.5 h-1.5 rounded-full @detailClasses.DotClass"></span>
+                                    @s
+                                </span>
+                            }
+                        </div>
+                    }
+                    else
+                    {
+                        <p class="text-xs text-gray-400 italic">No services currently associated with this category.</p>
+                    }
+                </div>
+
+                <!-- Auto-assigned event associations -->
+                @{
+                    var detailProfile = ScheduleService.GetCategoryProfile(selectedCategoryForDetails.Code, selectedCategoryForDetails.Name);
+                }
+                <div>
+                    <h3 class="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2">Auto-Assigned to Events</h3>
+                    @if (detailProfile is null)
+                    {
+                        <p class="text-xs text-gray-400 italic">No default associations. Events in this category are assigned manually.</p>
+                    }
+                    else
+                    {
+                        <div class="text-xs text-gray-700 space-y-1">
+                            <p><span class="font-semibold">Space:</span> @(ScheduleService.GetStudioSpaces().FirstOrDefault(sp => sp.Id == detailProfile.DefaultSpaceId)?.Name ?? "—")</p>
+                            <p><span class="font-semibold">Service type:</span> @(detailProfile.DefaultServiceType ?? "—") &bull; @detailProfile.DefaultDurationHours.ToString("0.##")h &bull; $@detailProfile.DefaultPrice.ToString("N0")</p>
+                            <p><span class="font-semibold">Staff:</span> @AssociationNames(detailProfile.StaffIds, true)</p>
+                            <p><span class="font-semibold">Equipment:</span> @AssociationNames(detailProfile.EquipmentIds, false)</p>
+                        </div>
+                    }
+                </div>
+            </div>
+
+            <!-- Details Modal Footer -->
+            <div class="px-6 py-4 bg-gray-50 border-t border-gray-100 flex items-center justify-between">
+                <button type="button" 
+                        @onclick="() => ToggleCategoryStatus(selectedCategoryForDetails)"
+                        class="text-xs font-semibold @(selectedCategoryForDetails.Status == "Active" ? "text-amber-600 hover:text-amber-800" : "text-emerald-600 hover:text-emerald-800") cursor-pointer">
+                    @(selectedCategoryForDetails.Status == "Active" ? "Archive Category" : "Activate Category")
+                </button>
+                <div class="flex items-center gap-2">
+                    <button type="button" 
+                            @onclick="() => { isDetailsModalOpen = false; OpenEditModal(selectedCategoryForDetails); }"
+                            class="px-4 py-2 text-xs font-semibold text-gray-700 bg-white border border-gray-200 hover:bg-gray-50 rounded-lg transition-colors cursor-pointer">
+                        Edit Category
+                    </button>
+                    <button type="button" @onclick="() => isDetailsModalOpen = false"
+                            class="px-4 py-2 text-xs font-bold text-white bg-gray-900 hover:bg-black rounded-lg transition-colors cursor-pointer">
+                        Close
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+}
+
+@code {
+    // Search & Filter State
+    private string searchQuery = string.Empty;
+    private string selectedTypeFilter = "ALL";
+    private string selectedStatusFilter = "ALL";
+    private string? notificationMessage;
+
+    // Modal State
+    private bool isCategoryWizardOpen = false;
+    private bool isModalOpen = false;
+    private bool isEditMode = false;
+    private bool isDetailsModalOpen = false;
+    private ServiceCategoryItem? editingCategory;
+    private ServiceCategoryItem? selectedCategoryForDetails;
+    private CategoryModel formModel = new();
+    private CategoryAssociationProfile formProfile = new();
+
+    // Data Source List
+    private List<ServiceCategoryItem> categories = new();
+
+    // Computed total active services count across all categories
+    private int TotalActiveServicesCount => categories
+        .Where(c => c.IsActive)
+        .Sum(c => c.AssociatedServices.Count);
+
+    private bool IsFiltered => 
+        !string.IsNullOrWhiteSpace(searchQuery) || 
+        selectedTypeFilter != "ALL" || 
+        selectedStatusFilter != "ALL";
+
+    protected override void OnInitialized()
+    {
+        LoadDefaultCategories();
+    }
+
+    protected override async Task OnInitializedAsync()
+    {
+        // Overlay the saved portfolio placement (and mapped service names) onto the category list.
+        var saved = await ServicesApi.GetPortfolioCategoriesAsync();
+        foreach (var row in saved)
+        {
+            var cat = categories.FirstOrDefault(c => c.Code.Equals(row.Code, StringComparison.OrdinalIgnoreCase));
+            if (cat is null) continue;
+
+            cat.ShowInPortfolio = true;
+            cat.PortfolioSection = row.ParentSection;
+            if (row.ServiceNames.Count > 0)
+                cat.AssociatedServices = row.ServiceNames.ToList();
+        }
+
+        // Overlay the saved default associations (staff / equipment / space) used by the Calendar of Events.
+        ScheduleService.ApplyCategoryProfiles(await ServicesApi.GetCategoryAssociationsAsync());
+    }
+
+    private void ResetFilters()
+    {
+        searchQuery = string.Empty;
+        selectedTypeFilter = "ALL";
+        selectedStatusFilter = "ALL";
+    }
+
+    private void FilterByType(string type)
+    {
+        if (selectedTypeFilter.Equals(type, StringComparison.OrdinalIgnoreCase))
+        {
+            selectedTypeFilter = "ALL";
+        }
+        else
+        {
+            selectedTypeFilter = type;
+        }
+    }
+
+    /// <summary>
+    /// Dynamic LINQ query filtering categories by search text, category type, and publication status.
+    /// </summary>
+    private IEnumerable<ServiceCategoryItem> FilteredCategories
+    {
+        get
+        {
+            var result = categories.AsEnumerable();
+
+            // 1. Text Search: filter on Name, Code, Description, or Associated Service titles
+            if (!string.IsNullOrWhiteSpace(searchQuery))
+            {
+                var q = searchQuery.Trim();
+                result = result.Where(c =>
+                    c.Name.Contains(q, StringComparison.OrdinalIgnoreCase) ||
+                    c.Code.Contains(q, StringComparison.OrdinalIgnoreCase) ||
+                    (c.Description != null && c.Description.Contains(q, StringComparison.OrdinalIgnoreCase)) ||
+                    c.AssociatedServices.Any(s => s.Contains(q, StringComparison.OrdinalIgnoreCase)));
+            }
+
+            // 2. Type Dropdown / Tag Filter
+            if (!string.IsNullOrWhiteSpace(selectedTypeFilter) && selectedTypeFilter != "ALL")
+            {
+                result = result.Where(c => c.Type.Equals(selectedTypeFilter, StringComparison.OrdinalIgnoreCase));
+            }
+
+            // 3. Status Dropdown Filter
+            if (!string.IsNullOrWhiteSpace(selectedStatusFilter) && selectedStatusFilter != "ALL")
+            {
+                if (selectedStatusFilter == "Active")
+                {
+                    result = result.Where(c => c.Status == "Active");
+                }
+                else if (selectedStatusFilter == "Draft")
+                {
+                    result = result.Where(c => c.Status == "Draft");
+                }
+                else if (selectedStatusFilter == "Inactive")
+                {
+                    result = result.Where(c => c.Status == "Inactive" || c.Status == "Archived");
+                }
+            }
+
+            return result;
+        }
+    }
+
+    // Modal & Action Handlers
+    private void OpenAddModal()
+    {
+        formProfile = new CategoryAssociationProfile();
+        isCategoryWizardOpen = true;
+    }
+
+    private async Task HandleCategoryWizardSaved(string categoryId)
+    {
+        try
+        {
+            var apiCategories = await ServicesApi.GetCategoriesAsync();
+            if (apiCategories != null && apiCategories.Count > 0)
+            {
+                foreach (var c in apiCategories)
+                {
+                    if (!categories.Any(x => x.Id.Equals(c.Id, StringComparison.OrdinalIgnoreCase)))
+                    {
+                        categories.Add(new ServiceCategoryItem
+                        {
+                            Id = c.Id,
+                            Code = c.Id,
+                            Name = c.Name,
+                            Type = "Main Services",
+                            Description = c.Description,
+                            ColorTag = "Blue",
+                            Status = "Active",
+                            IsFeatured = false,
+                            AssociatedServices = new List<string>(),
+                            CreatedAt = DateTime.UtcNow
+                        });
+                    }
+                }
+            }
+        }
+        catch { }
+        notificationMessage = $"Service Category '{categoryId}' was registered successfully in the database.";
+    }
+
+    private void OpenEditModal(ServiceCategoryItem category)
+    {
+        isEditMode = true;
+        editingCategory = category;
+        formModel = new CategoryModel
+        {
+            Name = category.Name,
+            Code = category.Code,
+            Type = category.Type,
+            Description = category.Description,
+            ColorTag = category.ColorTag,
+            Status = category.Status,
+            IsFeatured = category.IsFeatured,
+            ShowInPortfolio = category.ShowInPortfolio,
+            PortfolioSection = category.PortfolioSection,
+            ServicesRaw = string.Join(", ", category.AssociatedServices)
+        };
+        formProfile = ScheduleService.GetCategoryProfile(category.Code, category.Name)?.Clone()
+                      ?? new CategoryAssociationProfile();
+        isModalOpen = true;
+    }
+
+    private void OpenDetailsModal(ServiceCategoryItem category)
+    {
+        selectedCategoryForDetails = category;
+        isDetailsModalOpen = true;
+    }
+
+    private void CloseModal()
+    {
+        isModalOpen = false;
+        editingCategory = null;
+    }
+
+    private async Task HandleSaveCategory()
+    {
+        var parsedServices = formModel.ServicesRaw
+            .Split(new[] { ',', ';' }, StringSplitOptions.RemoveEmptyEntries)
+            .Select(s => s.Trim())
+            .Where(s => !string.IsNullOrWhiteSpace(s))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList();
+
+        ServiceCategoryItem savedCategory;
+        string? previousCode = null;
+
+        if (isEditMode && editingCategory != null)
+        {
+            previousCode = editingCategory.Code;
+            editingCategory.Name = formModel.Name;
+            editingCategory.Code = formModel.Code;
+            editingCategory.Type = formModel.Type;
+            editingCategory.Description = formModel.Description;
+            editingCategory.ColorTag = formModel.ColorTag;
+            editingCategory.Status = formModel.Status;
+            editingCategory.IsFeatured = formModel.IsFeatured;
+            editingCategory.ShowInPortfolio = formModel.ShowInPortfolio;
+            editingCategory.PortfolioSection = formModel.PortfolioSection;
+            editingCategory.AssociatedServices = parsedServices;
+            savedCategory = editingCategory;
+
+            notificationMessage = $"Service Category \"{editingCategory.Name}\" was updated successfully.";
+        }
+        else
+        {
+            var newCategory = new ServiceCategoryItem
+            {
+                Id = Guid.NewGuid().ToString("N"),
+                Name = formModel.Name,
+                Code = formModel.Code,
+                Type = formModel.Type,
+                Description = formModel.Description,
+                ColorTag = formModel.ColorTag,
+                Status = formModel.Status,
+                IsFeatured = formModel.IsFeatured,
+                ShowInPortfolio = formModel.ShowInPortfolio,
+                PortfolioSection = formModel.PortfolioSection,
+                AssociatedServices = parsedServices,
+                CreatedAt = DateTime.UtcNow
+            };
+
+            savedCategory = newCategory;
+            categories.Insert(0, newCategory);
+            notificationMessage = $"Service Category \"{newCategory.Name}\" ({newCategory.Code}) added to the master catalog registry.";
+        }
+
+        // Persist portfolio placement so the public sidebar can read it.
+        // If the code changed, drop the row stored under the old code first.
+        if (previousCode is not null && !previousCode.Equals(savedCategory.Code, StringComparison.OrdinalIgnoreCase))
+        {
+            await ServicesApi.SavePortfolioCategoryAsync(new PortfolioCategoryDto
+            {
+                Code = previousCode,
+                ShowInPortfolio = false
+            });
+        }
+
+        var portfolioSaved = await ServicesApi.SavePortfolioCategoryAsync(new PortfolioCategoryDto
+        {
+            Code = savedCategory.Code,
+            Name = savedCategory.Name,
+            Description = savedCategory.Description,
+            ParentSection = savedCategory.PortfolioSection,
+            ColorTag = savedCategory.ColorTag,
+            IsActive = savedCategory.IsActive,
+            ShowInPortfolio = savedCategory.ShowInPortfolio,
+            ServiceNames = savedCategory.AssociatedServices.ToList()
+        });
+
+        if (!portfolioSaved)
+        {
+            notificationMessage += " (Portfolio placement could not be saved — please try again.)";
+        }
+
+        // Persist the default event associations. If the code changed, drop the mapping stored under the old code.
+        if (previousCode is not null && !previousCode.Equals(savedCategory.Code, StringComparison.OrdinalIgnoreCase))
+        {
+            ScheduleService.RemoveCategoryProfile(previousCode);
+            await ServicesApi.SaveCategoryAssociationsAsync(new CategoryAssociationProfile { CategoryCode = previousCode });
+        }
+
+        formProfile.CategoryCode = savedCategory.Code;
+        formProfile.CategoryName = savedCategory.Name;
+        ScheduleService.SaveCategoryProfile(formProfile);
+
+        if (!await ServicesApi.SaveCategoryAssociationsAsync(formProfile))
+        {
+            notificationMessage += " (Default event associations could not be saved — please try again.)";
+        }
+
+        isModalOpen = false;
+        editingCategory = null;
+    }
+
+    private string AssociationNames(IEnumerable<string> ids, bool staff)
+    {
+        var names = staff
+            ? ids.Select(id => ScheduleService.GetStaffMembers().FirstOrDefault(m => m.Id == id)?.FullName)
+            : ids.Select(id => ScheduleService.GetEquipmentResources().FirstOrDefault(e => e.Id == id)?.Name);
+
+        var list = names.OfType<string>().ToList();
+        return list.Count == 0 ? "—" : string.Join(", ", list);
+    }
+
+    private void ToggleCategoryStatus(ServiceCategoryItem category)
+    {
+        category.Status = category.Status == "Active" ? "Inactive" : "Active";
+        notificationMessage = $"Category \"{category.Name}\" is now marked as {category.Status}.";
+    }
+
+    private void LoadDefaultCategories()
+    {
+        categories = new List<ServiceCategoryItem>
+        {
+            new()
+            {
+                Id = "CAT-001",
+                Code = "CAT-PORT",
+                Name = "Portrait Photography",
+                Type = "Main Services",
+                Description = "Individual, family, lifestyle, and executive studio portrait sessions with lighting setup.",
+                ColorTag = "Blue",
+                Status = "Active",
+                IsFeatured = true,
+                AssociatedServices = new List<string> { "Studio Headshots", "Senior Portraits", "Family Studio Session" },
+                CreatedAt = DateTime.UtcNow.AddMonths(-3)
+            },
+            new()
+            {
+                Id = "CAT-002",
+                Code = "CAT-WEDD",
+                Name = "Wedding & Nuptials",
+                Type = "Packages",
+                Description = "Comprehensive wedding ceremonies, bridal preparations, vows, and reception coverage.",
+                ColorTag = "Rose",
+                Status = "Active",
+                IsFeatured = true,
+                AssociatedServices = new List<string> { "Full Day Nuptial", "Pre-Nuptial Shoot", "Reception Highlights" },
+                CreatedAt = DateTime.UtcNow.AddMonths(-4)
+            },
+            new()
+            {
+                Id = "CAT-003",
+                Code = "CAT-COMM",
+                Name = "Commercial & Branding",
+                Type = "Main Services",
+                Description = "High-impact visual assets, product photography, editorial looks, and corporate marketing.",
+                ColorTag = "Purple",
+                Status = "Active",
+                IsFeatured = true,
+                AssociatedServices = new List<string> { "Product Catalog", "Brand Campaigns", "Food & Beverage" },
+                CreatedAt = DateTime.UtcNow.AddMonths(-2)
+            },
+            new()
+            {
+                Id = "CAT-004",
+                Code = "CAT-EVENT",
+                Name = "Event & Gala Coverage",
+                Type = "Packages",
+                Description = "Live event documentation, keynote corporate summits, conferences, and milestone parties.",
+                ColorTag = "Amber",
+                Status = "Active",
+                IsFeatured = false,
+                AssociatedServices = new List<string> { "Corporate Gala", "Concerts & Live", "Milestone Celebrations" },
+                CreatedAt = DateTime.UtcNow.AddMonths(-5)
+            },
+            new()
+            {
+                Id = "CAT-005",
+                Code = "CAT-AER",
+                Name = "Aerial & Drone Operations",
+                Type = "Specialty",
+                Description = "FAA Part 107 certified high-altitude aerial imaging and cinematic 4K drone videography.",
+                ColorTag = "Indigo",
+                Status = "Active",
+                IsFeatured = false,
+                AssociatedServices = new List<string> { "4K Drone Aerials", "Venue Fly-Through", "Architectural Scans" },
+                CreatedAt = DateTime.UtcNow.AddMonths(-1)
+            },
+            new()
+            {
+                Id = "CAT-006",
+                Code = "CAT-POST",
+                Name = "Post-Processing & Retouching",
+                Type = "Add-Ons",
+                Description = "Digital darkroom lab services, color grade harmonization, and editorial skin retouching.",
+                ColorTag = "Emerald",
+                Status = "Active",
+                IsFeatured = false,
+                AssociatedServices = new List<string> { "Editorial Skin Retouch", "Color Grading", "Batch RAW Processing" },
+                CreatedAt = DateTime.UtcNow.AddMonths(-6)
+            },
+            new()
+            {
+                Id = "CAT-007",
+                Code = "CAT-ARCH",
+                Name = "Specialty Analog Projects",
+                Type = "Specialty",
+                Description = "Experimental darkroom techniques, 35mm / 120 medium format film, and vintage wet plates.",
+                ColorTag = "Cyan",
+                Status = "Draft",
+                IsFeatured = false,
+                AssociatedServices = new List<string> { "Vintage Tintype", "Analog 35mm Roll" },
+                CreatedAt = DateTime.UtcNow.AddDays(-14)
+            }
+        };
+    }
+}

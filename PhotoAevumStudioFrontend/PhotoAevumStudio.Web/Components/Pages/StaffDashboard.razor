@@ -1,0 +1,92 @@
+@page "/staff"
+@layout EmployeeLayout
+@using PhotoAevumStudio.Web.Services
+@inject IUserService UserService
+@attribute [Authorize(Roles = "Employee")]
+@rendermode InteractiveServer
+
+<PageTitle>Staff Dashboard | Photo Aevum Studio</PageTitle>
+
+@* ── Page header ─────────────────────────────────────────────────── *@
+<header class="aev-page-header">
+    <div>
+        <h1 class="aev-page-header__title">Staff Dashboard</h1>
+        <p class="aev-page-header__subtitle">@DateTime.Today.ToString("dddd, MMMM d, yyyy")</p>
+    </div>
+</header>
+
+@* ── Stat cards ──────────────────────────────────────────────────── *@
+<section class="aev-stat-grid" aria-label="My summary">
+    <article class="aev-stat-card">
+        <div class="aev-stat-card__icon aev-stat-card__icon--teal" aria-hidden="true">📅</div>
+        <div>
+            <p class="aev-stat-card__label">Upcoming Shoots</p>
+            <h2 class="aev-stat-card__value">@UpcomingShootsCount</h2>
+        </div>
+    </article>
+    <article class="aev-stat-card">
+        <div class="aev-stat-card__icon aev-stat-card__icon--blue" aria-hidden="true">✅</div>
+        <div>
+            <p class="aev-stat-card__label">Completed This Week</p>
+            <h2 class="aev-stat-card__value">@CompletedThisWeekCount</h2>
+        </div>
+    </article>
+    <article class="aev-stat-card">
+        <div class="aev-stat-card__icon aev-stat-card__icon--amber" aria-hidden="true">📷</div>
+        <div>
+            <p class="aev-stat-card__label">Gear Checked Out</p>
+            <h2 class="aev-stat-card__value">@GearCheckedOutCount</h2>
+        </div>
+    </article>
+</section>
+
+@* ── Navigation cards ─────────────────────────────────────────────── *@
+<div class="aev-content-row aev-content-row--wrap">
+
+    <a href="/staff/assignments" class="aev-nav-card">
+        <span class="aev-nav-card__icon" aria-hidden="true">📋</span>
+        <h2 class="aev-nav-card__title">My Assignments</h2>
+        <p class="aev-nav-card__desc">View upcoming shoots, call times, and shot lists.</p>
+    </a>
+
+    <a href="/staff/pipeline" class="aev-nav-card">
+        <span class="aev-nav-card__icon" aria-hidden="true">🔄</span>
+        <h2 class="aev-nav-card__title">Delivery Pipeline</h2>
+        <p class="aev-nav-card__desc">Track post-processing: Culling, Editing, Uploading.</p>
+    </a>
+
+    <a href="/staff/gear" class="aev-nav-card">
+        <span class="aev-nav-card__icon" aria-hidden="true">📷</span>
+        <h2 class="aev-nav-card__title">Gear Checklist</h2>
+        <p class="aev-nav-card__desc">Check out / return equipment and file damage reports.</p>
+    </a>
+
+</div>
+
+@* ── Availability management ─────────────────────────────────────── *@
+<section class="aev-card" aria-label="Availability management">
+    <header class="aev-card__header">
+        <h2 class="aev-card__heading">Availability Management</h2>
+    </header>
+    <div class="aev-card__body">
+        <p class="aev-card__desc">Mark dates where you are unavailable for assignment.</p>
+        <div class="aev-inline-form">
+            <input type="date" class="aev-input" aria-label="Date to block" />
+            <button class="btn btn--primary">Block Date</button>
+        </div>
+    </div>
+</section>
+
+@code {
+    private int UpcomingShootsCount;
+    private int CompletedThisWeekCount;
+    private int GearCheckedOutCount;
+
+    protected override void OnInitialized()
+    {
+        var bookings = UserService.GetBookings();
+        UpcomingShootsCount = bookings.Count(b => b.EventDateTime >= DateTime.Today && !string.Equals(b.Status, "Cancelled", StringComparison.OrdinalIgnoreCase));
+        CompletedThisWeekCount = bookings.Count(b => string.Equals(b.Status, "Completed", StringComparison.OrdinalIgnoreCase) || string.Equals(b.Status, "Delivered", StringComparison.OrdinalIgnoreCase));
+        GearCheckedOutCount = UserService.GetEquipmentRows().Count(e => !string.Equals(e.Status, "Available", StringComparison.OrdinalIgnoreCase));
+    }
+}

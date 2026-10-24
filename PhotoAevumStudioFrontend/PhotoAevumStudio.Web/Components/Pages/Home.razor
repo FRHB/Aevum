@@ -1,0 +1,708 @@
+@page "/"
+@page "/Home"
+@rendermode InteractiveServer
+@using PhotoAevumStudio.Web.Models
+@using PhotoAevumStudio.Web.Services
+@inject IUserService UserService
+@inject IServicesApiClient ServicesApi
+@inject NavigationManager NavManager
+
+<PageTitle>Photo Aevum Studio | Book Your Session</PageTitle>
+
+@* ── Auth portal modal (rendered inline so Blazor Server wires the events) *@
+<AuthPortalModal IsVisible="_modalOpen" OnClose="CloseModal" />
+
+@* ── Public Top Navigation Bar ────────────────────────────────────────────── *@
+<header class="sticky top-0 z-50 bg-white/95 backdrop-blur-md border-b border-gray-100">
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-20 flex items-center justify-between">
+
+        @* Brand *@
+        <a href="/" class="flex items-center gap-3">
+            <img src="images/AevumLogo.jpg" alt="Photo Aevum Logo" class="h-9 w-auto rounded-full" />
+            <span class="font-bold text-lg tracking-tight uppercase tracking-widest text-gray-900">Photo Aevum Studio</span>
+        </a>
+
+        @* Desktop nav links *@
+        <nav class="hidden md:flex items-center gap-16 text-sm font-medium text-gray-600">
+            <a href="#home" class="hover:text-gray-950 transition-colors">HOME</a>
+            <a href="#services" @onclick="ShowFeaturedServicesAsync" class="hover:text-gray-950 transition-colors">SERVICES</a>
+            <a href="#portfolio" @onclick="TogglePortfolio" @onclick:preventDefault class="hover:text-gray-950 transition-colors">PORTFOLIO</a>
+            <a href="#faq" class="hover:text-gray-950 transition-colors">FAQ</a>
+            <a href="#contact" class="hover:text-gray-950 transition-colors">CONTACT</a>
+        </nav>
+
+        @* CTA group *@
+        <div class="flex items-center gap-3">
+            <button @onclick="OpenModal"
+                    class="hidden md:inline-flex items-center gap-1.5 border border-gray-300 text-gray-700 hover:border-gray-700 hover:text-gray-900 px-5 py-2.5 rounded-none font-medium text-xs uppercase tracking-wider transition-colors">
+                <span aria-hidden="true">→</span> Login / Sign In
+            </button>
+            <a href="/schedule"
+               class="bg-gray-900 hover:bg-black text-white px-5 py-2.5 rounded-none font-medium text-xs uppercase tracking-wider transition-colors">
+                Book Online
+            </a>
+        </div>
+
+    </div>
+</header>
+
+@* ── Hero Section ─────────────────────────────────────────────────────────── *@
+<section id="home" class="relative pt-24 pb-32 lg:pt-36 lg:pb-40 bg-gray-50">
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 relative z-10">
+        <div class="grid lg:grid-cols-2 gap-12 lg:gap-16 items-center">
+
+            <div class="max-w-2xl">
+                <h1 class="text-5xl lg:text-7xl font-bold tracking-tighter text-gray-900 leading-none mb-6">
+                    Capture <br /> the moment.
+                </h1>
+                <p class="text-lg text-gray-500 mb-10 leading-relaxed max-w-lg font-light">
+                    Professional photography and videography studio specializing in portraits, landscapes, and editorials. Secure your date effortlessly online.
+                </p>
+                <div class="flex flex-col sm:flex-row gap-4">
+                    <a href="/schedule"
+                       class="bg-gray-900 hover:bg-black text-white px-8 py-4 rounded-none font-medium transition-colors text-sm uppercase tracking-wider flex items-center justify-center gap-2 group w-full sm:w-auto">
+                        Schedule Appointment
+                        <span aria-hidden="true">&rarr;</span>
+                    </a>
+                    <a href="#services"
+                       class="bg-transparent hover:bg-gray-100 text-gray-900 border border-gray-300 px-8 py-4 rounded-none font-medium transition-colors text-sm uppercase tracking-wider flex items-center justify-center w-full sm:w-auto text-center">
+                        View Pricing
+                    </a>
+                </div>
+            </div>
+
+            <div class="relative w-full aspect-[4/5] lg:aspect-square bg-gray-200 overflow-hidden">
+                <img src="https://images.unsplash.com/photo-1604904612715-47bf9d9bc670?q=80&w=2000&auto=format&fit=crop"
+                     alt="Editorial Fashion Shot"
+                     class="object-cover w-full h-full grayscale hover:grayscale-0 transition-all duration-700" />
+
+                @* Floating availability card *@
+                <div class="absolute bottom-6 left-6 right-6 sm:left-auto sm:right-6 sm:bottom-6 sm:w-80 bg-white/95 backdrop-blur-md p-6 shadow-2xl border border-white/20">
+                    <div class="flex items-center justify-between mb-4 pb-4 border-b border-gray-100">
+                        <div>
+                            <p class="text-xs text-gray-500 uppercase tracking-wider mb-1">Next Available</p>
+                            <p class="font-semibold text-gray-900">
+                                @(DatabaseServices.FirstOrDefault()?.Title ?? "Portrait Session")
+                            </p>
+                        </div>
+                        <div class="w-10 h-10 rounded-full bg-gray-100 flex items-center justify-center">
+                            <span>📅</span>
+                        </div>
+                    </div>
+                    <div class="flex justify-between items-center">
+                        <p class="text-sm font-medium text-gray-900">@DateTime.Today.AddDays(1).ToString("MMM d, 10:00 AM")</p>
+                        <a href="/schedule"
+                           class="text-xs font-bold text-gray-900 uppercase tracking-wider hover:underline">
+                            Book Now
+                        </a>
+                    </div>
+                </div>
+            </div>
+
+        </div>
+    </div>
+</section>
+
+@* ── Services & Pricing Section (Loaded dynamically from Database) ────────── *@
+<section id="services" class="py-24 md:py-32 bg-gray-50 overflow-hidden">
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+
+        <div class="flex flex-col md:flex-row justify-between items-end mb-16 gap-6">
+            <div class="max-w-2xl">
+                <h2 class="text-3xl md:text-5xl font-bold text-gray-900 tracking-tighter mb-4">Our Services</h2>
+                <p class="text-lg text-gray-500 font-light">Explore our active studio services directly from the studio catalog. Transparent pricing, no hidden fees.</p>
+            </div>
+
+            <div class="hidden md:flex flex-col items-end gap-2">
+                <a href="/schedule" class="inline-flex items-center justify-center border border-gray-300 text-gray-700 hover:border-gray-900 hover:text-gray-900 px-4 py-2 rounded-none font-medium text-xs uppercase tracking-wider transition-colors bg-white">
+                    Book Any Service
+                </a>
+                <p class="text-sm font-medium text-gray-400 uppercase tracking-widest">01 / Services</p>
+            </div>
+        </div>
+
+        @if (_featuredMode)
+        {
+            @* Featured pool: services the admin has starred (Main, Package, Add-On) *@
+            <div class="flex flex-wrap items-center justify-between gap-3 mb-10">
+                <div class="flex flex-wrap gap-2" role="tablist" aria-label="Featured service type">
+                    @foreach (var kind in FeaturedKinds)
+                    {
+                        var k = kind;
+                        <button type="button"
+                                role="tab"
+                                aria-selected="@(_featuredKindFilter == k ? "true" : "false")"
+                                @onclick="() => _featuredKindFilter = k"
+                                class="px-4 py-2 text-xs font-medium uppercase tracking-wider border transition-colors @(_featuredKindFilter == k ? "bg-gray-900 text-white border-gray-900" : "bg-white text-gray-600 border-gray-300 hover:border-gray-900")">
+                            @k <span class="opacity-60">(@FeaturedCount(k))</span>
+                        </button>
+                    }
+                </div>
+                <button type="button" @onclick="ShowAllServices"
+                        class="text-xs font-bold text-gray-900 uppercase tracking-wider hover:underline">
+                    Browse all services &rarr;
+                </button>
+            </div>
+
+            @if (_featuredLoading)
+            {
+                <div class="p-12 text-center bg-white border border-gray-200">
+                    <p class="text-gray-500 text-base">Loading featured services...</p>
+                </div>
+            }
+            else if (!VisibleFeatured.Any())
+            {
+                <div class="p-12 text-center bg-white border border-gray-200">
+                    <p class="text-gray-900 font-semibold mb-1">No featured services yet</p>
+                    <p class="text-gray-500 text-sm">
+                        @(_featuredPool.Count == 0
+                            ? "Check back soon — our highlighted offerings will appear here."
+                            : "Nothing featured in this type. Try another tab.")
+                    </p>
+                </div>
+            }
+            else
+            {
+                <div class="grid sm:grid-cols-2 lg:grid-cols-3 gap-6">
+                    @foreach (var card in VisibleFeatured)
+                    {
+                        <article class="bg-white border border-gray-200 p-6 flex flex-col hover:shadow-xl transition-shadow duration-300">
+                            <div class="flex items-center justify-between mb-4">
+                                <span class="text-[10px] font-bold uppercase tracking-widest text-gray-500">@card.Kind</span>
+                                <span class="bg-gray-900 text-white text-[10px] font-bold uppercase tracking-wider px-2 py-0.5">★ Featured</span>
+                            </div>
+                            <h3 class="text-2xl font-bold text-gray-900 tracking-tight mb-1">@card.Title</h3>
+                            <p class="text-lg font-light text-gray-500 mb-4">@card.PriceText</p>
+                            <p class="text-gray-500 font-light text-sm leading-relaxed mb-4 line-clamp-3">@card.Description</p>
+                            <p class="text-xs text-gray-400 uppercase tracking-wider font-medium mt-auto mb-3">@card.Meta</p>
+                            <a href="/schedule" class="text-xs font-bold text-gray-900 uppercase tracking-wider hover:underline">
+                                Schedule This &rarr;
+                            </a>
+                        </article>
+                    }
+                </div>
+            }
+        }
+        else if (!DatabaseServices.Any())
+        {
+            <div class="p-12 text-center bg-white border border-gray-200 rounded-lg">
+                <p class="text-gray-500 text-base">Loading live services from the database...</p>
+            </div>
+        }
+        else
+        {
+            @* 3D Carousel Spotlight Container *@
+            <div class="relative w-full h-[36rem] flex justify-center items-center mt-12">
+
+                @* Prev Button *@
+                <button type="button"
+                        @onclick="PrevSlide"
+                        aria-label="Previous service"
+                        class="absolute left-0 top-1/2 -translate-y-1/2 z-40 inline-flex items-center justify-center w-12 h-12 bg-white border border-gray-300 text-gray-700 hover:border-gray-900 hover:text-gray-900 active:bg-gray-100 rounded-none transition-colors duration-300 group">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="w-5 h-5 transition-transform duration-300 group-hover:-translate-x-0.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                        <polyline points="15 18 9 12 15 6"></polyline>
+                    </svg>
+                </button>
+
+                @* Next Button *@
+                <button type="button"
+                        @onclick="NextSlide"
+                        aria-label="Next service"
+                        class="absolute right-0 top-1/2 -translate-y-1/2 z-40 inline-flex items-center justify-center w-12 h-12 bg-white border border-gray-300 text-gray-700 hover:border-gray-900 hover:text-gray-900 active:bg-gray-100 rounded-none transition-colors duration-300 group">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="w-5 h-5 transition-transform duration-300 group-hover:translate-x-0.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                        <polyline points="9 18 15 12 9 6"></polyline>
+                    </svg>
+                </button>
+
+                @* Dynamic Service Cards from Database *@
+                @for (int i = 0; i < CarouselItems.Count; i++)
+                {
+                    int index = i;
+                    var svc = CarouselItems[index];
+                    string serviceImg = GetServiceFallbackImage(svc.Code, index);
+
+                    <div @onclick="() => SetActive(index)"
+                         class="absolute transition-all duration-700 ease-[cubic-bezier(0.25,1,0.5,1)] cursor-pointer w-72 md:w-96 bg-white p-4 @GetCardClass(index)">
+                        @if (index == 0)
+                        {
+                            <div class="absolute top-0 right-0 bg-gray-900 text-white text-xs font-bold uppercase tracking-wider px-3 py-1 -mt-3 mr-8 shadow-sm z-10">Featured</div>
+                        }
+                        <div class="aspect-square bg-gray-900 mb-6 relative overflow-hidden">
+                            <img src="@serviceImg" alt="@svc.Title" class="object-cover w-full h-full opacity-90 transition-opacity duration-500">
+                        </div>
+                        <div class="px-2 pb-8 text-center">
+                            <h3 class="text-2xl font-bold text-gray-900 mb-1 tracking-tight">@svc.Title</h3>
+                            <p class="text-lg font-light text-gray-500 mb-4">
+                                @(svc.BasePrice > 0 ? $"₱{svc.BasePrice:N0}" : "Custom Quote")
+                            </p>
+                            <p class="text-gray-500 font-light text-sm leading-relaxed mb-4 hidden md:block">
+                                @(!string.IsNullOrWhiteSpace(svc.Description) ? svc.Description : "Professional photography session executed in our premium studio bay.")
+                            </p>
+                            <div class="flex justify-center gap-4 text-xs text-gray-400 uppercase tracking-wider font-medium mb-3">
+                                <span>@svc.Duration</span><span>&bull;</span><span>@svc.Category</span>
+                            </div>
+                            <a href="/schedule" class="inline-block mt-2 text-xs font-bold text-gray-900 uppercase tracking-wider hover:underline">
+                                Schedule This &rarr;
+                            </a>
+                        </div>
+                    </div>
+                }
+
+            </div>
+
+            @* Pagination Dots *@
+            @if (CarouselItems.Count > 1)
+            {
+                <div class="flex justify-center gap-3 mt-8">
+                    @for (int i = 0; i < CarouselItems.Count; i++)
+                    {
+                        int dotIdx = i;
+                        <button type="button"
+                                @onclick="() => SetActive(dotIdx)"
+                                class="w-2.5 h-2.5 rounded-full transition-all duration-300 @(activeIndex == dotIdx ? "bg-gray-900 scale-125" : "bg-gray-300 hover:bg-gray-400")"></button>
+                    }
+                </div>
+            }
+        }
+
+    </div>
+</section>
+
+@* ── FAQ Section ─────────────────────────────────────────────────────────── *@
+<section id="faq" class="py-20 md:py-32 bg-gray-50">
+    <div class="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8">
+        <div class="text-center mb-12 md:mb-16">
+            <h2 class="text-3xl md:text-5xl font-bold text-gray-900 tracking-tighter mb-4">Frequently Asked Questions</h2>
+            <p class="text-base md:text-lg text-gray-500 font-light">Everything you need to know before booking your session.</p>
+        </div>
+
+        <div class="space-y-4">
+            <details class="bg-white border border-gray-200 group cursor-pointer" open="open">
+                <summary class="flex justify-between items-center p-6 text-lg font-medium text-gray-900 select-none">
+                    How do I book a session?
+                    <span class="relative w-6 h-6 flex items-center justify-center">
+                        <span class="absolute w-4 h-0.5 bg-gray-900 transition-transform group-open:rotate-180"></span>
+                        <span class="absolute w-0.5 h-4 bg-gray-900 transition-transform group-open:rotate-90"></span>
+                    </span>
+                </summary>
+                <div class="px-6 pb-6 text-gray-500 font-light leading-relaxed">
+                    Booking is handled entirely online through our appointment system. Simply select your desired service above, choose an available date and time from the calendar, and complete the reservation to secure your spot.
+                </div>
+            </details>
+
+            <details class="bg-white border border-gray-200 group cursor-pointer">
+                <summary class="flex justify-between items-center p-6 text-lg font-medium text-gray-900 select-none">
+                    Do you provide a makeup artist or stylist?
+                    <span class="relative w-6 h-6 flex items-center justify-center">
+                        <span class="absolute w-4 h-0.5 bg-gray-900 transition-transform group-open:rotate-180"></span>
+                        <span class="absolute w-0.5 h-4 bg-gray-900 transition-transform group-open:rotate-90"></span>
+                    </span>
+                </summary>
+                <div class="px-6 pb-6 text-gray-500 font-light leading-relaxed">
+                    Standard packages do not include a dedicated makeup artist or stylist. However, we have a network of trusted professionals we can recommend, or you can request one as an add-on during booking.
+                </div>
+            </details>
+
+            <details class="bg-white border border-gray-200 group cursor-pointer">
+                <summary class="flex justify-between items-center p-6 text-lg font-medium text-gray-900 select-none">
+                    When will I receive my photos?
+                    <span class="relative w-6 h-6 flex items-center justify-center">
+                        <span class="absolute w-4 h-0.5 bg-gray-900 transition-transform group-open:rotate-180"></span>
+                        <span class="absolute w-0.5 h-4 bg-gray-900 transition-transform group-open:rotate-90"></span>
+                    </span>
+                </summary>
+                <div class="px-6 pb-6 text-gray-500 font-light leading-relaxed">
+                    You will receive an online proofing gallery within 48 hours of your shoot to select your favorites. Final retouched photos will be delivered via your private digital gallery within 7 business days.
+                </div>
+            </details>
+        </div>
+    </div>
+</section>
+
+@* ── Portfolio slide-over sidebar ─────────────────────────────────────────── *@
+<div @onclick="ClosePortfolio"
+     aria-hidden="true"
+     class="fixed inset-0 z-[60] bg-black/40 backdrop-blur-sm transition-opacity duration-300 @(_portfolioOpen ? "opacity-100" : "opacity-0 pointer-events-none")"></div>
+
+<aside role="dialog"
+       aria-modal="true"
+       aria-label="Portfolio categories"
+       aria-hidden="@(!_portfolioOpen ? "true" : "false")"
+       inert="@(!_portfolioOpen)"
+       class="fixed inset-y-0 left-0 z-[70] w-full max-w-sm bg-white shadow-2xl flex flex-col transform transition-transform duration-300 ease-out @(_portfolioOpen ? "translate-x-0" : "-translate-x-full")">
+
+    <div class="flex items-center justify-between h-20 px-6 border-b border-gray-100">
+        <h2 class="text-sm font-bold uppercase tracking-widest text-gray-900">Portfolio</h2>
+        <button @onclick="ClosePortfolio"
+                type="button"
+                aria-label="Close portfolio menu"
+                class="w-10 h-10 flex items-center justify-center text-gray-500 hover:text-gray-950 hover:bg-gray-100 transition-colors">
+            ✕
+        </button>
+    </div>
+
+    <nav class="flex-1 overflow-y-auto px-6 py-8" aria-label="Portfolio categories">
+        @if (_activePortfolioCategory is { } active)
+        {
+            @* ── Category detail: services mapped to the chosen category ── *@
+            <button type="button" @onclick="BackToPortfolioList"
+                    class="text-xs font-bold text-gray-500 hover:text-gray-950 uppercase tracking-widest mb-6 transition-colors">
+                &larr; Back to categories
+            </button>
+
+            <p class="text-xs text-gray-400 uppercase tracking-widest mb-1">@active.ParentSection</p>
+            <h3 class="text-2xl font-bold tracking-tight text-gray-900 mb-2">@active.Name</h3>
+            @if (!string.IsNullOrWhiteSpace(active.Description))
+            {
+                <p class="text-sm text-gray-500 font-light leading-relaxed mb-6">@active.Description</p>
+            }
+
+            @if (!_activeMain.Any() && !_activePackages.Any() && !_activeAddOns.Any())
+            {
+                <p class="text-sm text-gray-500 py-6 border-t border-gray-100">No services are linked to this category yet.</p>
+            }
+
+            @if (_activeMain.Any())
+            {
+                <h4 class="text-xs font-bold uppercase tracking-widest text-gray-900 mt-8 mb-3">Main Services</h4>
+                <ul class="divide-y divide-gray-100 border-y border-gray-100">
+                    @foreach (var m in _activeMain)
+                    {
+                        <li class="py-4">
+                            <div class="flex items-baseline justify-between gap-4">
+                                <span class="font-semibold text-gray-900">@m.Title</span>
+                                <span class="text-sm text-gray-500 whitespace-nowrap">@(m.BasePrice > 0 ? $"₱{m.BasePrice:N0}" : "Custom Quote")</span>
+                            </div>
+                            <p class="text-xs text-gray-400 uppercase tracking-wider mt-1">@m.Duration</p>
+                        </li>
+                    }
+                </ul>
+            }
+
+            @if (_activePackages.Any())
+            {
+                <h4 class="text-xs font-bold uppercase tracking-widest text-gray-900 mt-8 mb-3">Package Services</h4>
+                <ul class="divide-y divide-gray-100 border-y border-gray-100">
+                    @foreach (var pk in _activePackages)
+                    {
+                        <li class="py-4">
+                            <div class="flex items-baseline justify-between gap-4">
+                                <span class="font-semibold text-gray-900">@pk.Title</span>
+                                <span class="text-sm text-gray-500 whitespace-nowrap">@pk.Price</span>
+                            </div>
+                            @if (!string.IsNullOrWhiteSpace(pk.SavingsNote))
+                            {
+                                <p class="text-xs text-gray-400 mt-1">@pk.SavingsNote</p>
+                            }
+                        </li>
+                    }
+                </ul>
+            }
+
+            @if (_activeAddOns.Any())
+            {
+                <h4 class="text-xs font-bold uppercase tracking-widest text-gray-900 mt-8 mb-3">Additional Services</h4>
+                <ul class="divide-y divide-gray-100 border-y border-gray-100">
+                    @foreach (var ad in _activeAddOns)
+                    {
+                        <li class="py-4">
+                            <div class="flex items-baseline justify-between gap-4">
+                                <span class="font-semibold text-gray-900">@ad.Title</span>
+                                <span class="text-sm text-gray-500 whitespace-nowrap">@ad.PriceText</span>
+                            </div>
+                            @if (!string.IsNullOrWhiteSpace(ad.TypeCategory))
+                            {
+                                <p class="text-xs text-gray-400 uppercase tracking-wider mt-1">@ad.TypeCategory</p>
+                            }
+                        </li>
+                    }
+                </ul>
+            }
+
+            <a href="/schedule"
+               class="mt-8 inline-flex w-full items-center justify-center bg-gray-900 hover:bg-black text-white px-6 py-3 text-xs font-medium uppercase tracking-wider transition-colors">
+                Book This Category
+            </a>
+        }
+        else
+        {
+            @* ── Accordion: Photography / Videography ── *@
+            <p class="text-xs text-gray-400 uppercase tracking-widest mb-4">Browse by category</p>
+            <ul class="divide-y divide-gray-100 border-y border-gray-100">
+                @foreach (var section in PortfolioSections.All)
+                {
+                    var sectionName = section;
+                    var isOpen = _expandedSection == sectionName;
+                    var sectionCategories = PortfolioCategoriesFor(sectionName);
+                    var panelId = $"portfolio-section-{sectionName.ToLowerInvariant()}";
+
+                    <li>
+                        <button @onclick="() => ToggleSection(sectionName)"
+                                type="button"
+                                aria-expanded="@(isOpen ? "true" : "false")"
+                                aria-controls="@panelId"
+                                class="w-full flex items-center justify-between py-5 text-left text-2xl font-bold tracking-tight text-gray-900 hover:pl-2 transition-all duration-300">
+                            <span>@sectionName</span>
+                            <span class="flex items-center gap-3">
+                                <span class="text-xs font-medium text-gray-400">@sectionCategories.Count</span>
+                                <span aria-hidden="true" class="text-base transition-transform duration-300 @(isOpen ? "rotate-180" : "")">▾</span>
+                            </span>
+                        </button>
+
+                        @if (isOpen)
+                        {
+                            <div id="@panelId" class="pb-4">
+                                @if (_portfolioLoading)
+                                {
+                                    <p class="text-sm text-gray-400 py-3 pl-2">Loading categories...</p>
+                                }
+                                else if (sectionCategories.Count == 0)
+                                {
+                                    <p class="text-sm text-gray-400 py-3 pl-2">No categories published yet.</p>
+                                }
+                                else
+                                {
+                                    <ul class="space-y-1">
+                                        @foreach (var cat in sectionCategories)
+                                        {
+                                            var c = cat;
+                                            <li>
+                                                <button type="button"
+                                                        @onclick="() => OpenPortfolioCategory(c)"
+                                                        class="w-full flex items-center justify-between py-3 pl-2 pr-1 text-left text-base font-medium text-gray-700 hover:text-gray-950 hover:pl-4 transition-all duration-300">
+                                                    <span>@c.Name</span>
+                                                    <span aria-hidden="true">&rarr;</span>
+                                                </button>
+                                            </li>
+                                        }
+                                    </ul>
+                                }
+                            </div>
+                        }
+                    </li>
+                }
+            </ul>
+        }
+    </nav>
+</aside>
+
+@code {
+    private List<MainServiceItem> DatabaseServices = new();
+    private List<MainServiceItem> CarouselItems = new();
+    private int activeIndex = 0;
+
+    protected override void OnInitialized()
+    {
+        try
+        {
+            DatabaseServices = UserService.GetMainServices().Where(s => s.IsActive).ToList();
+            if (DatabaseServices.Any())
+            {
+                CarouselItems = DatabaseServices.Take(5).ToList();
+                activeIndex = CarouselItems.Count > 1 ? 1 : 0;
+            }
+            else
+            {
+                // Fallback if database table is not yet seeded
+                CarouselItems = new List<MainServiceItem>
+                {
+                    new() { Code = "SRV-001", Title = "Portrait Session", BasePrice = 250m, Duration = "1 Hr", Description = "1-hour studio or location shoot with retouched deliverables." },
+                    new() { Code = "SRV-002", Title = "Brand & Editorial", BasePrice = 450m, Duration = "4 Hrs", Description = "Half-day session tailored for personal brands and influencers." },
+                    new() { Code = "SRV-003", Title = "Express Headshot", BasePrice = 150m, Duration = "30 Min", Description = "Quick studio session ideal for executive headshots." }
+                };
+                activeIndex = 1;
+            }
+        }
+        catch
+        {
+            CarouselItems = new List<MainServiceItem>();
+        }
+    }
+
+    private void SetActive(int index)
+    {
+        if (index >= 0 && index < CarouselItems.Count)
+            activeIndex = index;
+    }
+
+    private void NextSlide()
+    {
+        if (CarouselItems.Count > 0)
+            activeIndex = (activeIndex + 1) % CarouselItems.Count;
+    }
+
+    private void PrevSlide()
+    {
+        if (CarouselItems.Count > 0)
+            activeIndex = (activeIndex - 1 + CarouselItems.Count) % CarouselItems.Count;
+    }
+
+    private string GetCardClass(int cardIndex)
+    {
+        if (cardIndex == activeIndex)
+            return "z-30 scale-100 opacity-100 translate-x-0 shadow-2xl";
+        else if (cardIndex < activeIndex)
+            return "z-20 scale-75 md:scale-85 opacity-40 hover:opacity-75 -translate-x-28 md:-translate-x-64 shadow-lg";
+        else
+            return "z-20 scale-75 md:scale-85 opacity-40 hover:opacity-75 translate-x-28 md:translate-x-64 shadow-lg";
+    }
+
+    private static string GetServiceFallbackImage(string code, int index) => (index % 3) switch
+    {
+        0 => "https://images.unsplash.com/photo-1531746020798-e6953c6e8e04?q=80&w=800&auto=format&fit=crop",
+        1 => "https://images.unsplash.com/photo-1604904612715-47bf9d9bc670?q=80&w=800&auto=format&fit=crop",
+        _ => "https://images.unsplash.com/photo-1542038784456-1ea8e935640e?q=80&w=800&auto=format&fit=crop"
+    };
+
+    private bool _modalOpen = false;
+    private void OpenModal() => _modalOpen = true;
+    private void CloseModal() => _modalOpen = false;
+
+    // ── Featured services pool (Services nav click) ─────────────────────
+    private bool _featuredMode = false;
+    private bool _featuredLoading = false;
+    private string _featuredKindFilter = "All";
+    private List<FeaturedServiceCard> _featuredPool = new();
+    private static readonly string[] FeaturedKinds = { "All", "Main Service", "Package", "Add-On" };
+
+    private IEnumerable<FeaturedServiceCard> VisibleFeatured =>
+        _featuredKindFilter == "All" ? _featuredPool : _featuredPool.Where(c => c.Kind == _featuredKindFilter);
+
+    private int FeaturedCount(string kind) =>
+        kind == "All" ? _featuredPool.Count : _featuredPool.Count(c => c.Kind == kind);
+
+    private async Task ShowFeaturedServicesAsync()
+    {
+        _featuredMode = true;
+        _featuredKindFilter = "All";
+        _featuredLoading = true;
+        try
+        {
+            _featuredPool = await BuildFeaturedPoolAsync();
+        }
+        catch
+        {
+            _featuredPool = new List<FeaturedServiceCard>();
+        }
+        finally
+        {
+            _featuredLoading = false;
+        }
+    }
+
+    private void ShowAllServices() => _featuredMode = false;
+
+    private async Task<List<FeaturedServiceCard>> BuildFeaturedPoolAsync()
+    {
+        var mainCodes = await ServicesApi.GetFeaturedCodesAsync(FeaturedEntityTypes.Main);
+        var packageCodes = await ServicesApi.GetFeaturedCodesAsync(FeaturedEntityTypes.Package);
+        var addOnCodes = await ServicesApi.GetFeaturedCodesAsync(FeaturedEntityTypes.AddOn);
+
+        var pool = new List<FeaturedServiceCard>();
+
+        pool.AddRange(UserService.GetMainServices()
+            .Where(s => s.IsActive && mainCodes.Contains(s.Code))
+            .Select(s => new FeaturedServiceCard(
+                s.Code, "Main Service", s.Title,
+                s.BasePrice > 0 ? $"₱{s.BasePrice:N0}" : "Custom Quote",
+                !string.IsNullOrWhiteSpace(s.Description) ? s.Description! : "Professional photography session executed in our premium studio bay.",
+                $"{s.Duration} • {s.Category}")));
+
+        pool.AddRange(UserService.GetPackageServices()
+            .Where(p => p.IsActive && packageCodes.Contains(p.Code))
+            .Select(p => new FeaturedServiceCard(
+                p.Code, "Package", p.Title, p.Price,
+                !string.IsNullOrWhiteSpace(p.Description) ? p.Description! : "A curated bundle of studio services at a package rate.",
+                !string.IsNullOrWhiteSpace(p.SavingsNote) ? p.SavingsNote! : p.BundleCategory)));
+
+        pool.AddRange(UserService.GetAdditionalServices()
+            .Where(a => a.IsActive && addOnCodes.Contains(a.Code))
+            .Select(a => new FeaturedServiceCard(
+                a.Code, "Add-On", a.Title, a.PriceText,
+                !string.IsNullOrWhiteSpace(a.Description) ? a.Description! : "Enhance your session with this optional extra.",
+                a.TypeCategory)));
+
+        return pool;
+    }
+
+    // ── Portfolio sidebar (accordions + category drill-down) ────────────
+    private bool _portfolioOpen = false;
+    private bool _portfolioLoading = false;
+    private string? _expandedSection;
+    private List<PortfolioCategoryDto> _portfolioCategories = new();
+    private PortfolioCategoryDto? _activePortfolioCategory;
+    private List<MainServiceItem> _activeMain = new();
+    private List<PackageServiceItem> _activePackages = new();
+    private List<AddOnServiceItem> _activeAddOns = new();
+
+    private async Task TogglePortfolio()
+    {
+        _portfolioOpen = !_portfolioOpen;
+        if (_portfolioOpen)
+        {
+            await LoadPortfolioCategoriesAsync();
+        }
+    }
+
+    private void ClosePortfolio()
+    {
+        _portfolioOpen = false;
+        _activePortfolioCategory = null;
+    }
+
+    private async Task LoadPortfolioCategoriesAsync()
+    {
+        _portfolioLoading = true;
+        try
+        {
+            var all = await ServicesApi.GetPortfolioCategoriesAsync();
+            _portfolioCategories = all.Where(c => c.IsActive).OrderBy(c => c.Name).ToList();
+        }
+        catch
+        {
+            _portfolioCategories = new List<PortfolioCategoryDto>();
+        }
+        finally
+        {
+            _portfolioLoading = false;
+        }
+    }
+
+    private List<PortfolioCategoryDto> PortfolioCategoriesFor(string section) =>
+        _portfolioCategories
+            .Where(c => c.ParentSection.Equals(section, StringComparison.OrdinalIgnoreCase))
+            .ToList();
+
+    private void ToggleSection(string section) =>
+        _expandedSection = _expandedSection == section ? null : section;
+
+    private void BackToPortfolioList() => _activePortfolioCategory = null;
+
+    private void OpenPortfolioCategory(PortfolioCategoryDto category)
+    {
+        _activePortfolioCategory = category;
+
+        try
+        {
+            _activeMain = UserService.GetMainServices()
+                .Where(s => s.IsActive && BelongsTo(category, s.Title, s.Category)).ToList();
+            _activePackages = UserService.GetPackageServices()
+                .Where(p => p.IsActive && BelongsTo(category, p.Title, p.BundleCategory)).ToList();
+            _activeAddOns = UserService.GetAdditionalServices()
+                .Where(a => a.IsActive && BelongsTo(category, a.Title, a.TypeCategory)).ToList();
+        }
+        catch
+        {
+            _activeMain = new(); _activePackages = new(); _activeAddOns = new();
+        }
+    }
+
+    /// <summary>
+    /// A service belongs to a category when the admin listed it by name under "Associated Services",
+    /// or when the service's own category text matches the category name.
+    /// </summary>
+    private static bool BelongsTo(PortfolioCategoryDto category, string title, string? categoryText) =>
+        category.ServiceNames.Contains(title, StringComparer.OrdinalIgnoreCase)
+        || (!string.IsNullOrWhiteSpace(categoryText)
+            && string.Equals(categoryText.Trim(), category.Name, StringComparison.OrdinalIgnoreCase));
+}

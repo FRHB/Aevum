@@ -1,0 +1,15 @@
+@using PhotoAevumStudio.Web.Models
+
+<!-- 
+    AdditionalServiceWizardModal: Alias component referencing AddAddOnModal 
+    Provides the 3-step wizard workflow for Additional Services (Add-Ons)
+-->
+<AddAddOnModal IsOpen="IsOpen"
+               IsOpenChanged="IsOpenChanged"
+               OnAddOnCreated="OnAddOnCreated" />
+
+@code {
+    [Parameter] public bool IsOpen { get; set; }
+    [Parameter] public EventCallback<bool> IsOpenChanged { get; set; }
+    [Parameter] public EventCallback<AddOnServiceItem> OnAddOnCreated { get; set; }
+}

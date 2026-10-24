@@ -1,0 +1,188 @@
+@page "/admin/services"
+@layout AdminLayout
+@rendermode InteractiveServer
+@attribute [Authorize(Roles = "Admin")]
+@using PhotoAevumStudio.Web.Models
+@using PhotoAevumStudio.Web.Services
+@inject IUserService UserService
+@inject IServicesApiClient ServicesApi
+
+<div class="space-y-6">
+    <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 pb-2 border-b border-gray-200">
+        <div>
+            <div class="flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-gray-500 mb-1">
+                <span>Admin</span>
+                <span>/</span>
+                <span class="text-gray-900 font-bold">Services</span>
+            </div>
+            <h1 class="text-2xl sm:text-3xl font-extrabold text-gray-900 tracking-tight">Services Management</h1>
+            <p class="text-sm text-gray-500 mt-0.5">Manage studio offerings, main service lines, and classification categories.</p>
+        </div>
+        <div class="flex flex-wrap items-center gap-2.5">
+            @* Trigger for Category Wizard *@
+            <button type="button" 
+                    @onclick="() => isCategoryWizardOpen = true"
+                    class="inline-flex items-center gap-2 px-4 py-2.5 bg-white border border-gray-300 hover:bg-gray-50 text-gray-800 text-xs font-semibold uppercase tracking-wider rounded-lg shadow-2xs transition-all active:scale-95 focus:ring-2 focus:ring-gray-900 focus:ring-offset-2">
+                <svg class="w-4 h-4 text-purple-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 7h.01M7 3h5c.512 0 1.024.195 1.414.586l7 7a2 2 0 010 2.828l-7 7a2 2 0 01-2.828 0l-7-7A1.994 1.994 0 013 12V7a4 4 0 014-4z" />
+                </svg>
+                <span>Add new Category</span>
+            </button>
+
+            @* Trigger for Main Services Wizard *@
+            <button type="button" 
+                    @onclick="() => isMainServiceWizardOpen = true"
+                    class="inline-flex items-center gap-2 px-4 py-2.5 bg-gray-900 hover:bg-black text-white text-xs font-semibold uppercase tracking-wider rounded-lg shadow-sm transition-all active:scale-95 focus:ring-2 focus:ring-gray-900 focus:ring-offset-2">
+                <svg class="w-4 h-4 text-emerald-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M12 4v16m8-8H4" />
+                </svg>
+                <span>Add New Main Service</span>
+            </button>
+        </div>
+    </div>
+
+    @* Toast / Notification Banner *@
+    @if (!string.IsNullOrWhiteSpace(notificationMessage))
+    {
+        <div class="p-4 bg-emerald-50 border border-emerald-200 text-emerald-900 rounded-xl flex items-center justify-between shadow-xs animate-in fade-in duration-200">
+            <div class="flex items-center gap-3">
+                <span class="w-7 h-7 rounded-full bg-emerald-600 text-white flex items-center justify-center shrink-0">
+                    <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M5 13l4 4L19 7" />
+                    </svg>
+                </span>
+                <div>
+                    <p class="text-xs font-bold text-emerald-950">Catalog Updated</p>
+                    <p class="text-xs text-emerald-800">@notificationMessage</p>
+                </div>
+            </div>
+            <button type="button" @onclick="() => notificationMessage = null" class="text-emerald-700 hover:text-emerald-950 p-1 text-sm font-bold">&times;</button>
+        </div>
+    }
+
+    <div class="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
+        <table class="w-full text-left text-sm">
+            <thead class="bg-gray-50 border-b border-gray-200 text-gray-500 uppercase text-xs font-semibold">
+                <tr>
+                    <th class="px-6 py-4">Code</th>
+                    <th class="px-6 py-4">Service Name</th>
+                    <th class="px-6 py-4">Description</th>
+                    <th class="px-6 py-4">Featured</th>
+                    <th class="px-6 py-4 text-right">Status</th>
+                </tr>
+            </thead>
+            <tbody class="divide-y divide-gray-100">
+                @if (_services.Count == 0)
+                {
+                    <tr>
+                        <td colspan="5" class="px-6 py-8 text-center text-gray-400">
+                            No services found in the database.
+                        </td>
+                    </tr>
+                }
+                else
+                {
+                    @foreach (var service in _services)
+                    {
+                        <tr class="hover:bg-gray-50">
+                            <td class="px-6 py-4 font-mono text-xs text-gray-600">@service.Code</td>
+                            <td class="px-6 py-4 font-medium text-gray-900">@service.Title</td>
+                            <td class="px-6 py-4 text-gray-500">@(string.IsNullOrWhiteSpace(service.Description) ? service.Category : service.Description)</td>
+                            <td class="px-6 py-4">
+                                    <button type="button"
+                                            @onclick="() => ToggleFeaturedAsync(service)"
+                                            disabled="@_busyCodes.Contains(service.Code)"
+                                            aria-pressed="@(service.IsFeatured ? "true" : "false")"
+                                            title="@(service.IsFeatured ? "Remove from featured services on the public site" : "Show on the public site as a featured service")"
+                                            class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold border transition-all cursor-pointer disabled:opacity-50 disabled:cursor-wait @(service.IsFeatured ? "bg-amber-50 text-amber-700 border-amber-300 hover:bg-amber-100" : "bg-white text-gray-500 border-gray-200 hover:border-gray-400 hover:text-gray-900")">
+                                        <span aria-hidden="true">@(service.IsFeatured ? "★" : "☆")</span>
+                                        <span>@(service.IsFeatured ? "Featured" : "Feature")</span>
+                                    </button>
+                                </td>
+                                <td class="px-6 py-4 text-right font-semibold text-gray-900">@service.Status</td>
+                        </tr>
+                    }
+                }
+            </tbody>
+        </table>
+    </div>
+</div>
+
+@* Modals *@
+<MainServiceWizardModal @bind-IsOpen="isMainServiceWizardOpen" OnServiceSaved="HandleMainServiceSaved" />
+<CategoryWizardModal @bind-IsOpen="isCategoryWizardOpen" OnCategorySaved="HandleCategorySaved" />
+<AddServicesWizard @bind-IsOpen="isWizardOpen" OnServiceSaved="LoadServices" />
+
+@code {
+    private bool isWizardOpen = false;
+    private bool isMainServiceWizardOpen = false;
+    private bool isCategoryWizardOpen = false;
+    private string? notificationMessage;
+    private IReadOnlyList<MainServiceItem> _services = Array.Empty<MainServiceItem>();
+
+    protected override void OnInitialized()
+    {
+        LoadServices();
+    }
+
+    private void LoadServices()
+    {
+        _services = UserService.GetMainServices();
+        ApplyFeaturedFlags();
+    }
+
+    // ── Featured toggle ─────────────────────────────────────────────────
+    private HashSet<string> _featuredCodes = new(StringComparer.OrdinalIgnoreCase);
+    private readonly HashSet<string> _busyCodes = new(StringComparer.OrdinalIgnoreCase);
+
+    protected override async Task OnInitializedAsync()
+    {
+        var codes = await ServicesApi.GetFeaturedCodesAsync(FeaturedEntityTypes.Main);
+        _featuredCodes = new HashSet<string>(codes, StringComparer.OrdinalIgnoreCase);
+        ApplyFeaturedFlags();
+    }
+
+    private void ApplyFeaturedFlags()
+    {
+        foreach (var item in _services)
+            item.IsFeatured = _featuredCodes.Contains(item.Code);
+    }
+
+    private async Task ToggleFeaturedAsync(MainServiceItem item)
+    {
+        if (!_busyCodes.Add(item.Code)) return;
+        var target = !item.IsFeatured;
+        try
+        {
+            var ok = await ServicesApi.SetFeaturedAsync(FeaturedEntityTypes.Main, item.Code, target);
+            if (ok)
+            {
+                item.IsFeatured = target;
+                if (target) _featuredCodes.Add(item.Code); else _featuredCodes.Remove(item.Code);
+                notificationMessage = target
+                    ? $"\"{item.Title}\" is now featured and will appear on the public site."
+                    : $"\"{item.Title}\" was removed from the featured services.";
+            }
+            else
+            {
+                notificationMessage = $"Could not update the featured status of \"{item.Title}\". Please try again.";
+            }
+        }
+        finally
+        {
+            _busyCodes.Remove(item.Code);
+        }
+    }
+
+    private void HandleMainServiceSaved(string serviceId)
+    {
+        notificationMessage = $"Service was successfully registered with custom ID '{serviceId}'.";
+        LoadServices();
+    }
+
+    private void HandleCategorySaved(string categoryId)
+    {
+        notificationMessage = $"Service Category was successfully created with custom ID '{categoryId}'.";
+        LoadServices();
+    }
+}

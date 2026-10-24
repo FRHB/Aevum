@@ -1,0 +1,285 @@
+@* =====================================================================
+   TermsModal.razor — Photo Aevum Studio Terms & Conditions Modal
+   
+   Aesthetic: Ultra-minimalist, high contrast, sharp typography,
+   clean structural borders, dark accents matching Photo Aevum Studio.
+   ===================================================================== *@
+
+@inject IJSRuntime JS
+
+@if (IsOpen)
+{
+    @* ── Modal Overlay Container ────────────────────────────────────────────── *@
+    <div class="fixed inset-0 z-50 flex items-center justify-center p-4 sm:p-6 md:p-10 overflow-hidden"
+         role="dialog"
+         aria-modal="true"
+         aria-labelledby="terms-modal-title"
+         @onkeydown="HandleKeyDown">
+
+        @* ── Backdrop blur and dark overlay ─────────────────────────────────── *@
+        <div class="fixed inset-0 bg-black/75 backdrop-blur-sm transition-opacity animate-fade-in"
+             @onclick="CloseAsync"
+             aria-hidden="true"></div>
+
+        @* ── Modal Dialog Panel ─────────────────────────────────────────────── *@
+        <div class="relative w-full max-w-3xl bg-white border border-gray-200 shadow-2xl flex flex-col max-h-[90vh] rounded-none z-10 overflow-hidden text-slate-900 transition-all">
+
+            @* ── Header Bar ─────────────────────────────────────────────────── *@
+            <header class="px-6 py-5 border-b border-gray-200 bg-[#FAF9F6] flex items-start justify-between gap-4 shrink-0">
+                <div class="space-y-1">
+                    <div class="inline-flex items-center gap-2 px-2.5 py-0.5 bg-black text-white text-[10px] font-semibold uppercase tracking-widest rounded-none">
+                        <span>Legal Agreement</span>
+                    </div>
+                    <h2 id="terms-modal-title" class="text-xl sm:text-2xl font-bold tracking-tight uppercase tracking-widest text-black pt-1">
+                        Terms of Service
+                    </h2>
+                    <div class="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-gray-500 font-light">
+                        <span>Effective: <strong class="font-medium text-gray-800">@EffectiveDate</strong></span>
+                        <span class="text-gray-300">•</span>
+                        <span>Last Updated: <strong class="font-medium text-gray-800">@LastUpdated</strong></span>
+                    </div>
+                </div>
+
+                @* Close 'X' Button *@
+                <button type="button"
+                        @onclick="CloseAsync"
+                        class="p-2 border border-transparent hover:border-gray-300 text-gray-400 hover:text-black hover:bg-white rounded-none transition-all duration-150 focus:outline-none focus:ring-1 focus:ring-black"
+                        aria-label="Close Terms of Service">
+                    <svg class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <line x1="18" y1="6" x2="6" y2="18"></line>
+                        <line x1="6" y1="6" x2="18" y2="18"></line>
+                    </svg>
+                </button>
+            </header>
+
+            @* ── Scrollable Body Content ────────────────────────────────────── *@
+            <div class="p-6 sm:p-8 overflow-y-auto flex-1 space-y-8 divide-y divide-gray-100 text-sm leading-relaxed font-light text-gray-600">
+
+                @* Preamble / Introduction *@
+                <div class="space-y-3">
+                    <p class="text-base text-gray-900 font-normal leading-relaxed">
+                        Welcome to <span class="font-bold uppercase tracking-wider text-black">Photo Aevum Studio</span>. By booking a photography or videography session, reserving studio bay facilities, commissioning creative works, or entering our studio premises, you enter into a legally binding agreement governed by the following Terms and Conditions.
+                    </p>
+                    <p class="text-xs text-gray-500 italic">
+                        Please review these terms thoroughly. Acceptance is acknowledged upon placing a deposit reservation, signing a booking agreement, or accessing delivered digital assets.
+                    </p>
+                </div>
+
+                @* SECTION 1: Studio Services & Booking Policy *@
+                <section class="pt-6 space-y-4">
+                    <div class="flex items-center gap-2">
+                        <span class="px-2 py-0.5 bg-gray-900 text-white text-[11px] font-mono font-bold tracking-wider">01</span>
+                        <h3 class="text-base font-bold uppercase tracking-widest text-black">Studio Services &amp; Booking Policy</h3>
+                    </div>
+
+                    <div class="space-y-3 text-xs sm:text-sm">
+                        <div class="border-l-2 border-black pl-3.5 py-0.5 space-y-1">
+                            <h4 class="font-semibold text-gray-900 uppercase tracking-wider text-xs">1.1 Retainer Deposit &amp; Reservation Confirmation</h4>
+                            <p>
+                                A non-refundable retainer deposit of <strong>50% of the total session package fee</strong> is required at the time of booking to secure your date, designated studio bay, and assigned lead photographer. No date or time slot is reserved until the retainer is cleared.
+                            </p>
+                        </div>
+
+                        <div class="border-l-2 border-black pl-3.5 py-0.5 space-y-1">
+                            <h4 class="font-semibold text-gray-900 uppercase tracking-wider text-xs">1.2 Session Commencement &amp; Punctuality</h4>
+                            <p>
+                                Studio sessions begin strictly at the scheduled reservation time. To ensure full creative coverage and avoid scheduling overlaps with subsequent clients, arriving late will reduce your effective shooting duration. Session times cannot be extended past the reserved booking window. Overtime requested by the client and permitted by studio availability is billed at <strong>₱1,500 per additional 30 minutes</strong>.
+                            </p>
+                        </div>
+
+                        <div class="border-l-2 border-black pl-3.5 py-0.5 space-y-1">
+                            <h4 class="font-semibold text-gray-900 uppercase tracking-wider text-xs">1.3 Rescheduling Protocol</h4>
+                            <p>
+                                We allow <strong>one complimentary rescheduling request</strong> if submitted in writing at least <strong>48 hours prior</strong> to the scheduled session. The new appointment date must fall within 60 calendar days of the original date, subject to studio availability. Rescheduling requests submitted under 48 hours will incur a 20% re-booking surcharge.
+                            </p>
+                        </div>
+                    </div>
+                </section>
+
+                @* SECTION 2: Cancellation & Refund Policy *@
+                <section class="pt-6 space-y-4">
+                    <div class="flex items-center gap-2">
+                        <span class="px-2 py-0.5 bg-gray-900 text-white text-[11px] font-mono font-bold tracking-wider">02</span>
+                        <h3 class="text-base font-bold uppercase tracking-widest text-black">Cancellation &amp; Refund Policy</h3>
+                    </div>
+
+                    <div class="space-y-3 text-xs sm:text-sm">
+                        <div class="border-l-2 border-black pl-3.5 py-0.5 space-y-1">
+                            <h4 class="font-semibold text-gray-900 uppercase tracking-wider text-xs">2.1 Client Cancellations</h4>
+                            <p>
+                                If a client cancels a session with more than 7 days' notice, the 50% deposit may be converted into studio credit valid for 6 months. Cancellations made fewer than 48 hours before the scheduled session or client "no-shows" will forfeit the entire retainer deposit to offset incurred preparatory overhead and lost studio bay booking capacity.
+                            </p>
+                        </div>
+
+                        <div class="border-l-2 border-black pl-3.5 py-0.5 space-y-1">
+                            <h4 class="font-semibold text-gray-900 uppercase tracking-wider text-xs">2.2 Studio Cancellation &amp; Force Majeure</h4>
+                            <p>
+                                In the improbable event that Photo Aevum Studio cannot perform due to severe equipment failure, sudden illness, or force majeure (extreme weather, natural disaster, civil unrest), the studio will make every reasonable effort to provide a comparable substitute photographer or offer an immediate priority reschedule. If a mutual reschedule cannot be agreed upon, all monies paid by the client will be promptly refunded in full.
+                            </p>
+                        </div>
+
+                        <div class="border-l-2 border-black pl-3.5 py-0.5 space-y-1">
+                            <h4 class="font-semibold text-gray-900 uppercase tracking-wider text-xs">2.3 Non-Refundable Items &amp; Lab Work</h4>
+                            <p>
+                                Once digital retouching has commenced or physical lab print orders (such as canvas wraps, acrylic prints, and fine-art albums) have been sent into production, all associated labor and lab fees become strictly non-refundable.
+                            </p>
+                        </div>
+                    </div>
+                </section>
+
+                @* SECTION 3: Copyright & Image Usage Rights *@
+                <section class="pt-6 space-y-4">
+                    <div class="flex items-center gap-2">
+                        <span class="px-2 py-0.5 bg-gray-900 text-white text-[11px] font-mono font-bold tracking-wider">03</span>
+                        <h3 class="text-base font-bold uppercase tracking-widest text-black">Copyright &amp; Image Usage Rights</h3>
+                    </div>
+
+                    <div class="space-y-3 text-xs sm:text-sm">
+                        <div class="border-l-2 border-black pl-3.5 py-0.5 space-y-1">
+                            <h4 class="font-semibold text-gray-900 uppercase tracking-wider text-xs">3.1 Authorship &amp; Statutory Copyright</h4>
+                            <p>
+                                Photo Aevum Studio retains exclusive legal copyright and authorship in all original photographic captures, RAW digital negatives, and artistic post-processed imagery pursuant to applicable intellectual property laws.
+                            </p>
+                        </div>
+
+                        <div class="border-l-2 border-black pl-3.5 py-0.5 space-y-1">
+                            <h4 class="font-semibold text-gray-900 uppercase tracking-wider text-xs">3.2 Personal Usage License (Standard Sessions)</h4>
+                            <p>
+                                Upon settlement of all outstanding invoices, clients receive a perpetual, non-exclusive, royalty-free <strong>Personal Usage License</strong>. You are fully entitled to reproduce, print, post on personal social media channels, and archive high-resolution files for personal and family enjoyment. Tagging <em>@@photoaevumstudio</em> is appreciated but not mandatory. Alteration with third-party filters or resale is strictly prohibited.
+                            </p>
+                        </div>
+
+                        <div class="border-l-2 border-black pl-3.5 py-0.5 space-y-1">
+                            <h4 class="font-semibold text-gray-900 uppercase tracking-wider text-xs">3.3 Commercial &amp; Advertising Rights</h4>
+                            <p>
+                                Commercial exploitation—including paid advertising, magazine editorial publication, billboard display, e-commerce product catalogs, or transfer to third-party corporate sponsors—requires a formal, written <strong>Commercial Usage License</strong> specifying territory, media channels, and term duration.
+                            </p>
+                        </div>
+                    </div>
+                </section>
+
+                @* SECTION 4: Client Conduct & Studio Liability *@
+                <section class="pt-6 space-y-4">
+                    <div class="flex items-center gap-2">
+                        <span class="px-2 py-0.5 bg-gray-900 text-white text-[11px] font-mono font-bold tracking-wider">04</span>
+                        <h3 class="text-base font-bold uppercase tracking-widest text-black">Client Conduct &amp; Studio Liability</h3>
+                    </div>
+
+                    <div class="space-y-3 text-xs sm:text-sm">
+                        <div class="border-l-2 border-black pl-3.5 py-0.5 space-y-1">
+                            <h4 class="font-semibold text-gray-900 uppercase tracking-wider text-xs">4.1 Studio Space &amp; Gear Preservation</h4>
+                            <p>
+                                Clients and their guests agree to exercise care within our studio bays. Strobe lighting rigs, C-stands, softboxes, and seamless backdrops are delicate precision instruments. Any physical damage to studio facilities or equipment resulting from willful negligence or reckless behavior will be assessed and billed directly to the primary booking client.
+                            </p>
+                        </div>
+
+                        <div class="border-l-2 border-black pl-3.5 py-0.5 space-y-1">
+                            <h4 class="font-semibold text-gray-900 uppercase tracking-wider text-xs">4.2 Safety, Minors, &amp; Conduct</h4>
+                            <p>
+                                We maintain a professional, harassment-free environment for all clients and team members. Minors under age 18 must be accompanied by an adult legal guardian during all consultations and shooting sessions. The studio reserves the right to terminate any session immediately without refund if client conduct is deemed abusive, intoxicated, or hazardous.
+                            </p>
+                        </div>
+
+                        <div class="border-l-2 border-black pl-3.5 py-0.5 space-y-1">
+                            <h4 class="font-semibold text-gray-900 uppercase tracking-wider text-xs">4.3 Limitation of Liability</h4>
+                            <p>
+                                Photo Aevum Studio cannot be held liable for personal injury, lost or damaged personal valuables brought into the studio, or indirect damages. In any legal dispute, our aggregate financial liability shall not exceed the total sum paid by the client for the specific session in dispute.
+                            </p>
+                        </div>
+                    </div>
+                </section>
+
+                @* SECTION 5: Digital Delivery & Archive Retention *@
+                <section class="pt-6 space-y-4">
+                    <div class="flex items-center gap-2">
+                        <span class="px-2 py-0.5 bg-gray-900 text-white text-[11px] font-mono font-bold tracking-wider">05</span>
+                        <h3 class="text-base font-bold uppercase tracking-widest text-black">Delivery Timelines &amp; Archival</h3>
+                    </div>
+
+                    <div class="space-y-3 text-xs sm:text-sm">
+                        <p>
+                            Watermarked preview contact sheets are typically delivered within <strong>3 to 5 business days</strong> following your session. Final retouched master files will be uploaded to your private client portal within <strong>10 to 14 business days</strong> of final image selections. Private client galleries remain active for <strong>12 months</strong>; clients are urged to download and create redundant offline backups promptly upon delivery.
+                        </p>
+                    </div>
+                </section>
+            </div>
+
+            @* ── Footer / Action Bar ────────────────────────────────────────── *@
+            <footer class="px-6 py-4 bg-gray-50 border-t border-gray-200 flex flex-col sm:flex-row items-center justify-between gap-4 shrink-0">
+                <div class="text-xs text-gray-500 font-light text-center sm:text-left">
+                    Questions about our policies? Contact <a href="mailto:photoaevumstudio@gmail.com" class="text-black font-medium underline underline-offset-2 hover:text-gray-700">photoaevumstudio@gmail.com</a>
+                </div>
+
+                <div class="flex items-center gap-3 w-full sm:w-auto justify-end">
+                    <button type="button"
+                            @onclick="CloseAsync"
+                            class="flex-1 sm:flex-initial px-6 py-2.5 bg-white hover:bg-gray-100 text-gray-800 border border-gray-300 rounded-none font-medium text-xs uppercase tracking-wider transition-colors">
+                        Close
+                    </button>
+
+                    @if (ShowAgreeButton)
+                    {
+                        <button type="button"
+                                @onclick="AgreeAsync"
+                                class="flex-1 sm:flex-initial px-8 py-2.5 bg-black hover:bg-gray-800 text-white border border-black rounded-none font-medium text-xs uppercase tracking-wider transition-colors shadow-xs flex items-center justify-center gap-1.5">
+                            <svg class="w-3.5 h-3.5 text-white" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                                <polyline points="20 6 9 17 4 12"></polyline>
+                            </svg>
+                            <span>I Agree</span>
+                        </button>
+                    }
+                </div>
+            </footer>
+        </div>
+    </div>
+}
+
+@code {
+    [Parameter]
+    public bool IsOpen { get; set; } = false;
+
+    [Parameter]
+    public EventCallback<bool> IsOpenChanged { get; set; }
+
+    [Parameter]
+    public EventCallback OnClose { get; set; }
+
+    [Parameter]
+    public EventCallback OnAgree { get; set; }
+
+    [Parameter]
+    public bool ShowAgreeButton { get; set; } = true;
+
+    [Parameter]
+    public string LastUpdated { get; set; } = "October 24, 2026";
+
+    [Parameter]
+    public string EffectiveDate { get; set; } = "January 1, 2026";
+
+    private async Task CloseAsync()
+    {
+        IsOpen = false;
+        await IsOpenChanged.InvokeAsync(false);
+        if (OnClose.HasDelegate)
+        {
+            await OnClose.InvokeAsync();
+        }
+    }
+
+    private async Task AgreeAsync()
+    {
+        if (OnAgree.HasDelegate)
+        {
+            await OnAgree.InvokeAsync();
+        }
+        await CloseAsync();
+    }
+
+    private async Task HandleKeyDown(KeyboardEventArgs e)
+    {
+        if (e.Key == "Escape")
+        {
+            await CloseAsync();
+        }
+    }
+}

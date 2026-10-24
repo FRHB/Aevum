@@ -1,0 +1,208 @@
+@page "/admin/employees"
+@layout AdminLayout
+@rendermode InteractiveServer
+@attribute [Authorize(Roles = "Admin")]
+@using PhotoAevumStudio.Web.Models
+@inject IEmployeeService Employees
+@implements IDisposable
+
+<div class="space-y-6">
+    <!-- Header Section with Add Button -->
+    <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 pb-2 border-b border-slate-200">
+        <div>
+            <h1 class="text-2xl font-bold text-slate-900 tracking-tight">Staff List</h1>
+            <p class="text-sm text-slate-500 mt-0.5">Manage photo studio employees, active specializations, and system credentials.</p>
+        </div>
+
+        <button type="button" 
+                @onclick="() => isWizardOpen = true"
+                class="inline-flex items-center justify-center gap-2 px-5 py-2.5 bg-slate-900 hover:bg-black text-white text-xs font-semibold uppercase tracking-wider rounded-lg shadow-sm transition-all focus:ring-2 focus:ring-slate-900 focus:ring-offset-2">
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M18 9v3m0 0v3m0-3h3m-3 0h-3m-2-5a4 4 0 11-8 0 4 4 0 018 0zM3 20a6 6 0 0112 0v1H3v-1z" />
+            </svg>
+            Add Employee
+        </button>
+    </div>
+
+    <!-- Quick Stats Cards -->
+    <div class="grid grid-cols-1 sm:grid-cols-3 gap-4">
+        <div class="bg-white p-4 rounded-xl border border-slate-200 shadow-sm flex items-center gap-4">
+            <div class="w-10 h-10 rounded-lg bg-slate-100 flex items-center justify-center text-slate-800 text-lg font-bold">
+                👥
+            </div>
+            <div>
+                <p class="text-xs text-slate-500 font-medium">Total Staff</p>
+                <p class="text-xl font-bold text-slate-900">@employees.Count</p>
+            </div>
+        </div>
+        <div class="bg-white p-4 rounded-xl border border-slate-200 shadow-sm flex items-center gap-4">
+            <div class="w-10 h-10 rounded-lg bg-emerald-50 flex items-center justify-center text-emerald-600 text-lg font-bold">
+                ✓
+            </div>
+            <div>
+                <p class="text-xs text-slate-500 font-medium">Active Personnel</p>
+                <p class="text-xl font-bold text-slate-900">@employees.Count(e => e.IsActive)</p>
+            </div>
+        </div>
+        <div class="bg-white p-4 rounded-xl border border-slate-200 shadow-sm flex items-center gap-4">
+            <div class="w-10 h-10 rounded-lg bg-amber-50 flex items-center justify-center text-amber-600 text-lg font-bold">
+                ★
+            </div>
+            <div>
+                <p class="text-xs text-slate-500 font-medium">Unique Specializations</p>
+                <p class="text-xl font-bold text-slate-900">
+                    @employees.SelectMany(e => e.Specializations).Distinct(StringComparer.OrdinalIgnoreCase).Count()
+                </p>
+            </div>
+        </div>
+    </div>
+
+    <!-- Filter & Search Toolbar -->
+    <div class="bg-white p-4 rounded-xl border border-slate-200 shadow-sm flex flex-col sm:flex-row gap-3 items-center justify-between">
+        <div class="relative w-full sm:w-80">
+            <input type="text" 
+                   @bind="searchQuery" 
+                   @bind:event="oninput"
+                   placeholder="Search by name, ID, or skill..." 
+                   class="w-full pl-9 pr-4 py-2 text-xs rounded-lg border border-slate-300 focus:outline-none focus:ring-1 focus:ring-slate-900 focus:border-slate-900" />
+            <svg class="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+            </svg>
+        </div>
+        <span class="text-xs text-slate-500 self-end sm:self-center">
+            Showing @FilteredEmployees.Count of @employees.Count employees
+        </span>
+    </div>
+
+    <!-- Staff Table View -->
+    <div class="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
+        <div class="overflow-x-auto">
+            <table class="w-full text-left border-collapse text-xs">
+                <thead>
+                    <tr class="bg-slate-50/75 border-b border-slate-200 text-slate-600 font-semibold uppercase tracking-wider">
+                        <th class="px-5 py-3.5">Employee</th>
+                        <th class="px-5 py-3.5">Employee ID</th>
+                        <th class="px-5 py-3.5">Specializations</th>
+                        <th class="px-5 py-3.5">Status</th>
+                        <th class="px-5 py-3.5 text-right">Actions</th>
+                    </tr>
+                </thead>
+                <tbody class="divide-y divide-slate-100">
+                    @if (isLoading)
+                    {
+                        <tr>
+                            <td colspan="5" class="px-5 py-10 text-center text-slate-400">
+                                <span class="inline-block w-4 h-4 border-2 border-slate-400/30 border-t-slate-600 rounded-full animate-spin mr-2"></span>
+                                Loading staff directory...
+                            </td>
+                        </tr>
+                    }
+                    else if (FilteredEmployees.Count == 0)
+                    {
+                        <tr>
+                            <td colspan="5" class="px-5 py-10 text-center text-slate-400">
+                                @(employees.Count == 0 ? "No employees found in the database." : "No employees found matching your search.")
+                            </td>
+                        </tr>
+                    }
+                    else
+                    {
+                        @foreach (var emp in FilteredEmployees)
+                        {
+                            <tr class="hover:bg-slate-50/60 transition-colors">
+                                <td class="px-5 py-3.5">
+                                    <div class="flex items-center gap-3">
+                                        <div class="w-8 h-8 rounded-full bg-slate-900 text-white flex items-center justify-center font-bold text-xs uppercase shrink-0">
+                                            @emp.Initials
+                                        </div>
+                                        <div>
+                                            <p class="font-semibold text-slate-900">@emp.FullName</p>
+                                            <p class="text-slate-500 text-[11px]">@emp.Email</p>
+                                        </div>
+                                    </div>
+                                </td>
+                                <td class="px-5 py-3.5">
+                                    <span class="font-mono text-slate-700 bg-slate-100 px-2 py-0.5 rounded text-[11px] font-medium">
+                                        @emp.EmployeeId
+                                    </span>
+                                </td>
+                                <td class="px-5 py-3.5">
+                                    <div class="flex flex-wrap gap-1">
+                                        @foreach (var spec in emp.Specializations)
+                                        {
+                                            <span class="inline-block bg-slate-100 text-slate-800 text-[11px] px-2 py-0.5 rounded border border-slate-200">
+                                                @spec
+                                            </span>
+                                        }
+                                    </div>
+                                </td>
+                                <td class="px-5 py-3.5">
+                                    <span class="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-medium bg-emerald-50 text-emerald-700 border border-emerald-200">
+                                        <span class="w-1.5 h-1.5 rounded-full bg-emerald-500"></span>
+                                        @emp.Status
+                                    </span>
+                                </td>
+                                <td class="px-5 py-3.5 text-right">
+                                    <span class="text-slate-400 text-xs">@emp.Status</span>
+                                </td>
+                            </tr>
+                        }
+                    }
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+<!-- Add Employee Wizard Modal -->
+<AddEmployeeWizard @bind-IsOpen="isWizardOpen" OnSaved="HandleEmployeeSaved" />
+
+@code {
+    private bool isWizardOpen = false;
+    private bool isLoading = true;
+    private string searchQuery = string.Empty;
+    private List<EmployeeViewModel> employees = new();
+    private CancellationTokenSource? _cts;
+
+    private List<EmployeeViewModel> FilteredEmployees => employees
+        .Where(e => string.IsNullOrWhiteSpace(searchQuery) ||
+                    e.FullName.Contains(searchQuery, StringComparison.OrdinalIgnoreCase) ||
+                    e.EmployeeId.Contains(searchQuery, StringComparison.OrdinalIgnoreCase) ||
+                    e.Specializations.Any(s => s.Contains(searchQuery, StringComparison.OrdinalIgnoreCase)))
+        .ToList();
+
+    protected override async Task OnInitializedAsync()
+    {
+        _cts = new CancellationTokenSource();
+        await LoadEmployeesAsync();
+    }
+
+    private async Task LoadEmployeesAsync()
+    {
+        isLoading = true;
+        try
+        {
+            var data = await Employees.GetEmployeesAsync(_cts?.Token ?? CancellationToken.None);
+            employees = data?.ToList() ?? new List<EmployeeViewModel>();
+        }
+        catch
+        {
+            employees = new List<EmployeeViewModel>();
+        }
+        finally
+        {
+            isLoading = false;
+        }
+    }
+
+    private async Task HandleEmployeeSaved()
+    {
+        await LoadEmployeesAsync();
+    }
+
+    public void Dispose()
+    {
+        _cts?.Cancel();
+        _cts?.Dispose();
+    }
+}

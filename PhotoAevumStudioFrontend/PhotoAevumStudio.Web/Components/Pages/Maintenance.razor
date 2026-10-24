@@ -1,0 +1,719 @@
+@page "/admin/equipment/maintenance"
+@page "/admin/maintenance"
+@page "/maintenance"
+@layout AdminLayout
+@rendermode InteractiveServer
+@attribute [Authorize(Roles = "Admin")]
+@inject IEquipmentService EquipmentService
+@implements IDisposable
+
+<PageTitle>Maintenance &amp; Calibration Logs | Photo Aevum Studio</PageTitle>
+
+<div class="space-y-6 pb-12">
+    <!-- Sub-navigation Tabs -->
+    <EquipmentSubNav ActiveTabLabel="Maintenance" />
+
+    <!-- Header Section with Action Button -->
+    <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 pb-2 border-b border-slate-200">
+        <div>
+            <h1 class="text-2xl font-bold text-slate-900 tracking-tight">Maintenance</h1>
+            <p class="text-sm text-slate-500 mt-0.5">Equipment repair records, routine calibration, and servicing history.</p>
+        </div>
+
+        <div class="flex items-center gap-3">
+            <button type="button" 
+                    @onclick="OpenLogMaintenanceModal"
+                    class="inline-flex items-center justify-center gap-2 px-5 py-2.5 bg-slate-900 hover:bg-black text-white text-xs font-semibold uppercase tracking-wider rounded-lg shadow-sm transition-all focus:ring-2 focus:ring-slate-900 focus:ring-offset-2 active:scale-95">
+                <svg class="w-4 h-4 text-amber-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M12 4v16m8-8H4" />
+                </svg>
+                <span>Log Maintenance / Service</span>
+            </button>
+        </div>
+    </div>
+
+    <!-- Alert / Toast Banner -->
+    @if (!string.IsNullOrWhiteSpace(notificationMessage))
+    {
+        <div class="p-4 bg-emerald-50 border border-emerald-200 text-emerald-900 rounded-xl flex items-center justify-between shadow-xs animate-in fade-in duration-200">
+            <div class="flex items-center gap-3">
+                <span class="w-7 h-7 rounded-full bg-emerald-600 text-white flex items-center justify-center shrink-0">
+                    <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M5 13l4 4L19 7" />
+                    </svg>
+                </span>
+                <div>
+                    <p class="text-xs font-bold text-emerald-950">Audit Log Committed</p>
+                    <p class="text-xs text-emerald-800">@notificationMessage</p>
+                </div>
+            </div>
+            <button type="button" @onclick="() => notificationMessage = null" class="text-emerald-700 hover:text-emerald-950 p-1 text-sm font-bold">&times;</button>
+        </div>
+    }
+
+    <!-- Summary Cards (Top Row) -->
+    <div class="grid grid-cols-1 sm:grid-cols-3 gap-4">
+        <!-- Card 1: Total Equipment currently under Maintenance/Repair -->
+        <div class="bg-white p-4 rounded-xl border border-slate-200 shadow-sm flex items-center gap-4 hover:shadow-md transition-shadow">
+            <div class="w-12 h-12 rounded-lg bg-amber-50 flex items-center justify-center text-amber-600 text-xl font-bold shrink-0">
+                ⚠️
+            </div>
+            <div>
+                <p class="text-xs text-slate-500 font-medium uppercase tracking-wider">Under Maintenance</p>
+                <p class="text-2xl font-extrabold text-amber-700 mt-0.5">@equipmentList.Count(e => e.IsMaintenance)</p>
+                <p class="text-[11px] text-slate-400">Current hardware undergoing repair/calibration</p>
+            </div>
+        </div>
+
+        <!-- Card 2: Completed Servicing Logs this month -->
+        <div class="bg-white p-4 rounded-xl border border-slate-200 shadow-sm flex items-center gap-4 hover:shadow-md transition-shadow">
+            <div class="w-12 h-12 rounded-lg bg-emerald-50 flex items-center justify-center text-emerald-600 text-xl font-bold shrink-0">
+                📋
+            </div>
+            <div>
+                <p class="text-xs text-slate-500 font-medium uppercase tracking-wider">Servicing Logs (This Month)</p>
+                <p class="text-2xl font-extrabold text-emerald-700 mt-0.5">
+                    @maintenanceLogs.Count(m => m.LoggedAt.Month == DateTime.UtcNow.Month && m.LoggedAt.Year == DateTime.UtcNow.Year)
+                </p>
+                <p class="text-[11px] text-slate-400">Audit records captured in dbo.HistoryLog</p>
+            </div>
+        </div>
+
+        <!-- Card 3: Pending Calibration checks -->
+        <div class="bg-white p-4 rounded-xl border border-slate-200 shadow-sm flex items-center gap-4 hover:shadow-md transition-shadow">
+            <div class="w-12 h-12 rounded-lg bg-blue-50 flex items-center justify-center text-blue-600 text-xl font-bold shrink-0">
+                🔬
+            </div>
+            <div>
+                <p class="text-xs text-slate-500 font-medium uppercase tracking-wider">Calibration History</p>
+                <p class="text-2xl font-extrabold text-blue-700 mt-0.5">
+                    @maintenanceLogs.Count(m => m.IsCalibration)
+                </p>
+                <p class="text-[11px] text-slate-400">Precision lens, sensor &amp; strobe calibrations</p>
+            </div>
+        </div>
+    </div>
+
+    <!-- Filter & Search Toolbar -->
+    <div class="bg-white p-4 rounded-xl border border-slate-200 shadow-sm flex flex-col md:flex-row gap-3 items-center justify-between">
+        <div class="flex flex-col sm:flex-row items-center gap-3 w-full md:w-auto flex-1">
+            <!-- Search Bar -->
+            <div class="relative w-full sm:w-80">
+                <input type="text" 
+                       @bind="searchQuery" 
+                       @bind:event="oninput"
+                       placeholder="Search by equipment, serial no, or staff ID..." 
+                       class="w-full pl-9 pr-4 py-2 text-xs rounded-lg border border-slate-300 focus:outline-none focus:ring-1 focus:ring-slate-900 focus:border-slate-900 placeholder:text-slate-400" />
+                <svg class="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                </svg>
+            </div>
+
+            <!-- Service Filter Dropdown -->
+            <div class="w-full sm:w-48">
+                <select @bind="selectedServiceFilter"
+                        class="w-full px-3 py-2 text-xs rounded-lg border border-slate-300 bg-white text-slate-700 focus:outline-none focus:ring-1 focus:ring-slate-900">
+                    <option value="ALL">All Service Types</option>
+                    <option value="Repair">Repairs &amp; Fixes</option>
+                    <option value="Calibration">Calibrations</option>
+                    <option value="Routine">Routine Servicing</option>
+                </select>
+            </div>
+
+            <!-- Status Filter Dropdown -->
+            <div class="w-full sm:w-44">
+                <select @bind="selectedStatusFilter"
+                        class="w-full px-3 py-2 text-xs rounded-lg border border-slate-300 bg-white text-slate-700 focus:outline-none focus:ring-1 focus:ring-slate-900">
+                    <option value="ALL">All Log Statuses</option>
+                    <option value="Maintenance">Flagged Maintenance</option>
+                    <option value="Available">Available / Resolved</option>
+                </select>
+            </div>
+
+            @if (IsFiltered)
+            {
+                <button type="button" 
+                        @onclick="ResetFilters"
+                        class="text-xs text-slate-600 hover:text-slate-900 hover:underline px-2 py-1">
+                    Clear Filters
+                </button>
+            }
+        </div>
+
+        <span class="text-xs text-slate-500 self-end md:self-center font-medium">
+            Showing <strong class="text-slate-900">@FilteredLogs.Count()</strong> of <strong class="text-slate-900">@maintenanceLogs.Count</strong> audit records
+        </span>
+    </div>
+
+    <!-- Data Table Structure -->
+    <div class="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
+        <div class="overflow-x-auto">
+            <table class="w-full text-left border-collapse text-xs">
+                <thead>
+                    <tr class="bg-slate-50/75 border-b border-slate-200 text-slate-600 font-semibold uppercase tracking-wider text-[11px]">
+                        <th class="px-5 py-3.5">Equipment Name &amp; Serial</th>
+                        <th class="px-5 py-3.5">Status</th>
+                        <th class="px-5 py-3.5">Action / Details</th>
+                        <th class="px-5 py-3.5">Logged By</th>
+                        <th class="px-5 py-3.5">Date / Time</th>
+                        <th class="px-5 py-3.5 text-right">Actions</th>
+                    </tr>
+                </thead>
+                <tbody class="divide-y divide-slate-100">
+                    @if (isLoading)
+                    {
+                        <tr>
+                            <td colspan="6" class="px-5 py-12 text-center text-slate-400">
+                                <span class="inline-block w-4 h-4 border-2 border-slate-400/30 border-t-slate-600 rounded-full animate-spin mr-2"></span>
+                                Querying maintenance history from dbo.HistoryLog (EntityName = 'Equipment')...
+                            </td>
+                        </tr>
+                    }
+                    else if (!FilteredLogs.Any())
+                    {
+                        <tr>
+                            <td colspan="6" class="px-5 py-12 text-center text-slate-400">
+                                <div class="max-w-xs mx-auto space-y-2">
+                                    <p class="text-2xl">🔧</p>
+                                    <p class="font-medium text-slate-700">No maintenance logs match your filter</p>
+                                    <p class="text-[11px]">Use "+ Log Maintenance" to record a new servicing ticket or calibration check.</p>
+                                </div>
+                            </td>
+                        </tr>
+                    }
+                    else
+                    {
+                        @foreach (var log in FilteredLogs)
+                        {
+                            <tr class="hover:bg-slate-50/70 transition-colors">
+                                <!-- EQUIPMENT NAME (with Serial No) -->
+                                <td class="px-5 py-3.5">
+                                    <div class="flex items-center gap-3">
+                                        <div class="w-8 h-8 rounded-lg bg-slate-900 text-white flex items-center justify-center font-bold text-xs uppercase shrink-0 shadow-xs">
+                                            @GetInitials(log.EquipmentName)
+                                        </div>
+                                        <div>
+                                            <p class="font-bold text-slate-900 leading-snug">@log.EquipmentName</p>
+                                            <div class="flex items-center gap-2 mt-0.5">
+                                                <span class="font-mono text-[11px] text-slate-500 font-medium">@log.EntityID</span>
+                                                @if (!string.IsNullOrEmpty(log.SerialNo))
+                                                {
+                                                    <span class="text-slate-300">•</span>
+                                                    <span class="font-mono text-[11px] text-slate-400">SN: @log.SerialNo</span>
+                                                }
+                                            </div>
+                                        </div>
+                                    </div>
+                                </td>
+
+                                <!-- STATUS ('Maintenance' / 'Available' badge) -->
+                                <td class="px-5 py-3.5">
+                                    @if (log.EquipmentStatus.Equals("Maintenance", StringComparison.OrdinalIgnoreCase))
+                                    {
+                                        <span class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold bg-amber-50 text-amber-800 border border-amber-200">
+                                            <span class="w-1.5 h-1.5 rounded-full bg-amber-500 animate-pulse"></span>
+                                            Maintenance
+                                        </span>
+                                    }
+                                    else
+                                    {
+                                        <span class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold bg-emerald-50 text-emerald-800 border border-emerald-200">
+                                            <span class="w-1.5 h-1.5 rounded-full bg-emerald-500"></span>
+                                            Available
+                                        </span>
+                                    }
+                                </td>
+
+                                <!-- ACTION / DETAILS (Stored in dbo.HistoryLog.ActionDetails) -->
+                                <td class="px-5 py-3.5 max-w-md">
+                                    <p class="text-xs text-slate-800 leading-relaxed font-normal">
+                                        @log.ActionDetails
+                                    </p>
+                                    <span class="text-[10px] text-slate-400 font-mono mt-0.5 inline-block">
+                                        ActionType: @log.ActionType | LogID: #@log.HistoryLogID
+                                    </span>
+                                </td>
+
+                                <!-- LOGGED BY (Admin/Employee ID) -->
+                                <td class="px-5 py-3.5">
+                                    <div class="inline-flex items-center gap-1.5 px-2 py-0.5 rounded bg-slate-100 text-slate-700 font-mono text-[11px] font-semibold border border-slate-200">
+                                        <span>👤</span>
+                                        <span>@log.ActorID</span>
+                                    </div>
+                                    <p class="text-[10px] text-slate-400 mt-0.5">Role: @log.ChangedByType</p>
+                                </td>
+
+                                <!-- DATE/TIME (dbo.HistoryLog.LoggedAt) -->
+                                <td class="px-5 py-3.5 text-slate-600 text-[11px] whitespace-nowrap">
+                                    <div>@log.LoggedAt.ToLocalTime().ToString("MMM dd, yyyy")</div>
+                                    <div class="text-slate-400 text-[10px]">@log.LoggedAt.ToLocalTime().ToString("hh:mm tt")</div>
+                                </td>
+
+                                <!-- ACTIONS (Resolve & Return to Available) -->
+                                <td class="px-5 py-3.5 text-right whitespace-nowrap">
+                                    <div class="inline-flex items-center gap-1.5">
+                                        @if (IsItemCurrentlyInMaintenance(log.EntityID))
+                                        {
+                                            <button type="button" 
+                                                    @onclick="() => OpenResolveModal(log)"
+                                                    class="px-2.5 py-1.5 text-xs font-bold text-emerald-700 bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 rounded-md transition-all shadow-2xs">
+                                                Resolve &amp; Make Available
+                                            </button>
+                                        }
+                                        else
+                                        {
+                                            <span class="text-[11px] text-emerald-700 font-semibold px-2 py-1">
+                                                ✓ Active in Service
+                                            </span>
+                                        }
+
+                                        <button type="button"
+                                                @onclick="() => ViewDetails(log)"
+                                                class="px-2 py-1.5 text-xs text-slate-500 hover:text-slate-900 hover:bg-slate-100 rounded-md transition-colors"
+                                                title="View audit record">
+                                            <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+                                            </svg>
+                                        </button>
+                                    </div>
+                                </td>
+                            </tr>
+                        }
+                    }
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+<!-- ══════════════════════════════════════════════════════════════════════════ -->
+<!-- MODAL: LOG MAINTENANCE / SCHEDULE SERVICE                                 -->
+<!-- ══════════════════════════════════════════════════════════════════════════ -->
+@if (isLogModalOpen)
+{
+    <div class="fixed inset-0 z-50 overflow-y-auto bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4">
+        <div class="relative bg-white rounded-2xl shadow-xl border border-slate-200 w-full max-w-lg overflow-hidden animate-in fade-in zoom-in-95 duration-150">
+            <!-- Modal Header -->
+            <div class="px-6 py-4 bg-slate-900 text-white flex items-center justify-between">
+                <div class="flex items-center gap-2">
+                    <span class="w-7 h-7 rounded-lg bg-amber-500 text-slate-950 flex items-center justify-center font-bold text-sm">
+                        🔧
+                    </span>
+                    <div>
+                        <h2 class="text-base font-bold text-white leading-tight">Log Maintenance &amp; Servicing</h2>
+                        <p class="text-[11px] text-slate-300">Creates record in dbo.HistoryLog (EntityName = 'Equipment')</p>
+                    </div>
+                </div>
+                <button type="button" @onclick="CloseLogModal" class="text-slate-400 hover:text-white text-lg font-bold p-1">&times;</button>
+            </div>
+
+            <!-- Modal Form -->
+            <EditForm Model="@maintenanceForm" OnValidSubmit="HandleSubmitMaintenance">
+                <DataAnnotationsValidator />
+
+                <div class="p-6 space-y-4">
+                    @if (!string.IsNullOrEmpty(formErrorMessage))
+                    {
+                        <div class="p-3 bg-rose-50 border border-rose-200 text-rose-800 rounded-lg text-xs">
+                            @formErrorMessage
+                        </div>
+                    }
+
+                    <!-- Select Equipment -->
+                    <div>
+                        <label class="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1">
+                            Target Equipment Hardware <span class="text-rose-500">*</span>
+                        </label>
+                        <InputSelect @bind-Value="maintenanceForm.EquipmentID"
+                                     class="w-full px-3 py-2 text-xs rounded-lg border border-slate-300 bg-white text-slate-900 focus:outline-none focus:ring-1 focus:ring-slate-900">
+                            <option value="">-- Choose Equipment --</option>
+                            @foreach (var eq in equipmentList)
+                            {
+                                <option value="@eq.EquipmentID">
+                                    @eq.EquipmentName (@eq.EquipmentID) — Status: @eq.EquipmentStatus
+                                </option>
+                            }
+                        </InputSelect>
+                        <ValidationMessage For="@(() => maintenanceForm.EquipmentID)" class="text-[11px] text-rose-600 mt-1" />
+                    </div>
+
+                    <!-- Service Category -->
+                    <div>
+                        <label class="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1">
+                            Service Category <span class="text-rose-500">*</span>
+                        </label>
+                        <InputSelect @bind-Value="maintenanceForm.ServiceType"
+                                     class="w-full px-3 py-2 text-xs rounded-lg border border-slate-300 bg-white text-slate-900 focus:outline-none focus:ring-1 focus:ring-slate-900">
+                            <option value="Repair">Hardware Repair &amp; Defect Fix</option>
+                            <option value="Calibration">Precision Optical / Sensor Calibration</option>
+                            <option value="Routine Servicing">Routine Inspection, Cleaning &amp; Firmware</option>
+                        </InputSelect>
+                    </div>
+
+                    <!-- Action Details / Diagnosis Notes -->
+                    <div>
+                        <label class="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1">
+                            Diagnosis, Servicing Details &amp; Actions Taken <span class="text-rose-500">*</span>
+                        </label>
+                        <InputTextArea @bind-Value="maintenanceForm.IssueDetails"
+                                       rows="3"
+                                       placeholder="e.g. Ultrasonic sensor cleaning, shutter mechanism recalibration, battery dock replacement..."
+                                       class="w-full px-3 py-2 text-xs rounded-lg border border-slate-300 focus:outline-none focus:ring-1 focus:ring-slate-900" />
+                        <ValidationMessage For="@(() => maintenanceForm.IssueDetails)" class="text-[11px] text-rose-600 mt-1" />
+                    </div>
+
+                    <!-- Actor ID -->
+                    <div>
+                        <label class="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1">
+                            Logged By (Admin / Staff ID) <span class="text-rose-500">*</span>
+                        </label>
+                        <InputText @bind-Value="maintenanceForm.ActorID" 
+                                   class="w-full px-3 py-2 text-xs font-mono rounded-lg border border-slate-300 focus:outline-none focus:ring-1 focus:ring-slate-900" />
+                        <p class="text-[10px] text-slate-400 mt-1">Bound to ChangedByAdminID in dbo.HistoryLog.</p>
+                    </div>
+
+                    <!-- Toggle: Set under maintenance -->
+                    <div class="p-3 bg-slate-50 border border-slate-200 rounded-lg">
+                        <label class="flex items-start gap-2.5 cursor-pointer">
+                            <InputCheckbox @bind-Value="maintenanceForm.SetUnderMaintenance" 
+                                           class="rounded border-slate-300 text-amber-600 focus:ring-amber-500 mt-0.5" />
+                            <div>
+                                <span class="text-xs font-bold text-slate-900">Shift Equipment Status to 'Maintenance'</span>
+                                <p class="text-[11px] text-slate-500">
+                                    When checked, updates <code class="font-mono">dbo.Equipment.EquipmentStatus = 'Maintenance'</code> and prevents dispatch in <code class="font-mono">Dispatch.razor</code> until resolved.
+                                </p>
+                            </div>
+                        </label>
+                    </div>
+                </div>
+
+                <!-- Modal Footer -->
+                <div class="px-6 py-3.5 bg-slate-50 border-t border-slate-200 flex items-center justify-end gap-3">
+                    <button type="button" 
+                            @onclick="CloseLogModal"
+                            class="px-4 py-2 text-xs font-medium text-slate-600 hover:text-slate-900">
+                        Cancel
+                    </button>
+                    <button type="submit" 
+                            disabled="@isSubmitting"
+                            class="px-5 py-2 bg-slate-900 hover:bg-black text-white text-xs font-bold uppercase tracking-wider rounded-lg shadow-sm transition-all disabled:opacity-50 flex items-center gap-2">
+                        @if (isSubmitting)
+                        {
+                            <span class="inline-block w-3.5 h-3.5 border-2 border-white/30 border-t-white rounded-full animate-spin"></span>
+                            <span>Saving Log...</span>
+                        }
+                        else
+                        {
+                            <span>Commit Servicing Log</span>
+                        }
+                    </button>
+                </div>
+            </EditForm>
+        </div>
+    </div>
+}
+
+<!-- ══════════════════════════════════════════════════════════════════════════ -->
+<!-- MODAL: RESOLVE MAINTENANCE                                                -->
+<!-- ══════════════════════════════════════════════════════════════════════════ -->
+@if (isResolveModalOpen && resolveTargetLog != null)
+{
+    <div class="fixed inset-0 z-50 overflow-y-auto bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4">
+        <div class="relative bg-white rounded-2xl shadow-xl border border-slate-200 w-full max-w-md overflow-hidden animate-in fade-in zoom-in-95 duration-150">
+            <div class="px-6 py-4 bg-emerald-700 text-white flex items-center justify-between">
+                <div class="flex items-center gap-2">
+                    <span class="text-lg">✓</span>
+                    <h3 class="font-bold text-sm text-white">Resolve Maintenance</h3>
+                </div>
+                <button type="button" @onclick="() => isResolveModalOpen = false" class="text-emerald-200 hover:text-white font-bold">&times;</button>
+            </div>
+
+            <div class="p-6 space-y-4 text-xs">
+                <div>
+                    <span class="text-slate-400 uppercase text-[10px] font-bold">Equipment</span>
+                    <p class="text-sm font-bold text-slate-900">@resolveTargetLog.EquipmentName</p>
+                    <p class="font-mono text-slate-500">ID: @resolveTargetLog.EntityID | SN: @(resolveTargetLog.SerialNo ?? "N/A")</p>
+                </div>
+
+                <div>
+                    <span class="text-slate-400 uppercase text-[10px] font-bold">Initial Issue</span>
+                    <p class="text-slate-700 bg-slate-50 p-2.5 rounded border border-slate-200">
+                        @resolveTargetLog.ActionDetails
+                    </p>
+                </div>
+
+                <div>
+                    <label class="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1">
+                        Resolution Notes / Inspection Certification <span class="text-rose-500">*</span>
+                    </label>
+                    <textarea @bind="resolveNotes"
+                              rows="3"
+                              placeholder="e.g. Repairs completed by authorized center. Bench tests passed and unit returned to Available status..."
+                              class="w-full px-3 py-2 text-xs rounded-lg border border-slate-300 focus:outline-none focus:ring-1 focus:ring-slate-900"></textarea>
+                </div>
+
+                <div class="p-3 bg-emerald-50 border border-emerald-200 text-emerald-900 rounded-lg text-[11px]">
+                    <strong>Audit Effect:</strong> Restores <code class="font-mono">dbo.Equipment.EquipmentStatus = 'Available'</code> and logs a resolution entry into <code class="font-mono">dbo.HistoryLog</code>.
+                </div>
+            </div>
+
+            <div class="px-6 py-3.5 bg-slate-50 border-t border-slate-200 flex items-center justify-end gap-3">
+                <button type="button" 
+                        @onclick="() => isResolveModalOpen = false"
+                        class="px-4 py-2 text-xs font-medium text-slate-600 hover:text-slate-900">
+                    Cancel
+                </button>
+                <button type="button" 
+                        @onclick="ConfirmResolveMaintenance"
+                        disabled="@(string.IsNullOrWhiteSpace(resolveNotes))"
+                        class="px-5 py-2 bg-emerald-700 hover:bg-emerald-800 text-white text-xs font-bold uppercase tracking-wider rounded-lg shadow-sm transition-all disabled:opacity-50">
+                    Confirm &amp; Restore to Available
+                </button>
+            </div>
+        </div>
+    </div>
+}
+
+<!-- ══════════════════════════════════════════════════════════════════════════ -->
+<!-- MODAL: AUDIT RECORD DETAILS                                               -->
+<!-- ══════════════════════════════════════════════════════════════════════════ -->
+@if (detailsModalLog != null)
+{
+    <div class="fixed inset-0 z-50 overflow-y-auto bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4">
+        <div class="relative bg-white rounded-2xl shadow-xl border border-slate-200 w-full max-w-md overflow-hidden animate-in fade-in zoom-in-95 duration-150">
+            <div class="px-6 py-4 bg-slate-900 text-white flex items-center justify-between">
+                <h3 class="font-bold text-sm text-white">dbo.HistoryLog Audit Record</h3>
+                <button type="button" @onclick="() => detailsModalLog = null" class="text-slate-400 hover:text-white font-bold">&times;</button>
+            </div>
+            <div class="p-6 space-y-3 text-xs">
+                <div class="grid grid-cols-2 gap-2">
+                    <div>
+                        <span class="text-slate-400 uppercase text-[10px] font-bold">HistoryLog ID</span>
+                        <p class="font-mono font-bold text-slate-800">#@detailsModalLog.HistoryLogID</p>
+                    </div>
+                    <div>
+                        <span class="text-slate-400 uppercase text-[10px] font-bold">Action Type</span>
+                        <p class="font-mono font-bold text-slate-800">@detailsModalLog.ActionType</p>
+                    </div>
+                </div>
+                <div>
+                    <span class="text-slate-400 uppercase text-[10px] font-bold">Entity</span>
+                    <p class="font-bold text-slate-900">@detailsModalLog.EntityName (ID: @detailsModalLog.EntityID)</p>
+                </div>
+                <div>
+                    <span class="text-slate-400 uppercase text-[10px] font-bold">Equipment</span>
+                    <p class="font-semibold text-slate-800">@detailsModalLog.EquipmentName @(!string.IsNullOrEmpty(detailsModalLog.SerialNo) ? $"• SN: {detailsModalLog.SerialNo}" : "")</p>
+                </div>
+                <div>
+                    <span class="text-slate-400 uppercase text-[10px] font-bold">Action Details</span>
+                    <p class="text-slate-800 bg-slate-50 p-2.5 rounded-lg border border-slate-200">
+                        @detailsModalLog.ActionDetails
+                    </p>
+                </div>
+                <div class="grid grid-cols-2 gap-2">
+                    <div>
+                        <span class="text-slate-400 uppercase text-[10px] font-bold">Changed By Actor</span>
+                        <p class="font-mono text-slate-800">@detailsModalLog.ActorID (@detailsModalLog.ChangedByType)</p>
+                    </div>
+                    <div>
+                        <span class="text-slate-400 uppercase text-[10px] font-bold">Logged At (UTC)</span>
+                        <p class="text-slate-800">@detailsModalLog.LoggedAt.ToString("yyyy-MM-dd HH:mm:ss")</p>
+                    </div>
+                </div>
+            </div>
+            <div class="px-6 py-3 bg-slate-50 border-t border-slate-200 flex justify-end">
+                <button type="button" @onclick="() => detailsModalLog = null" class="px-4 py-2 bg-slate-900 text-white rounded-lg text-xs font-bold">Close</button>
+            </div>
+        </div>
+    </div>
+}
+
+@code {
+    private List<MaintenanceLogModel> maintenanceLogs = new();
+    private List<EquipmentItemModel> equipmentList = new();
+
+    private bool isLoading = true;
+    private bool isSubmitting = false;
+    private bool isLogModalOpen = false;
+    private bool isResolveModalOpen = false;
+
+    private string searchQuery = string.Empty;
+    private string selectedServiceFilter = "ALL";
+    private string selectedStatusFilter = "ALL";
+    private string? notificationMessage;
+    private string? formErrorMessage;
+
+    private NewMaintenanceFormModel maintenanceForm = new();
+    private MaintenanceLogModel? resolveTargetLog;
+    private string resolveNotes = string.Empty;
+
+    private MaintenanceLogModel? detailsModalLog;
+
+    protected override async Task OnInitializedAsync()
+    {
+        EquipmentService.OnChange += HandleExternalStateChange;
+        await LoadDataAsync();
+    }
+
+    private async Task LoadDataAsync()
+    {
+        isLoading = true;
+        maintenanceLogs = (await EquipmentService.GetMaintenanceLogsAsync()).ToList();
+        equipmentList = (await EquipmentService.GetEquipmentsAsync()).ToList();
+        isLoading = false;
+    }
+
+    private void HandleExternalStateChange()
+    {
+        _ = InvokeAsync(async () =>
+        {
+            await LoadDataAsync();
+            StateHasChanged();
+        });
+    }
+
+    private bool IsFiltered => 
+        !string.IsNullOrWhiteSpace(searchQuery) || 
+        selectedServiceFilter != "ALL" || 
+        selectedStatusFilter != "ALL";
+
+    private void ResetFilters()
+    {
+        searchQuery = string.Empty;
+        selectedServiceFilter = "ALL";
+        selectedStatusFilter = "ALL";
+    }
+
+    private IEnumerable<MaintenanceLogModel> FilteredLogs
+    {
+        get
+        {
+            var query = maintenanceLogs.AsEnumerable();
+
+            if (!string.IsNullOrWhiteSpace(searchQuery))
+            {
+                var q = searchQuery.Trim();
+                query = query.Where(m =>
+                    m.EquipmentName.Contains(q, StringComparison.OrdinalIgnoreCase) ||
+                    m.EntityID.Contains(q, StringComparison.OrdinalIgnoreCase) ||
+                    (!string.IsNullOrEmpty(m.SerialNo) && m.SerialNo.Contains(q, StringComparison.OrdinalIgnoreCase)) ||
+                    m.ActorID.Contains(q, StringComparison.OrdinalIgnoreCase) ||
+                    m.ActionDetails.Contains(q, StringComparison.OrdinalIgnoreCase));
+            }
+
+            if (selectedServiceFilter != "ALL")
+            {
+                query = query.Where(m => m.ActionDetails.Contains($"[{selectedServiceFilter}", StringComparison.OrdinalIgnoreCase));
+            }
+
+            if (selectedStatusFilter != "ALL")
+            {
+                query = query.Where(m => m.EquipmentStatus.Equals(selectedStatusFilter, StringComparison.OrdinalIgnoreCase));
+            }
+
+            return query;
+        }
+    }
+
+    private bool IsItemCurrentlyInMaintenance(string equipmentId)
+    {
+        var item = equipmentList.FirstOrDefault(e => e.EquipmentID.Equals(equipmentId, StringComparison.OrdinalIgnoreCase));
+        return item != null && item.IsMaintenance;
+    }
+
+    private void OpenLogMaintenanceModal()
+    {
+        maintenanceForm = new NewMaintenanceFormModel
+        {
+            EquipmentID = equipmentList.FirstOrDefault(e => e.IsAvailable)?.EquipmentID ?? string.Empty,
+            ServiceType = "Repair",
+            ActorID = "ADM-001",
+            SetUnderMaintenance = true
+        };
+        formErrorMessage = null;
+        isLogModalOpen = true;
+    }
+
+    private void CloseLogModal()
+    {
+        isLogModalOpen = false;
+        formErrorMessage = null;
+    }
+
+    private async Task HandleSubmitMaintenance()
+    {
+        if (string.IsNullOrEmpty(maintenanceForm.EquipmentID) || string.IsNullOrWhiteSpace(maintenanceForm.IssueDetails))
+        {
+            formErrorMessage = "Please select equipment and provide maintenance diagnosis details.";
+            return;
+        }
+
+        isSubmitting = true;
+        formErrorMessage = null;
+
+        var (success, error) = await EquipmentService.LogMaintenanceAsync(
+            maintenanceForm.EquipmentID,
+            maintenanceForm.ServiceType,
+            maintenanceForm.IssueDetails,
+            maintenanceForm.ActorID,
+            maintenanceForm.SetUnderMaintenance);
+
+        isSubmitting = false;
+
+        if (success)
+        {
+            isLogModalOpen = false;
+            notificationMessage = $"Maintenance log successfully recorded in dbo.HistoryLog for equipment '{maintenanceForm.EquipmentID}'.";
+            await LoadDataAsync();
+        }
+        else
+        {
+            formErrorMessage = error ?? "Failed to save maintenance log.";
+        }
+    }
+
+    private void OpenResolveModal(MaintenanceLogModel log)
+    {
+        resolveTargetLog = log;
+        resolveNotes = "Repairs and bench calibration diagnostics completed successfully. Certified ready for active deployment.";
+        isResolveModalOpen = true;
+    }
+
+    private async Task ConfirmResolveMaintenance()
+    {
+        if (resolveTargetLog == null || string.IsNullOrWhiteSpace(resolveNotes))
+            return;
+
+        var (success, _) = await EquipmentService.ResolveMaintenanceAsync(
+            resolveTargetLog.EntityID,
+            resolveNotes,
+            "ADM-001");
+
+        isResolveModalOpen = false;
+
+        if (success)
+        {
+            notificationMessage = $"Equipment '{resolveTargetLog.EquipmentName}' restored to 'Available'. Resolution audit log recorded in dbo.HistoryLog.";
+            await LoadDataAsync();
+        }
+    }
+
+    private void ViewDetails(MaintenanceLogModel log)
+    {
+        detailsModalLog = log;
+    }
+
+    private string GetInitials(string name)
+    {
+        if (string.IsNullOrWhiteSpace(name)) return "MN";
+        var parts = name.Split(' ', StringSplitOptions.RemoveEmptyEntries);
+        if (parts.Length == 1) return parts[0][..Math.Min(2, parts[0].Length)].ToUpperInvariant();
+        return $"{parts[0][0]}{parts[1][0]}".ToUpperInvariant();
+    }
+
+    public void Dispose()
+    {
+        EquipmentService.OnChange -= HandleExternalStateChange;
+    }
+}

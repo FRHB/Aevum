@@ -1,0 +1,142 @@
+@page "/login"
+@layout EmptyLayout
+@using PhotoAevumStudio.Web.Models
+@using PhotoAevumStudio.Web.Services
+@inject NavigationManager NavManager
+@inject IAuthService AuthService
+@inject AuthenticationStateProvider AuthStateProvider
+
+<PageTitle>Studio Portal Login | Photo Aevum</PageTitle>
+
+<div class="login-page-wrapper">
+    <div class="login-card relative">
+        <!-- Close Button -->
+        <button type="button"
+                class="absolute top-4 right-4 p-1.5 text-gray-500 hover:text-gray-700 hover:bg-gray-100 rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-gray-300"
+                @onclick="HandleClose"
+                aria-label="Close">
+            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+            </svg>
+        </button>
+
+        <!-- Logo Section -->
+        <div class="logo-wrapper">
+            <img src="images/AevumLogo.jpg" alt="Aevum Studio Logo" class="aevum-logo" />
+        </div>
+
+        <div class="portal-badge-container">
+            <span class="portal-badge">Studio Access Portal</span>
+        </div>
+
+        <h2 class="login-header">Sign In</h2>
+
+        <!-- Blazor EditForm for Data Binding -->
+        <EditForm Model="@loginModel" OnValidSubmit="HandleLogin">
+            <div class="input-group">
+                <label for="userId">Account ID or Email</label>
+                <input type="text"
+                       id="userId"
+                       class="minimal-input"
+                       @bind="loginModel.UserId"
+                       placeholder="e.g. ADM-001, EMP-001, or client email"
+                       required
+                       disabled="@isSubmitting" />
+            </div>
+
+            <div class="input-group">
+                <div class="label-row">
+                    <label for="password">Password</label>
+                    <a href="/forgot-password" class="forgot-password-link">Forgot password?</a>
+                </div>
+                <PasswordInput Id="password"
+                               Name="password"
+                               Autocomplete="current-password"
+                               @bind-Value="loginModel.Password"
+                               Placeholder="Enter your account password"
+                               Disabled="@isSubmitting" />
+            </div>
+
+            <!-- Display error message if login fails -->
+            @if (!string.IsNullOrEmpty(errorMessage))
+            {
+                <div class="login-error-alert" role="alert">
+                    <span class="alert-icon">⚠️</span>
+                    <span>@errorMessage</span>
+                </div>
+            }
+
+            <button type="submit" class="login-button" disabled="@isSubmitting">
+                @if (isSubmitting)
+                {
+                    <span class="spinner-border spinner-border-sm me-2" role="status" aria-hidden="true"></span>
+                    <span>Authenticating...</span>
+                }
+                else
+                {
+                    <span>Sign In to Studio</span>
+                }
+            </button>
+        </EditForm>
+    </div>
+</div>
+
+@code {
+    private LoginCredentials loginModel = new LoginCredentials();
+    private string errorMessage = "";
+    private bool isSubmitting = false;
+
+    private async Task HandleLogin()
+    {
+        isSubmitting = true;
+        errorMessage = "";
+        StateHasChanged();
+
+        var result = await AuthService.LoginAsync(loginModel.UserId, loginModel.Password, CancellationToken.None);
+
+        if (result.RequiresPasswordChange)
+        {
+            NavManager.NavigateTo($"/change-password?userId={Uri.EscapeDataString(result.UserId ?? loginModel.UserId)}");
+            return;
+        }
+
+        if (result.Success)
+        {
+            var authState = await AuthStateProvider.GetAuthenticationStateAsync();
+            var user = authState.User;
+
+            bool isSuper = user.IsInRole("Super Admin") ||
+                (!string.IsNullOrEmpty(result.Role) && result.Role.Contains("Super", StringComparison.OrdinalIgnoreCase)) ||
+                (!string.IsNullOrEmpty(loginModel.UserId) && loginModel.UserId.StartsWith("SADM-", StringComparison.OrdinalIgnoreCase));
+
+            bool isAdmin = isSuper || user.IsInRole("Admin") ||
+                (!string.IsNullOrEmpty(result.Role) && result.Role.Contains("Admin", StringComparison.OrdinalIgnoreCase)) ||
+                (!string.IsNullOrEmpty(loginModel.UserId) && loginModel.UserId.StartsWith("ADM-", StringComparison.OrdinalIgnoreCase));
+
+            bool isEmployee = user.IsInRole("Employee") ||
+                (!string.IsNullOrEmpty(result.Role) && (result.Role.Contains("Employee", StringComparison.OrdinalIgnoreCase) || result.Role.Contains("Staff", StringComparison.OrdinalIgnoreCase))) ||
+                (!string.IsNullOrEmpty(loginModel.UserId) && loginModel.UserId.StartsWith("EMP-", StringComparison.OrdinalIgnoreCase));
+
+            if (isAdmin)
+                NavManager.NavigateTo("/admin");
+            else if (isEmployee)
+                NavManager.NavigateTo("/staff");
+            else
+                NavManager.NavigateTo("/my");
+        }
+        else
+        {
+            errorMessage = result.Error ?? "Invalid Account ID or password. Please check your credentials.";
+        }
+        
+        isSubmitting = false;
+    }
+
+    private void HandleClose() => NavManager.NavigateTo("/");
+
+    public class LoginCredentials
+    {
+        public string UserId { get; set; } = string.Empty;
+        public string Password { get; set; } = string.Empty;
+    }
+}

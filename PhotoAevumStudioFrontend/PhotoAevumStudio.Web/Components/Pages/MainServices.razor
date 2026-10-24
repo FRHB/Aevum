@@ -1,0 +1,297 @@
+@page "/admin/services/main"
+@page "/main-services"
+@page "/services/main"
+@layout AdminLayout
+@rendermode InteractiveServer
+@using PhotoAevumStudio.Web.Models
+@using PhotoAevumStudio.Web.Services
+@inject IUserService UserService
+@inject IServicesApiClient ServicesApi
+
+<PageTitle>Main Services Management | Photo Aevum Studio</PageTitle>
+
+<div class="space-y-6">
+    <!-- Page Header & Action Controls -->
+    <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 pb-2">
+        <div>
+            <div class="flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-gray-500 mb-1">
+                <span>Services Module</span>
+                <span>/</span>
+                <span class="text-gray-900">Main Services</span>
+            </div>
+            <h1 class="text-2xl sm:text-3xl font-extrabold text-gray-900 tracking-tight">Main Services Management</h1>
+            <p class="text-sm text-gray-500 mt-1">
+                Primary photography packages including portraits, commercial, and events.
+            </p>
+        </div>
+
+        <div class="flex items-center gap-3">
+            <button type="button"
+                    @onclick="OpenCreateModal"
+                    class="inline-flex items-center gap-2 px-4 py-2.5 bg-gray-900 hover:bg-black text-white text-sm font-semibold rounded-lg shadow-sm hover:shadow transition-all duration-150 active:scale-95 focus:outline-none focus:ring-2 focus:ring-gray-900 focus:ring-offset-2">
+                <svg class="w-4 h-4 text-emerald-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M12 4v16m8-8H4" />
+                </svg>
+                <span>Add New Main Service</span>
+            </button>
+        </div>
+    </div>
+
+    @if (!string.IsNullOrWhiteSpace(notificationMessage))
+    {
+        <div class="p-4 bg-emerald-50 border border-emerald-200 text-emerald-900 rounded-xl flex items-center justify-between shadow-xs animate-in fade-in duration-200">
+            <div class="flex items-center gap-3">
+                <span class="w-7 h-7 rounded-full bg-emerald-600 text-white flex items-center justify-center shrink-0">
+                    <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M5 13l4 4L19 7" />
+                    </svg>
+                </span>
+                <div>
+                    <p class="text-xs font-bold text-emerald-950">Service Catalog Updated</p>
+                    <p class="text-xs text-emerald-800">@notificationMessage</p>
+                </div>
+            </div>
+            <button type="button" @onclick="() => notificationMessage = null" class="text-emerald-700 hover:text-emerald-950 p-1 text-sm font-bold">&times;</button>
+        </div>
+    }
+
+    <!-- Quick Stats Grid -->
+    <div class="grid grid-cols-2 lg:grid-cols-4 gap-4">
+        <div class="bg-white p-4 rounded-xl border border-gray-200 shadow-xs">
+            <div class="flex items-center justify-between">
+                <span class="text-xs font-semibold text-gray-500 uppercase tracking-wider">Total Services</span>
+                <span class="p-1.5 rounded-lg bg-gray-100 text-gray-700">📋</span>
+            </div>
+            <p class="text-2xl font-bold text-gray-900 mt-2">@services.Count</p>
+            <p class="text-[11px] text-gray-400 mt-0.5">Active service catalog</p>
+        </div>
+
+        <div class="bg-white p-4 rounded-xl border border-gray-200 shadow-xs">
+            <div class="flex items-center justify-between">
+                <span class="text-xs font-semibold text-gray-500 uppercase tracking-wider">Active Bookings</span>
+                <span class="p-1.5 rounded-lg bg-blue-50 text-blue-700">📅</span>
+            </div>
+            <p class="text-2xl font-bold text-gray-900 mt-2">@activeBookingsCount</p>
+            <p class="text-[11px] text-gray-400 mt-0.5">Scheduled sessions</p>
+        </div>
+
+        <div class="bg-white p-4 rounded-xl border border-gray-200 shadow-xs">
+            <div class="flex items-center justify-between">
+                <span class="text-xs font-semibold text-gray-500 uppercase tracking-wider">Top Category</span>
+                <span class="p-1.5 rounded-lg bg-purple-50 text-purple-700">📷</span>
+            </div>
+            <p class="text-2xl font-bold text-gray-900 mt-2">@(services.FirstOrDefault()?.Category ?? "—")</p>
+            <p class="text-[11px] text-gray-400 mt-0.5">Primary service line</p>
+        </div>
+
+        <div class="bg-white p-4 rounded-xl border border-gray-200 shadow-xs">
+            <div class="flex items-center justify-between">
+                <span class="text-xs font-semibold text-gray-500 uppercase tracking-wider">Active Services</span>
+                <span class="p-1.5 rounded-lg bg-emerald-50 text-emerald-700">⏱️</span>
+            </div>
+            <p class="text-2xl font-bold text-gray-900 mt-2">@services.Count(s => s.IsActive)</p>
+            <p class="text-[11px] text-gray-400 mt-0.5">Published services</p>
+        </div>
+    </div>
+
+    <!-- Search & Filter Controls -->
+    <div class="bg-white p-4 rounded-xl border border-gray-200 shadow-xs space-y-3">
+        <div class="flex flex-col md:flex-row gap-3 items-stretch md:items-center justify-between">
+            <div class="relative flex-1 min-w-[240px]">
+                <input type="text"
+                       @bind="searchQuery"
+                       @bind:event="oninput"
+                       placeholder="Search services by title, code, or description..."
+                       class="w-full px-4 py-2.5 text-sm bg-gray-50/70 border border-gray-200 rounded-lg text-gray-900 placeholder-gray-400 focus:bg-white focus:outline-none focus:ring-2 focus:ring-gray-900" />
+            </div>
+
+            @if (!string.IsNullOrWhiteSpace(searchQuery))
+            {
+                <button type="button"
+                        @onclick="ResetFilters"
+                        class="px-3 py-2.5 text-xs font-semibold text-gray-600 hover:text-gray-900 hover:bg-gray-100 rounded-lg border border-gray-200 transition-colors whitespace-nowrap">
+                    Reset Filters
+                </button>
+            }
+        </div>
+    </div>
+
+    <!-- Data Table: Main Services -->
+    <div class="bg-white rounded-xl shadow-xs border border-gray-200 overflow-hidden">
+        <div class="px-6 py-3.5 bg-gray-50/50 border-b border-gray-200 flex items-center justify-between text-xs text-gray-500 font-medium">
+            <div>
+                Showing <span class="font-bold text-gray-900">@FilteredServices.Count()</span> of <span class="font-bold text-gray-900">@services.Count</span> main services
+            </div>
+        </div>
+
+        <div class="overflow-x-auto">
+            <table class="w-full text-left border-collapse">
+                <thead>
+                    <tr class="bg-gray-50/80 border-b border-gray-200 text-[11px] font-semibold uppercase tracking-wider text-gray-500">
+                        <th scope="col" class="py-3.5 px-6">Service Name</th>
+                        <th scope="col" class="py-3.5 px-6">Description</th>
+                        <th scope="col" class="py-3.5 px-6">Featured</th>
+                        <th scope="col" class="py-3.5 px-6">Status</th>
+                    </tr>
+                </thead>
+                <tbody class="divide-y divide-gray-100 text-sm">
+                    @if (FilteredServices.Any())
+                    {
+                        @foreach (var svc in FilteredServices)
+                        {
+                            <tr class="hover:bg-gray-50/60 transition-colors duration-100">
+                                <td class="py-4 px-6">
+                                    <div class="flex items-center gap-3">
+                                        <div class="w-10 h-10 rounded-full bg-gray-900 text-white font-bold text-xs flex items-center justify-center shrink-0 shadow-xs">
+                                            MS
+                                        </div>
+                                        <div>
+                                            <div class="font-semibold text-gray-900">@svc.Title</div>
+                                            <div class="font-mono text-[11px] text-gray-400">@svc.Code</div>
+                                        </div>
+                                    </div>
+                                </td>
+                                <td class="py-4 px-6">
+                                    <div class="text-xs text-gray-700 font-medium">@(string.IsNullOrWhiteSpace(svc.Description) ? svc.Category : svc.Description)</div>
+                                </td>
+                                <td class="py-4 px-6">
+                                    <button type="button"
+                                            @onclick="() => ToggleFeaturedAsync(svc)"
+                                            disabled="@_busyCodes.Contains(svc.Code)"
+                                            aria-pressed="@(svc.IsFeatured ? "true" : "false")"
+                                            title="@(svc.IsFeatured ? "Remove from featured services on the public site" : "Show on the public site as a featured service")"
+                                            class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold border transition-all cursor-pointer disabled:opacity-50 disabled:cursor-wait @(svc.IsFeatured ? "bg-amber-50 text-amber-700 border-amber-300 hover:bg-amber-100" : "bg-white text-gray-500 border-gray-200 hover:border-gray-400 hover:text-gray-900")">
+                                        <span aria-hidden="true">@(svc.IsFeatured ? "★" : "☆")</span>
+                                        <span>@(svc.IsFeatured ? "Featured" : "Feature")</span>
+                                    </button>
+                                </td>
+                                <td class="py-4 px-6">
+                                    <span class="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200">
+                                        <span class="w-1.5 h-1.5 rounded-full bg-emerald-500"></span>
+                                        @svc.Status
+                                    </span>
+                                </td>
+                            </tr>
+                        }
+                    }
+                    else
+                    {
+                        <tr>
+                            <td colspan="4" class="py-12 px-6 text-center">
+                                <div class="max-w-sm mx-auto space-y-2">
+                                    <h4 class="text-sm font-bold text-gray-900">No main services found</h4>
+                                    <p class="text-xs text-gray-500">
+                                        @(services.Count == 0
+                                            ? "No main service records exist in the database yet."
+                                            : "No services matched your search query.")
+                                    </p>
+                                </div>
+                            </td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+<MainServiceWizardModal @bind-IsOpen="isCreateModalOpen" OnServiceSaved="HandleServiceSaved" />
+
+@code {
+    private bool isCreateModalOpen = false;
+    private string? notificationMessage;
+    private string searchQuery = string.Empty;
+    private int activeBookingsCount;
+    private List<MainServiceItem> services = new();
+
+    protected override void OnInitialized()
+    {
+        LoadFromDatabase();
+    }
+
+    private void LoadFromDatabase()
+    {
+        services = UserService.GetMainServices().ToList();
+        ApplyFeaturedFlags();
+        activeBookingsCount = UserService.GetBookings().Count;
+    }
+
+    private void OpenCreateModal() => isCreateModalOpen = true;
+
+    private void HandleServiceSaved(string serviceId)
+    {
+        LoadFromDatabase();
+        notificationMessage = $"Service with custom ID '{serviceId}' has been saved to the database.";
+    }
+
+    private void HandleServiceCreated(MainServiceItem newItem)
+    {
+        LoadFromDatabase();
+        notificationMessage = $"Service \"{newItem.Title}\" ({newItem.Code}) has been saved to the database.";
+    }
+
+    private IEnumerable<MainServiceItem> FilteredServices
+    {
+        get
+        {
+            var result = services.AsEnumerable();
+            if (!string.IsNullOrWhiteSpace(searchQuery))
+            {
+                var q = searchQuery.Trim();
+                result = result.Where(s =>
+                    s.Title.Contains(q, StringComparison.OrdinalIgnoreCase) ||
+                    s.Code.Contains(q, StringComparison.OrdinalIgnoreCase) ||
+                    (s.Description?.Contains(q, StringComparison.OrdinalIgnoreCase) ?? false));
+            }
+            return result;
+        }
+    }
+
+    private void ResetFilters()
+    {
+        searchQuery = string.Empty;
+    }
+
+    // ── Featured toggle ─────────────────────────────────────────────────
+    private HashSet<string> _featuredCodes = new(StringComparer.OrdinalIgnoreCase);
+    private readonly HashSet<string> _busyCodes = new(StringComparer.OrdinalIgnoreCase);
+
+    protected override async Task OnInitializedAsync()
+    {
+        var codes = await ServicesApi.GetFeaturedCodesAsync(FeaturedEntityTypes.Main);
+        _featuredCodes = new HashSet<string>(codes, StringComparer.OrdinalIgnoreCase);
+        ApplyFeaturedFlags();
+    }
+
+    private void ApplyFeaturedFlags()
+    {
+        foreach (var item in services)
+            item.IsFeatured = _featuredCodes.Contains(item.Code);
+    }
+
+    private async Task ToggleFeaturedAsync(MainServiceItem item)
+    {
+        if (!_busyCodes.Add(item.Code)) return;
+        var target = !item.IsFeatured;
+        try
+        {
+            var ok = await ServicesApi.SetFeaturedAsync(FeaturedEntityTypes.Main, item.Code, target);
+            if (ok)
+            {
+                item.IsFeatured = target;
+                if (target) _featuredCodes.Add(item.Code); else _featuredCodes.Remove(item.Code);
+                notificationMessage = target
+                    ? $"\"{item.Title}\" is now featured and will appear on the public site."
+                    : $"\"{item.Title}\" was removed from the featured services.";
+            }
+            else
+            {
+                notificationMessage = $"Could not update the featured status of \"{item.Title}\". Please try again.";
+            }
+        }
+        finally
+        {
+            _busyCodes.Remove(item.Code);
+        }
+    }
+}

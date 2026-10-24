@@ -1,0 +1,26 @@
+@inherits LayoutComponentBase
+@inject NavigationManager Nav
+
+<div class="aev-shell">
+    <Sidebar UserRole="@EffectiveUserRole" />
+    <main class="aev-shell__content">
+        @Body
+    </main>
+</div>
+
+@code {
+    [Parameter] public string UserRole { get; set; } = string.Empty;
+
+    private string EffectiveUserRole
+    {
+        get
+        {
+            if (!string.IsNullOrEmpty(UserRole)) return UserRole;
+            var path = Nav.ToBaseRelativePath(Nav.Uri).ToLowerInvariant();
+            if (path.StartsWith("admin")) return "admin";
+            if (path.StartsWith("staff")) return "employee";
+            if (path.StartsWith("my")) return "customer";
+            return string.Empty;
+        }
+    }
+}

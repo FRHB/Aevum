@@ -1,0 +1,204 @@
+/* --- Aevum Studio Professional Responsive Login Styles --- */
+.login-page-wrapper {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    min-height: 100vh;
+    padding: 1.5rem;
+    background: radial-gradient(circle at 50% 20%, #1f2937 0%, #111827 100%);
+    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+    box-sizing: border-box;
+}
+
+.login-card {
+    position: relative;
+    background-color: #ffffff;
+    padding: 3rem 2.5rem;
+    border-radius: 16px;
+    box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.35);
+    width: 100%;
+    max-width: 440px;
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    box-sizing: border-box;
+}
+
+.logo-wrapper {
+    display: flex;
+    justify-content: center;
+    margin-bottom: 1.25rem;
+}
+
+.aevum-logo {
+    max-width: 130px;
+    height: auto;
+    object-fit: contain;
+}
+
+.portal-badge-container {
+    text-align: center;
+    margin-bottom: 0.75rem;
+}
+
+.portal-badge {
+    display: inline-block;
+    font-size: 0.75rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    padding: 0.25rem 0.75rem;
+    background: #f3f4f6;
+    color: #4b5563;
+    border-radius: 9999px;
+    border: 1px solid #e5e7eb;
+}
+
+.login-header {
+    text-align: center;
+    font-weight: 700;
+    font-size: 1.5rem;
+    color: #111827;
+    margin-bottom: 1.75rem;
+    letter-spacing: -0.02em;
+}
+
+.login-subtext {
+    text-align: center;
+    font-size: 0.85rem;
+    color: #6b7280;
+    margin-bottom: 2rem;
+    line-height: 1.4;
+}
+
+/* --- Input Group & Labels --- */
+.input-group {
+    margin-bottom: 1.5rem;
+    display: flex;
+    flex-direction: column;
+}
+
+.label-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 0.5rem;
+}
+
+.input-group label {
+    font-size: 0.8rem;
+    color: #374151;
+    font-weight: 600;
+    margin-bottom: 0.45rem;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+}
+
+.input-hint {
+    font-size: 0.75rem;
+    color: #6b7280;
+    margin-top: 0.35rem;
+}
+
+.input-hint code {
+    background: #f3f4f6;
+    padding: 0.1rem 0.3rem;
+    border-radius: 3px;
+    font-size: 0.75rem;
+    color: #1f2937;
+}
+
+/* --- Text Fields --- */
+.minimal-input {
+    padding: 0.85rem 1rem;
+    border: 1px solid #d1d5db;
+    border-radius: 8px;
+    background-color: #f9fafb;
+    font-size: 0.95rem;
+    color: #111827;
+    width: 100%;
+    box-sizing: border-box;
+    transition: all 0.2s ease;
+}
+
+.minimal-input:focus {
+    outline: none;
+    border-color: #111827;
+    background-color: #ffffff;
+    box-shadow: 0 0 0 2px rgba(17, 24, 39, 0.15);
+}
+
+.minimal-input::placeholder {
+    color: #9ca3af;
+}
+
+.forgot-password-link {
+    font-size: 0.8rem;
+    color: #2563eb;
+    text-decoration: none;
+    font-weight: 500;
+    transition: color 0.15s ease;
+}
+
+.forgot-password-link:hover {
+    color: #1d4ed8;
+    text-decoration: underline;
+}
+
+.login-error-alert {
+    background-color: #fef2f2;
+    border: 1px solid #fecaca;
+    color: #991b1b;
+    padding: 0.75rem 1rem;
+    border-radius: 8px;
+    margin-bottom: 1.25rem;
+    font-size: 0.85rem;
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+}
+
+.login-button {
+    width: 100%;
+    padding: 0.95rem 1.25rem;
+    background-color: #111827;
+    color: #ffffff;
+    border: none;
+    border-radius: 8px;
+    font-size: 1rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.login-button:hover:not(:disabled) {
+    background-color: #1f2937;
+    transform: translateY(-1px);
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+}
+
+.login-button:disabled {
+    opacity: 0.65;
+    cursor: not-allowed;
+}
+
+.client-signup-prompt {
+    text-align: center;
+    margin-top: 2rem;
+    padding-top: 1.5rem;
+    border-top: 1px solid #f3f4f6;
+    font-size: 0.85rem;
+    color: #6b7280;
+}
+
+.signup-link {
+    color: #111827;
+    font-weight: 600;
+    margin-left: 0.35rem;
+    text-decoration: none;
+}
+
+.signup-link:hover {
+    text-decoration: underline;
+}
