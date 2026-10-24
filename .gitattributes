@@ -1,12 +1,15 @@
-# Ignore third-party libraries and scripts in the wwwroot folder
-wwwroot/lib/** linguist-vendored
-wwwroot/js/** linguist-vendored
+# 1. Force GitHub to recognize Blazor components as C# instead of HTML
+*.razor linguist-language=C#
 
-# Hide massive generated CSS files (like Tailwind output)
-*.css linguist-vendored
-
-# Optional: Downplay HTML files if they still overshadow your C# code
+# 2. Hide static HTML files from the language statistics
 *.html linguist-detectable=false
 
-# Optional: Ignore JSON config files (like appsettings.json or launchSettings.json)
+# 3. Mark CSS (like Tailwind outputs or Bootstrap) as generated/third-party
+*.css linguist-vendored
+
+# 4. Hide JavaScript dependencies and third-party libraries
+*.js linguist-vendored
+wwwroot/lib/** linguist-vendored
+
+# 5. Ignore JSON config files (like appsettings.json or launchSettings.json)
 *.json linguist-vendored
