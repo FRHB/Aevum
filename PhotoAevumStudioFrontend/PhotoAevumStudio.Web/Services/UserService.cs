@@ -439,12 +439,19 @@ public sealed class UserService : IUserService
         using var conn = CreateConnection();
         conn.Open();
 
+        var normalizedId = id.Trim().ToUpperInvariant();
+        var specId = $"SP-{normalizedId.Replace("EMP-", "", StringComparison.OrdinalIgnoreCase)}";
+
         const string sql = @"
             DELETE FROM dbo.EmployeeJointSpecialization WHERE UPPER(EmployeeID) = @Id;
+            DELETE FROM dbo.EmployeeSpecialization
+            WHERE UPPER(SpecializationID) = @SpecId
+              AND NOT EXISTS (SELECT 1 FROM dbo.EmployeeJointSpecialization WHERE UPPER(SpecializationID) = @SpecId);
             DELETE FROM dbo.Employee WHERE UPPER(EmployeeID) = @Id;";
 
         using var cmd = new SqlCommand(sql, conn);
-        cmd.Parameters.AddWithValue("@Id", id.Trim().ToUpperInvariant());
+        cmd.Parameters.AddWithValue("@Id", normalizedId);
+        cmd.Parameters.AddWithValue("@SpecId", specId);
         return cmd.ExecuteNonQuery() > 0;
     }
 
@@ -583,7 +590,13 @@ public sealed class UserService : IUserService
                        COALESCE(NULLIF(SpecializationName, ''), Specialization, SpecializationID) AS Name,
                        COALESCE(NULLIF(SpecializationDescription, ''), Description) AS Description,
                        COALESCE(NULLIF(ColorTag, ''), 'Blue') AS ColorTag,
-                       COALESCE(CreatedAt, SYSUTCDATETIME()) AS CreatedAt
+                       COALESCE(CreatedAt, SYSUTCDATETIME()) AS CreatedAt,
+                       CASE
+                           WHEN NULLIF(Specialization, '') IS NOT NULL
+                                AND Specialization <> COALESCE(NULLIF(SpecializationName, ''), '')
+                           THEN Specialization
+                           ELSE 'Photography'
+                       END AS Department
                 FROM dbo.EmployeeSpecialization
                 ORDER BY SpecializationID;
             END";
@@ -597,7 +610,7 @@ public sealed class UserService : IUserService
                 Id = reader.GetString(0),
                 Name = reader.GetString(1),
                 Description = reader.IsDBNull(2) ? null : reader.GetString(2),
-                Department = "Photography",
+                Department = reader.IsDBNull(5) ? "Photography" : reader.GetString(5),
                 ColorTag = reader.IsDBNull(3) ? "Blue" : reader.GetString(3),
                 CreatedAt = reader.IsDBNull(4) ? DateTime.UtcNow : reader.GetDateTime(4)
             });
@@ -676,30 +689,99 @@ public sealed class UserService : IUserService
     public SpecializationLookupItem AddSpecialization(SpecializationModel model)
     {
         ArgumentNullException.ThrowIfNull(model);
+        var trimmedName = model.Name?.Trim() ?? string.Empty;
+        if (string.IsNullOrWhiteSpace(trimmedName))
+            throw new ArgumentException("Specialization name is required.", nameof(model));
+
+        var trimmedDesc = string.IsNullOrWhiteSpace(model.Description) ? null : model.Description.Trim();
+        var department = string.IsNullOrWhiteSpace(model.Department) ? "Photography" : model.Department.Trim();
+        var colorTag = string.IsNullOrWhiteSpace(model.ColorTag) ? "Blue" : model.ColorTag.Trim();
+
         using var conn = CreateConnection();
         conn.Open();
 
-        var existingCount = GetSpecializationLookups().Count;
-        var nextId = $"SP-{existingCount + 1:D3}";
+        // If a specialization with the same name already exists, update its metadata and return it
+        const string findExistingSql = @"
+            SELECT TOP 1 SpecializationID
+            FROM dbo.EmployeeSpecialization
+            WHERE UPPER(LTRIM(RTRIM(COALESCE(NULLIF(SpecializationName, ''), Specialization)))) = UPPER(@Name)
+            ORDER BY SpecializationID;";
+
+        string? existingId = null;
+        using (var findCmd = new SqlCommand(findExistingSql, conn))
+        {
+            findCmd.Parameters.AddWithValue("@Name", trimmedName);
+            existingId = findCmd.ExecuteScalar() as string;
+        }
+
+        if (!string.IsNullOrWhiteSpace(existingId))
+        {
+            const string updateSql = @"
+                UPDATE dbo.EmployeeSpecialization
+                SET SpecializationName = @Name,
+                    SpecializationDescription = @Desc,
+                    Specialization = @Dept,
+                    Description = @Desc,
+                    ColorTag = @Color
+                WHERE SpecializationID = @Id;";
+
+            using var updateCmd = new SqlCommand(updateSql, conn);
+            updateCmd.Parameters.AddWithValue("@Id", existingId);
+            updateCmd.Parameters.AddWithValue("@Name", trimmedName);
+            updateCmd.Parameters.AddWithValue("@Dept", department);
+            updateCmd.Parameters.AddWithValue("@Desc", (object?)trimmedDesc ?? DBNull.Value);
+            updateCmd.Parameters.AddWithValue("@Color", colorTag);
+            updateCmd.ExecuteNonQuery();
+
+            return new SpecializationLookupItem
+            {
+                Id = existingId,
+                Name = trimmedName,
+                Description = trimmedDesc,
+                Department = department,
+                ColorTag = colorTag,
+                CreatedAt = DateTime.UtcNow
+            };
+        }
+
+        // Compute collision-free next SP-### ID
+        const string maxNumSql = @"
+            SELECT ISNULL(MAX(TRY_CAST(SUBSTRING(SpecializationID, 4, 20) AS INT)), 0)
+            FROM dbo.EmployeeSpecialization
+            WHERE SpecializationID LIKE 'SP-[0-9]%'
+              AND TRY_CAST(SUBSTRING(SpecializationID, 4, 20) AS INT) < 900;";
+
+        int nextNumber = 1;
+        using (var maxCmd = new SqlCommand(maxNumSql, conn))
+        {
+            var scalar = maxCmd.ExecuteScalar();
+            if (scalar != null && scalar != DBNull.Value)
+            {
+                nextNumber = Convert.ToInt32(scalar) + 1;
+            }
+        }
+
+        var nextId = $"SP-{nextNumber:D3}";
 
         const string sql = @"
             INSERT INTO dbo.EmployeeSpecialization (SpecializationID, SpecializationName, SpecializationDescription, Specialization, Description, ColorTag, CreatedAt)
-            VALUES (@Id, @Name, @Desc, @Name, @Desc, @Color, SYSUTCDATETIME());";
+            VALUES (@Id, @Name, @Desc, @Dept, @Desc, @Color, SYSUTCDATETIME());";
 
         using var cmd = new SqlCommand(sql, conn);
         cmd.Parameters.AddWithValue("@Id", nextId);
-        cmd.Parameters.AddWithValue("@Name", model.Name.Trim());
-        cmd.Parameters.AddWithValue("@Desc", (object?)model.Description?.Trim() ?? DBNull.Value);
-        cmd.Parameters.AddWithValue("@Color", string.IsNullOrWhiteSpace(model.ColorTag) ? "Blue" : model.ColorTag);
+        cmd.Parameters.AddWithValue("@Name", trimmedName);
+        cmd.Parameters.AddWithValue("@Dept", department);
+        cmd.Parameters.AddWithValue("@Desc", (object?)trimmedDesc ?? DBNull.Value);
+        cmd.Parameters.AddWithValue("@Color", colorTag);
         cmd.ExecuteNonQuery();
 
         return new SpecializationLookupItem
         {
             Id = nextId,
-            Name = model.Name.Trim(),
-            Description = model.Description?.Trim(),
-            Department = model.Department,
-            ColorTag = model.ColorTag,
+            Name = trimmedName,
+            Description = trimmedDesc,
+            Department = department,
+            ColorTag = colorTag,
             CreatedAt = DateTime.UtcNow
         };
     }

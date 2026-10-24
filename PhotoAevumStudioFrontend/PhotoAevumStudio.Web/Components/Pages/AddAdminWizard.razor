@@ -449,6 +449,7 @@
                 await Task.Delay(1200);
 
                 await OnSaved.InvokeAsync();
+                isSaving = false;
                 await CloseModal();
             }
             else

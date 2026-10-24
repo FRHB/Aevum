@@ -921,6 +921,7 @@
         {
             var created = await UserService.CreateComboPackageViaApiAsync(formModel);
             await OnPackageCreated.InvokeAsync(created);
+            isSaving = false;
             await HandleClose();
         }
         catch (Exception ex)

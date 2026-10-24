@@ -368,6 +368,7 @@
             }
 
             await OnCategorySaved.InvokeAsync(createdId ?? model.GeneratedId);
+            isSaving = false;
             await HandleClose();
         }
         catch (Exception ex)
