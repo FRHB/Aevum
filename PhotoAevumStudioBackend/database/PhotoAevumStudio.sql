@@ -4,7 +4,19 @@ SET QUOTED_IDENTIFIER ON;
 GO
 
 /* =====================================================================
-   1. USER AND ACCESS MANAGEMENT TABLES
+   1. SEQUENCE GENERATORS (Atomic Custom IDs)
+   ===================================================================== */
+CREATE SEQUENCE dbo.Seq_CustomerID AS INT START WITH 1 INCREMENT BY 1;
+CREATE SEQUENCE dbo.Seq_EmployeeID AS INT START WITH 1 INCREMENT BY 1;
+CREATE SEQUENCE dbo.Seq_AdminID AS INT START WITH 1 INCREMENT BY 1;
+CREATE SEQUENCE dbo.EquipmentIdSequence AS INT START WITH 1 INCREMENT BY 1 MINVALUE 1 NO CYCLE CACHE 10;
+CREATE SEQUENCE dbo.Seq_EquipmentType AS INT START WITH 1 INCREMENT BY 1;
+CREATE SEQUENCE dbo.Seq_AdditionalServicesID AS INT START WITH 1 INCREMENT BY 1;
+CREATE SEQUENCE dbo.Seq_ComboPackageID AS INT START WITH 1 INCREMENT BY 1;
+GO
+
+/* =====================================================================
+   2. USER AND ACCESS MANAGEMENT TABLES
    ===================================================================== */
 
 CREATE TABLE dbo.Admin (
@@ -15,18 +27,17 @@ CREATE TABLE dbo.Admin (
     AdminMiddleName nvarchar(255),
     Email nvarchar(255) NULL,
     AdminPassword nvarchar(255) NOT NULL,
-    isFirstLogin bit NOT NULL CONSTRAINT DF_Admin_isFirstLogin DEFAULT 1
+    isFirstLogin bit NOT NULL CONSTRAINT DF_Admin_isFirstLogin DEFAULT 1,
+    CreatedAt datetime2 NOT NULL CONSTRAINT DF_Admin_CreatedAt DEFAULT SYSUTCDATETIME()
 );
 
 CREATE TABLE dbo.SystemAdmin (
     SystemAdminID nvarchar(30) NOT NULL PRIMARY KEY,
-    SystemAdminRole nvarchar(20) NOT NULL,
     FirstName nvarchar(255) NOT NULL,
     LastName nvarchar(255) NOT NULL,
     MiddleName nvarchar(255) NULL,
     PasswordHash nvarchar(255) NOT NULL,
     CreatedAt datetime2 NOT NULL CONSTRAINT DF_SystemAdmin_CreatedAt DEFAULT SYSUTCDATETIME()
-    -- Explicitly NO email column required for SystemAdmin
 );
 
 CREATE TABLE dbo.Employee (
@@ -38,6 +49,7 @@ CREATE TABLE dbo.Employee (
     EmployeePassword nvarchar(255),
     EmployeeStatus nvarchar(20) NOT NULL CONSTRAINT DF_Employee_Status DEFAULT 'Active',
     isFirstLogin bit NOT NULL CONSTRAINT DF_Employee_isFirstLogin DEFAULT 1,
+    CreatedAt datetime2 NOT NULL CONSTRAINT DF_Employee_CreatedAt DEFAULT SYSUTCDATETIME(),
     CONSTRAINT CK_Employee_Status CHECK (EmployeeStatus IN ('Active','Inactive'))
 );
 
@@ -48,14 +60,17 @@ CREATE TABLE dbo.Customer (
     CustomerMiddleName nvarchar(255),
     CustomerEmail nvarchar(255) NOT NULL UNIQUE, 
     CustomerPhoneNumber nvarchar(30),
-    CustomerPassword nvarchar(255) NOT NULL
+    CustomerPassword nvarchar(255) NOT NULL,
+    CustomerStatus nvarchar(20) NOT NULL CONSTRAINT DF_Customer_Status DEFAULT 'Active',
+    CreatedAt datetime2 NOT NULL CONSTRAINT DF_Customer_CreatedAt DEFAULT SYSUTCDATETIME(),
+    CONSTRAINT CK_Customer_Status CHECK (CustomerStatus IN ('Active','Inactive'))
 );
 
 CREATE UNIQUE INDEX UX_Admin_Email ON dbo.Admin(Email) WHERE Email IS NOT NULL;
 CREATE UNIQUE INDEX UX_Employee_Email ON dbo.Employee(EmployeeEmail) WHERE EmployeeEmail IS NOT NULL;
 
 /* =====================================================================
-   2. CATALOG AND INVENTORY TABLES (Includes VARBINARY(MAX) Service Images)
+   3. CATALOG AND INVENTORY TABLES
    ===================================================================== */
 
 CREATE TABLE dbo.EmployeeSpecialization (
@@ -73,7 +88,8 @@ CREATE TABLE dbo.ComboPackage (
     ComboPackageID nvarchar(30) NOT NULL PRIMARY KEY,
     ComboPackageName nvarchar(255) NOT NULL,
     ComboPackageDescription nvarchar(255) NOT NULL,
-    ComboPackageImage varbinary(max) NOT NULL,
+    ComboPackagePrice decimal(18,2) NOT NULL CONSTRAINT DF_ComboPackage_Price DEFAULT 0.00,
+    ComboPackageImage varbinary(max) NULL,
     ComboPackageImageMimeType nvarchar(100) NULL CONSTRAINT DF_ComboPackage_MimeType DEFAULT 'image/jpeg'
 );
 
@@ -81,8 +97,11 @@ CREATE TABLE dbo.AdditionalServices (
     AdditionalServicesID nvarchar(30) NOT NULL PRIMARY KEY,
     AdditionalServiceName nvarchar(255),
     AdditionalServicesDescription nvarchar(255),
-    AdditionalServiceImage varbinary(max) NOT NULL,
-    AdditionalServiceImageMimeType nvarchar(100) NULL CONSTRAINT DF_AdditionalServices_MimeType DEFAULT 'image/jpeg'
+    ServicePrice decimal(18,2) NOT NULL CONSTRAINT DF_AdditionalServices_Price DEFAULT 0.00,
+    CategoryName nvarchar(100) NULL,
+    AdditionalServiceImage varbinary(max) NULL,
+    AdditionalServiceImageMimeType nvarchar(100) NULL CONSTRAINT DF_AdditionalServices_MimeType DEFAULT 'image/jpeg',
+    CreatedAt datetime2 NOT NULL CONSTRAINT DF_AdditionalServices_CreatedAt DEFAULT SYSUTCDATETIME()
 );
 
 CREATE TABLE dbo.Services (
@@ -91,7 +110,8 @@ CREATE TABLE dbo.Services (
     ServicesDescription nvarchar(255) NOT NULL,
     ServicePrice Money Not Null,
     ServiceImage varbinary(max) NULL,
-    ServiceImageMimeType nvarchar(100) NULL CONSTRAINT DF_Services_MimeType DEFAULT 'image/jpeg'
+    ServiceImageMimeType nvarchar(100) NULL CONSTRAINT DF_Services_MimeType DEFAULT 'image/jpeg',
+    CreatedAt datetime2 NOT NULL CONSTRAINT DF_Services_CreatedAt DEFAULT SYSUTCDATETIME()
 );
 
 CREATE TABLE dbo.ServiceCategory ( 
@@ -116,16 +136,19 @@ CREATE TABLE dbo.ServiceCategoryJoins (
 CREATE TABLE dbo.Equipment (
     EquipmentID nvarchar(30) NOT NULL PRIMARY KEY,
     EquipmentName nvarchar(100) NOT NULL,
+    EquipmentDescription nvarchar(1000) NULL,
     EquipmentTypeID nvarchar(30) NOT NULL,
     EquipmentStatus nvarchar(20) NOT NULL CONSTRAINT DF_Equipment_Status DEFAULT 'Available',
     EquipmentImage varbinary(max) NULL, 
+    ImagePath nvarchar(500) NULL,
     SerialNo nvarchar(30),
+    CreatedAt datetime2 NOT NULL CONSTRAINT DF_Equipment_CreatedAt DEFAULT SYSUTCDATETIME(),
     CONSTRAINT CK_Equipment_Status CHECK (EquipmentStatus IN ('Available','Maintenance','Retired'))
 );
 CREATE UNIQUE INDEX UX_Equipment_SerialNo ON dbo.Equipment(SerialNo) WHERE SerialNo IS NOT NULL;
 
 /* =====================================================================
-   3. BOOKINGS AND APPOINTMENTS TABLES
+   4. BOOKINGS AND APPOINTMENTS TABLES
    ===================================================================== */
 
 CREATE TABLE dbo.EventAppointment (
@@ -186,11 +209,11 @@ CREATE TABLE dbo.ComboPackageJoin (
     ComboPackageJoinID nvarchar(30) NOT NULL PRIMARY KEY,
     ComboPackageID nvarchar(30) NOT NULL,
     AdditionalServicesID nvarchar(30),
-    ServicesID nvarchar(30) NOT NULL
+    ServicesID nvarchar(30) NULL
 );
 
 /* =====================================================================
-   4. AUDIT & HISTORY LOGGING TABLE (Supports SystemAdmin and Admin tracking)
+   5. AUDIT & HISTORY LOGGING TABLE
    ===================================================================== */
 
 CREATE TABLE dbo.HistoryLog (
@@ -223,7 +246,7 @@ CREATE TABLE dbo.HistoryLog (
 GO
 
 /* =====================================================================
-   5. FOREIGN KEY RELATIONSHIPS
+   6. FOREIGN KEY RELATIONSHIPS
    ===================================================================== */
 ALTER TABLE dbo.Equipment ADD CONSTRAINT FK_Equipment_EquipmentType FOREIGN KEY (EquipmentTypeID) REFERENCES dbo.EquipmentType(EquipmentTypeID);
 ALTER TABLE dbo.BookingNegotiation ADD CONSTRAINT FK_BookingNegotiation_Employee FOREIGN KEY (EmployeeID) REFERENCES dbo.Employee(EmployeeID);
@@ -243,12 +266,10 @@ ALTER TABLE dbo.EventLineItem ADD CONSTRAINT FK_EventLineItem_EventAppointment F
 ALTER TABLE dbo.EventLineItem ADD CONSTRAINT FK_EventLineItem_ComboPackage FOREIGN KEY (ComboPackageID) REFERENCES dbo.ComboPackage(ComboPackageID);
 ALTER TABLE dbo.EventEmployee ADD CONSTRAINT FK_EventEmployee_EventAppointment FOREIGN KEY (EventAppointmentID) REFERENCES dbo.EventAppointment(EventAppointmentID) ON DELETE CASCADE;
 ALTER TABLE dbo.EventEquipment ADD CONSTRAINT FK_EventEquipment_EventAppointment FOREIGN KEY (EventAppointmentID) REFERENCES dbo.EventAppointment(EventAppointmentID) ON DELETE CASCADE;
-
 ALTER TABLE dbo.ServiceCategoryJoins ADD CONSTRAINT FK_ServiceCategoryJoins_ServiceCategory FOREIGN KEY (ServiceCategoryID) REFERENCES dbo.ServiceCategory(ServiceCategoryID) ON DELETE CASCADE;
 ALTER TABLE dbo.ServiceCategoryJoins ADD CONSTRAINT FK_ServiceCategoryJoins_Services FOREIGN KEY (ServicesID) REFERENCES dbo.Services(ServicesID);
 ALTER TABLE dbo.ServiceCategoryJoins ADD CONSTRAINT FK_ServiceCategoryJoins_AdditionalServices FOREIGN KEY (AdditionalServicesID) REFERENCES dbo.AdditionalServices(AdditionalServicesID);
 ALTER TABLE dbo.ServiceCategoryJoins ADD CONSTRAINT FK_ServiceCategoryJoins_ComboPackage FOREIGN KEY (ComboPackageID) REFERENCES dbo.ComboPackage(ComboPackageID);
-
 ALTER TABLE dbo.HistoryLog ADD CONSTRAINT FK_HistoryLog_EventAppointment FOREIGN KEY (EventAppointmentID) REFERENCES dbo.EventAppointment(EventAppointmentID);
 ALTER TABLE dbo.HistoryLog ADD CONSTRAINT FK_HistoryLog_BookingNegotiation FOREIGN KEY (NegotiationID) REFERENCES dbo.BookingNegotiation(NegotiationID);
 ALTER TABLE dbo.HistoryLog ADD CONSTRAINT FK_HistoryLog_Customer FOREIGN KEY (CustomerID) REFERENCES dbo.Customer(CustomerID);
@@ -259,7 +280,7 @@ ALTER TABLE dbo.HistoryLog ADD CONSTRAINT FK_HistoryLog_ChangedByAdmin FOREIGN K
 GO
 
 /* =====================================================================
-   6. INDEXES FOR COMMON AUDIT & HISTORY LOOKUPS
+   7. INDEXES FOR COMMON AUDIT & HISTORY LOOKUPS
    ===================================================================== */
 CREATE INDEX IX_HistoryLog_EventAppointment ON dbo.HistoryLog (EventAppointmentID, LoggedAt DESC);
 CREATE INDEX IX_HistoryLog_Entity           ON dbo.HistoryLog (EntityName, EntityID, LoggedAt DESC);

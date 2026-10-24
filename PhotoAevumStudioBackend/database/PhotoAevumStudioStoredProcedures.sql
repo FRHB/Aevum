@@ -7,62 +7,128 @@ GO
    1. USER MANAGEMENT (Customer, Employee, Admin & SystemAdmin)
    ===================================================================== */
 
--- Create a new Customer
 CREATE OR ALTER PROCEDURE dbo.sp_CreateCustomer
-    @CustomerID nvarchar(30),
     @CustomerFirstName nvarchar(255),
     @CustomerLastName nvarchar(255),
     @CustomerMiddleName nvarchar(255) = NULL,
     @CustomerEmail nvarchar(255),
     @CustomerPhoneNumber nvarchar(30) = NULL,
-    @CustomerPassword nvarchar(255)
+    @CustomerPassword nvarchar(255),
+    @GeneratedCustomerID nvarchar(30) = NULL OUTPUT
 AS
 BEGIN
     SET NOCOUNT ON;
+    SET XACT_ABORT ON;
     
-    INSERT INTO dbo.Customer (
-        CustomerID, CustomerFirstName, CustomerLastName, CustomerMiddleName, 
-        CustomerEmail, CustomerPhoneNumber, CustomerPassword
-    )
-    VALUES (
-        @CustomerID, @CustomerFirstName, @CustomerLastName, @CustomerMiddleName, 
-        @CustomerEmail, @CustomerPhoneNumber, @CustomerPassword
-    );
+    BEGIN TRY
+        BEGIN TRANSACTION;
+        
+        DECLARE @SeqVal INT = NEXT VALUE FOR dbo.Seq_CustomerID;
+        DECLARE @NewID NVARCHAR(30) = 'CUST-' + RIGHT('0000' + CAST(@SeqVal AS VARCHAR(10)), 4);
+        
+        WHILE EXISTS (SELECT 1 FROM dbo.Customer WITH (UPDLOCK, HOLDLOCK) WHERE CustomerID = @NewID)
+        BEGIN
+            SET @SeqVal = NEXT VALUE FOR dbo.Seq_CustomerID;
+            SET @NewID = 'CUST-' + RIGHT('0000' + CAST(@SeqVal AS VARCHAR(10)), 4);
+        END
+        
+        INSERT INTO dbo.Customer (
+            CustomerID, CustomerFirstName, CustomerLastName, CustomerMiddleName, 
+            CustomerEmail, CustomerPhoneNumber, CustomerPassword, CustomerStatus, CreatedAt
+        )
+        VALUES (
+            @NewID, @CustomerFirstName, @CustomerLastName, @CustomerMiddleName, 
+            @CustomerEmail, @CustomerPhoneNumber, @CustomerPassword, 'Active', SYSUTCDATETIME()
+        );
+        
+        IF OBJECT_ID(N'dbo.HistoryLog', N'U') IS NOT NULL
+        BEGIN
+            INSERT INTO dbo.HistoryLog (
+                ActionType, EntityName, EntityID, ActionDetails, ChangedByType, LoggedAt
+            )
+            VALUES (
+                'INSERT', 'Customer', @NewID, 'Customer account registered via automated ID generation.', 'System', SYSUTCDATETIME()
+            );
+        END
+        
+        COMMIT TRANSACTION;
+        
+        SET @GeneratedCustomerID = @NewID;
+        SELECT @NewID AS CustomerID;
+        
+    END TRY
+    BEGIN CATCH
+        IF @@TRANCOUNT > 0 ROLLBACK TRANSACTION;
+        THROW;
+    END CATCH
 END;
 GO
 
--- Create a new Employee
 CREATE OR ALTER PROCEDURE dbo.sp_CreateEmployee
-    @EmployeeID nvarchar(30),
     @EmployeeFirstName nvarchar(255),
     @EmployeeLastName nvarchar(255),
     @EmployeeMiddleName nvarchar(255) = NULL,
     @EmployeeEmail nvarchar(255),
     @EmployeePassword nvarchar(255),
-    @isFirstLogin bit = 1 -- Defaults to 1 (True) if not provided by backend
+    @isFirstLogin bit = 1,
+    @CreatedByAdminID nvarchar(30) = NULL,
+    @GeneratedEmployeeID nvarchar(30) = NULL OUTPUT
 AS
 BEGIN
     SET NOCOUNT ON;
-
-    INSERT INTO dbo.Employee (
-        EmployeeID, EmployeeFirstName, EmployeeLastName, EmployeeMiddleName, 
-        EmployeeEmail, EmployeePassword, EmployeeStatus, isFirstLogin
-    )
-    VALUES (
-        @EmployeeID, @EmployeeFirstName, @EmployeeLastName, @EmployeeMiddleName, 
-        @EmployeeEmail, @EmployeePassword, 'Active', @isFirstLogin
-    );
+    SET XACT_ABORT ON;
+    
+    BEGIN TRY
+        BEGIN TRANSACTION;
+        
+        DECLARE @SeqVal INT = NEXT VALUE FOR dbo.Seq_EmployeeID;
+        DECLARE @NewID NVARCHAR(30) = 'EMP-' + RIGHT('000' + CAST(@SeqVal AS VARCHAR(10)), 3);
+        
+        WHILE EXISTS (SELECT 1 FROM dbo.Employee WITH (UPDLOCK, HOLDLOCK) WHERE EmployeeID = @NewID)
+        BEGIN
+            SET @SeqVal = NEXT VALUE FOR dbo.Seq_EmployeeID;
+            SET @NewID = 'EMP-' + RIGHT('000' + CAST(@SeqVal AS VARCHAR(10)), 3);
+        END
+        
+        INSERT INTO dbo.Employee (
+            EmployeeID, EmployeeFirstName, EmployeeLastName, EmployeeMiddleName, 
+            EmployeeEmail, EmployeePassword, EmployeeStatus, isFirstLogin, CreatedAt
+        )
+        VALUES (
+            @NewID, @EmployeeFirstName, @EmployeeLastName, @EmployeeMiddleName, 
+            @EmployeeEmail, @EmployeePassword, 'Active', @isFirstLogin, SYSUTCDATETIME()
+        );
+        
+        IF OBJECT_ID(N'dbo.HistoryLog', N'U') IS NOT NULL AND @CreatedByAdminID IS NOT NULL
+        BEGIN
+            DECLARE @ActorType nvarchar(20) = CASE WHEN @CreatedByAdminID LIKE 'SADM-%' THEN 'SystemAdmin' ELSE 'Admin' END;
+            INSERT INTO dbo.HistoryLog (
+                ActionType, EntityName, EntityID, ActionDetails, ChangedByType, ChangedByAdminID, LoggedAt
+            )
+            VALUES (
+                'INSERT', 'Employee', @NewID, 'Employee account created via automated ID generation.', @ActorType, @CreatedByAdminID, SYSUTCDATETIME()
+            );
+        END
+        
+        COMMIT TRANSACTION;
+        
+        SET @GeneratedEmployeeID = @NewID;
+        SELECT @NewID AS EmployeeID;
+        
+    END TRY
+    BEGIN CATCH
+        IF @@TRANCOUNT > 0 ROLLBACK TRANSACTION;
+        THROW;
+    END CATCH
 END;
 GO
 
--- Complete Employee First Login
 CREATE OR ALTER PROCEDURE dbo.sp_CompleteEmployeeFirstLogin
     @EmployeeID nvarchar(30),
     @NewPassword nvarchar(255) = NULL
 AS
 BEGIN
     SET NOCOUNT ON;
-
     UPDATE dbo.Employee
     SET isFirstLogin = 0,
         EmployeePassword = COALESCE(@NewPassword, EmployeePassword)
@@ -70,14 +136,12 @@ BEGIN
 END;
 GO
 
--- Complete Admin First Login
 CREATE OR ALTER PROCEDURE dbo.sp_CompleteAdminFirstLogin
     @AdminID nvarchar(30),
     @NewPassword nvarchar(255) = NULL
 AS
 BEGIN
     SET NOCOUNT ON;
-
     UPDATE dbo.Admin
     SET isFirstLogin = 0,
         AdminPassword = COALESCE(@NewPassword, AdminPassword)
@@ -85,7 +149,6 @@ BEGIN
 END;
 GO
 
--- Create Admin: Restricted EXCLUSIVELY to SystemAdmin role (SADM-###)
 CREATE OR ALTER PROCEDURE dbo.sp_CreateAdmin
     @AdminID          nvarchar(30),
     @AdminRole        nvarchar(15),
@@ -102,7 +165,6 @@ BEGIN
     DECLARE @RequesterRole nvarchar(15) = NULL;
     SELECT @RequesterRole = AdminRole FROM dbo.Admin WHERE AdminID = @RequestingUserID;
 
-    -- Strict authorization check: Only SystemAdmin accounts can create new Admin users
     IF (@RequestingUserID NOT LIKE 'SADM-%' 
         AND ISNULL(@RequesterRole, '') NOT IN ('SystemAdmin', 'Super Admin')
         AND NOT EXISTS (SELECT 1 FROM dbo.SystemAdmin WHERE SystemAdminID = @RequestingUserID))
@@ -111,7 +173,6 @@ BEGIN
         RETURN;
     END
 
-    -- Regular Admin accounts require an Email
     IF (@AdminRole <> 'SystemAdmin' AND @AdminID NOT LIKE 'SADM-%' AND (@AdminEmail IS NULL OR LTRIM(RTRIM(@AdminEmail)) = ''))
     BEGIN
         RAISERROR('Validation Error: Email address is required for regular Admin accounts.', 16, 1);
@@ -134,7 +195,6 @@ BEGIN
         END
     END
 
-    -- Log action in HistoryLog
     INSERT INTO dbo.HistoryLog (
         ActionType, EntityName, EntityID, ActionDetails, ChangedByType, ChangedByAdminID
     )
@@ -145,11 +205,76 @@ BEGIN
 END;
 GO
 
+CREATE OR ALTER PROCEDURE dbo.sp_UpdateAdmin
+    @AdminID          nvarchar(30),
+    @AdminFirstName   nvarchar(255),
+    @AdminLastName    nvarchar(255),
+    @AdminMiddleName  nvarchar(255) = NULL,
+    @AdminEmail       nvarchar(255) = NULL,
+    @RequestingUserID nvarchar(30)
+AS
+BEGIN
+    SET NOCOUNT ON;
+
+    DECLARE @RequesterRole nvarchar(20) = NULL;
+    SELECT @RequesterRole = AdminRole FROM dbo.Admin WHERE AdminID = @RequestingUserID;
+    
+    DECLARE @IsSystemAdmin bit = 0;
+    IF (@RequestingUserID LIKE 'SADM-%' 
+        OR ISNULL(@RequesterRole, '') IN ('SystemAdmin', 'Super Admin')
+        OR EXISTS (SELECT 1 FROM dbo.SystemAdmin WHERE SystemAdminID = @RequestingUserID))
+    BEGIN
+        SET @IsSystemAdmin = 1;
+    END
+
+    IF @IsSystemAdmin = 0
+    BEGIN
+        RAISERROR('Permission Denied: Admins have read-only access and cannot edit administrator records.', 16, 1);
+        RETURN;
+    END
+
+    DECLARE @TargetRole nvarchar(20) = NULL;
+    SELECT @TargetRole = AdminRole FROM dbo.Admin WHERE AdminID = @AdminID;
+
+    IF (@TargetRole IN ('SystemAdmin', 'Super Admin') OR @AdminID LIKE 'SADM-%')
+    BEGIN
+        IF UPPER(@AdminID) <> UPPER(@RequestingUserID)
+        BEGIN
+            RAISERROR('Permission Denied: Cannot edit the data of other System Admin users.', 16, 1);
+            RETURN;
+        END
+    END
+
+    UPDATE dbo.Admin
+    SET AdminFirstName = @AdminFirstName,
+        AdminLastName = @AdminLastName,
+        AdminMiddleName = @AdminMiddleName,
+        Email = @AdminEmail
+    WHERE AdminID = @AdminID;
+
+    IF EXISTS (SELECT 1 FROM dbo.SystemAdmin WHERE SystemAdminID = @AdminID)
+    BEGIN
+        UPDATE dbo.SystemAdmin
+        SET FirstName = @AdminFirstName,
+            LastName = @AdminLastName,
+            MiddleName = @AdminMiddleName
+        WHERE SystemAdminID = @AdminID;
+    END
+
+    INSERT INTO dbo.HistoryLog (
+        ActionType, EntityName, EntityID, ActionDetails, ChangedByType, ChangedByAdminID
+    )
+    VALUES (
+        'UPDATE', 'Admin', @AdminID, CONCAT('Updated Admin details for ', @AdminID),
+        'SystemAdmin', @RequestingUserID
+    );
+END;
+GO
+
 /* =====================================================================
    2. EVENT & BOOKING MANAGEMENT
    ===================================================================== */
 
--- Create a new Event Appointment
 CREATE OR ALTER PROCEDURE dbo.sp_CreateEventAppointment
     @EventAppointmentID nvarchar(30),
     @EventName nvarchar(255),
@@ -160,7 +285,6 @@ CREATE OR ALTER PROCEDURE dbo.sp_CreateEventAppointment
 AS
 BEGIN
     SET NOCOUNT ON;
-
     INSERT INTO dbo.EventAppointment (
         EventAppointmentID, EventName, EventDescription, CustomerID, 
         EventDate, EventTime, EventStatus
@@ -172,7 +296,6 @@ BEGIN
 END;
 GO
 
--- Add a Line Item to an Event (Service, Additional Service, or Combo)
 CREATE OR ALTER PROCEDURE dbo.sp_AddEventLineItem
     @EventLineItemID nvarchar(30),
     @EventAppointmentID nvarchar(30),
@@ -182,7 +305,6 @@ CREATE OR ALTER PROCEDURE dbo.sp_AddEventLineItem
 AS
 BEGIN
     SET NOCOUNT ON;
-
     INSERT INTO dbo.EventLineItem (
         EventLineItemID, EventAppointmentID, ServicesID, AdditionalServicesID, ComboPackageID
     )
@@ -192,14 +314,12 @@ BEGIN
 END;
 GO
 
--- Assign Employee to an Event
 CREATE OR ALTER PROCEDURE dbo.sp_AssignEmployeeToEvent
     @EventAppointmentID nvarchar(30),
     @EmployeeID nvarchar(30)
 AS
 BEGIN
     SET NOCOUNT ON;
-
     IF NOT EXISTS (SELECT 1 FROM dbo.EventEmployee WHERE EventAppointmentID = @EventAppointmentID AND EmployeeID = @EmployeeID)
     BEGIN
         INSERT INTO dbo.EventEmployee (EventAppointmentID, EmployeeID)
@@ -208,594 +328,10 @@ BEGIN
 END;
 GO
 
-/* =====================================================================
-   3. EQUIPMENT MANAGEMENT
-   ===================================================================== */
-
--- Add new Equipment
-CREATE OR ALTER PROCEDURE dbo.sp_AddEquipment
-    @EquipmentID nvarchar(30),
-    @EquipmentName nvarchar(100),
-    @EquipmentTypeID nvarchar(30),
-    @SerialNo nvarchar(30) = NULL
-AS
-BEGIN
-    SET NOCOUNT ON;
-
-    INSERT INTO dbo.Equipment (
-        EquipmentID, EquipmentName, EquipmentTypeID, EquipmentStatus, SerialNo
-    )
-    VALUES (
-        @EquipmentID, @EquipmentName, @EquipmentTypeID, 'Available', @SerialNo
-    );
-END;
-GO
-
--- Assign Equipment to an Event
-CREATE OR ALTER PROCEDURE dbo.sp_AssignEquipmentToEvent
-    @EventAppointmentID nvarchar(30),
-    @EquipmentID nvarchar(30)
-AS
-BEGIN
-    SET NOCOUNT ON;
-
-    IF NOT EXISTS (SELECT 1 FROM dbo.EventEquipment WHERE EventAppointmentID = @EventAppointmentID AND EquipmentID = @EquipmentID)
-    BEGIN
-        INSERT INTO dbo.EventEquipment (EventAppointmentID, EquipmentID)
-        VALUES (@EventAppointmentID, @EquipmentID);
-    END
-END;
-GO
-
-/* =====================================================================
-   4. CATALOG & CATEGORY MANAGEMENT
-   ===================================================================== */
-
--- 4.1 Generate Sequential Custom IDs (SRV-#### and CAT-####)
-CREATE OR ALTER PROCEDURE dbo.sp_GetNextServiceID
-    @NextServiceID nvarchar(30) = NULL OUTPUT
-AS
-BEGIN
-    SET NOCOUNT ON;
-
-    DECLARE @MaxNum INT = 0;
-
-    SELECT @MaxNum = ISNULL(MAX(
-        TRY_CAST(
-            SUBSTRING(ServicesID, CHARINDEX('-', ServicesID) + 1, 20)
-        AS INT)
-    ), 0)
-    FROM dbo.Services WITH (UPDLOCK, HOLDLOCK)
-    WHERE ServicesID LIKE 'SRV-%';
-
-    SET @NextServiceID = 'SRV-' + RIGHT('0000' + CAST((@MaxNum + 1) AS VARCHAR(10)), 4);
-
-    SELECT @NextServiceID AS NextServiceID;
-END;
-GO
-
-CREATE OR ALTER PROCEDURE dbo.sp_GetNextCategoryID
-    @NextCategoryID nvarchar(30) = NULL OUTPUT
-AS
-BEGIN
-    SET NOCOUNT ON;
-
-    DECLARE @MaxNum INT = 0;
-
-    SELECT @MaxNum = ISNULL(MAX(
-        TRY_CAST(
-            SUBSTRING(ServiceCategoryID, CHARINDEX('-', ServiceCategoryID) + 1, 20)
-        AS INT)
-    ), 0)
-    FROM dbo.ServiceCategory WITH (UPDLOCK, HOLDLOCK)
-    WHERE ServiceCategoryID LIKE 'CAT-%';
-
-    SET @NextCategoryID = 'CAT-' + RIGHT('0000' + CAST((@MaxNum + 1) AS VARCHAR(10)), 4);
-
-    SELECT @NextCategoryID AS NextCategoryID;
-END;
-GO
-
--- 4.2 Query All Service Categories
-CREATE OR ALTER PROCEDURE dbo.sp_GetServiceCategories
-AS
-BEGIN
-    SET NOCOUNT ON;
-
-    SELECT 
-        ServiceCategoryID,
-        ServiceCategoryName,
-        ServiceCategoryDescription
-    FROM dbo.ServiceCategory
-    ORDER BY ServiceCategoryName;
-END;
-GO
-
--- 4.3 Create Service Category with Auto-Generated ID
-CREATE OR ALTER PROCEDURE dbo.sp_CreateServiceCategory
-    @ServiceCategoryName        nvarchar(255),
-    @ServiceCategoryDescription nvarchar(255),
-    @CreatedByAdminID           nvarchar(30)  = NULL,
-    @CreatedCategoryID          nvarchar(30)  = NULL OUTPUT
-AS
-BEGIN
-    SET NOCOUNT ON;
-    SET XACT_ABORT ON;
-
-    BEGIN TRANSACTION;
-    BEGIN TRY
-        DECLARE @MaxNum INT = 0;
-        SELECT @MaxNum = ISNULL(MAX(
-            TRY_CAST(SUBSTRING(ServiceCategoryID, CHARINDEX('-', ServiceCategoryID) + 1, 20) AS INT)
-        ), 0)
-        FROM dbo.ServiceCategory WITH (UPDLOCK, HOLDLOCK)
-        WHERE ServiceCategoryID LIKE 'CAT-%';
-
-        SET @CreatedCategoryID = 'CAT-' + RIGHT('0000' + CAST((@MaxNum + 1) AS VARCHAR(10)), 4);
-
-        WHILE EXISTS (SELECT 1 FROM dbo.ServiceCategory WHERE ServiceCategoryID = @CreatedCategoryID)
-        BEGIN
-            SET @MaxNum = @MaxNum + 1;
-            SET @CreatedCategoryID = 'CAT-' + RIGHT('0000' + CAST((@MaxNum + 1) AS VARCHAR(10)), 4);
-        END
-
-        INSERT INTO dbo.ServiceCategory (
-            ServiceCategoryID,
-            ServiceCategoryName,
-            ServiceCategoryDescription
-        )
-        VALUES (
-            @CreatedCategoryID,
-            @ServiceCategoryName,
-            @ServiceCategoryDescription
-        );
-
-        IF OBJECT_ID(N'dbo.sp_AddHistoryLog', N'P') IS NOT NULL
-        BEGIN
-            EXEC dbo.sp_AddHistoryLog
-                @ActionType = 'CREATE',
-                @EntityName = 'ServiceCategory',
-                @EntityID = @CreatedCategoryID,
-                @ActionDetails = 'New service category created via Wizard.',
-                @ChangedByType = 'Admin',
-                @ChangedBy = @CreatedByAdminID;
-        END
-
-        COMMIT TRANSACTION;
-
-        SELECT 
-            ServiceCategoryID,
-            ServiceCategoryName,
-            ServiceCategoryDescription
-        FROM dbo.ServiceCategory
-        WHERE ServiceCategoryID = @CreatedCategoryID;
-
-    END TRY
-    BEGIN CATCH
-        IF @@TRANCOUNT > 0
-            ROLLBACK TRANSACTION;
-        THROW;
-    END CATCH
-END;
-GO
-
--- 4.4 Create Main Service with Auto-Generated ID and Optional Category Join
-CREATE OR ALTER PROCEDURE dbo.sp_CreateService
-    @ServiceName           nvarchar(255),
-    @ServicesDescription   nvarchar(255),
-    @ServicePrice          money,
-    @ServiceCategoryID     nvarchar(30)   = NULL,
-    @ServiceImage          varbinary(max) = NULL,
-    @ServiceImageMimeType  nvarchar(100)  = 'image/jpeg',
-    @CreatedByAdminID      nvarchar(30)   = NULL,
-    @CreatedServiceID      nvarchar(30)   = NULL OUTPUT
-AS
-BEGIN
-    SET NOCOUNT ON;
-    SET XACT_ABORT ON;
-
-    BEGIN TRANSACTION;
-    BEGIN TRY
-        DECLARE @MaxNum INT = 0;
-        SELECT @MaxNum = ISNULL(MAX(
-            TRY_CAST(SUBSTRING(ServicesID, CHARINDEX('-', ServicesID) + 1, 20) AS INT)
-        ), 0)
-        FROM dbo.Services WITH (UPDLOCK, HOLDLOCK)
-        WHERE ServicesID LIKE 'SRV-%';
-
-        SET @CreatedServiceID = 'SRV-' + RIGHT('0000' + CAST((@MaxNum + 1) AS VARCHAR(10)), 4);
-
-        WHILE EXISTS (SELECT 1 FROM dbo.Services WHERE ServicesID = @CreatedServiceID)
-        BEGIN
-            SET @MaxNum = @MaxNum + 1;
-            SET @CreatedServiceID = 'SRV-' + RIGHT('0000' + CAST((@MaxNum + 1) AS VARCHAR(10)), 4);
-        END
-
-        INSERT INTO dbo.Services (
-            ServicesID,
-            ServiceName,
-            ServicesDescription,
-            ServicePrice,
-            ServiceImage,
-            ServiceImageMimeType
-        )
-        VALUES (
-            @CreatedServiceID,
-            @ServiceName,
-            @ServicesDescription,
-            @ServicePrice,
-            @ServiceImage,
-            @ServiceImageMimeType
-        );
-
-        IF @ServiceCategoryID IS NOT NULL AND RTRIM(LTRIM(@ServiceCategoryID)) <> ''
-        BEGIN
-            IF EXISTS (SELECT 1 FROM dbo.ServiceCategory WHERE ServiceCategoryID = @ServiceCategoryID)
-            BEGIN
-                DECLARE @JoinID NVARCHAR(30) = 'SCJ-' + RIGHT('0000' + CAST((@MaxNum + 1) AS VARCHAR(10)), 4);
-                IF EXISTS (SELECT 1 FROM dbo.ServiceCategoryJoins WHERE ServiceCategoryJoinID = @JoinID)
-                BEGIN
-                    SET @JoinID = 'SCJ-' + SUBSTRING(CONVERT(NVARCHAR(36), NEWID()), 1, 8);
-                END
-
-                INSERT INTO dbo.ServiceCategoryJoins (
-                    ServiceCategoryJoinID,
-                    ServiceCategoryID,
-                    ServicesID
-                )
-                VALUES (
-                    @JoinID,
-                    @ServiceCategoryID,
-                    @CreatedServiceID
-                );
-            END
-        END
-
-        IF OBJECT_ID(N'dbo.sp_AddHistoryLog', N'P') IS NOT NULL
-        BEGIN
-            EXEC dbo.sp_AddHistoryLog
-                @ActionType = 'CREATE',
-                @EntityName = 'Services',
-                @EntityID = @CreatedServiceID,
-                @ActionDetails = 'New main service created via Wizard.',
-                @ChangedByType = 'Admin',
-                @ChangedBy = @CreatedByAdminID;
-        END
-
-        COMMIT TRANSACTION;
-
-        SELECT 
-            s.ServicesID,
-            s.ServiceName,
-            s.ServicesDescription,
-            s.ServicePrice,
-            @ServiceCategoryID AS ServiceCategoryID,
-            c.ServiceCategoryName,
-            CAST(CASE WHEN s.ServiceImage IS NOT NULL THEN 1 ELSE 0 END AS bit) AS HasImage
-        FROM dbo.Services s
-        LEFT JOIN dbo.ServiceCategory c ON c.ServiceCategoryID = @ServiceCategoryID
-        WHERE s.ServicesID = @CreatedServiceID;
-
-    END TRY
-    BEGIN CATCH
-        IF @@TRANCOUNT > 0
-            ROLLBACK TRANSACTION;
-        THROW;
-    END CATCH
-END;
-GO
-
--- 4.5 Add Service Category Join
-CREATE OR ALTER PROCEDURE dbo.sp_AddServiceCategoryJoin
-    @ServiceCategoryJoinID nvarchar(30),
-    @ServiceCategoryID nvarchar(30),
-    @ServicesID nvarchar(30) = NULL,
-    @AdditionalServicesID nvarchar(30) = NULL,
-    @ComboPackageID nvarchar(30) = NULL
-AS
-BEGIN
-    SET NOCOUNT ON;
-
-    INSERT INTO dbo.ServiceCategoryJoins (
-        ServiceCategoryJoinID, ServiceCategoryID, ServicesID, AdditionalServicesID, ComboPackageID
-    )
-    VALUES (
-        @ServiceCategoryJoinID, @ServiceCategoryID, @ServicesID, @AdditionalServicesID, @ComboPackageID
-    );
-END;
-GO
-
-/* =====================================================================
-   5. SERVICE IMAGES (Summary vs Detail with Binaries)
-   ===================================================================== */
-
--- 5.1 Main Services
-CREATE OR ALTER PROCEDURE dbo.sp_GetServicesSummary
-AS
-BEGIN
-    SET NOCOUNT ON;
-    -- Crucial Rule: Do NOT load heavy binary data on initial list/grid
-    SELECT 
-        ServicesID, 
-        ServiceName, 
-        ServicesDescription, 
-        ServicePrice,
-        CAST(CASE WHEN ServiceImage IS NOT NULL THEN 1 ELSE 0 END AS bit) AS HasImage
-    FROM dbo.Services
-    ORDER BY ServicesID;
-END;
-GO
-
-CREATE OR ALTER PROCEDURE dbo.sp_GetServiceDetailWithImage
-    @ServicesID nvarchar(30)
-AS
-BEGIN
-    SET NOCOUNT ON;
-    -- Fetch heavy image binary only when user opens detail view
-    SELECT 
-        ServicesID, 
-        ServiceName, 
-        ServicesDescription, 
-        ServicePrice,
-        ServiceImage,
-        ISNULL(ServiceImageMimeType, 'image/jpeg') AS ServiceImageMimeType,
-        CAST(CASE WHEN ServiceImage IS NOT NULL THEN 1 ELSE 0 END AS bit) AS HasImage
-    FROM dbo.Services
-    WHERE ServicesID = @ServicesID;
-END;
-GO
-
-CREATE OR ALTER PROCEDURE dbo.sp_UpdateServiceImage
-    @ServicesID           nvarchar(30),
-    @ServiceImage         varbinary(max),
-    @ServiceImageMimeType nvarchar(100) = 'image/jpeg',
-    @UpdatedByAdminID     nvarchar(30)  = NULL
-AS
-BEGIN
-    SET NOCOUNT ON;
-
-    UPDATE dbo.Services
-    SET ServiceImage = @ServiceImage,
-        ServiceImageMimeType = @ServiceImageMimeType
-    WHERE ServicesID = @ServicesID;
-
-    IF @UpdatedByAdminID IS NOT NULL
-    BEGIN
-        DECLARE @ActorType nvarchar(20) = CASE WHEN @UpdatedByAdminID LIKE 'SADM-%' THEN 'SystemAdmin' ELSE 'Admin' END;
-        EXEC dbo.sp_AddHistoryLog 
-            @ActionType = 'IMAGE_UPLOAD', 
-            @EntityName = 'Services', 
-            @EntityID = @ServicesID, 
-            @ActionDetails = 'Updated service hero image.',
-            @ChangedByType = @ActorType, 
-            @ActorID = @UpdatedByAdminID;
-    END
-END;
-GO
-
--- 5.2 Additional Services
-CREATE OR ALTER PROCEDURE dbo.sp_GetAdditionalServicesSummary
-AS
-BEGIN
-    SET NOCOUNT ON;
-    SELECT 
-        AdditionalServicesID, 
-        AdditionalServiceName, 
-        AdditionalServicesDescription,
-        CAST(CASE WHEN AdditionalServiceImage IS NOT NULL THEN 1 ELSE 0 END AS bit) AS HasImage
-    FROM dbo.AdditionalServices
-    ORDER BY AdditionalServicesID;
-END;
-GO
-
-CREATE OR ALTER PROCEDURE dbo.sp_GetAdditionalServiceDetailWithImage
-    @AdditionalServicesID nvarchar(30)
-AS
-BEGIN
-    SET NOCOUNT ON;
-    SELECT 
-        AdditionalServicesID, 
-        AdditionalServiceName, 
-        AdditionalServicesDescription,
-        AdditionalServiceImage,
-        ISNULL(AdditionalServiceImageMimeType, 'image/jpeg') AS AdditionalServiceImageMimeType,
-        CAST(CASE WHEN AdditionalServiceImage IS NOT NULL THEN 1 ELSE 0 END AS bit) AS HasImage
-    FROM dbo.AdditionalServices
-    WHERE AdditionalServicesID = @AdditionalServicesID;
-END;
-GO
-
-CREATE OR ALTER PROCEDURE dbo.sp_UpdateAdditionalServiceImage
-    @AdditionalServicesID           nvarchar(30),
-    @AdditionalServiceImage         varbinary(max),
-    @AdditionalServiceImageMimeType nvarchar(100) = 'image/jpeg',
-    @UpdatedByAdminID               nvarchar(30)  = NULL
-AS
-BEGIN
-    SET NOCOUNT ON;
-
-    UPDATE dbo.AdditionalServices
-    SET AdditionalServiceImage = @AdditionalServiceImage,
-        AdditionalServiceImageMimeType = @AdditionalServiceImageMimeType
-    WHERE AdditionalServicesID = @AdditionalServicesID;
-
-    IF @UpdatedByAdminID IS NOT NULL
-    BEGIN
-        DECLARE @ActorType nvarchar(20) = CASE WHEN @UpdatedByAdminID LIKE 'SADM-%' THEN 'SystemAdmin' ELSE 'Admin' END;
-        EXEC dbo.sp_AddHistoryLog 
-            @ActionType = 'IMAGE_UPLOAD', 
-            @EntityName = 'AdditionalServices', 
-            @EntityID = @AdditionalServicesID, 
-            @ActionDetails = 'Updated additional service image.',
-            @ChangedByType = @ActorType, 
-            @ActorID = @UpdatedByAdminID;
-    END
-END;
-GO
-
--- 5.3 Combo Packages
-CREATE OR ALTER PROCEDURE dbo.sp_GetComboPackagesSummary
-AS
-BEGIN
-    SET NOCOUNT ON;
-    SELECT 
-        ComboPackageID, 
-        ComboPackageName, 
-        ComboPackageDescription,
-        CAST(CASE WHEN ComboPackageImage IS NOT NULL THEN 1 ELSE 0 END AS bit) AS HasImage
-    FROM dbo.ComboPackage
-    ORDER BY ComboPackageID;
-END;
-GO
-
-CREATE OR ALTER PROCEDURE dbo.sp_GetComboPackageDetailWithImage
-    @ComboPackageID nvarchar(30)
-AS
-BEGIN
-    SET NOCOUNT ON;
-    SELECT 
-        ComboPackageID, 
-        ComboPackageName, 
-        ComboPackageDescription,
-        ComboPackageImage,
-        ISNULL(ComboPackageImageMimeType, 'image/jpeg') AS ComboPackageImageMimeType,
-        CAST(CASE WHEN ComboPackageImage IS NOT NULL THEN 1 ELSE 0 END AS bit) AS HasImage
-    FROM dbo.ComboPackage
-    WHERE ComboPackageID = @ComboPackageID;
-END;
-GO
-
-CREATE OR ALTER PROCEDURE dbo.sp_UpdateComboPackageImage
-    @ComboPackageID           nvarchar(30),
-    @ComboPackageImage         varbinary(max),
-    @ComboPackageImageMimeType nvarchar(100) = 'image/jpeg',
-    @UpdatedByAdminID         nvarchar(30)  = NULL
-AS
-BEGIN
-    SET NOCOUNT ON;
-
-    UPDATE dbo.ComboPackage
-    SET ComboPackageImage = @ComboPackageImage,
-        ComboPackageImageMimeType = @ComboPackageImageMimeType
-    WHERE ComboPackageID = @ComboPackageID;
-
-    IF @UpdatedByAdminID IS NOT NULL
-    BEGIN
-        DECLARE @ActorType nvarchar(20) = CASE WHEN @UpdatedByAdminID LIKE 'SADM-%' THEN 'SystemAdmin' ELSE 'Admin' END;
-        EXEC dbo.sp_AddHistoryLog 
-            @ActionType = 'IMAGE_UPLOAD', 
-            @EntityName = 'ComboPackage', 
-            @EntityID = @ComboPackageID, 
-            @ActionDetails = 'Updated combo package hero image.',
-            @ChangedByType = @ActorType, 
-            @ActorID = @UpdatedByAdminID;
-    END
-END;
-GO
-
-/* =====================================================================
-   6. STATUS UPDATES & AUDIT LOGGING (HistoryLog Integration)
-   ===================================================================== */
-
--- Add record to HistoryLog
-CREATE OR ALTER PROCEDURE dbo.sp_AddHistoryLog
-    @ActionType          nvarchar(20),
-    @EntityName          nvarchar(128),
-    @EntityID            nvarchar(30)  = NULL,
-    @ActionDetails       nvarchar(max) = NULL,
-    @EventAppointmentID  nvarchar(30)  = NULL,
-    @NegotiationID       nvarchar(30)  = NULL,
-    @CustomerID          nvarchar(30)  = NULL,
-    @EmployeeID          nvarchar(30)  = NULL,
-    @ChangedByType       nvarchar(20), -- 'Customer', 'Employee', 'Admin', 'SystemAdmin', 'System'
-    @ActorID             nvarchar(30)  = NULL
-AS
-BEGIN
-    SET NOCOUNT ON;
-
-    DECLARE @ChangedByCustomer nvarchar(30) = NULL;
-    DECLARE @ChangedByEmployee nvarchar(30) = NULL;
-    DECLARE @ChangedByAdmin    nvarchar(30) = NULL;
-
-    IF @ChangedByType = 'Customer' SET @ChangedByCustomer = @ActorID;
-    ELSE IF @ChangedByType = 'Employee' SET @ChangedByEmployee = @ActorID;
-    ELSE IF @ChangedByType IN ('Admin', 'SystemAdmin') SET @ChangedByAdmin = @ActorID;
-
-    INSERT INTO dbo.HistoryLog (
-        ActionType, EntityName, EntityID, ActionDetails, 
-        EventAppointmentID, NegotiationID, CustomerID, EmployeeID, 
-        ChangedByType, ChangedByCustomerID, ChangedByEmployeeID, ChangedByAdminID
-    )
-    VALUES (
-        @ActionType, @EntityName, @EntityID, @ActionDetails,
-        @EventAppointmentID, @NegotiationID, @CustomerID, @EmployeeID,
-        @ChangedByType, @ChangedByCustomer, @ChangedByEmployee, @ChangedByAdmin
-    );
-END;
-GO
-
--- Retrieve History Logs (Full access for SystemAdmin)
-CREATE OR ALTER PROCEDURE dbo.sp_GetHistoryLogs
-    @RequestingUserID nvarchar(30),
-    @TopCount         int = 100
-AS
-BEGIN
-    SET NOCOUNT ON;
-
-    DECLARE @IsSystemAdmin bit = 0;
-    IF (@RequestingUserID LIKE 'SADM-%' 
-        OR EXISTS (SELECT 1 FROM dbo.Admin WHERE AdminID = @RequestingUserID AND AdminRole IN ('SystemAdmin', 'Super Admin'))
-        OR EXISTS (SELECT 1 FROM dbo.SystemAdmin WHERE SystemAdminID = @RequestingUserID))
-    BEGIN
-        SET @IsSystemAdmin = 1;
-    END
-
-    IF @IsSystemAdmin = 1
-    BEGIN
-        SELECT TOP (@TopCount)
-            HistoryLogID,
-            ActionType,
-            EntityName,
-            EntityID,
-            ActionDetails,
-            EventAppointmentID,
-            NegotiationID,
-            CustomerID,
-            EmployeeID,
-            ChangedByType,
-            ChangedBy,
-            LoggedAt
-        FROM dbo.HistoryLog
-        ORDER BY LoggedAt DESC;
-    END
-    ELSE
-    BEGIN
-        SELECT TOP (@TopCount)
-            HistoryLogID,
-            ActionType,
-            EntityName,
-            EntityID,
-            ActionDetails,
-            EventAppointmentID,
-            NegotiationID,
-            CustomerID,
-            EmployeeID,
-            ChangedByType,
-            ChangedBy,
-            LoggedAt
-        FROM dbo.HistoryLog
-        WHERE ChangedByAdminID = @RequestingUserID
-           OR EntityName IN ('Services', 'AdditionalServices', 'ComboPackage', 'Equipment', 'EventAppointment')
-        ORDER BY LoggedAt DESC;
-    END
-END;
-GO
-
--- Update Event Status
 CREATE OR ALTER PROCEDURE dbo.sp_UpdateEventStatus
     @EventAppointmentID nvarchar(30),
     @NewStatus nvarchar(30),
-    @ChangedByType nvarchar(20),  -- 'Customer', 'Employee', 'Admin', 'SystemAdmin', or 'System'
+    @ChangedByType nvarchar(20), 
     @ActorID nvarchar(30) = NULL
 AS
 BEGIN
@@ -846,155 +382,31 @@ END;
 GO
 
 /* =====================================================================
-   7. COMBO PACKAGE WIZARD, MANY-TO-MANY BUNDLING & ATOMIC ID GENERATION
+   3. EQUIPMENT & EQUIPMENT TYPE MANAGEMENT
    ===================================================================== */
 
--- 7.1 Schema Safety: Ensure ComboPackagePrice & Nullable ServicesID in ComboPackageJoin
-IF OBJECT_ID(N'dbo.ComboPackage', N'U') IS NOT NULL
-BEGIN
-    IF COL_LENGTH(N'dbo.ComboPackage', N'ComboPackagePrice') IS NULL
-    BEGIN
-        ALTER TABLE dbo.ComboPackage ADD ComboPackagePrice decimal(18,2) NOT NULL CONSTRAINT DF_ComboPackage_Price DEFAULT 0.00;
-    END;
-END;
-GO
-
-IF OBJECT_ID(N'dbo.ComboPackageJoin', N'U') IS NOT NULL
-BEGIN
-    ALTER TABLE dbo.ComboPackageJoin ALTER COLUMN ServicesID nvarchar(30) NULL;
-END;
-GO
-
--- 7.2 Atomic SQL Sequence for PKG-#### ID Generation (Race-Condition Free)
-IF NOT EXISTS (SELECT 1 FROM sys.sequences WHERE name = 'Seq_ComboPackageID')
-BEGIN
-    DECLARE @InitMaxVal INT = 0;
-    IF OBJECT_ID(N'dbo.ComboPackage', N'U') IS NOT NULL
-    BEGIN
-        SELECT @InitMaxVal = ISNULL(MAX(TRY_CAST(SUBSTRING(ComboPackageID, 5, 20) AS INT)), 0)
-        FROM dbo.ComboPackage
-        WHERE ComboPackageID LIKE 'PKG-%';
-    END;
-
-    DECLARE @CreateSeqSql NVARCHAR(MAX) = N'CREATE SEQUENCE dbo.Seq_ComboPackageID AS INT START WITH ' 
-        + CAST((@InitMaxVal + 1) AS NVARCHAR(20)) + N' INCREMENT BY 1;';
-    EXEC sp_executesql @CreateSeqSql;
-END;
-GO
-
--- 7.3 Get Next Sequential Custom Combo Package ID (Read-Only Preview)
-CREATE OR ALTER PROCEDURE dbo.sp_GetNextComboPackageId
-    @NextPackageID nvarchar(30) OUTPUT
+CREATE OR ALTER PROCEDURE dbo.sp_GetNextEquipmentTypeID
+    @NextID NVARCHAR(30) = NULL OUTPUT
 AS
 BEGIN
     SET NOCOUNT ON;
+    DECLARE @SeqVal INT = NEXT VALUE FOR dbo.Seq_EquipmentType;
 
-    -- Look up current sequence state safely without consuming the sequence value prematurely
-    IF EXISTS (SELECT 1 FROM sys.sequences WHERE name = 'Seq_ComboPackageID')
+    WHILE EXISTS (SELECT 1 FROM dbo.EquipmentType WHERE EquipmentTypeID = 'ETYP-' + RIGHT('0000' + CAST(@SeqVal AS VARCHAR(10)), 4))
     BEGIN
-        DECLARE @CurVal SQL_VARIANT;
-        SELECT @CurVal = current_value FROM sys.sequences WHERE name = 'Seq_ComboPackageID';
-
-        DECLARE @NextNum INT;
-        IF @CurVal IS NULL
-        BEGIN
-            SET @NextNum = 1;
-        END
-        ELSE
-        BEGIN
-            -- Check if any records exist in dbo.ComboPackage; if current_value has never been drawn, use start
-            DECLARE @ExistingCount INT = 0;
-            SELECT @ExistingCount = COUNT(*) FROM dbo.ComboPackage WHERE ComboPackageID LIKE 'PKG-%';
-
-            IF @ExistingCount = 0 AND CAST(@CurVal AS INT) <= 1
-                SET @NextNum = 1;
-            ELSE
-                SET @NextNum = CAST(@CurVal AS INT) + 1;
-        END;
-
-        SET @NextPackageID = CONCAT('PKG-', FORMAT(@NextNum, 'd4'));
+        SET @SeqVal = NEXT VALUE FOR dbo.Seq_EquipmentType;
     END
-    ELSE
-    BEGIN
-        DECLARE @MaxNum INT = 0;
-        SELECT @MaxNum = ISNULL(MAX(TRY_CAST(SUBSTRING(ComboPackageID, 5, 20) AS INT)), 0)
-        FROM dbo.ComboPackage WITH (NOLOCK)
-        WHERE ComboPackageID LIKE 'PKG-%';
 
-        SET @NextPackageID = CONCAT('PKG-', FORMAT(@MaxNum + 1, 'd4'));
-    END;
+    SET @NextID = 'ETYP-' + RIGHT('0000' + CAST(@SeqVal AS VARCHAR(10)), 4);
+    SELECT @NextID AS NextEquipmentTypeID;
 END;
 GO
 
--- 7.4 Retrieve Available Services (Main + Additional) for Bundling in Wizard Page 2
-CREATE OR ALTER PROCEDURE dbo.sp_GetAvailableServicesForBundling
-AS
-BEGIN
-    SET NOCOUNT ON;
-
-    -- Return Main Services (dbo.Services)
-    SELECT 
-        s.ServicesID AS ServiceId,
-        s.ServiceName AS ServiceName,
-        s.ServicesDescription AS ServiceDescription,
-        CAST(s.ServicePrice AS decimal(18,2)) AS Price,
-        N'Main' AS ServiceType,
-        CAST(CASE WHEN s.ServiceImage IS NOT NULL THEN 1 ELSE 0 END AS bit) AS HasImage
-    FROM dbo.Services s
-
-    UNION ALL
-
-    -- Return Additional Services (dbo.AdditionalServices)
-    SELECT 
-        a.AdditionalServicesID AS ServiceId,
-        a.AdditionalServiceName AS ServiceName,
-        a.AdditionalServicesDescription AS ServiceDescription,
-        CAST(0.00 AS decimal(18,2)) AS Price,
-        N'Additional' AS ServiceType,
-        CAST(CASE WHEN a.AdditionalServiceImage IS NOT NULL THEN 1 ELSE 0 END AS bit) AS HasImage
-    FROM dbo.AdditionalServices a
-    ORDER BY ServiceType DESC, ServiceName ASC;
-END;
-GO
-
--- 7.5 Retrieve Service Categories Lookup for Wizard Page 1 Dropdown
-CREATE OR ALTER PROCEDURE dbo.sp_GetServiceCategoriesLookup
-AS
-BEGIN
-    SET NOCOUNT ON;
-
-    IF OBJECT_ID(N'dbo.ServiceCategory', N'U') IS NOT NULL
-    BEGIN
-        SELECT 
-            ServiceCategoryID AS CategoryId,
-            ServiceCategoryName AS CategoryName,
-            ServiceCategoryDescription AS CategoryDescription
-        FROM dbo.ServiceCategory
-        ORDER BY ServiceCategoryName ASC;
-    END
-    ELSE
-    BEGIN
-        -- Empty result set if table does not exist
-        SELECT 
-            CAST('' AS nvarchar(30)) AS CategoryId,
-            CAST('' AS nvarchar(255)) AS CategoryName,
-            CAST('' AS nvarchar(255)) AS CategoryDescription
-        WHERE 1 = 0;
-    END
-END;
-GO
-
--- 7.6 Atomic Package Creation with Many-to-Many Bundled Services & Media
-CREATE OR ALTER PROCEDURE dbo.sp_CreateComboPackageWithServices
-    @ComboPackageName          nvarchar(255),
-    @ComboPackageDescription   nvarchar(max),
-    @ComboPackagePrice         decimal(18,2),
-    @ServiceCategoryID         nvarchar(30),
-    @ComboPackageImage         varbinary(max),
-    @ComboPackageImageMimeType nvarchar(100) = 'image/jpeg',
-    @SelectedServiceIDsJson    nvarchar(max), -- JSON array e.g., ["SRV-001", "ADD-002"]
-    @CreatedByAdminID          nvarchar(30)  = NULL,
-    @GeneratedPackageID        nvarchar(30)  OUTPUT
+CREATE OR ALTER PROCEDURE dbo.sp_CreateEquipmentType
+    @EquipmentTypeName nvarchar(255),
+    @EquipmentTypeID nvarchar(30) = NULL,
+    @CreatedByAdminID nvarchar(30) = NULL,
+    @GeneratedID nvarchar(30) = NULL OUTPUT
 AS
 BEGIN
     SET NOCOUNT ON;
@@ -1003,253 +415,56 @@ BEGIN
     BEGIN TRY
         BEGIN TRANSACTION;
 
-        -- 1. Acquire transaction-level application lock to guarantee strict concurrency isolation
-        DECLARE @LockResult INT;
-        EXEC @LockResult = sp_getapplock 
-            @Resource = 'ComboPackage_IdGen_Lock', 
-            @LockMode = 'Exclusive', 
-            @LockOwner = 'Transaction',
-            @LockTimeout = 10000;
-
-        IF @LockResult < 0
-        BEGIN
-            RAISERROR('Failed to acquire application lock for package ID generation.', 16, 1);
-            ROLLBACK TRANSACTION;
-            RETURN;
-        END;
-
-        -- 2. Generate atomic sequential ID via SQL Sequence
-        DECLARE @SeqNum INT;
-        IF EXISTS (SELECT 1 FROM sys.sequences WHERE name = 'Seq_ComboPackageID')
-        BEGIN
-            SET @SeqNum = NEXT VALUE FOR dbo.Seq_ComboPackageID;
-        END
-        ELSE
-        BEGIN
-            DECLARE @CurMax INT = 0;
-            SELECT @CurMax = ISNULL(MAX(TRY_CAST(SUBSTRING(ComboPackageID, 5, 20) AS INT)), 0)
-            FROM dbo.ComboPackage WITH (UPDLOCK, HOLDLOCK)
-            WHERE ComboPackageID LIKE 'PKG-%';
-            SET @SeqNum = @CurMax + 1;
-        END;
-
-        SET @GeneratedPackageID = CONCAT('PKG-', FORMAT(@SeqNum, 'd4'));
-
-        -- Ensure uniqueness if there were manual out-of-band inserts
-        WHILE EXISTS (SELECT 1 FROM dbo.ComboPackage WHERE ComboPackageID = @GeneratedPackageID)
-        BEGIN
-            IF EXISTS (SELECT 1 FROM sys.sequences WHERE name = 'Seq_ComboPackageID')
-                SET @SeqNum = NEXT VALUE FOR dbo.Seq_ComboPackageID;
-            ELSE
-                SET @SeqNum = @SeqNum + 1;
-
-            SET @GeneratedPackageID = CONCAT('PKG-', FORMAT(@SeqNum, 'd4'));
-        END;
-
-        -- 3. Insert Master ComboPackage Record
-        INSERT INTO dbo.ComboPackage (
-            ComboPackageID,
-            ComboPackageName,
-            ComboPackageDescription,
-            ComboPackagePrice,
-            ComboPackageImage,
-            ComboPackageImageMimeType
+        IF EXISTS (
+            SELECT 1 FROM dbo.EquipmentType 
+            WHERE LOWER(RTRIM(LTRIM(EquipmentTypeName))) = LOWER(RTRIM(LTRIM(@EquipmentTypeName)))
         )
-        VALUES (
-            @GeneratedPackageID,
-            @ComboPackageName,
-            @ComboPackageDescription,
-            @ComboPackagePrice,
-            @ComboPackageImage,
-            ISNULL(@ComboPackageImageMimeType, 'image/jpeg')
-        );
-
-        -- 4. Map Service Category Join
-        IF @ServiceCategoryID IS NOT NULL AND LEN(TRIM(@ServiceCategoryID)) > 0
         BEGIN
-            -- Ensure category exists
-            IF NOT EXISTS (SELECT 1 FROM dbo.ServiceCategory WHERE ServiceCategoryID = @ServiceCategoryID)
-            BEGIN
-                INSERT INTO dbo.ServiceCategory (ServiceCategoryID, ServiceCategoryName, ServiceCategoryDescription)
-                VALUES (@ServiceCategoryID, @ServiceCategoryID, @ServiceCategoryID);
-            END;
+            THROW 51001, 'An Equipment Type with this name already exists in the catalog.', 1;
+        END
 
-            DECLARE @CatJoinID nvarchar(30) = CONCAT('SCJ-', SUBSTRING(REPLACE(CAST(NEWID() AS nvarchar(36)), '-', ''), 1, 10));
-            INSERT INTO dbo.ServiceCategoryJoins (
-                ServiceCategoryJoinID,
-                ServiceCategoryID,
-                ServicesID,
-                AdditionalServicesID,
-                ComboPackageID
-            )
-            VALUES (
-                @CatJoinID,
-                @ServiceCategoryID,
-                NULL,
-                NULL,
-                @GeneratedPackageID
-            );
-        END;
-
-        -- 5. Insert Many-to-Many Service Mappings into dbo.ComboPackageJoin
-        IF @SelectedServiceIDsJson IS NOT NULL AND ISJSON(@SelectedServiceIDsJson) = 1
+        DECLARE @NewID NVARCHAR(30) = @EquipmentTypeID;
+        IF @NewID IS NULL OR LTRIM(RTRIM(@NewID)) = ''
         BEGIN
-            DECLARE @ParsedServices TABLE (SvcID nvarchar(30));
-            INSERT INTO @ParsedServices (SvcID)
-            SELECT DISTINCT value 
-            FROM OPENJSON(@SelectedServiceIDsJson)
-            WHERE value IS NOT NULL AND LEN(TRIM(value)) > 0;
+            DECLARE @SeqVal INT = NEXT VALUE FOR dbo.Seq_EquipmentType;
+            SET @NewID = 'ETYP-' + RIGHT('0000' + CAST(@SeqVal AS VARCHAR(10)), 4);
+        END
 
-            DECLARE @CurrSvcID nvarchar(30);
-            DECLARE svc_cur CURSOR LOCAL FAST_FORWARD FOR 
-                SELECT SvcID FROM @ParsedServices;
-
-            OPEN svc_cur;
-            FETCH NEXT FROM svc_cur INTO @CurrSvcID;
-
-            WHILE @@FETCH_STATUS = 0
-            BEGIN
-                DECLARE @JoinID nvarchar(30) = CONCAT('CPJ-', SUBSTRING(REPLACE(CAST(NEWID() AS nvarchar(36)), '-', ''), 1, 10));
-
-                -- Verify whether it belongs to Services or AdditionalServices
-                IF EXISTS (SELECT 1 FROM dbo.Services WHERE ServicesID = @CurrSvcID)
-                BEGIN
-                    INSERT INTO dbo.ComboPackageJoin (ComboPackageJoinID, ComboPackageID, ServicesID, AdditionalServicesID)
-                    VALUES (@JoinID, @GeneratedPackageID, @CurrSvcID, NULL);
-                END
-                ELSE IF EXISTS (SELECT 1 FROM dbo.AdditionalServices WHERE AdditionalServicesID = @CurrSvcID)
-                BEGIN
-                    INSERT INTO dbo.ComboPackageJoin (ComboPackageJoinID, ComboPackageID, ServicesID, AdditionalServicesID)
-                    VALUES (@JoinID, @GeneratedPackageID, NULL, @CurrSvcID);
-                END
-                ELSE
-                BEGIN
-                    -- Default fallback: map as ServicesID
-                    INSERT INTO dbo.ComboPackageJoin (ComboPackageJoinID, ComboPackageID, ServicesID, AdditionalServicesID)
-                    VALUES (@JoinID, @GeneratedPackageID, @CurrSvcID, NULL);
-                END;
-
-                FETCH NEXT FROM svc_cur INTO @CurrSvcID;
-            END;
-
-            CLOSE svc_cur;
-            DEALLOCATE svc_cur;
-        END;
-
-        -- 6. Audit Trail Logging in dbo.HistoryLog
-        IF OBJECT_ID(N'dbo.HistoryLog', N'U') IS NOT NULL
+        WHILE EXISTS (SELECT 1 FROM dbo.EquipmentType WITH (UPDLOCK, HOLDLOCK) WHERE EquipmentTypeID = @NewID)
         BEGIN
-            DECLARE @ActorAdminID nvarchar(30) = COALESCE(@CreatedByAdminID, 'SADM-001');
-            DECLARE @ActorRole nvarchar(20) = CASE WHEN @ActorAdminID LIKE 'SADM-%' THEN 'SystemAdmin' ELSE 'Admin' END;
+            DECLARE @NextSeqVal INT = NEXT VALUE FOR dbo.Seq_EquipmentType;
+            SET @NewID = 'ETYP-' + RIGHT('0000' + CAST(@NextSeqVal AS VARCHAR(10)), 4);
+        END
 
+        INSERT INTO dbo.EquipmentType (EquipmentTypeID, EquipmentTypeName)
+        VALUES (@NewID, RTRIM(LTRIM(@EquipmentTypeName)));
+
+        IF @CreatedByAdminID IS NOT NULL AND OBJECT_ID(N'dbo.HistoryLog', N'U') IS NOT NULL
+        BEGIN
             INSERT INTO dbo.HistoryLog (
-                ActionType,
-                EntityName,
-                EntityID,
-                ActionDetails,
-                ChangedByType,
-                ChangedByAdminID,
-                LoggedAt
+                ActionType, EntityName, EntityID, ActionDetails, ChangedByType, ChangedByAdminID, LoggedAt
             )
             VALUES (
-                'INSERT',
-                'ComboPackage',
-                @GeneratedPackageID,
-                CONCAT('Created Combo Package "', @ComboPackageName, '" (ID: ', @GeneratedPackageID, ') with price ', CAST(@ComboPackagePrice AS nvarchar(30))),
-                @ActorRole,
-                @ActorAdminID,
-                SYSUTCDATETIME()
+                'INSERT', 'EquipmentType', @NewID, 'Created new Equipment Type with atomic ETYP-#### ID generation.', 'Admin', @CreatedByAdminID, SYSUTCDATETIME()
             );
-        END;
+        END
 
         COMMIT TRANSACTION;
+        SET @GeneratedID = @NewID;
+
+        SELECT EquipmentTypeID, EquipmentTypeName FROM dbo.EquipmentType WHERE EquipmentTypeID = @NewID;
     END TRY
     BEGIN CATCH
-        IF @@TRANCOUNT > 0
-            ROLLBACK TRANSACTION;
+        IF @@TRANCOUNT > 0 ROLLBACK TRANSACTION;
         THROW;
-    END CATCH;
+    END CATCH
 END;
 GO
-
--- Update Admin: Enforces strict role-based mutation rules
-CREATE OR ALTER PROCEDURE dbo.sp_UpdateAdmin
-    @AdminID          nvarchar(30),
-    @AdminFirstName   nvarchar(255),
-    @AdminLastName    nvarchar(255),
-    @AdminMiddleName  nvarchar(255) = NULL,
-    @AdminEmail       nvarchar(255) = NULL,
-    @RequestingUserID nvarchar(30)
-AS
-BEGIN
-    SET NOCOUNT ON;
-
-    DECLARE @RequesterRole nvarchar(20) = NULL;
-    SELECT @RequesterRole = AdminRole FROM dbo.Admin WHERE AdminID = @RequestingUserID;
-    
-    DECLARE @IsSystemAdmin bit = 0;
-    IF (@RequestingUserID LIKE 'SADM-%' 
-        OR ISNULL(@RequesterRole, '') IN ('SystemAdmin', 'Super Admin')
-        OR EXISTS (SELECT 1 FROM dbo.SystemAdmin WHERE SystemAdminID = @RequestingUserID))
-    BEGIN
-        SET @IsSystemAdmin = 1;
-    END
-
-    -- Role "Admin" cannot edit ANY admin
-    IF @IsSystemAdmin = 0
-    BEGIN
-        RAISERROR('Permission Denied: Admins have read-only access and cannot edit administrator records.', 16, 1);
-        RETURN;
-    END
-
-    -- Role "System Admin" cannot edit other System Admins
-    DECLARE @TargetRole nvarchar(20) = NULL;
-    SELECT @TargetRole = AdminRole FROM dbo.Admin WHERE AdminID = @AdminID;
-
-    IF (@TargetRole IN ('SystemAdmin', 'Super Admin') OR @AdminID LIKE 'SADM-%')
-    BEGIN
-        IF UPPER(@AdminID) <> UPPER(@RequestingUserID)
-        BEGIN
-            RAISERROR('Permission Denied: Cannot edit the data of other System Admin users.', 16, 1);
-            RETURN;
-        END
-    END
-
-    UPDATE dbo.Admin
-    SET AdminFirstName = @AdminFirstName,
-        AdminLastName = @AdminLastName,
-        AdminMiddleName = @AdminMiddleName,
-        Email = @AdminEmail
-    WHERE AdminID = @AdminID;
-
-    IF EXISTS (SELECT 1 FROM dbo.SystemAdmin WHERE SystemAdminID = @AdminID)
-    BEGIN
-        UPDATE dbo.SystemAdmin
-        SET FirstName = @AdminFirstName,
-            LastName = @AdminLastName,
-            MiddleName = @AdminMiddleName
-        WHERE SystemAdminID = @AdminID;
-    END
-
-    INSERT INTO dbo.HistoryLog (
-        ActionType, EntityName, EntityID, ActionDetails, ChangedByType, ChangedByAdminID
-    )
-    VALUES (
-        'UPDATE', 'Admin', @AdminID, CONCAT('Updated Admin details for ', @AdminID),
-        'SystemAdmin', @RequestingUserID
-    );
-END;
-GO
-
--- ─────────────────────────────────────────────────────────────────────
--- 6. EQUIPMENT WIZARD STORED PROCEDURES & ATOMIC SEQUENTIAL ID (EQP-####)
--- ─────────────────────────────────────────────────────────────────────
 
 CREATE OR ALTER PROCEDURE dbo.sp_GetNextEquipmentIdPreview
 AS
 BEGIN
     SET NOCOUNT ON;
-
     DECLARE @NextVal INT;
 
     SELECT @NextVal = CAST(current_value AS INT)
@@ -1325,11 +540,7 @@ BEGIN
     BEGIN TRY
         IF @SerialNo IS NOT NULL
         BEGIN
-            IF EXISTS (
-                SELECT 1 
-                FROM dbo.Equipment WITH (UPDLOCK, HOLDLOCK) 
-                WHERE SerialNo = @SerialNo
-            )
+            IF EXISTS (SELECT 1 FROM dbo.Equipment WITH (UPDLOCK, HOLDLOCK) WHERE SerialNo = @SerialNo)
             BEGIN
                 RAISERROR('An equipment item with Serial Number ''%s'' already exists in inventory.', 16, 1, @SerialNo);
             END;
@@ -1345,58 +556,26 @@ BEGIN
         END;
 
         INSERT INTO dbo.Equipment (
-            EquipmentID,
-            EquipmentName,
-            EquipmentDescription,
-            EquipmentTypeID,
-            EquipmentStatus,
-            SerialNo,
-            ImagePath,
-            CreatedAt
+            EquipmentID, EquipmentName, EquipmentDescription, EquipmentTypeID, EquipmentStatus, SerialNo, ImagePath, CreatedAt
         )
         VALUES (
-            @AssignedEquipmentID,
-            @EquipmentName,
-            @EquipmentDescription,
-            @EquipmentTypeID,
-            'Available',
-            @SerialNo,
-            @ImagePath,
-            SYSUTCDATETIME()
+            @AssignedEquipmentID, @EquipmentName, @EquipmentDescription, @EquipmentTypeID, 'Available', @SerialNo, @ImagePath, SYSUTCDATETIME()
         );
 
         IF OBJECT_ID(N'dbo.HistoryLog', N'U') IS NOT NULL
         BEGIN
             INSERT INTO dbo.HistoryLog (
-                ActionType,
-                EntityName,
-                ActionDetails,
-                ChangedByType,
-                ChangedByAdminID,
-                LoggedAt
+                ActionType, EntityName, ActionDetails, ChangedByType, ChangedByAdminID, LoggedAt
             )
             VALUES (
-                'INSERT',
-                'Equipment',
-                'Registered equipment ''' + @EquipmentName + ''' (' + @AssignedEquipmentID + ') with Category ''' + @EquipmentTypeID + '''.',
-                'Admin',
-                ISNULL(@CreatedByAdminID, 'ADM-001'),
-                SYSUTCDATETIME()
+                'INSERT', 'Equipment', 'Registered equipment ''' + @EquipmentName + ''' (' + @AssignedEquipmentID + ') with Category ''' + @EquipmentTypeID + '''.', 'Admin', ISNULL(@CreatedByAdminID, 'ADM-001'), SYSUTCDATETIME()
             );
         END;
 
         COMMIT TRANSACTION;
 
         SELECT 
-            e.EquipmentID,
-            e.EquipmentName,
-            e.EquipmentDescription,
-            e.EquipmentTypeID,
-            et.EquipmentTypeName,
-            e.EquipmentStatus,
-            e.SerialNo,
-            e.ImagePath,
-            e.CreatedAt
+            e.EquipmentID, e.EquipmentName, e.EquipmentDescription, e.EquipmentTypeID, et.EquipmentTypeName, e.EquipmentStatus, e.SerialNo, e.ImagePath, e.CreatedAt
         FROM dbo.Equipment e
         LEFT JOIN dbo.EquipmentType et ON et.EquipmentTypeID = e.EquipmentTypeID
         WHERE e.EquipmentID = @AssignedEquipmentID;
@@ -1404,16 +583,732 @@ BEGIN
         RETURN 0;
     END TRY
     BEGIN CATCH
-        IF @@TRANCOUNT > 0
-            ROLLBACK TRANSACTION;
-
+        IF @@TRANCOUNT > 0 ROLLBACK TRANSACTION;
         DECLARE @ErrorMessage NVARCHAR(4000) = ERROR_MESSAGE();
         DECLARE @ErrorSeverity INT = ERROR_SEVERITY();
         DECLARE @ErrorState INT = ERROR_STATE();
-
         RAISERROR(@ErrorMessage, @ErrorSeverity, @ErrorState);
         RETURN -99;
     END CATCH;
 END;
 GO
 
+CREATE OR ALTER PROCEDURE dbo.sp_AssignEquipmentToEvent
+    @EventAppointmentID nvarchar(30),
+    @EquipmentID nvarchar(30)
+AS
+BEGIN
+    SET NOCOUNT ON;
+    IF NOT EXISTS (SELECT 1 FROM dbo.EventEquipment WHERE EventAppointmentID = @EventAppointmentID AND EquipmentID = @EquipmentID)
+    BEGIN
+        INSERT INTO dbo.EventEquipment (EventAppointmentID, EquipmentID)
+        VALUES (@EventAppointmentID, @EquipmentID);
+    END
+END;
+GO
+
+/* =====================================================================
+   4. CATALOG & CATEGORY MANAGEMENT
+   ===================================================================== */
+
+CREATE OR ALTER PROCEDURE dbo.sp_GetNextServiceID
+    @NextServiceID nvarchar(30) = NULL OUTPUT
+AS
+BEGIN
+    SET NOCOUNT ON;
+    DECLARE @MaxNum INT = 0;
+    SELECT @MaxNum = ISNULL(MAX(TRY_CAST(SUBSTRING(ServicesID, CHARINDEX('-', ServicesID) + 1, 20) AS INT)), 0)
+    FROM dbo.Services WITH (UPDLOCK, HOLDLOCK)
+    WHERE ServicesID LIKE 'SRV-%';
+
+    SET @NextServiceID = 'SRV-' + RIGHT('0000' + CAST((@MaxNum + 1) AS VARCHAR(10)), 4);
+    SELECT @NextServiceID AS NextServiceID;
+END;
+GO
+
+CREATE OR ALTER PROCEDURE dbo.sp_GetNextCategoryID
+    @NextCategoryID nvarchar(30) = NULL OUTPUT
+AS
+BEGIN
+    SET NOCOUNT ON;
+    DECLARE @MaxNum INT = 0;
+    SELECT @MaxNum = ISNULL(MAX(TRY_CAST(SUBSTRING(ServiceCategoryID, CHARINDEX('-', ServiceCategoryID) + 1, 20) AS INT)), 0)
+    FROM dbo.ServiceCategory WITH (UPDLOCK, HOLDLOCK)
+    WHERE ServiceCategoryID LIKE 'CAT-%';
+
+    SET @NextCategoryID = 'CAT-' + RIGHT('0000' + CAST((@MaxNum + 1) AS VARCHAR(10)), 4);
+    SELECT @NextCategoryID AS NextCategoryID;
+END;
+GO
+
+CREATE OR ALTER PROCEDURE dbo.sp_GetServiceCategories
+AS
+BEGIN
+    SET NOCOUNT ON;
+    SELECT ServiceCategoryID, ServiceCategoryName, ServiceCategoryDescription
+    FROM dbo.ServiceCategory
+    ORDER BY ServiceCategoryName;
+END;
+GO
+
+CREATE OR ALTER PROCEDURE dbo.sp_CreateServiceCategory
+    @ServiceCategoryName        nvarchar(255),
+    @ServiceCategoryDescription nvarchar(255),
+    @CreatedByAdminID           nvarchar(30)  = NULL,
+    @CreatedCategoryID          nvarchar(30)  = NULL OUTPUT
+AS
+BEGIN
+    SET NOCOUNT ON;
+    SET XACT_ABORT ON;
+
+    BEGIN TRANSACTION;
+    BEGIN TRY
+        DECLARE @MaxNum INT = 0;
+        SELECT @MaxNum = ISNULL(MAX(TRY_CAST(SUBSTRING(ServiceCategoryID, CHARINDEX('-', ServiceCategoryID) + 1, 20) AS INT)), 0)
+        FROM dbo.ServiceCategory WITH (UPDLOCK, HOLDLOCK)
+        WHERE ServiceCategoryID LIKE 'CAT-%';
+
+        SET @CreatedCategoryID = 'CAT-' + RIGHT('0000' + CAST((@MaxNum + 1) AS VARCHAR(10)), 4);
+
+        WHILE EXISTS (SELECT 1 FROM dbo.ServiceCategory WHERE ServiceCategoryID = @CreatedCategoryID)
+        BEGIN
+            SET @MaxNum = @MaxNum + 1;
+            SET @CreatedCategoryID = 'CAT-' + RIGHT('0000' + CAST((@MaxNum + 1) AS VARCHAR(10)), 4);
+        END
+
+        INSERT INTO dbo.ServiceCategory (
+            ServiceCategoryID, ServiceCategoryName, ServiceCategoryDescription
+        )
+        VALUES (
+            @CreatedCategoryID, @ServiceCategoryName, @ServiceCategoryDescription
+        );
+
+        IF OBJECT_ID(N'dbo.sp_AddHistoryLog', N'P') IS NOT NULL
+        BEGIN
+            EXEC dbo.sp_AddHistoryLog
+                @ActionType = 'CREATE',
+                @EntityName = 'ServiceCategory',
+                @EntityID = @CreatedCategoryID,
+                @ActionDetails = 'New service category created via Wizard.',
+                @ChangedByType = 'Admin',
+                @ActorID = @CreatedByAdminID;
+        END
+
+        COMMIT TRANSACTION;
+
+        SELECT ServiceCategoryID, ServiceCategoryName, ServiceCategoryDescription
+        FROM dbo.ServiceCategory
+        WHERE ServiceCategoryID = @CreatedCategoryID;
+
+    END TRY
+    BEGIN CATCH
+        IF @@TRANCOUNT > 0 ROLLBACK TRANSACTION;
+        THROW;
+    END CATCH
+END;
+GO
+
+CREATE OR ALTER PROCEDURE dbo.sp_CreateService
+    @ServiceName           nvarchar(255),
+    @ServicesDescription   nvarchar(255),
+    @ServicePrice          money,
+    @ServiceCategoryID     nvarchar(30)   = NULL,
+    @ServiceImage          varbinary(max) = NULL,
+    @ServiceImageMimeType  nvarchar(100)  = 'image/jpeg',
+    @CreatedByAdminID      nvarchar(30)   = NULL,
+    @CreatedServiceID      nvarchar(30)   = NULL OUTPUT
+AS
+BEGIN
+    SET NOCOUNT ON;
+    SET XACT_ABORT ON;
+
+    BEGIN TRANSACTION;
+    BEGIN TRY
+        DECLARE @MaxNum INT = 0;
+        SELECT @MaxNum = ISNULL(MAX(TRY_CAST(SUBSTRING(ServicesID, CHARINDEX('-', ServicesID) + 1, 20) AS INT)), 0)
+        FROM dbo.Services WITH (UPDLOCK, HOLDLOCK)
+        WHERE ServicesID LIKE 'SRV-%';
+
+        SET @CreatedServiceID = 'SRV-' + RIGHT('0000' + CAST((@MaxNum + 1) AS VARCHAR(10)), 4);
+
+        WHILE EXISTS (SELECT 1 FROM dbo.Services WHERE ServicesID = @CreatedServiceID)
+        BEGIN
+            SET @MaxNum = @MaxNum + 1;
+            SET @CreatedServiceID = 'SRV-' + RIGHT('0000' + CAST((@MaxNum + 1) AS VARCHAR(10)), 4);
+        END
+
+        INSERT INTO dbo.Services (
+            ServicesID, ServiceName, ServicesDescription, ServicePrice, ServiceImage, ServiceImageMimeType
+        )
+        VALUES (
+            @CreatedServiceID, @ServiceName, @ServicesDescription, @ServicePrice, @ServiceImage, @ServiceImageMimeType
+        );
+
+        IF @ServiceCategoryID IS NOT NULL AND RTRIM(LTRIM(@ServiceCategoryID)) <> ''
+        BEGIN
+            IF EXISTS (SELECT 1 FROM dbo.ServiceCategory WHERE ServiceCategoryID = @ServiceCategoryID)
+            BEGIN
+                DECLARE @JoinID NVARCHAR(30) = 'SCJ-' + RIGHT('0000' + CAST((@MaxNum + 1) AS VARCHAR(10)), 4);
+                IF EXISTS (SELECT 1 FROM dbo.ServiceCategoryJoins WHERE ServiceCategoryJoinID = @JoinID)
+                BEGIN
+                    SET @JoinID = 'SCJ-' + SUBSTRING(CONVERT(NVARCHAR(36), NEWID()), 1, 8);
+                END
+
+                INSERT INTO dbo.ServiceCategoryJoins (
+                    ServiceCategoryJoinID, ServiceCategoryID, ServicesID
+                )
+                VALUES (
+                    @JoinID, @ServiceCategoryID, @CreatedServiceID
+                );
+            END
+        END
+
+        IF OBJECT_ID(N'dbo.sp_AddHistoryLog', N'P') IS NOT NULL
+        BEGIN
+            EXEC dbo.sp_AddHistoryLog
+                @ActionType = 'CREATE',
+                @EntityName = 'Services',
+                @EntityID = @CreatedServiceID,
+                @ActionDetails = 'New main service created via Wizard.',
+                @ChangedByType = 'Admin',
+                @ActorID = @CreatedByAdminID;
+        END
+
+        COMMIT TRANSACTION;
+
+        SELECT 
+            s.ServicesID, s.ServiceName, s.ServicesDescription, s.ServicePrice, 
+            @ServiceCategoryID AS ServiceCategoryID, c.ServiceCategoryName, 
+            CAST(CASE WHEN s.ServiceImage IS NOT NULL THEN 1 ELSE 0 END AS bit) AS HasImage
+        FROM dbo.Services s
+        LEFT JOIN dbo.ServiceCategory c ON c.ServiceCategoryID = @ServiceCategoryID
+        WHERE s.ServicesID = @CreatedServiceID;
+
+    END TRY
+    BEGIN CATCH
+        IF @@TRANCOUNT > 0 ROLLBACK TRANSACTION;
+        THROW;
+    END CATCH
+END;
+GO
+
+CREATE OR ALTER PROCEDURE dbo.sp_AddServiceCategoryJoin
+    @ServiceCategoryJoinID nvarchar(30),
+    @ServiceCategoryID nvarchar(30),
+    @ServicesID nvarchar(30) = NULL,
+    @AdditionalServicesID nvarchar(30) = NULL,
+    @ComboPackageID nvarchar(30) = NULL
+AS
+BEGIN
+    SET NOCOUNT ON;
+    INSERT INTO dbo.ServiceCategoryJoins (
+        ServiceCategoryJoinID, ServiceCategoryID, ServicesID, AdditionalServicesID, ComboPackageID
+    )
+    VALUES (
+        @ServiceCategoryJoinID, @ServiceCategoryID, @ServicesID, @AdditionalServicesID, @ComboPackageID
+    );
+END;
+GO
+
+/* =====================================================================
+   5. SERVICE & CATALOG IMAGES 
+   ===================================================================== */
+
+CREATE OR ALTER PROCEDURE dbo.sp_GetServicesSummary
+AS
+BEGIN
+    SET NOCOUNT ON;
+    SELECT 
+        ServicesID, ServiceName, ServicesDescription, ServicePrice,
+        CAST(CASE WHEN ServiceImage IS NOT NULL THEN 1 ELSE 0 END AS bit) AS HasImage
+    FROM dbo.Services
+    ORDER BY ServicesID;
+END;
+GO
+
+CREATE OR ALTER PROCEDURE dbo.sp_GetServiceDetailWithImage
+    @ServicesID nvarchar(30)
+AS
+BEGIN
+    SET NOCOUNT ON;
+    SELECT 
+        ServicesID, ServiceName, ServicesDescription, ServicePrice, ServiceImage,
+        ISNULL(ServiceImageMimeType, 'image/jpeg') AS ServiceImageMimeType,
+        CAST(CASE WHEN ServiceImage IS NOT NULL THEN 1 ELSE 0 END AS bit) AS HasImage
+    FROM dbo.Services
+    WHERE ServicesID = @ServicesID;
+END;
+GO
+
+CREATE OR ALTER PROCEDURE dbo.sp_UpdateServiceImage
+    @ServicesID           nvarchar(30),
+    @ServiceImage         varbinary(max),
+    @ServiceImageMimeType nvarchar(100) = 'image/jpeg',
+    @UpdatedByAdminID     nvarchar(30)  = NULL
+AS
+BEGIN
+    SET NOCOUNT ON;
+    UPDATE dbo.Services
+    SET ServiceImage = @ServiceImage,
+        ServiceImageMimeType = @ServiceImageMimeType
+    WHERE ServicesID = @ServicesID;
+
+    IF @UpdatedByAdminID IS NOT NULL
+    BEGIN
+        DECLARE @ActorType nvarchar(20) = CASE WHEN @UpdatedByAdminID LIKE 'SADM-%' THEN 'SystemAdmin' ELSE 'Admin' END;
+        EXEC dbo.sp_AddHistoryLog 
+            @ActionType = 'IMAGE_UPLOAD', @EntityName = 'Services', @EntityID = @ServicesID, 
+            @ActionDetails = 'Service image attached/updated via Image Wizard.', @ChangedByType = @ActorType, @ActorID = @UpdatedByAdminID;
+    END
+END;
+GO
+
+CREATE OR ALTER PROCEDURE dbo.sp_GetNextAdditionalServiceID
+    @NextID NVARCHAR(30) = NULL OUTPUT
+AS
+BEGIN
+    SET NOCOUNT ON;
+    DECLARE @CurVal SQL_VARIANT;
+    SELECT @CurVal = current_value FROM sys.sequences WHERE name = 'Seq_AdditionalServicesID' AND schema_id = SCHEMA_ID('dbo');
+    
+    DECLARE @SeqVal INT = ISNULL(CAST(@CurVal AS INT), 1);
+
+    WHILE EXISTS (SELECT 1 FROM dbo.AdditionalServices WHERE AdditionalServicesID = 'ADD-' + RIGHT('0000' + CAST(@SeqVal AS VARCHAR(10)), 4))
+    BEGIN
+        SET @SeqVal = @SeqVal + 1;
+    END
+    
+    SET @NextID = 'ADD-' + RIGHT('0000' + CAST(@SeqVal AS VARCHAR(10)), 4);
+    SELECT @NextID AS NextAdditionalServiceID;
+END;
+GO
+
+CREATE OR ALTER PROCEDURE dbo.sp_CreateAdditionalService
+    @AdditionalServiceName nvarchar(255),
+    @AdditionalServicesDescription nvarchar(255),
+    @ServicePrice decimal(18,2) = 0.00,
+    @CategoryName nvarchar(100) = NULL,
+    @AdditionalServiceImage varbinary(max) = NULL,
+    @AdditionalServiceImageMimeType nvarchar(100) = 'image/jpeg',
+    @CreatedByAdminID nvarchar(30) = NULL,
+    @GeneratedID nvarchar(30) = NULL OUTPUT
+AS
+BEGIN
+    SET NOCOUNT ON;
+    SET XACT_ABORT ON;
+
+    BEGIN TRANSACTION;
+    
+    DECLARE @SeqVal INT = NEXT VALUE FOR dbo.Seq_AdditionalServicesID;
+    DECLARE @NewID NVARCHAR(30) = 'ADD-' + RIGHT('0000' + CAST(@SeqVal AS VARCHAR(10)), 4);
+
+    WHILE EXISTS (SELECT 1 FROM dbo.AdditionalServices WITH (UPDLOCK, HOLDLOCK) WHERE AdditionalServicesID = @NewID)
+    BEGIN
+        SET @SeqVal = NEXT VALUE FOR dbo.Seq_AdditionalServicesID;
+        SET @NewID = 'ADD-' + RIGHT('0000' + CAST(@SeqVal AS VARCHAR(10)), 4);
+    END
+
+    INSERT INTO dbo.AdditionalServices (
+        AdditionalServicesID, AdditionalServiceName, AdditionalServicesDescription, ServicePrice, CategoryName, AdditionalServiceImage, AdditionalServiceImageMimeType, CreatedAt
+    )
+    VALUES (
+        @NewID, @AdditionalServiceName, @AdditionalServicesDescription, @ServicePrice, @CategoryName, @AdditionalServiceImage, @AdditionalServiceImageMimeType, SYSUTCDATETIME()
+    );
+
+    IF @CreatedByAdminID IS NOT NULL
+    BEGIN
+        DECLARE @ActorType nvarchar(20) = CASE WHEN @CreatedByAdminID LIKE 'SADM-%' THEN 'SystemAdmin' ELSE 'Admin' END;
+        IF OBJECT_ID(N'dbo.sp_AddHistoryLog', N'P') IS NOT NULL
+        BEGIN
+            EXEC dbo.sp_AddHistoryLog 
+                @ActionType = 'CREATE', @EntityName = 'AdditionalServices', @EntityID = @NewID, 
+                @ActionDetails = 'Created new Additional Service with atomic ADD-#### ID generation and media upload.', @ChangedByType = @ActorType, @ActorID = @CreatedByAdminID;
+        END
+    END
+
+    COMMIT TRANSACTION;
+    SET @GeneratedID = @NewID;
+    SELECT @NewID AS AdditionalServicesID;
+END;
+GO
+
+CREATE OR ALTER PROCEDURE dbo.sp_GetAdditionalServicesSummary
+AS
+BEGIN
+    SET NOCOUNT ON;
+    SELECT 
+        AdditionalServicesID, AdditionalServiceName, AdditionalServicesDescription,
+        ISNULL(ServicePrice, 0.00) AS ServicePrice, ISNULL(CategoryName, 'Add-On') AS CategoryName,
+        CAST(CASE WHEN AdditionalServiceImage IS NOT NULL THEN 1 ELSE 0 END AS bit) AS HasImage
+    FROM dbo.AdditionalServices
+    ORDER BY AdditionalServicesID;
+END;
+GO
+
+CREATE OR ALTER PROCEDURE dbo.sp_GetAdditionalServiceDetailWithImage
+    @AdditionalServicesID nvarchar(30)
+AS
+BEGIN
+    SET NOCOUNT ON;
+    SELECT 
+        AdditionalServicesID, AdditionalServiceName, AdditionalServicesDescription,
+        ISNULL(ServicePrice, 0.00) AS ServicePrice, ISNULL(CategoryName, 'Add-On') AS CategoryName,
+        AdditionalServiceImage, ISNULL(AdditionalServiceImageMimeType, 'image/jpeg') AS AdditionalServiceImageMimeType,
+        CAST(CASE WHEN AdditionalServiceImage IS NOT NULL THEN 1 ELSE 0 END AS bit) AS HasImage
+    FROM dbo.AdditionalServices
+    WHERE AdditionalServicesID = @AdditionalServicesID;
+END;
+GO
+
+CREATE OR ALTER PROCEDURE dbo.sp_UpdateAdditionalServiceImage
+    @AdditionalServicesID           nvarchar(30),
+    @AdditionalServiceImage         varbinary(max),
+    @AdditionalServiceImageMimeType nvarchar(100) = 'image/jpeg',
+    @UpdatedByAdminID               nvarchar(30)  = NULL
+AS
+BEGIN
+    SET NOCOUNT ON;
+    UPDATE dbo.AdditionalServices
+    SET AdditionalServiceImage = @AdditionalServiceImage,
+        AdditionalServiceImageMimeType = @AdditionalServiceImageMimeType
+    WHERE AdditionalServicesID = @AdditionalServicesID;
+
+    IF @UpdatedByAdminID IS NOT NULL
+    BEGIN
+        DECLARE @ActorType nvarchar(20) = CASE WHEN @UpdatedByAdminID LIKE 'SADM-%' THEN 'SystemAdmin' ELSE 'Admin' END;
+        EXEC dbo.sp_AddHistoryLog 
+            @ActionType = 'IMAGE_UPLOAD', @EntityName = 'AdditionalServices', @EntityID = @AdditionalServicesID, 
+            @ActionDetails = 'Additional service image attached/updated via Image Wizard.', @ChangedByType = @ActorType, @ActorID = @UpdatedByAdminID;
+    END
+END;
+GO
+
+/* =====================================================================
+   6. COMBO PACKAGES
+   ===================================================================== */
+
+CREATE OR ALTER PROCEDURE dbo.sp_GetNextComboPackageId
+    @NextPackageID nvarchar(30) OUTPUT
+AS
+BEGIN
+    SET NOCOUNT ON;
+    IF EXISTS (SELECT 1 FROM sys.sequences WHERE name = 'Seq_ComboPackageID')
+    BEGIN
+        DECLARE @CurVal SQL_VARIANT;
+        SELECT @CurVal = current_value FROM sys.sequences WHERE name = 'Seq_ComboPackageID';
+        DECLARE @NextNum INT;
+        IF @CurVal IS NULL
+        BEGIN
+            SET @NextNum = 1;
+        END
+        ELSE
+        BEGIN
+            DECLARE @ExistingCount INT = 0;
+            SELECT @ExistingCount = COUNT(*) FROM dbo.ComboPackage WHERE ComboPackageID LIKE 'PKG-%';
+            IF @ExistingCount = 0 AND CAST(@CurVal AS INT) <= 1
+                SET @NextNum = 1;
+            ELSE
+                SET @NextNum = CAST(@CurVal AS INT) + 1;
+        END;
+        SET @NextPackageID = CONCAT('PKG-', FORMAT(@NextNum, 'd4'));
+    END
+    ELSE
+    BEGIN
+        DECLARE @MaxNum INT = 0;
+        SELECT @MaxNum = ISNULL(MAX(TRY_CAST(SUBSTRING(ComboPackageID, 5, 20) AS INT)), 0)
+        FROM dbo.ComboPackage WITH (NOLOCK)
+        WHERE ComboPackageID LIKE 'PKG-%';
+        SET @NextPackageID = CONCAT('PKG-', FORMAT(@MaxNum + 1, 'd4'));
+    END;
+END;
+GO
+
+CREATE OR ALTER PROCEDURE dbo.sp_GetAvailableServicesForBundling
+AS
+BEGIN
+    SET NOCOUNT ON;
+    SELECT 
+        s.ServicesID AS ServiceId, s.ServiceName AS ServiceName, s.ServicesDescription AS ServiceDescription,
+        CAST(s.ServicePrice AS decimal(18,2)) AS Price, N'Main' AS ServiceType,
+        CAST(CASE WHEN s.ServiceImage IS NOT NULL THEN 1 ELSE 0 END AS bit) AS HasImage
+    FROM dbo.Services s
+    UNION ALL
+    SELECT 
+        a.AdditionalServicesID AS ServiceId, a.AdditionalServiceName AS ServiceName, a.AdditionalServicesDescription AS ServiceDescription,
+        CAST(0.00 AS decimal(18,2)) AS Price, N'Additional' AS ServiceType,
+        CAST(CASE WHEN a.AdditionalServiceImage IS NOT NULL THEN 1 ELSE 0 END AS bit) AS HasImage
+    FROM dbo.AdditionalServices a
+    ORDER BY ServiceType DESC, ServiceName ASC;
+END;
+GO
+
+CREATE OR ALTER PROCEDURE dbo.sp_GetServiceCategoriesLookup
+AS
+BEGIN
+    SET NOCOUNT ON;
+    IF OBJECT_ID(N'dbo.ServiceCategory', N'U') IS NOT NULL
+    BEGIN
+        SELECT ServiceCategoryID AS CategoryId, ServiceCategoryName AS CategoryName, ServiceCategoryDescription AS CategoryDescription
+        FROM dbo.ServiceCategory
+        ORDER BY ServiceCategoryName ASC;
+    END
+    ELSE
+    BEGIN
+        SELECT CAST('' AS nvarchar(30)) AS CategoryId, CAST('' AS nvarchar(255)) AS CategoryName, CAST('' AS nvarchar(255)) AS CategoryDescription
+        WHERE 1 = 0;
+    END
+END;
+GO
+
+CREATE OR ALTER PROCEDURE dbo.sp_CreateComboPackageWithServices
+    @ComboPackageName          nvarchar(255),
+    @ComboPackageDescription   nvarchar(max),
+    @ComboPackagePrice         decimal(18,2),
+    @ServiceCategoryID         nvarchar(30),
+    @ComboPackageImage         varbinary(max),
+    @ComboPackageImageMimeType nvarchar(100) = 'image/jpeg',
+    @SelectedServiceIDsJson    nvarchar(max),
+    @CreatedByAdminID          nvarchar(30)  = NULL,
+    @GeneratedPackageID        nvarchar(30)  OUTPUT
+AS
+BEGIN
+    SET NOCOUNT ON;
+    SET XACT_ABORT ON;
+    BEGIN TRY
+        BEGIN TRANSACTION;
+
+        DECLARE @LockResult INT;
+        EXEC @LockResult = sp_getapplock @Resource = 'ComboPackage_IdGen_Lock', @LockMode = 'Exclusive', @LockOwner = 'Transaction', @LockTimeout = 10000;
+
+        IF @LockResult < 0
+        BEGIN
+            RAISERROR('Failed to acquire application lock for package ID generation.', 16, 1);
+            ROLLBACK TRANSACTION;
+            RETURN;
+        END;
+
+        DECLARE @SeqNum INT;
+        IF EXISTS (SELECT 1 FROM sys.sequences WHERE name = 'Seq_ComboPackageID')
+        BEGIN
+            SET @SeqNum = NEXT VALUE FOR dbo.Seq_ComboPackageID;
+        END
+        ELSE
+        BEGIN
+            DECLARE @CurMax INT = 0;
+            SELECT @CurMax = ISNULL(MAX(TRY_CAST(SUBSTRING(ComboPackageID, 5, 20) AS INT)), 0)
+            FROM dbo.ComboPackage WITH (UPDLOCK, HOLDLOCK)
+            WHERE ComboPackageID LIKE 'PKG-%';
+            SET @SeqNum = @CurMax + 1;
+        END;
+
+        SET @GeneratedPackageID = CONCAT('PKG-', FORMAT(@SeqNum, 'd4'));
+
+        WHILE EXISTS (SELECT 1 FROM dbo.ComboPackage WHERE ComboPackageID = @GeneratedPackageID)
+        BEGIN
+            IF EXISTS (SELECT 1 FROM sys.sequences WHERE name = 'Seq_ComboPackageID')
+                SET @SeqNum = NEXT VALUE FOR dbo.Seq_ComboPackageID;
+            ELSE
+                SET @SeqNum = @SeqNum + 1;
+            SET @GeneratedPackageID = CONCAT('PKG-', FORMAT(@SeqNum, 'd4'));
+        END;
+
+        INSERT INTO dbo.ComboPackage (
+            ComboPackageID, ComboPackageName, ComboPackageDescription, ComboPackagePrice, ComboPackageImage, ComboPackageImageMimeType
+        )
+        VALUES (
+            @GeneratedPackageID, @ComboPackageName, @ComboPackageDescription, @ComboPackagePrice, @ComboPackageImage, ISNULL(@ComboPackageImageMimeType, 'image/jpeg')
+        );
+
+        IF @ServiceCategoryID IS NOT NULL AND LEN(TRIM(@ServiceCategoryID)) > 0
+        BEGIN
+            IF NOT EXISTS (SELECT 1 FROM dbo.ServiceCategory WHERE ServiceCategoryID = @ServiceCategoryID)
+            BEGIN
+                INSERT INTO dbo.ServiceCategory (ServiceCategoryID, ServiceCategoryName, ServiceCategoryDescription)
+                VALUES (@ServiceCategoryID, @ServiceCategoryID, @ServiceCategoryID);
+            END;
+
+            DECLARE @CatJoinID nvarchar(30) = CONCAT('SCJ-', SUBSTRING(REPLACE(CAST(NEWID() AS nvarchar(36)), '-', ''), 1, 10));
+            INSERT INTO dbo.ServiceCategoryJoins (ServiceCategoryJoinID, ServiceCategoryID, ServicesID, AdditionalServicesID, ComboPackageID)
+            VALUES (@CatJoinID, @ServiceCategoryID, NULL, NULL, @GeneratedPackageID);
+        END;
+
+        IF @SelectedServiceIDsJson IS NOT NULL AND ISJSON(@SelectedServiceIDsJson) = 1
+        BEGIN
+            DECLARE @ParsedServices TABLE (SvcID nvarchar(30));
+            INSERT INTO @ParsedServices (SvcID)
+            SELECT DISTINCT value FROM OPENJSON(@SelectedServiceIDsJson)
+            WHERE value IS NOT NULL AND LEN(TRIM(value)) > 0;
+
+            DECLARE @CurrSvcID nvarchar(30);
+            DECLARE svc_cur CURSOR LOCAL FAST_FORWARD FOR SELECT SvcID FROM @ParsedServices;
+
+            OPEN svc_cur;
+            FETCH NEXT FROM svc_cur INTO @CurrSvcID;
+
+            WHILE @@FETCH_STATUS = 0
+            BEGIN
+                DECLARE @JoinID nvarchar(30) = CONCAT('CPJ-', SUBSTRING(REPLACE(CAST(NEWID() AS nvarchar(36)), '-', ''), 1, 10));
+
+                IF EXISTS (SELECT 1 FROM dbo.Services WHERE ServicesID = @CurrSvcID)
+                BEGIN
+                    INSERT INTO dbo.ComboPackageJoin (ComboPackageJoinID, ComboPackageID, ServicesID, AdditionalServicesID)
+                    VALUES (@JoinID, @GeneratedPackageID, @CurrSvcID, NULL);
+                END
+                ELSE IF EXISTS (SELECT 1 FROM dbo.AdditionalServices WHERE AdditionalServicesID = @CurrSvcID)
+                BEGIN
+                    INSERT INTO dbo.ComboPackageJoin (ComboPackageJoinID, ComboPackageID, ServicesID, AdditionalServicesID)
+                    VALUES (@JoinID, @GeneratedPackageID, NULL, @CurrSvcID);
+                END
+                ELSE
+                BEGIN
+                    INSERT INTO dbo.ComboPackageJoin (ComboPackageJoinID, ComboPackageID, ServicesID, AdditionalServicesID)
+                    VALUES (@JoinID, @GeneratedPackageID, @CurrSvcID, NULL);
+                END;
+
+                FETCH NEXT FROM svc_cur INTO @CurrSvcID;
+            END;
+            CLOSE svc_cur;
+            DEALLOCATE svc_cur;
+        END;
+
+        IF OBJECT_ID(N'dbo.HistoryLog', N'U') IS NOT NULL
+        BEGIN
+            DECLARE @ActorAdminID nvarchar(30) = COALESCE(@CreatedByAdminID, 'SADM-001');
+            DECLARE @ActorRole nvarchar(20) = CASE WHEN @ActorAdminID LIKE 'SADM-%' THEN 'SystemAdmin' ELSE 'Admin' END;
+
+            INSERT INTO dbo.HistoryLog (
+                ActionType, EntityName, EntityID, ActionDetails, ChangedByType, ChangedByAdminID, LoggedAt
+            )
+            VALUES (
+                'INSERT', 'ComboPackage', @GeneratedPackageID, CONCAT('Created Combo Package "', @ComboPackageName, '" (ID: ', @GeneratedPackageID, ') with price ', CAST(@ComboPackagePrice AS nvarchar(30))), @ActorRole, @ActorAdminID, SYSUTCDATETIME()
+            );
+        END;
+
+        COMMIT TRANSACTION;
+    END TRY
+    BEGIN CATCH
+        IF @@TRANCOUNT > 0 ROLLBACK TRANSACTION;
+        THROW;
+    END CATCH;
+END;
+GO
+
+CREATE OR ALTER PROCEDURE dbo.sp_GetComboPackagesSummary
+AS
+BEGIN
+    SET NOCOUNT ON;
+    SELECT 
+        ComboPackageID, ComboPackageName, ComboPackageDescription,
+        CAST(CASE WHEN ComboPackageImage IS NOT NULL THEN 1 ELSE 0 END AS bit) AS HasImage
+    FROM dbo.ComboPackage
+    ORDER BY ComboPackageID;
+END;
+GO
+
+CREATE OR ALTER PROCEDURE dbo.sp_GetComboPackageDetailWithImage
+    @ComboPackageID nvarchar(30)
+AS
+BEGIN
+    SET NOCOUNT ON;
+    SELECT 
+        ComboPackageID, ComboPackageName, ComboPackageDescription, ComboPackageImage,
+        ISNULL(ComboPackageImageMimeType, 'image/jpeg') AS ComboPackageImageMimeType,
+        CAST(CASE WHEN ComboPackageImage IS NOT NULL THEN 1 ELSE 0 END AS bit) AS HasImage
+    FROM dbo.ComboPackage
+    WHERE ComboPackageID = @ComboPackageID;
+END;
+GO
+
+CREATE OR ALTER PROCEDURE dbo.sp_UpdateComboPackageImage
+    @ComboPackageID           nvarchar(30),
+    @ComboPackageImage         varbinary(max),
+    @ComboPackageImageMimeType nvarchar(100) = 'image/jpeg',
+    @UpdatedByAdminID         nvarchar(30)  = NULL
+AS
+BEGIN
+    SET NOCOUNT ON;
+    UPDATE dbo.ComboPackage
+    SET ComboPackageImage = @ComboPackageImage,
+        ComboPackageImageMimeType = @ComboPackageImageMimeType
+    WHERE ComboPackageID = @ComboPackageID;
+
+    IF @UpdatedByAdminID IS NOT NULL
+    BEGIN
+        DECLARE @ActorType nvarchar(20) = CASE WHEN @UpdatedByAdminID LIKE 'SADM-%' THEN 'SystemAdmin' ELSE 'Admin' END;
+        EXEC dbo.sp_AddHistoryLog 
+            @ActionType = 'IMAGE_UPLOAD', @EntityName = 'ComboPackage', @EntityID = @ComboPackageID, 
+            @ActionDetails = 'Combo package image attached/updated via Image Wizard.', @ChangedByType = @ActorType, @ActorID = @UpdatedByAdminID;
+    END
+END;
+GO
+
+/* =====================================================================
+   7. AUDIT LOGGING (HistoryLog)
+   ===================================================================== */
+
+CREATE OR ALTER PROCEDURE dbo.sp_AddHistoryLog
+    @ActionType          nvarchar(20),
+    @EntityName          nvarchar(128),
+    @EntityID            nvarchar(30)  = NULL,
+    @ActionDetails       nvarchar(max) = NULL,
+    @EventAppointmentID  nvarchar(30)  = NULL,
+    @NegotiationID       nvarchar(30)  = NULL,
+    @CustomerID          nvarchar(30)  = NULL,
+    @EmployeeID          nvarchar(30)  = NULL,
+    @ChangedByType       nvarchar(20),
+    @ActorID             nvarchar(30)  = NULL
+AS
+BEGIN
+    SET NOCOUNT ON;
+
+    DECLARE @ChangedByCustomer nvarchar(30) = NULL;
+    DECLARE @ChangedByEmployee nvarchar(30) = NULL;
+    DECLARE @ChangedByAdmin    nvarchar(30) = NULL;
+
+    IF @ChangedByType = 'Customer' SET @ChangedByCustomer = @ActorID;
+    ELSE IF @ChangedByType = 'Employee' SET @ChangedByEmployee = @ActorID;
+    ELSE IF @ChangedByType IN ('Admin', 'SystemAdmin') SET @ChangedByAdmin = @ActorID;
+
+    INSERT INTO dbo.HistoryLog (
+        ActionType, EntityName, EntityID, ActionDetails, EventAppointmentID, NegotiationID, CustomerID, EmployeeID,
+        ChangedByType, ChangedByCustomerID, ChangedByEmployeeID, ChangedByAdminID
+    )
+    VALUES (
+        @ActionType, @EntityName, @EntityID, @ActionDetails, @EventAppointmentID, @NegotiationID, @CustomerID, @EmployeeID,
+        @ChangedByType, @ChangedByCustomer, @ChangedByEmployee, @ChangedByAdmin
+    );
+END;
+GO
+
+CREATE OR ALTER PROCEDURE dbo.sp_GetHistoryLogs
+    @RequestingUserID nvarchar(30),
+    @TopCount         int = 100
+AS
+BEGIN
+    SET NOCOUNT ON;
+    DECLARE @IsSystemAdmin bit = 0;
+    
+    IF (@RequestingUserID LIKE 'SADM-%' 
+        OR EXISTS (SELECT 1 FROM dbo.Admin WHERE AdminID = @RequestingUserID AND AdminRole IN ('SystemAdmin', 'Super Admin'))
+        OR EXISTS (SELECT 1 FROM dbo.SystemAdmin WHERE SystemAdminID = @RequestingUserID))
+    BEGIN
+        SET @IsSystemAdmin = 1;
+    END
+
+    IF @IsSystemAdmin = 1
+    BEGIN
+        SELECT TOP (@TopCount)
+            HistoryLogID, ActionType, EntityName, EntityID, ActionDetails, EventAppointmentID, NegotiationID, CustomerID, EmployeeID, ChangedByType, ChangedBy, LoggedAt
+        FROM dbo.HistoryLog
+        ORDER BY LoggedAt DESC;
+    END
+    ELSE
+    BEGIN
+        SELECT TOP (@TopCount)
+            HistoryLogID, ActionType, EntityName, EntityID, ActionDetails, EventAppointmentID, NegotiationID, CustomerID, EmployeeID, ChangedByType, ChangedBy, LoggedAt
+        FROM dbo.HistoryLog
+        WHERE ChangedByAdminID = @RequestingUserID OR EntityName IN ('Services', 'AdditionalServices', 'ComboPackage', 'Equipment', 'EventAppointment')
+        ORDER BY LoggedAt DESC;
+    END
+END;
+GO
