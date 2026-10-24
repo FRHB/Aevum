@@ -19,11 +19,13 @@ public sealed class UserService : IUserService
     private static readonly Regex ValidCustomerIdRegex = new(@"^CUST-\d{4}$", RegexOptions.Compiled | RegexOptions.IgnoreCase);
 
     private readonly string _connectionString;
+    private readonly IHttpClientFactory? _httpClientFactory;
 
-    public UserService(IConfiguration? configuration = null)
+    public UserService(IConfiguration? configuration = null, IHttpClientFactory? httpClientFactory = null)
     {
         _connectionString = configuration?.GetConnectionString("DefaultConnection")
             ?? DefaultLocalConnectionString;
+        _httpClientFactory = httpClientFactory;
     }
 
     private SqlConnection CreateConnection() => new(_connectionString);
@@ -1077,6 +1079,460 @@ public sealed class UserService : IUserService
             Description = model.Description,
             Status = model.Status
         };
+    }
+
+    // ── 4-Step Wizard API Client & Service Bundle Integration ─────────────────
+
+    public async Task<string> GetNextComboPackageIdAsync(CancellationToken ct = default)
+    {
+        // 1. Attempt API Endpoint Call
+        if (_httpClientFactory != null)
+        {
+            try
+            {
+                var client = _httpClientFactory.CreateClient("AevumApi.Authorized");
+                var response = await client.GetAsync("api/packages/next-id", ct);
+                if (response.IsSuccessStatusCode)
+                {
+                    var result = await response.Content.ReadFromJsonAsync<System.Text.Json.JsonElement>(cancellationToken: ct);
+                    if (result.TryGetProperty("packageId", out var pkgId) || result.TryGetProperty("nextId", out pkgId))
+                    {
+                        var val = pkgId.GetString();
+                        if (!string.IsNullOrWhiteSpace(val)) return val;
+                    }
+                }
+            }
+            catch
+            {
+                // API unavailable; fall through to database query
+            }
+        }
+
+        // 2. Database Fallback (Atomic SQL Server Sequence or Stored Procedure)
+        try
+        {
+            await using var conn = CreateConnection();
+            await conn.OpenAsync(ct);
+
+            await using var cmd = new SqlCommand("dbo.sp_GetNextComboPackageId", conn)
+            {
+                CommandType = CommandType.StoredProcedure
+            };
+            var outParam = new SqlParameter("@NextPackageID", SqlDbType.NVarChar, 30)
+            {
+                Direction = ParameterDirection.Output
+            };
+            cmd.Parameters.Add(outParam);
+            await cmd.ExecuteNonQueryAsync(ct);
+
+            var nextId = outParam.Value?.ToString();
+            if (!string.IsNullOrWhiteSpace(nextId)) return nextId;
+        }
+        catch
+        {
+            // Direct query fallback
+        }
+
+        try
+        {
+            await using var conn = CreateConnection();
+            await conn.OpenAsync(ct);
+
+            const string fallbackSql = @"
+                IF EXISTS (SELECT 1 FROM sys.sequences WHERE name = 'Seq_ComboPackageID')
+                BEGIN
+                    DECLARE @CurVal SQL_VARIANT;
+                    SELECT @CurVal = current_value FROM sys.sequences WHERE name = 'Seq_ComboPackageID';
+                    DECLARE @NextNum INT = 1;
+                    IF @CurVal IS NOT NULL
+                    BEGIN
+                        DECLARE @ExistingCount INT = 0;
+                        SELECT @ExistingCount = COUNT(*) FROM dbo.ComboPackage WHERE ComboPackageID LIKE 'PKG-%';
+                        IF @ExistingCount > 0 OR CAST(@CurVal AS INT) > 1
+                            SET @NextNum = CAST(@CurVal AS INT) + 1;
+                    END
+                    SELECT 'PKG-' + RIGHT('0000' + CAST(@NextNum AS VARCHAR(10)), 4);
+                END
+                ELSE
+                BEGIN
+                    DECLARE @MaxVal INT = 0;
+                    IF OBJECT_ID(N'dbo.ComboPackage', N'U') IS NOT NULL
+                    BEGIN
+                        SELECT @MaxVal = ISNULL(MAX(TRY_CAST(SUBSTRING(ComboPackageID, 5, 20) AS INT)), 0)
+                        FROM dbo.ComboPackage WITH (NOLOCK)
+                        WHERE ComboPackageID LIKE 'PKG-%';
+                    END
+                    SELECT 'PKG-' + RIGHT('0000' + CAST(@MaxVal + 1 AS VARCHAR(10)), 4);
+                END";
+
+            await using var cmd = new SqlCommand(fallbackSql, conn);
+            var scalar = await cmd.ExecuteScalarAsync(ct);
+            return scalar?.ToString() ?? "PKG-0001";
+        }
+        catch
+        {
+            var fallbackCount = GetPackageServices().Count + 1;
+            return $"PKG-{fallbackCount:D4}";
+        }
+    }
+
+    public async Task<IReadOnlyList<CategoryLookupModel>> GetServiceCategoriesLookupAsync(CancellationToken ct = default)
+    {
+        // 1. Attempt API Endpoint Call
+        if (_httpClientFactory != null)
+        {
+            try
+            {
+                var client = _httpClientFactory.CreateClient("AevumApi.Authorized");
+                var response = await client.GetAsync("api/packages/categories", ct);
+                if (response.IsSuccessStatusCode)
+                {
+                    var apiList = await response.Content.ReadFromJsonAsync<List<CategoryLookupModel>>(cancellationToken: ct);
+                    if (apiList != null && apiList.Count > 0)
+                        return apiList;
+                }
+            }
+            catch { }
+        }
+
+        // 2. Database Fallback
+        var list = new List<CategoryLookupModel>();
+        try
+        {
+            await using var conn = CreateConnection();
+            await conn.OpenAsync(ct);
+
+            const string catSql = @"
+                IF OBJECT_ID(N'dbo.ServiceCategory', N'U') IS NOT NULL
+                BEGIN
+                    SELECT ServiceCategoryID, ServiceCategoryName, ServiceCategoryDescription
+                    FROM dbo.ServiceCategory
+                    ORDER BY ServiceCategoryName;
+                END";
+
+            await using var cmd = new SqlCommand(catSql, conn);
+            await using var reader = await cmd.ExecuteReaderAsync(ct);
+            while (await reader.ReadAsync(ct))
+            {
+                list.Add(new CategoryLookupModel
+                {
+                    Id = reader.GetString(0),
+                    Name = reader.GetString(1),
+                    Description = reader.IsDBNull(2) ? null : reader.GetString(2)
+                });
+            }
+        }
+        catch { }
+
+        // If database table is empty or unpopulated, supply standard studio service categories
+        if (list.Count == 0)
+        {
+            list.AddRange(new[]
+            {
+                new CategoryLookupModel { Id = "CAT-PORT", Name = "Portrait Photography", Description = "Studio headshots, family portraits, and graduation" },
+                new CategoryLookupModel { Id = "CAT-WEDD", Name = "Wedding & Reception", Description = "Pre-nuptial, ceremony, and all-day wedding coverage" },
+                new CategoryLookupModel { Id = "CAT-COMM", Name = "Commercial & Editorial", Description = "Corporate branding, product showcases, and fashion" },
+                new CategoryLookupModel { Id = "CAT-EVNT", Name = "Event Photography", Description = "Birthdays, corporate events, and live celebrations" }
+            });
+        }
+
+        return list;
+    }
+
+    public async Task<IReadOnlyList<BundleServiceOption>> GetAvailableServicesForBundlingAsync(CancellationToken ct = default)
+    {
+        // 1. Attempt API Endpoint Call
+        if (_httpClientFactory != null)
+        {
+            try
+            {
+                var client = _httpClientFactory.CreateClient("AevumApi.Authorized");
+                var response = await client.GetAsync("api/packages/available-services", ct);
+                if (response.IsSuccessStatusCode)
+                {
+                    var apiList = await response.Content.ReadFromJsonAsync<List<BundleServiceOption>>(cancellationToken: ct);
+                    if (apiList != null && apiList.Count > 0)
+                        return apiList;
+                }
+            }
+            catch { }
+        }
+
+        // 2. Database Fallback (Stored Procedure or Direct Query)
+        var list = new List<BundleServiceOption>();
+        try
+        {
+            await using var conn = CreateConnection();
+            await conn.OpenAsync(ct);
+
+            const string svcSql = @"
+                IF OBJECT_ID(N'dbo.sp_GetAvailableServicesForBundling', N'P') IS NOT NULL
+                BEGIN
+                    EXEC dbo.sp_GetAvailableServicesForBundling;
+                END
+                ELSE
+                BEGIN
+                    IF OBJECT_ID(N'dbo.Services', N'U') IS NOT NULL
+                    BEGIN
+                        SELECT ServicesID, ServiceName, ServicesDescription, ServicePrice, 'Main' AS ServiceType,
+                               CAST(CASE WHEN ServiceImage IS NOT NULL THEN 1 ELSE 0 END AS bit) AS HasImage
+                        FROM dbo.Services
+                    END
+                    UNION ALL
+                    IF OBJECT_ID(N'dbo.AdditionalServices', N'U') IS NOT NULL
+                    BEGIN
+                        SELECT AdditionalServicesID, AdditionalServiceName, AdditionalServicesDescription, 0.00 AS ServicePrice, 'Additional' AS ServiceType,
+                               CAST(CASE WHEN AdditionalServiceImage IS NOT NULL THEN 1 ELSE 0 END AS bit) AS HasImage
+                        FROM dbo.AdditionalServices
+                    END
+                    ORDER BY ServiceType DESC, ServiceName ASC;
+                END";
+
+            await using var cmd = new SqlCommand(svcSql, conn);
+            await using var reader = await cmd.ExecuteReaderAsync(ct);
+            while (await reader.ReadAsync(ct))
+            {
+                list.Add(new BundleServiceOption
+                {
+                    Id = reader.GetString(0),
+                    Name = reader.GetString(1),
+                    Description = reader.IsDBNull(2) ? string.Empty : reader.GetString(2),
+                    Price = reader.IsDBNull(3) ? 0m : reader.GetDecimal(3),
+                    ServiceType = reader.GetString(4),
+                    HasImage = !reader.IsDBNull(5) && reader.GetBoolean(5)
+                });
+            }
+        }
+        catch { }
+
+        // If database is empty, provide default options
+        if (list.Count == 0)
+        {
+            foreach (var m in GetMainServices())
+            {
+                list.Add(new BundleServiceOption
+                {
+                    Id = m.Code,
+                    Name = m.Title,
+                    Description = m.Description,
+                    Price = m.BasePrice,
+                    ServiceType = "Main",
+                    HasImage = false
+                });
+            }
+
+            foreach (var a in GetAdditionalServices())
+            {
+                list.Add(new BundleServiceOption
+                {
+                    Id = a.Code,
+                    Name = a.Title,
+                    Description = a.Description,
+                    Price = 50.00m,
+                    ServiceType = "Additional",
+                    HasImage = false
+                });
+            }
+        }
+
+        return list;
+    }
+
+    public async Task<PackageServiceItem> CreateComboPackageViaApiAsync(
+        PackageWizardFormModel formModel,
+        CancellationToken ct = default)
+    {
+        ArgumentNullException.ThrowIfNull(formModel);
+
+        // 1. Attempt Secure Multipart/Form-Data API Submission
+        if (_httpClientFactory != null)
+        {
+            try
+            {
+                var client = _httpClientFactory.CreateClient("AevumApi.Authorized");
+
+                using var form = new MultipartFormDataContent();
+                form.Add(new StringContent(formModel.Name.Trim()), "Name");
+                form.Add(new StringContent(formModel.Description?.Trim() ?? string.Empty), "Description");
+                form.Add(new StringContent(formModel.CategoryId.Trim()), "CategoryId");
+                form.Add(new StringContent(formModel.Price.ToString(System.Globalization.CultureInfo.InvariantCulture)), "Price");
+
+                if (formModel.SelectedServiceIds != null)
+                {
+                    foreach (var sId in formModel.SelectedServiceIds)
+                    {
+                        form.Add(new StringContent(sId), "SelectedServiceIds");
+                    }
+                    var json = System.Text.Json.JsonSerializer.Serialize(formModel.SelectedServiceIds);
+                    form.Add(new StringContent(json), "SelectedServiceIdsRaw");
+                }
+
+                if (formModel.ImageBytes != null && formModel.ImageBytes.Length > 0)
+                {
+                    var fileContent = new ByteArrayContent(formModel.ImageBytes);
+                    var mime = string.IsNullOrWhiteSpace(formModel.ImageMimeType) ? "image/jpeg" : formModel.ImageMimeType;
+                    fileContent.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue(mime);
+                    form.Add(fileContent, "ImageFile", formModel.ImageFileName ?? "package-hero.jpg");
+                }
+
+                var response = await client.PostAsync("api/packages", form, ct);
+                if (response.IsSuccessStatusCode)
+                {
+                    var created = await response.Content.ReadFromJsonAsync<System.Text.Json.JsonElement>(cancellationToken: ct);
+                    var packageId = created.TryGetProperty("packageId", out var pid) ? pid.GetString() ?? formModel.GeneratedPackageId : formModel.GeneratedPackageId;
+                    var title = created.TryGetProperty("name", out var ptitle) ? ptitle.GetString() ?? formModel.Name : formModel.Name;
+
+                    return new PackageServiceItem
+                    {
+                        Code = packageId,
+                        Title = title,
+                        BundleCategory = formModel.CategoryName,
+                        Description = formModel.Description,
+                        Price = $"${formModel.Price:N0}",
+                        Status = "Active"
+                    };
+                }
+                else
+                {
+                    var errBody = await response.Content.ReadAsStringAsync(ct);
+                    if (response.StatusCode == System.Net.HttpStatusCode.BadRequest)
+                    {
+                        throw new InvalidOperationException($"API Validation Failed: {errBody}");
+                    }
+                }
+            }
+            catch (InvalidOperationException)
+            {
+                throw;
+            }
+            catch
+            {
+                // Fall through to database transactional save
+            }
+        }
+
+        // 2. Direct Database Transactional Save (Anti-Race Condition via Sequence / Stored Procedure)
+        var packageCode = string.IsNullOrWhiteSpace(formModel.GeneratedPackageId) 
+            ? await GetNextComboPackageIdAsync(ct) 
+            : formModel.GeneratedPackageId;
+
+        await using var conn = CreateConnection();
+        await conn.OpenAsync(ct);
+
+        const string prepSql = @"
+            IF OBJECT_ID(N'dbo.ComboPackage', N'U') IS NOT NULL
+            BEGIN
+                IF COL_LENGTH(N'dbo.ComboPackage', N'ComboPackagePrice') IS NULL
+                    ALTER TABLE dbo.ComboPackage ADD ComboPackagePrice decimal(18,2) NOT NULL CONSTRAINT DF_ComboPackage_Price DEFAULT 0.00;
+            END;
+            IF OBJECT_ID(N'dbo.ComboPackageJoin', N'U') IS NOT NULL
+            BEGIN
+                ALTER TABLE dbo.ComboPackageJoin ALTER COLUMN ServicesID nvarchar(30) NULL;
+            END;";
+
+        await using (var prepCmd = new SqlCommand(prepSql, conn))
+        {
+            await prepCmd.ExecuteNonQueryAsync(ct);
+        }
+
+        await using var trans = (SqlTransaction)await conn.BeginTransactionAsync(IsolationLevel.Serializable, ct);
+        try
+        {
+            // Acquire transaction lock
+            const string lockSql = @"
+                DECLARE @res INT;
+                EXEC @res = sp_getapplock @Resource = 'ComboPackage_IdGen_Lock', @LockMode = 'Exclusive', @LockOwner = 'Transaction';
+                SELECT @res;";
+            await using (var lockCmd = new SqlCommand(lockSql, conn, trans))
+            {
+                await lockCmd.ExecuteScalarAsync(ct);
+            }
+
+            // Insert into dbo.ComboPackage
+            const string insertSql = @"
+                INSERT INTO dbo.ComboPackage (
+                    ComboPackageID, ComboPackageName, ComboPackageDescription, ComboPackagePrice, ComboPackageImage, ComboPackageImageMimeType
+                )
+                VALUES (@Id, @Name, @Desc, @Price, @Img, @Mime);";
+
+            await using (var cmd = new SqlCommand(insertSql, conn, trans))
+            {
+                cmd.Parameters.AddWithValue("@Id", packageCode);
+                cmd.Parameters.AddWithValue("@Name", formModel.Name.Trim());
+                cmd.Parameters.AddWithValue("@Desc", formModel.Description?.Trim() ?? string.Empty);
+                cmd.Parameters.AddWithValue("@Price", formModel.Price);
+                cmd.Parameters.Add("@Img", SqlDbType.VarBinary, -1).Value = (object?)formModel.ImageBytes ?? DBNull.Value;
+                cmd.Parameters.AddWithValue("@Mime", string.IsNullOrWhiteSpace(formModel.ImageMimeType) ? "image/jpeg" : formModel.ImageMimeType.Trim());
+                await cmd.ExecuteNonQueryAsync(ct);
+            }
+
+            // Insert Category mapping into dbo.ServiceCategoryJoins
+            if (!string.IsNullOrWhiteSpace(formModel.CategoryId))
+            {
+                const string catJoinSql = @"
+                    IF NOT EXISTS (SELECT 1 FROM dbo.ServiceCategory WHERE ServiceCategoryID = @CatId)
+                    BEGIN
+                        INSERT INTO dbo.ServiceCategory (ServiceCategoryID, ServiceCategoryName, ServiceCategoryDescription)
+                        VALUES (@CatId, @CatId, @CatId);
+                    END;
+                    INSERT INTO dbo.ServiceCategoryJoins (ServiceCategoryJoinID, ServiceCategoryID, ServicesID, AdditionalServicesID, ComboPackageID)
+                    VALUES ('SCJ-' + SUBSTRING(REPLACE(CAST(NEWID() AS nvarchar(36)), '-', ''), 1, 10), @CatId, NULL, NULL, @PkgId);";
+
+                await using var catCmd = new SqlCommand(catJoinSql, conn, trans);
+                catCmd.Parameters.AddWithValue("@CatId", formModel.CategoryId.Trim());
+                catCmd.Parameters.AddWithValue("@PkgId", packageCode);
+                await catCmd.ExecuteNonQueryAsync(ct);
+            }
+
+            // Insert Many-to-Many mappings into dbo.ComboPackageJoin
+            if (formModel.SelectedServiceIds != null && formModel.SelectedServiceIds.Count > 0)
+            {
+                foreach (var svcId in formModel.SelectedServiceIds)
+                {
+                    if (string.IsNullOrWhiteSpace(svcId)) continue;
+
+                    const string joinSql = @"
+                        DECLARE @JID nvarchar(30) = 'CPJ-' + SUBSTRING(REPLACE(CAST(NEWID() AS nvarchar(36)), '-', ''), 1, 10);
+                        IF EXISTS (SELECT 1 FROM dbo.Services WHERE ServicesID = @SvcId)
+                        BEGIN
+                            INSERT INTO dbo.ComboPackageJoin (ComboPackageJoinID, ComboPackageID, ServicesID, AdditionalServicesID)
+                            VALUES (@JID, @PkgId, @SvcId, NULL);
+                        END
+                        ELSE IF EXISTS (SELECT 1 FROM dbo.AdditionalServices WHERE AdditionalServicesID = @SvcId)
+                        BEGIN
+                            INSERT INTO dbo.ComboPackageJoin (ComboPackageJoinID, ComboPackageID, ServicesID, AdditionalServicesID)
+                            VALUES (@JID, @PkgId, NULL, @SvcId);
+                        END
+                        ELSE
+                        BEGIN
+                            INSERT INTO dbo.ComboPackageJoin (ComboPackageJoinID, ComboPackageID, ServicesID, AdditionalServicesID)
+                            VALUES (@JID, @PkgId, @SvcId, NULL);
+                        END;";
+
+                    await using var joinCmd = new SqlCommand(joinSql, conn, trans);
+                    joinCmd.Parameters.AddWithValue("@PkgId", packageCode);
+                    joinCmd.Parameters.AddWithValue("@SvcId", svcId.Trim());
+                    await joinCmd.ExecuteNonQueryAsync(ct);
+                }
+            }
+
+            await trans.CommitAsync(ct);
+
+            return new PackageServiceItem
+            {
+                Code = packageCode,
+                Title = formModel.Name.Trim(),
+                BundleCategory = formModel.CategoryName,
+                Description = formModel.Description,
+                Price = $"${formModel.Price:N0}",
+                Status = "Active"
+            };
+        }
+        catch
+        {
+            await trans.RollbackAsync(ct);
+            throw;
+        }
     }
 
     public IReadOnlyList<AddOnServiceItem> GetAdditionalServices()

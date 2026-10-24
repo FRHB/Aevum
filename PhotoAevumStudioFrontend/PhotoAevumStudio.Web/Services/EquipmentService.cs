@@ -1,4 +1,5 @@
 using System.Text.RegularExpressions;
+using System.Net.Http.Json;
 using PhotoAevumStudio.Web.Models;
 
 namespace PhotoAevumStudio.Web.Services;
@@ -24,8 +25,11 @@ public sealed class EquipmentService : IEquipmentService
 
     public event Action? OnChange;
 
-    public EquipmentService()
+    private readonly IHttpClientFactory? _httpClientFactory;
+
+    public EquipmentService(IHttpClientFactory? httpClientFactory = null)
     {
+        _httpClientFactory = httpClientFactory;
         SeedDatabaseEntities();
     }
 
@@ -91,6 +95,96 @@ public sealed class EquipmentService : IEquipmentService
             }
 
             return Task.FromResult<IReadOnlyList<EquipmentTypeModel>>(_types.OrderBy(t => t.EquipmentTypeName).ToList());
+        }
+    }
+
+
+    public Task<string> GetNextEquipmentIdPreviewAsync(CancellationToken ct = default)
+    {
+        lock (_lock)
+        {
+            int maxNum = 0;
+            foreach (var eq in _equipments)
+            {
+                var match = Regex.Match(eq.EquipmentID, @"\d+");
+                if (match.Success && int.TryParse(match.Value, out int n) && n > maxNum)
+                    maxNum = n;
+            }
+            return Task.FromResult($"EQP-{(maxNum + 1):D4}");
+        }
+    }
+
+    public Task<(bool Success, string? Error, EquipmentItemModel? CreatedItem)> CreateEquipmentAsync(
+        string name,
+        string? description,
+        string typeId,
+        string? serialNo,
+        string? imagePath,
+        CancellationToken ct = default)
+    {
+        lock (_lock)
+        {
+            if (string.IsNullOrWhiteSpace(name))
+                return Task.FromResult((false, (string?)"Equipment name cannot be empty.", (EquipmentItemModel?)null));
+
+            var type = _types.FirstOrDefault(t => t.EquipmentTypeID.Equals(typeId, StringComparison.OrdinalIgnoreCase));
+            if (type == null)
+            {
+                type = new EquipmentTypeModel
+                {
+                    EquipmentTypeID = typeId.Trim(),
+                    EquipmentTypeName = typeId.Trim(),
+                    ColorTag = "Blue",
+                    Status = "Active"
+                };
+                _types.Add(type);
+            }
+
+            if (!string.IsNullOrWhiteSpace(serialNo) && _equipments.Any(e => !string.IsNullOrEmpty(e.SerialNo) && e.SerialNo.Equals(serialNo.Trim(), StringComparison.OrdinalIgnoreCase)))
+            {
+                return Task.FromResult((false, (string?)$"An equipment item with Serial Number '{serialNo}' already exists in the registry.", (EquipmentItemModel?)null));
+            }
+
+            int maxNum = 0;
+            foreach (var eq in _equipments)
+            {
+                var match = Regex.Match(eq.EquipmentID, @"\d+");
+                if (match.Success && int.TryParse(match.Value, out int n) && n > maxNum)
+                    maxNum = n;
+            }
+            var generatedId = $"EQP-{(maxNum + 1):D4}";
+
+            var newItem = new EquipmentItemModel
+            {
+                EquipmentID = generatedId,
+                EquipmentName = name.Trim(),
+                EquipmentDescription = description?.Trim(),
+                EquipmentTypeID = type.EquipmentTypeID,
+                EquipmentTypeName = type.EquipmentTypeName,
+                EquipmentStatus = "Available",
+                SerialNo = string.IsNullOrWhiteSpace(serialNo) ? null : serialNo.Trim(),
+                ImagePath = imagePath
+            };
+
+            _equipments.Insert(0, newItem);
+
+            _maintenanceLogs.Insert(0, new MaintenanceLogModel
+            {
+                HistoryLogID = _nextHistoryLogId++,
+                ActionType = "INSERT",
+                EntityName = "Equipment",
+                EntityID = newItem.EquipmentID,
+                EquipmentName = newItem.EquipmentName,
+                SerialNo = newItem.SerialNo,
+                EquipmentStatus = "Available",
+                ActionDetails = $"Equipment registered via wizard with custom ID {newItem.EquipmentID} under category '{type.EquipmentTypeName}'.",
+                ChangedByType = "Admin",
+                ChangedByAdminID = "ADM-001",
+                LoggedAt = DateTime.UtcNow
+            });
+
+            NotifyStateChanged();
+            return Task.FromResult((true, (string?)null, (EquipmentItemModel?)newItem));
         }
     }
 
@@ -162,21 +256,84 @@ public sealed class EquipmentService : IEquipmentService
         }
     }
 
-    public Task<(bool Success, string? Error)> AddEquipmentTypeAsync(string typeId, string typeName, string colorTag = "Blue", CancellationToken ct = default)
+    public async Task<string> GetNextEquipmentTypeIdAsync(CancellationToken ct = default)
     {
+        if (_httpClientFactory != null)
+        {
+            try
+            {
+                var client = _httpClientFactory.CreateClient("AevumApi");
+                var response = await client.GetFromJsonAsync<GeneratedIdResponseModel>("api/equipment-types/next-id", ct);
+                if (!string.IsNullOrWhiteSpace(response?.NextId))
+                {
+                    return response.NextId;
+                }
+            }
+            catch
+            {
+                // Fall back to in-memory sequence calculation below
+            }
+        }
+
         lock (_lock)
         {
-            if (string.IsNullOrWhiteSpace(typeId) || string.IsNullOrWhiteSpace(typeName))
-                return Task.FromResult((false, (string?)"Category ID and Name are required."));
+            int maxId = 0;
+            foreach (var t in _types)
+            {
+                if (t.EquipmentTypeID.StartsWith("ETYP-", StringComparison.OrdinalIgnoreCase)
+                    && int.TryParse(t.EquipmentTypeID[5..], out var parsed) && parsed > maxId)
+                {
+                    maxId = parsed;
+                }
+            }
+            return $"ETYP-{(maxId + 1):D4}";
+        }
+    }
 
-            var cleanId = typeId.Trim().ToUpperInvariant();
+    public async Task<(bool Success, string? Error)> AddEquipmentTypeAsync(string typeId, string typeName, string colorTag = "Blue", CancellationToken ct = default)
+    {
+        if (string.IsNullOrWhiteSpace(typeId) || string.IsNullOrWhiteSpace(typeName))
+            return (false, "Category ID and Name are required.");
+
+        var cleanId = typeId.Trim().ToUpperInvariant();
+        var cleanName = typeName.Trim();
+
+        if (_httpClientFactory != null)
+        {
+            try
+            {
+                var client = _httpClientFactory.CreateClient("AevumApi.Authorized");
+                var response = await client.PostAsJsonAsync("api/equipment-types", new
+                {
+                    EquipmentTypeId = cleanId,
+                    EquipmentTypeName = cleanName
+                }, ct);
+
+                if (!response.IsSuccessStatusCode)
+                {
+                    if (response.StatusCode == System.Net.HttpStatusCode.Conflict)
+                    {
+                        var err = await response.Content.ReadFromJsonAsync<ApiErrorMessageModel>(cancellationToken: ct);
+                        return (false, err?.Message ?? "An Equipment Type with this name or ID already exists.");
+                    }
+                    return (false, $"API Error: {response.ReasonPhrase}");
+                }
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"[EquipmentService] API sync note: {ex.Message}");
+            }
+        }
+
+        lock (_lock)
+        {
             if (_types.Any(t => t.EquipmentTypeID.Equals(cleanId, StringComparison.OrdinalIgnoreCase)))
-                return Task.FromResult((false, (string?)$"Equipment Type '{cleanId}' already exists."));
+                return (false, $"Equipment Type '{cleanId}' already exists.");
 
             var newType = new EquipmentTypeModel
             {
                 EquipmentTypeID = cleanId,
-                EquipmentTypeName = typeName.Trim(),
+                EquipmentTypeName = cleanName,
                 ColorTag = colorTag,
                 Status = "Active",
                 AssociatedItemsCount = 0,
@@ -201,7 +358,7 @@ public sealed class EquipmentService : IEquipmentService
             });
 
             NotifyStateChanged();
-            return Task.FromResult((true, (string?)null));
+            return (true, null);
         }
     }
 

@@ -20,6 +20,7 @@
   </ItemGroup>
 
   <ItemGroup>
+    <ProjectReference Include="..\..\PhotoAevumStudioFrontend\PhotoAevumStudio.Web\PhotoAevumStudio.Web.csproj" />
     <ProjectReference Include="..\PhotoAevumStudio.Application\PhotoAevumStudio.Application.csproj" />
     <ProjectReference Include="..\PhotoAevumStudio.Infrastructure\PhotoAevumStudio.Infrastructure.csproj" />
   </ItemGroup>

@@ -8,6 +8,8 @@
 @rendermode InteractiveServer
 @attribute [Authorize]
 @using PhotoAevumStudio.Web.Models
+@using PhotoAevumStudio.Web.Services
+@inject IServicesApiClient ServicesApi
 
 <PageTitle>Service Categories Management | Photo Aevum Studio</PageTitle>
 
@@ -390,6 +392,9 @@
     </div>
 </div>
 
+<!-- 2-Step Service Category Wizard Modal -->
+<CategoryWizardModal @bind-IsOpen="isCategoryWizardOpen" OnCategorySaved="HandleCategoryWizardSaved" />
+
 <!-- Add / Edit Category Modal Dialog -->
 @if (isModalOpen)
 {
@@ -670,6 +675,7 @@
     private string? notificationMessage;
 
     // Modal State
+    private bool isCategoryWizardOpen = false;
     private bool isModalOpen = false;
     private bool isEditMode = false;
     private bool isDetailsModalOpen = false;
@@ -764,17 +770,39 @@
     // Modal & Action Handlers
     private void OpenAddModal()
     {
-        isEditMode = false;
-        editingCategory = null;
-        formModel = new CategoryModel
+        isCategoryWizardOpen = true;
+    }
+
+    private async Task HandleCategoryWizardSaved(string categoryId)
+    {
+        try
         {
-            Code = $"CAT-{Guid.NewGuid():N}"[..8].ToUpperInvariant(),
-            Type = "Main Services",
-            ColorTag = "Blue",
-            Status = "Active",
-            IsFeatured = false
-        };
-        isModalOpen = true;
+            var apiCategories = await ServicesApi.GetCategoriesAsync();
+            if (apiCategories != null && apiCategories.Count > 0)
+            {
+                foreach (var c in apiCategories)
+                {
+                    if (!categories.Any(x => x.Id.Equals(c.Id, StringComparison.OrdinalIgnoreCase)))
+                    {
+                        categories.Add(new ServiceCategoryItem
+                        {
+                            Id = c.Id,
+                            Code = c.Id,
+                            Name = c.Name,
+                            Type = "Main Services",
+                            Description = c.Description,
+                            ColorTag = "Blue",
+                            Status = "Active",
+                            IsFeatured = false,
+                            AssociatedServices = new List<string>(),
+                            CreatedAt = DateTime.UtcNow
+                        });
+                    }
+                }
+            }
+        }
+        catch { }
+        notificationMessage = $"Service Category '{categoryId}' was registered successfully in the database.";
     }
 
     private void OpenEditModal(ServiceCategoryItem category)

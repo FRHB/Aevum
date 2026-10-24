@@ -31,4 +31,23 @@ public interface IStudioManagementService
 
     // History Logs (SystemAdmin has full access)
     Task<IReadOnlyList<HistoryLogDto>> GetHistoryLogsAsync(string requestingUserId, int topCount = 100, CancellationToken cancellationToken = default);
+
+    // Sequential Custom ID Generation & Wizard Workflows
+    Task<string> GetNextServiceIdAsync(CancellationToken cancellationToken = default);
+    Task<string> GetNextCategoryIdAsync(CancellationToken cancellationToken = default);
+    Task<string> GetNextAdditionalServiceIdAsync(CancellationToken cancellationToken = default);
+    Task<IReadOnlyList<CategoryDto>> GetCategoriesAsync(CancellationToken cancellationToken = default);
+    Task<ServiceCreatedResponseDto> CreateServiceAsync(CreateServiceDto dto, string? requestingAdminId = null, CancellationToken cancellationToken = default);
+    Task<CategoryDto> CreateCategoryAsync(CreateCategoryDto dto, string? requestingAdminId = null, CancellationToken cancellationToken = default);
+    Task<AdditionalServiceResponseDto> CreateAdditionalServiceAsync(CreateAdditionalServiceDto dto, string? requestingAdminId = null, CancellationToken cancellationToken = default);
+
+    // Combo Package Wizard Methods
+    Task<string> GetNextComboPackageIdAsync(CancellationToken cancellationToken = default);
+    Task<IReadOnlyList<BundledServiceSelectionItem>> GetAvailableServicesForBundlingAsync(CancellationToken cancellationToken = default);
+    Task<ComboPackageCreatedResponseDto> CreateComboPackageWithServicesAsync(
+        CreateComboPackageModel model,
+        byte[]? imageBytes,
+        string? imageMimeType,
+        string? requestingAdminId = null,
+        CancellationToken cancellationToken = default);
 }

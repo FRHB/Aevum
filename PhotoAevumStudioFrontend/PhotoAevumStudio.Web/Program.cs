@@ -17,9 +17,13 @@ builder.Services.AddAuthorizationCore();
 builder.Services.AddTransient<AuthHttpHandler>();
 builder.Services.AddScoped<IAuthService, AuthService>();
 builder.Services.AddScoped<IEmployeeService, EmployeeService>();
+builder.Services.AddScoped<IAdminService, AdminService>();
 builder.Services.AddScoped<IUserService, UserService>();   // Mock user data service (Task 3.1)
 builder.Services.AddScoped<IScheduleService, ScheduleService>();
 builder.Services.AddSingleton<IEquipmentService, EquipmentService>();
+builder.Services.AddScoped<IServicesApiClient, ServicesApiClient>();
+builder.Services.AddScoped<PhotoAevumStudio.Web.Models.BookScheduleState>();
+builder.Services.AddScoped<IBookScheduleClient, BookScheduleClient>();
 
 var apiBaseUrl = builder.Configuration["Api:BaseUrl"]
     ?? throw new InvalidOperationException("Api:BaseUrl is missing from configuration.");

@@ -145,6 +145,12 @@ public interface IUserService
     void UpdateAdditionalServiceImage(string code, byte[] imageBytes, string mimeType, string? requestingAdminId = null);
     AddOnServiceItem AddAdditionalService(AddOnServiceModel model);
 
+    // ── Combo Package Wizard (4-Step Workflow) ─────────────────────────────
+    Task<string> GetNextComboPackageIdAsync(CancellationToken ct = default);
+    Task<IReadOnlyList<CategoryLookupModel>> GetServiceCategoriesLookupAsync(CancellationToken ct = default);
+    Task<IReadOnlyList<BundleServiceOption>> GetAvailableServicesForBundlingAsync(CancellationToken ct = default);
+    Task<PackageServiceItem> CreateComboPackageViaApiAsync(PackageWizardFormModel formModel, CancellationToken ct = default);
+
     // ── Equipment ───────────────────────────────────────────────────────────
     List<EquipmentRowDto> GetEquipmentRows();
     List<EquipmentTypeRowDto> GetEquipmentTypes();

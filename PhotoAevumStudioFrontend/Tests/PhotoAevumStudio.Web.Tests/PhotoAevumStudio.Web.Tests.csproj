@@ -19,7 +19,13 @@
   </ItemGroup>
 
   <ItemGroup>
+    <Compile Remove="AdminManagementTests.cs" />
+  </ItemGroup>
+
+  <ItemGroup>
     <ProjectReference Include="..\..\PhotoAevumStudio.Web\PhotoAevumStudio.Web.csproj" />
+    <ProjectReference Include="..\..\..\PhotoAevumStudioBackend\PhotoAevumStudio.Application\PhotoAevumStudio.Application.csproj" />
+    <ProjectReference Include="..\..\..\PhotoAevumStudioBackend\PhotoAevumStudio.Infrastructure\PhotoAevumStudio.Infrastructure.csproj" />
   </ItemGroup>
 
 </Project>

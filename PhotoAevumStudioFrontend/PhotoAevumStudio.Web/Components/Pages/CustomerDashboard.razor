@@ -15,8 +15,12 @@
         <h1 class="aev-page-header__title">Welcome to Aevum</h1>
         <p class="aev-page-header__subtitle">Your photography portal</p>
     </div>
-    <a href="/my/book" class="btn btn--primary">Book a Session</a>
+    <div class="flex items-center gap-2">
+        <button type="button" class="btn btn--primary" @onclick="() => _showBookScheduleModal = true">Book Schedule</button>
+    </div>
 </header>
+
+<BookScheduleWizardModal @bind-IsOpen="_showBookScheduleModal" />
 
 @if (PendingCount > 0)
 {
@@ -35,11 +39,11 @@
         <p class="aev-nav-card__desc">Track the status of your upcoming and past shoots.</p>
     </a>
 
-    <a href="/my/book" class="aev-nav-card">
+    <button type="button" class="aev-nav-card text-left" @onclick="() => _showBookScheduleModal = true">
         <span class="aev-nav-card__icon" aria-hidden="true">➕</span>
         <h2 class="aev-nav-card__title">Book a Schedule</h2>
         <p class="aev-nav-card__desc">Request a new photography session with our team.</p>
-    </a>
+    </button>
 
     <a href="/my/bookings" class="aev-nav-card">
         <span class="aev-nav-card__icon" aria-hidden="true">🖼</span>
@@ -96,6 +100,7 @@
     private Task<AuthenticationState>? AuthState { get; set; }
 
     private List<BookingRow> UpcomingBookings = new();
+    private bool _showBookScheduleModal;
     private int PendingCount => UpcomingBookings.Count(b => string.Equals(b.Status, "Pending", StringComparison.OrdinalIgnoreCase));
 
     protected override async Task OnInitializedAsync()

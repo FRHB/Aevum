@@ -9,7 +9,17 @@
 <PageTitle>Studio Portal Login | Photo Aevum</PageTitle>
 
 <div class="login-page-wrapper">
-    <div class="login-card">
+    <div class="login-card relative">
+        <!-- Close Button -->
+        <button type="button"
+                class="absolute top-4 right-4 p-1.5 text-gray-500 hover:text-gray-700 hover:bg-gray-100 rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-gray-300"
+                @onclick="HandleClose"
+                aria-label="Close">
+            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+            </svg>
+        </button>
+
         <!-- Logo Section -->
         <div class="logo-wrapper">
             <img src="images/AevumLogo.jpg" alt="Aevum Studio Logo" class="aevum-logo" />
@@ -20,7 +30,6 @@
         </div>
 
         <h2 class="login-header">Sign In</h2>
-        <p class="login-subtext">Authorized access for Administrators, Employees & Clients</p>
 
         <!-- Blazor EditForm for Data Binding -->
         <EditForm Model="@loginModel" OnValidSubmit="HandleLogin">
@@ -33,7 +42,6 @@
                        placeholder="e.g. ADM-001, EMP-001, or client email"
                        required
                        disabled="@isSubmitting" />
-                <span class="input-hint">Admins: <code>ADM-###</code> &bull; Staff: <code>EMP-###</code> &bull; Clients: Email</span>
             </div>
 
             <div class="input-group">
@@ -70,11 +78,6 @@
                 }
             </button>
         </EditForm>
-
-        <div class="client-signup-prompt">
-            <span>New customer?</span>
-            <a href="/register" class="signup-link">Create client account</a>
-        </div>
     </div>
 </div>
 
@@ -128,6 +131,8 @@
         
         isSubmitting = false;
     }
+
+    private void HandleClose() => NavManager.NavigateTo("/");
 
     public class LoginCredentials
     {

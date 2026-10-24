@@ -177,6 +177,51 @@ public static class DatabaseSeeder
                         ALTER TABLE dbo.ComboPackage ADD ComboPackageImage varbinary(max) NULL;
                     IF COL_LENGTH(N'dbo.ComboPackage', N'ComboPackageImageMimeType') IS NULL
                         ALTER TABLE dbo.ComboPackage ADD ComboPackageImageMimeType nvarchar(100) NULL CONSTRAINT DF_ComboPackage_MimeType DEFAULT 'image/jpeg';
+                    IF COL_LENGTH(N'dbo.ComboPackage', N'ComboPackagePrice') IS NULL
+                        ALTER TABLE dbo.ComboPackage ADD ComboPackagePrice decimal(18,2) NOT NULL CONSTRAINT DF_ComboPackage_Price DEFAULT 0.00;
+                END;
+
+                IF OBJECT_ID(N'dbo.ComboPackageJoin', N'U') IS NOT NULL
+                BEGIN
+                    ALTER TABLE dbo.ComboPackageJoin ALTER COLUMN ServicesID nvarchar(30) NULL;
+                END;
+
+                IF NOT EXISTS (SELECT 1 FROM sys.sequences WHERE name = 'Seq_ComboPackageID')
+                BEGIN
+                    DECLARE @InitMaxVal INT = 0;
+                    IF OBJECT_ID(N'dbo.ComboPackage', N'U') IS NOT NULL
+                    BEGIN
+                        SELECT @InitMaxVal = ISNULL(MAX(TRY_CAST(SUBSTRING(ComboPackageID, 5, 20) AS INT)), 0)
+                        FROM dbo.ComboPackage
+                        WHERE ComboPackageID LIKE 'PKG-%';
+                    END;
+                    DECLARE @CreateSeqSql NVARCHAR(MAX) = N'CREATE SEQUENCE dbo.Seq_ComboPackageID AS INT START WITH ' 
+                        + CAST((@InitMaxVal + 1) AS NVARCHAR(20)) + N' INCREMENT BY 1;';
+                    EXEC sp_executesql @CreateSeqSql;
+                END;
+
+                IF OBJECT_ID(N'dbo.Equipment', N'U') IS NOT NULL
+                BEGIN
+                    IF COL_LENGTH(N'dbo.Equipment', N'EquipmentDescription') IS NULL
+                        ALTER TABLE dbo.Equipment ADD EquipmentDescription nvarchar(1000) NULL;
+                    IF COL_LENGTH(N'dbo.Equipment', N'ImagePath') IS NULL
+                        ALTER TABLE dbo.Equipment ADD ImagePath nvarchar(500) NULL;
+                    IF COL_LENGTH(N'dbo.Equipment', N'CreatedAt') IS NULL
+                        ALTER TABLE dbo.Equipment ADD CreatedAt datetime2 NOT NULL CONSTRAINT DF_Equipment_CreatedAt DEFAULT SYSUTCDATETIME();
+                END;
+
+                IF NOT EXISTS (SELECT 1 FROM sys.sequences WHERE name = 'EquipmentIdSequence' AND schema_id = SCHEMA_ID('dbo'))
+                BEGIN
+                    DECLARE @InitEqpMaxVal INT = 0;
+                    IF OBJECT_ID(N'dbo.Equipment', N'U') IS NOT NULL
+                    BEGIN
+                        SELECT @InitEqpMaxVal = ISNULL(MAX(TRY_CAST(SUBSTRING(EquipmentID, 5, 10) AS INT)), 0)
+                        FROM dbo.Equipment
+                        WHERE EquipmentID LIKE 'EQP-%';
+                    END;
+                    DECLARE @CreateEqpSeqSql NVARCHAR(MAX) = N'CREATE SEQUENCE dbo.EquipmentIdSequence AS INT START WITH ' 
+                        + CAST((@InitEqpMaxVal + 1) AS NVARCHAR(20)) + N' INCREMENT BY 1 MINVALUE 1 NO CYCLE CACHE 10;';
+                    EXEC sp_executesql @CreateEqpSeqSql;
                 END;
             ";
             await setCmd.ExecuteNonQueryAsync();

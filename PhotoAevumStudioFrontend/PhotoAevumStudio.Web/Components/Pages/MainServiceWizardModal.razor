@@ -1,0 +1,673 @@
+@using System.ComponentModel.DataAnnotations
+@using PhotoAevumStudio.Web.Models
+@using PhotoAevumStudio.Web.Services
+@inject IServicesApiClient ServicesApi
+@inject ILogger<MainServiceWizardModal> Logger
+
+@if (IsOpen)
+{
+    <div class="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4 sm:p-6 overflow-y-auto animate-in fade-in duration-150"
+         role="dialog" aria-modal="true" aria-labelledby="main-service-modal-title">
+
+        <div class="relative w-full max-w-2xl bg-white rounded-2xl shadow-2xl border border-gray-100 overflow-hidden flex flex-col max-h-[92vh]">
+            
+            @* ── Modal Header ────────────────────────────────────────────────────────── *@
+            <div class="px-6 py-5 border-b border-gray-100 flex items-center justify-between bg-white shrink-0">
+                <div class="flex items-center gap-3">
+                    <div class="w-10 h-10 rounded-xl bg-gray-900 text-white flex items-center justify-center font-bold text-sm shadow-xs">
+                        <svg class="w-5 h-5 text-emerald-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" />
+                        </svg>
+                    </div>
+                    <div>
+                        <h2 id="main-service-modal-title" class="text-lg sm:text-xl font-bold text-gray-900">Add New Main Service</h2>
+                        <p class="text-xs text-gray-500">Configure master service offering, media assets, and catalog metadata</p>
+                    </div>
+                </div>
+                <button type="button" 
+                        @onclick="HandleClose" 
+                        disabled="@isSaving"
+                        class="text-gray-400 hover:text-gray-700 p-2 rounded-lg hover:bg-gray-100 transition-colors"
+                        aria-label="Close modal">
+                    <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+                    </svg>
+                </button>
+            </div>
+
+            @* ── Stepper Navigation Bar ─────────────────────────────────────────────── *@
+            <div class="px-6 pt-4 pb-3 bg-gray-50/70 border-b border-gray-100 shrink-0">
+                <nav aria-label="Wizard Steps" class="flex items-center justify-between">
+                    
+                    @* Step 1: Details *@
+                    <div class="flex items-center gap-2.5">
+                        <span class="w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold transition-all
+                            @(currentStep > 1 ? "bg-emerald-600 text-white shadow-xs" : currentStep == 1 ? "bg-gray-900 text-white shadow-xs ring-4 ring-gray-100" : "bg-gray-200 text-gray-500")">
+                            @(currentStep > 1 ? "✓" : "1")
+                        </span>
+                        <div class="hidden sm:block text-left">
+                            <p class="text-xs font-semibold @(currentStep == 1 ? "text-gray-900" : "text-gray-500")">Step 1</p>
+                            <p class="text-[11px] text-gray-400">Details</p>
+                        </div>
+                    </div>
+
+                    <div class="flex-1 h-0.5 mx-3 sm:mx-4 @(currentStep > 1 ? "bg-emerald-500" : "bg-gray-200") transition-colors"></div>
+
+                    @* Step 2: Media *@
+                    <div class="flex items-center gap-2.5">
+                        <span class="w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold transition-all
+                            @(currentStep > 2 ? "bg-emerald-600 text-white shadow-xs" : currentStep == 2 ? "bg-gray-900 text-white shadow-xs ring-4 ring-gray-100" : "bg-gray-200 text-gray-500")">
+                            @(currentStep > 2 ? "✓" : "2")
+                        </span>
+                        <div class="hidden sm:block text-left">
+                            <p class="text-xs font-semibold @(currentStep == 2 ? "text-gray-900" : "text-gray-500")">Step 2</p>
+                            <p class="text-[11px] text-gray-400">Media</p>
+                        </div>
+                    </div>
+
+                    <div class="flex-1 h-0.5 mx-3 sm:mx-4 @(currentStep > 2 ? "bg-emerald-500" : "bg-gray-200") transition-colors"></div>
+
+                    @* Step 3: Overview & Save *@
+                    <div class="flex items-center gap-2.5">
+                        <span class="w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold transition-all
+                            @(currentStep == 3 ? "bg-gray-900 text-white shadow-xs ring-4 ring-gray-100" : "bg-gray-200 text-gray-500")">
+                            3
+                        </span>
+                        <div class="hidden sm:block text-left">
+                            <p class="text-xs font-semibold @(currentStep == 3 ? "text-gray-900" : "text-gray-500")">Step 3</p>
+                            <p class="text-[11px] text-gray-400">Overview &amp; Save</p>
+                        </div>
+                    </div>
+
+                </nav>
+            </div>
+
+            @* ── Modal Body Content ─────────────────────────────────────────────────── *@
+            <div class="p-6 overflow-y-auto flex-1 space-y-5">
+
+                @* Validation / Error Banner *@
+                @if (!string.IsNullOrWhiteSpace(errorMessage))
+                {
+                    <div class="p-3.5 bg-rose-50 border border-rose-200 text-rose-800 rounded-xl flex items-start gap-3 text-xs" role="alert">
+                        <svg class="w-4 h-4 text-rose-600 shrink-0 mt-0.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                        </svg>
+                        <div class="flex-1">
+                            <span class="font-bold">Error:</span> @errorMessage
+                        </div>
+                        <button type="button" @onclick="() => errorMessage = null" class="text-rose-500 hover:text-rose-700 font-bold">&times;</button>
+                    </div>
+                }
+
+                @* ══════════════════════════════════════════════════════════════════════
+                   WIZARD PAGE 1: DETAILS
+                   ══════════════════════════════════════════════════════════════════════ *@
+                @if (currentStep == 1)
+                {
+                    <div class="space-y-4 animate-in fade-in duration-150">
+                        <div class="bg-gray-50/50 p-4 rounded-xl border border-gray-100 mb-2">
+                            <h3 class="text-xs font-bold uppercase tracking-wider text-gray-600 mb-1">Service Specifications</h3>
+                            <p class="text-xs text-gray-400">Fill in the primary catalog attributes for this main photography service.</p>
+                        </div>
+
+                        @* Field: Service Name *@
+                        <div>
+                            <label for="srv-name" class="block text-xs font-semibold uppercase tracking-wider text-gray-700 mb-1.5">
+                                Service Name <span class="text-rose-500">*</span>
+                            </label>
+                            <input id="srv-name"
+                                   type="text"
+                                   @bind="model.Name"
+                                   placeholder="e.g., Executive Studio Portrait Session"
+                                   class="w-full px-3.5 py-2.5 text-sm bg-white border @(nameError != null ? "border-rose-400 focus:ring-rose-500" : "border-gray-300 focus:ring-gray-900") rounded-lg text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:border-transparent transition-all shadow-xs" />
+                            @if (nameError != null)
+                            {
+                                <p class="text-xs text-rose-600 mt-1 font-medium">@nameError</p>
+                            }
+                        </div>
+
+                        @* Field: Service Description (TextArea) *@
+                        <div>
+                            <label for="srv-desc" class="block text-xs font-semibold uppercase tracking-wider text-gray-700 mb-1.5">
+                                Service Description <span class="text-rose-500">*</span>
+                            </label>
+                            <textarea id="srv-desc"
+                                      rows="3"
+                                      @bind="model.Description"
+                                      placeholder="Provide an engaging description of what clients receive during this session..."
+                                      class="w-full px-3.5 py-2.5 text-sm bg-white border @(descError != null ? "border-rose-400 focus:ring-rose-500" : "border-gray-300 focus:ring-gray-900") rounded-lg text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:border-transparent transition-all resize-none shadow-xs"></textarea>
+                            @if (descError != null)
+                            {
+                                <p class="text-xs text-rose-600 mt-1 font-medium">@descError</p>
+                            }
+                        </div>
+
+                        @* Two-column grid: Price & Category *@
+                        <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                            @* Field: Service Price (Numeric/Decimal) *@
+                            <div>
+                                <label for="srv-price" class="block text-xs font-semibold uppercase tracking-wider text-gray-700 mb-1.5">
+                                    Service Price <span class="text-rose-500">*</span>
+                                </label>
+                                <div class="relative rounded-lg shadow-xs">
+                                    <div class="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-gray-400 font-semibold text-sm">
+                                        ₱
+                                    </div>
+                                    <input id="srv-price"
+                                           type="number"
+                                           step="0.01"
+                                           min="0"
+                                           @bind="model.Price"
+                                           placeholder="150.00"
+                                           class="w-full pl-8 pr-3.5 py-2.5 text-sm bg-white border @(priceError != null ? "border-rose-400 focus:ring-rose-500" : "border-gray-300 focus:ring-gray-900") rounded-lg text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:border-transparent transition-all" />
+                                </div>
+                                @if (priceError != null)
+                                {
+                                    <p class="text-xs text-rose-600 mt-1 font-medium">@priceError</p>
+                                }
+                            </div>
+
+                            @* Field: Service Category (Dropdown mapping to existing categories) *@
+                            <div>
+                                <label for="srv-category" class="block text-xs font-semibold uppercase tracking-wider text-gray-700 mb-1.5">
+                                    Service Category <span class="text-rose-500">*</span>
+                                </label>
+                                <div class="relative">
+                                    <select id="srv-category"
+                                            @bind="model.CategoryId"
+                                            class="w-full px-3.5 py-2.5 text-sm bg-white border @(categoryError != null ? "border-rose-400 focus:ring-rose-500" : "border-gray-300 focus:ring-gray-900") rounded-lg text-gray-900 focus:outline-none focus:ring-2 focus:border-transparent transition-all shadow-xs cursor-pointer appearance-none pr-8">
+                                        <option value="">-- Choose Category --</option>
+                                        @foreach (var cat in categories)
+                                        {
+                                            <option value="@cat.Id">@cat.Name (@cat.Id)</option>
+                                        }
+                                    </select>
+                                    <div class="pointer-events-none absolute inset-y-0 right-0 flex items-center px-3 text-gray-400">
+                                        <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" />
+                                        </svg>
+                                    </div>
+                                </div>
+                                @if (categoryError != null)
+                                {
+                                    <p class="text-xs text-rose-600 mt-1 font-medium">@categoryError</p>
+                                }
+                            </div>
+                        </div>
+                    </div>
+                }
+
+                @* ══════════════════════════════════════════════════════════════════════
+                   WIZARD PAGE 2: MEDIA
+                   ══════════════════════════════════════════════════════════════════════ *@
+                @if (currentStep == 2)
+                {
+                    <div class="space-y-4 animate-in fade-in duration-150">
+                        <div class="bg-gray-50/50 p-4 rounded-xl border border-gray-100">
+                            <h3 class="text-xs font-bold uppercase tracking-wider text-gray-600 mb-1">Presentation Showcase Image</h3>
+                            <p class="text-xs text-gray-400">Upload a high-resolution marketing image for catalog cards, booking workflows, and client galleries.</p>
+                        </div>
+
+                        @* Choose an Image File Input *@
+                        @if (model.ImageBytes == null)
+                        {
+                            <div class="relative border-2 border-dashed border-gray-300 hover:border-gray-500 rounded-2xl p-8 text-center bg-gray-50/40 hover:bg-gray-50 transition-all cursor-pointer group">
+                                <InputFile OnChange="HandleFileSelected"
+                                           accept="image/png,image/jpeg,image/jpg,image/webp"
+                                           class="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10" />
+
+                                <div class="flex flex-col items-center justify-center space-y-3 pointer-events-none">
+                                    <div class="w-14 h-14 rounded-full bg-white shadow-sm border border-gray-200 flex items-center justify-center text-gray-400 group-hover:text-gray-900 group-hover:scale-105 transition-all">
+                                        <svg class="w-7 h-7" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.75" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                                        </svg>
+                                    </div>
+                                    <div>
+                                        <p class="text-sm font-semibold text-gray-800">
+                                            <span class="text-emerald-600 underline">Click to choose an image</span> or drag and drop
+                                        </p>
+                                        <p class="text-xs text-gray-400 mt-1">PNG, JPG, or WEBP (Maximum file size: 5 MB)</p>
+                                    </div>
+                                </div>
+                            </div>
+                        }
+                        else
+                        {
+                            @* Selected Image Preview & File Meta *@
+                            <div class="bg-gray-50 rounded-2xl p-4 border border-gray-200 space-y-3">
+                                <div class="flex items-center justify-between">
+                                    <span class="text-xs font-bold uppercase tracking-wider text-gray-700">Selected Presentation Image</span>
+                                    <button type="button" 
+                                            @onclick="RemoveImage"
+                                            class="text-xs font-semibold text-rose-600 hover:text-rose-800 hover:underline flex items-center gap-1 cursor-pointer">
+                                        <svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                                        </svg>
+                                        Remove Image
+                                    </button>
+                                </div>
+
+                                <div class="relative rounded-xl overflow-hidden bg-black/5 aspect-video max-h-56 flex items-center justify-center border border-gray-200">
+                                    <img src="@model.ImagePreviewUrl"
+                                         alt="Service Preview"
+                                         class="w-full h-full object-contain" />
+                                </div>
+
+                                <div class="flex items-center justify-between text-xs text-gray-500 pt-1 border-t border-gray-200/60">
+                                    <span class="font-medium truncate max-w-[220px]">@model.ImageFileName</span>
+                                    <span class="font-mono text-gray-400">@FormatFileSize(model.ImageSize) &bull; @model.ImageMimeType</span>
+                                </div>
+                            </div>
+                        }
+
+                        @if (fileError != null)
+                        {
+                            <p class="text-xs text-rose-600 font-medium">@fileError</p>
+                        }
+                    </div>
+                }
+
+                @* ══════════════════════════════════════════════════════════════════════
+                   WIZARD PAGE 3: OVERVIEW & SAVE
+                   ══════════════════════════════════════════════════════════════════════ *@
+                @if (currentStep == 3)
+                {
+                    <div class="space-y-4 animate-in fade-in duration-150">
+                        
+                        @* Auto-Generated ID Alert Card *@
+                        <div class="bg-gradient-to-r from-gray-900 to-gray-800 text-white rounded-xl p-4 shadow-sm flex items-center justify-between">
+                            <div>
+                                <span class="text-[11px] font-bold uppercase tracking-wider text-emerald-400 flex items-center gap-1.5">
+                                    <svg class="w-3.5 h-3.5" fill="currentColor" viewBox="0 0 20 20">
+                                        <path fill-rule="evenodd" d="M10 1.944A11.954 11.954 0 012.166 5C2.056 5.649 2 6.319 2 7c0 5.225 3.34 9.67 8 11.317C14.66 16.67 18 12.225 18 7c0-.682-.057-1.35-.166-2.001A11.954 11.954 0 0110 1.944zM11 14a1 1 0 11-2 0 1 1 0 012 0zm0-7a1 1 0 10-2 0v3a1 1 0 102 0V7z" clip-rule="evenodd" />
+                                    </svg>
+                                    System-Assigned Service ID (Strictly Read-Only)
+                                </span>
+                                <p class="text-xs text-gray-300 mt-0.5">
+                                    Auto-generated sequential catalog identifier assigned by the database backend.
+                                </p>
+                            </div>
+                            <div class="text-right">
+                                @if (isGeneratingId)
+                                {
+                                    <span class="inline-flex items-center gap-1.5 text-xs text-gray-300">
+                                        <svg class="animate-spin w-4 h-4 text-emerald-400" fill="none" viewBox="0 0 24 24">
+                                            <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                                            <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z"></path>
+                                        </svg>
+                                        Generating...
+                                    </span>
+                                }
+                                else
+                                {
+                                    <span class="inline-block px-3 py-1.5 bg-white/10 border border-white/20 rounded-lg font-mono text-sm font-bold text-emerald-300 tracking-wider">
+                                        @model.GeneratedId
+                                    </span>
+                                }
+                            </div>
+                        </div>
+
+                        @* Read-only Overview Card *@
+                        <div class="bg-gray-50/70 rounded-xl border border-gray-200 overflow-hidden text-xs divide-y divide-gray-200">
+                            
+                            <div class="p-3.5 flex justify-between items-center bg-white">
+                                <span class="font-medium text-gray-500 uppercase tracking-wider text-[11px]">Service Name</span>
+                                <span class="font-bold text-gray-900 text-sm">@model.Name</span>
+                            </div>
+
+                            <div class="p-3.5 flex justify-between items-center">
+                                <span class="font-medium text-gray-500 uppercase tracking-wider text-[11px]">Category</span>
+                                <span class="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-semibold bg-blue-50 text-blue-700 border border-blue-200">
+                                    <span class="w-1.5 h-1.5 rounded-full bg-blue-500"></span>
+                                    @model.CategoryName
+                                </span>
+                            </div>
+
+                            <div class="p-3.5 flex justify-between items-center bg-white">
+                                <span class="font-medium text-gray-500 uppercase tracking-wider text-[11px]">Base Price</span>
+                                <span class="font-mono font-bold text-emerald-700 text-sm">₱@model.Price.ToString("N2")</span>
+                            </div>
+
+                            <div class="p-3.5">
+                                <span class="block font-medium text-gray-500 uppercase tracking-wider text-[11px] mb-1">Description</span>
+                                <p class="text-gray-700 leading-relaxed bg-white p-2.5 rounded-lg border border-gray-100">
+                                    @model.Description
+                                </p>
+                            </div>
+
+                            <div class="p-3.5">
+                                <span class="block font-medium text-gray-500 uppercase tracking-wider text-[11px] mb-2">Media Attachment</span>
+                                @if (model.ImageBytes != null && !string.IsNullOrEmpty(model.ImagePreviewUrl))
+                                {
+                                    <div class="flex items-center gap-3 bg-white p-2.5 rounded-lg border border-gray-100">
+                                        <img src="@model.ImagePreviewUrl" alt="Thumbnail" class="w-12 h-12 object-cover rounded-md border border-gray-200 shrink-0" />
+                                        <div class="truncate">
+                                            <p class="font-semibold text-gray-900 truncate">@model.ImageFileName</p>
+                                            <p class="text-[11px] text-gray-400">@FormatFileSize(model.ImageSize) &bull; @model.ImageMimeType</p>
+                                        </div>
+                                    </div>
+                                }
+                                else
+                                {
+                                    <div class="text-gray-400 italic py-1">No image attached. Default placeholder will be used.</div>
+                                }
+                            </div>
+
+                        </div>
+                    </div>
+                }
+
+            </div>
+
+            @* ── Modal Footer Controls ──────────────────────────────────────────────── *@
+            <div class="px-6 py-4 bg-gray-50 border-t border-gray-100 flex items-center justify-between shrink-0">
+                <div>
+                    @if (currentStep > 1)
+                    {
+                        <button type="button" 
+                                @onclick="PrevStep" 
+                                disabled="@isSaving"
+                                class="px-4 py-2.5 bg-white border border-gray-300 hover:bg-gray-100 text-gray-700 text-xs font-semibold rounded-lg transition-colors cursor-pointer">
+                            &larr; Back
+                        </button>
+                    }
+                    else
+                    {
+                        <button type="button" 
+                                @onclick="HandleClose" 
+                                disabled="@isSaving"
+                                class="px-4 py-2.5 bg-white border border-gray-300 hover:bg-gray-100 text-gray-700 text-xs font-semibold rounded-lg transition-colors cursor-pointer">
+                            Cancel
+                        </button>
+                    }
+                </div>
+
+                <div>
+                    @if (currentStep < 3)
+                    {
+                        <button type="button" 
+                                @onclick="NextStep"
+                                class="inline-flex items-center gap-1.5 px-6 py-2.5 bg-gray-900 hover:bg-black text-white text-xs font-semibold rounded-lg shadow-sm hover:shadow transition-all cursor-pointer">
+                            <span>Next Step</span>
+                            <span>&rarr;</span>
+                        </button>
+                    }
+                    else
+                    {
+                        <button type="button" 
+                                @onclick="HandleSaveAsync" 
+                                disabled="@(isSaving || isGeneratingId)"
+                                class="inline-flex items-center gap-2 px-7 py-2.5 bg-emerald-600 hover:bg-emerald-700 active:scale-95 text-white text-xs font-bold rounded-lg shadow-sm hover:shadow transition-all disabled:opacity-60 cursor-pointer">
+                            @if (isSaving)
+                            {
+                                <svg class="animate-spin w-4 h-4 text-white" fill="none" viewBox="0 0 24 24">
+                                    <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                                    <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z"></path>
+                                </svg>
+                                <span>Saving Service...</span>
+                            }
+                            else
+                            {
+                                <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7" />
+                                </svg>
+                                <span>Save Service</span>
+                            }
+                        </button>
+                    }
+                </div>
+            </div>
+
+        </div>
+    </div>
+}
+
+@code {
+    [Parameter] public bool IsOpen { get; set; }
+    [Parameter] public EventCallback<bool> IsOpenChanged { get; set; }
+    [Parameter] public EventCallback<string> OnServiceSaved { get; set; }
+
+    private int currentStep = 1;
+    private bool isSaving = false;
+    private bool isGeneratingId = false;
+    private string? errorMessage;
+
+    // Field-level validation messages
+    private string? nameError;
+    private string? descError;
+    private string? priceError;
+    private string? categoryError;
+    private string? fileError;
+
+    private MainServiceWizardModel model = new();
+    private List<CategoryLookupItem> categories = new();
+
+    protected override async Task OnParametersSetAsync()
+    {
+        if (IsOpen && categories.Count == 0)
+        {
+            await LoadCategoriesAsync();
+        }
+    }
+
+    public async Task ResetWizardAsync()
+    {
+        currentStep = 1;
+        isSaving = false;
+        isGeneratingId = false;
+        errorMessage = null;
+        nameError = null;
+        descError = null;
+        priceError = null;
+        categoryError = null;
+        fileError = null;
+        model = new MainServiceWizardModel();
+
+        await LoadCategoriesAsync();
+    }
+
+    private async Task LoadCategoriesAsync()
+    {
+        try
+        {
+            var list = await ServicesApi.GetCategoriesAsync();
+            categories = list.ToList();
+            if (string.IsNullOrWhiteSpace(model.CategoryId) && categories.Count > 0)
+            {
+                model.CategoryId = categories[0].Id;
+                model.CategoryName = categories[0].Name;
+            }
+        }
+        catch (Exception ex)
+        {
+            Logger.LogWarning(ex, "Failed to load categories for dropdown.");
+        }
+    }
+
+    private async Task HandleClose()
+    {
+        if (isSaving) return;
+        await ResetWizardAsync();
+        await IsOpenChanged.InvokeAsync(false);
+    }
+
+    private async Task NextStep()
+    {
+        errorMessage = null;
+
+        if (currentStep == 1)
+        {
+            if (!ValidateStep1())
+                return;
+
+            currentStep = 2;
+            return;
+        }
+
+        if (currentStep == 2)
+        {
+            currentStep = 3;
+            await PrepareOverviewStepAsync();
+        }
+    }
+
+    private void PrevStep()
+    {
+        errorMessage = null;
+        if (currentStep > 1)
+        {
+            currentStep--;
+        }
+    }
+
+    private bool ValidateStep1()
+    {
+        nameError = null;
+        descError = null;
+        priceError = null;
+        categoryError = null;
+
+        bool isValid = true;
+
+        if (string.IsNullOrWhiteSpace(model.Name))
+        {
+            nameError = "Service name is required.";
+            isValid = false;
+        }
+        else if (model.Name.Trim().Length < 2)
+        {
+            nameError = "Service name must be at least 2 characters.";
+            isValid = false;
+        }
+
+        if (string.IsNullOrWhiteSpace(model.Description))
+        {
+            descError = "Service description is required.";
+            isValid = false;
+        }
+
+        if (model.Price <= 0)
+        {
+            priceError = "Price must be a positive decimal value.";
+            isValid = false;
+        }
+
+        if (string.IsNullOrWhiteSpace(model.CategoryId))
+        {
+            categoryError = "Please select a category.";
+            isValid = false;
+        }
+        else
+        {
+            var match = categories.FirstOrDefault(c => c.Id == model.CategoryId);
+            model.CategoryName = match?.Name ?? model.CategoryId;
+        }
+
+        return isValid;
+    }
+
+    private async Task HandleFileSelected(InputFileChangeEventArgs e)
+    {
+        fileError = null;
+        var file = e.File;
+        if (file == null) return;
+
+        if (file.Size > 5 * 1024 * 1024)
+        {
+            fileError = "Image file size exceeds the 5MB limit.";
+            return;
+        }
+
+        try
+        {
+            using var stream = file.OpenReadStream(maxAllowedSize: 5 * 1024 * 1024);
+            using var ms = new MemoryStream();
+            await stream.CopyToAsync(ms);
+
+            model.ImageBytes = ms.ToArray();
+            model.ImageFileName = file.Name;
+            model.ImageMimeType = file.ContentType ?? "image/jpeg";
+            model.ImageSize = file.Size;
+            model.ImagePreviewUrl = $"data:{model.ImageMimeType};base64,{Convert.ToBase64String(model.ImageBytes)}";
+        }
+        catch (Exception ex)
+        {
+            fileError = $"Error processing image: {ex.Message}";
+        }
+    }
+
+    private void RemoveImage()
+    {
+        model.ImageBytes = null;
+        model.ImageFileName = null;
+        model.ImageMimeType = null;
+        model.ImagePreviewUrl = null;
+        model.ImageSize = 0;
+        fileError = null;
+    }
+
+    private async Task PrepareOverviewStepAsync()
+    {
+        var match = categories.FirstOrDefault(c => c.Id == model.CategoryId);
+        model.CategoryName = match?.Name ?? model.CategoryId;
+
+        if (string.IsNullOrWhiteSpace(model.GeneratedId))
+        {
+            try
+            {
+                isGeneratingId = true;
+                model.GeneratedId = await ServicesApi.GetNextServiceIdAsync();
+            }
+            catch (Exception ex)
+            {
+                Logger.LogWarning(ex, "Failed to preview next Service ID.");
+                model.GeneratedId = "SRV-0001";
+            }
+            finally
+            {
+                isGeneratingId = false;
+            }
+        }
+    }
+
+    private async Task HandleSaveAsync()
+    {
+        isSaving = true;
+        errorMessage = null;
+
+        try
+        {
+            var (success, error, createdId) = await ServicesApi.CreateServiceAsync(model);
+            if (!success)
+            {
+                errorMessage = error ?? "Failed to save the new main service. Please try again.";
+                return;
+            }
+
+            await OnServiceSaved.InvokeAsync(createdId ?? model.GeneratedId);
+            await HandleClose();
+        }
+        catch (Exception ex)
+        {
+            errorMessage = $"Unexpected error saving service: {ex.Message}";
+        }
+        finally
+        {
+            isSaving = false;
+        }
+    }
+
+    private static string FormatFileSize(long bytes)
+    {
+        if (bytes <= 0) return "0 B";
+        string[] suffixes = { "B", "KB", "MB", "GB" };
+        int idx = 0;
+        double d = bytes;
+        while (d >= 1024 && idx < suffixes.Length - 1)
+        {
+            d /= 1024;
+            idx++;
+        }
+        return $"{d:0.##} {suffixes[idx]}";
+    }
+}

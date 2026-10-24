@@ -13,6 +13,8 @@ public class EquipmentItemModel
     public string EquipmentTypeName { get; set; } = string.Empty;
     public string EquipmentStatus { get; set; } = "Available"; // 'Available', 'Maintenance', 'Retired'
     public string? SerialNo { get; set; }
+    public string? EquipmentDescription { get; set; }
+    public string? ImagePath { get; set; }
     public byte[]? EquipmentImage { get; set; }
 
     // Computed and display helpers
@@ -191,4 +193,15 @@ public class NewMaintenanceFormModel
 
     [Required(ErrorMessage = "Staff/Admin ID is required.")]
     public string ActorID { get; set; } = "ADM-001";
+}
+
+public class GeneratedIdResponseModel
+{
+    public string NextId { get; set; } = string.Empty;
+    public string GeneratedId { get; set; } = string.Empty;
+}
+
+public class ApiErrorMessageModel
+{
+    public string Message { get; set; } = string.Empty;
 }

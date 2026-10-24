@@ -54,13 +54,41 @@
         Nav.LocationChanged += OnLocationChanged;
     }
 
+    private System.Security.Claims.ClaimsPrincipal? _currentUser;
+
+    private bool IsSystemAdmin
+    {
+        get
+        {
+            if (_currentUser != null)
+            {
+                if (_currentUser.IsInRole("SystemAdmin") || _currentUser.IsInRole("System Admin") || _currentUser.IsInRole("Super Admin"))
+                    return true;
+
+                var studioId = _currentUser.FindFirst("studio_id")?.Value;
+                if (!string.IsNullOrEmpty(studioId) && studioId.StartsWith("SADM-", StringComparison.OrdinalIgnoreCase))
+                    return true;
+            }
+
+            var r = (UserRole ?? "").Trim();
+            return r.Equals("systemadmin", StringComparison.OrdinalIgnoreCase)
+                || r.Equals("system admin", StringComparison.OrdinalIgnoreCase)
+                || r.Equals("super admin", StringComparison.OrdinalIgnoreCase)
+                || r.StartsWith("sadm-", StringComparison.OrdinalIgnoreCase);
+        }
+    }
+
     protected override async Task OnInitializedAsync()
     {
-        if (string.IsNullOrWhiteSpace(UserRole) && AuthState != null)
+        if (AuthState != null)
         {
             var state = await AuthState;
-            var roleClaim = state.User.FindFirst(System.Security.Claims.ClaimTypes.Role) ?? state.User.FindFirst("role");
-            UserRole = roleClaim?.Value?.ToLower() ?? string.Empty;
+            _currentUser = state.User;
+            if (string.IsNullOrWhiteSpace(UserRole))
+            {
+                var roleClaim = state.User.FindFirst(System.Security.Claims.ClaimTypes.Role) ?? state.User.FindFirst("role");
+                UserRole = roleClaim?.Value?.ToLower() ?? string.Empty;
+            }
         }
 
         if (string.IsNullOrWhiteSpace(UserRole))
@@ -106,7 +134,7 @@
             _openAccordions.Add("emp-services");
         }
 
-        if (path.StartsWith("admin/employees") || path.StartsWith("admin/staff"))
+        if (path.StartsWith("admin/employees") || path.StartsWith("admin/staff") || path.StartsWith("admin/admins") || path.StartsWith("admin/admin"))
             _openAccordions.Add("employees");
 
         if (path.StartsWith("admin/equipments") || path.StartsWith("admin/equipment"))
@@ -257,6 +285,10 @@
                         aria-hidden="@(!IsOpen("employees"))">
                         <li><NavLink href="/admin/employees" class="aev-sidebar__sub-link" Match="NavLinkMatch.All" ActiveClass="aev-sidebar__link--active">Staff List</NavLink></li>
                         <li><NavLink href="/admin/employees/specialization" class="aev-sidebar__sub-link" ActiveClass="aev-sidebar__link--active">Specialization</NavLink></li>
+                        @if (this.IsSystemAdmin)
+                        {
+                            <li><NavLink href="/admin/admins" class="aev-sidebar__sub-link" ActiveClass="aev-sidebar__link--active">Admin</NavLink></li>
+                        }
                     </ul>
                 </li>
 

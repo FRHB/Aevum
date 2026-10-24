@@ -159,10 +159,21 @@ builder.Services.AddMemoryCache();
 builder.Services.AddScoped<IBookingService, BookingService>();
 builder.Services.AddScoped<IPhotoService,   PhotoService>();
 builder.Services.AddScoped<IStudioManagementService, StudioManagementService>();
+builder.Services.AddScoped<IAdminManagementService, AdminManagementService>();
 builder.Services.AddScoped<IStorageProvider, LocalStorageProvider>();
+builder.Services.AddScoped<IEquipmentTypeService, EquipmentTypeService>();
 builder.Services.Configure<PhotoAevumStudio.Application.Models.SmtpSettings>(builder.Configuration.GetSection("SmtpSettings"));
 builder.Services.AddScoped<PhotoAevumStudio.Application.Interfaces.IEmailService, PhotoAevumStudio.Infrastructure.Services.EmailService>();
 builder.Services.AddScoped<PhotoAevumStudio.Application.Interfaces.ISqlAuthService, PhotoAevumStudio.Infrastructure.Services.SqlAuthService>();
+
+// Book Schedule wizard (separate context; tables created by SchedulingSchema.sql at startup)
+builder.Services.AddDbContext<PhotoAevumStudio.Infrastructure.Scheduling.SchedulingDbContext>(options =>
+    options.UseSqlServer(connectionString, sql => sql.EnableRetryOnFailure()));
+builder.Services.Configure<PhotoAevumStudio.Infrastructure.Scheduling.SchedulingOptions>(builder.Configuration.GetSection("Scheduling"));
+builder.Services.AddSingleton(TimeProvider.System);
+builder.Services.AddScoped<IScheduleBookingService, PhotoAevumStudio.Infrastructure.Scheduling.ScheduleBookingService>();
+builder.Services.AddSingleton<IMeetingLinkService, PhotoAevumStudio.Infrastructure.Scheduling.MockMeetingLinkService>();
+builder.Services.AddScoped<IBookingNotificationService, PhotoAevumStudio.Infrastructure.Scheduling.BookingNotificationService>();
 
 // ═════════════════════════════════════════════════════════════════════════════
 
@@ -225,6 +236,7 @@ if (app.Environment.IsDevelopment())
 
 if (!app.Environment.IsEnvironment("Testing"))
     app.UseHttpsRedirection();
+app.UseStaticFiles();
 app.UseCors("BlazorFrontend");
 app.UseRateLimiter();
 app.UseAuthentication(); // Must come before UseAuthorization
@@ -287,6 +299,8 @@ await using (var scope = app.Services.CreateAsyncScope())
             await DatabaseSeeder.ReconcileMigrationHistoryAsync(db);
             await db.Database.MigrateAsync();
             await DatabaseSeeder.EnsureStoredProceduresAsync(db);
+            await PhotoAevumStudio.Infrastructure.Scheduling.SchedulingSchema.EnsureAsync(
+                scope.ServiceProvider.GetRequiredService<PhotoAevumStudio.Infrastructure.Scheduling.SchedulingDbContext>());
             await DatabaseSeeder.SeedRolesAsync(roleManager);
         }
         else

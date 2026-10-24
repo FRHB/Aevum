@@ -11,6 +11,7 @@
 }
 
 .login-card {
+    position: relative;
     background-color: #ffffff;
     padding: 3rem 2.5rem;
     border-radius: 16px;
@@ -56,7 +57,7 @@
     font-weight: 700;
     font-size: 1.5rem;
     color: #111827;
-    margin-bottom: 0.35rem;
+    margin-bottom: 1.75rem;
     letter-spacing: -0.02em;
 }
 

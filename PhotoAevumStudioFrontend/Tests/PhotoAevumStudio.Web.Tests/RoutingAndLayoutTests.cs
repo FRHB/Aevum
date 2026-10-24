@@ -65,6 +65,7 @@ public class RoutingAndLayoutTests
             typeof(Maintenance),
             typeof(EquipmentTypes),
             typeof(Profile),
+            typeof(AdminManagement),
             typeof(Clients)
         };
 

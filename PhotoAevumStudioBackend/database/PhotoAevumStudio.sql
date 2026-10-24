@@ -20,6 +20,7 @@ CREATE TABLE dbo.Admin (
 
 CREATE TABLE dbo.SystemAdmin (
     SystemAdminID nvarchar(30) NOT NULL PRIMARY KEY,
+    SystemAdminRole nvarchar(20) NOT NULL,
     FirstName nvarchar(255) NOT NULL,
     LastName nvarchar(255) NOT NULL,
     MiddleName nvarchar(255) NULL,
@@ -72,7 +73,7 @@ CREATE TABLE dbo.ComboPackage (
     ComboPackageID nvarchar(30) NOT NULL PRIMARY KEY,
     ComboPackageName nvarchar(255) NOT NULL,
     ComboPackageDescription nvarchar(255) NOT NULL,
-    ComboPackageImage varbinary(max) NULL,
+    ComboPackageImage varbinary(max) NOT NULL,
     ComboPackageImageMimeType nvarchar(100) NULL CONSTRAINT DF_ComboPackage_MimeType DEFAULT 'image/jpeg'
 );
 
@@ -80,7 +81,7 @@ CREATE TABLE dbo.AdditionalServices (
     AdditionalServicesID nvarchar(30) NOT NULL PRIMARY KEY,
     AdditionalServiceName nvarchar(255),
     AdditionalServicesDescription nvarchar(255),
-    AdditionalServiceImage varbinary(max) NULL,
+    AdditionalServiceImage varbinary(max) NOT NULL,
     AdditionalServiceImageMimeType nvarchar(100) NULL CONSTRAINT DF_AdditionalServices_MimeType DEFAULT 'image/jpeg'
 );
 

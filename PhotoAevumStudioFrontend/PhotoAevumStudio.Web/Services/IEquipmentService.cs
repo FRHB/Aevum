@@ -13,6 +13,15 @@ public interface IEquipmentService
     Task<IReadOnlyList<EventAppointmentModel>> GetUpcomingEventsAsync(CancellationToken ct = default);
     Task<IReadOnlyList<MaintenanceLogModel>> GetMaintenanceLogsAsync(CancellationToken ct = default);
 
+    Task<string> GetNextEquipmentTypeIdAsync(CancellationToken ct = default);
+    Task<string> GetNextEquipmentIdPreviewAsync(CancellationToken ct = default);
+    Task<(bool Success, string? Error, EquipmentItemModel? CreatedItem)> CreateEquipmentAsync(
+        string name,
+        string? description,
+        string typeId,
+        string? serialNo,
+        string? imagePath,
+        CancellationToken ct = default);
     Task<(bool Success, string? Error)> AddEquipmentAsync(string name, string typeId, string? serialNo, string? equipmentId = null, CancellationToken ct = default);
     Task<(bool Success, string? Error)> UpdateEquipmentStatusAsync(string equipmentId, string newStatus, string details, string actorId, string actorType = "Admin", CancellationToken ct = default);
     Task<(bool Success, string? Error)> AddEquipmentTypeAsync(string typeId, string typeName, string colorTag = "Blue", CancellationToken ct = default);

@@ -1,0 +1,369 @@
+@page "/admin/admins"
+@page "/admin/admin"
+@layout AdminLayout
+@rendermode InteractiveServer
+@attribute [Authorize(Roles = "Admin,SystemAdmin,System Admin,Super Admin")]
+@using System.Security.Claims
+@using PhotoAevumStudio.Web.Models
+@using PhotoAevumStudio.Web.Services
+@inject IAdminService AdminService
+@inject AuthenticationStateProvider AuthStateProvider
+@implements IDisposable
+
+<div class="space-y-6">
+    <!-- Header Section with Add Button -->
+    <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 pb-2 border-b border-slate-200">
+        <div>
+            <h1 class="text-2xl font-bold text-slate-900 tracking-tight">Admin Directory</h1>
+            <p class="text-sm text-slate-500 mt-0.5">Manage studio administrators, role privileges, and security credentials.</p>
+        </div>
+
+        @if (isSystemAdmin)
+        {
+            <button type="button" 
+                    @onclick="() => isWizardOpen = true"
+                    class="inline-flex items-center justify-center gap-2 px-5 py-2.5 bg-slate-900 hover:bg-black text-white text-xs font-semibold uppercase tracking-wider rounded-lg shadow-sm transition-all focus:ring-2 focus:ring-slate-900 focus:ring-offset-2">
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M18 9v3m0 0v3m0-3h3m-3 0h-3m-2-5a4 4 0 11-8 0 4 4 0 018 0zM3 20a6 6 0 0112 0v1H3v-1z" />
+                </svg>
+                Add Admin
+            </button>
+        }
+        else
+        {
+            <div class="inline-flex items-center gap-2 px-3 py-1.5 bg-slate-100 border border-slate-200 text-slate-600 rounded-lg text-xs font-medium">
+                <svg class="w-4 h-4 text-slate-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
+                </svg>
+                <span>Read-Only Access</span>
+            </div>
+        }
+    </div>
+
+    <!-- Role Status Notice for Regular Admins -->
+    @if (!isSystemAdmin && !isLoading)
+    {
+        <div class="p-3 bg-slate-50 border border-slate-200 rounded-xl flex items-center justify-between text-xs text-slate-600">
+            <div class="flex items-center gap-2">
+                <span class="inline-block w-2 h-2 rounded-full bg-slate-400"></span>
+                <span>Logged in as <strong>Admin</strong>. Per security policy, System Admin accounts are withheld from your view, and mutations are restricted.</span>
+            </div>
+            <span class="font-mono text-[11px] bg-slate-200/60 px-2 py-0.5 rounded text-slate-700">@currentUserId</span>
+        </div>
+    }
+
+    <!-- Quick Stats Cards -->
+    <div class="grid grid-cols-1 sm:grid-cols-3 gap-4">
+        <div class="bg-white p-4 rounded-xl border border-slate-200 shadow-sm flex items-center gap-4">
+            <div class="w-10 h-10 rounded-lg bg-slate-100 flex items-center justify-center text-slate-800 text-lg font-bold">
+                🛡️
+            </div>
+            <div>
+                <p class="text-xs text-slate-500 font-medium">Visible Admins</p>
+                <p class="text-xl font-bold text-slate-900">@admins.Count</p>
+            </div>
+        </div>
+
+        @if (isSystemAdmin)
+        {
+            <div class="bg-white p-4 rounded-xl border border-slate-200 shadow-sm flex items-center gap-4">
+                <div class="w-10 h-10 rounded-lg bg-purple-50 flex items-center justify-center text-purple-700 text-lg font-bold">
+                    ⚡
+                </div>
+                <div>
+                    <p class="text-xs text-slate-500 font-medium">System Admins</p>
+                    <p class="text-xl font-bold text-purple-900">@admins.Count(a => a.IsSuperAdmin)</p>
+                </div>
+            </div>
+        }
+        else
+        {
+            <div class="bg-white p-4 rounded-xl border border-slate-200 shadow-sm flex items-center gap-4">
+                <div class="w-10 h-10 rounded-lg bg-slate-50 flex items-center justify-center text-slate-400 text-lg font-bold">
+                    🔒
+                </div>
+                <div>
+                    <p class="text-xs text-slate-500 font-medium">Authority Level</p>
+                    <p class="text-sm font-semibold text-slate-700">Restricted Admin</p>
+                </div>
+            </div>
+        }
+
+        <div class="bg-white p-4 rounded-xl border border-slate-200 shadow-sm flex items-center gap-4">
+            <div class="w-10 h-10 rounded-lg bg-emerald-50 flex items-center justify-center text-emerald-600 text-lg font-bold">
+                ✓
+            </div>
+            <div>
+                <p class="text-xs text-slate-500 font-medium">Operational Admins</p>
+                <p class="text-xl font-bold text-slate-900">@admins.Count(a => !a.IsSuperAdmin)</p>
+            </div>
+        </div>
+    </div>
+
+    <!-- Filter & Search Toolbar -->
+    <div class="bg-white p-4 rounded-xl border border-slate-200 shadow-sm flex flex-col sm:flex-row gap-3 items-center justify-between">
+        <div class="flex flex-col sm:flex-row gap-3 w-full sm:w-auto flex-1">
+            <div class="relative w-full sm:w-80">
+                <input type="text" 
+                       @bind="searchQuery" 
+                       @bind:event="oninput"
+                       placeholder="Search by name, ID, or email..." 
+                       class="w-full pl-9 pr-4 py-2 text-xs rounded-lg border border-slate-300 focus:outline-none focus:ring-1 focus:ring-slate-900 focus:border-slate-900" />
+                <svg class="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                </svg>
+            </div>
+
+            @if (isSystemAdmin)
+            {
+                <select @bind="selectedRoleFilter" class="text-xs rounded-lg border border-slate-300 py-2 px-3 bg-white focus:outline-none focus:ring-1 focus:ring-slate-900">
+                    <option value="All">All Roles (@admins.Count)</option>
+                    <option value="System Admin">System Admins (@admins.Count(a => a.IsSuperAdmin))</option>
+                    <option value="Admin">Regular Admins (@admins.Count(a => !a.IsSuperAdmin))</option>
+                </select>
+            }
+        </div>
+
+        <span class="text-xs text-slate-500 self-end sm:self-center">
+            Showing @FilteredAdmins.Count of @admins.Count administrators
+        </span>
+    </div>
+
+    <!-- Admin Table View -->
+    <div class="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
+        <div class="overflow-x-auto">
+            <table class="w-full text-left border-collapse text-xs">
+                <thead>
+                    <tr class="bg-slate-50/75 border-b border-slate-200 text-slate-600 font-semibold uppercase tracking-wider">
+                        <th class="px-5 py-3.5">Administrator</th>
+                        <th class="px-5 py-3.5">Admin ID</th>
+                        <th class="px-5 py-3.5">Role</th>
+                        <th class="px-5 py-3.5">Status</th>
+                        <th class="px-5 py-3.5 text-right">Actions</th>
+                    </tr>
+                </thead>
+                <tbody class="divide-y divide-slate-100">
+                    @if (isLoading)
+                    {
+                        <tr>
+                            <td colspan="5" class="px-5 py-10 text-center text-slate-400">
+                                <span class="inline-block w-4 h-4 border-2 border-slate-400/30 border-t-slate-600 rounded-full animate-spin mr-2"></span>
+                                Loading administrator directory...
+                            </td>
+                        </tr>
+                    }
+                    else if (FilteredAdmins.Count == 0)
+                    {
+                        <tr>
+                            <td colspan="5" class="px-5 py-10 text-center text-slate-400">
+                                @(admins.Count == 0 ? "No administrator accounts found in the database." : "No administrators found matching your search.")
+                            </td>
+                        </tr>
+                    }
+                    else
+                    {
+                        @foreach (var admin in FilteredAdmins)
+                        {
+                            <tr class="hover:bg-slate-50/60 transition-colors">
+                                <td class="px-5 py-3.5">
+                                    <div class="flex items-center gap-3">
+                                        <div class="w-8 h-8 rounded-full flex items-center justify-center font-bold text-xs uppercase shrink-0 @(admin.IsSuperAdmin ? "bg-purple-900 text-white" : "bg-slate-900 text-white")">
+                                            @admin.Initials
+                                        </div>
+                                        <div>
+                                            <p class="font-semibold text-slate-900 flex items-center gap-1.5">
+                                                @admin.FullName
+                                                @if (string.Equals(admin.Id, currentUserId, StringComparison.OrdinalIgnoreCase))
+                                                {
+                                                    <span class="text-[10px] bg-slate-100 text-slate-600 px-1.5 py-0.2 rounded font-normal">(You)</span>
+                                                }
+                                            </p>
+                                            <p class="text-slate-500 text-[11px]">@admin.Email</p>
+                                        </div>
+                                    </div>
+                                </td>
+                                <td class="px-5 py-3.5">
+                                    <span class="font-mono text-slate-700 bg-slate-100 px-2 py-0.5 rounded text-[11px] font-medium">
+                                        @admin.Id
+                                    </span>
+                                </td>
+                                <td class="px-5 py-3.5">
+                                    @if (admin.IsSuperAdmin)
+                                    {
+                                        <span class="inline-flex items-center gap-1 bg-purple-50 text-purple-700 border border-purple-200 text-[11px] px-2 py-0.5 rounded-full font-medium">
+                                            <span class="w-1.5 h-1.5 rounded-full bg-purple-600"></span>
+                                            System Admin
+                                        </span>
+                                    }
+                                    else
+                                    {
+                                        <span class="inline-flex items-center gap-1 bg-slate-100 text-slate-700 border border-slate-200 text-[11px] px-2 py-0.5 rounded-full font-medium">
+                                            <span class="w-1.5 h-1.5 rounded-full bg-slate-500"></span>
+                                            Admin
+                                        </span>
+                                    }
+                                </td>
+                                <td class="px-5 py-3.5">
+                                    <span class="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-medium bg-emerald-50 text-emerald-700 border border-emerald-200">
+                                        <span class="w-1.5 h-1.5 rounded-full bg-emerald-500"></span>
+                                        @admin.Status
+                                    </span>
+                                </td>
+                                <td class="px-5 py-3.5 text-right">
+                                    @if (isSystemAdmin)
+                                    {
+                                        @if (admin.IsSuperAdmin)
+                                        {
+                                            @if (string.Equals(admin.Id, currentUserId, StringComparison.OrdinalIgnoreCase))
+                                            {
+                                                <button type="button" 
+                                                        class="inline-flex items-center gap-1 text-slate-700 hover:text-black font-semibold text-xs px-2.5 py-1 rounded hover:bg-slate-100 transition-colors"
+                                                        @onclick="() => OpenEditModal(admin)">
+                                                    <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
+                                                    </svg>
+                                                    Edit Self
+                                                </button>
+                                            }
+                                            else
+                                            {
+                                                <span class="inline-flex items-center gap-1 text-[11px] text-slate-400 font-medium px-2 py-1 rounded bg-slate-50 border border-slate-200/60 cursor-not-allowed"
+                                                      title="System Admins cannot edit other System Admin accounts">
+                                                    <svg class="w-3 h-3 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
+                                                    </svg>
+                                                    Protected
+                                                </span>
+                                            }
+                                        }
+                                        else
+                                        {
+                                            <!-- System Admin can update regular Admin accounts -->
+                                            <button type="button" 
+                                                    class="inline-flex items-center gap-1 text-slate-900 hover:text-black font-semibold text-xs px-2.5 py-1 rounded hover:bg-slate-100 transition-colors"
+                                                    @onclick="() => OpenEditModal(admin)">
+                                                <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
+                                                </svg>
+                                                Edit
+                                            </button>
+                                        }
+                                    }
+                                    else
+                                    {
+                                        <!-- Regular Admin: Read-only view for their permission level -->
+                                        <span class="inline-flex items-center gap-1 text-[11px] text-slate-400 font-medium px-2 py-1"
+                                              title="Admins have read-only access">
+                                            <svg class="w-3 h-3 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+                                            </svg>
+                                            View Only
+                                        </span>
+                                    }
+                                </td>
+                            </tr>
+                        }
+                    }
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+<!-- Add Admin Wizard Modal -->
+<AddAdminWizard @bind-IsOpen="isWizardOpen" OnSaved="HandleAdminSaved" />
+
+<!-- Edit Admin Modal -->
+<EditAdminModal @bind-IsOpen="isEditModalOpen" Admin="selectedAdmin" OnSaved="HandleAdminSaved" />
+
+@code {
+    private bool isWizardOpen = false;
+    private bool isEditModalOpen = false;
+    private bool isLoading = true;
+    private bool isSystemAdmin = false;
+    private string currentUserId = string.Empty;
+
+    private string searchQuery = string.Empty;
+    private string selectedRoleFilter = "All";
+    private List<AdminViewModel> admins = new();
+    private AdminViewModel? selectedAdmin;
+
+    private CancellationTokenSource? _cts;
+
+    private List<AdminViewModel> FilteredAdmins => admins
+        .Where(a => selectedRoleFilter == "All" ||
+                    (selectedRoleFilter == "System Admin" && a.IsSuperAdmin) ||
+                    (selectedRoleFilter == "Admin" && !a.IsSuperAdmin))
+        .Where(a => string.IsNullOrWhiteSpace(searchQuery) ||
+                    a.FullName.Contains(searchQuery, StringComparison.OrdinalIgnoreCase) ||
+                    a.Id.Contains(searchQuery, StringComparison.OrdinalIgnoreCase) ||
+                    a.Email.Contains(searchQuery, StringComparison.OrdinalIgnoreCase))
+        .ToList();
+
+    protected override async Task OnInitializedAsync()
+    {
+        _cts = new CancellationTokenSource();
+        await DetermineUserRoleAsync();
+        await LoadAdminsAsync();
+    }
+
+    private async Task DetermineUserRoleAsync()
+    {
+        try
+        {
+            var authState = await AuthStateProvider.GetAuthenticationStateAsync();
+            var user = authState.User;
+
+            currentUserId = user.FindFirstValue("studio_id")
+                            ?? user.FindFirstValue(ClaimTypes.NameIdentifier)
+                            ?? user.FindFirstValue(ClaimTypes.Name)
+                            ?? string.Empty;
+
+            isSystemAdmin = user.IsInRole("SystemAdmin")
+                            || user.IsInRole("System Admin")
+                            || user.IsInRole("Super Admin")
+                            || currentUserId.StartsWith("SADM-", StringComparison.OrdinalIgnoreCase);
+        }
+        catch
+        {
+            isSystemAdmin = false;
+            currentUserId = string.Empty;
+        }
+    }
+
+    private async Task LoadAdminsAsync()
+    {
+        isLoading = true;
+        try
+        {
+            var data = await AdminService.GetAdminsAsync(_cts?.Token ?? CancellationToken.None);
+            admins = data?.ToList() ?? new List<AdminViewModel>();
+        }
+        catch
+        {
+            admins = new List<AdminViewModel>();
+        }
+        finally
+        {
+            isLoading = false;
+        }
+    }
+
+    private void OpenEditModal(AdminViewModel admin)
+    {
+        selectedAdmin = admin;
+        isEditModalOpen = true;
+    }
+
+    private async Task HandleAdminSaved()
+    {
+        await LoadAdminsAsync();
+    }
+
+    public void Dispose()
+    {
+        _cts?.Cancel();
+        _cts?.Dispose();
+    }
+}

@@ -181,7 +181,7 @@
     </div>
 </div>
 
-<AddMainServiceModal @bind-IsOpen="isCreateModalOpen" OnServiceCreated="HandleServiceCreated" />
+<MainServiceWizardModal @bind-IsOpen="isCreateModalOpen" OnServiceSaved="HandleServiceSaved" />
 
 @code {
     private bool isCreateModalOpen = false;
@@ -202,6 +202,12 @@
     }
 
     private void OpenCreateModal() => isCreateModalOpen = true;
+
+    private void HandleServiceSaved(string serviceId)
+    {
+        LoadFromDatabase();
+        notificationMessage = $"Service with custom ID '{serviceId}' has been saved to the database.";
+    }
 
     private void HandleServiceCreated(MainServiceItem newItem)
     {
