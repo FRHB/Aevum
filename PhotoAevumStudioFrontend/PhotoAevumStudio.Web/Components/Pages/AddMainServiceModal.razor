@@ -17,10 +17,17 @@
                 </button>
             </div>
 
+<<<<<<< HEAD
             <div class="p-6 overflow-y-auto flex-1">
                 <EditForm EditContext="@editContext">
                     <DataAnnotationsValidator />
 
+=======
+            <EditForm EditContext="@editContext" OnSubmit="HandleSaveAsync" class="flex flex-col flex-1 min-h-0">
+                <DataAnnotationsValidator />
+
+                <div class="p-6 overflow-y-auto flex-1">
+>>>>>>> 89cb0506c91bf3c01f732797627baaa00fea2957
                     <div class="space-y-4">
                         <div>
                             <label for="svc-name" class="block text-sm font-semibold text-gray-800 mb-1.5">
@@ -76,6 +83,7 @@
                             </div>
                         }
                     </div>
+<<<<<<< HEAD
                 </EditForm>
             </div>
 
@@ -89,6 +97,21 @@
                     @(isSaving ? "Saving..." : "Save Service")
                 </button>
             </div>
+=======
+                </div>
+
+                <div class="px-6 py-4 bg-gray-50 border-t border-gray-100 flex items-center justify-between">
+                    <button type="button" @onclick="HandleClose" disabled="@isSaving"
+                            class="px-4 py-2.5 bg-white border border-gray-300 hover:bg-gray-100 text-gray-700 text-xs font-semibold rounded-lg">
+                        Cancel
+                    </button>
+                    <button type="submit" disabled="@isSaving"
+                            class="px-6 py-2.5 bg-gray-900 hover:bg-black text-white text-xs font-semibold rounded-lg disabled:opacity-60">
+                        @(isSaving ? "Saving..." : "Save Service")
+                    </button>
+                </div>
+            </EditForm>
+>>>>>>> 89cb0506c91bf3c01f732797627baaa00fea2957
         </div>
     </div>
 }
@@ -146,6 +169,10 @@
             saveErrorMessage = null;
             var created = UserService.AddMainService(model);
             await OnServiceCreated.InvokeAsync(created);
+<<<<<<< HEAD
+=======
+            isSaving = false;
+>>>>>>> 89cb0506c91bf3c01f732797627baaa00fea2957
             await HandleClose();
         }
         catch (Exception ex)

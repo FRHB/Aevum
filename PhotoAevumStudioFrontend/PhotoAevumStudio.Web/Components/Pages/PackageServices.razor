@@ -5,9 +5,13 @@
 @layout AdminLayout
 @rendermode InteractiveServer
 @using PhotoAevumStudio.Web.Models
+<<<<<<< HEAD
 @using PhotoAevumStudio.Web.Services
 @inject IUserService UserService
 @inject IServicesApiClient ServicesApi
+=======
+@inject IUserService UserService
+>>>>>>> 89cb0506c91bf3c01f732797627baaa00fea2957
 
 <PageTitle>Package Services | Photo Aevum Studio</PageTitle>
 
@@ -130,7 +134,10 @@
                     <tr class="bg-gray-50/80 border-b border-gray-200 text-[11px] font-semibold uppercase tracking-wider text-gray-500">
                         <th scope="col" class="py-3.5 px-6">Package Tier</th>
                         <th scope="col" class="py-3.5 px-6">Description</th>
+<<<<<<< HEAD
                         <th scope="col" class="py-3.5 px-6">Featured</th>
+=======
+>>>>>>> 89cb0506c91bf3c01f732797627baaa00fea2957
                         <th scope="col" class="py-3.5 px-6">Status</th>
                     </tr>
                 </thead>
@@ -155,6 +162,7 @@
                                     <div class="text-xs text-gray-700 font-medium">@(string.IsNullOrWhiteSpace(pkg.Description) ? pkg.BundleCategory : pkg.Description)</div>
                                 </td>
                                 <td class="py-4 px-6">
+<<<<<<< HEAD
                                     <button type="button"
                                             @onclick="() => ToggleFeaturedAsync(pkg)"
                                             disabled="@_busyCodes.Contains(pkg.Code)"
@@ -166,6 +174,8 @@
                                     </button>
                                 </td>
                                 <td class="py-4 px-6">
+=======
+>>>>>>> 89cb0506c91bf3c01f732797627baaa00fea2957
                                     <span class="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200">
                                         <span class="w-1.5 h-1.5 rounded-full bg-emerald-500"></span>
                                         @pkg.Status
@@ -177,7 +187,11 @@
                     else
                     {
                         <tr>
+<<<<<<< HEAD
                             <td colspan="4" class="py-12 px-6 text-center">
+=======
+                            <td colspan="3" class="py-12 px-6 text-center">
+>>>>>>> 89cb0506c91bf3c01f732797627baaa00fea2957
                                 <div class="max-w-sm mx-auto space-y-2">
                                     <h4 class="text-sm font-bold text-gray-900">No package services found</h4>
                                     <p class="text-xs text-gray-500">
@@ -211,7 +225,10 @@
     private void LoadFromDatabase()
     {
         packages = UserService.GetPackageServices().ToList();
+<<<<<<< HEAD
         ApplyFeaturedFlags();
+=======
+>>>>>>> 89cb0506c91bf3c01f732797627baaa00fea2957
     }
 
     private void OpenCreateModal() => isCreateModalOpen = true;
@@ -243,6 +260,7 @@
     {
         searchQuery = string.Empty;
     }
+<<<<<<< HEAD
 
     // ── Featured toggle ─────────────────────────────────────────────────
     private HashSet<string> _featuredCodes = new(StringComparer.OrdinalIgnoreCase);
@@ -286,4 +304,6 @@
             _busyCodes.Remove(item.Code);
         }
     }
+=======
+>>>>>>> 89cb0506c91bf3c01f732797627baaa00fea2957
 }

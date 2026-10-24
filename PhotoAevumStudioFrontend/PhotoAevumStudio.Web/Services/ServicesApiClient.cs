@@ -560,6 +560,7 @@ public class ServicesApiClient : IServicesApiClient
             return (false, dbEx.Message, null);
         }
     }
+<<<<<<< HEAD
 
     // ═════════════════════════════════════════════════════════════════════
     //  Featured services + public Portfolio mapping
@@ -1018,4 +1019,6 @@ public class ServicesApiClient : IServicesApiClient
             return false;
         }
     }
+=======
+>>>>>>> 89cb0506c91bf3c01f732797627baaa00fea2957
 }

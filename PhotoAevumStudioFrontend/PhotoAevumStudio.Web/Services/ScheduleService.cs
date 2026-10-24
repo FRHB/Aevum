@@ -16,8 +16,11 @@ public class ScheduleService : IScheduleService
     private readonly List<EquipmentItemResource> _equipmentResources = new();
     private readonly List<EquipmentReservationModel> _equipmentReservations = new();
 
+<<<<<<< HEAD
     private readonly List<CategoryAssociationProfile> _categoryProfiles = new();
 
+=======
+>>>>>>> 89cb0506c91bf3c01f732797627baaa00fea2957
     public ScheduleService()
     {
         SeedStudioSpaces();
@@ -26,7 +29,10 @@ public class ScheduleService : IScheduleService
         SeedStaffShifts();
         SeedEquipment();
         SeedEquipmentReservations();
+<<<<<<< HEAD
         SeedCategoryProfiles();
+=======
+>>>>>>> 89cb0506c91bf3c01f732797627baaa00fea2957
 
         RecalculateEventConflicts();
         RecalculateShiftConflicts();
@@ -52,7 +58,10 @@ public class ScheduleService : IScheduleService
 
         _eventBookings.Add(booking);
         RecalculateEventConflicts();
+<<<<<<< HEAD
         SyncEventAssociations(booking);
+=======
+>>>>>>> 89cb0506c91bf3c01f732797627baaa00fea2957
     }
 
     public void UpdateEventBooking(EventBookingModel booking)
@@ -66,7 +75,10 @@ public class ScheduleService : IScheduleService
 
             _eventBookings[existingIndex] = booking;
             RecalculateEventConflicts();
+<<<<<<< HEAD
             SyncEventAssociations(booking);
+=======
+>>>>>>> 89cb0506c91bf3c01f732797627baaa00fea2957
         }
     }
 
@@ -74,10 +86,13 @@ public class ScheduleService : IScheduleService
     {
         _eventBookings.RemoveAll(b => b.Id == id);
         RecalculateEventConflicts();
+<<<<<<< HEAD
 
         // Release the equipment that was auto-reserved for this event.
         _equipmentReservations.RemoveAll(r => r.SourceEventId == id);
         RecalculateEquipmentConflicts();
+=======
+>>>>>>> 89cb0506c91bf3c01f732797627baaa00fea2957
     }
 
     public int GetEventConflictCount()
@@ -108,6 +123,7 @@ public class ScheduleService : IScheduleService
                     b2.HasConflict = true;
                     b2.ConflictMessage = $"Double-booked with '{b1.ClientName}' ({b1.FormattedTimeRange})";
                 }
+<<<<<<< HEAD
                 else if (b1.SharesStaffWith(b2))
                 {
                     b1.HasConflict = true;
@@ -116,6 +132,8 @@ public class ScheduleService : IScheduleService
                     b2.HasConflict = true;
                     b2.ConflictMessage = $"Assigned staff also booked on '{b1.ClientName}' ({b1.FormattedTimeRange})";
                 }
+=======
+>>>>>>> 89cb0506c91bf3c01f732797627baaa00fea2957
             }
         }
     }
@@ -293,6 +311,7 @@ public class ScheduleService : IScheduleService
     }
 
     // ─────────────────────────────────────────────────────────────────────────
+<<<<<<< HEAD
     // CATEGORY → ASSOCIATION PROFILES (auto-assignment when a category is chosen)
     // ─────────────────────────────────────────────────────────────────────────
 
@@ -488,6 +507,8 @@ public class ScheduleService : IScheduleService
     }
 
     // ─────────────────────────────────────────────────────────────────────────
+=======
+>>>>>>> 89cb0506c91bf3c01f732797627baaa00fea2957
     // SEED DATA INITIALIZERS
     // ─────────────────────────────────────────────────────────────────────────
 

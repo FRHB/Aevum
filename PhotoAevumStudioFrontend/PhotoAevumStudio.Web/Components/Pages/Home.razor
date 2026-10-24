@@ -4,7 +4,10 @@
 @using PhotoAevumStudio.Web.Models
 @using PhotoAevumStudio.Web.Services
 @inject IUserService UserService
+<<<<<<< HEAD
 @inject IServicesApiClient ServicesApi
+=======
+>>>>>>> 89cb0506c91bf3c01f732797627baaa00fea2957
 @inject NavigationManager NavManager
 
 <PageTitle>Photo Aevum Studio | Book Your Session</PageTitle>
@@ -25,7 +28,11 @@
         @* Desktop nav links *@
         <nav class="hidden md:flex items-center gap-16 text-sm font-medium text-gray-600">
             <a href="#home" class="hover:text-gray-950 transition-colors">HOME</a>
+<<<<<<< HEAD
             <a href="#services" @onclick="ShowFeaturedServicesAsync" class="hover:text-gray-950 transition-colors">SERVICES</a>
+=======
+            <a href="#services" class="hover:text-gray-950 transition-colors">SERVICES</a>
+>>>>>>> 89cb0506c91bf3c01f732797627baaa00fea2957
             <a href="#portfolio" @onclick="TogglePortfolio" @onclick:preventDefault class="hover:text-gray-950 transition-colors">PORTFOLIO</a>
             <a href="#faq" class="hover:text-gray-950 transition-colors">FAQ</a>
             <a href="#contact" class="hover:text-gray-950 transition-colors">CONTACT</a>
@@ -121,6 +128,7 @@
             </div>
         </div>
 
+<<<<<<< HEAD
         @if (_featuredMode)
         {
             @* Featured pool: services the admin has starred (Main, Package, Add-On) *@
@@ -184,6 +192,9 @@
             }
         }
         else if (!DatabaseServices.Any())
+=======
+        @if (!DatabaseServices.Any())
+>>>>>>> 89cb0506c91bf3c01f732797627baaa00fea2957
         {
             <div class="p-12 text-center bg-white border border-gray-200 rounded-lg">
                 <p class="text-gray-500 text-base">Loading live services from the database...</p>
@@ -342,6 +353,7 @@
     </div>
 
     <nav class="flex-1 overflow-y-auto px-6 py-8" aria-label="Portfolio categories">
+<<<<<<< HEAD
         @if (_activePortfolioCategory is { } active)
         {
             @* ── Category detail: services mapped to the chosen category ── *@
@@ -483,6 +495,25 @@
                 }
             </ul>
         }
+=======
+        <p class="text-xs text-gray-400 uppercase tracking-widest mb-4">Browse by category</p>
+        <ul class="divide-y divide-gray-100 border-y border-gray-100">
+            <li>
+                <button @onclick='() => SelectPortfolioCategory("Photography")'
+                        type="button"
+                        class="w-full flex items-center justify-between py-5 text-left text-2xl font-bold tracking-tight text-gray-900 hover:pl-2 transition-all duration-300 group">
+                    Photography &rarr;
+                </button>
+            </li>
+            <li>
+                <button @onclick='() => SelectPortfolioCategory("Videography")'
+                        type="button"
+                        class="w-full flex items-center justify-between py-5 text-left text-2xl font-bold tracking-tight text-gray-900 hover:pl-2 transition-all duration-300 group">
+                    Videography &rarr;
+                </button>
+            </li>
+        </ul>
+>>>>>>> 89cb0506c91bf3c01f732797627baaa00fea2957
     </nav>
 </aside>
 
@@ -558,6 +589,7 @@
     private void OpenModal() => _modalOpen = true;
     private void CloseModal() => _modalOpen = false;
 
+<<<<<<< HEAD
     // ── Featured services pool (Services nav click) ─────────────────────
     private bool _featuredMode = false;
     private bool _featuredLoading = false;
@@ -705,4 +737,16 @@
         category.ServiceNames.Contains(title, StringComparer.OrdinalIgnoreCase)
         || (!string.IsNullOrWhiteSpace(categoryText)
             && string.Equals(categoryText.Trim(), category.Name, StringComparison.OrdinalIgnoreCase));
+=======
+    private bool _portfolioOpen = false;
+    private string? _selectedPortfolioCategory;
+    private void TogglePortfolio() => _portfolioOpen = !_portfolioOpen;
+    private void ClosePortfolio() => _portfolioOpen = false;
+
+    private void SelectPortfolioCategory(string category)
+    {
+        _selectedPortfolioCategory = category;
+        _portfolioOpen = false;
+    }
+>>>>>>> 89cb0506c91bf3c01f732797627baaa00fea2957
 }

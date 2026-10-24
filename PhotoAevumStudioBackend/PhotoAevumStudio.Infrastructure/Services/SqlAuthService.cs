@@ -1,4 +1,8 @@
+<<<<<<< HEAD
 ﻿using System.Data;
+=======
+using System.Data;
+>>>>>>> 89cb0506c91bf3c01f732797627baaa00fea2957
 using Microsoft.Data.SqlClient;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
@@ -799,6 +803,7 @@ public class SqlAuthService : ISqlAuthService
 
         try
         {
+<<<<<<< HEAD
             if (BCrypt.Net.BCrypt.Verify(provided, storedHash))
                 return true;
         }
@@ -821,6 +826,14 @@ public class SqlAuthService : ISqlAuthService
         }
 
         return false;
+=======
+            return BCrypt.Net.BCrypt.Verify(provided, storedHash);
+        }
+        catch
+        {
+            return false;
+        }
+>>>>>>> 89cb0506c91bf3c01f732797627baaa00fea2957
     }
 
     private static bool VerifyPasswordFlexible(string provided, string stored, bool allowPlainText)

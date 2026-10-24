@@ -18,9 +18,12 @@ public class MainServiceItem
     public string Status { get; set; } = "Active";
     public bool IsActive => Status.Equals("Active", StringComparison.OrdinalIgnoreCase);
 
+<<<<<<< HEAD
     /// <summary>True when an admin has marked this service as featured on the public site.</summary>
     public bool IsFeatured { get; set; }
 
+=======
+>>>>>>> 89cb0506c91bf3c01f732797627baaa00fea2957
     public string Id => Code;
     public string Name => Title;
     public decimal Price => BasePrice;
@@ -73,9 +76,12 @@ public class PackageServiceItem
     public string? Description { get; set; }
     public string Status { get; set; } = "Active";
     public bool IsActive => Status.Equals("Active", StringComparison.OrdinalIgnoreCase);
+<<<<<<< HEAD
 
     /// <summary>True when an admin has marked this package as featured on the public site.</summary>
     public bool IsFeatured { get; set; }
+=======
+>>>>>>> 89cb0506c91bf3c01f732797627baaa00fea2957
 }
 
 /// <summary>
@@ -121,9 +127,12 @@ public class AddOnServiceItem
     public string? Description { get; set; }
     public string Status { get; set; } = "Active";
     public bool IsActive => Status.Equals("Active", StringComparison.OrdinalIgnoreCase);
+<<<<<<< HEAD
 
     /// <summary>True when an admin has marked this add-on as featured on the public site.</summary>
     public bool IsFeatured { get; set; }
+=======
+>>>>>>> 89cb0506c91bf3c01f732797627baaa00fea2957
 }
 
 /// <summary>
@@ -170,6 +179,7 @@ public class ServiceCategoryItem
     public string Type { get; set; } = "Main Services"; // "Main Services", "Packages", "Add-Ons", "Specialty"
     public string Status { get; set; } = "Active"; // "Active", "Draft", "Inactive", "Archived"
     public bool IsFeatured { get; set; } = false;
+<<<<<<< HEAD
 
     /// <summary>When true the category is listed in the public Portfolio sidebar.</summary>
     public bool ShowInPortfolio { get; set; } = false;
@@ -177,6 +187,8 @@ public class ServiceCategoryItem
     /// <summary>Parent portfolio folder: "Photography" or "Videography".</summary>
     public string PortfolioSection { get; set; } = PortfolioSections.Photography;
 
+=======
+>>>>>>> 89cb0506c91bf3c01f732797627baaa00fea2957
     public string ColorTag { get; set; } = "Blue"; // "Blue", "Rose", "Purple", "Emerald", "Amber", "Indigo", "Cyan"
     public List<string> AssociatedServices { get; set; } = new();
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
@@ -221,6 +233,7 @@ public class CategoryModel
 
     public bool IsFeatured { get; set; } = false;
 
+<<<<<<< HEAD
     public bool ShowInPortfolio { get; set; } = false;
 
     public string PortfolioSection { get; set; } = PortfolioSections.Photography;
@@ -331,3 +344,7 @@ public class CategoryAssociationProfile
         EquipmentIds = EquipmentIds.ToList()
     };
 }
+=======
+    public string ServicesRaw { get; set; } = string.Empty;
+}
+>>>>>>> 89cb0506c91bf3c01f732797627baaa00fea2957

@@ -5,7 +5,10 @@
 @layout AdminLayout
 @rendermode InteractiveServer
 @inject IScheduleService ScheduleService
+<<<<<<< HEAD
 @inject IServicesApiClient ServicesApi
+=======
+>>>>>>> 89cb0506c91bf3c01f732797627baaa00fea2957
 
 <PageTitle>Calendar of Events | Aevum Studio</PageTitle>
 
@@ -346,6 +349,7 @@
                         <span class="drawer-field-label">Photographer</span>
                         <span class="drawer-field-val">@_selectedBooking.AssignedPhotographer</span>
                     </div>
+<<<<<<< HEAD
                     @if (!string.IsNullOrWhiteSpace(_selectedBooking.CategoryName))
                     {
                         <div class="drawer-field">
@@ -374,6 +378,8 @@
                             <span class="drawer-field-val text-xs" style="color:#991b1b">@_selectedBooking.ConflictMessage</span>
                         </div>
                     }
+=======
+>>>>>>> 89cb0506c91bf3c01f732797627baaa00fea2957
                     <div class="drawer-field">
                         <span class="drawer-field-label">Price</span>
                         <span class="drawer-field-val font-bold">$@_selectedBooking.EstimatedPrice.ToString("N2")</span>
@@ -403,10 +409,13 @@
     @* ── CREATE NEW EVENT MODAL ───────────────────────────────────────── *@
     @if (_isCreateModalOpen)
     {
+<<<<<<< HEAD
         var busyStaff = BusyStaffIds;
         var busyEquipment = BusyEquipmentIds;
         var busyPicked = _assignedStaffIds.Count(busyStaff.Contains) + _assignedEquipmentIds.Count(busyEquipment.Contains);
 
+=======
+>>>>>>> 89cb0506c91bf3c01f732797627baaa00fea2957
         <div class="drawer-backdrop" @onclick="CloseCreateModal">
             <div class="compact-modal" @onclick:stopPropagation="true">
                 <div class="modal-header">
@@ -427,6 +436,7 @@
                         <input type="text" @bind="_newEvent.ClientName" class="form-control text-xs" placeholder="e.g. Acme Corp Shoot" />
                     </div>
 
+<<<<<<< HEAD
                     @* Category: choosing one auto-assigns space, service, price, duration, staff and equipment *@
                     <div class="form-group mb-2">
                         <label class="form-label text-xs">Event Category</label>
@@ -452,6 +462,8 @@
                         }
                     </div>
 
+=======
+>>>>>>> 89cb0506c91bf3c01f732797627baaa00fea2957
                     <div class="grid grid-cols-2 gap-2 mb-2">
                         <div>
                             <label class="form-label text-xs">Studio Space</label>
@@ -465,10 +477,17 @@
                         <div>
                             <label class="form-label text-xs">Service Type</label>
                             <select @bind="_newEvent.ServiceType" class="form-control text-xs">
+<<<<<<< HEAD
                                 @foreach (var t in EventServiceTypes.All)
                                 {
                                     <option value="@t">@t</option>
                                 }
+=======
+                                <option value="Express Headshot">Express Headshot</option>
+                                <option value="Full Studio Session">Full Studio Session</option>
+                                <option value="Commercial Campaign">Commercial Campaign</option>
+                                <option value="Bridal Prep">Bridal Prep</option>
+>>>>>>> 89cb0506c91bf3c01f732797627baaa00fea2957
                             </select>
                         </div>
                     </div>
@@ -488,6 +507,7 @@
                         </div>
                     </div>
 
+<<<<<<< HEAD
                     <div class="grid grid-cols-2 gap-2 mb-2">
                         <div>
                             <label class="form-label text-xs">Estimated Price ($)</label>
@@ -556,6 +576,8 @@
                         </p>
                     }
 
+=======
+>>>>>>> 89cb0506c91bf3c01f732797627baaa00fea2957
                     <div class="modal-footer pt-3 mt-3 border-t flex justify-end gap-2">
                         <button type="button" @onclick="CloseCreateModal" class="btn btn-sm btn-outline-secondary">Cancel</button>
                         <button type="button" @onclick="SaveNewEvent" class="btn btn-sm btn-dark">Save Event</button>
@@ -580,6 +602,7 @@
     private string? _modalErrorMessage;
 
     private EventBookingModel _newEvent = new();
+<<<<<<< HEAD
 
     // Category-driven auto-assignment state for the create modal
     private List<CategoryLookupItem> _categories = new();
@@ -588,11 +611,14 @@
     private readonly List<string> _assignedStaffIds = new();
     private readonly List<string> _assignedEquipmentIds = new();
     private bool _spaceLockedFromSlot;
+=======
+>>>>>>> 89cb0506c91bf3c01f732797627baaa00fea2957
     private DateTime _newEventDate = DateTime.Today;
     private TimeOnly _newStartTime = new(9, 0);
     private TimeOnly _newEndTime = new(13, 0);
 
     private List<StudioSpaceResource> StudioSpaces => ScheduleService.GetStudioSpaces();
+<<<<<<< HEAD
     private List<StaffMemberResource> StaffMembers => ScheduleService.GetStaffMembers();
     private List<EquipmentItemResource> EquipmentItems => ScheduleService.GetEquipmentResources();
 
@@ -622,6 +648,10 @@
         }
     }
 
+=======
+    private List<EventBookingModel> AllBookings => ScheduleService.GetEventBookings();
+
+>>>>>>> 89cb0506c91bf3c01f732797627baaa00fea2957
     private int ConflictCount => ScheduleService.GetEventConflictCount();
     private int TotalBookingsCount => AllBookings.Count;
     private int ThisWeekBookingsCount => AllBookings.Count(b => WeekDays.Any(w => w.Date == b.Date.Date));
@@ -807,7 +837,10 @@
         _newStartTime = new TimeOnly(9, 0);
         _newEndTime = new TimeOnly(13, 0);
         _modalErrorMessage = null;
+<<<<<<< HEAD
         ResetAssociationState(spaceLockedFromSlot: false);
+=======
+>>>>>>> 89cb0506c91bf3c01f732797627baaa00fea2957
         _isCreateModalOpen = true;
     }
 
@@ -826,7 +859,10 @@
         _newStartTime = new TimeOnly(10, 0);
         _newEndTime = new TimeOnly(13, 0);
         _modalErrorMessage = null;
+<<<<<<< HEAD
         ResetAssociationState(spaceLockedFromSlot: true);
+=======
+>>>>>>> 89cb0506c91bf3c01f732797627baaa00fea2957
         _isCreateModalOpen = true;
     }
 
@@ -854,15 +890,19 @@
         _newEvent.StartTime = _newStartTime.ToTimeSpan();
         _newEvent.EndTime = _newEndTime.ToTimeSpan();
 
+<<<<<<< HEAD
         _newEvent.AssignedStaffIds = _assignedStaffIds.ToList();
         _newEvent.AssignedEquipmentIds = _assignedEquipmentIds.ToList();
         _newEvent.AssignedPhotographer = ScheduleService.ResolveLeadStaffName(_assignedStaffIds, _newEvent.AssignedPhotographer);
 
+=======
+>>>>>>> 89cb0506c91bf3c01f732797627baaa00fea2957
         ScheduleService.AddEventBooking(_newEvent);
         _isCreateModalOpen = false;
         _modalErrorMessage = null;
     }
 
+<<<<<<< HEAD
     private void ResetAssociationState(bool spaceLockedFromSlot)
     {
         _selectedCategoryId = string.Empty;
@@ -937,6 +977,8 @@
     private string EquipmentNames(IEnumerable<string> ids) =>
         string.Join(", ", ids.Select(id => EquipmentItems.FirstOrDefault(q => q.Id == id)?.Name).OfType<string>());
 
+=======
+>>>>>>> 89cb0506c91bf3c01f732797627baaa00fea2957
     private string GetSpaceDotColor(string spaceId) => spaceId switch
     {
         "studio-a" => "bg-blue-500",

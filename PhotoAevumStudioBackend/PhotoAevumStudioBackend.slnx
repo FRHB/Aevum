@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 <Solution>
   <Folder Name="/Tests/">
     <Project Path="Tests/PhotoAevumStudio.Api.Tests/PhotoAevumStudio.Api.Tests.csproj" />
@@ -7,3 +8,14 @@
   <Project Path="PhotoAevumStudio.Application/PhotoAevumStudio.Application.csproj" />
   <Project Path="PhotoAevumStudio.Infrastructure/PhotoAevumStudio.Infrastructure.csproj" />
 </Solution>
+=======
+<Solution>
+  <Folder Name="/Tests/">
+    <Project Path="Tests/PhotoAevumStudio.Api.Tests/PhotoAevumStudio.Api.Tests.csproj" />
+    <Project Path="Tests/PhotoAevumStudio.Application.Tests/PhotoAevumStudio.Application.Tests.csproj" />
+  </Folder>
+  <Project Path="PhotoAevumStudio.Api/PhotoAevumStudio.Api.csproj" />
+  <Project Path="PhotoAevumStudio.Application/PhotoAevumStudio.Application.csproj" />
+  <Project Path="PhotoAevumStudio.Infrastructure/PhotoAevumStudio.Infrastructure.csproj" />
+</Solution>
+>>>>>>> 89cb0506c91bf3c01f732797627baaa00fea2957

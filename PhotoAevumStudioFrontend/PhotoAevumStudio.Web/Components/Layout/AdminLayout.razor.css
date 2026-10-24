@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 ﻿.admin-layout-wrapper {
     display: flex;
     min-height: 100vh;
@@ -17,3 +18,24 @@
         margin-left: 16rem; /* Matches sidebar width */
     }
 }
+=======
+﻿.admin-layout-wrapper {
+    display: flex;
+    min-height: 100vh;
+    background-color: #F8FAFC;
+    font-family: 'Inter', sans-serif;
+}
+
+.admin-main-content {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+}
+
+@media (min-width: 768px) {
+    .admin-main-content {
+        margin-left: 16rem; /* Matches sidebar width */
+    }
+}
+>>>>>>> 89cb0506c91bf3c01f732797627baaa00fea2957

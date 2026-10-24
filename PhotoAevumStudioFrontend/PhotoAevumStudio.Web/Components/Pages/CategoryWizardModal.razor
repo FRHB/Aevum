@@ -3,7 +3,10 @@
 @using PhotoAevumStudio.Web.Services
 @inject IServicesApiClient ServicesApi
 @inject ILogger<CategoryWizardModal> Logger
+<<<<<<< HEAD
 @inject IScheduleService ScheduleService
+=======
+>>>>>>> 89cb0506c91bf3c01f732797627baaa00fea2957
 
 @if (IsOpen)
 {
@@ -36,6 +39,7 @@
                 </button>
             </div>
 
+<<<<<<< HEAD
             @* ── Stepper Navigation Bar (3 Steps) ───────────────────────────────────── *@
             <div class="px-6 pt-4 pb-3 bg-gray-50/70 border-b border-gray-100 shrink-0">
                 <nav aria-label="Wizard Steps" class="flex items-center justify-between">
@@ -59,6 +63,38 @@
                             </div>
                         </div>
                     }
+=======
+            @* ── Stepper Navigation Bar (2 Steps) ───────────────────────────────────── *@
+            <div class="px-6 pt-4 pb-3 bg-gray-50/70 border-b border-gray-100 shrink-0">
+                <nav aria-label="Wizard Steps" class="flex items-center justify-between">
+                    
+                    @* Step 1: Details *@
+                    <div class="flex items-center gap-2.5">
+                        <span class="w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold transition-all
+                            @(currentStep > 1 ? "bg-emerald-600 text-white shadow-xs" : currentStep == 1 ? "bg-gray-900 text-white shadow-xs ring-4 ring-gray-100" : "bg-gray-200 text-gray-500")">
+                            @(currentStep > 1 ? "✓" : "1")
+                        </span>
+                        <div class="text-left">
+                            <p class="text-xs font-semibold @(currentStep == 1 ? "text-gray-900" : "text-gray-500")">Step 1</p>
+                            <p class="text-[11px] text-gray-400">Category Details</p>
+                        </div>
+                    </div>
+
+                    <div class="flex-1 h-0.5 mx-4 @(currentStep > 1 ? "bg-emerald-500" : "bg-gray-200") transition-colors"></div>
+
+                    @* Step 2: Overview & Save *@
+                    <div class="flex items-center gap-2.5">
+                        <span class="w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold transition-all
+                            @(currentStep == 2 ? "bg-gray-900 text-white shadow-xs ring-4 ring-gray-100" : "bg-gray-200 text-gray-500")">
+                            2
+                        </span>
+                        <div class="text-left">
+                            <p class="text-xs font-semibold @(currentStep == 2 ? "text-gray-900" : "text-gray-500")">Step 2</p>
+                            <p class="text-[11px] text-gray-400">Overview &amp; Save</p>
+                        </div>
+                    </div>
+
+>>>>>>> 89cb0506c91bf3c01f732797627baaa00fea2957
                 </nav>
             </div>
 
@@ -125,11 +161,16 @@
                 }
 
                 @* ══════════════════════════════════════════════════════════════════════
+<<<<<<< HEAD
                    WIZARD PAGE 2: DEFAULT ASSOCIATIONS
+=======
+                   WIZARD PAGE 2: OVERVIEW & SAVE
+>>>>>>> 89cb0506c91bf3c01f732797627baaa00fea2957
                    ══════════════════════════════════════════════════════════════════════ *@
                 @if (currentStep == 2)
                 {
                     <div class="space-y-4 animate-in fade-in duration-150">
+<<<<<<< HEAD
                         <div class="bg-gray-50/50 p-4 rounded-xl border border-gray-100">
                             <h3 class="text-xs font-bold uppercase tracking-wider text-gray-600 mb-1">Default Associations</h3>
                             <p class="text-xs text-gray-400">
@@ -148,6 +189,8 @@
                 @if (currentStep == 3)
                 {
                     <div class="space-y-4 animate-in fade-in duration-150">
+=======
+>>>>>>> 89cb0506c91bf3c01f732797627baaa00fea2957
                         
                         @* Auto-Generated ID Alert Card *@
                         <div class="bg-gradient-to-r from-gray-900 to-gray-800 text-white rounded-xl p-4 shadow-sm flex items-center justify-between">
@@ -197,6 +240,7 @@
                                 </p>
                             </div>
 
+<<<<<<< HEAD
                             <div class="p-3.5 bg-white space-y-1.5">
                                 <span class="block font-medium text-gray-500 uppercase tracking-wider text-[11px] mb-1">Auto-Assigned to Events</span>
                                 @if (!defaults.HasAny)
@@ -212,6 +256,8 @@
                                 }
                             </div>
 
+=======
+>>>>>>> 89cb0506c91bf3c01f732797627baaa00fea2957
                         </div>
                     </div>
                 }
@@ -242,7 +288,11 @@
                 </div>
 
                 <div>
+<<<<<<< HEAD
                     @if (currentStep < 3)
+=======
+                    @if (currentStep == 1)
+>>>>>>> 89cb0506c91bf3c01f732797627baaa00fea2957
                     {
                         <button type="button" 
                                 @onclick="NextStep"
@@ -286,8 +336,11 @@
     [Parameter] public EventCallback<bool> IsOpenChanged { get; set; }
     [Parameter] public EventCallback<string> OnCategorySaved { get; set; }
 
+<<<<<<< HEAD
     private static readonly string[] StepLabels = { "Category Details", "Default Associations", "Overview & Save" };
 
+=======
+>>>>>>> 89cb0506c91bf3c01f732797627baaa00fea2957
     private int currentStep = 1;
     private bool isSaving = false;
     private bool isGeneratingId = false;
@@ -297,7 +350,10 @@
     private string? descError;
 
     private CategoryWizardModel model = new();
+<<<<<<< HEAD
     private CategoryAssociationProfile defaults = new();
+=======
+>>>>>>> 89cb0506c91bf3c01f732797627baaa00fea2957
 
     public void ResetWizard()
     {
@@ -308,7 +364,10 @@
         nameError = null;
         descError = null;
         model = new CategoryWizardModel();
+<<<<<<< HEAD
         defaults = new CategoryAssociationProfile();
+=======
+>>>>>>> 89cb0506c91bf3c01f732797627baaa00fea2957
     }
 
     private async Task HandleClose()
@@ -321,6 +380,7 @@
     private async Task NextStep()
     {
         errorMessage = null;
+<<<<<<< HEAD
 
         if (currentStep == 1)
         {
@@ -348,6 +408,13 @@
             currentStep = 3;
             await PrepareOverviewStepAsync();
         }
+=======
+        if (!ValidateStep1())
+            return;
+
+        currentStep = 2;
+        await PrepareOverviewStepAsync();
+>>>>>>> 89cb0506c91bf3c01f732797627baaa00fea2957
     }
 
     private void PrevStep()
@@ -420,10 +487,15 @@
                 return;
             }
 
+<<<<<<< HEAD
             var categoryId = createdId ?? model.GeneratedId;
             await SaveDefaultsAsync(categoryId);
 
             await OnCategorySaved.InvokeAsync(categoryId);
+=======
+            await OnCategorySaved.InvokeAsync(createdId ?? model.GeneratedId);
+            isSaving = false;
+>>>>>>> 89cb0506c91bf3c01f732797627baaa00fea2957
             await HandleClose();
         }
         catch (Exception ex)
@@ -435,6 +507,7 @@
             isSaving = false;
         }
     }
+<<<<<<< HEAD
 
     /// <summary>
     /// Stores the default associations for the new category. A failure here never blocks the category
@@ -475,4 +548,6 @@
         var list = items.ToList();
         return list.Count == 0 ? "—" : string.Join(", ", list);
     }
+=======
+>>>>>>> 89cb0506c91bf3c01f732797627baaa00fea2957
 }
