@@ -14,6 +14,7 @@ CREATE OR ALTER PROCEDURE dbo.sp_CreateCustomer
     @CustomerEmail nvarchar(255),
     @CustomerPhoneNumber nvarchar(30) = NULL,
     @CustomerPassword nvarchar(255),
+    @CustomerID nvarchar(30) = NULL,
     @GeneratedCustomerID nvarchar(30) = NULL OUTPUT
 AS
 BEGIN
@@ -23,13 +24,17 @@ BEGIN
     BEGIN TRY
         BEGIN TRANSACTION;
         
-        DECLARE @SeqVal INT = NEXT VALUE FOR dbo.Seq_CustomerID;
-        DECLARE @NewID NVARCHAR(30) = 'CUST-' + RIGHT('0000' + CAST(@SeqVal AS VARCHAR(10)), 4);
+        DECLARE @NewID NVARCHAR(30) = NULLIF(LTRIM(RTRIM(@CustomerID)), '');
+        IF @NewID IS NULL
+        BEGIN
+            DECLARE @SeqVal INT = NEXT VALUE FOR dbo.Seq_CustomerID;
+            SET @NewID = 'CUST-' + RIGHT('0000' + CAST(@SeqVal AS VARCHAR(10)), 4);
+        END
         
         WHILE EXISTS (SELECT 1 FROM dbo.Customer WITH (UPDLOCK, HOLDLOCK) WHERE CustomerID = @NewID)
         BEGIN
-            SET @SeqVal = NEXT VALUE FOR dbo.Seq_CustomerID;
-            SET @NewID = 'CUST-' + RIGHT('0000' + CAST(@SeqVal AS VARCHAR(10)), 4);
+            DECLARE @NextSeqVal INT = NEXT VALUE FOR dbo.Seq_CustomerID;
+            SET @NewID = 'CUST-' + RIGHT('0000' + CAST(@NextSeqVal AS VARCHAR(10)), 4);
         END
         
         INSERT INTO dbo.Customer (
@@ -72,6 +77,7 @@ CREATE OR ALTER PROCEDURE dbo.sp_CreateEmployee
     @EmployeePassword nvarchar(255),
     @isFirstLogin bit = 1,
     @CreatedByAdminID nvarchar(30) = NULL,
+    @EmployeeID nvarchar(30) = NULL,
     @GeneratedEmployeeID nvarchar(30) = NULL OUTPUT
 AS
 BEGIN
@@ -81,13 +87,17 @@ BEGIN
     BEGIN TRY
         BEGIN TRANSACTION;
         
-        DECLARE @SeqVal INT = NEXT VALUE FOR dbo.Seq_EmployeeID;
-        DECLARE @NewID NVARCHAR(30) = 'EMP-' + RIGHT('000' + CAST(@SeqVal AS VARCHAR(10)), 3);
+        DECLARE @NewID NVARCHAR(30) = NULLIF(LTRIM(RTRIM(@EmployeeID)), '');
+        IF @NewID IS NULL
+        BEGIN
+            DECLARE @SeqVal INT = NEXT VALUE FOR dbo.Seq_EmployeeID;
+            SET @NewID = 'EMP-' + RIGHT('000' + CAST(@SeqVal AS VARCHAR(10)), 3);
+        END
         
         WHILE EXISTS (SELECT 1 FROM dbo.Employee WITH (UPDLOCK, HOLDLOCK) WHERE EmployeeID = @NewID)
         BEGIN
-            SET @SeqVal = NEXT VALUE FOR dbo.Seq_EmployeeID;
-            SET @NewID = 'EMP-' + RIGHT('000' + CAST(@SeqVal AS VARCHAR(10)), 3);
+            DECLARE @NextSeqVal INT = NEXT VALUE FOR dbo.Seq_EmployeeID;
+            SET @NewID = 'EMP-' + RIGHT('000' + CAST(@NextSeqVal AS VARCHAR(10)), 3);
         END
         
         INSERT INTO dbo.Employee (
@@ -461,6 +471,16 @@ BEGIN
 END;
 GO
 
+CREATE OR ALTER PROCEDURE dbo.sp_GetEquipmentTypes
+AS
+BEGIN
+    SET NOCOUNT ON;
+    SELECT EquipmentTypeID, EquipmentTypeName
+    FROM dbo.EquipmentType
+    ORDER BY EquipmentTypeName;
+END;
+GO
+
 CREATE OR ALTER PROCEDURE dbo.sp_GetNextEquipmentIdPreview
 AS
 BEGIN
@@ -653,7 +673,7 @@ GO
 
 CREATE OR ALTER PROCEDURE dbo.sp_CreateServiceCategory
     @ServiceCategoryName        nvarchar(255),
-    @ServiceCategoryDescription nvarchar(255),
+    @ServiceCategoryDescription nvarchar(1000),
     @CreatedByAdminID           nvarchar(30)  = NULL,
     @CreatedCategoryID          nvarchar(30)  = NULL OUTPUT
 AS
@@ -686,7 +706,7 @@ BEGIN
         IF OBJECT_ID(N'dbo.sp_AddHistoryLog', N'P') IS NOT NULL
         BEGIN
             EXEC dbo.sp_AddHistoryLog
-                @ActionType = 'CREATE',
+                @ActionType = 'INSERT',
                 @EntityName = 'ServiceCategory',
                 @EntityID = @CreatedCategoryID,
                 @ActionDetails = 'New service category created via Wizard.',
@@ -710,8 +730,8 @@ GO
 
 CREATE OR ALTER PROCEDURE dbo.sp_CreateService
     @ServiceName           nvarchar(255),
-    @ServicesDescription   nvarchar(255),
-    @ServicePrice          money,
+    @ServicesDescription   nvarchar(1000),
+    @ServicePrice          decimal(18,2),
     @ServiceCategoryID     nvarchar(30)   = NULL,
     @ServiceImage          varbinary(max) = NULL,
     @ServiceImageMimeType  nvarchar(100)  = 'image/jpeg',
@@ -766,7 +786,7 @@ BEGIN
         IF OBJECT_ID(N'dbo.sp_AddHistoryLog', N'P') IS NOT NULL
         BEGIN
             EXEC dbo.sp_AddHistoryLog
-                @ActionType = 'CREATE',
+                @ActionType = 'INSERT',
                 @EntityName = 'Services',
                 @EntityID = @CreatedServiceID,
                 @ActionDetails = 'New main service created via Wizard.',
@@ -885,7 +905,7 @@ GO
 
 CREATE OR ALTER PROCEDURE dbo.sp_CreateAdditionalService
     @AdditionalServiceName nvarchar(255),
-    @AdditionalServicesDescription nvarchar(255),
+    @AdditionalServicesDescription nvarchar(1000),
     @ServicePrice decimal(18,2) = 0.00,
     @CategoryName nvarchar(100) = NULL,
     @AdditionalServiceImage varbinary(max) = NULL,
@@ -921,7 +941,7 @@ BEGIN
         IF OBJECT_ID(N'dbo.sp_AddHistoryLog', N'P') IS NOT NULL
         BEGIN
             EXEC dbo.sp_AddHistoryLog 
-                @ActionType = 'CREATE', @EntityName = 'AdditionalServices', @EntityID = @NewID, 
+                @ActionType = 'INSERT', @EntityName = 'AdditionalServices', @EntityID = @NewID, 
                 @ActionDetails = 'Created new Additional Service with atomic ADD-#### ID generation and media upload.', @ChangedByType = @ActorType, @ActorID = @CreatedByAdminID;
         END
     END
@@ -1035,7 +1055,7 @@ BEGIN
     UNION ALL
     SELECT 
         a.AdditionalServicesID AS ServiceId, a.AdditionalServiceName AS ServiceName, a.AdditionalServicesDescription AS ServiceDescription,
-        CAST(0.00 AS decimal(18,2)) AS Price, N'Additional' AS ServiceType,
+        CAST(ISNULL(a.ServicePrice, 0.00) AS decimal(18,2)) AS Price, N'Additional' AS ServiceType,
         CAST(CASE WHEN a.AdditionalServiceImage IS NOT NULL THEN 1 ELSE 0 END AS bit) AS HasImage
     FROM dbo.AdditionalServices a
     ORDER BY ServiceType DESC, ServiceName ASC;
@@ -1134,41 +1154,20 @@ BEGIN
 
         IF @SelectedServiceIDsJson IS NOT NULL AND ISJSON(@SelectedServiceIDsJson) = 1
         BEGIN
-            DECLARE @ParsedServices TABLE (SvcID nvarchar(30));
+            DECLARE @ParsedServices TABLE (SvcID nvarchar(30) PRIMARY KEY);
             INSERT INTO @ParsedServices (SvcID)
-            SELECT DISTINCT value FROM OPENJSON(@SelectedServiceIDsJson)
+            SELECT DISTINCT TRIM(value) FROM OPENJSON(@SelectedServiceIDsJson)
             WHERE value IS NOT NULL AND LEN(TRIM(value)) > 0;
 
-            DECLARE @CurrSvcID nvarchar(30);
-            DECLARE svc_cur CURSOR LOCAL FAST_FORWARD FOR SELECT SvcID FROM @ParsedServices;
-
-            OPEN svc_cur;
-            FETCH NEXT FROM svc_cur INTO @CurrSvcID;
-
-            WHILE @@FETCH_STATUS = 0
-            BEGIN
-                DECLARE @JoinID nvarchar(30) = CONCAT('CPJ-', SUBSTRING(REPLACE(CAST(NEWID() AS nvarchar(36)), '-', ''), 1, 10));
-
-                IF EXISTS (SELECT 1 FROM dbo.Services WHERE ServicesID = @CurrSvcID)
-                BEGIN
-                    INSERT INTO dbo.ComboPackageJoin (ComboPackageJoinID, ComboPackageID, ServicesID, AdditionalServicesID)
-                    VALUES (@JoinID, @GeneratedPackageID, @CurrSvcID, NULL);
-                END
-                ELSE IF EXISTS (SELECT 1 FROM dbo.AdditionalServices WHERE AdditionalServicesID = @CurrSvcID)
-                BEGIN
-                    INSERT INTO dbo.ComboPackageJoin (ComboPackageJoinID, ComboPackageID, ServicesID, AdditionalServicesID)
-                    VALUES (@JoinID, @GeneratedPackageID, NULL, @CurrSvcID);
-                END
-                ELSE
-                BEGIN
-                    INSERT INTO dbo.ComboPackageJoin (ComboPackageJoinID, ComboPackageID, ServicesID, AdditionalServicesID)
-                    VALUES (@JoinID, @GeneratedPackageID, @CurrSvcID, NULL);
-                END;
-
-                FETCH NEXT FROM svc_cur INTO @CurrSvcID;
-            END;
-            CLOSE svc_cur;
-            DEALLOCATE svc_cur;
+            INSERT INTO dbo.ComboPackageJoin (ComboPackageJoinID, ComboPackageID, ServicesID, AdditionalServicesID)
+            SELECT
+                CONCAT('CPJ-', SUBSTRING(REPLACE(CAST(NEWID() AS nvarchar(36)), '-', ''), 1, 10)),
+                @GeneratedPackageID,
+                CASE WHEN s.ServicesID IS NOT NULL OR a.AdditionalServicesID IS NULL THEN p.SvcID ELSE NULL END,
+                CASE WHEN a.AdditionalServicesID IS NOT NULL THEN p.SvcID ELSE NULL END
+            FROM @ParsedServices p
+            LEFT JOIN dbo.Services s ON s.ServicesID = p.SvcID
+            LEFT JOIN dbo.AdditionalServices a ON a.AdditionalServicesID = p.SvcID;
         END;
 
         IF OBJECT_ID(N'dbo.HistoryLog', N'U') IS NOT NULL
@@ -1199,6 +1198,7 @@ BEGIN
     SET NOCOUNT ON;
     SELECT 
         ComboPackageID, ComboPackageName, ComboPackageDescription,
+        ISNULL(ComboPackagePrice, 0.00) AS ComboPackagePrice,
         CAST(CASE WHEN ComboPackageImage IS NOT NULL THEN 1 ELSE 0 END AS bit) AS HasImage
     FROM dbo.ComboPackage
     ORDER BY ComboPackageID;
@@ -1211,7 +1211,9 @@ AS
 BEGIN
     SET NOCOUNT ON;
     SELECT 
-        ComboPackageID, ComboPackageName, ComboPackageDescription, ComboPackageImage,
+        ComboPackageID, ComboPackageName, ComboPackageDescription,
+        ISNULL(ComboPackagePrice, 0.00) AS ComboPackagePrice,
+        ComboPackageImage,
         ISNULL(ComboPackageImageMimeType, 'image/jpeg') AS ComboPackageImageMimeType,
         CAST(CASE WHEN ComboPackageImage IS NOT NULL THEN 1 ELSE 0 END AS bit) AS HasImage
     FROM dbo.ComboPackage

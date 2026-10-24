@@ -115,21 +115,6 @@ public class ApplicationDbContext : IdentityDbContext<ApplicationUser>
              .HasForeignKey(ea => ea.BookingId)
              .OnDelete(DeleteBehavior.Cascade);
         });
-
-                // Prevent Double-Booking Gear
-        builder.Entity<EquipmentAssignment>(e =>
-        {
-            e.HasIndex(eq => new { eq.EquipmentId, eq.ScheduleDate, eq.ScheduleTime }).IsUnique();
-            e.HasOne(ea => ea.Equipment)
-             .WithMany()
-             .HasForeignKey(ea => ea.EquipmentId)
-             .OnDelete(DeleteBehavior.NoAction);
-             
-            e.HasOne(ea => ea.Booking)
-             .WithMany(b => b.EquipmentAssignments)
-             .HasForeignKey(ea => ea.BookingId)
-             .OnDelete(DeleteBehavior.Cascade);
-        });
     }
 }
 

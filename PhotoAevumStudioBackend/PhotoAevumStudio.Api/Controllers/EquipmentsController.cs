@@ -226,6 +226,7 @@ public class EquipmentsController : ControllerBase
     /// saves the uploaded image to the server disk, and stores the file path in the database.
     /// </summary>
     [HttpPost]
+    [Authorize(Policy = "StaffOrAbove")]
     [Consumes("multipart/form-data")]
     public async Task<IActionResult> CreateEquipment(
         [FromForm] CreateEquipmentRequestDto dto,

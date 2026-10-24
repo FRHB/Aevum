@@ -40,6 +40,7 @@ public class AuthController : ControllerBase
 
     [HttpPost("send-verification")]
     [AllowAnonymous]
+    [EnableRateLimiting("LoginPolicy")]
     public async Task<IActionResult> SendVerificationCode([FromBody] SendVerificationRequest request)
     {
         if (string.IsNullOrWhiteSpace(request.Email)) return BadRequest("Email is required.");
@@ -60,6 +61,7 @@ public class AuthController : ControllerBase
 
     [HttpPost("verify-code")]
     [AllowAnonymous]
+    [EnableRateLimiting("LoginPolicy")]
     public IActionResult VerifyCode([FromBody] VerifyCodeRequest request)
     {
         if (!_cache.TryGetValue($"VerificationCode_{request.Email}", out string? storedCode) || storedCode != request.VerificationCode)
@@ -71,6 +73,7 @@ public class AuthController : ControllerBase
 
     [HttpPost("forgot-password")]
     [AllowAnonymous]
+    [EnableRateLimiting("LoginPolicy")]
     public async Task<IActionResult> ForgotPassword([FromBody] SendVerificationRequest request)
     {
         if (string.IsNullOrWhiteSpace(request.Email)) return BadRequest("Email is required.");
@@ -90,6 +93,7 @@ public class AuthController : ControllerBase
 
     [HttpPost("reset-password")]
     [AllowAnonymous]
+    [EnableRateLimiting("LoginPolicy")]
     public async Task<IActionResult> ResetPassword([FromBody] ResetPasswordRequest request)
     {
         if (!_cache.TryGetValue($"ResetCode_{request.Email}", out string? storedCode) || storedCode != request.VerificationCode)

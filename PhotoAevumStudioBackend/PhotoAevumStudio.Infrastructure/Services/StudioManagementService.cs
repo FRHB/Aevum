@@ -359,14 +359,20 @@ public class StudioManagementService : IStudioManagementService
         await using var reader = await cmd.ExecuteReaderAsync(cancellationToken);
         if (await reader.ReadAsync(cancellationToken))
         {
+            var hasCategoryCol = reader.FieldCount >= 8;
+            var price = reader.IsDBNull(3) ? 0m : reader.GetDecimal(3);
+            var imgIdx = hasCategoryCol ? 5 : 3;
+            var mimeIdx = hasCategoryCol ? 6 : 4;
+            var hasImgIdx = hasCategoryCol ? 7 : 5;
+
             return new ServiceDetailDto(
                 Id: reader.GetString(0),
                 Name: reader.GetString(1),
                 Description: reader.IsDBNull(2) ? string.Empty : reader.GetString(2),
-                Price: 0m,
-                Image: reader.IsDBNull(3) ? null : (byte[])reader[3],
-                MimeType: reader.IsDBNull(4) ? "image/jpeg" : reader.GetString(4),
-                HasImage: !reader.IsDBNull(5) && reader.GetBoolean(5)
+                Price: price,
+                Image: reader.IsDBNull(imgIdx) ? null : (byte[])reader[imgIdx],
+                MimeType: reader.IsDBNull(mimeIdx) ? "image/jpeg" : reader.GetString(mimeIdx),
+                HasImage: !reader.IsDBNull(hasImgIdx) && reader.GetBoolean(hasImgIdx)
             );
         }
 
@@ -409,12 +415,16 @@ public class StudioManagementService : IStudioManagementService
             await using var reader = await cmd.ExecuteReaderAsync(cancellationToken);
             while (await reader.ReadAsync(cancellationToken))
             {
+                var hasPriceCol = reader.FieldCount >= 5;
+                var price = hasPriceCol && !reader.IsDBNull(3) ? reader.GetDecimal(3) : 0m;
+                var hasImgIdx = hasPriceCol ? 4 : 3;
+
                 list.Add(new ServiceSummaryDto(
                     Id: reader.GetString(0),
                     Name: reader.GetString(1),
                     Description: reader.IsDBNull(2) ? string.Empty : reader.GetString(2),
-                    Price: 0m,
-                    HasImage: !reader.IsDBNull(3) && reader.GetBoolean(3)
+                    Price: price,
+                    HasImage: !reader.IsDBNull(hasImgIdx) && reader.GetBoolean(hasImgIdx)
                 ));
             }
         }
@@ -422,6 +432,7 @@ public class StudioManagementService : IStudioManagementService
         {
             const string fallbackSql = @"
                 SELECT ComboPackageID, ComboPackageName, ComboPackageDescription,
+                       ISNULL(ComboPackagePrice, 0.00) AS ComboPackagePrice,
                        CAST(CASE WHEN ComboPackageImage IS NOT NULL THEN 1 ELSE 0 END AS bit)
                 FROM dbo.ComboPackage ORDER BY ComboPackageID;";
             await using var fbCmd = new SqlCommand(fallbackSql, conn);
@@ -432,8 +443,8 @@ public class StudioManagementService : IStudioManagementService
                     Id: reader.GetString(0),
                     Name: reader.GetString(1),
                     Description: reader.IsDBNull(2) ? string.Empty : reader.GetString(2),
-                    Price: 0m,
-                    HasImage: !reader.IsDBNull(3) && reader.GetBoolean(3)
+                    Price: reader.IsDBNull(3) ? 0m : reader.GetDecimal(3),
+                    HasImage: !reader.IsDBNull(4) && reader.GetBoolean(4)
                 ));
             }
         }
@@ -455,14 +466,20 @@ public class StudioManagementService : IStudioManagementService
         await using var reader = await cmd.ExecuteReaderAsync(cancellationToken);
         if (await reader.ReadAsync(cancellationToken))
         {
+            var hasPriceCol = reader.FieldCount >= 7;
+            var price = hasPriceCol && !reader.IsDBNull(3) ? reader.GetDecimal(3) : 0m;
+            var imgIdx = hasPriceCol ? 4 : 3;
+            var mimeIdx = hasPriceCol ? 5 : 4;
+            var hasImgIdx = hasPriceCol ? 6 : 5;
+
             return new ServiceDetailDto(
                 Id: reader.GetString(0),
                 Name: reader.GetString(1),
                 Description: reader.IsDBNull(2) ? string.Empty : reader.GetString(2),
-                Price: 0m,
-                Image: reader.IsDBNull(3) ? null : (byte[])reader[3],
-                MimeType: reader.IsDBNull(4) ? "image/jpeg" : reader.GetString(4),
-                HasImage: !reader.IsDBNull(5) && reader.GetBoolean(5)
+                Price: price,
+                Image: reader.IsDBNull(imgIdx) ? null : (byte[])reader[imgIdx],
+                MimeType: reader.IsDBNull(mimeIdx) ? "image/jpeg" : reader.GetString(mimeIdx),
+                HasImage: !reader.IsDBNull(hasImgIdx) && reader.GetBoolean(hasImgIdx)
             );
         }
 
@@ -1127,7 +1144,7 @@ public class StudioManagementService : IStudioManagementService
             UNION ALL
             IF OBJECT_ID(N'dbo.AdditionalServices', N'U') IS NOT NULL
             BEGIN
-                SELECT AdditionalServicesID, AdditionalServiceName, AdditionalServicesDescription, 0.00 AS ServicePrice, 'Additional' AS ServiceType,
+                SELECT AdditionalServicesID, AdditionalServiceName, AdditionalServicesDescription, ISNULL(ServicePrice, 0.00) AS ServicePrice, 'Additional' AS ServiceType,
                        CAST(CASE WHEN AdditionalServiceImage IS NOT NULL THEN 1 ELSE 0 END AS bit) AS HasImage
                 FROM dbo.AdditionalServices
             END

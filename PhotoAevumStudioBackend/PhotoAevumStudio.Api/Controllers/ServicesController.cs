@@ -75,6 +75,7 @@ public class ServicesController : ControllerBase
     /// Handles multipart/form-data upload to create a new Main Service with an image.
     /// </summary>
     [HttpPost]
+    [Authorize(Policy = "StaffOrAbove")]
     [Consumes("multipart/form-data")]
     public async Task<IActionResult> Create([FromForm] CreateServiceFormRequest request, CancellationToken ct)
     {

@@ -73,6 +73,7 @@ public class CategoriesController : ControllerBase
     /// Creates a new Service Category with auto-generated custom ID.
     /// </summary>
     [HttpPost]
+    [Authorize(Policy = "StaffOrAbove")]
     public async Task<IActionResult> Create([FromBody] CreateCategoryRequest request, CancellationToken ct)
     {
         if (!ModelState.IsValid)

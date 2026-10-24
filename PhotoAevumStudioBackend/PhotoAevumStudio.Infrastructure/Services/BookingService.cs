@@ -90,25 +90,50 @@ public class BookingService : IBookingService
                 FROM dbo.EventAppointment ea
                 LEFT JOIN dbo.Customer c ON c.CustomerID = ea.CustomerID
                 ORDER BY ea.EventDate DESC, ea.EventTime DESC;
-            END";
+            END;
+            IF OBJECT_ID(N'dbo.Bookings', N'U') IS NOT NULL
+            BEGIN
+                SELECT CAST(b.Id AS nvarchar(30)) AS EventAppointmentID,
+                       N'Photo Session' AS EventName,
+                       N'' AS EventDescription,
+                       b.CustomerId AS CustomerID,
+                       b.CustomerId AS CustomerName,
+                       b.ScheduleDate AS EventDate,
+                       b.ScheduleTime AS EventTime,
+                       CASE b.Status
+                           WHEN 0 THEN N'Pending'
+                           WHEN 1 THEN N'Confirmed'
+                           WHEN 2 THEN N'Shot'
+                           WHEN 3 THEN N'Editing'
+                           WHEN 4 THEN N'Delivered'
+                           WHEN 5 THEN N'Cancelled'
+                           ELSE N'Scheduled'
+                       END AS EventStatus,
+                       SYSUTCDATETIME() AS CreatedAt
+                FROM dbo.Bookings b
+                ORDER BY b.ScheduleDate DESC, b.ScheduleTime DESC;
+            END;";
 
         await using var cmd = new SqlCommand(sql, conn);
         await using var reader = await cmd.ExecuteReaderAsync(cancellationToken);
-        while (await reader.ReadAsync(cancellationToken))
+        do
         {
-            bookings.Add(new BookingListItemDto
+            while (await reader.ReadAsync(cancellationToken))
             {
-                EventAppointmentId = reader.GetString(0),
-                EventName = reader.GetString(1),
-                EventDescription = reader.IsDBNull(2) ? string.Empty : reader.GetString(2),
-                CustomerId = reader.IsDBNull(3) ? string.Empty : reader.GetString(3),
-                CustomerName = reader.IsDBNull(4) ? string.Empty : reader.GetString(4),
-                EventDate = DateOnly.FromDateTime(reader.GetDateTime(5)),
-                EventTime = TimeOnly.FromTimeSpan(reader.GetFieldValue<TimeSpan>(6)),
-                EventStatus = reader.IsDBNull(7) ? "Scheduled" : reader.GetString(7),
-                CreatedAt = reader.IsDBNull(8) ? DateTime.UtcNow : reader.GetDateTime(8)
-            });
-        }
+                bookings.Add(new BookingListItemDto
+                {
+                    EventAppointmentId = reader.GetString(0),
+                    EventName = reader.GetString(1),
+                    EventDescription = reader.IsDBNull(2) ? string.Empty : reader.GetString(2),
+                    CustomerId = reader.IsDBNull(3) ? string.Empty : reader.GetString(3),
+                    CustomerName = reader.IsDBNull(4) ? string.Empty : reader.GetString(4),
+                    EventDate = DateOnly.FromDateTime(reader.GetDateTime(5)),
+                    EventTime = TimeOnly.FromTimeSpan(reader.GetFieldValue<TimeSpan>(6)),
+                    EventStatus = reader.IsDBNull(7) ? "Scheduled" : reader.GetString(7),
+                    CreatedAt = reader.IsDBNull(8) ? DateTime.UtcNow : reader.GetDateTime(8)
+                });
+            }
+        } while (await reader.NextResultAsync(cancellationToken));
 
         return bookings;
     }

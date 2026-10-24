@@ -147,6 +147,7 @@ public class AdditionalServicesController : ControllerBase
     /// Securely processes the multipart/form-data upload stream and triggers atomic ADD-#### generation.
     /// </summary>
     [HttpPost]
+    [Authorize(Policy = "StaffOrAbove")]
     [Consumes("multipart/form-data")]
     [ProducesResponseType(typeof(AdditionalServiceResponseDto), StatusCodes.Status201Created)]
     [ProducesResponseType(typeof(ValidationProblemDetails), StatusCodes.Status400BadRequest)]

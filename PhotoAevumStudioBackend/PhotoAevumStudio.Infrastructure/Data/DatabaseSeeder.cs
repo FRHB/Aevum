@@ -161,6 +161,12 @@ public static class DatabaseSeeder
                         ALTER TABLE dbo.Services ADD ServiceImage varbinary(max) NULL;
                     IF COL_LENGTH(N'dbo.Services', N'ServiceImageMimeType') IS NULL
                         ALTER TABLE dbo.Services ADD ServiceImageMimeType nvarchar(100) NULL CONSTRAINT DF_Services_MimeType DEFAULT 'image/jpeg';
+                    ALTER TABLE dbo.Services ALTER COLUMN ServicesDescription nvarchar(1000) NOT NULL;
+                END;
+
+                IF OBJECT_ID(N'dbo.ServiceCategory', N'U') IS NOT NULL
+                BEGIN
+                    ALTER TABLE dbo.ServiceCategory ALTER COLUMN ServiceCategoryDescription nvarchar(1000) NOT NULL;
                 END;
 
                 IF OBJECT_ID(N'dbo.AdditionalServices', N'U') IS NOT NULL
@@ -169,6 +175,7 @@ public static class DatabaseSeeder
                         ALTER TABLE dbo.AdditionalServices ADD AdditionalServiceImage varbinary(max) NULL;
                     IF COL_LENGTH(N'dbo.AdditionalServices', N'AdditionalServiceImageMimeType') IS NULL
                         ALTER TABLE dbo.AdditionalServices ADD AdditionalServiceImageMimeType nvarchar(100) NULL CONSTRAINT DF_AdditionalServices_MimeType DEFAULT 'image/jpeg';
+                    ALTER TABLE dbo.AdditionalServices ALTER COLUMN AdditionalServicesDescription nvarchar(1000) NULL;
                 END;
 
                 IF OBJECT_ID(N'dbo.ComboPackage', N'U') IS NOT NULL
@@ -179,6 +186,7 @@ public static class DatabaseSeeder
                         ALTER TABLE dbo.ComboPackage ADD ComboPackageImageMimeType nvarchar(100) NULL CONSTRAINT DF_ComboPackage_MimeType DEFAULT 'image/jpeg';
                     IF COL_LENGTH(N'dbo.ComboPackage', N'ComboPackagePrice') IS NULL
                         ALTER TABLE dbo.ComboPackage ADD ComboPackagePrice decimal(18,2) NOT NULL CONSTRAINT DF_ComboPackage_Price DEFAULT 0.00;
+                    ALTER TABLE dbo.ComboPackage ALTER COLUMN ComboPackageDescription nvarchar(1000) NOT NULL;
                 END;
 
                 IF OBJECT_ID(N'dbo.ComboPackageJoin', N'U') IS NOT NULL

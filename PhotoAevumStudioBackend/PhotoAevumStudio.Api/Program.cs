@@ -104,11 +104,11 @@ builder.Services.AddAuthorization(o =>
 
 
     o.AddPolicy("AdminOrAbove", p => p
-        .RequireRole(AppRoles.Admin)
+        .RequireRole(AppRoles.Admin, AppRoles.SystemAdmin)
         .RequireAssertion(c => !MustChange(c)));
 
     o.AddPolicy("StaffOrAbove", p => p
-        .RequireRole(AppRoles.Admin, AppRoles.Employee)
+        .RequireRole(AppRoles.Admin, AppRoles.SystemAdmin, AppRoles.Employee)
         .RequireAssertion(c => !MustChange(c)));
 });
 // ── CORS — allow the Blazor frontend origin ───────────────────────────────────

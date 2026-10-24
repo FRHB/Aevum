@@ -66,20 +66,44 @@ public class EquipmentTypeService(ApplicationDbContext db) : IEquipmentTypeServi
     public async Task<IReadOnlyList<EquipmentTypeResponse>> GetAllEquipmentTypesAsync(CancellationToken cancellationToken = default)
     {
         await using var conn = new SqlConnection(ConnectionString);
-        await using var cmd = new SqlCommand("dbo.sp_GetEquipmentTypes", conn)
-        {
-            CommandType = CommandType.StoredProcedure
-        };
-
         await conn.OpenAsync(cancellationToken);
-        await using var reader = await cmd.ExecuteReaderAsync(cancellationToken);
 
         var list = new List<EquipmentTypeResponse>();
-        while (await reader.ReadAsync(cancellationToken))
+        try
+        {
+            await using var cmd = new SqlCommand("dbo.sp_GetEquipmentTypes", conn)
+            {
+                CommandType = CommandType.StoredProcedure
+            };
+            await using var reader = await cmd.ExecuteReaderAsync(cancellationToken);
+            while (await reader.ReadAsync(cancellationToken))
+            {
+                list.Add(new EquipmentTypeResponse(
+                    EquipmentTypeId: reader.GetString(0),
+                    EquipmentTypeName: reader.GetString(1)
+                ));
+            }
+            return list;
+        }
+        catch (SqlException)
+        {
+            // Fallback to direct query if stored procedure is not yet created
+        }
+
+        const string fallbackSql = @"
+            IF OBJECT_ID(N'dbo.EquipmentType', N'U') IS NOT NULL
+            BEGIN
+                SELECT EquipmentTypeID, EquipmentTypeName
+                FROM dbo.EquipmentType
+                ORDER BY EquipmentTypeName;
+            END;";
+        await using var fbCmd = new SqlCommand(fallbackSql, conn);
+        await using var fbReader = await fbCmd.ExecuteReaderAsync(cancellationToken);
+        while (await fbReader.ReadAsync(cancellationToken))
         {
             list.Add(new EquipmentTypeResponse(
-                EquipmentTypeId: reader.GetString(0),
-                EquipmentTypeName: reader.GetString(1)
+                EquipmentTypeId: fbReader.GetString(0),
+                EquipmentTypeName: fbReader.IsDBNull(1) ? fbReader.GetString(0) : fbReader.GetString(1)
             ));
         }
 

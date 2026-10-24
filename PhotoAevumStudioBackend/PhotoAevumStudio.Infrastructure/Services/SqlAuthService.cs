@@ -461,15 +461,44 @@ public class SqlAuthService : ISqlAuthService
         {
             CommandType = CommandType.StoredProcedure
         };
-        cmd.Parameters.AddWithValue("@CustomerID", customerId);
         cmd.Parameters.AddWithValue("@CustomerFirstName", firstName.Trim());
         cmd.Parameters.AddWithValue("@CustomerLastName", lastName.Trim());
         cmd.Parameters.AddWithValue("@CustomerMiddleName", string.IsNullOrWhiteSpace(middleName) ? DBNull.Value : middleName.Trim());
         cmd.Parameters.AddWithValue("@CustomerEmail", email.Trim());
         cmd.Parameters.AddWithValue("@CustomerPhoneNumber", string.IsNullOrWhiteSpace(phone) ? DBNull.Value : phone.Trim());
         cmd.Parameters.AddWithValue("@CustomerPassword", hashedPassword);
+        var outParam = new SqlParameter("@GeneratedCustomerID", SqlDbType.NVarChar, 30)
+        {
+            Direction = ParameterDirection.Output
+        };
+        cmd.Parameters.Add(outParam);
 
-        await cmd.ExecuteNonQueryAsync(cancellationToken);
+        try
+        {
+            var scalarId = await cmd.ExecuteScalarAsync(cancellationToken) as string;
+            customerId = (outParam.Value as string) ?? scalarId ?? customerId;
+        }
+        catch (SqlException)
+        {
+            const string fallbackSql = @"
+                INSERT INTO dbo.Customer (
+                    CustomerID, CustomerFirstName, CustomerLastName, CustomerMiddleName,
+                    CustomerEmail, CustomerPhoneNumber, CustomerPassword, CustomerStatus, CreatedAt
+                )
+                VALUES (
+                    @CustomerID, @CustomerFirstName, @CustomerLastName, @CustomerMiddleName,
+                    @CustomerEmail, @CustomerPhoneNumber, @CustomerPassword, 'Active', SYSUTCDATETIME()
+                );";
+            await using var fbCmd = new SqlCommand(fallbackSql, conn);
+            fbCmd.Parameters.AddWithValue("@CustomerID", customerId);
+            fbCmd.Parameters.AddWithValue("@CustomerFirstName", firstName.Trim());
+            fbCmd.Parameters.AddWithValue("@CustomerLastName", lastName.Trim());
+            fbCmd.Parameters.AddWithValue("@CustomerMiddleName", string.IsNullOrWhiteSpace(middleName) ? DBNull.Value : middleName.Trim());
+            fbCmd.Parameters.AddWithValue("@CustomerEmail", email.Trim());
+            fbCmd.Parameters.AddWithValue("@CustomerPhoneNumber", string.IsNullOrWhiteSpace(phone) ? DBNull.Value : phone.Trim());
+            fbCmd.Parameters.AddWithValue("@CustomerPassword", hashedPassword);
+            await fbCmd.ExecuteNonQueryAsync(cancellationToken);
+        }
         await LogActivityAsync("INSERT", "Customer", customerId, $"Registered customer {customerId} ({email})", "Customer", customerId, cancellationToken);
 
         _logger.LogInformation("Created Customer {CustomerId} ({Email}) with BCrypt password hash.", customerId, email);
