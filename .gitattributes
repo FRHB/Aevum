@@ -1,0 +1,12 @@
+# Ignore third-party libraries and scripts in the wwwroot folder
+wwwroot/lib/** linguist-vendored
+wwwroot/js/** linguist-vendored
+
+# Hide massive generated CSS files (like Tailwind output)
+*.css linguist-vendored
+
+# Optional: Downplay HTML files if they still overshadow your C# code
+*.html linguist-detectable=false
+
+# Optional: Ignore JSON config files (like appsettings.json or launchSettings.json)
+*.json linguist-vendored
