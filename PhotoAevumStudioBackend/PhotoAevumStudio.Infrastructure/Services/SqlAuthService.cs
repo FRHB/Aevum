@@ -65,14 +65,15 @@ public class SqlAuthService : ISqlAuthService
                 var authUser = new AuthUser(sysId, AppRoles.SystemAdmin, fullName, email, storedPassword, false);
 
                 bool match = VerifyPasswordFlexible(password, storedPassword, allowPlainText: true);
-                if (!match)
+                if (match)
                 {
-                    _logger.LogWarning("Failed login attempt for System Admin {SystemAdminId}.", sysId);
-                    return new AuthValidationResult(Success: false, ErrorMessage: "Invalid credentials.");
+                    _logger.LogInformation("Successful login for System Admin {SystemAdminId}.", sysId);
+                    return new AuthValidationResult(Success: true, RequiresPasswordChange: false, User: authUser, IsFirstLogin: false);
                 }
-
-                _logger.LogInformation("Successful login for System Admin {SystemAdminId}.", sysId);
-                return new AuthValidationResult(Success: true, RequiresPasswordChange: false, User: authUser, IsFirstLogin: false);
+                else
+                {
+                    _logger.LogWarning("System Admin password mismatch for {SystemAdminId}, checking other entities...", sysId);
+                }
             }
         }
 
@@ -84,15 +85,12 @@ public class SqlAuthService : ISqlAuthService
                    CASE WHEN COL_LENGTH(N'dbo.Admin', N'isFirstLogin') IS NOT NULL THEN isFirstLogin ELSE CAST(1 AS bit) END AS isFirstLogin
             FROM dbo.Admin
             WHERE AdminID = @UserId 
-               OR AdminID = @CandidateAdminId 
-               OR (COL_LENGTH(N'dbo.Admin', N'Email') IS NOT NULL AND Email = @UserId)
-               OR UPPER(AdminID) = UPPER(@CandidateAdminId) 
+               OR (COL_LENGTH(N'dbo.Admin', N'Email') IS NOT NULL AND (Email = @UserId OR UPPER(Email) = UPPER(@UserId)))
                OR UPPER(AdminID) = UPPER(@UserId);";
 
         await using (var adminCmd = new SqlCommand(adminQuery, conn))
         {
             adminCmd.Parameters.AddWithValue("@UserId", trimmedId);
-            adminCmd.Parameters.AddWithValue("@CandidateAdminId", candidateAdminId);
             await using var reader = await adminCmd.ExecuteReaderAsync(cancellationToken);
             if (await reader.ReadAsync(cancellationToken))
             {
@@ -120,45 +118,38 @@ public class SqlAuthService : ISqlAuthService
                 if (isFirstLogin)
                 {
                     bool match = VerifyPasswordFlexible(password, storedPassword, allowPlainText: true);
-                    if (!match)
+                    if (match)
                     {
-                        _logger.LogWarning("Failed login for admin {AdminId} (invalid credentials on first login).", adminId);
-                        return new AuthValidationResult(Success: false, ErrorMessage: "Invalid credentials.");
+                        _logger.LogInformation("Admin {AdminId} first-time login detected. Access withheld until password change.", adminId);
+                        return new AuthValidationResult(Success: true, RequiresPasswordChange: true, User: authUser, IsFirstLogin: true);
                     }
-
-                    _logger.LogInformation("Admin {AdminId} first-time login detected. Access withheld until password change.", adminId);
-                    return new AuthValidationResult(Success: true, RequiresPasswordChange: true, User: authUser, IsFirstLogin: true);
+                    _logger.LogWarning("Admin password mismatch on first login for {AdminId}.", adminId);
                 }
                 else
                 {
                     bool match = VerifyPasswordStrict(password, storedPassword);
-                    if (!match)
+                    if (match)
                     {
-                        _logger.LogWarning("Failed login attempt for admin {AdminId}.", adminId);
-                        return new AuthValidationResult(Success: false, ErrorMessage: "Invalid credentials.");
+                        _logger.LogInformation("Successful standard login for admin {AdminId}.", adminId);
+                        return new AuthValidationResult(Success: true, RequiresPasswordChange: false, User: authUser, IsFirstLogin: false);
                     }
-
-                    _logger.LogInformation("Successful standard login for admin {AdminId}.", adminId);
-                    return new AuthValidationResult(Success: true, RequiresPasswordChange: false, User: authUser, IsFirstLogin: false);
+                    _logger.LogWarning("Admin password mismatch for {AdminId}, checking other entities...", adminId);
                 }
             }
         }
 
-        // 2. Check dbo.Employee
+        // 2. Check dbo.Employees
         const string empQuery = @"
             SELECT EmployeeID, EmployeeFirstName, EmployeeLastName, EmployeeMiddleName, EmployeeEmail, EmployeePassword, EmployeeStatus, isFirstLogin
-            FROM dbo.Employee
+            FROM dbo.Employees
             WHERE EmployeeID = @UserId 
                OR EmployeeEmail = @UserId 
-               OR EmployeeID = @CandidateAdminId 
-               OR UPPER(EmployeeID) = UPPER(@CandidateAdminId) 
                OR UPPER(EmployeeID) = UPPER(@UserId) 
                OR UPPER(EmployeeEmail) = UPPER(@UserId);";
 
         await using (var empCmd = new SqlCommand(empQuery, conn))
         {
             empCmd.Parameters.AddWithValue("@UserId", trimmedId);
-            empCmd.Parameters.AddWithValue("@CandidateAdminId", candidateAdminId);
             await using var reader = await empCmd.ExecuteReaderAsync(cancellationToken);
             if (await reader.ReadAsync(cancellationToken))
             {
@@ -177,44 +168,68 @@ public class SqlAuthService : ISqlAuthService
                     return new AuthValidationResult(Success: false, ErrorMessage: "Employee account is inactive.");
                 }
 
+                await reader.CloseAsync();
+
+                // Check specialization in join table for Office Clerk role
+                string assignedRole = AppRoles.Employee;
+                const string clerkCheckSql = @"
+                    IF OBJECT_ID(N'dbo.EmployeeJointSpecialization', N'U') IS NOT NULL
+                       AND OBJECT_ID(N'dbo.EmployeeSpecialization', N'U') IS NOT NULL
+                    BEGIN
+                        SELECT COUNT(1)
+                        FROM dbo.EmployeeJointSpecialization ejs
+                        JOIN dbo.EmployeeSpecialization es ON ejs.SpecializationID = es.SpecializationID
+                        WHERE ejs.EmployeeID = @EmpId
+                          AND (UPPER(LTRIM(RTRIM(COALESCE(NULLIF(es.SpecializationName, ''), es.Specialization)))) = 'OFFICE CLERK');
+                    END
+                    ELSE
+                    BEGIN
+                        SELECT 0;
+                    END";
+                await using (var clerkCmd = new SqlCommand(clerkCheckSql, conn))
+                {
+                    clerkCmd.Parameters.AddWithValue("@EmpId", empId);
+                    var count = Convert.ToInt32(await clerkCmd.ExecuteScalarAsync(cancellationToken) ?? 0);
+                    if (count > 0)
+                    {
+                        assignedRole = AppRoles.OfficeClerk;
+                    }
+                }
+
                 var fullName = string.Join(" ", new[] { first, middle, last }.Where(s => !string.IsNullOrWhiteSpace(s)));
-                var authUser = new AuthUser(empId, AppRoles.Employee, fullName, empEmail, storedPassword, isFirstLogin);
+                var authUser = new AuthUser(empId, assignedRole, fullName, empEmail, storedPassword, isFirstLogin);
 
                 if (isFirstLogin)
                 {
                     bool match = VerifyPasswordFlexible(password, storedPassword, allowPlainText: true);
-                    if (!match)
+                    if (match)
                     {
-                        _logger.LogWarning("Failed login for employee {EmployeeId} (invalid credentials on first login).", empId);
-                        return new AuthValidationResult(Success: false, ErrorMessage: "Invalid credentials.");
+                        _logger.LogInformation("Employee {EmployeeId} first-time login detected. Access withheld until password change.", empId);
+                        return new AuthValidationResult(Success: true, RequiresPasswordChange: true, User: authUser, IsFirstLogin: true);
                     }
-
-                    _logger.LogInformation("Employee {EmployeeId} first-time login detected. Access withheld until password change.", empId);
-                    return new AuthValidationResult(Success: true, RequiresPasswordChange: true, User: authUser, IsFirstLogin: true);
+                    _logger.LogWarning("Employee first login password mismatch for {EmployeeId}.", empId);
                 }
                 else
                 {
                     bool match = VerifyPasswordStrict(password, storedPassword);
-                    if (!match)
+                    if (match)
                     {
-                        _logger.LogWarning("Failed login attempt for employee {EmployeeId}.", empId);
-                        return new AuthValidationResult(Success: false, ErrorMessage: "Invalid credentials.");
+                        _logger.LogInformation("Successful standard login for employee {EmployeeId} ({Role}).", empId, assignedRole);
+                        return new AuthValidationResult(Success: true, RequiresPasswordChange: false, User: authUser, IsFirstLogin: false);
                     }
-
-                    _logger.LogInformation("Successful standard login for employee {EmployeeId}.", empId);
-                    return new AuthValidationResult(Success: true, RequiresPasswordChange: false, User: authUser, IsFirstLogin: false);
+                    _logger.LogWarning("Employee password mismatch for {EmployeeId}, checking Customer...", empId);
                 }
             }
         }
 
         // 3. Check dbo.Customer
         const string custQuery = @"
-            SELECT CustomerID, CustomerFirstName, CustomerLastName, CustomerMiddleName, CustomerEmail, CustomerPhoneNumber, CustomerPassword
+            SELECT CustomerID, CustomerFirstName, CustomerLastName, CustomerMiddleName, CustomerEmail, CustomerPhoneNumber, CustomerPassword, CustomerStatus
             FROM dbo.Customer
-            WHERE CustomerEmail = @UserId 
-               OR CustomerID = @UserId
-               OR UPPER(CustomerEmail) = UPPER(@UserId)
-               OR UPPER(CustomerID) = UPPER(@UserId);";
+            WHERE LTRIM(RTRIM(CustomerEmail)) = @UserId 
+               OR LTRIM(RTRIM(CustomerID)) = @UserId
+               OR UPPER(LTRIM(RTRIM(CustomerEmail))) = UPPER(@UserId)
+               OR UPPER(LTRIM(RTRIM(CustomerID))) = UPPER(@UserId);";
 
         await using (var custCmd = new SqlCommand(custQuery, conn))
         {
@@ -228,39 +243,45 @@ public class SqlAuthService : ISqlAuthService
                 var middle = reader.IsDBNull(reader.GetOrdinal("CustomerMiddleName")) ? null : reader.GetString(reader.GetOrdinal("CustomerMiddleName"));
                 var custEmail = reader.GetString(reader.GetOrdinal("CustomerEmail"));
                 var storedPassword = reader.GetString(reader.GetOrdinal("CustomerPassword"));
+                var custStatus = reader.IsDBNull(reader.GetOrdinal("CustomerStatus")) ? "Active" : reader.GetString(reader.GetOrdinal("CustomerStatus"));
                 await reader.CloseAsync();
+
+                if (!string.Equals(custStatus, "Active", StringComparison.OrdinalIgnoreCase))
+                {
+                    _logger.LogWarning("Login rejected for inactive customer {CustomerId}.", custId);
+                    return new AuthValidationResult(Success: false, ErrorMessage: "Customer account is inactive.");
+                }
 
                 var fullName = string.Join(" ", new[] { first, middle, last }.Where(s => !string.IsNullOrWhiteSpace(s)));
                 var authUser = new AuthUser(custId, AppRoles.Customer, fullName, custEmail, storedPassword, IsFirstLogin: false);
 
                 bool match = VerifyPasswordFlexible(password, storedPassword, allowPlainText: true);
 
-                if (!match)
+                if (match)
                 {
-                    _logger.LogWarning("Failed login attempt for customer {Email}.", custEmail);
-                    return new AuthValidationResult(Success: false, ErrorMessage: "Invalid credentials.");
+                    if (!storedPassword.StartsWith("$2", StringComparison.Ordinal))
+                    {
+                        try
+                        {
+                            var upgradedHash = BCrypt.Net.BCrypt.HashPassword(password);
+                            const string upgradeSql = "UPDATE dbo.Customer SET CustomerPassword = @Hash WHERE CustomerID = @CustId;";
+                            await using var upgradeCmd = new SqlCommand(upgradeSql, conn);
+                            upgradeCmd.Parameters.AddWithValue("@Hash", upgradedHash);
+                            upgradeCmd.Parameters.AddWithValue("@CustId", custId);
+                            await upgradeCmd.ExecuteNonQueryAsync(cancellationToken);
+                            _logger.LogInformation("Upgraded plain text password to BCrypt hash for customer {CustomerId}.", custId);
+                        }
+                        catch (Exception ex)
+                        {
+                            _logger.LogWarning(ex, "Failed to auto-upgrade password hash for customer {CustomerId}.", custId);
+                        }
+                    }
+
+                    _logger.LogInformation("Successful standard login for customer {Email}.", custEmail);
+                    return new AuthValidationResult(Success: true, RequiresPasswordChange: false, User: authUser, IsFirstLogin: false);
                 }
 
-                if (!storedPassword.StartsWith("$2", StringComparison.Ordinal))
-                {
-                    try
-                    {
-                        var upgradedHash = BCrypt.Net.BCrypt.HashPassword(password);
-                        const string upgradeSql = "UPDATE dbo.Customer SET CustomerPassword = @Hash WHERE CustomerID = @CustId;";
-                        await using var upgradeCmd = new SqlCommand(upgradeSql, conn);
-                        upgradeCmd.Parameters.AddWithValue("@Hash", upgradedHash);
-                        upgradeCmd.Parameters.AddWithValue("@CustId", custId);
-                        await upgradeCmd.ExecuteNonQueryAsync(cancellationToken);
-                        _logger.LogInformation("Upgraded plain text password to BCrypt hash for customer {CustomerId}.", custId);
-                    }
-                    catch (Exception ex)
-                    {
-                        _logger.LogWarning(ex, "Failed to auto-upgrade password hash for customer {CustomerId}.", custId);
-                    }
-                }
-
-                _logger.LogInformation("Successful standard login for customer {Email}.", custEmail);
-                return new AuthValidationResult(Success: true, RequiresPasswordChange: false, User: authUser, IsFirstLogin: false);
+                _logger.LogWarning("Failed login attempt for customer {Email} (password mismatch).", custEmail);
             }
         }
 
@@ -354,7 +375,7 @@ public class SqlAuthService : ISqlAuthService
         // Check Employee
         const string empCheck = @"
             SELECT EmployeeID, EmployeeEmail, EmployeePassword, EmployeeStatus, isFirstLogin
-            FROM dbo.Employee
+            FROM dbo.Employees
             WHERE EmployeeID = @UserId 
                OR EmployeeEmail = @UserId 
                OR EmployeeID = @CandidateAdminId 
@@ -386,7 +407,7 @@ public class SqlAuthService : ISqlAuthService
                 string newHashed = BCrypt.Net.BCrypt.HashPassword(newPassword);
 
                 const string updateSql = @"
-                    UPDATE dbo.Employee
+                    UPDATE dbo.Employees
                     SET EmployeePassword = @NewPassword, isFirstLogin = 0
                     WHERE EmployeeID = @EmployeeID;";
                 await using var updateCmd = new SqlCommand(updateSql, conn);
@@ -558,7 +579,7 @@ public class SqlAuthService : ISqlAuthService
         await using var conn = CreateConnection();
         await conn.OpenAsync(cancellationToken);
 
-        const string checkSql = "SELECT 1 FROM dbo.Employee WHERE EmployeeID = @EmpId OR EmployeeEmail = @Email;";
+        const string checkSql = "SELECT 1 FROM dbo.Employees WHERE EmployeeID = @EmpId OR EmployeeEmail = @Email;";
         await using (var checkCmd = new SqlCommand(checkSql, conn))
         {
             checkCmd.Parameters.AddWithValue("@EmpId", employeeId.Trim());
@@ -589,7 +610,7 @@ public class SqlAuthService : ISqlAuthService
         catch (SqlException)
         {
             const string insertSql = @"
-                INSERT INTO dbo.Employee (EmployeeID, EmployeeFirstName, EmployeeLastName, EmployeeMiddleName, EmployeeEmail, EmployeePassword, EmployeeStatus, isFirstLogin)
+                INSERT INTO dbo.Employees (EmployeeID, EmployeeFirstName, EmployeeLastName, EmployeeMiddleName, EmployeeEmail, EmployeePassword, EmployeeStatus, isFirstLogin)
                 VALUES (@EmployeeID, @EmployeeFirstName, @EmployeeLastName, @EmployeeMiddleName, @EmployeeEmail, @EmployeePassword, 'Active', 1);";
             await using var insertCmd = new SqlCommand(insertSql, conn);
             insertCmd.Parameters.AddWithValue("@EmployeeID", employeeId.Trim());
@@ -728,7 +749,7 @@ public class SqlAuthService : ISqlAuthService
 
         // Try Employee
         const string updateEmp = @"
-            UPDATE dbo.Employee 
+            UPDATE dbo.Employees 
             SET EmployeePassword = @Hash, isFirstLogin = 0 
             WHERE EmployeeEmail = @Email 
                OR EmployeeID = @Email 
@@ -849,24 +870,27 @@ public class SqlAuthService : ISqlAuthService
         if (string.IsNullOrWhiteSpace(provided) || string.IsNullOrWhiteSpace(storedHash))
             return false;
 
+        var cleanProvided = provided.Trim();
+        var cleanStored = storedHash.Trim();
+
         try
         {
-            if (BCrypt.Net.BCrypt.Verify(provided, storedHash))
+            if (BCrypt.Net.BCrypt.Verify(cleanProvided, cleanStored))
                 return true;
         }
         catch
         {
         }
 
-        if (string.Equals(provided, storedHash, StringComparison.Ordinal) || string.Equals(provided.Trim(), storedHash.Trim(), StringComparison.Ordinal))
+        if (string.Equals(cleanProvided, cleanStored, StringComparison.Ordinal))
             return true;
 
-        if ((provided == "AxiomBit_2026" || provided == "AxiomBit@2026") &&
-            (storedHash.StartsWith("$2a$") || storedHash.StartsWith("$2b$") || storedHash == "AxiomBit_2026" || storedHash == "AxiomBit@2026"))
+        if ((cleanProvided == "AxiomBit_2026" || cleanProvided == "AxiomBit@2026") &&
+            (cleanStored.StartsWith("$2a$") || cleanStored.StartsWith("$2b$") || cleanStored == "AxiomBit_2026" || cleanStored == "AxiomBit@2026"))
         {
             try
             {
-                if (BCrypt.Net.BCrypt.Verify("AxiomBit_2026", storedHash) || BCrypt.Net.BCrypt.Verify("AxiomBit@2026", storedHash))
+                if (BCrypt.Net.BCrypt.Verify("AxiomBit_2026", cleanStored) || BCrypt.Net.BCrypt.Verify("AxiomBit@2026", cleanStored))
                     return true;
             }
             catch { }
@@ -880,16 +904,19 @@ public class SqlAuthService : ISqlAuthService
         if (string.IsNullOrWhiteSpace(provided) || string.IsNullOrWhiteSpace(stored))
             return false;
 
+        var cleanProvided = provided.Trim();
+        var cleanStored = stored.Trim();
+
         try
         {
-            if (BCrypt.Net.BCrypt.Verify(provided, stored))
+            if (BCrypt.Net.BCrypt.Verify(cleanProvided, cleanStored))
                 return true;
         }
         catch
         {
         }
 
-        if (allowPlainText && (stored == provided || stored.Trim() == provided.Trim()))
+        if (allowPlainText && string.Equals(cleanStored, cleanProvided, StringComparison.Ordinal))
             return true;
 
         return false;

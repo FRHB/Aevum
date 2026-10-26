@@ -85,6 +85,26 @@
             @* ── Modal Body Content ─────────────────────────────────────────────────── *@
             <div class="p-6 overflow-y-auto flex-1 space-y-5">
 
+                @* Success Confirmation Banner *@
+                @if (isSaveSuccess)
+                {
+                    <div class="p-8 bg-emerald-50 border border-emerald-200 text-emerald-900 rounded-2xl flex flex-col items-center justify-center text-center space-y-4 animate-in fade-in zoom-in-95 duration-200 shadow-sm my-4">
+                        <div class="w-16 h-16 rounded-full bg-emerald-600 text-white flex items-center justify-center text-3xl font-bold shadow-md">
+                            ✓
+                        </div>
+                        <div>
+                            <h3 class="text-lg font-bold text-emerald-950">Service Saved Successfully!</h3>
+                            <p class="text-xs text-emerald-800 mt-1">@successMessage</p>
+                        </div>
+                        <div class="flex items-center gap-2 text-xs text-emerald-700 font-medium pt-2">
+                            <span class="inline-block w-4 h-4 border-2 border-emerald-600/30 border-t-emerald-600 rounded-full animate-spin"></span>
+                            <span>Auto-refreshing service catalog and closing...</span>
+                        </div>
+                    </div>
+                }
+                else
+                {
+
                 @* Validation / Error Banner *@
                 @if (!string.IsNullOrWhiteSpace(errorMessage))
                 {
@@ -179,7 +199,7 @@
                                         <option value="">-- Choose Category --</option>
                                         @foreach (var cat in categories)
                                         {
-                                            <option value="@cat.Id">@cat.Name (@cat.Id)</option>
+                                            <option value="@cat.Id">@cat.Name</option>
                                         }
                                     </select>
                                     <div class="pointer-events-none absolute inset-y-0 right-0 flex items-center px-3 text-gray-400">
@@ -356,67 +376,71 @@
                         </div>
                     </div>
                 }
+                }
 
             </div>
 
             @* ── Modal Footer Controls ──────────────────────────────────────────────── *@
-            <div class="px-6 py-4 bg-gray-50 border-t border-gray-100 flex items-center justify-between shrink-0">
-                <div>
-                    @if (currentStep > 1)
-                    {
-                        <button type="button" 
-                                @onclick="PrevStep" 
-                                disabled="@isSaving"
-                                class="px-4 py-2.5 bg-white border border-gray-300 hover:bg-gray-100 text-gray-700 text-xs font-semibold rounded-lg transition-colors cursor-pointer">
-                            &larr; Back
-                        </button>
-                    }
-                    else
-                    {
-                        <button type="button" 
-                                @onclick="HandleClose" 
-                                disabled="@isSaving"
-                                class="px-4 py-2.5 bg-white border border-gray-300 hover:bg-gray-100 text-gray-700 text-xs font-semibold rounded-lg transition-colors cursor-pointer">
-                            Cancel
-                        </button>
-                    }
-                </div>
+            @if (!isSaveSuccess)
+            {
+                <div class="px-6 py-4 bg-gray-50 border-t border-gray-100 flex items-center justify-between shrink-0">
+                    <div>
+                        @if (currentStep > 1)
+                        {
+                            <button type="button" 
+                                    @onclick="PrevStep" 
+                                    disabled="@isSaving"
+                                    class="px-4 py-2.5 bg-white border border-gray-300 hover:bg-gray-100 text-gray-700 text-xs font-semibold rounded-lg transition-colors cursor-pointer">
+                                &larr; Back
+                            </button>
+                        }
+                        else
+                        {
+                            <button type="button" 
+                                    @onclick="HandleClose" 
+                                    disabled="@isSaving"
+                                    class="px-4 py-2.5 bg-white border border-gray-300 hover:bg-gray-100 text-gray-700 text-xs font-semibold rounded-lg transition-colors cursor-pointer">
+                                Cancel
+                            </button>
+                        }
+                    </div>
 
-                <div>
-                    @if (currentStep < 3)
-                    {
-                        <button type="button" 
-                                @onclick="NextStep"
-                                class="inline-flex items-center gap-1.5 px-6 py-2.5 bg-gray-900 hover:bg-black text-white text-xs font-semibold rounded-lg shadow-sm hover:shadow transition-all cursor-pointer">
-                            <span>Next Step</span>
-                            <span>&rarr;</span>
-                        </button>
-                    }
-                    else
-                    {
-                        <button type="button" 
-                                @onclick="HandleSaveAsync" 
-                                disabled="@(isSaving || isGeneratingId)"
-                                class="inline-flex items-center gap-2 px-7 py-2.5 bg-emerald-600 hover:bg-emerald-700 active:scale-95 text-white text-xs font-bold rounded-lg shadow-sm hover:shadow transition-all disabled:opacity-60 cursor-pointer">
-                            @if (isSaving)
-                            {
-                                <svg class="animate-spin w-4 h-4 text-white" fill="none" viewBox="0 0 24 24">
-                                    <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
-                                    <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z"></path>
-                                </svg>
-                                <span>Saving Service...</span>
-                            }
-                            else
-                            {
-                                <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7" />
-                                </svg>
-                                <span>Save Service</span>
-                            }
-                        </button>
-                    }
+                    <div>
+                        @if (currentStep < 3)
+                        {
+                            <button type="button" 
+                                    @onclick="NextStep"
+                                    class="inline-flex items-center gap-1.5 px-6 py-2.5 bg-gray-900 hover:bg-black text-white text-xs font-semibold rounded-lg shadow-sm hover:shadow transition-all cursor-pointer">
+                                <span>Next Step</span>
+                                <span>&rarr;</span>
+                            </button>
+                        }
+                        else
+                        {
+                            <button type="button" 
+                                    @onclick="HandleSaveAsync" 
+                                    disabled="@(isSaving || isGeneratingId)"
+                                    class="inline-flex items-center gap-2 px-7 py-2.5 bg-emerald-600 hover:bg-emerald-700 active:scale-95 text-white text-xs font-bold rounded-lg shadow-sm hover:shadow transition-all disabled:opacity-60 cursor-pointer">
+                                @if (isSaving)
+                                {
+                                    <svg class="animate-spin w-4 h-4 text-white" fill="none" viewBox="0 0 24 24">
+                                        <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                                        <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z"></path>
+                                    </svg>
+                                    <span>Saving Service...</span>
+                                }
+                                else
+                                {
+                                    <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7" />
+                                    </svg>
+                                    <span>Save Service</span>
+                                }
+                            </button>
+                        }
+                    </div>
                 </div>
-            </div>
+            }
 
         </div>
     </div>
@@ -429,6 +453,8 @@
 
     private int currentStep = 1;
     private bool isSaving = false;
+    private bool isSaveSuccess = false;
+    private string? successMessage;
     private bool isGeneratingId = false;
     private string? errorMessage;
 
@@ -454,6 +480,8 @@
     {
         currentStep = 1;
         isSaving = false;
+        isSaveSuccess = false;
+        successMessage = null;
         isGeneratingId = false;
         errorMessage = null;
         nameError = null;
@@ -644,7 +672,14 @@
                 return;
             }
 
-            await OnServiceSaved.InvokeAsync(createdId ?? model.GeneratedId);
+            var finalId = createdId ?? model.GeneratedId;
+            isSaveSuccess = true;
+            successMessage = $"Main Service '{model.Name}' ({finalId}) has been successfully saved to the database.";
+            StateHasChanged();
+
+            await Task.Delay(1800);
+
+            await OnServiceSaved.InvokeAsync(finalId);
             await HandleClose();
         }
         catch (Exception ex)

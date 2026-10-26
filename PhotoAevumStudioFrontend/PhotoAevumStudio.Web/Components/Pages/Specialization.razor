@@ -572,6 +572,7 @@
         LoadFromDatabase();
         activeTab = "catalog";
         notificationMessage = $"Specialization \"{newSpec.Name}\" ({newSpec.Id}) was successfully saved and added to the master registry.";
+        StateHasChanged();
     }
 
     private void ConfirmDeleteSpecialization(SpecializationLookupItem spec)

@@ -8,9 +8,14 @@
 
 @rendermode InteractiveServer
 
-@attribute [Authorize(Roles = "Admin,SystemAdmin,System Admin,Super Admin,Office Clerk")]
+@attribute [Authorize(Roles = "Admin,SystemAdmin,System Admin,Super Admin,Office Clerk,Employee,Staff")]
 
+@using PhotoAevumStudio.Web.Services
+@using Microsoft.AspNetCore.Components.Authorization
+@using System.Security.Claims
 @inject IEquipmentService EquipmentService
+@inject IUserService UserService
+@inject AuthenticationStateProvider AuthStateProvider
 
 @inject NavigationManager Nav
 
@@ -58,6 +63,8 @@
 
 
 
+        @if (!_isReadOnly)
+        {
         <div class="flex items-center gap-3">
 
             <button type="button" 
@@ -77,6 +84,7 @@
             </button>
 
         </div>
+        }
 
     </div>
 
@@ -550,6 +558,10 @@
 
 @code {
 
+    [CascadingParameter] Task<AuthenticationState>? AuthState { get; set; }
+    private ClaimsPrincipal? _currentUser;
+    private bool _isReadOnly = true;
+
     private List<EquipmentTypeModel> equipmentTypes = new();
 
     private List<EquipmentItemModel> equipmentList = new();
@@ -581,6 +593,17 @@
     protected override async Task OnInitializedAsync()
 
     {
+        if (AuthState != null)
+        {
+            var state = await AuthState;
+            _currentUser = state.User;
+        }
+        else if (AuthStateProvider != null)
+        {
+            var state = await AuthStateProvider.GetAuthenticationStateAsync();
+            _currentUser = state.User;
+        }
+        _isReadOnly = !EmployeeRoleHelper.IsOfficeClerk(_currentUser, UserService) && !EmployeeRoleHelper.IsAdmin(_currentUser) && !EmployeeRoleHelper.IsSystemAdmin(_currentUser);
 
         EquipmentService.OnChange += HandleExternalStateChange;
 

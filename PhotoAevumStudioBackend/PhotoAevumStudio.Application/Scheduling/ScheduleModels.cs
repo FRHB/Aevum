@@ -63,9 +63,26 @@ public sealed record ScheduleBookingResultDto(
     string? EventLocation,
     bool ConfirmationEmailSent);
 
-/// <summary>Another client won the race for this slot. The transaction has been rolled back.</summary>
-public sealed class SlotUnavailableException(DateOnly date, TimeOnly start)
-    : Exception($"The {start:h:mm tt} slot on {date:MMM d, yyyy} has just been booked by another client.");
+/// <summary>Another client won the race for this slot, or no staff member is available.</summary>
+public sealed class SlotUnavailableException : Exception
+{
+    public DateOnly Date { get; }
+    public TimeOnly Start { get; }
+
+    public SlotUnavailableException(DateOnly date, TimeOnly start)
+        : base($"The {start:h:mm tt} slot on {date:MMM d, yyyy} has just been booked by another client.")
+    {
+        Date = date;
+        Start = start;
+    }
+
+    public SlotUnavailableException(DateOnly date, TimeOnly start, string message)
+        : base(message)
+    {
+        Date = date;
+        Start = start;
+    }
+}
 
 /// <summary>Request failed business validation. Message is safe to show to the user.</summary>
 public sealed class ScheduleValidationException(string message) : Exception(message);

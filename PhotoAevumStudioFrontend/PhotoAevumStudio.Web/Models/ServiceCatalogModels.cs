@@ -15,6 +15,7 @@ public class MainServiceItem
     public decimal BasePrice { get; set; }
     public string Duration { get; set; } = "1.5 Hours";
     public string? Description { get; set; }
+    public string? ImageBase64 { get; set; }
     public string Status { get; set; } = "Active";
     public bool IsActive => Status.Equals("Active", StringComparison.OrdinalIgnoreCase);
 

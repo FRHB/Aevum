@@ -19,7 +19,7 @@
                 <option value="">Select Equipment...</option>
                 @foreach (var eq in EquipmentItems.Where(e => e.Status == "Available"))
                 {
-                    <option value="@eq.Id">@eq.Name (ID: @eq.Id)</option>
+                    <option value="@eq.Id">@eq.Name</option>
                 }
             </select>
             <button class="bg-teal-600 text-white px-6 py-2 rounded-md font-semibold text-sm hover:bg-teal-700" disabled="@(!EquipmentItems.Any())">Checkout</button>

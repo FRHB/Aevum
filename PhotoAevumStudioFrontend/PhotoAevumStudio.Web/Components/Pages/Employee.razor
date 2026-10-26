@@ -233,6 +233,7 @@
     private async Task HandleEmployeeSaved()
     {
         await LoadEmployeesAsync();
+        StateHasChanged();
     }
 
     public void Dispose()

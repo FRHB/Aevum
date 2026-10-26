@@ -167,6 +167,10 @@ public class AuthController : ControllerBase
         {
             roles.Add(AppRoles.Admin);
         }
+        if (user.Role == AppRoles.OfficeClerk)
+        {
+            roles.Add(AppRoles.Employee);
+        }
 
         var token = BuildJwt(user.Id, user.Email, user.FullName, user.Id, roles);
         await _sqlAuthService.LogActivityAsync("LOGIN", "Session", user.Id, "Successful login session established", user.Role, user.Id);

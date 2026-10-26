@@ -94,13 +94,13 @@ BEGIN
             SET @NewID = 'EMP-' + RIGHT('000' + CAST(@SeqVal AS VARCHAR(10)), 3);
         END
         
-        WHILE EXISTS (SELECT 1 FROM dbo.Employee WITH (UPDLOCK, HOLDLOCK) WHERE EmployeeID = @NewID)
+        WHILE EXISTS (SELECT 1 FROM dbo.Employees WITH (UPDLOCK, HOLDLOCK) WHERE EmployeeID = @NewID)
         BEGIN
             DECLARE @NextSeqVal INT = NEXT VALUE FOR dbo.Seq_EmployeeID;
             SET @NewID = 'EMP-' + RIGHT('000' + CAST(@NextSeqVal AS VARCHAR(10)), 3);
         END
         
-        INSERT INTO dbo.Employee (
+        INSERT INTO dbo.Employees (
             EmployeeID, EmployeeFirstName, EmployeeLastName, EmployeeMiddleName, 
             EmployeeEmail, EmployeePassword, EmployeeStatus, isFirstLogin, CreatedAt
         )
@@ -139,7 +139,7 @@ CREATE OR ALTER PROCEDURE dbo.sp_CompleteEmployeeFirstLogin
 AS
 BEGIN
     SET NOCOUNT ON;
-    UPDATE dbo.Employee
+    UPDATE dbo.Employees
     SET isFirstLogin = 0,
         EmployeePassword = COALESCE(@NewPassword, EmployeePassword)
     WHERE EmployeeID = @EmployeeID;
@@ -337,9 +337,9 @@ BEGIN
     IF @EventDate IS NOT NULL
     BEGIN
         IF EXISTS (
-            SELECT 1 FROM dbo.Employee e
+            SELECT 1 FROM dbo.Employees e
             WHERE e.EmployeeID = @EmployeeID
-              AND COL_LENGTH(N'dbo.Employee', N'DaysOff') IS NOT NULL
+              AND COL_LENGTH(N'dbo.Employees', N'DaysOff') IS NOT NULL
               AND CHARINDEX(DATENAME(dw, @EventDate), e.DaysOff) > 0
         )
         BEGIN

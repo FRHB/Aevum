@@ -723,7 +723,7 @@
     [CascadingParameter] Task<AuthenticationState>? AuthState { get; set; }
     private ClaimsPrincipal? _currentUser;
     private bool _isOfficeClerk;
-    public bool EffectiveReadOnly => IsReadOnly || _isOfficeClerk;
+    public bool EffectiveReadOnly => IsReadOnly || _isOfficeClerk || (!EmployeeRoleHelper.IsAdmin(_currentUser) && !EmployeeRoleHelper.IsSystemAdmin(_currentUser));
 
     // Search & Filter State
     private string searchQuery = string.Empty;
@@ -755,7 +755,7 @@
 
     protected override void OnInitialized()
     {
-        LoadDefaultCategories();
+        LoadCategoriesFromDb();
     }
 
     protected override async Task OnInitializedAsync()
@@ -775,49 +775,53 @@
         await RefreshCategoriesAsync();
     }
 
-    private async Task RefreshCategoriesAsync()
+    private void LoadCategoriesFromDb()
     {
         try
         {
-            var apiCategories = await ServicesApi.GetCategoriesAsync();
-            if (apiCategories != null && apiCategories.Count > 0)
+            var dbCategories = UserService.GetServiceCategories();
+            if (dbCategories != null && dbCategories.Count > 0)
             {
-                foreach (var c in apiCategories)
-                {
-                    if (!categories.Any(x => x.Id.Equals(c.Id, StringComparison.OrdinalIgnoreCase) || x.Code.Equals(c.Id, StringComparison.OrdinalIgnoreCase)))
-                    {
-                        categories.Add(new ServiceCategoryItem
-                        {
-                            Id = c.Id,
-                            Code = c.Id,
-                            Name = c.Name,
-                            Type = "Main Services",
-                            Description = c.Description,
-                            ColorTag = "Blue",
-                            Status = "Active",
-                            IsFeatured = false,
-                            AssociatedServices = new List<string>(),
-                            CreatedAt = DateTime.UtcNow
-                        });
-                    }
-                }
+                categories = dbCategories.ToList();
+                return;
             }
         }
         catch { }
 
-        // Overlay the saved portfolio placement (and mapped service names) onto the category list.
+        LoadDefaultCategories();
+    }
+
+    private async Task RefreshCategoriesAsync()
+    {
+        try
+        {
+            var dbCategories = UserService.GetServiceCategories();
+            if (dbCategories != null && dbCategories.Count > 0)
+            {
+                categories = dbCategories.ToList();
+            }
+        }
+        catch { }
+
+        // Overlay the saved portfolio placement onto the category list.
         try
         {
             var saved = await ServicesApi.GetPortfolioCategoriesAsync();
             foreach (var row in saved)
             {
-                var cat = categories.FirstOrDefault(c => c.Code.Equals(row.Code, StringComparison.OrdinalIgnoreCase));
+                var cat = categories.FirstOrDefault(c => c.Code.Equals(row.Code, StringComparison.OrdinalIgnoreCase) || c.Id.Equals(row.Code, StringComparison.OrdinalIgnoreCase));
                 if (cat is null) continue;
 
                 cat.ShowInPortfolio = true;
                 cat.PortfolioSection = row.ParentSection;
-                if (row.ServiceNames.Count > 0)
+                if (!string.IsNullOrWhiteSpace(row.ColorTag))
+                {
+                    cat.ColorTag = row.ColorTag;
+                }
+                if (cat.AssociatedServices.Count == 0 && row.ServiceNames.Count > 0)
+                {
                     cat.AssociatedServices = row.ServiceNames.ToList();
+                }
             }
         }
         catch { }
@@ -1013,6 +1017,16 @@
         if (!portfolioSaved)
         {
             notificationMessage += " (Portfolio placement could not be saved — please try again.)";
+        }
+
+        try
+        {
+            UserService.AddServiceCategory(savedCategory);
+            await RefreshCategoriesAsync();
+        }
+        catch (Exception ex)
+        {
+            notificationMessage += $" (Database sync: {ex.Message})";
         }
 
         isModalOpen = false;

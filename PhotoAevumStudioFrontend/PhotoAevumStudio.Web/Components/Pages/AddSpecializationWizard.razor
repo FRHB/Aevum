@@ -22,7 +22,7 @@
                         <p class="text-xs text-gray-500">Master lookup catalogue configuration</p>
                     </div>
                 </div>
-                <button type="button" @onclick="HandleClose" disabled="@isSaving"
+                <button type="button" @onclick="HandleTopClose" disabled="@isSaving"
                         class="text-gray-400 hover:text-gray-600 rounded-lg p-1.5 hover:bg-gray-100 transition-colors focus:outline-none focus:ring-2 focus:ring-gray-900"
                         aria-label="Close dialog">
                     <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -176,43 +176,96 @@
                             }
                         </div>
                     }
+
+                    @if (currentStep == 4)
+                    {
+                        <div class="py-6 px-4 flex flex-col items-center text-center space-y-4 animate-in fade-in duration-200">
+                            <div class="w-16 h-16 rounded-full bg-emerald-100 text-emerald-600 flex items-center justify-center text-3xl font-bold shadow-sm">
+                                ✓
+                            </div>
+                            <div>
+                                <h3 class="text-xl font-bold text-gray-900">Specialization Created Successfully!</h3>
+                                <p class="text-xs text-gray-500 mt-1">The new specialization has been registered and is now active for staff assignment.</p>
+                            </div>
+
+                            <div class="bg-gray-50 border border-gray-200 rounded-xl p-4 w-full text-left text-xs divide-y divide-gray-200">
+                                <div class="flex justify-between items-center pb-2">
+                                    <span class="text-gray-500 font-medium">Specialization Name</span>
+                                    <span class="font-bold text-gray-900">@model.Name</span>
+                                </div>
+                                <div class="flex justify-between items-center py-2">
+                                    <span class="text-gray-500 font-medium">Department</span>
+                                    <span class="font-medium text-gray-800">@model.Department</span>
+                                </div>
+                                <div class="flex justify-between items-center py-2">
+                                    <span class="text-gray-500 font-medium">Color Tag</span>
+                                    <span class="font-medium text-gray-800 flex items-center gap-1.5">
+                                        <span class="w-2.5 h-2.5 rounded-full @SpecializationColorHelper.GetClasses(model.ColorTag).DotClass"></span>
+                                        @model.ColorTag
+                                    </span>
+                                </div>
+                                <div class="pt-2">
+                                    <span class="text-gray-500 font-medium block mb-1">Description</span>
+                                    <span class="text-gray-700 italic">
+                                        @(string.IsNullOrWhiteSpace(model.Description) ? "No description provided." : model.Description)
+                                    </span>
+                                </div>
+                            </div>
+                        </div>
+                    }
                 </EditForm>
             </div>
 
             <div class="px-6 py-4 bg-gray-50 border-t border-gray-100 flex items-center justify-between">
-                <div>
-                    @if (currentStep > 1)
-                    {
-                        <button type="button" @onclick="HandlePrevStep" disabled="@isSaving"
-                                class="inline-flex items-center gap-1.5 px-4 py-2.5 bg-white border border-gray-300 hover:bg-gray-100 text-gray-700 text-xs font-semibold rounded-lg shadow-xs">
-                            Back
+                @if (currentStep == 4)
+                {
+                    <div class="w-full flex justify-end">
+                        <button type="button" 
+                                class="inline-flex items-center gap-2 px-6 py-2.5 bg-gray-900 hover:bg-black text-white text-xs font-semibold rounded-lg shadow-sm"
+                                @onclick="HandleExitSuccess">
+                            <span>Exit &amp; Return to Specializations</span>
+                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14 5l7 7m0 0l-7 7m7-7H3" />
+                            </svg>
                         </button>
-                    }
-                    else
-                    {
-                        <button type="button" @onclick="HandleClose" disabled="@isSaving"
-                                class="px-4 py-2.5 bg-white border border-gray-300 hover:bg-gray-100 text-gray-700 text-xs font-semibold rounded-lg shadow-xs">
-                            Cancel
-                        </button>
-                    }
-                </div>
+                    </div>
+                }
+                else
+                {
+                    <div>
+                        @if (currentStep > 1)
+                        {
+                            <button type="button" @onclick="HandlePrevStep" disabled="@isSaving"
+                                    class="inline-flex items-center gap-1.5 px-4 py-2.5 bg-white border border-gray-300 hover:bg-gray-100 text-gray-700 text-xs font-semibold rounded-lg shadow-xs">
+                                Back
+                            </button>
+                        }
+                        else
+                        {
+                            <button type="button" @onclick="HandleClose" disabled="@isSaving"
+                                    class="px-4 py-2.5 bg-white border border-gray-300 hover:bg-gray-100 text-gray-700 text-xs font-semibold rounded-lg shadow-xs">
+                                Cancel
+                            </button>
+                        }
+                    </div>
 
-                <div class="flex items-center gap-3">
-                    @if (currentStep < TotalSteps)
-                    {
-                        <button type="button" @onclick="HandleNextStep"
-                                class="inline-flex items-center gap-1.5 px-5 py-2.5 bg-gray-900 hover:bg-black text-white text-xs font-semibold rounded-lg shadow-sm">
-                            Next
-                        </button>
-                    }
-                    else
-                    {
-                        <button type="button" @onclick="HandleSaveAsync" disabled="@isSaving"
-                                class="inline-flex items-center gap-2 px-6 py-2.5 bg-gray-900 hover:bg-black text-white text-xs font-semibold rounded-lg shadow-sm disabled:opacity-60">
-                            <span>@(isSaving ? "Saving..." : "Save Specialization")</span>
-                        </button>
-                    }
-                </div>
+                    <div class="flex items-center gap-3">
+                        @if (currentStep < TotalSteps)
+                        {
+                            <button type="button" @onclick="HandleNextStep"
+                                    class="inline-flex items-center gap-1.5 px-5 py-2.5 bg-gray-900 hover:bg-black text-white text-xs font-semibold rounded-lg shadow-sm">
+                                Next
+                            </button>
+                        }
+                        else
+                        {
+                            <button type="button" @onclick="HandleSaveAsync" disabled="@isSaving"
+                                    class="inline-flex items-center gap-2 px-6 py-2.5 bg-gray-900 hover:bg-black text-white text-xs font-semibold rounded-lg shadow-sm disabled:opacity-60">
+                                <span>@(isSaving ? "Saving..." : "Save Specialization")</span>
+                            </button>
+                        }
+                    </div>
+                }
             </div>
         </div>
     </div>
@@ -267,11 +320,14 @@
         }
     }
 
+    private SpecializationLookupItem? _savedItem;
+
     private void ResetWizard()
     {
         currentStep = 1;
         isSaving = false;
         saveErrorMessage = null;
+        _savedItem = null;
         model = new SpecializationModel();
         editContext = new EditContext(model);
         messageStore = new ValidationMessageStore(editContext);
@@ -311,6 +367,26 @@
         }
     }
 
+    private async Task HandleTopClose()
+    {
+        if (isSaving) return;
+        if (currentStep == 4)
+        {
+            await HandleExitSuccess();
+            return;
+        }
+        await HandleClose();
+    }
+
+    private async Task HandleExitSuccess()
+    {
+        if (_savedItem != null)
+        {
+            await OnSpecializationCreated.InvokeAsync(_savedItem);
+        }
+        await HandleClose();
+    }
+
     private async Task HandleClose()
     {
         if (isSaving) return;
@@ -331,11 +407,9 @@
             isSaving = true;
             saveErrorMessage = null;
 
-            var newMasterItem = UserService.AddSpecialization(model);
-
-            ResetWizard();
-            await OnSpecializationCreated.InvokeAsync(newMasterItem);
-            await HandleClose();
+            _savedItem = UserService.AddSpecialization(model);
+            currentStep = 4;
+            StateHasChanged();
         }
         catch (Exception ex)
         {

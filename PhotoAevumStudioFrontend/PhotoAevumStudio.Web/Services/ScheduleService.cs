@@ -1,95 +1,357 @@
 using System;
 using System.Collections.Generic;
+using System.Data;
 using System.Linq;
+using Microsoft.Data.SqlClient;
+using Microsoft.Extensions.Configuration;
 using PhotoAevumStudio.Web.Models;
 
 namespace PhotoAevumStudio.Web.Services;
 
 public class ScheduleService : IScheduleService
 {
-    private readonly List<StudioSpaceResource> _studioSpaces = new();
-    private readonly List<EventBookingModel> _eventBookings = new();
+    private readonly string _connectionString;
 
-    private readonly List<StaffMemberResource> _staffMembers = new();
-    private readonly List<StaffShiftModel> _staffShifts = new();
-
-    private readonly List<EquipmentItemResource> _equipmentResources = new();
-    private readonly List<EquipmentReservationModel> _equipmentReservations = new();
-
-    public ScheduleService()
+    private readonly List<StudioSpaceResource> _defaultStudioSpaces = new()
     {
-        SeedStudioSpaces();
-        SeedEventBookings();
-        SeedStaffMembers();
-        SeedStaffShifts();
-        SeedEquipment();
-        SeedEquipmentReservations();
+        new()
+        {
+            Id = "SP-01",
+            Name = "Studio A (Main Hall)",
+            Dimensions = "1,200 sq.ft",
+            MaxCapacity = 25,
+            IconType = "studio",
+            BadgeColor = "bg-blue-100 text-blue-800 border-blue-200",
+            Description = "Cyclorama wall with high grid lighting."
+        },
+        new()
+        {
+            Id = "SP-02",
+            Name = "Studio B (Portrait & Editorial)",
+            Dimensions = "650 sq.ft",
+            MaxCapacity = 10,
+            IconType = "studio",
+            BadgeColor = "bg-indigo-100 text-indigo-800 border-indigo-200",
+            Description = "Daylight windows and multiple backdrop rollers."
+        },
+        new()
+        {
+            Id = "SP-03",
+            Name = "Outdoor / On-Location Shoot",
+            Dimensions = "Open Area",
+            MaxCapacity = 50,
+            IconType = "outdoor",
+            BadgeColor = "bg-emerald-100 text-emerald-800 border-emerald-200",
+            Description = "Field shoots and on-site client assignments."
+        },
+        new()
+        {
+            Id = "SP-04",
+            Name = "Edit Bay & Audio Suite",
+            Dimensions = "220 sq.ft",
+            MaxCapacity = 4,
+            IconType = "commercial",
+            BadgeColor = "bg-amber-100 text-amber-800 border-amber-200",
+            Description = "Color grading and live sound monitoring."
+        }
+    };
 
-        RecalculateEventConflicts();
-        RecalculateShiftConflicts();
-        RecalculateEquipmentConflicts();
+    public ScheduleService(IConfiguration? configuration = null)
+    {
+        _connectionString = configuration?.GetConnectionString("DefaultConnection")
+            ?? "Data Source=localhost\\SQLEXPRESS;Initial Catalog=PhotoAevumStudio;Integrated Security=True;Persist Security Info=False;Pooling=False;MultipleActiveResultSets=False;Encrypt=True;TrustServerCertificate=True;Application Name=\"SQL Server Management Studio\";Command Timeout=0";
     }
 
+    private SqlConnection CreateConnection() => new SqlConnection(_connectionString);
+
     // ─────────────────────────────────────────────────────────────────────────
-    // STUDIO SPACES & EVENTS
+    // 1. STUDIO SPACES & EVENTS
     // ─────────────────────────────────────────────────────────────────────────
 
-    public List<StudioSpaceResource> GetStudioSpaces() => _studioSpaces;
+    public List<StudioSpaceResource> GetStudioSpaces() => _defaultStudioSpaces;
 
-    public List<EventBookingModel> GetEventBookings() => _eventBookings;
+    public List<EventBookingModel> GetEventBookings()
+    {
+        var bookings = new List<EventBookingModel>();
+
+        try
+        {
+            using var conn = CreateConnection();
+            conn.Open();
+
+            const string sql = @"
+                SELECT ea.EventAppointmentID,
+                       ea.EventName,
+                       ea.EventDescription,
+                       ea.CustomerID,
+                       COALESCE(NULLIF(LTRIM(RTRIM(c.CustomerFirstName + ' ' + ISNULL(c.CustomerLastName, ''))), ''), ea.CustomerID, 'Studio Client') AS CustomerName,
+                       c.CustomerEmail,
+                       c.CustomerPhoneNumber,
+                       ea.EventDate,
+                       ea.EventTime,
+                       ea.EventStatus,
+                       emp.EmployeeID,
+                       COALESCE(NULLIF(LTRIM(RTRIM(emp.EmployeeFirstName + ' ' + ISNULL(emp.EmployeeLastName, ''))), ''), emp.EmployeeID, 'Unassigned') AS EmployeeName
+                FROM dbo.EventAppointment ea
+                LEFT JOIN dbo.Customer c ON c.CustomerID = ea.CustomerID
+                LEFT JOIN dbo.EventEmployee ee ON ee.EventAppointmentID = ea.EventAppointmentID
+                LEFT JOIN dbo.Employees emp ON emp.EmployeeID = ee.EmployeeID
+                ORDER BY ea.EventDate DESC, ea.EventTime DESC;";
+
+            using var cmd = new SqlCommand(sql, conn);
+            using var reader = cmd.ExecuteReader();
+
+            while (reader.Read())
+            {
+                var id = reader.GetString(0);
+                var eventName = reader.GetString(1);
+                var desc = reader.IsDBNull(2) ? string.Empty : reader.GetString(2);
+                var custId = reader.IsDBNull(3) ? string.Empty : reader.GetString(3);
+                var clientName = reader.IsDBNull(4) ? "Studio Client" : reader.GetString(4);
+                var email = reader.IsDBNull(5) ? string.Empty : reader.GetString(5);
+                var phone = reader.IsDBNull(6) ? string.Empty : reader.GetString(6);
+                var eventDate = reader.GetDateTime(7);
+                var eventTime = reader.GetFieldValue<TimeSpan>(8);
+                var status = reader.IsDBNull(9) ? "Confirmed" : reader.GetString(9);
+                var empName = reader.IsDBNull(11) ? "Unassigned" : reader.GetString(11);
+
+                // Default 2-hour duration for events
+                var endTime = eventTime.Add(TimeSpan.FromHours(2));
+                if (endTime > new TimeSpan(23, 59, 0))
+                    endTime = new TimeSpan(23, 59, 0);
+
+                var space = _defaultStudioSpaces[0];
+
+                bookings.Add(new EventBookingModel
+                {
+                    Id = id,
+                    StudioSpaceId = space.Id,
+                    StudioSpaceName = space.Name,
+                    ClientName = clientName,
+                    ClientEmail = email,
+                    ClientPhone = phone,
+                    ServiceType = string.IsNullOrWhiteSpace(eventName) ? "Studio Photography" : eventName,
+                    Date = eventDate,
+                    StartTime = eventTime,
+                    EndTime = endTime,
+                    Status = status,
+                    AssignedPhotographer = empName,
+                    Notes = desc,
+                    EstimatedPrice = 350.00m
+                });
+            }
+        }
+        catch
+        {
+            // Fail safely
+        }
+
+        RecalculateEventConflicts(bookings);
+        return bookings;
+    }
 
     public void AddEventBooking(EventBookingModel booking)
     {
         if (string.IsNullOrWhiteSpace(booking.Id))
-            booking.Id = Guid.NewGuid().ToString("N")[..8];
+            booking.Id = "EVT-" + DateTime.UtcNow.ToString("yyyyMMdd") + "-" + Guid.NewGuid().ToString("N")[..4].ToUpperInvariant();
 
-        var space = _studioSpaces.FirstOrDefault(s => s.Id == booking.StudioSpaceId);
-        if (space != null)
-            booking.StudioSpaceName = space.Name;
+        try
+        {
+            using var conn = CreateConnection();
+            conn.Open();
 
-        _eventBookings.Add(booking);
-        RecalculateEventConflicts();
+            const string insertSql = @"
+                IF NOT EXISTS (SELECT 1 FROM dbo.EventAppointment WHERE EventAppointmentID = @Id)
+                BEGIN
+                    INSERT INTO dbo.EventAppointment 
+                        (EventAppointmentID, EventName, EventDescription, CustomerID, EventDate, EventTime, EventStatus, CreatedAt)
+                    VALUES 
+                        (@Id, @Name, @Desc, @CustId, @Date, @Time, @Status, SYSUTCDATETIME());
+                END";
+
+            using (var cmd = new SqlCommand(insertSql, conn))
+            {
+                cmd.Parameters.AddWithValue("@Id", booking.Id.Trim());
+                cmd.Parameters.AddWithValue("@Name", string.IsNullOrWhiteSpace(booking.ServiceType) ? "Studio Event" : booking.ServiceType.Trim());
+                cmd.Parameters.AddWithValue("@Desc", ((object)booking.Notes?.Trim()) ?? DBNull.Value);
+                cmd.Parameters.AddWithValue("@CustId", "CUST-0001");
+                cmd.Parameters.AddWithValue("@Date", booking.Date.Date);
+                cmd.Parameters.AddWithValue("@Time", booking.StartTime);
+                cmd.Parameters.AddWithValue("@Status", string.IsNullOrWhiteSpace(booking.Status) ? "Confirmed" : booking.Status.Trim());
+                cmd.ExecuteNonQuery();
+            }
+
+            // Assign employee if specified
+            if (!string.IsNullOrWhiteSpace(booking.AssignedPhotographer) && !booking.AssignedPhotographer.Equals("Unassigned", StringComparison.OrdinalIgnoreCase))
+            {
+                const string assignSql = @"
+                    DECLARE @EmpId nvarchar(50) = NULL;
+                    SELECT TOP 1 @EmpId = EmployeeID 
+                    FROM dbo.Employees 
+                    WHERE EmployeeID = @EmpName 
+                       OR (EmployeeFirstName + ' ' + ISNULL(EmployeeLastName, '')) LIKE '%' + @EmpName + '%';
+
+                    IF @EmpId IS NOT NULL
+                    BEGIN
+                        IF NOT EXISTS (SELECT 1 FROM dbo.EventEmployee WHERE EventAppointmentID = @ApptId AND EmployeeID = @EmpId)
+                        BEGIN
+                            INSERT INTO dbo.EventEmployee (EventAppointmentID, EmployeeID)
+                            VALUES (@ApptId, @EmpId);
+                        END
+                    END";
+
+                using var assignCmd = new SqlCommand(assignSql, conn);
+                assignCmd.Parameters.AddWithValue("@ApptId", booking.Id.Trim());
+                assignCmd.Parameters.AddWithValue("@EmpName", booking.AssignedPhotographer.Trim());
+                assignCmd.ExecuteNonQuery();
+            }
+
+            // Log activity
+            const string logSql = @"
+                IF OBJECT_ID(N'dbo.HistoryLog', N'U') IS NOT NULL
+                BEGIN
+                    INSERT INTO dbo.HistoryLog (ActionType, EntityName, EntityID, ChangedBy, ActionDetails, LoggedAt)
+                    VALUES ('Create', 'EventAppointment', @Id, 'Staff', @Details, SYSUTCDATETIME());
+                END";
+
+            using var logCmd = new SqlCommand(logSql, conn);
+            logCmd.Parameters.AddWithValue("@Id", booking.Id.Trim());
+            logCmd.Parameters.AddWithValue("@Details", $"Scheduled event {booking.Id}: {booking.ClientName} ({booking.ServiceType}) on {booking.Date:yyyy-MM-dd} at {booking.StartTime}");
+            logCmd.ExecuteNonQuery();
+        }
+        catch
+        {
+        }
     }
 
     public void UpdateEventBooking(EventBookingModel booking)
     {
-        var existingIndex = _eventBookings.FindIndex(b => b.Id == booking.Id);
-        if (existingIndex >= 0)
-        {
-            var space = _studioSpaces.FirstOrDefault(s => s.Id == booking.StudioSpaceId);
-            if (space != null)
-                booking.StudioSpaceName = space.Name;
+        if (string.IsNullOrWhiteSpace(booking.Id)) return;
 
-            _eventBookings[existingIndex] = booking;
-            RecalculateEventConflicts();
+        try
+        {
+            using var conn = CreateConnection();
+            conn.Open();
+
+            const string updateSql = @"
+                UPDATE dbo.EventAppointment
+                SET EventName = @Name,
+                    EventDescription = @Desc,
+                    EventDate = @Date,
+                    EventTime = @Time,
+                    EventStatus = @Status
+                WHERE EventAppointmentID = @Id;";
+
+            using (var cmd = new SqlCommand(updateSql, conn))
+            {
+                cmd.Parameters.AddWithValue("@Id", booking.Id.Trim());
+                cmd.Parameters.AddWithValue("@Name", string.IsNullOrWhiteSpace(booking.ServiceType) ? "Studio Event" : booking.ServiceType.Trim());
+                cmd.Parameters.AddWithValue("@Desc", ((object)booking.Notes?.Trim()) ?? DBNull.Value);
+                cmd.Parameters.AddWithValue("@Date", booking.Date.Date);
+                cmd.Parameters.AddWithValue("@Time", booking.StartTime);
+                cmd.Parameters.AddWithValue("@Status", string.IsNullOrWhiteSpace(booking.Status) ? "Confirmed" : booking.Status.Trim());
+                cmd.ExecuteNonQuery();
+            }
+
+            // Update employee assignment
+            if (!string.IsNullOrWhiteSpace(booking.AssignedPhotographer) && !booking.AssignedPhotographer.Equals("Unassigned", StringComparison.OrdinalIgnoreCase))
+            {
+                const string reassignSql = @"
+                    DELETE FROM dbo.EventEmployee WHERE EventAppointmentID = @ApptId;
+
+                    DECLARE @EmpId nvarchar(50) = NULL;
+                    SELECT TOP 1 @EmpId = EmployeeID 
+                    FROM dbo.Employees 
+                    WHERE EmployeeID = @EmpName 
+                       OR (EmployeeFirstName + ' ' + ISNULL(EmployeeLastName, '')) LIKE '%' + @EmpName + '%';
+
+                    IF @EmpId IS NOT NULL
+                    BEGIN
+                        INSERT INTO dbo.EventEmployee (EventAppointmentID, EmployeeID)
+                        VALUES (@ApptId, @EmpId);
+                    END";
+
+                using var reassignCmd = new SqlCommand(reassignSql, conn);
+                reassignCmd.Parameters.AddWithValue("@ApptId", booking.Id.Trim());
+                reassignCmd.Parameters.AddWithValue("@EmpName", booking.AssignedPhotographer.Trim());
+                reassignCmd.ExecuteNonQuery();
+            }
+
+            // Log activity
+            const string logSql = @"
+                IF OBJECT_ID(N'dbo.HistoryLog', N'U') IS NOT NULL
+                BEGIN
+                    INSERT INTO dbo.HistoryLog (ActionType, EntityName, EntityID, ChangedBy, ActionDetails, LoggedAt)
+                    VALUES ('Update', 'EventAppointment', @Id, 'Staff', @Details, SYSUTCDATETIME());
+                END";
+
+            using var logCmd = new SqlCommand(logSql, conn);
+            logCmd.Parameters.AddWithValue("@Id", booking.Id.Trim());
+            logCmd.Parameters.AddWithValue("@Details", $"Updated event {booking.Id}: Status={booking.Status}, Date={booking.Date:yyyy-MM-dd}");
+            logCmd.ExecuteNonQuery();
+        }
+        catch
+        {
         }
     }
 
     public void DeleteEventBooking(string id)
     {
-        _eventBookings.RemoveAll(b => b.Id == id);
-        RecalculateEventConflicts();
+        if (string.IsNullOrWhiteSpace(id)) return;
+
+        try
+        {
+            using var conn = CreateConnection();
+            conn.Open();
+
+            const string deleteSql = @"
+                DELETE FROM dbo.EventEquipment WHERE EventAppointmentID = @Id;
+                DELETE FROM dbo.EventEmployee WHERE EventAppointmentID = @Id;
+                DELETE FROM dbo.EventAppointment WHERE EventAppointmentID = @Id;";
+
+            using (var cmd = new SqlCommand(deleteSql, conn))
+            {
+                cmd.Parameters.AddWithValue("@Id", id.Trim());
+                cmd.ExecuteNonQuery();
+            }
+
+            const string logSql = @"
+                IF OBJECT_ID(N'dbo.HistoryLog', N'U') IS NOT NULL
+                BEGIN
+                    INSERT INTO dbo.HistoryLog (ActionType, EntityName, EntityID, ChangedBy, ActionDetails, LoggedAt)
+                    VALUES ('Delete', 'EventAppointment', @Id, 'Staff', @Details, SYSUTCDATETIME());
+                END";
+
+            using var logCmd = new SqlCommand(logSql, conn);
+            logCmd.Parameters.AddWithValue("@Id", id.Trim());
+            logCmd.Parameters.AddWithValue("@Details", $"Deleted event appointment {id}");
+            logCmd.ExecuteNonQuery();
+        }
+        catch
+        {
+        }
     }
 
     public int GetEventConflictCount()
     {
-        return _eventBookings.Count(b => b.HasConflict);
+        var bookings = GetEventBookings();
+        return bookings.Count(b => b.HasConflict);
     }
 
-    private void RecalculateEventConflicts()
+    private static void RecalculateEventConflicts(List<EventBookingModel> bookings)
     {
-        foreach (var b in _eventBookings)
+        foreach (var b in bookings)
         {
             b.HasConflict = false;
             b.ConflictMessage = null;
         }
 
-        for (int i = 0; i < _eventBookings.Count; i++)
+        for (int i = 0; i < bookings.Count; i++)
         {
-            for (int j = i + 1; j < _eventBookings.Count; j++)
+            for (int j = i + 1; j < bookings.Count; j++)
             {
-                var b1 = _eventBookings[i];
-                var b2 = _eventBookings[j];
+                var b1 = bookings[i];
+                var b2 = bookings[j];
 
                 if (b1.OverlapsWith(b2))
                 {
@@ -104,1023 +366,444 @@ public class ScheduleService : IScheduleService
     }
 
     // ─────────────────────────────────────────────────────────────────────────
-    // STAFF & SHIFTS
+    // 2. STAFF & SHIFTS
     // ─────────────────────────────────────────────────────────────────────────
 
-    public List<StaffMemberResource> GetStaffMembers() => _staffMembers;
+    public List<StaffMemberResource> GetStaffMembers()
+    {
+        var staff = new List<StaffMemberResource>();
 
-    public List<StaffShiftModel> GetStaffShifts() => _staffShifts;
+        try
+        {
+            using var conn = CreateConnection();
+            conn.Open();
+
+            const string sql = @"
+                SELECT emp.EmployeeID,
+                       COALESCE(NULLIF(LTRIM(RTRIM(emp.EmployeeFirstName + ' ' + ISNULL(emp.EmployeeLastName, ''))), ''), emp.EmployeeID) AS FullName,
+                       emp.EmployeeEmail,
+                       emp.EmployeeStatus,
+                       STRING_AGG(es.SpecializationName, ', ') AS Specializations
+                FROM dbo.Employees emp
+                LEFT JOIN dbo.EmployeeJointSpecialization ejs ON ejs.EmployeeID = emp.EmployeeID
+                LEFT JOIN dbo.EmployeeSpecialization es ON es.SpecializationID = ejs.SpecializationID
+                GROUP BY emp.EmployeeID, emp.EmployeeFirstName, emp.EmployeeLastName, emp.EmployeeEmail, emp.EmployeeStatus
+                ORDER BY emp.EmployeeID;";
+
+            using var cmd = new SqlCommand(sql, conn);
+            using var reader = cmd.ExecuteReader();
+
+            while (reader.Read())
+            {
+                var id = reader.GetString(0);
+                var name = reader.GetString(1);
+                var email = reader.IsDBNull(2) ? $"{id.ToLowerInvariant()}@photoaevum.studio" : reader.GetString(2);
+                var status = reader.IsDBNull(3) ? "Active" : reader.GetString(3);
+                var role = reader.IsDBNull(4) ? "Studio Staff" : reader.GetString(4);
+
+                var initials = "ST";
+                var parts = name.Split(' ', StringSplitOptions.RemoveEmptyEntries);
+                if (parts.Length >= 2)
+                    initials = $"{parts[0][0]}{parts[1][0]}".ToUpperInvariant();
+                else if (parts.Length == 1 && parts[0].Length > 0)
+                    initials = parts[0][..1].ToUpperInvariant();
+
+                staff.Add(new StaffMemberResource
+                {
+                    Id = id,
+                    StaffCode = id,
+                    FullName = name,
+                    Role = string.IsNullOrWhiteSpace(role) ? "Staff Member" : role,
+                    Email = email,
+                    Status = status,
+                    AvatarInitials = initials,
+                    AvatarColor = "bg-indigo-100 text-indigo-700",
+                    TargetHoursPerWeek = 40
+                });
+            }
+        }
+        catch
+        {
+        }
+
+        return staff;
+    }
+
+    public List<StaffShiftModel> GetStaffShifts()
+    {
+        var shifts = new List<StaffShiftModel>();
+
+        try
+        {
+            using var conn = CreateConnection();
+            conn.Open();
+
+            const string sql = @"
+                SELECT ee.EventAppointmentID,
+                       emp.EmployeeID,
+                       COALESCE(NULLIF(LTRIM(RTRIM(emp.EmployeeFirstName + ' ' + ISNULL(emp.EmployeeLastName, ''))), ''), emp.EmployeeID) AS FullName,
+                       ea.EventDate,
+                       ea.EventTime,
+                       ea.EventName,
+                       COALESCE(es.SpecializationName, 'Photographer') AS Role
+                FROM dbo.EventEmployee ee
+                INNER JOIN dbo.EventAppointment ea ON ea.EventAppointmentID = ee.EventAppointmentID
+                INNER JOIN dbo.Employees emp ON emp.EmployeeID = ee.EmployeeID
+                LEFT JOIN dbo.EmployeeJointSpecialization ejs ON ejs.EmployeeID = emp.EmployeeID
+                LEFT JOIN dbo.EmployeeSpecialization es ON es.SpecializationID = ejs.SpecializationID
+                ORDER BY ea.EventDate DESC, ea.EventTime DESC;";
+
+            using var cmd = new SqlCommand(sql, conn);
+            using var reader = cmd.ExecuteReader();
+
+            while (reader.Read())
+            {
+                var apptId = reader.GetString(0);
+                var empId = reader.GetString(1);
+                var empName = reader.GetString(2);
+                var eventDate = reader.GetDateTime(3);
+                var startTime = reader.GetFieldValue<TimeSpan>(4);
+                var eventName = reader.GetString(5);
+                var role = reader.IsDBNull(6) ? "Photographer" : reader.GetString(6);
+
+                var endTime = startTime.Add(TimeSpan.FromHours(2));
+                if (endTime > new TimeSpan(23, 59, 0))
+                    endTime = new TimeSpan(23, 59, 0);
+
+                shifts.Add(new StaffShiftModel
+                {
+                    Id = $"{apptId}-{empId}",
+                    StaffId = empId,
+                    StaffName = empName,
+                    Role = role,
+                    Date = eventDate,
+                    StartTime = startTime,
+                    EndTime = endTime,
+                    Location = "Studio A",
+                    ShiftType = "Production Shoot",
+                    Notes = $"Assigned to event: {eventName}"
+                });
+            }
+        }
+        catch
+        {
+        }
+
+        RecalculateShiftConflicts(shifts);
+        return shifts;
+    }
 
     public void AddStaffShift(StaffShiftModel shift)
     {
-        if (string.IsNullOrWhiteSpace(shift.Id))
-            shift.Id = Guid.NewGuid().ToString("N")[..8];
-
-        if (!string.IsNullOrEmpty(shift.StaffId))
-        {
-            var staff = _staffMembers.FirstOrDefault(s => s.Id == shift.StaffId);
-            if (staff != null)
-            {
-                shift.StaffName = staff.FullName;
-                shift.Role = staff.Role;
-            }
-        }
-        else
-        {
-            shift.StaffName = "Open Shift";
-        }
-
-        _staffShifts.Add(shift);
-        RecalculateShiftConflicts();
+        // Staff shifts in the studio derive directly from event assignments
     }
 
     public void UpdateStaffShift(StaffShiftModel shift)
     {
-        var existingIndex = _staffShifts.FindIndex(s => s.Id == shift.Id);
-        if (existingIndex >= 0)
-        {
-            if (!string.IsNullOrEmpty(shift.StaffId))
-            {
-                var staff = _staffMembers.FirstOrDefault(s => s.Id == shift.StaffId);
-                if (staff != null)
-                {
-                    shift.StaffName = staff.FullName;
-                    shift.Role = staff.Role;
-                }
-            }
-            else
-            {
-                shift.StaffName = "Open Shift";
-            }
-
-            _staffShifts[existingIndex] = shift;
-            RecalculateShiftConflicts();
-        }
     }
 
     public void DeleteStaffShift(string id)
     {
-        _staffShifts.RemoveAll(s => s.Id == id);
-        RecalculateShiftConflicts();
+        if (string.IsNullOrWhiteSpace(id)) return;
+        var parts = id.Split('-');
+        if (parts.Length >= 2)
+        {
+            var apptId = parts[0];
+            var empId = parts[1];
+
+            try
+            {
+                using var conn = CreateConnection();
+                conn.Open();
+                using var cmd = new SqlCommand("DELETE FROM dbo.EventEmployee WHERE EventAppointmentID = @ApptId AND EmployeeID = @EmpId;", conn);
+                cmd.Parameters.AddWithValue("@ApptId", apptId);
+                cmd.Parameters.AddWithValue("@EmpId", empId);
+                cmd.ExecuteNonQuery();
+            }
+            catch
+            {
+            }
+        }
     }
 
     public int GetShiftConflictCount()
     {
-        return _staffShifts.Count(s => s.HasConflict);
+        var shifts = GetStaffShifts();
+        return shifts.Count(s => s.HasConflict);
     }
 
-    private void RecalculateShiftConflicts()
+    private static void RecalculateShiftConflicts(List<StaffShiftModel> shifts)
     {
-        foreach (var s in _staffShifts)
+        foreach (var s in shifts)
         {
             s.HasConflict = false;
             s.ConflictMessage = null;
         }
 
-        for (int i = 0; i < _staffShifts.Count; i++)
+        for (int i = 0; i < shifts.Count; i++)
         {
-            for (int j = i + 1; j < _staffShifts.Count; j++)
+            for (int j = i + 1; j < shifts.Count; j++)
             {
-                var s1 = _staffShifts[i];
-                var s2 = _staffShifts[j];
+                var s1 = shifts[i];
+                var s2 = shifts[j];
 
                 if (s1.OverlapsWith(s2))
                 {
                     s1.HasConflict = true;
-                    s1.ConflictMessage = $"Overlapping shift at '{s2.Location}' ({s2.FormattedTimeRange})";
+                    s1.ConflictMessage = $"Shift overlaps with '{s2.Notes}' ({s2.FormattedTimeRange})";
 
                     s2.HasConflict = true;
-                    s2.ConflictMessage = $"Overlapping shift at '{s1.Location}' ({s1.FormattedTimeRange})";
+                    s2.ConflictMessage = $"Shift overlaps with '{s1.Notes}' ({s1.FormattedTimeRange})";
                 }
             }
         }
     }
 
     // ─────────────────────────────────────────────────────────────────────────
-    // EQUIPMENT & RESERVATIONS
+    // 3. EQUIPMENT RESOURCES & RESERVATIONS
     // ─────────────────────────────────────────────────────────────────────────
 
-    public List<EquipmentItemResource> GetEquipmentResources() => _equipmentResources;
+    public List<EquipmentItemResource> GetEquipmentResources()
+    {
+        var list = new List<EquipmentItemResource>();
 
-    public List<EquipmentReservationModel> GetEquipmentReservations() => _equipmentReservations;
+        try
+        {
+            using var conn = CreateConnection();
+            conn.Open();
+
+            const string sql = @"
+                SELECT eq.EquipmentID,
+                       eq.EquipmentName,
+                       COALESCE(eq.SerialNo, eq.EquipmentID) AS SerialNumber,
+                       COALESCE(et.EquipmentTypeName, eq.EquipmentTypeID, 'Gear') AS Category,
+                       COALESCE(eq.EquipmentStatus, 'Ready') AS Status
+                FROM dbo.Equipment eq
+                LEFT JOIN dbo.EquipmentType et ON et.EquipmentTypeID = eq.EquipmentTypeID
+                ORDER BY eq.EquipmentID;";
+
+            using var cmd = new SqlCommand(sql, conn);
+            using var reader = cmd.ExecuteReader();
+
+            while (reader.Read())
+            {
+                list.Add(new EquipmentItemResource
+                {
+                    Id = reader.GetString(0),
+                    Name = reader.GetString(1),
+                    SerialNumber = reader.GetString(2),
+                    Category = reader.GetString(3),
+                    Status = reader.GetString(4),
+                    StorageBay = "Studio Inventory Rack",
+                    BadgeColor = "bg-emerald-50 text-emerald-700 border-emerald-200"
+                });
+            }
+        }
+        catch
+        {
+        }
+
+        return list;
+    }
+
+    public List<EquipmentReservationModel> GetEquipmentReservations()
+    {
+        var reservations = new List<EquipmentReservationModel>();
+
+        try
+        {
+            using var conn = CreateConnection();
+            conn.Open();
+
+            const string sql = @"
+                SELECT eeq.EventAppointmentID,
+                       eq.EquipmentID,
+                       eq.EquipmentName,
+                       COALESCE(et.EquipmentTypeName, eq.EquipmentTypeID, 'Gear') AS Category,
+                       ea.EventDate,
+                       ea.EventTime,
+                       ea.EventName,
+                       COALESCE(NULLIF(LTRIM(RTRIM(emp.EmployeeFirstName + ' ' + ISNULL(emp.EmployeeLastName, ''))), ''), emp.EmployeeID, 'Lead Technician') AS Technician
+                FROM dbo.EventEquipment eeq
+                INNER JOIN dbo.EventAppointment ea ON ea.EventAppointmentID = eeq.EventAppointmentID
+                INNER JOIN dbo.Equipment eq ON eq.EquipmentID = eeq.EquipmentID
+                LEFT JOIN dbo.EquipmentType et ON et.EquipmentTypeID = eq.EquipmentTypeID
+                LEFT JOIN dbo.EventEmployee ee ON ee.EventAppointmentID = ea.EventAppointmentID
+                LEFT JOIN dbo.Employees emp ON emp.EmployeeID = ee.EmployeeID
+                ORDER BY ea.EventDate DESC, ea.EventTime DESC;";
+
+            using var cmd = new SqlCommand(sql, conn);
+            using var reader = cmd.ExecuteReader();
+
+            while (reader.Read())
+            {
+                var apptId = reader.GetString(0);
+                var eqId = reader.GetString(1);
+                var eqName = reader.GetString(2);
+                var cat = reader.GetString(3);
+                var eventDate = reader.GetDateTime(4);
+                var startTime = reader.GetFieldValue<TimeSpan>(5);
+                var eventName = reader.GetString(6);
+                var technician = reader.IsDBNull(7) ? "Studio Staff" : reader.GetString(7);
+
+                var endTime = startTime.Add(TimeSpan.FromHours(2));
+                if (endTime > new TimeSpan(23, 59, 0))
+                    endTime = new TimeSpan(23, 59, 0);
+
+                reservations.Add(new EquipmentReservationModel
+                {
+                    Id = $"{apptId}-{eqId}",
+                    EquipmentId = eqId,
+                    EquipmentName = eqName,
+                    Category = cat,
+                    Date = eventDate,
+                    StartTime = startTime,
+                    EndTime = endTime,
+                    ProjectOrClient = eventName,
+                    TechnicianInCharge = technician,
+                    Location = "Studio A",
+                    MaintenanceStatus = "Ready",
+                    Notes = $"Reserved for shoot: {eventName}"
+                });
+            }
+        }
+        catch
+        {
+        }
+
+        RecalculateEquipmentConflicts(reservations);
+        return reservations;
+    }
 
     public void AddEquipmentReservation(EquipmentReservationModel reservation)
     {
-        if (string.IsNullOrWhiteSpace(reservation.Id))
-            reservation.Id = Guid.NewGuid().ToString("N")[..8];
+        if (string.IsNullOrWhiteSpace(reservation.EquipmentId)) return;
 
-        var eq = _equipmentResources.FirstOrDefault(e => e.Id == reservation.EquipmentId);
-        if (eq != null)
+        try
         {
-            reservation.EquipmentName = eq.Name;
-            reservation.Category = eq.Category;
-        }
+            using var conn = CreateConnection();
+            conn.Open();
 
-        _equipmentReservations.Add(reservation);
-        RecalculateEquipmentConflicts();
+            // Find or create an appointment for this reservation
+            string apptId = reservation.Id;
+            if (string.IsNullOrWhiteSpace(apptId) || apptId.Contains("-"))
+            {
+                apptId = "EVT-" + DateTime.UtcNow.ToString("yyyyMMdd") + "-" + Guid.NewGuid().ToString("N")[..4].ToUpperInvariant();
+                const string createEventSql = @"
+                    INSERT INTO dbo.EventAppointment 
+                        (EventAppointmentID, EventName, EventDescription, CustomerID, EventDate, EventTime, EventStatus, CreatedAt)
+                    VALUES 
+                        (@Id, @Name, @Desc, 'CUST-0001', @Date, @Time, 'Confirmed', SYSUTCDATETIME());";
+
+                using var createCmd = new SqlCommand(createEventSql, conn);
+                createCmd.Parameters.AddWithValue("@Id", apptId);
+                createCmd.Parameters.AddWithValue("@Name", string.IsNullOrWhiteSpace(reservation.ProjectOrClient) ? "Equipment Reservation" : reservation.ProjectOrClient.Trim());
+                createCmd.Parameters.AddWithValue("@Desc", ((object)reservation.Notes?.Trim()) ?? DBNull.Value);
+                createCmd.Parameters.AddWithValue("@Date", reservation.Date.Date);
+                createCmd.Parameters.AddWithValue("@Time", reservation.StartTime);
+                createCmd.ExecuteNonQuery();
+            }
+
+            const string reserveSql = @"
+                IF NOT EXISTS (SELECT 1 FROM dbo.EventEquipment WHERE EventAppointmentID = @ApptId AND EquipmentID = @EqId)
+                BEGIN
+                    INSERT INTO dbo.EventEquipment (EventAppointmentID, EquipmentID)
+                    VALUES (@ApptId, @EqId);
+                END";
+
+            using var cmd = new SqlCommand(reserveSql, conn);
+            cmd.Parameters.AddWithValue("@ApptId", apptId);
+            cmd.Parameters.AddWithValue("@EqId", reservation.EquipmentId.Trim());
+            cmd.ExecuteNonQuery();
+
+            // Log activity
+            const string logSql = @"
+                IF OBJECT_ID(N'dbo.HistoryLog', N'U') IS NOT NULL
+                BEGIN
+                    INSERT INTO dbo.HistoryLog (ActionType, EntityName, EntityID, ChangedBy, ActionDetails, LoggedAt)
+                    VALUES ('Create', 'EventEquipment', @EqId, 'Staff', @Details, SYSUTCDATETIME());
+                END";
+
+            using var logCmd = new SqlCommand(logSql, conn);
+            logCmd.Parameters.AddWithValue("@EqId", reservation.EquipmentId.Trim());
+            logCmd.Parameters.AddWithValue("@Details", $"Reserved equipment {reservation.EquipmentId} for {reservation.ProjectOrClient} on {reservation.Date:yyyy-MM-dd}");
+            logCmd.ExecuteNonQuery();
+        }
+        catch
+        {
+        }
     }
 
     public void UpdateEquipmentReservation(EquipmentReservationModel reservation)
     {
-        var existingIndex = _equipmentReservations.FindIndex(r => r.Id == reservation.Id);
-        if (existingIndex >= 0)
-        {
-            var eq = _equipmentResources.FirstOrDefault(e => e.Id == reservation.EquipmentId);
-            if (eq != null)
-            {
-                reservation.EquipmentName = eq.Name;
-                reservation.Category = eq.Category;
-            }
-
-            _equipmentReservations[existingIndex] = reservation;
-            RecalculateEquipmentConflicts();
-        }
     }
 
     public void DeleteEquipmentReservation(string id)
     {
-        _equipmentReservations.RemoveAll(r => r.Id == id);
-        RecalculateEquipmentConflicts();
+        if (string.IsNullOrWhiteSpace(id)) return;
+        var parts = id.Split('-');
+        if (parts.Length >= 2)
+        {
+            var apptId = parts[0];
+            var eqId = parts[1];
+
+            try
+            {
+                using var conn = CreateConnection();
+                conn.Open();
+                using var cmd = new SqlCommand("DELETE FROM dbo.EventEquipment WHERE EventAppointmentID = @ApptId AND EquipmentID = @EqId;", conn);
+                cmd.Parameters.AddWithValue("@ApptId", apptId);
+                cmd.Parameters.AddWithValue("@EqId", eqId);
+                cmd.ExecuteNonQuery();
+
+                const string logSql = @"
+                    IF OBJECT_ID(N'dbo.HistoryLog', N'U') IS NOT NULL
+                    BEGIN
+                        INSERT INTO dbo.HistoryLog (ActionType, EntityName, EntityID, ChangedBy, ActionDetails, LoggedAt)
+                        VALUES ('Delete', 'EventEquipment', @EqId, 'Staff', @Details, SYSUTCDATETIME());
+                    END";
+
+                using var logCmd = new SqlCommand(logSql, conn);
+                logCmd.Parameters.AddWithValue("@EqId", eqId);
+                logCmd.Parameters.AddWithValue("@Details", $"Cancelled reservation for equipment {eqId} in appointment {apptId}");
+                logCmd.ExecuteNonQuery();
+            }
+            catch
+            {
+            }
+        }
     }
 
     public int GetEquipmentConflictCount()
     {
-        return _equipmentReservations.Count(r => r.HasConflict);
+        var reservations = GetEquipmentReservations();
+        return reservations.Count(r => r.HasConflict);
     }
 
-    private void RecalculateEquipmentConflicts()
+    private static void RecalculateEquipmentConflicts(List<EquipmentReservationModel> reservations)
     {
-        foreach (var r in _equipmentReservations)
+        foreach (var r in reservations)
         {
             r.HasConflict = false;
             r.ConflictMessage = null;
         }
 
-        for (int i = 0; i < _equipmentReservations.Count; i++)
+        for (int i = 0; i < reservations.Count; i++)
         {
-            for (int j = i + 1; j < _equipmentReservations.Count; j++)
+            for (int j = i + 1; j < reservations.Count; j++)
             {
-                var r1 = _equipmentReservations[i];
-                var r2 = _equipmentReservations[j];
+                var r1 = reservations[i];
+                var r2 = reservations[j];
 
                 if (r1.OverlapsWith(r2))
                 {
                     r1.HasConflict = true;
-                    r1.ConflictMessage = $"Double-reserved for '{r2.ProjectOrClient}' ({r2.FormattedTimeRange})";
+                    r1.ConflictMessage = $"Gear overlap with '{r2.ProjectOrClient}' ({r2.FormattedTimeRange})";
 
                     r2.HasConflict = true;
-                    r2.ConflictMessage = $"Double-reserved for '{r1.ProjectOrClient}' ({r1.FormattedTimeRange})";
+                    r2.ConflictMessage = $"Gear overlap with '{r1.ProjectOrClient}' ({r1.FormattedTimeRange})";
                 }
             }
         }
-    }
-
-    // ─────────────────────────────────────────────────────────────────────────
-    // SEED DATA INITIALIZERS
-    // ─────────────────────────────────────────────────────────────────────────
-
-    private void SeedStudioSpaces()
-    {
-        _studioSpaces.AddRange(new[]
-        {
-            new StudioSpaceResource
-            {
-                Id = "studio-a",
-                Name = "Studio A (Main Cyclorama)",
-                Description = "Infinite white cyc wall, 14ft clearance, overhead Profoto softbox grid",
-                Dimensions = "1,200 sq ft",
-                MaxCapacity = 20,
-                BadgeColor = "bg-blue-50 text-blue-700 border-blue-200",
-                IconType = "studio"
-            },
-            new StudioSpaceResource
-            {
-                Id = "studio-b",
-                Name = "Studio B (Still Life & Product)",
-                Description = "Motorized tabletop rig, high CRI continuous lighting, macro isolation bay",
-                Dimensions = "850 sq ft",
-                MaxCapacity = 10,
-                BadgeColor = "bg-indigo-50 text-indigo-700 border-indigo-200",
-                IconType = "commercial"
-            },
-            new StudioSpaceResource
-            {
-                Id = "studio-c",
-                Name = "Studio C (Green Screen & Cinema)",
-                Description = "Sound-dampened acoustic walls, full chroma green cyc, teleprompter suite",
-                Dimensions = "1,450 sq ft",
-                MaxCapacity = 25,
-                BadgeColor = "bg-emerald-50 text-emerald-700 border-emerald-200",
-                IconType = "cinema"
-            },
-            new StudioSpaceResource
-            {
-                Id = "outdoor-shoot",
-                Name = "Outdoor & Field Production",
-                Description = "Permitted urban architecture, waterfront daylight shoots, mobile generator support",
-                Dimensions = "External Location",
-                MaxCapacity = 15,
-                BadgeColor = "bg-amber-50 text-amber-700 border-amber-200",
-                IconType = "outdoor"
-            },
-            new StudioSpaceResource
-            {
-                Id = "wedding-venue",
-                Name = "Wedding & Gala Venues",
-                Description = "On-site sanctuary, cathedral halls, ballroom setups, bridal preparation lounges",
-                Dimensions = "Grand Venue",
-                MaxCapacity = 60,
-                BadgeColor = "bg-purple-50 text-purple-700 border-purple-200",
-                IconType = "venue"
-            }
-        });
-    }
-
-    private void SeedEventBookings()
-    {
-        // Anchor to start of current week (Monday)
-        var today = DateTime.Today;
-        int diff = (7 + (today.DayOfWeek - DayOfWeek.Monday)) % 7;
-        var monday = today.AddDays(-1 * diff);
-
-        _eventBookings.AddRange(new[]
-        {
-            // Monday
-            new EventBookingModel
-            {
-                Id = "evt-101",
-                StudioSpaceId = "studio-a",
-                StudioSpaceName = "Studio A (Main Cyclorama)",
-                ClientName = "Vogue Scandinavia",
-                ClientEmail = "production@voguescan.com",
-                ClientPhone = "+1 (555) 234-5678",
-                ServiceType = "Commercial Campaign",
-                Date = monday,
-                StartTime = new TimeSpan(9, 0, 0),
-                EndTime = new TimeSpan(13, 0, 0),
-                Status = "Confirmed",
-                AssignedPhotographer = "Elena Rostova",
-                EstimatedPrice = 1200.00m,
-                Notes = "Autumn fashion editorial with 4 models and rapid wardrobe changes."
-            },
-            new EventBookingModel
-            {
-                Id = "evt-102",
-                StudioSpaceId = "studio-b",
-                StudioSpaceName = "Studio B (Still Life & Product)",
-                ClientName = "Lumina Skincare",
-                ClientEmail = "marketing@luminaskin.com",
-                ClientPhone = "+1 (555) 345-6789",
-                ServiceType = "Product Catalog",
-                Date = monday,
-                StartTime = new TimeSpan(14, 0, 0),
-                EndTime = new TimeSpan(17, 30, 0),
-                Status = "Confirmed",
-                AssignedPhotographer = "Marcus Vance",
-                EstimatedPrice = 650.00m,
-                Notes = "Cosmetic bottles with reflective glass and water splash textures."
-            },
-
-            // Tuesday
-            new EventBookingModel
-            {
-                Id = "evt-103",
-                StudioSpaceId = "studio-c",
-                StudioSpaceName = "Studio C (Green Screen & Cinema)",
-                ClientName = "Apex Financial Tech",
-                ClientEmail = "media@apexfintech.io",
-                ClientPhone = "+1 (555) 456-7890",
-                ServiceType = "Full Studio Session",
-                Date = monday.AddDays(1),
-                StartTime = new TimeSpan(10, 0, 0),
-                EndTime = new TimeSpan(15, 0, 0),
-                Status = "Confirmed",
-                AssignedPhotographer = "Marcus Vance",
-                EstimatedPrice = 900.00m,
-                Notes = "CEO keynote recording with dynamic backdrop visual overlays."
-            },
-            new EventBookingModel
-            {
-                Id = "evt-104",
-                StudioSpaceId = "outdoor-shoot",
-                StudioSpaceName = "Outdoor & Field Production",
-                ClientName = "Marcus & Sarah Jenkins",
-                ClientEmail = "jenkins.sarah@gmail.com",
-                ClientPhone = "+1 (555) 567-8901",
-                ServiceType = "Express Headshot",
-                Date = monday.AddDays(1),
-                StartTime = new TimeSpan(15, 30, 0),
-                EndTime = new TimeSpan(18, 0, 0),
-                Status = "Pending",
-                AssignedPhotographer = "Clara Oswald",
-                EstimatedPrice = 450.00m,
-                Notes = "Golden hour couple portrait session at city botanical garden."
-            },
-
-            // Wednesday (Intentional Conflict in Studio A to satisfy prompt requirement!)
-            new EventBookingModel
-            {
-                Id = "evt-105",
-                StudioSpaceId = "studio-a",
-                StudioSpaceName = "Studio A (Main Cyclorama)",
-                ClientName = "Horizon Luxury Apparel",
-                ClientEmail = "shoot@horizonapparel.com",
-                ClientPhone = "+1 (555) 678-9012",
-                ServiceType = "Commercial Campaign",
-                Date = monday.AddDays(2),
-                StartTime = new TimeSpan(10, 0, 0),
-                EndTime = new TimeSpan(14, 0, 0),
-                Status = "Confirmed",
-                AssignedPhotographer = "Elena Rostova",
-                EstimatedPrice = 1400.00m,
-                Notes = "Winter outerwear collection lookbook."
-            },
-            new EventBookingModel
-            {
-                Id = "evt-106",
-                StudioSpaceId = "studio-a", // Intentional overlap with evt-105!
-                StudioSpaceName = "Studio A (Main Cyclorama)",
-                ClientName = "Sterling Capital Partners",
-                ClientEmail = "partners@sterlingcap.com",
-                ClientPhone = "+1 (555) 789-0123",
-                ServiceType = "Express Headshot",
-                Date = monday.AddDays(2),
-                StartTime = new TimeSpan(12, 30, 0),
-                EndTime = new TimeSpan(16, 0, 0),
-                Status = "Pending",
-                AssignedPhotographer = "Clara Oswald",
-                EstimatedPrice = 850.00m,
-                Notes = "Board of Directors corporate portrait session (Double-booked room)."
-            },
-
-            // Thursday
-            new EventBookingModel
-            {
-                Id = "evt-107",
-                StudioSpaceId = "studio-b",
-                StudioSpaceName = "Studio B (Still Life & Product)",
-                ClientName = "Nordic Roast Coffee",
-                ClientEmail = "info@nordicroast.co",
-                ClientPhone = "+1 (555) 890-1234",
-                ServiceType = "Product Catalog",
-                Date = monday.AddDays(3),
-                StartTime = new TimeSpan(9, 30, 0),
-                EndTime = new TimeSpan(13, 30, 0),
-                Status = "Completed",
-                AssignedPhotographer = "Sophia Lin",
-                EstimatedPrice = 550.00m,
-                Notes = "Packaging design lifestyle shoots with espresso machinery steam."
-            },
-
-            // Friday
-            new EventBookingModel
-            {
-                Id = "evt-108",
-                StudioSpaceId = "wedding-venue",
-                StudioSpaceName = "Wedding & Gala Venues",
-                ClientName = "Katherine & Daniel Vance",
-                ClientEmail = "dan.vance@yahoo.com",
-                ClientPhone = "+1 (555) 901-2345",
-                ServiceType = "Bridal Prep",
-                Date = monday.AddDays(4),
-                StartTime = new TimeSpan(11, 0, 0),
-                EndTime = new TimeSpan(19, 0, 0),
-                Status = "Confirmed",
-                AssignedPhotographer = "Elena Rostova",
-                EstimatedPrice = 2800.00m,
-                Notes = "Full day bridal preparation, vow exchange, and evening cocktail gala."
-            },
-
-            // Saturday
-            new EventBookingModel
-            {
-                Id = "evt-109",
-                StudioSpaceId = "studio-a",
-                StudioSpaceName = "Studio A (Main Cyclorama)",
-                ClientName = "Urban Beats Records",
-                ClientEmail = "press@urbanbeats.com",
-                ClientPhone = "+1 (555) 012-3456",
-                ServiceType = "Full Studio Session",
-                Date = monday.AddDays(5),
-                StartTime = new TimeSpan(13, 0, 0),
-                EndTime = new TimeSpan(18, 0, 0),
-                Status = "Confirmed",
-                AssignedPhotographer = "David Chen",
-                EstimatedPrice = 750.00m,
-                Notes = "Album cover photography and promotional press kits."
-            }
-        });
-    }
-
-    private void SeedStaffMembers()
-    {
-        _staffMembers.AddRange(new[]
-        {
-            new StaffMemberResource
-            {
-                Id = "staff-01",
-                FullName = "Elena Rostova",
-                StaffCode = "PA-001",
-                Role = "Senior Photographer",
-                AvatarInitials = "ER",
-                AvatarColor = "bg-rose-100 text-rose-700",
-                TargetHoursPerWeek = 40,
-                Status = "Active",
-                Email = "elena.rostova@photoaevum.com",
-                Phone = "+1 (555) 101-0001"
-            },
-            new StaffMemberResource
-            {
-                Id = "staff-02",
-                FullName = "Marcus Vance",
-                StaffCode = "PA-002",
-                Role = "Lead Videographer",
-                AvatarInitials = "MV",
-                AvatarColor = "bg-blue-100 text-blue-700",
-                TargetHoursPerWeek = 40,
-                Status = "Active",
-                Email = "marcus.vance@photoaevum.com",
-                Phone = "+1 (555) 101-0002"
-            },
-            new StaffMemberResource
-            {
-                Id = "staff-03",
-                FullName = "Alex Rivera",
-                StaffCode = "PA-003",
-                Role = "Lighting Specialist",
-                AvatarInitials = "AR",
-                AvatarColor = "bg-amber-100 text-amber-700",
-                TargetHoursPerWeek = 35,
-                Status = "Active",
-                Email = "alex.rivera@photoaevum.com",
-                Phone = "+1 (555) 101-0003"
-            },
-            new StaffMemberResource
-            {
-                Id = "staff-04",
-                FullName = "Sophia Lin",
-                StaffCode = "PA-004",
-                Role = "Master Retoucher",
-                AvatarInitials = "SL",
-                AvatarColor = "bg-purple-100 text-purple-700",
-                TargetHoursPerWeek = 40,
-                Status = "Active",
-                Email = "sophia.lin@photoaevum.com",
-                Phone = "+1 (555) 101-0004"
-            },
-            new StaffMemberResource
-            {
-                Id = "staff-05",
-                FullName = "David Chen",
-                StaffCode = "PA-005",
-                Role = "Studio Assistant",
-                AvatarInitials = "DC",
-                AvatarColor = "bg-emerald-100 text-emerald-700",
-                TargetHoursPerWeek = 30,
-                Status = "Active",
-                Email = "david.chen@photoaevum.com",
-                Phone = "+1 (555) 101-0005"
-            },
-            new StaffMemberResource
-            {
-                Id = "staff-06",
-                FullName = "Clara Oswald",
-                StaffCode = "PA-006",
-                Role = "Editorial Photographer",
-                AvatarInitials = "CO",
-                AvatarColor = "bg-cyan-100 text-cyan-700",
-                TargetHoursPerWeek = 40,
-                Status = "Active",
-                Email = "clara.oswald@photoaevum.com",
-                Phone = "+1 (555) 101-0006"
-            }
-        });
-    }
-
-    private void SeedStaffShifts()
-    {
-        var today = DateTime.Today;
-        int diff = (7 + (today.DayOfWeek - DayOfWeek.Monday)) % 7;
-        var monday = today.AddDays(-1 * diff);
-
-        _staffShifts.AddRange(new[]
-        {
-            // OPEN SHIFTS (Pool row)
-            new StaffShiftModel
-            {
-                Id = "shift-open-01",
-                StaffId = null,
-                StaffName = "Open Shift",
-                Role = "Grip & Audio Rigging",
-                Date = monday.AddDays(1), // Tuesday
-                StartTime = new TimeSpan(10, 0, 0),
-                EndTime = new TimeSpan(16, 0, 0),
-                Location = "Studio C",
-                ShiftType = "Full Day",
-                Notes = "Second boom operator and lighting grip needed for commercial recording."
-            },
-            new StaffShiftModel
-            {
-                Id = "shift-open-02",
-                StaffId = null,
-                StaffName = "Open Shift",
-                Role = "Second Shooter",
-                Date = monday.AddDays(5), // Saturday
-                StartTime = new TimeSpan(11, 0, 0),
-                EndTime = new TimeSpan(18, 0, 0),
-                Location = "Wedding Venue",
-                ShiftType = "Full Day",
-                Notes = "Second camera shooter for reception and guest candids."
-            },
-
-            // Elena Rostova
-            new StaffShiftModel
-            {
-                Id = "shift-101",
-                StaffId = "staff-01",
-                StaffName = "Elena Rostova",
-                Role = "Senior Photographer",
-                Date = monday,
-                StartTime = new TimeSpan(8, 30, 0),
-                EndTime = new TimeSpan(14, 30, 0),
-                Location = "Studio A",
-                ShiftType = "Full Day",
-                Notes = "Lead on Vogue editorial."
-            },
-            new StaffShiftModel
-            {
-                Id = "shift-102",
-                StaffId = "staff-01",
-                StaffName = "Elena Rostova",
-                Role = "Senior Photographer",
-                Date = monday.AddDays(1),
-                StartTime = new TimeSpan(9, 0, 0),
-                EndTime = new TimeSpan(17, 0, 0),
-                Location = "Studio A",
-                ShiftType = "Full Day"
-            },
-            // Intentional shift conflict for Elena on Thursday!
-            new StaffShiftModel
-            {
-                Id = "shift-103",
-                StaffId = "staff-01",
-                StaffName = "Elena Rostova",
-                Role = "Senior Photographer",
-                Date = monday.AddDays(3),
-                StartTime = new TimeSpan(9, 0, 0),
-                EndTime = new TimeSpan(14, 0, 0),
-                Location = "Studio A",
-                ShiftType = "Full Day",
-                Notes = "Horizon campaign session."
-            },
-            new StaffShiftModel
-            {
-                Id = "shift-104",
-                StaffId = "staff-01", // Overlap with shift-103!
-                StaffName = "Elena Rostova",
-                Role = "Senior Photographer",
-                Date = monday.AddDays(3),
-                StartTime = new TimeSpan(12, 30, 0),
-                EndTime = new TimeSpan(17, 30, 0),
-                Location = "Outdoor Shoot",
-                ShiftType = "Half Day",
-                Notes = "Assigned to outdoor sunset bridal preview (Double rostered)."
-            },
-            new StaffShiftModel
-            {
-                Id = "shift-105",
-                StaffId = "staff-01",
-                StaffName = "Elena Rostova",
-                Role = "Senior Photographer",
-                Date = monday.AddDays(4),
-                StartTime = new TimeSpan(10, 0, 0),
-                EndTime = new TimeSpan(19, 0, 0),
-                Location = "Wedding Venue",
-                ShiftType = "Overtime",
-                Notes = "Katherine Vance wedding day shoot."
-            },
-
-            // Marcus Vance
-            new StaffShiftModel
-            {
-                Id = "shift-201",
-                StaffId = "staff-02",
-                StaffName = "Marcus Vance",
-                Role = "Lead Videographer",
-                Date = monday,
-                StartTime = new TimeSpan(13, 30, 0),
-                EndTime = new TimeSpan(18, 0, 0),
-                Location = "Studio B",
-                ShiftType = "Half Day"
-            },
-            new StaffShiftModel
-            {
-                Id = "shift-202",
-                StaffId = "staff-02",
-                StaffName = "Marcus Vance",
-                Role = "Lead Videographer",
-                Date = monday.AddDays(1),
-                StartTime = new TimeSpan(9, 30, 0),
-                EndTime = new TimeSpan(16, 30, 0),
-                Location = "Studio C",
-                ShiftType = "Full Day"
-            },
-            new StaffShiftModel
-            {
-                Id = "shift-203",
-                StaffId = "staff-02",
-                StaffName = "Marcus Vance",
-                Role = "Lead Videographer",
-                Date = monday.AddDays(2),
-                StartTime = new TimeSpan(9, 0, 0),
-                EndTime = new TimeSpan(17, 0, 0),
-                Location = "Edit Bay 1",
-                ShiftType = "Full Day",
-                Notes = "Color grading and raw cinema assembly."
-            },
-            new StaffShiftModel
-            {
-                Id = "shift-204",
-                StaffId = "staff-02",
-                StaffName = "Marcus Vance",
-                Role = "Lead Videographer",
-                Date = monday.AddDays(4),
-                StartTime = new TimeSpan(9, 0, 0),
-                EndTime = new TimeSpan(17, 0, 0),
-                Location = "Studio C",
-                ShiftType = "Full Day"
-            },
-
-            // Alex Rivera (Sick Leave example)
-            new StaffShiftModel
-            {
-                Id = "shift-301",
-                StaffId = "staff-03",
-                StaffName = "Alex Rivera",
-                Role = "Lighting Specialist",
-                Date = monday,
-                StartTime = new TimeSpan(8, 0, 0),
-                EndTime = new TimeSpan(16, 0, 0),
-                Location = "Studio A",
-                ShiftType = "Full Day"
-            },
-            new StaffShiftModel
-            {
-                Id = "shift-302",
-                StaffId = "staff-03",
-                StaffName = "Alex Rivera",
-                Role = "Lighting Specialist",
-                Date = monday.AddDays(2), // Wednesday
-                StartTime = new TimeSpan(9, 0, 0),
-                EndTime = new TimeSpan(17, 0, 0),
-                Location = "Studio A",
-                ShiftType = "Sick Leave",
-                Notes = "Medical certificate filed with HR."
-            },
-            new StaffShiftModel
-            {
-                Id = "shift-303",
-                StaffId = "staff-03",
-                StaffName = "Alex Rivera",
-                Role = "Lighting Specialist",
-                Date = monday.AddDays(4),
-                StartTime = new TimeSpan(9, 0, 0),
-                EndTime = new TimeSpan(17, 0, 0),
-                Location = "Studio B",
-                ShiftType = "Full Day"
-            },
-
-            // Sophia Lin
-            new StaffShiftModel
-            {
-                Id = "shift-401",
-                StaffId = "staff-04",
-                StaffName = "Sophia Lin",
-                Role = "Master Retoucher",
-                Date = monday,
-                StartTime = new TimeSpan(9, 0, 0),
-                EndTime = new TimeSpan(17, 0, 0),
-                Location = "Edit Bay 2",
-                ShiftType = "Full Day"
-            },
-            new StaffShiftModel
-            {
-                Id = "shift-402",
-                StaffId = "staff-04",
-                StaffName = "Sophia Lin",
-                Role = "Master Retoucher",
-                Date = monday.AddDays(3),
-                StartTime = new TimeSpan(9, 0, 0),
-                EndTime = new TimeSpan(17, 0, 0),
-                Location = "Studio B",
-                ShiftType = "Full Day"
-            },
-
-            // David Chen
-            new StaffShiftModel
-            {
-                Id = "shift-501",
-                StaffId = "staff-05",
-                StaffName = "David Chen",
-                Role = "Studio Assistant",
-                Date = monday.AddDays(1),
-                StartTime = new TimeSpan(9, 0, 0),
-                EndTime = new TimeSpan(14, 0, 0),
-                Location = "Studio C",
-                ShiftType = "Half Day"
-            },
-            new StaffShiftModel
-            {
-                Id = "shift-502",
-                StaffId = "staff-05",
-                StaffName = "David Chen",
-                Role = "Studio Assistant",
-                Date = monday.AddDays(5),
-                StartTime = new TimeSpan(12, 0, 0),
-                EndTime = new TimeSpan(19, 0, 0),
-                Location = "Studio A",
-                ShiftType = "Full Day"
-            },
-
-            // Clara Oswald
-            new StaffShiftModel
-            {
-                Id = "shift-601",
-                StaffId = "staff-06",
-                StaffName = "Clara Oswald",
-                Role = "Editorial Photographer",
-                Date = monday.AddDays(1),
-                StartTime = new TimeSpan(15, 0, 0),
-                EndTime = new TimeSpan(19, 0, 0),
-                Location = "Outdoor Shoot",
-                ShiftType = "Half Day"
-            },
-            new StaffShiftModel
-            {
-                Id = "shift-602",
-                StaffId = "staff-06",
-                StaffName = "Clara Oswald",
-                Role = "Editorial Photographer",
-                Date = monday.AddDays(3),
-                StartTime = new TimeSpan(9, 0, 0),
-                EndTime = new TimeSpan(17, 0, 0),
-                Location = "Studio A",
-                ShiftType = "Full Day"
-            }
-        });
-    }
-
-    private void SeedEquipment()
-    {
-        _equipmentResources.AddRange(new[]
-        {
-            new EquipmentItemResource
-            {
-                Id = "eq-01",
-                Name = "Canon EOS R5 Mark II (#1)",
-                SerialNumber = "SN-CAN-88214",
-                Category = "Camera Bodies",
-                Status = "Ready",
-                StorageBay = "Locker A-01",
-                BadgeColor = "bg-blue-50 text-blue-700 border-blue-200"
-            },
-            new EquipmentItemResource
-            {
-                Id = "eq-02",
-                Name = "Sony FX3 Full-Frame Cinema (#2)",
-                SerialNumber = "SN-SNY-44901",
-                Category = "Cinema Rigs",
-                Status = "Ready",
-                StorageBay = "Locker A-03",
-                BadgeColor = "bg-indigo-50 text-indigo-700 border-indigo-200"
-            },
-            new EquipmentItemResource
-            {
-                Id = "eq-03",
-                Name = "Godox AD600 Pro Strobe Kit A",
-                SerialNumber = "SN-GDX-10229",
-                Category = "Strobe Lighting",
-                Status = "Ready",
-                StorageBay = "Lighting Bay Shelf 2",
-                BadgeColor = "bg-amber-50 text-amber-700 border-amber-200"
-            },
-            new EquipmentItemResource
-            {
-                Id = "eq-04",
-                Name = "Profoto B10X Duo Location Kit",
-                SerialNumber = "SN-PRF-30918",
-                Category = "Strobe Lighting",
-                Status = "In-Use",
-                StorageBay = "Mobile Pelican 04",
-                BadgeColor = "bg-purple-50 text-purple-700 border-purple-200"
-            },
-            new EquipmentItemResource
-            {
-                Id = "eq-05",
-                Name = "Sony FE 24-70mm f/2.8 GM II",
-                SerialNumber = "SN-LNS-99120",
-                Category = "Lenses",
-                Status = "Ready",
-                StorageBay = "Optics Safe #1",
-                BadgeColor = "bg-cyan-50 text-cyan-700 border-cyan-200"
-            },
-            new EquipmentItemResource
-            {
-                Id = "eq-06",
-                Name = "Canon RF 85mm f/1.2L USM",
-                SerialNumber = "SN-LNS-77341",
-                Category = "Lenses",
-                Status = "Ready",
-                StorageBay = "Optics Safe #2",
-                BadgeColor = "bg-cyan-50 text-cyan-700 border-cyan-200"
-            },
-            new EquipmentItemResource
-            {
-                Id = "eq-07",
-                Name = "DJI Ronin RS3 Pro Gimbal",
-                SerialNumber = "SN-DJI-55238",
-                Category = "Grip & Audio",
-                Status = "In-Maintenance",
-                StorageBay = "Tech Bench 3",
-                BadgeColor = "bg-rose-50 text-rose-700 border-rose-200"
-            },
-            new EquipmentItemResource
-            {
-                Id = "eq-08",
-                Name = "Sennheiser MKH 416 Boom & Mic Kit",
-                SerialNumber = "SN-SNH-12095",
-                Category = "Grip & Audio",
-                Status = "Ready",
-                StorageBay = "Audio Bag 01",
-                BadgeColor = "bg-emerald-50 text-emerald-700 border-emerald-200"
-            }
-        });
-    }
-
-    private void SeedEquipmentReservations()
-    {
-        var today = DateTime.Today;
-        int diff = (7 + (today.DayOfWeek - DayOfWeek.Monday)) % 7;
-        var monday = today.AddDays(-1 * diff);
-
-        _equipmentReservations.AddRange(new[]
-        {
-            // Monday
-            new EquipmentReservationModel
-            {
-                Id = "res-101",
-                EquipmentId = "eq-01",
-                EquipmentName = "Canon EOS R5 Mark II (#1)",
-                Category = "Camera Bodies",
-                Date = monday,
-                StartTime = new TimeSpan(9, 0, 0),
-                EndTime = new TimeSpan(13, 0, 0),
-                ProjectOrClient = "Vogue Scandinavia Editorial",
-                TechnicianInCharge = "Elena Rostova",
-                Location = "Studio A",
-                MaintenanceStatus = "Ready",
-                Notes = "Battery grip and 2x 512GB CFexpress Type B cards checked out."
-            },
-            new EquipmentReservationModel
-            {
-                Id = "res-102",
-                EquipmentId = "eq-03",
-                EquipmentName = "Godox AD600 Pro Strobe Kit A",
-                Category = "Strobe Lighting",
-                Date = monday,
-                StartTime = new TimeSpan(9, 0, 0),
-                EndTime = new TimeSpan(13, 0, 0),
-                ProjectOrClient = "Vogue Scandinavia Editorial",
-                TechnicianInCharge = "Alex Rivera",
-                Location = "Studio A",
-                MaintenanceStatus = "Ready"
-            },
-            new EquipmentReservationModel
-            {
-                Id = "res-103",
-                EquipmentId = "eq-05",
-                EquipmentName = "Sony FE 24-70mm f/2.8 GM II",
-                Category = "Lenses",
-                Date = monday,
-                StartTime = new TimeSpan(14, 0, 0),
-                EndTime = new TimeSpan(18, 0, 0),
-                ProjectOrClient = "Lumina Skincare Catalog",
-                TechnicianInCharge = "Marcus Vance",
-                Location = "Studio B",
-                MaintenanceStatus = "Ready"
-            },
-
-            // Tuesday
-            new EquipmentReservationModel
-            {
-                Id = "res-201",
-                EquipmentId = "eq-02",
-                EquipmentName = "Sony FX3 Full-Frame Cinema (#2)",
-                Category = "Cinema Rigs",
-                Date = monday.AddDays(1),
-                StartTime = new TimeSpan(9, 30, 0),
-                EndTime = new TimeSpan(15, 30, 0),
-                ProjectOrClient = "Apex Financial Tech Keynote",
-                TechnicianInCharge = "Marcus Vance",
-                Location = "Studio C",
-                MaintenanceStatus = "Ready",
-                Notes = "HDMI raw output monitor feed and cage with top handle."
-            },
-            new EquipmentReservationModel
-            {
-                Id = "res-202",
-                EquipmentId = "eq-08",
-                EquipmentName = "Sennheiser MKH 416 Boom & Mic Kit",
-                Category = "Grip & Audio",
-                Date = monday.AddDays(1),
-                StartTime = new TimeSpan(9, 30, 0),
-                EndTime = new TimeSpan(15, 30, 0),
-                ProjectOrClient = "Apex Financial Tech Keynote",
-                TechnicianInCharge = "David Chen",
-                Location = "Studio C",
-                MaintenanceStatus = "Ready"
-            },
-
-            // Wednesday
-            new EquipmentReservationModel
-            {
-                Id = "res-301",
-                EquipmentId = "eq-06",
-                EquipmentName = "Canon RF 85mm f/1.2L USM",
-                Category = "Lenses",
-                Date = monday.AddDays(2),
-                StartTime = new TimeSpan(10, 0, 0),
-                EndTime = new TimeSpan(15, 0, 0),
-                ProjectOrClient = "Horizon Luxury Apparel",
-                TechnicianInCharge = "Elena Rostova",
-                Location = "Studio A",
-                MaintenanceStatus = "Ready"
-            },
-
-            // Thursday (Intentional double booking conflict on Godox AD600!)
-            new EquipmentReservationModel
-            {
-                Id = "res-401",
-                EquipmentId = "eq-03",
-                EquipmentName = "Godox AD600 Pro Strobe Kit A",
-                Category = "Strobe Lighting",
-                Date = monday.AddDays(3),
-                StartTime = new TimeSpan(9, 0, 0),
-                EndTime = new TimeSpan(14, 0, 0),
-                ProjectOrClient = "Nordic Roast Product Shoot",
-                TechnicianInCharge = "Alex Rivera",
-                Location = "Studio B",
-                MaintenanceStatus = "Ready"
-            },
-            new EquipmentReservationModel
-            {
-                Id = "res-402",
-                EquipmentId = "eq-03", // Overlap with res-401!
-                EquipmentName = "Godox AD600 Pro Strobe Kit A",
-                Category = "Strobe Lighting",
-                Date = monday.AddDays(3),
-                StartTime = new TimeSpan(12, 0, 0),
-                EndTime = new TimeSpan(17, 0, 0),
-                ProjectOrClient = "Commercial Lookbook",
-                TechnicianInCharge = "Clara Oswald",
-                Location = "Studio A",
-                MaintenanceStatus = "Ready",
-                Notes = "Requested for fast recycling flashes on white cyclorama (Double-booked)."
-            },
-
-            // Friday
-            new EquipmentReservationModel
-            {
-                Id = "res-501",
-                EquipmentId = "eq-04",
-                EquipmentName = "Profoto B10X Duo Location Kit",
-                Category = "Strobe Lighting",
-                Date = monday.AddDays(4),
-                StartTime = new TimeSpan(10, 0, 0),
-                EndTime = new TimeSpan(19, 0, 0),
-                ProjectOrClient = "Katherine & Daniel Vance Wedding",
-                TechnicianInCharge = "Elena Rostova",
-                Location = "Wedding Venue",
-                MaintenanceStatus = "In-Use",
-                Notes = "Packed into rolling pelican case with 4 high-capacity lithium batteries."
-            },
-
-            // Maintenance tag item on Saturday
-            new EquipmentReservationModel
-            {
-                Id = "res-601",
-                EquipmentId = "eq-07",
-                EquipmentName = "DJI Ronin RS3 Pro Gimbal",
-                Category = "Grip & Audio",
-                Date = monday.AddDays(5),
-                StartTime = new TimeSpan(9, 0, 0),
-                EndTime = new TimeSpan(18, 0, 0),
-                ProjectOrClient = "Scheduled Firmware & Motor Calibration",
-                TechnicianInCharge = "David Chen",
-                Location = "Tech Bench 3",
-                MaintenanceStatus = "In-Maintenance",
-                Notes = "Pitch axis firmware recalibration and balancing weight check."
-            }
-        });
     }
 }

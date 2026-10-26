@@ -1,0 +1,320 @@
+@page "/admin/portfolio/categories"
+@layout AdminLayout
+@rendermode InteractiveServer
+@attribute [Authorize(Roles = "Admin, SystemAdmin, Super Admin, Office Clerk")]
+@using PhotoAevumStudio.Web.Models
+@using PhotoAevumStudio.Web.Services
+@using Microsoft.AspNetCore.Components.Authorization
+@using System.Security.Claims
+@inject IPortfolioService PortfolioService
+@inject IUserService UserService
+@inject AuthenticationStateProvider AuthStateProvider
+
+<PageTitle>Portfolio Categories | Photo Aevum Studio</PageTitle>
+
+<div class="space-y-6">
+    <!-- Header -->
+    <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 pb-2 border-b border-slate-200">
+        <div>
+            <div class="flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-slate-500 mb-1">
+                <span>Portfolio</span>
+                <span>/</span>
+                <span class="text-slate-900 font-bold">Categories</span>
+            </div>
+            <h1 class="text-2xl font-bold text-slate-900 tracking-tight">Portfolio Categories</h1>
+            <p class="text-sm text-slate-500 mt-0.5">Manage photographic portfolio categories and catalog classification.</p>
+        </div>
+
+        @if (!_isReadOnly)
+        {
+            <button type="button"
+                    @onclick="OpenAddModal"
+                    class="inline-flex items-center justify-center gap-2 px-5 py-2.5 bg-slate-900 hover:bg-black text-white text-xs font-semibold uppercase tracking-wider rounded-lg shadow-sm transition-all focus:ring-2 focus:ring-slate-900 focus:ring-offset-2">
+                <svg class="w-4 h-4 text-emerald-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M12 4v16m8-8H4" />
+                </svg>
+                Add Category
+            </button>
+        }
+    </div>
+
+    <!-- Feedback Toast -->
+    @if (!string.IsNullOrWhiteSpace(_notification))
+    {
+        <div class="p-4 bg-emerald-50 border border-emerald-200 rounded-xl flex items-center justify-between text-xs text-emerald-800 shadow-sm animate-in fade-in duration-200">
+            <div class="flex items-center gap-2.5">
+                <span class="text-base">✓</span>
+                <span>@_notification</span>
+            </div>
+            <button type="button" @onclick="() => _notification = null" class="text-emerald-600 hover:text-emerald-900">✕</button>
+        </div>
+    }
+
+    <!-- Quick Stats -->
+    <div class="grid grid-cols-1 sm:grid-cols-3 gap-4">
+        <div class="bg-white p-4 rounded-xl border border-slate-200 shadow-sm flex items-center gap-4">
+            <div class="w-10 h-10 rounded-lg bg-slate-100 flex items-center justify-center text-slate-800 text-lg font-bold">📁</div>
+            <div>
+                <p class="text-xs text-slate-500 font-medium">Total Categories</p>
+                <p class="text-xl font-bold text-slate-900">@_categories.Count</p>
+            </div>
+        </div>
+        <div class="bg-white p-4 rounded-xl border border-slate-200 shadow-sm flex items-center gap-4">
+            <div class="w-10 h-10 rounded-lg bg-emerald-50 flex items-center justify-center text-emerald-600 text-lg font-bold">🖼️</div>
+            <div>
+                <p class="text-xs text-slate-500 font-medium">Associated Albums</p>
+                <p class="text-xl font-bold text-slate-900">@_categories.Sum(c => c.PortfolioCount)</p>
+            </div>
+        </div>
+        <div class="bg-white p-4 rounded-xl border border-slate-200 shadow-sm flex items-center gap-4">
+            <div class="w-10 h-10 rounded-lg bg-indigo-50 flex items-center justify-center text-indigo-600 text-lg font-bold">★</div>
+            <div>
+                <p class="text-xs text-slate-500 font-medium">Parent Sections</p>
+                <p class="text-xl font-bold text-slate-900">@_categories.Select(c => c.ParentSection).Distinct().Count()</p>
+            </div>
+        </div>
+    </div>
+
+    <!-- Search Toolbar -->
+    <div class="bg-white p-4 rounded-xl border border-slate-200 shadow-sm flex flex-col sm:flex-row gap-3 items-center justify-between">
+        <div class="relative w-full sm:w-80">
+            <input type="text"
+                   @bind="_searchQuery"
+                   @bind:event="oninput"
+                   placeholder="Search category name, code, or section..."
+                   class="w-full pl-9 pr-4 py-2 text-xs rounded-lg border border-slate-300 focus:outline-none focus:ring-1 focus:ring-slate-900 focus:border-slate-900" />
+            <svg class="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+            </svg>
+        </div>
+        <span class="text-xs text-slate-500">
+            Showing @FilteredCategories.Count of @_categories.Count categories
+        </span>
+    </div>
+
+    <!-- Table -->
+    <div class="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
+        <div class="overflow-x-auto">
+            <table class="w-full text-left border-collapse text-xs">
+                <thead>
+                    <tr class="bg-slate-50/75 border-b border-slate-200 text-slate-600 font-semibold uppercase tracking-wider">
+                        <th class="px-5 py-3.5">Code</th>
+                        <th class="px-5 py-3.5">Category Name</th>
+                        <th class="px-5 py-3.5">Section</th>
+                        <th class="px-5 py-3.5">Color Tag</th>
+                        <th class="px-5 py-3.5">Description</th>
+                        <th class="px-5 py-3.5 text-center">Albums</th>
+                        <th class="px-5 py-3.5 text-right">Status</th>
+                    </tr>
+                </thead>
+                <tbody class="divide-y divide-slate-100">
+                    @if (_isLoading)
+                    {
+                        <tr>
+                            <td colspan="7" class="px-5 py-10 text-center text-slate-400">
+                                <span class="inline-block w-4 h-4 border-2 border-slate-400/30 border-t-slate-600 rounded-full animate-spin mr-2"></span>
+                                Loading categories...
+                            </td>
+                        </tr>
+                    }
+                    else if (FilteredCategories.Count == 0)
+                    {
+                        <tr>
+                            <td colspan="7" class="px-5 py-10 text-center text-slate-400">
+                                No categories found.
+                            </td>
+                        </tr>
+                    }
+                    else
+                    {
+                        @foreach (var c in FilteredCategories)
+                        {
+                            <tr class="hover:bg-slate-50/60 transition-colors">
+                                <td class="px-5 py-3.5 font-mono font-semibold text-slate-800">
+                                    <span class="bg-slate-100 px-2 py-0.5 rounded text-[11px] border border-slate-200">@c.CategoryCode</span>
+                                </td>
+                                <td class="px-5 py-3.5 font-bold text-slate-900">@c.CategoryName</td>
+                                <td class="px-5 py-3.5 font-medium text-slate-700">@c.ParentSection</td>
+                                <td class="px-5 py-3.5">
+                                    <span class="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-medium bg-slate-100 text-slate-800 border border-slate-200">
+                                        <span class="w-2 h-2 rounded-full bg-slate-900"></span>
+                                        @c.ColorTag
+                                    </span>
+                                </td>
+                                <td class="px-5 py-3.5 text-slate-500 max-w-xs truncate" title="@c.Description">
+                                    @(string.IsNullOrWhiteSpace(c.Description) ? "—" : c.Description)
+                                </td>
+                                <td class="px-5 py-3.5 text-center font-bold text-slate-900">@c.PortfolioCount</td>
+                                <td class="px-5 py-3.5 text-right">
+                                    <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider bg-emerald-50 text-emerald-700 border border-emerald-200">
+                                        Active
+                                    </span>
+                                </td>
+                            </tr>
+                        }
+                    }
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+<!-- Modal: Add Category -->
+@if (_isModalOpen)
+{
+    <div class="fixed inset-0 z-50 bg-slate-950/60 backdrop-blur-sm flex items-center justify-center p-4">
+        <div class="bg-white rounded-2xl shadow-2xl border border-slate-200 w-full max-w-md overflow-hidden animate-in zoom-in duration-150">
+            <div class="px-6 py-4 border-b border-slate-100 flex items-center justify-between bg-slate-50/50">
+                <h3 class="font-bold text-base text-slate-900">Add Portfolio Category</h3>
+                <button type="button" @onclick="() => _isModalOpen = false" class="text-slate-400 hover:text-slate-700 text-lg">✕</button>
+            </div>
+
+            <div class="p-6 space-y-4 text-xs">
+                @if (!string.IsNullOrEmpty(_modalError))
+                {
+                    <div class="p-3 bg-rose-50 border border-rose-200 text-rose-700 rounded-lg font-medium">@_modalError</div>
+                }
+
+                <div>
+                    <label class="block font-semibold uppercase tracking-wider text-slate-700 mb-1">Category Name <span class="text-rose-500">*</span></label>
+                    <input type="text" @bind="_newName" placeholder="e.g. Editorial Fashion" class="w-full px-3 py-2 border border-slate-300 rounded-lg text-xs focus:ring-1 focus:ring-slate-900 focus:outline-none" />
+                </div>
+
+                <div>
+                    <label class="block font-semibold uppercase tracking-wider text-slate-700 mb-1">Parent Section <span class="text-rose-500">*</span></label>
+                    <select @bind="_newSection" class="w-full px-3 py-2 border border-slate-300 rounded-lg text-xs bg-white focus:ring-1 focus:ring-slate-900 focus:outline-none">
+                        <option value="Photography">Photography</option>
+                        <option value="Videography">Videography</option>
+                        <option value="Commercial">Commercial</option>
+                        <option value="Events">Live Events</option>
+                    </select>
+                </div>
+
+                <div>
+                    <label class="block font-semibold uppercase tracking-wider text-slate-700 mb-1">Color Tag <span class="text-rose-500">*</span></label>
+                    <select @bind="_newColor" class="w-full px-3 py-2 border border-slate-300 rounded-lg text-xs bg-white focus:ring-1 focus:ring-slate-900 focus:outline-none">
+                        <option value="Blue">Studio Blue</option>
+                        <option value="Emerald">Emerald Green</option>
+                        <option value="Purple">Studio Purple</option>
+                        <option value="Amber">Warm Amber</option>
+                        <option value="Rose">Rose Red</option>
+                        <option value="Indigo">Deep Indigo</option>
+                    </select>
+                </div>
+
+                <div>
+                    <label class="block font-semibold uppercase tracking-wider text-slate-700 mb-1">Description <span class="text-slate-400 font-normal lowercase">(optional)</span></label>
+                    <textarea @bind="_newDesc" rows="3" placeholder="Describe the type of work in this category..." class="w-full px-3 py-2 border border-slate-300 rounded-lg text-xs focus:ring-1 focus:ring-slate-900 focus:outline-none resize-none"></textarea>
+                </div>
+            </div>
+
+            <div class="px-6 py-4 bg-slate-50 border-t border-slate-100 flex items-center justify-end gap-2">
+                <button type="button" @onclick="() => _isModalOpen = false" class="px-4 py-2 border border-slate-300 rounded-lg text-xs font-semibold text-slate-700 hover:bg-slate-100">Cancel</button>
+                <button type="button" @onclick="HandleSaveCategory" disabled="@_isSaving" class="px-5 py-2 bg-slate-900 hover:bg-black text-white rounded-lg text-xs font-semibold uppercase tracking-wider shadow-sm disabled:opacity-50 flex items-center gap-2">
+                    @if (_isSaving)
+                    {
+                        <span class="w-3 h-3 border-2 border-white/30 border-t-white rounded-full animate-spin"></span>
+                        <span>Saving...</span>
+                    }
+                    else
+                    {
+                        <span>Save Category</span>
+                    }
+                </button>
+            </div>
+        </div>
+    </div>
+}
+
+@code {
+    [CascadingParameter] Task<AuthenticationState>? AuthState { get; set; }
+    private ClaimsPrincipal? _currentUser;
+    private bool _isReadOnly;
+
+    private List<PortfolioCategoryModel> _categories = new();
+    private bool _isLoading = true;
+    private string _searchQuery = string.Empty;
+    private string? _notification;
+
+    private bool _isModalOpen;
+    private bool _isSaving;
+    private string? _modalError;
+    private string _newName = string.Empty;
+    private string _newSection = "Photography";
+    private string _newColor = "Blue";
+    private string _newDesc = string.Empty;
+
+    private List<PortfolioCategoryModel> FilteredCategories => _categories
+        .Where(c => string.IsNullOrWhiteSpace(_searchQuery) ||
+                    c.CategoryName.Contains(_searchQuery, StringComparison.OrdinalIgnoreCase) ||
+                    c.CategoryCode.Contains(_searchQuery, StringComparison.OrdinalIgnoreCase) ||
+                    c.ParentSection.Contains(_searchQuery, StringComparison.OrdinalIgnoreCase))
+        .ToList();
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (AuthState != null) _currentUser = (await AuthState).User;
+        else if (AuthStateProvider != null) _currentUser = (await AuthStateProvider.GetAuthenticationStateAsync()).User;
+        _isReadOnly = EmployeeRoleHelper.IsOfficeClerk(_currentUser, UserService);
+
+        await LoadCategories();
+    }
+
+    private async Task LoadCategories()
+    {
+        _isLoading = true;
+        try
+        {
+            _categories = await PortfolioService.GetCategoriesAsync();
+        }
+        finally
+        {
+            _isLoading = false;
+        }
+    }
+
+    private void OpenAddModal()
+    {
+        _newName = string.Empty;
+        _newSection = "Photography";
+        _newColor = "Blue";
+        _newDesc = string.Empty;
+        _modalError = null;
+        _isModalOpen = true;
+    }
+
+    private async Task HandleSaveCategory()
+    {
+        if (string.IsNullOrWhiteSpace(_newName))
+        {
+            _modalError = "Category name is required.";
+            return;
+        }
+
+        _isSaving = true;
+        _modalError = null;
+
+        try
+        {
+            var res = await PortfolioService.CreateCategoryAsync(_newName, _newDesc, _newSection, _newColor);
+            if (res != null)
+            {
+                _isModalOpen = false;
+                _notification = $"Category '{res.CategoryName}' ({res.CategoryCode}) added successfully!";
+                await LoadCategories();
+            }
+            else
+            {
+                _modalError = "Failed to create category. Please verify your inputs.";
+            }
+        }
+        catch (Exception ex)
+        {
+            _modalError = ex.Message;
+        }
+        finally
+        {
+            _isSaving = false;
+        }
+    }
+}

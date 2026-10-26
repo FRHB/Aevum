@@ -59,9 +59,9 @@ BEGIN
     BEGIN
         IF EXISTS (
             SELECT 1 
-            FROM dbo.Employee e
+            FROM dbo.Employees e
             INNER JOIN STRING_SPLIT(@EmployeeIDs, ',') s ON (e.EmployeeID = s.value)
-            WHERE COL_LENGTH(N'dbo.Employee', N'DaysOff') IS NOT NULL
+            WHERE COL_LENGTH(N'dbo.Employees', N'DaysOff') IS NOT NULL
               AND CHARINDEX(DATENAME(dw, @EventDate), e.DaysOff) > 0
         )
         BEGIN

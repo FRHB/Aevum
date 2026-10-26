@@ -20,7 +20,7 @@
                         class="text-slate-400 hover:text-slate-700 p-1.5 rounded-lg hover:bg-slate-100 transition-colors"
                         aria-label="Close"
                         @onclick="HandleCancelClick" 
-                        disabled="@(isSaving || saveSuccess)">
+                        disabled="@isSaving">
                     <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
                     </svg>
@@ -59,8 +59,8 @@
                     <!-- Step 3 -->
                     <div class="flex items-center gap-2.5">
                         <span class="w-7 h-7 rounded-full flex items-center justify-center text-xs font-semibold transition-all
-                            @(currentStep == 3 ? "bg-slate-900 text-white shadow-sm ring-4 ring-slate-100" : "bg-slate-100 text-slate-400")">
-                            3
+                            @(currentStep >= 3 ? "bg-slate-900 text-white shadow-sm ring-4 ring-slate-100" : "bg-slate-100 text-slate-400")">
+                            @(currentStep > 3 ? "✓" : "3")
                         </span>
                         <span class="text-xs font-medium @(currentStep == 3 ? "text-slate-900 font-bold" : "text-slate-500")">
                             Overview &amp; Credentials
@@ -244,10 +244,10 @@
                             <div class="space-y-4 pt-1">
                                 <div>
                                     <label for="emp-id" class="block text-xs font-semibold uppercase tracking-wider text-slate-700 mb-1.5">
-                                        Employee ID <span class="text-rose-500">*</span>
+                                        Employee ID <span class="text-slate-400 font-normal lowercase">(system assigned)</span>
                                     </label>
-                                    <InputText id="emp-id" @bind-Value="model.EmployeeId" class="@MonoInputClass" placeholder="e.g. EMP-001" autocomplete="off" />
-                                    <ValidationMessage For="() => model.EmployeeId" class="text-xs text-rose-600 mt-1" />
+                                    <input id="emp-id" value="@model.EmployeeId" class="@MonoInputClass bg-slate-100 text-slate-700 cursor-not-allowed font-bold" readonly disabled />
+                                    <p class="text-[11px] text-slate-500 mt-1">System-assigned sequential ID. This identifier is permanently locked and cannot be edited.</p>
                                 </div>
 
                                 <div>
@@ -271,16 +271,52 @@
                                     @saveError
                                 </div>
                             }
+                        </div>
+                    }
 
-                            @if (saveSuccess)
-                            {
-                                <div class="p-3 bg-emerald-50 border border-emerald-200 rounded-lg text-xs text-emerald-800 font-medium flex items-center gap-2" role="status">
-                                    <svg class="w-4 h-4 shrink-0 text-emerald-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7" />
-                                    </svg>
-                                    <span>Employee account created successfully! Login credentials have been sent to @model.Email.</span>
+                    @if (currentStep == 4)
+                    {
+                        <div class="py-6 px-4 flex flex-col items-center text-center space-y-4 animate-in fade-in duration-200">
+                            <div class="w-16 h-16 rounded-full bg-emerald-100 text-emerald-600 flex items-center justify-center text-3xl font-bold shadow-sm">
+                                ✓
+                            </div>
+                            <div>
+                                <h3 class="text-xl font-bold text-slate-900">Staff Account Created Successfully!</h3>
+                                <p class="text-xs text-slate-500 mt-1">The new employee has been onboarded and successfully recorded in the studio database.</p>
+                            </div>
+
+                            <div class="bg-slate-50 border border-slate-200 rounded-xl p-4 w-full text-left text-xs divide-y divide-slate-200">
+                                <div class="flex justify-between items-center pb-2">
+                                    <span class="text-slate-500 font-medium">Employee ID</span>
+                                    <span class="font-mono font-bold text-slate-900 bg-white px-2 py-0.5 rounded border border-slate-200">@model.EmployeeId</span>
                                 </div>
-                            }
+                                <div class="flex justify-between items-center py-2">
+                                    <span class="text-slate-500 font-medium">Full Name</span>
+                                    <span class="font-semibold text-slate-900">@model.FullName</span>
+                                </div>
+                                <div class="flex justify-between items-center py-2">
+                                    <span class="text-slate-500 font-medium">Email Address</span>
+                                    <span class="text-slate-800">@model.Email</span>
+                                </div>
+                                <div class="flex justify-between items-center py-2">
+                                    <span class="text-slate-500 font-medium">Weekly Day(s) Off</span>
+                                    <span class="text-slate-800 font-medium">@model.DaysOffString</span>
+                                </div>
+                                <div class="pt-2">
+                                    <span class="text-slate-500 font-medium block mb-1">Assigned Specializations</span>
+                                    <div class="flex flex-wrap gap-1">
+                                        @foreach (var s in model.Specializations)
+                                        {
+                                            <span class="bg-white border border-slate-200 text-slate-800 text-[11px] px-2 py-0.5 rounded font-medium">@s</span>
+                                        }
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div class="p-3 bg-emerald-50 border border-emerald-200 rounded-lg text-xs text-emerald-800 text-left w-full flex items-start gap-2">
+                                <span class="text-base shrink-0">✉️</span>
+                                <span>Initial temporary credentials have been set. The staff member can now sign in using their Employee ID or Email.</span>
+                            </div>
                         </div>
                     }
                 </EditForm>
@@ -323,18 +359,24 @@
                             <span class="w-3.5 h-3.5 border-2 border-white/30 border-t-white rounded-full animate-spin"></span>
                             <span>Saving &amp; Sending Email...</span>
                         }
-                        else if (saveSuccess)
-                        {
-                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7" />
-                            </svg>
-                            <span>Saved!</span>
-                        }
                         else
                         {
                             <span>Complete Setup</span>
                         }
                     </button>
+                }
+                else if (currentStep == 4)
+                {
+                    <div class="w-full flex justify-end">
+                        <button type="button" 
+                                class="px-6 py-2.5 rounded-lg bg-slate-900 hover:bg-black text-white text-xs font-semibold uppercase tracking-wider transition-colors shadow-sm flex items-center gap-2" 
+                                @onclick="HandleExitSuccess">
+                            <span>Exit &amp; Return to Staff List</span>
+                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14 5l7 7m0 0l-7 7m7-7H3" />
+                            </svg>
+                        </button>
+                    </div>
                 }
             </div>
         </div>
@@ -441,9 +483,20 @@
         await IsOpenChanged.InvokeAsync(IsOpen);
     }
 
+    private async Task HandleExitSuccess()
+    {
+        await OnSaved.InvokeAsync();
+        await CloseModal();
+    }
+
     private async Task HandleCancelClick()
     {
         if (isSaving) return;
+        if (currentStep == 4)
+        {
+            await HandleExitSuccess();
+            return;
+        }
         await CloseModal();
         await OnCancel.InvokeAsync();
     }
@@ -613,12 +666,8 @@
             }
 
             saveSuccess = true;
+            currentStep = 4;
             StateHasChanged();
-
-            await Task.Delay(1200);
-
-            await OnSaved.InvokeAsync();
-            await CloseModal();
         }
         catch (OperationCanceledException)
         {

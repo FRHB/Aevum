@@ -6,9 +6,14 @@
 
 @rendermode InteractiveServer
 
-@attribute [Authorize(Roles = "Admin,SystemAdmin,System Admin,Super Admin,Office Clerk")]
+@attribute [Authorize(Roles = "Admin,SystemAdmin,System Admin,Super Admin,Office Clerk,Employee,Staff")]
 
+@using PhotoAevumStudio.Web.Services
+@using Microsoft.AspNetCore.Components.Authorization
+@using System.Security.Claims
 @inject IEquipmentService EquipmentService
+@inject IUserService UserService
+@inject AuthenticationStateProvider AuthStateProvider
 
 @implements IDisposable
 
@@ -40,6 +45,8 @@
 
 
 
+        @if (!_isReadOnly)
+        {
         <div class="flex items-center gap-3">
 
             <button type="button" 
@@ -75,6 +82,7 @@
             </button>
 
         </div>
+        }
 
     </div>
 
@@ -563,7 +571,8 @@
                                 <td class="px-5 py-3.5 text-right whitespace-nowrap">
 
                                     <div class="inline-flex items-center gap-1.5">
-
+                                        @if (!_isReadOnly)
+                                        {
                                         @if (item.IsMaintenance)
 
                                         {
@@ -598,6 +607,7 @@
 
                                             </button>
 
+                                        }
                                         }
 
 
@@ -910,6 +920,10 @@
 
 @code {
 
+    [CascadingParameter] Task<AuthenticationState>? AuthState { get; set; }
+    private ClaimsPrincipal? _currentUser;
+    private bool _isReadOnly = true;
+
     private List<EquipmentItemModel> equipmentList = new();
 
     private List<EquipmentTypeModel> equipmentTypes = new();
@@ -955,6 +969,17 @@
     protected override async Task OnInitializedAsync()
 
     {
+        if (AuthState != null)
+        {
+            var state = await AuthState;
+            _currentUser = state.User;
+        }
+        else if (AuthStateProvider != null)
+        {
+            var state = await AuthStateProvider.GetAuthenticationStateAsync();
+            _currentUser = state.User;
+        }
+        _isReadOnly = !EmployeeRoleHelper.IsOfficeClerk(_currentUser, UserService) && !EmployeeRoleHelper.IsAdmin(_currentUser) && !EmployeeRoleHelper.IsSystemAdmin(_currentUser);
 
         EquipmentService.OnChange += HandleExternalStateChange;
 

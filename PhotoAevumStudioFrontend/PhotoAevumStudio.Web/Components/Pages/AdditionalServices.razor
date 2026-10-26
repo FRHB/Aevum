@@ -221,7 +221,7 @@
     [CascadingParameter] Task<AuthenticationState>? AuthState { get; set; }
     private ClaimsPrincipal? _currentUser;
     private bool _isOfficeClerk;
-    public bool EffectiveReadOnly => IsReadOnly || _isOfficeClerk;
+    public bool EffectiveReadOnly => IsReadOnly || _isOfficeClerk || (!EmployeeRoleHelper.IsAdmin(_currentUser) && !EmployeeRoleHelper.IsSystemAdmin(_currentUser));
 
     private bool isCreateModalOpen = false;
     private string? notificationMessage;

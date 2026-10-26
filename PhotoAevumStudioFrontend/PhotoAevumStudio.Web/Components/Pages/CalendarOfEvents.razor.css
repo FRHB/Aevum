@@ -620,20 +620,37 @@
 .drawer-backdrop {
     position: fixed;
     inset: 0;
-    background: rgba(0, 0, 0, 0.4);
+    background: rgba(15, 23, 42, 0.6);
+    backdrop-filter: blur(4px);
     z-index: 50;
     display: flex;
-    justify-content: flex-end;
+    align-items: center;
+    justify-content: center;
+    padding: 1rem;
 }
 
 .compact-detail-drawer {
-    width: 360px;
-    max-width: 90vw;
+    width: 480px;
+    max-width: 95vw;
     background: #ffffff;
-    height: 100%;
-    box-shadow: -4px 0 15px rgba(0, 0, 0, 0.15);
+    max-height: 85vh;
+    border-radius: 16px;
+    box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.25);
     display: flex;
     flex-direction: column;
+    overflow: hidden;
+    animation: modalPopIn 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+@keyframes modalPopIn {
+    from {
+        opacity: 0;
+        transform: scale(0.96);
+    }
+    to {
+        opacity: 1;
+        transform: scale(1);
+    }
 }
 
 .drawer-header {
@@ -657,6 +674,7 @@
     display: flex;
     flex-direction: column;
     gap: 0.85rem;
+    overflow-y: auto;
 }
 
 .drawer-field {

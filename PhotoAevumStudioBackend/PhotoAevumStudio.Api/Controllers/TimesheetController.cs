@@ -3,6 +3,7 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using PhotoAevumStudio.Application.Entities;
+using PhotoAevumStudio.Application.Interfaces;
 using PhotoAevumStudio.Infrastructure.Data;
 
 namespace PhotoAevumStudio.Api.Controllers;
@@ -13,17 +14,41 @@ namespace PhotoAevumStudio.Api.Controllers;
 public class TimesheetController : ControllerBase
 {
     private readonly ApplicationDbContext _db;
+    private readonly ISqlAuthService _sqlAuthService;
 
-    public TimesheetController(ApplicationDbContext db)
+    public TimesheetController(ApplicationDbContext db, ISqlAuthService sqlAuthService)
     {
         _db = db;
+        _sqlAuthService = sqlAuthService;
+    }
+
+    private static DateTime GetPhtNow()
+    {
+        try
+        {
+            var phtZone = TimeZoneInfo.FindSystemTimeZoneById("Asia/Manila");
+            return TimeZoneInfo.ConvertTimeFromUtc(DateTime.UtcNow, phtZone);
+        }
+        catch (TimeZoneNotFoundException)
+        {
+            try
+            {
+                var phtZone = TimeZoneInfo.FindSystemTimeZoneById("Singapore Standard Time");
+                return TimeZoneInfo.ConvertTimeFromUtc(DateTime.UtcNow, phtZone);
+            }
+            catch
+            {
+                return DateTime.UtcNow.AddHours(8);
+            }
+        }
     }
 
     [HttpGet("status")]
     public async Task<IActionResult> GetStatus([FromQuery] string? employeeId, CancellationToken ct)
     {
         var targetId = ResolveTargetId(employeeId);
-        var today = DateOnly.FromDateTime(DateTime.UtcNow);
+        var phtNow = GetPhtNow();
+        var today = DateOnly.FromDateTime(phtNow);
 
         var activeShift = await _db.EmployeeTimesheets
             .Where(t => t.EmployeeStudioId == targetId && t.ClockOut == null)
@@ -45,14 +70,14 @@ public class TimesheetController : ControllerBase
             .Include(e => e.IdentityUser)
             .FirstOrDefaultAsync(e => e.IdentityUser.StudioId == targetId || e.IdentityUserId == targetId, ct);
 
-        var dayName = DateTime.UtcNow.DayOfWeek.ToString();
+        var dayName = phtNow.DayOfWeek.ToString();
         bool isDayOff = emp != null && (emp.DaysOff ?? "Sunday").Contains(dayName, StringComparison.OrdinalIgnoreCase);
 
         var isClockedIn = activeShift != null;
         double elapsedHours = 0;
         if (isClockedIn && activeShift != null)
         {
-            elapsedHours = Math.Round((DateTime.UtcNow - activeShift.ClockIn).TotalHours, 2);
+            elapsedHours = Math.Round((phtNow - activeShift.ClockIn).TotalHours, 2);
         }
         else if (todayShift?.ClockOut != null)
         {
@@ -76,7 +101,8 @@ public class TimesheetController : ControllerBase
     public async Task<IActionResult> ClockIn([FromBody] ClockInOutRequestDto dto, CancellationToken ct)
     {
         var targetId = ResolveTargetId(dto.EmployeeStudioId);
-        var today = DateOnly.FromDateTime(DateTime.UtcNow);
+        var phtNow = GetPhtNow();
+        var today = DateOnly.FromDateTime(phtNow);
 
         // 1. Check if already clocked in
         var existingOpen = await _db.EmployeeTimesheets
@@ -87,7 +113,7 @@ public class TimesheetController : ControllerBase
             return BadRequest(new ProblemDetails
             {
                 Title = "Already Clocked In",
-                Detail = $"Employee {targetId} is already clocked in since {existingOpen.ClockIn:hh:mm tt} UTC."
+                Detail = $"Employee {targetId} is already clocked in since {existingOpen.ClockIn:hh:mm tt} PHT."
             });
         }
 
@@ -109,7 +135,7 @@ public class TimesheetController : ControllerBase
             .Include(e => e.IdentityUser)
             .FirstOrDefaultAsync(e => e.IdentityUser.StudioId == targetId || e.IdentityUserId == targetId, ct);
 
-        var dayName = DateTime.UtcNow.DayOfWeek.ToString();
+        var dayName = phtNow.DayOfWeek.ToString();
         bool isDayOff = emp != null && (emp.DaysOff ?? "Sunday").Contains(dayName, StringComparison.OrdinalIgnoreCase);
 
         var employeeName = dto.EmployeeName;
@@ -122,19 +148,28 @@ public class TimesheetController : ControllerBase
 
         var timesheet = new EmployeeTimesheet
         {
-            TimesheetId = "TS-" + DateTime.UtcNow.ToString("yyyyMMdd") + "-" + Guid.NewGuid().ToString("N")[..4].ToUpperInvariant(),
+            TimesheetId = "TS-" + phtNow.ToString("yyyyMMdd") + "-" + Guid.NewGuid().ToString("N")[..4].ToUpperInvariant(),
             EmployeeStudioId = targetId,
             EmployeeName = employeeName,
             WorkDate = today,
-            ClockIn = DateTime.UtcNow,
+            ClockIn = phtNow,
             Status = TimesheetStatuses.Open,
             IsDayOffWork = isDayOff,
             Notes = dto.Notes,
-            CreatedAt = DateTime.UtcNow
+            CreatedAt = phtNow
         };
 
         _db.EmployeeTimesheets.Add(timesheet);
         await _db.SaveChangesAsync(ct);
+
+        await _sqlAuthService.LogActivityAsync(
+            "CLOCK_IN",
+            "EmployeeTimesheet",
+            timesheet.TimesheetId,
+            $"Employee {targetId} clocked in at {phtNow:yyyy-MM-dd hh:mm:ss tt} PHT",
+            "Employee",
+            targetId,
+            ct);
 
         return Ok(timesheet);
     }
@@ -143,6 +178,7 @@ public class TimesheetController : ControllerBase
     public async Task<IActionResult> ClockOut([FromBody] ClockInOutRequestDto dto, CancellationToken ct)
     {
         var targetId = ResolveTargetId(dto.EmployeeStudioId);
+        var phtNow = GetPhtNow();
 
         var openRecord = await _db.EmployeeTimesheets
             .Where(t => t.EmployeeStudioId == targetId && t.ClockOut == null)
@@ -158,7 +194,7 @@ public class TimesheetController : ControllerBase
             });
         }
 
-        openRecord.ClockOut = DateTime.UtcNow;
+        openRecord.ClockOut = phtNow;
         openRecord.TotalHours = Math.Round((openRecord.ClockOut.Value - openRecord.ClockIn).TotalHours, 2);
         openRecord.Status = TimesheetStatuses.Completed;
         if (!string.IsNullOrWhiteSpace(dto.Notes))
@@ -169,6 +205,16 @@ public class TimesheetController : ControllerBase
         }
 
         await _db.SaveChangesAsync(ct);
+
+        await _sqlAuthService.LogActivityAsync(
+            "CLOCK_OUT",
+            "EmployeeTimesheet",
+            openRecord.TimesheetId,
+            $"Employee {targetId} clocked out at {phtNow:yyyy-MM-dd hh:mm:ss tt} PHT (Duration: {openRecord.TotalHours}h)",
+            "Employee",
+            targetId,
+            ct);
+
         return Ok(openRecord);
     }
 
@@ -176,8 +222,9 @@ public class TimesheetController : ControllerBase
     [Authorize(Policy = "StaffOrAbove")]
     public async Task<IActionResult> GetTodaySummary(CancellationToken ct)
     {
-        var today = DateOnly.FromDateTime(DateTime.UtcNow);
-        var dayName = DateTime.UtcNow.DayOfWeek.ToString();
+        var phtNow = GetPhtNow();
+        var today = DateOnly.FromDateTime(phtNow);
+        var dayName = phtNow.DayOfWeek.ToString();
 
         var timesheets = await _db.EmployeeTimesheets
             .Where(t => t.WorkDate == today || t.ClockOut == null)
@@ -212,7 +259,7 @@ public class TimesheetController : ControllerBase
                 IsClockedIn = punch != null && punch.ClockOut == null,
                 ClockIn = punch?.ClockIn,
                 ClockOut = punch?.ClockOut,
-                TotalHours = punch != null ? (punch.ClockOut == null ? Math.Round((DateTime.UtcNow - punch.ClockIn).TotalHours, 2) : punch.TotalHours) : 0,
+                TotalHours = punch != null ? (punch.ClockOut == null ? Math.Round((phtNow - punch.ClockIn).TotalHours, 2) : punch.TotalHours) : 0,
                 IsDayOffToday = isDayOff,
                 IsOnLeaveToday = leave != null,
                 ActiveLeaveType = leave?.LeaveType
@@ -259,6 +306,16 @@ public class TimesheetController : ControllerBase
         record.AdjustmentReason = dto.AdjustmentReason ?? "Adjusted by management";
 
         await _db.SaveChangesAsync(ct);
+
+        await _sqlAuthService.LogActivityAsync(
+            "ADJUST_PUNCH",
+            "EmployeeTimesheet",
+            record.TimesheetId,
+            $"Timesheet #{id} ({record.EmployeeStudioId}) punch adjusted by {reviewer}: In={record.ClockIn:yyyy-MM-dd HH:mm}, Out={record.ClockOut:yyyy-MM-dd HH:mm}. Reason: {record.AdjustmentReason}",
+            "OfficeClerk",
+            reviewer,
+            ct);
+
         return Ok(record);
     }
 

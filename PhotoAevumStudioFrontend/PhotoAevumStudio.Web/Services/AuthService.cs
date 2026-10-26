@@ -54,7 +54,7 @@ public sealed class AuthService : IAuthService
                 return new AuthResult(false, Error: "Token missing from server response.");
 
             await _authStateProvider.NotifyUserLoginAsync(loginResponse.Token);
-            return new AuthResult(true, Token: loginResponse.Token);
+            return new AuthResult(true, Token: loginResponse.Token, UserId: loginResponse.UserId, Role: loginResponse.Role);
         }
         catch (HttpRequestException ex)
         {

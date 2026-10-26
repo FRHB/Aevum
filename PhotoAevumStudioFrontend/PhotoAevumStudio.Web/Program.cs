@@ -21,6 +21,7 @@ builder.Services.AddScoped<IEmployeeService, EmployeeService>();
 builder.Services.AddScoped<IAdminService, AdminService>();
 builder.Services.AddScoped<IUserService, UserService>();   // Mock user data service (Task 3.1)
 builder.Services.AddScoped<IScheduleService, ScheduleService>();
+builder.Services.AddScoped<IPortfolioService, PortfolioService>();
 builder.Services.AddSingleton<IEquipmentService, EquipmentService>();
 builder.Services.AddScoped<IServicesApiClient, ServicesApiClient>();
 builder.Services.AddScoped<PhotoAevumStudio.Web.Models.BookScheduleState>();

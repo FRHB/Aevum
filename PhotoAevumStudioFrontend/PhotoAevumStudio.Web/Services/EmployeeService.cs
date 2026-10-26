@@ -140,9 +140,9 @@ public class EmployeeService : IEmployeeService
             await using var conn = new SqlConnection(_connectionString);
             await conn.OpenAsync(cancellationToken);
             const string sql = @"
-                IF COL_LENGTH(N'dbo.Employee', N'DaysOff') IS NOT NULL
+                IF COL_LENGTH(N'dbo.Employees', N'DaysOff') IS NOT NULL
                 BEGIN
-                    UPDATE dbo.Employee SET DaysOff = @DaysOff WHERE EmployeeID = @EmpId;
+                    UPDATE dbo.Employees SET DaysOff = @DaysOff WHERE EmployeeID = @EmpId;
                 END";
             await using var cmd = new SqlCommand(sql, conn);
             cmd.Parameters.AddWithValue("@DaysOff", daysOff.Trim());

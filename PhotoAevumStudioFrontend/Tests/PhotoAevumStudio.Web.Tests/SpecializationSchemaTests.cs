@@ -89,4 +89,45 @@ public class SpecializationSchemaTests
             Assert.False(reader.IsDBNull(0)); // SpecializationID
         }
     }
+
+    [Fact]
+    public async Task ApplicationDbContext_EmployeesQuery_ExecutesSuccessfullyAgainstDatabase()
+    {
+        var options = new DbContextOptionsBuilder<ApplicationDbContext>()
+            .UseSqlServer(ConnectionString)
+            .Options;
+
+        await using var db = new ApplicationDbContext(options);
+        if (await db.Database.CanConnectAsync())
+        {
+            var employees = await db.Employees
+                .Include(e => e.IdentityUser)
+                .ToListAsync();
+
+            Assert.NotNull(employees);
+        }
+    }
+
+    [Fact]
+    public async Task RawQuery_SelectingEmployeeColumns_Succeeds()
+    {
+        await using var conn = new SqlConnection(ConnectionString);
+        await conn.OpenAsync();
+
+        const string sql = @"
+            SELECT Id,
+                   IdentityUserId,
+                   Status,
+                   DaysOff,
+                   Specializations,
+                   EmployeeID,
+                   EmployeeFirstName,
+                   EmployeeLastName,
+                   EmployeeEmail
+            FROM dbo.Employees;";
+
+        await using var cmd = new SqlCommand(sql, conn);
+        await using var reader = await cmd.ExecuteReaderAsync();
+        Assert.NotNull(reader);
+    }
 }

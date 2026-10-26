@@ -3,8 +3,13 @@
 @page "/dispatch"
 @layout AdminLayout
 @rendermode InteractiveServer
-@attribute [Authorize(Roles = "Admin,SystemAdmin,System Admin,Super Admin,Office Clerk")]
+@attribute [Authorize(Roles = "Admin,SystemAdmin,System Admin,Super Admin,Office Clerk,Employee,Staff")]
+@using PhotoAevumStudio.Web.Services
+@using Microsoft.AspNetCore.Components.Authorization
+@using System.Security.Claims
 @inject IEquipmentService EquipmentService
+@inject IUserService UserService
+@inject AuthenticationStateProvider AuthStateProvider
 @implements IDisposable
 
 <PageTitle>Gear Dispatch &amp; Checkout | Photo Aevum Studio</PageTitle>
@@ -20,6 +25,8 @@
             <p class="text-sm text-slate-500 mt-0.5">Gear checkout, on-location kits dispatch, and return verification.</p>
         </div>
 
+        @if (!_isReadOnly)
+        {
         <div class="flex items-center gap-3">
             <button type="button" 
                     @onclick="OpenCheckoutModal"
@@ -30,6 +37,7 @@
                 <span>New Checkout / Dispatch Kit</span>
             </button>
         </div>
+        }
     </div>
 
     <!-- Alert / Toast Banner -->
@@ -260,21 +268,24 @@
                                 <!-- ACTIONS -->
                                 <td class="px-5 py-3.5 text-right whitespace-nowrap">
                                     <div class="inline-flex items-center gap-1.5">
-                                        @if (item.IsActiveCheckout)
+                                        @if (!_isReadOnly)
                                         {
-                                            <button type="button" 
-                                                    @onclick="() => OpenVerifyReturnModal(item)"
-                                                    class="px-2.5 py-1.5 text-xs font-bold text-emerald-700 bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 rounded-md transition-all shadow-2xs">
-                                                Verify Return
-                                            </button>
-                                        }
-                                        else if (item.IsScheduled)
-                                        {
-                                            <button type="button" 
-                                                    @onclick="() => QuickDispatchNow(item)"
-                                                    class="px-2.5 py-1.5 text-xs font-bold text-blue-700 bg-blue-50 hover:bg-blue-100 border border-blue-200 rounded-md transition-all shadow-2xs">
-                                                Dispatch Now
-                                            </button>
+                                            @if (item.IsActiveCheckout)
+                                            {
+                                                <button type="button" 
+                                                        @onclick="() => OpenVerifyReturnModal(item)"
+                                                        class="px-2.5 py-1.5 text-xs font-bold text-emerald-700 bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 rounded-md transition-all shadow-2xs">
+                                                    Verify Return
+                                                </button>
+                                            }
+                                            else if (item.IsScheduled)
+                                            {
+                                                <button type="button" 
+                                                        @onclick="() => QuickDispatchNow(item)"
+                                                        class="px-2.5 py-1.5 text-xs font-bold text-blue-700 bg-blue-50 hover:bg-blue-100 border border-blue-200 rounded-md transition-all shadow-2xs">
+                                                    Dispatch Now
+                                                </button>
+                                            }
                                         }
 
                                         <button type="button"
@@ -553,6 +564,10 @@
 }
 
 @code {
+    [CascadingParameter] Task<AuthenticationState>? AuthState { get; set; }
+    private ClaimsPrincipal? _currentUser;
+    private bool _isReadOnly = true;
+
     private List<DispatchItemModel> dispatches = new();
     private List<EventAppointmentModel> upcomingEvents = new();
     private List<EquipmentItemModel> allEquipments = new();
@@ -583,6 +598,18 @@
 
     protected override async Task OnInitializedAsync()
     {
+        if (AuthState != null)
+        {
+            var state = await AuthState;
+            _currentUser = state.User;
+        }
+        else if (AuthStateProvider != null)
+        {
+            var state = await AuthStateProvider.GetAuthenticationStateAsync();
+            _currentUser = state.User;
+        }
+        _isReadOnly = !EmployeeRoleHelper.IsOfficeClerk(_currentUser, UserService) && !EmployeeRoleHelper.IsAdmin(_currentUser) && !EmployeeRoleHelper.IsSystemAdmin(_currentUser);
+
         EquipmentService.OnChange += HandleExternalStateChange;
         await LoadDataAsync();
     }

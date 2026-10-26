@@ -3,8 +3,13 @@
 @page "/maintenance"
 @layout AdminLayout
 @rendermode InteractiveServer
-@attribute [Authorize(Roles = "Admin,SystemAdmin,System Admin,Super Admin,Office Clerk")]
+@attribute [Authorize(Roles = "Admin,SystemAdmin,System Admin,Super Admin,Office Clerk,Employee,Staff")]
+@using PhotoAevumStudio.Web.Services
+@using Microsoft.AspNetCore.Components.Authorization
+@using System.Security.Claims
 @inject IEquipmentService EquipmentService
+@inject IUserService UserService
+@inject AuthenticationStateProvider AuthStateProvider
 @implements IDisposable
 
 <PageTitle>Maintenance &amp; Calibration Logs | Photo Aevum Studio</PageTitle>
@@ -20,6 +25,8 @@
             <p class="text-sm text-slate-500 mt-0.5">Equipment repair records, routine calibration, and servicing history.</p>
         </div>
 
+        @if (!_isReadOnly)
+        {
         <div class="flex items-center gap-3">
             <button type="button" 
                     @onclick="OpenLogMaintenanceModal"
@@ -30,6 +37,7 @@
                 <span>Log Maintenance / Service</span>
             </button>
         </div>
+        }
     </div>
 
     <!-- Alert / Toast Banner -->
@@ -252,7 +260,7 @@
                                 <!-- ACTIONS (Resolve & Return to Available) -->
                                 <td class="px-5 py-3.5 text-right whitespace-nowrap">
                                     <div class="inline-flex items-center gap-1.5">
-                                        @if (IsItemCurrentlyInMaintenance(log.EntityID))
+                                        @if (!_isReadOnly && IsItemCurrentlyInMaintenance(log.EntityID))
                                         {
                                             <button type="button" 
                                                     @onclick="() => OpenResolveModal(log)"
@@ -331,7 +339,7 @@
                             @foreach (var eq in equipmentList)
                             {
                                 <option value="@eq.EquipmentID">
-                                    @eq.EquipmentName (@eq.EquipmentID) — Status: @eq.EquipmentStatus
+                                    @eq.EquipmentName — Status: @eq.EquipmentStatus
                                 </option>
                             }
                         </InputSelect>
@@ -530,6 +538,10 @@
 }
 
 @code {
+    [CascadingParameter] Task<AuthenticationState>? AuthState { get; set; }
+    private ClaimsPrincipal? _currentUser;
+    private bool _isReadOnly = true;
+
     private List<MaintenanceLogModel> maintenanceLogs = new();
     private List<EquipmentItemModel> equipmentList = new();
 
@@ -552,6 +564,18 @@
 
     protected override async Task OnInitializedAsync()
     {
+        if (AuthState != null)
+        {
+            var state = await AuthState;
+            _currentUser = state.User;
+        }
+        else if (AuthStateProvider != null)
+        {
+            var state = await AuthStateProvider.GetAuthenticationStateAsync();
+            _currentUser = state.User;
+        }
+        _isReadOnly = !EmployeeRoleHelper.IsOfficeClerk(_currentUser, UserService) && !EmployeeRoleHelper.IsAdmin(_currentUser) && !EmployeeRoleHelper.IsSystemAdmin(_currentUser);
+
         EquipmentService.OnChange += HandleExternalStateChange;
         await LoadDataAsync();
     }

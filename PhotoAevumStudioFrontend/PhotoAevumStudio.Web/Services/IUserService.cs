@@ -128,6 +128,9 @@ public interface IUserService
     bool DeleteSpecialization(string id);
 
     // ── Studio Services & Packages ──────────────────────────────────────────
+    IReadOnlyList<ServiceCategoryItem> GetServiceCategories();
+    ServiceCategoryItem AddServiceCategory(ServiceCategoryItem category);
+    bool DeleteServiceCategory(string id);
     IReadOnlyList<MainServiceItem> GetMainServices();
     IReadOnlyList<MainServiceItem> GetMainServicesSummary();
     (byte[]? Image, string? MimeType) GetServiceImage(string code);
@@ -166,4 +169,5 @@ public interface IUserService
     List<PhotoRowDto> GetPhotos(string? bookingId = null);
     List<AuditLogRowDto> GetAuditLogs(string? userId = null);
     IReadOnlyList<AuditLogRowDto> GetHistoryLogs(string requestingUserId, int topCount = 100);
+    void LogActivity(string actionType, string entityName, string? entityId, string? details, string? changedBy = null);
 }

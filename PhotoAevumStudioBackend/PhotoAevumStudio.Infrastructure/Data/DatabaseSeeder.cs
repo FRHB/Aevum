@@ -154,16 +154,33 @@ public static class DatabaseSeeder
                     );
                 END;
 
-                IF OBJECT_ID(N'dbo.Employee', N'U') IS NOT NULL
+                IF OBJECT_ID(N'dbo.Employees', N'U') IS NOT NULL
                 BEGIN
-                    IF COL_LENGTH(N'dbo.Employee', N'isFirstLogin') IS NULL
+                    IF COL_LENGTH(N'dbo.Employees', N'isFirstLogin') IS NULL
                     BEGIN
-                        ALTER TABLE dbo.Employee ADD isFirstLogin bit NOT NULL CONSTRAINT DF_Employee_isFirstLogin DEFAULT 1;
+                        ALTER TABLE dbo.Employees ADD isFirstLogin bit NOT NULL CONSTRAINT DF_Employees_isFirstLogin DEFAULT 1;
                     END;
-                    IF COL_LENGTH(N'dbo.Employee', N'DaysOff') IS NULL
+                    IF COL_LENGTH(N'dbo.Employees', N'DaysOff') IS NULL
                     BEGIN
-                        ALTER TABLE dbo.Employee ADD DaysOff nvarchar(50) NOT NULL CONSTRAINT DF_Employee_DaysOff DEFAULT 'Sunday';
+                        ALTER TABLE dbo.Employees ADD DaysOff nvarchar(50) NOT NULL CONSTRAINT DF_Employees_DaysOff DEFAULT 'Sunday';
                     END;
+                    IF COL_LENGTH(N'dbo.Employees', N'Id') IS NULL
+                    BEGIN
+                        ALTER TABLE dbo.Employees ADD Id int IDENTITY(1,1);
+                    END;
+                    IF COL_LENGTH(N'dbo.Employees', N'IdentityUserId') IS NULL
+                    BEGIN
+                        ALTER TABLE dbo.Employees ADD IdentityUserId nvarchar(450) NULL;
+                    END;
+                    IF COL_LENGTH(N'dbo.Employees', N'Status') IS NULL
+                    BEGIN
+                        ALTER TABLE dbo.Employees ADD Status nvarchar(50) NOT NULL CONSTRAINT DF_Employees_EF_Status DEFAULT 'Active';
+                    END;
+                    IF COL_LENGTH(N'dbo.Employees', N'Specializations') IS NULL
+                    BEGIN
+                        ALTER TABLE dbo.Employees ADD Specializations nvarchar(max) NOT NULL CONSTRAINT DF_Employees_EF_Specializations DEFAULT '[]';
+                    END;
+                    EXEC(N'UPDATE dbo.Employees SET IdentityUserId = EmployeeID WHERE IdentityUserId IS NULL; UPDATE dbo.Employees SET Status = EmployeeStatus WHERE Status IS NULL;');
                 END;
 
                 IF OBJECT_ID(N'dbo.EmployeeLeaves', N'U') IS NULL AND OBJECT_ID(N'dbo.EmployeeLeave', N'U') IS NULL

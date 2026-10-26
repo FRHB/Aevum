@@ -33,6 +33,10 @@ public class ApplicationDbContext : IdentityDbContext<ApplicationUser>
     public DbSet<EventCategory> ServiceCategories => EventCategories;
     public DbSet<ServiceCategoryJoin> ServiceCategoryJoins => Set<ServiceCategoryJoin>();
 
+    public DbSet<PortfolioCategoryEntity> PortfolioCategories => Set<PortfolioCategoryEntity>();
+    public DbSet<PortfolioEntity> Portfolios => Set<PortfolioEntity>();
+    public DbSet<PortfolioImage> PortfolioImages => Set<PortfolioImage>();
+
     protected override void OnModelCreating(ModelBuilder builder)
     {
         base.OnModelCreating(builder); // Must call base — creates Identity tables
@@ -76,6 +80,7 @@ public class ApplicationDbContext : IdentityDbContext<ApplicationUser>
         // ── Employee ─────────────────────────────────────────────────────────
         builder.Entity<Employee>(e =>
         {
+            e.ToTable("Employees");
             e.HasKey(emp => emp.Id);
             e.HasOne(emp => emp.IdentityUser)
              .WithOne()

@@ -61,8 +61,8 @@ public class StudioManagementService : IStudioManagementService
         var employees = new List<Employee>();
         const string empSql = @"
             SELECT EmployeeID, EmployeeFirstName, EmployeeLastName, EmployeeMiddleName, EmployeeEmail, EmployeeStatus,
-                   CASE WHEN COL_LENGTH(N'dbo.Employee', N'DaysOff') IS NOT NULL THEN ISNULL(DaysOff, 'Sunday') ELSE 'Sunday' END AS DaysOff
-            FROM dbo.Employee
+                   CASE WHEN COL_LENGTH(N'dbo.Employees', N'DaysOff') IS NOT NULL THEN ISNULL(DaysOff, 'Sunday') ELSE 'Sunday' END AS DaysOff
+            FROM dbo.Employees
             ORDER BY EmployeeID;";
 
         await using var cmd = new SqlCommand(empSql, conn);
