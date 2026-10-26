@@ -5,9 +5,13 @@
 @page "/specializations"
 @layout AdminLayout
 @rendermode InteractiveServer
-@attribute [Authorize(Roles = "Admin,SystemAdmin,System Admin,Super Admin")]
+@attribute [Authorize(Roles = "Admin,SystemAdmin,System Admin,Super Admin,Office Clerk")]
 @inject IUserService UserService
+@inject AuthenticationStateProvider AuthStateProvider
 @using PhotoAevumStudio.Web.Models
+@using PhotoAevumStudio.Web.Services
+@using Microsoft.AspNetCore.Components.Authorization
+@using System.Security.Claims
 
 <PageTitle>Specializations Management | Photo Aevum Studio</PageTitle>
 
@@ -26,6 +30,8 @@
             </p>
         </div>
 
+        @if (!_isOfficeClerk)
+        {
         <div class="flex items-center gap-3">
             <button type="button" 
                     @onclick="OpenWizard"
@@ -36,6 +42,7 @@
                 <span>+ Add New Specialization</span>
             </button>
         </div>
+        }
     </div>
 
     <!-- Alert / Toast Banner for Updates -->
@@ -221,6 +228,8 @@
                                         @staffCount
                                     </td>
                                     <td class="py-4 px-6 text-right">
+                                        @if (!_isOfficeClerk)
+                                        {
                                         <button type="button" 
                                                 @onclick="() => ConfirmDeleteSpecialization(spec)"
                                                 class="inline-flex items-center gap-1 px-2.5 py-1 text-xs font-semibold text-rose-600 hover:text-rose-900 hover:bg-rose-50 rounded-lg transition-colors cursor-pointer"
@@ -230,6 +239,7 @@
                                             </svg>
                                             Delete
                                         </button>
+                                        }
                                     </td>
                                 </tr>
                             }
@@ -462,6 +472,17 @@
         .Select(s => string.IsNullOrWhiteSpace(s.Department) ? "General" : s.Department)
         .Distinct()
         .OrderBy(d => d);
+
+    [CascadingParameter] Task<AuthenticationState>? AuthState { get; set; }
+    private bool _isOfficeClerk;
+
+    protected override async Task OnInitializedAsync()
+    {
+        ClaimsPrincipal? user = null;
+        if (AuthState != null) user = (await AuthState).User;
+        else user = (await AuthStateProvider.GetAuthenticationStateAsync()).User;
+        _isOfficeClerk = EmployeeRoleHelper.IsOfficeClerk(user, UserService);
+    }
 
     protected override void OnInitialized()
     {

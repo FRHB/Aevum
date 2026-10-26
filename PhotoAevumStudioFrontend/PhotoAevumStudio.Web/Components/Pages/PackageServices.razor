@@ -6,8 +6,11 @@
 @rendermode InteractiveServer
 @using PhotoAevumStudio.Web.Models
 @using PhotoAevumStudio.Web.Services
+@using Microsoft.AspNetCore.Components.Authorization
+@using System.Security.Claims
 @inject IUserService UserService
 @inject IServicesApiClient ServicesApi
+@inject AuthenticationStateProvider AuthStateProvider
 
 <PageTitle>Package Services | Photo Aevum Studio</PageTitle>
 
@@ -26,16 +29,19 @@
             </p>
         </div>
 
-        <div class="flex items-center gap-3">
-            <button type="button"
-                    @onclick="OpenCreateModal"
-                    class="inline-flex items-center gap-2 px-4 py-2.5 bg-gray-900 hover:bg-black text-white text-sm font-semibold rounded-lg shadow-sm hover:shadow transition-all duration-150 active:scale-95 focus:outline-none focus:ring-2 focus:ring-gray-900 focus:ring-offset-2">
-                <svg class="w-4 h-4 text-emerald-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M12 4v16m8-8H4" />
-                </svg>
-                <span>Create New Package</span>
-            </button>
-        </div>
+        @if (!EffectiveReadOnly)
+        {
+            <div class="flex items-center gap-3">
+                <button type="button"
+                        @onclick="OpenCreateModal"
+                        class="inline-flex items-center gap-2 px-4 py-2.5 bg-gray-900 hover:bg-black text-white text-sm font-semibold rounded-lg shadow-sm hover:shadow transition-all duration-150 active:scale-95 focus:outline-none focus:ring-2 focus:ring-gray-900 focus:ring-offset-2">
+                    <svg class="w-4 h-4 text-emerald-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M12 4v16m8-8H4" />
+                    </svg>
+                    <span>Create New Package</span>
+                </button>
+            </div>
+        }
     </div>
 
     @if (!string.IsNullOrWhiteSpace(notificationMessage))
@@ -155,15 +161,25 @@
                                     <div class="text-xs text-gray-700 font-medium">@(string.IsNullOrWhiteSpace(pkg.Description) ? pkg.BundleCategory : pkg.Description)</div>
                                 </td>
                                 <td class="py-4 px-6">
-                                    <button type="button"
-                                            @onclick="() => ToggleFeaturedAsync(pkg)"
-                                            disabled="@_busyCodes.Contains(pkg.Code)"
-                                            aria-pressed="@(pkg.IsFeatured ? "true" : "false")"
-                                            title="@(pkg.IsFeatured ? "Remove from featured services on the public site" : "Show on the public site as a featured service")"
-                                            class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold border transition-all cursor-pointer disabled:opacity-50 disabled:cursor-wait @(pkg.IsFeatured ? "bg-amber-50 text-amber-700 border-amber-300 hover:bg-amber-100" : "bg-white text-gray-500 border-gray-200 hover:border-gray-400 hover:text-gray-900")">
-                                        <span aria-hidden="true">@(pkg.IsFeatured ? "★" : "☆")</span>
-                                        <span>@(pkg.IsFeatured ? "Featured" : "Feature")</span>
-                                    </button>
+                                    @if (EffectiveReadOnly)
+                                    {
+                                        <span class="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold border @(pkg.IsFeatured ? "bg-amber-50 text-amber-700 border-amber-300" : "bg-gray-50 text-gray-500 border-gray-200")">
+                                            <span aria-hidden="true">@(pkg.IsFeatured ? "★" : "☆")</span>
+                                            <span>@(pkg.IsFeatured ? "Featured" : "Standard")</span>
+                                        </span>
+                                    }
+                                    else
+                                    {
+                                        <button type="button"
+                                                @onclick="() => ToggleFeaturedAsync(pkg)"
+                                                disabled="@_busyCodes.Contains(pkg.Code)"
+                                                aria-pressed="@(pkg.IsFeatured ? "true" : "false")"
+                                                title="@(pkg.IsFeatured ? "Remove from featured services on the public site" : "Show on the public site as a featured service")"
+                                                class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold border transition-all cursor-pointer disabled:opacity-50 disabled:cursor-wait @(pkg.IsFeatured ? "bg-amber-50 text-amber-700 border-amber-300 hover:bg-amber-100" : "bg-white text-gray-500 border-gray-200 hover:border-gray-400 hover:text-gray-900")">
+                                            <span aria-hidden="true">@(pkg.IsFeatured ? "★" : "☆")</span>
+                                            <span>@(pkg.IsFeatured ? "Featured" : "Feature")</span>
+                                        </button>
+                                    }
                                 </td>
                                 <td class="py-4 px-6">
                                     <span class="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200">
@@ -195,9 +211,18 @@
     </div>
 </div>
 
-<CreatePackageModal @bind-IsOpen="isCreateModalOpen" OnPackageCreated="HandlePackageCreated" />
+@if (!EffectiveReadOnly)
+{
+    <CreatePackageModal @bind-IsOpen="isCreateModalOpen" OnPackageCreated="HandlePackageCreated" />
+}
 
 @code {
+    [Parameter] public bool IsReadOnly { get; set; }
+    [CascadingParameter] Task<AuthenticationState>? AuthState { get; set; }
+    private ClaimsPrincipal? _currentUser;
+    private bool _isOfficeClerk;
+    public bool EffectiveReadOnly => IsReadOnly || _isOfficeClerk;
+
     private bool isCreateModalOpen = false;
     private string? notificationMessage;
     private string searchQuery = string.Empty;
@@ -250,6 +275,18 @@
 
     protected override async Task OnInitializedAsync()
     {
+        if (AuthState != null)
+        {
+            var state = await AuthState;
+            _currentUser = state.User;
+        }
+        else if (AuthStateProvider != null)
+        {
+            var state = await AuthStateProvider.GetAuthenticationStateAsync();
+            _currentUser = state.User;
+        }
+        _isOfficeClerk = EmployeeRoleHelper.IsOfficeClerk(_currentUser, UserService);
+
         var codes = await ServicesApi.GetFeaturedCodesAsync(FeaturedEntityTypes.Package);
         _featuredCodes = new HashSet<string>(codes, StringComparer.OrdinalIgnoreCase);
         ApplyFeaturedFlags();

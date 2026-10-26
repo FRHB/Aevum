@@ -56,4 +56,21 @@ public class AdminEmailStubService : IEmailService
 
         return SendEmailAsync(toEmail, subject, body, isHtml: false);
     }
+
+    public Task SendEmployeeWelcomeEmailAsync(
+        string toEmail,
+        string employeeName,
+        string employeeId,
+        string initialPassword,
+        CancellationToken cancellationToken = default)
+    {
+        var subject = "Welcome to Photo Aevum Studio – Staff Account Credentials";
+        var body = $"Hello {employeeName},\n\nYour staff account has been provisioned.\nStaff ID: {employeeId}\nTemporary Password: {initialPassword}\n\nPlease change your password on first login.";
+
+        _logger.LogInformation(
+            "[STUB EMAIL SERVICE] Staff welcome email dispatched to {ToEmail} for Staff {EmployeeId}. Temporary password: {TempPassword}",
+            toEmail, employeeId, initialPassword);
+
+        return SendEmailAsync(toEmail, subject, body, isHtml: false);
+    }
 }

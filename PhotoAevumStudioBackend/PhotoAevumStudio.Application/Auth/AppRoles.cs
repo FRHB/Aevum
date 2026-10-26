@@ -5,8 +5,9 @@ public static class AppRoles
 {
     public const string SystemAdmin = "SystemAdmin";
     public const string Admin       = "Admin";
+    public const string OfficeClerk = "Office Clerk";
     public const string Employee    = "Employee";
     public const string Customer    = "Customer";
 
-    public static readonly IReadOnlyList<string> All = [SystemAdmin, Admin, Employee, Customer];
+    public static readonly IReadOnlyList<string> All = [SystemAdmin, Admin, OfficeClerk, Employee, Customer];
 }

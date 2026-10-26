@@ -23,7 +23,17 @@ public class EmployeeViewModel
     public string Email { get; set; } = string.Empty;
     public string Role { get; set; } = string.Empty;
     public List<string> Specializations { get; set; } = new();
+    public List<string> SelectedDaysOff { get; set; } = new() { "Sunday" };
+    public string DaysOffString => SelectedDaysOff.Count > 0 ? string.Join(",", SelectedDaysOff) : "Sunday";
     public string Status { get; set; } = "Active";
+    public string DaysOff { get; set; } = "Sunday";
+    public bool IsClockedIn { get; set; }
+    public DateTime? TodayClockIn { get; set; }
+    public DateTime? TodayClockOut { get; set; }
+    public double TodayHoursWorked { get; set; }
+    public bool IsDayOffToday { get; set; }
+    public bool IsOnLeaveToday { get; set; }
+    public string? ActiveLeaveType { get; set; }
 
     // Computed properties to maintain consistency and prevent redundant DB columns
     public bool IsActive => Status.Equals("Active", StringComparison.OrdinalIgnoreCase);
@@ -83,7 +93,8 @@ public record NewEmployeeRequest(
     string? MiddleName,
     string Email,
     IReadOnlyList<string> Specializations,
-    string Password);
+    string Password,
+    string DaysOff = "Sunday");
 
 public record SaveEmployeeResult(bool Success, string? Error = null);
 
@@ -156,6 +167,8 @@ public class EmployeeRegistrationModel : IValidatableObject
 
     // Step 2: Specializations
     public List<string> Specializations { get; set; } = new();
+    public List<string> SelectedDaysOff { get; set; } = new() { "Sunday" };
+    public string DaysOffString => SelectedDaysOff.Count > 0 ? string.Join(",", SelectedDaysOff) : "Sunday";
 
     public string FullName => string.Join(" ", new[] { FirstName, MiddleName, LastName }
         .Where(s => !string.IsNullOrWhiteSpace(s)));
@@ -182,3 +195,46 @@ public class EmployeeRegistrationModel : IValidatableObject
         }
     }
 }
+
+public class LeaveItemViewModel
+{
+    public int Id { get; set; }
+    public string LeaveId { get; set; } = string.Empty;
+    public string EmployeeStudioId { get; set; } = string.Empty;
+    public string EmployeeName { get; set; } = string.Empty;
+    public string LeaveType { get; set; } = "Sick Leave";
+    public DateOnly StartDate { get; set; }
+    public DateOnly EndDate { get; set; }
+    public string? Reason { get; set; }
+    public string Status { get; set; } = "Pending";
+    public string? ApprovedBy { get; set; }
+    public DateTime? ApprovedAt { get; set; }
+    public string? RejectionReason { get; set; }
+    public DateTime CreatedAt { get; set; }
+}
+
+public class ClockStatusViewModel
+{
+    public string EmployeeStudioId { get; set; } = string.Empty;
+    public bool IsClockedIn { get; set; }
+    public DateTime? ClockIn { get; set; }
+    public DateTime? ClockOut { get; set; }
+    public double ElapsedHours { get; set; }
+    public bool IsDayOffToday { get; set; }
+    public bool IsOnLeaveToday { get; set; }
+    public string? ActiveLeaveType { get; set; }
+}
+
+public class TodayAttendanceSummaryDto
+{
+    public string EmployeeStudioId { get; set; } = string.Empty;
+    public string EmployeeName { get; set; } = string.Empty;
+    public string DaysOff { get; set; } = "Sunday";
+    public bool IsClockedIn { get; set; }
+    public DateTime? ClockIn { get; set; }
+    public DateTime? ClockOut { get; set; }
+    public double TotalHours { get; set; }
+    public bool IsDayOffToday { get; set; }
+    public bool IsOnLeaveToday { get; set; }
+    public string? ActiveLeaveType { get; set; }
+}

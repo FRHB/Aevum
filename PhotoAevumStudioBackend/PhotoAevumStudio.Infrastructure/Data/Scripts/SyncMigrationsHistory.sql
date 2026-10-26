@@ -70,5 +70,15 @@ BEGIN
 END
 GO
 
+-- 6. AddSpecializationMissingColumns (SpecializationDescription, Description, ColorTag, CreatedAt)
+IF COL_LENGTH(N'dbo.EmployeeSpecialization', N'SpecializationDescription') IS NOT NULL
+   AND NOT EXISTS (SELECT 1 FROM [__EFMigrationsHistory] WHERE [MigrationId] = '20261026081300_AddSpecializationMissingColumns')
+BEGIN
+    INSERT INTO [__EFMigrationsHistory] ([MigrationId], [ProductVersion])
+    VALUES ('20261026081300_AddSpecializationMissingColumns', '10.0.12');
+    PRINT 'Recorded migration: 20261026081300_AddSpecializationMissingColumns';
+END
+GO
+
 PRINT 'Migration history synchronization complete.';
 GO

@@ -33,7 +33,8 @@ public class ManagementController : ControllerBase
             e.IdentityUser.Email,
             Role = "Employee",
             e.Specializations,
-            e.Status
+            e.Status,
+            e.DaysOff
         });
         
         return Ok(result);

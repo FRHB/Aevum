@@ -9,7 +9,11 @@
 @attribute [Authorize]
 @using PhotoAevumStudio.Web.Models
 @using PhotoAevumStudio.Web.Services
+@using Microsoft.AspNetCore.Components.Authorization
+@using System.Security.Claims
 @inject IServicesApiClient ServicesApi
+@inject IUserService UserService
+@inject AuthenticationStateProvider AuthStateProvider
 
 <PageTitle>Service Categories Management | Photo Aevum Studio</PageTitle>
 
@@ -28,16 +32,19 @@
             </p>
         </div>
 
-        <div class="flex items-center gap-3">
-            <button type="button" 
-                    @onclick="OpenAddModal"
-                    class="inline-flex items-center gap-2 px-4 py-2.5 bg-gray-900 hover:bg-black text-white text-sm font-semibold rounded-lg shadow-sm hover:shadow transition-all duration-150 active:scale-95 focus:outline-none focus:ring-2 focus:ring-gray-900 focus:ring-offset-2 cursor-pointer">
-                <svg class="w-4 h-4 text-emerald-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M12 4v16m8-8H4" />
-                </svg>
-                <span>+ Add New Category</span>
-            </button>
-        </div>
+        @if (!EffectiveReadOnly)
+        {
+            <div class="flex items-center gap-3">
+                <button type="button" 
+                        @onclick="OpenAddModal"
+                        class="inline-flex items-center gap-2 px-4 py-2.5 bg-gray-900 hover:bg-black text-white text-sm font-semibold rounded-lg shadow-sm hover:shadow transition-all duration-150 active:scale-95 focus:outline-none focus:ring-2 focus:ring-gray-900 focus:ring-offset-2 cursor-pointer">
+                    <svg class="w-4 h-4 text-emerald-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M12 4v16m8-8H4" />
+                    </svg>
+                    <span>+ Add New Category</span>
+                </button>
+            </div>
+        }
     </div>
 
     <!-- Alert / Toast Banner for Category Registry Updates -->
@@ -347,13 +354,16 @@
                                 <!-- Action Links (View Details -> and Edit) -->
                                 <td class="py-4 px-6 text-right whitespace-nowrap">
                                     <div class="inline-flex items-center gap-3">
-                                        <button type="button" 
-                                                @onclick="() => OpenEditModal(cat)"
-                                                class="text-xs font-medium text-gray-500 hover:text-gray-900 transition-colors cursor-pointer"
-                                                title="Edit category">
-                                            Edit
-                                        </button>
-                                        <span class="text-gray-200">|</span>
+                                        @if (!EffectiveReadOnly)
+                                        {
+                                            <button type="button" 
+                                                    @onclick="() => OpenEditModal(cat)"
+                                                    class="text-xs font-medium text-gray-500 hover:text-gray-900 transition-colors cursor-pointer"
+                                                    title="Edit category">
+                                                Edit
+                                            </button>
+                                            <span class="text-gray-200">|</span>
+                                        }
                                         <button type="button"
                                                 @onclick="() => OpenDetailsModal(cat)"
                                                 class="text-xs font-semibold text-gray-700 hover:text-gray-900 hover:underline transition-colors cursor-pointer">
@@ -679,17 +689,25 @@
 
             <!-- Details Modal Footer -->
             <div class="px-6 py-4 bg-gray-50 border-t border-gray-100 flex items-center justify-between">
-                <button type="button" 
-                        @onclick="() => ToggleCategoryStatus(selectedCategoryForDetails)"
-                        class="text-xs font-semibold @(selectedCategoryForDetails.Status == "Active" ? "text-amber-600 hover:text-amber-800" : "text-emerald-600 hover:text-emerald-800") cursor-pointer">
-                    @(selectedCategoryForDetails.Status == "Active" ? "Archive Category" : "Activate Category")
-                </button>
+                <div>
+                    @if (!EffectiveReadOnly)
+                    {
+                        <button type="button" 
+                                @onclick="() => ToggleCategoryStatus(selectedCategoryForDetails)"
+                                class="text-xs font-semibold @(selectedCategoryForDetails.Status == "Active" ? "text-amber-600 hover:text-amber-800" : "text-emerald-600 hover:text-emerald-800") cursor-pointer">
+                            @(selectedCategoryForDetails.Status == "Active" ? "Archive Category" : "Activate Category")
+                        </button>
+                    }
+                </div>
                 <div class="flex items-center gap-2">
-                    <button type="button" 
-                            @onclick="() => { isDetailsModalOpen = false; OpenEditModal(selectedCategoryForDetails); }"
-                            class="px-4 py-2 text-xs font-semibold text-gray-700 bg-white border border-gray-200 hover:bg-gray-50 rounded-lg transition-colors cursor-pointer">
-                        Edit Category
-                    </button>
+                    @if (!EffectiveReadOnly)
+                    {
+                        <button type="button" 
+                                @onclick="() => { isDetailsModalOpen = false; OpenEditModal(selectedCategoryForDetails); }"
+                                class="px-4 py-2 text-xs font-semibold text-gray-700 bg-white border border-gray-200 hover:bg-gray-50 rounded-lg transition-colors cursor-pointer">
+                            Edit Category
+                        </button>
+                    }
                     <button type="button" @onclick="() => isDetailsModalOpen = false"
                             class="px-4 py-2 text-xs font-bold text-white bg-gray-900 hover:bg-black rounded-lg transition-colors cursor-pointer">
                         Close
@@ -701,6 +719,12 @@
 }
 
 @code {
+    [Parameter] public bool IsReadOnly { get; set; }
+    [CascadingParameter] Task<AuthenticationState>? AuthState { get; set; }
+    private ClaimsPrincipal? _currentUser;
+    private bool _isOfficeClerk;
+    public bool EffectiveReadOnly => IsReadOnly || _isOfficeClerk;
+
     // Search & Filter State
     private string searchQuery = string.Empty;
     private string selectedTypeFilter = "ALL";
@@ -736,6 +760,18 @@
 
     protected override async Task OnInitializedAsync()
     {
+        if (AuthState != null)
+        {
+            var state = await AuthState;
+            _currentUser = state.User;
+        }
+        else if (AuthStateProvider != null)
+        {
+            var state = await AuthStateProvider.GetAuthenticationStateAsync();
+            _currentUser = state.User;
+        }
+        _isOfficeClerk = EmployeeRoleHelper.IsOfficeClerk(_currentUser, UserService);
+
         await RefreshCategoriesAsync();
     }
 

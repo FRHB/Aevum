@@ -63,11 +63,16 @@ public sealed class AevumAuthenticationStateProvider : AuthenticationStateProvid
     private static ClaimsIdentity CreateIdentity(JwtSecurityToken jwt)
     {
         var claims = new List<Claim>();
+        string? studioId = null;
+        string? spec = null;
+        string? roleVal = null;
+
         foreach (var c in jwt.Claims)
         {
             claims.Add(c);
             if (c.Type == "role" || c.Type == ClaimTypes.Role)
             {
+                roleVal = c.Value;
                 claims.Add(new Claim(ClaimTypes.Role, c.Value));
                 claims.Add(new Claim("role", c.Value));
             }
@@ -75,7 +80,41 @@ public sealed class AevumAuthenticationStateProvider : AuthenticationStateProvid
             {
                 claims.Add(new Claim(ClaimTypes.Name, c.Value));
             }
+            if (c.Type == "studio_id" || c.Type == ClaimTypes.NameIdentifier || c.Type == JwtRegisteredClaimNames.Sub)
+            {
+                studioId ??= c.Value;
+            }
+            if (c.Type == "specialization" || c.Type == "position")
+            {
+                spec = c.Value;
+            }
         }
+
+        // If studioId starts with CLK- or role/spec contains clerk, ensure Office Clerk role claim is present
+        bool isClerk = (!string.IsNullOrEmpty(studioId) && studioId.StartsWith("CLK-", StringComparison.OrdinalIgnoreCase))
+            || (!string.IsNullOrEmpty(roleVal) && roleVal.Contains("clerk", StringComparison.OrdinalIgnoreCase))
+            || (!string.IsNullOrEmpty(spec) && spec.Contains("clerk", StringComparison.OrdinalIgnoreCase));
+
+        if (isClerk)
+        {
+            claims.Add(new Claim(ClaimTypes.Role, AppRoles.OfficeClerk));
+            claims.Add(new Claim("role", AppRoles.OfficeClerk));
+        }
+
+        // If studioId starts with SADM- or role contains system admin, ensure System Admin and Admin role claims are present
+        bool isSysAdmin = (!string.IsNullOrEmpty(studioId) && studioId.StartsWith("SADM-", StringComparison.OrdinalIgnoreCase))
+            || (!string.IsNullOrEmpty(roleVal) && (roleVal.Equals("SystemAdmin", StringComparison.OrdinalIgnoreCase) || roleVal.Equals("System Admin", StringComparison.OrdinalIgnoreCase) || roleVal.Equals("Super Admin", StringComparison.OrdinalIgnoreCase)));
+
+        if (isSysAdmin)
+        {
+            claims.Add(new Claim(ClaimTypes.Role, "System Admin"));
+            claims.Add(new Claim("role", "System Admin"));
+            claims.Add(new Claim(ClaimTypes.Role, "SystemAdmin"));
+            claims.Add(new Claim("role", "SystemAdmin"));
+            claims.Add(new Claim(ClaimTypes.Role, "Admin"));
+            claims.Add(new Claim("role", "Admin"));
+        }
+
         return new ClaimsIdentity(claims.DistinctBy(c => (c.Type, c.Value)), "jwt", ClaimTypes.Name, ClaimTypes.Role);
     }
 

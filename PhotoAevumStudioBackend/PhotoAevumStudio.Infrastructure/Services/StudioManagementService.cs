@@ -60,7 +60,8 @@ public class StudioManagementService : IStudioManagementService
 
         var employees = new List<Employee>();
         const string empSql = @"
-            SELECT EmployeeID, EmployeeFirstName, EmployeeLastName, EmployeeMiddleName, EmployeeEmail, EmployeeStatus
+            SELECT EmployeeID, EmployeeFirstName, EmployeeLastName, EmployeeMiddleName, EmployeeEmail, EmployeeStatus,
+                   CASE WHEN COL_LENGTH(N'dbo.Employee', N'DaysOff') IS NOT NULL THEN ISNULL(DaysOff, 'Sunday') ELSE 'Sunday' END AS DaysOff
             FROM dbo.Employee
             ORDER BY EmployeeID;";
 
@@ -75,6 +76,7 @@ public class StudioManagementService : IStudioManagementService
             var middleName = reader.IsDBNull(3) ? null : reader.GetString(3);
             var email = reader.IsDBNull(4) ? string.Empty : reader.GetString(4);
             var status = reader.IsDBNull(5) ? "Active" : reader.GetString(5);
+            var daysOff = reader.IsDBNull(6) ? "Sunday" : reader.GetString(6);
 
             specializationsByEmployee.TryGetValue(empId, out var specs);
 
@@ -93,6 +95,7 @@ public class StudioManagementService : IStudioManagementService
                     UserName = email
                 },
                 Status = status,
+                DaysOff = daysOff,
                 Specializations = specs ?? new List<string>()
             });
         }
@@ -674,30 +677,99 @@ public class StudioManagementService : IStudioManagementService
                     Description: reader.IsDBNull(2) ? string.Empty : reader.GetString(2)
                 ));
             }
-            if (list.Count > 0) return list;
         }
         catch (SqlException)
         {
             // Direct query fallback
         }
 
-        const string fallbackSql = @"
-            SELECT ServiceCategoryID, ServiceCategoryName, ServiceCategoryDescription
-            FROM dbo.ServiceCategory
-            ORDER BY ServiceCategoryName;";
-
-        await using var fbCmd = new SqlCommand(fallbackSql, conn);
-        await using var readerFb = await fbCmd.ExecuteReaderAsync(cancellationToken);
-        while (await readerFb.ReadAsync(cancellationToken))
+        if (list.Count == 0)
         {
-            list.Add(new CategoryDto(
-                Id: readerFb.GetString(0),
-                Name: readerFb.GetString(1),
-                Description: readerFb.IsDBNull(2) ? string.Empty : readerFb.GetString(2)
-            ));
+            const string fallbackSql = @"
+                SELECT ServiceCategoryID, ServiceCategoryName, ServiceCategoryDescription
+                FROM dbo.ServiceCategory
+                ORDER BY ServiceCategoryName;";
+
+            await using var fbCmd = new SqlCommand(fallbackSql, conn);
+            await using var readerFb = await fbCmd.ExecuteReaderAsync(cancellationToken);
+            while (await readerFb.ReadAsync(cancellationToken))
+            {
+                list.Add(new CategoryDto(
+                    Id: readerFb.GetString(0),
+                    Name: readerFb.GetString(1),
+                    Description: readerFb.IsDBNull(2) ? string.Empty : readerFb.GetString(2)
+                ));
+            }
+        }
+
+        // Enrich with associated services from dbo.ServiceCategoryJoins
+        if (list.Count > 0)
+        {
+            var assocMap = new Dictionary<string, List<string>>(StringComparer.OrdinalIgnoreCase);
+            const string joinSql = @"
+                IF OBJECT_ID(N'dbo.ServiceCategoryJoins', N'U') IS NOT NULL
+                BEGIN
+                    SELECT j.ServiceCategoryID,
+                           COALESCE(s.ServiceName, a.AdditionalServiceName, p.ComboPackageName) AS AssocName
+                    FROM dbo.ServiceCategoryJoins j
+                    LEFT JOIN dbo.Services s ON s.ServicesID = j.ServicesID
+                    LEFT JOIN dbo.AdditionalServices a ON a.AdditionalServicesID = j.AdditionalServicesID
+                    LEFT JOIN dbo.ComboPackage p ON p.ComboPackageID = j.ComboPackageID
+                    WHERE COALESCE(s.ServiceName, a.AdditionalServiceName, p.ComboPackageName) IS NOT NULL;
+                END";
+
+            await using var joinCmd = new SqlCommand(joinSql, conn);
+            await using var joinReader = await joinCmd.ExecuteReaderAsync(cancellationToken);
+            while (await joinReader.ReadAsync(cancellationToken))
+            {
+                var catId = joinReader.GetString(0);
+                var name = joinReader.GetString(1);
+                if (!assocMap.TryGetValue(catId, out var names))
+                {
+                    names = new List<string>();
+                    assocMap[catId] = names;
+                }
+                if (!names.Contains(name))
+                    names.Add(name);
+            }
+
+            var enriched = new List<CategoryDto>(list.Count);
+            foreach (var c in list)
+            {
+                assocMap.TryGetValue(c.Id, out var assocNames);
+                enriched.Add(c with { AssociatedServices = assocNames ?? new List<string>() });
+            }
+            return enriched;
         }
 
         return list;
+    }
+
+    public async Task<CategoryDto?> GetCategoryByIdAsync(string id, CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrWhiteSpace(id)) return null;
+
+        // Try EF Core query with navigation Include first
+        try
+        {
+            var entity = await _db.EventCategories
+                .AsNoTracking()
+                .Include(c => c.Associations)
+                .FirstOrDefaultAsync(c => c.Id == id, cancellationToken);
+
+            if (entity != null)
+            {
+                var names = await ResolveAssociatedNamesAsync(entity.Associations.ToList(), cancellationToken);
+                return new CategoryDto(entity.Id, entity.Name, entity.Description, names);
+            }
+        }
+        catch
+        {
+            // Fall back to GetCategoriesAsync lookup
+        }
+
+        var categories = await GetCategoriesAsync(cancellationToken);
+        return categories.FirstOrDefault(c => string.Equals(c.Id, id, StringComparison.OrdinalIgnoreCase));
     }
 
     public async Task<ServiceCreatedResponseDto> CreateServiceAsync(CreateServiceDto dto, string? requestingAdminId = null, CancellationToken cancellationToken = default)
@@ -824,71 +896,478 @@ public class StudioManagementService : IStudioManagementService
         if (string.IsNullOrWhiteSpace(dto.Name))
             throw new ArgumentException("Category name is required.", nameof(dto));
 
-        await using var conn = new SqlConnection(GetConnectionString());
-        await conn.OpenAsync(cancellationToken);
+        var nextId = await GetNextCategoryIdAsync(cancellationToken);
 
+        // 1. Determine relevant or default associations to assign to this category
+        var joins = await DetermineCategoryAssociationsAsync(nextId, dto, cancellationToken);
+
+        // 2. Primary: Save via Entity Framework Core models and relationships
         try
         {
-            await using var cmd = new SqlCommand("dbo.sp_CreateServiceCategory", conn)
+            var eventCategory = new EventCategory
             {
-                CommandType = CommandType.StoredProcedure
+                Id = nextId,
+                Name = dto.Name.Trim(),
+                Description = dto.Description.Trim(),
+                Associations = joins
             };
-            cmd.Parameters.AddWithValue("@ServiceCategoryName", dto.Name.Trim());
-            cmd.Parameters.AddWithValue("@ServiceCategoryDescription", dto.Description.Trim());
-            cmd.Parameters.AddWithValue("@CreatedByAdminID", (object?)requestingAdminId ?? DBNull.Value);
 
-            var outId = new SqlParameter("@CreatedCategoryID", SqlDbType.NVarChar, 30)
-            {
-                Direction = ParameterDirection.Output
-            };
-            cmd.Parameters.Add(outId);
+            _db.EventCategories.Add(eventCategory);
+            await _db.SaveChangesAsync(cancellationToken);
 
-            await using var reader = await cmd.ExecuteReaderAsync(cancellationToken);
-            if (await reader.ReadAsync(cancellationToken))
+            if (!string.IsNullOrWhiteSpace(requestingAdminId))
             {
-                return new CategoryDto(
-                    Id: reader.GetString(0),
-                    Name: reader.GetString(1),
-                    Description: reader.IsDBNull(2) ? string.Empty : reader.GetString(2)
-                );
+                await TryAddHistoryLogAsync("ServiceCategory", nextId, "New service category created via Wizard.", requestingAdminId, cancellationToken);
             }
-        }
-        catch (SqlException)
-        {
-            // Fall back to inline transaction
-        }
 
-        await using var trans = (SqlTransaction)await conn.BeginTransactionAsync(cancellationToken);
-        try
-        {
-            const string nextSql = @"
-                SELECT 'CAT-' + RIGHT('0000' + CAST(
-                    ISNULL(MAX(TRY_CAST(SUBSTRING(ServiceCategoryID, CHARINDEX('-', ServiceCategoryID) + 1, 20) AS INT)), 0) + 1
-                AS VARCHAR(10)), 4)
-                FROM dbo.ServiceCategory WITH (UPDLOCK, HOLDLOCK)
-                WHERE ServiceCategoryID LIKE 'CAT-%';";
+            var serviceNames = await ResolveAssociatedNamesAsync(joins, cancellationToken);
 
-            await using var idCmd = new SqlCommand(nextSql, conn, trans);
-            var nextId = (await idCmd.ExecuteScalarAsync(cancellationToken))?.ToString() ?? "CAT-0001";
-
-            const string insertSql = @"
-                INSERT INTO dbo.ServiceCategory (ServiceCategoryID, ServiceCategoryName, ServiceCategoryDescription)
-                VALUES (@Id, @Name, @Desc);";
-
-            await using var insertCmd = new SqlCommand(insertSql, conn, trans);
-            insertCmd.Parameters.AddWithValue("@Id", nextId);
-            insertCmd.Parameters.AddWithValue("@Name", dto.Name.Trim());
-            insertCmd.Parameters.AddWithValue("@Desc", dto.Description.Trim());
-            await insertCmd.ExecuteNonQueryAsync(cancellationToken);
-
-            await trans.CommitAsync(cancellationToken);
-
-            return new CategoryDto(nextId, dto.Name.Trim(), dto.Description.Trim());
+            return new CategoryDto(
+                Id: eventCategory.Id,
+                Name: eventCategory.Name,
+                Description: eventCategory.Description,
+                AssociatedServices: serviceNames
+            );
         }
         catch
         {
-            await trans.RollbackAsync(cancellationToken);
+            // Clear tracking if EF Core fails (e.g. constraints, disconnected mode, or driver fallback)
+            _db.ChangeTracker.Clear();
+
+            // Fallback: Execute transactional SQL ensuring both category and associations are saved
+            return await CreateCategoryViaSqlAsync(nextId, dto, joins, requestingAdminId, cancellationToken);
+        }
+    }
+
+    private static string GenerateJoinId() =>
+        "SCJ-" + Guid.NewGuid().ToString("N")[..8].ToUpperInvariant();
+
+    private async Task<List<ServiceCategoryJoin>> DetermineCategoryAssociationsAsync(
+        string categoryId,
+        CreateCategoryDto dto,
+        CancellationToken ct)
+    {
+        var joins = new List<ServiceCategoryJoin>();
+        await using var conn = new SqlConnection(GetConnectionString());
+        await conn.OpenAsync(ct);
+
+        // 1. Check explicitly provided associations
+        if (dto.AssociatedServiceIds != null && dto.AssociatedServiceIds.Count > 0)
+        {
+            foreach (var sid in dto.AssociatedServiceIds.Where(s => !string.IsNullOrWhiteSpace(s)))
+            {
+                var clean = sid.Trim();
+                const string checkSql = "SELECT TOP 1 ServicesID FROM dbo.Services WHERE ServicesID = @Id OR ServiceName = @Id;";
+                await using var cmd = new SqlCommand(checkSql, conn);
+                cmd.Parameters.AddWithValue("@Id", clean);
+                var found = await cmd.ExecuteScalarAsync(ct);
+                if (found != null)
+                {
+                    var foundId = found.ToString()!;
+                    if (!joins.Any(j => j.ServiceId == foundId))
+                    {
+                        joins.Add(new ServiceCategoryJoin
+                        {
+                            Id = GenerateJoinId(),
+                            CategoryId = categoryId,
+                            ServiceId = foundId
+                        });
+                    }
+                }
+            }
+        }
+
+        if (dto.AssociatedAdditionalServiceIds != null && dto.AssociatedAdditionalServiceIds.Count > 0)
+        {
+            foreach (var aid in dto.AssociatedAdditionalServiceIds.Where(a => !string.IsNullOrWhiteSpace(a)))
+            {
+                var clean = aid.Trim();
+                const string checkSql = "SELECT TOP 1 AdditionalServicesID FROM dbo.AdditionalServices WHERE AdditionalServicesID = @Id OR AdditionalServiceName = @Id;";
+                await using var cmd = new SqlCommand(checkSql, conn);
+                cmd.Parameters.AddWithValue("@Id", clean);
+                var found = await cmd.ExecuteScalarAsync(ct);
+                if (found != null)
+                {
+                    var foundId = found.ToString()!;
+                    if (!joins.Any(j => j.AdditionalServiceId == foundId))
+                    {
+                        joins.Add(new ServiceCategoryJoin
+                        {
+                            Id = GenerateJoinId(),
+                            CategoryId = categoryId,
+                            AdditionalServiceId = foundId
+                        });
+                    }
+                }
+            }
+        }
+
+        if (dto.AssociatedComboPackageIds != null && dto.AssociatedComboPackageIds.Count > 0)
+        {
+            foreach (var pid in dto.AssociatedComboPackageIds.Where(p => !string.IsNullOrWhiteSpace(p)))
+            {
+                var clean = pid.Trim();
+                const string checkSql = "SELECT TOP 1 ComboPackageID FROM dbo.ComboPackage WHERE ComboPackageID = @Id OR ComboPackageName = @Id;";
+                await using var cmd = new SqlCommand(checkSql, conn);
+                cmd.Parameters.AddWithValue("@Id", clean);
+                var found = await cmd.ExecuteScalarAsync(ct);
+                if (found != null)
+                {
+                    var foundId = found.ToString()!;
+                    if (!joins.Any(j => j.ComboPackageId == foundId))
+                    {
+                        joins.Add(new ServiceCategoryJoin
+                        {
+                            Id = GenerateJoinId(),
+                            CategoryId = categoryId,
+                            ComboPackageId = foundId
+                        });
+                    }
+                }
+            }
+        }
+
+        if (dto.Associations != null && dto.Associations.Count > 0)
+        {
+            foreach (var assoc in dto.Associations.Where(a => !string.IsNullOrWhiteSpace(a)))
+            {
+                var clean = assoc.Trim();
+                // Check Services
+                const string srvSql = "SELECT TOP 1 ServicesID FROM dbo.Services WHERE ServicesID = @Val OR ServiceName = @Val;";
+                await using var srvCmd = new SqlCommand(srvSql, conn);
+                srvCmd.Parameters.AddWithValue("@Val", clean);
+                var srvFound = await srvCmd.ExecuteScalarAsync(ct);
+                if (srvFound != null)
+                {
+                    var foundId = srvFound.ToString()!;
+                    if (!joins.Any(j => j.ServiceId == foundId))
+                    {
+                        joins.Add(new ServiceCategoryJoin { Id = GenerateJoinId(), CategoryId = categoryId, ServiceId = foundId });
+                    }
+                    continue;
+                }
+
+                // Check AdditionalServices
+                const string addSql = "SELECT TOP 1 AdditionalServicesID FROM dbo.AdditionalServices WHERE AdditionalServicesID = @Val OR AdditionalServiceName = @Val;";
+                await using var addCmd = new SqlCommand(addSql, conn);
+                addCmd.Parameters.AddWithValue("@Val", clean);
+                var addFound = await addCmd.ExecuteScalarAsync(ct);
+                if (addFound != null)
+                {
+                    var foundId = addFound.ToString()!;
+                    if (!joins.Any(j => j.AdditionalServiceId == foundId))
+                    {
+                        joins.Add(new ServiceCategoryJoin { Id = GenerateJoinId(), CategoryId = categoryId, AdditionalServiceId = foundId });
+                    }
+                    continue;
+                }
+
+                // Check ComboPackage
+                const string pkgSql = "SELECT TOP 1 ComboPackageID FROM dbo.ComboPackage WHERE ComboPackageID = @Val OR ComboPackageName = @Val;";
+                await using var pkgCmd = new SqlCommand(pkgSql, conn);
+                pkgCmd.Parameters.AddWithValue("@Val", clean);
+                var pkgFound = await pkgCmd.ExecuteScalarAsync(ct);
+                if (pkgFound != null)
+                {
+                    var foundId = pkgFound.ToString()!;
+                    if (!joins.Any(j => j.ComboPackageId == foundId))
+                    {
+                        joins.Add(new ServiceCategoryJoin { Id = GenerateJoinId(), CategoryId = categoryId, ComboPackageId = foundId });
+                    }
+                }
+            }
+        }
+
+        // If explicit associations were provided and resolved, return them
+        if (joins.Count > 0)
+        {
+            return joins;
+        }
+
+        // 2. Automatic assignment of default or relevant associations
+        // 2a. Match existing services by keyword from category name
+        var stopWords = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "and", "&", "the", "for", "with", "studio", "category", "photography", "photo", "services", "service" };
+        var keywords = dto.Name
+            .Split(new[] { ' ', '-', '/', ',', '&' }, StringSplitOptions.RemoveEmptyEntries)
+            .Where(w => w.Length >= 3 && !stopWords.Contains(w))
+            .ToList();
+
+        if (keywords.Count > 0)
+        {
+            foreach (var kw in keywords)
+            {
+                const string kwSql = @"
+                    SELECT TOP 2 ServicesID 
+                    FROM dbo.Services 
+                    WHERE ServiceName LIKE @Keyword OR ServicesDescription LIKE @Keyword
+                    ORDER BY ServicesID;";
+                await using var kwCmd = new SqlCommand(kwSql, conn);
+                kwCmd.Parameters.AddWithValue("@Keyword", $"%{kw}%");
+                await using var reader = await kwCmd.ExecuteReaderAsync(ct);
+                while (await reader.ReadAsync(ct))
+                {
+                    var sid = reader.GetString(0);
+                    if (!joins.Any(j => j.ServiceId == sid))
+                    {
+                        joins.Add(new ServiceCategoryJoin
+                        {
+                            Id = GenerateJoinId(),
+                            CategoryId = categoryId,
+                            ServiceId = sid
+                        });
+                    }
+                }
+            }
+        }
+
+        if (joins.Count > 0)
+        {
+            return joins;
+        }
+
+        // 2b. Check predefined category templates and find matching services
+        var templates = new (string Pattern, string[] Services)[]
+        {
+            ("Portrait", new[] { "Studio Headshots", "Senior Portraits", "Family Studio Session" }),
+            ("Maternity", new[] { "Maternity Session", "Newborn Photography", "Family Studio Session" }),
+            ("Newborn", new[] { "Newborn Photography", "Maternity Session", "Baby Portraits" }),
+            ("Wedding", new[] { "Full Day Nuptial", "Pre-Nuptial Shoot", "Reception Highlights" }),
+            ("Nuptial", new[] { "Full Day Nuptial", "Pre-Nuptial Shoot", "Reception Highlights" }),
+            ("Commercial", new[] { "Product Catalog", "Brand Campaigns", "Food & Beverage" }),
+            ("Branding", new[] { "Product Catalog", "Brand Campaigns", "Food & Beverage" }),
+            ("Event", new[] { "Corporate Gala", "Concerts & Live", "Milestone Celebrations" }),
+            ("Gala", new[] { "Corporate Gala", "Concerts & Live", "Milestone Celebrations" }),
+            ("Aerial", new[] { "4K Drone Aerials", "Venue Fly-Through", "Architectural Scans" }),
+            ("Drone", new[] { "4K Drone Aerials", "Venue Fly-Through", "Architectural Scans" }),
+            ("Post", new[] { "Editorial Skin Retouch", "Color Grading", "Batch RAW Processing" }),
+            ("Retouch", new[] { "Editorial Skin Retouch", "Color Grading", "Batch RAW Processing" }),
+            ("Analog", new[] { "Vintage Tintype", "Analog 35mm Roll" }),
+            ("Specialty", new[] { "Vintage Tintype", "Analog 35mm Roll" })
+        };
+
+        foreach (var (pattern, defaultServiceNames) in templates)
+        {
+            if (dto.Name.Contains(pattern, StringComparison.OrdinalIgnoreCase))
+            {
+                foreach (var sName in defaultServiceNames)
+                {
+                    const string tmplSql = "SELECT TOP 1 ServicesID FROM dbo.Services WHERE ServiceName = @Name OR ServiceName LIKE @LikeName;";
+                    await using var tmplCmd = new SqlCommand(tmplSql, conn);
+                    tmplCmd.Parameters.AddWithValue("@Name", sName);
+                    tmplCmd.Parameters.AddWithValue("@LikeName", $"%{sName}%");
+                    var sVal = await tmplCmd.ExecuteScalarAsync(ct);
+                    if (sVal != null)
+                    {
+                        var sid = sVal.ToString()!;
+                        if (!joins.Any(j => j.ServiceId == sid))
+                        {
+                            joins.Add(new ServiceCategoryJoin
+                            {
+                                Id = GenerateJoinId(),
+                                CategoryId = categoryId,
+                                ServiceId = sid
+                            });
+                        }
+                    }
+                }
+                if (joins.Count > 0)
+                    return joins;
+            }
+        }
+
+        // 2c. If existing services exist in dbo.Services, associate the first available service
+        const string anyServiceSql = "SELECT TOP 1 ServicesID FROM dbo.Services ORDER BY ServicesID;";
+        await using var anyCmd = new SqlCommand(anyServiceSql, conn);
+        var anyVal = await anyCmd.ExecuteScalarAsync(ct);
+        if (anyVal != null)
+        {
+            joins.Add(new ServiceCategoryJoin
+            {
+                Id = GenerateJoinId(),
+                CategoryId = categoryId,
+                ServiceId = anyVal.ToString()!
+            });
+            return joins;
+        }
+
+        // 2d. If dbo.Services has no rows, automatically create a baseline default service
+        var defaultSrvId = await EnsureDefaultServiceExistsAsync(dto.Name.Trim(), conn, ct);
+        joins.Add(new ServiceCategoryJoin
+        {
+            Id = GenerateJoinId(),
+            CategoryId = categoryId,
+            ServiceId = defaultSrvId
+        });
+
+        return joins;
+    }
+
+    private async Task<string> EnsureDefaultServiceExistsAsync(string categoryName, SqlConnection conn, CancellationToken ct)
+    {
+        const string checkSql = "SELECT TOP 1 ServicesID FROM dbo.Services ORDER BY ServicesID;";
+        await using (var checkCmd = new SqlCommand(checkSql, conn))
+        {
+            var existing = await checkCmd.ExecuteScalarAsync(ct);
+            if (existing != null)
+                return existing.ToString()!;
+        }
+
+        const string nextSql = @"
+            SELECT 'SRV-' + RIGHT('0000' + CAST(
+                ISNULL(MAX(TRY_CAST(SUBSTRING(ServicesID, CHARINDEX('-', ServicesID) + 1, 20) AS INT)), 0) + 1
+            AS VARCHAR(10)), 4)
+            FROM dbo.Services WITH (UPDLOCK, HOLDLOCK)
+            WHERE ServicesID LIKE 'SRV-%';";
+
+        await using var nextCmd = new SqlCommand(nextSql, conn);
+        var srvId = (await nextCmd.ExecuteScalarAsync(ct))?.ToString() ?? "SRV-0001";
+
+        const string insertSql = @"
+            INSERT INTO dbo.Services (ServicesID, ServiceName, ServicesDescription, ServicePrice, ServiceImageMimeType, CreatedAt)
+            VALUES (@Id, @Name, @Desc, @Price, @Mime, SYSUTCDATETIME());";
+
+        await using var insertCmd = new SqlCommand(insertSql, conn);
+        insertCmd.Parameters.AddWithValue("@Id", srvId);
+        insertCmd.Parameters.AddWithValue("@Name", $"{categoryName} - Standard Session");
+        insertCmd.Parameters.AddWithValue("@Desc", $"Default baseline session service for {categoryName}.");
+        insertCmd.Parameters.AddWithValue("@Price", 150.00m);
+        insertCmd.Parameters.AddWithValue("@Mime", "image/jpeg");
+        await insertCmd.ExecuteNonQueryAsync(ct);
+
+        return srvId;
+    }
+
+    private async Task<CategoryDto> CreateCategoryViaSqlAsync(
+        string categoryId,
+        CreateCategoryDto dto,
+        List<ServiceCategoryJoin> joins,
+        string? requestingAdminId,
+        CancellationToken ct)
+    {
+        await using var conn = new SqlConnection(GetConnectionString());
+        await conn.OpenAsync(ct);
+        await using var trans = (SqlTransaction)await conn.BeginTransactionAsync(ct);
+
+        try
+        {
+            const string insertCatSql = @"
+                IF NOT EXISTS (SELECT 1 FROM dbo.ServiceCategory WHERE ServiceCategoryID = @Id)
+                BEGIN
+                    INSERT INTO dbo.ServiceCategory (ServiceCategoryID, ServiceCategoryName, ServiceCategoryDescription)
+                    VALUES (@Id, @Name, @Desc);
+                END";
+
+            await using (var cmd = new SqlCommand(insertCatSql, conn, trans))
+            {
+                cmd.Parameters.AddWithValue("@Id", categoryId);
+                cmd.Parameters.AddWithValue("@Name", dto.Name.Trim());
+                cmd.Parameters.AddWithValue("@Desc", dto.Description.Trim());
+                await cmd.ExecuteNonQueryAsync(ct);
+            }
+
+            foreach (var j in joins)
+            {
+                const string insertJoinSql = @"
+                    IF NOT EXISTS (SELECT 1 FROM dbo.ServiceCategoryJoins WHERE ServiceCategoryJoinID = @JId)
+                    BEGIN
+                        INSERT INTO dbo.ServiceCategoryJoins (ServiceCategoryJoinID, ServiceCategoryID, ServicesID, AdditionalServicesID, ComboPackageID)
+                        VALUES (@JId, @CatId, @SrvId, @AddId, @PkgId);
+                    END";
+                await using var jCmd = new SqlCommand(insertJoinSql, conn, trans);
+                jCmd.Parameters.AddWithValue("@JId", j.Id);
+                jCmd.Parameters.AddWithValue("@CatId", categoryId);
+                jCmd.Parameters.AddWithValue("@SrvId", (object?)j.ServiceId ?? DBNull.Value);
+                jCmd.Parameters.AddWithValue("@AddId", (object?)j.AdditionalServiceId ?? DBNull.Value);
+                jCmd.Parameters.AddWithValue("@PkgId", (object?)j.ComboPackageId ?? DBNull.Value);
+                await jCmd.ExecuteNonQueryAsync(ct);
+            }
+
+            await trans.CommitAsync(ct);
+
+            if (!string.IsNullOrWhiteSpace(requestingAdminId))
+            {
+                await TryAddHistoryLogAsync("ServiceCategory", categoryId, "New service category created via Wizard.", requestingAdminId, ct);
+            }
+
+            var serviceNames = await ResolveAssociatedNamesAsync(joins, ct);
+            return new CategoryDto(categoryId, dto.Name.Trim(), dto.Description.Trim(), serviceNames);
+        }
+        catch
+        {
+            await trans.RollbackAsync(ct);
             throw;
+        }
+    }
+
+    private async Task<List<string>> ResolveAssociatedNamesAsync(List<ServiceCategoryJoin> joins, CancellationToken ct)
+    {
+        var names = new List<string>();
+        if (joins.Count == 0) return names;
+
+        await using var conn = new SqlConnection(GetConnectionString());
+        await conn.OpenAsync(ct);
+
+        foreach (var j in joins)
+        {
+            if (!string.IsNullOrWhiteSpace(j.ServiceId))
+            {
+                const string sql = "SELECT ServiceName FROM dbo.Services WHERE ServicesID = @Id;";
+                await using var cmd = new SqlCommand(sql, conn);
+                cmd.Parameters.AddWithValue("@Id", j.ServiceId);
+                var name = (await cmd.ExecuteScalarAsync(ct))?.ToString();
+                if (!string.IsNullOrWhiteSpace(name) && !names.Contains(name))
+                    names.Add(name);
+            }
+            else if (!string.IsNullOrWhiteSpace(j.AdditionalServiceId))
+            {
+                const string sql = "SELECT AdditionalServiceName FROM dbo.AdditionalServices WHERE AdditionalServicesID = @Id;";
+                await using var cmd = new SqlCommand(sql, conn);
+                cmd.Parameters.AddWithValue("@Id", j.AdditionalServiceId);
+                var name = (await cmd.ExecuteScalarAsync(ct))?.ToString();
+                if (!string.IsNullOrWhiteSpace(name) && !names.Contains(name))
+                    names.Add(name);
+            }
+            else if (!string.IsNullOrWhiteSpace(j.ComboPackageId))
+            {
+                const string sql = "SELECT ComboPackageName FROM dbo.ComboPackage WHERE ComboPackageID = @Id;";
+                await using var cmd = new SqlCommand(sql, conn);
+                cmd.Parameters.AddWithValue("@Id", j.ComboPackageId);
+                var name = (await cmd.ExecuteScalarAsync(ct))?.ToString();
+                if (!string.IsNullOrWhiteSpace(name) && !names.Contains(name))
+                    names.Add(name);
+            }
+        }
+
+        return names;
+    }
+
+    private async Task TryAddHistoryLogAsync(string entityName, string entityId, string details, string? adminId, CancellationToken ct)
+    {
+        try
+        {
+            await using var conn = new SqlConnection(GetConnectionString());
+            await conn.OpenAsync(ct);
+            const string sql = @"
+                IF OBJECT_ID(N'dbo.sp_AddHistoryLog', N'P') IS NOT NULL
+                BEGIN
+                    EXEC dbo.sp_AddHistoryLog
+                        @ActionType = 'INSERT',
+                        @EntityName = @Entity,
+                        @EntityID = @EntityId,
+                        @ActionDetails = @Details,
+                        @ChangedByType = 'Admin',
+                        @ActorID = @AdminId;
+                END";
+            await using var cmd = new SqlCommand(sql, conn);
+            cmd.Parameters.AddWithValue("@Entity", entityName);
+            cmd.Parameters.AddWithValue("@EntityId", entityId);
+            cmd.Parameters.AddWithValue("@Details", details);
+            cmd.Parameters.AddWithValue("@AdminId", (object?)adminId ?? DBNull.Value);
+            await cmd.ExecuteNonQueryAsync(ct);
+        }
+        catch
+        {
+            // History log failure is non-fatal
         }
     }
 

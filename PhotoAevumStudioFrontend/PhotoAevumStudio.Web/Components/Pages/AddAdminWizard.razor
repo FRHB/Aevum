@@ -63,16 +63,29 @@
                         </div>
                     </div>
 
-                    <div class="flex-1 h-0.5 mx-3 @(currentStep == 3 ? "bg-slate-900" : "bg-slate-200") transition-colors"></div>
+                    <div class="flex-1 h-0.5 mx-3 @(currentStep >= 3 ? "bg-slate-900" : "bg-slate-200") transition-colors"></div>
 
                     <!-- Step 3: Overview & Confirmation -->
                     <div class="flex items-center gap-2.5">
                         <span class="w-7 h-7 rounded-full flex items-center justify-center text-xs font-semibold transition-all
-                            @(currentStep == 3 ? "bg-slate-900 text-white shadow-sm ring-4 ring-slate-100" : "bg-slate-100 text-slate-400")">
-                            3
+                            @(currentStep >= 3 ? (currentStep > 3 ? "bg-emerald-600 text-white shadow-sm" : "bg-slate-900 text-white shadow-sm ring-4 ring-slate-100") : "bg-slate-100 text-slate-400")">
+                            @(currentStep > 3 ? "✓" : "3")
                         </span>
                         <span class="text-xs font-medium @(currentStep == 3 ? "text-slate-900 font-bold" : "text-slate-500")">
                             Overview &amp; Credentials
+                        </span>
+                    </div>
+
+                    <div class="flex-1 h-0.5 mx-3 @(currentStep == 4 ? "bg-slate-900" : "bg-slate-200") transition-colors"></div>
+
+                    <!-- Step 4: Completion -->
+                    <div class="flex items-center gap-2.5">
+                        <span class="w-7 h-7 rounded-full flex items-center justify-center text-xs font-semibold transition-all
+                            @(currentStep == 4 ? "bg-emerald-600 text-white shadow-sm ring-4 ring-emerald-100" : "bg-slate-100 text-slate-400")">
+                            @(currentStep == 4 ? "✓" : "4")
+                        </span>
+                        <span class="text-xs font-medium @(currentStep == 4 ? "text-emerald-700 font-bold" : "text-slate-500")">
+                            Completion
                         </span>
                     </div>
                 </nav>
@@ -274,9 +287,60 @@
                                     <svg class="w-4 h-4 shrink-0 text-emerald-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7" />
                                     </svg>
-                                    <span>Administrator account created! Credentials have been emailed to @model.Email.</span>
+                                    <span>@(successMessage ?? $"Administrator account created! Credentials have been emailed to {model.Email}.")</span>
                                 </div>
                             }
+                        </div>
+                    }
+
+                    @if (currentStep == 4)
+                    {
+                        <div class="text-center py-6 px-4 space-y-5 animate-in fade-in duration-200">
+                            <div class="w-16 h-16 bg-emerald-100 text-emerald-600 rounded-full flex items-center justify-center mx-auto text-2xl font-bold shadow-xs">
+                                <svg class="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M5 13l4 4L19 7" />
+                                </svg>
+                            </div>
+                            <div>
+                                <h3 class="text-lg font-bold text-slate-900">Administrator Created Successfully!</h3>
+                                <p class="text-xs text-slate-500 mt-1">
+                                    The administrator record has been saved and is now active in the studio system.
+                                </p>
+                            </div>
+
+                            <div class="bg-slate-50 border border-slate-200 rounded-xl p-4 divide-y divide-slate-200 text-xs text-left max-w-md mx-auto">
+                                <div class="pb-2.5 flex justify-between items-center">
+                                    <span class="text-slate-500 font-medium">Administrator</span>
+                                    <span class="text-slate-900 font-semibold">@model.FullName</span>
+                                </div>
+                                <div class="py-2.5 flex justify-between items-center">
+                                    <span class="text-slate-500 font-medium">Assigned Admin ID</span>
+                                    <span class="font-mono font-bold text-slate-900 bg-slate-200/60 px-2 py-0.5 rounded text-[11px]">@model.GeneratedId</span>
+                                </div>
+                                <div class="py-2.5 flex justify-between items-center">
+                                    <span class="text-slate-500 font-medium">Assigned Role</span>
+                                    <span class="inline-flex items-center px-2 py-0.5 rounded text-[11px] font-semibold @(model.IsSystemAdmin ? "bg-purple-100 text-purple-800" : "bg-slate-200 text-slate-800")">
+                                        @model.Role
+                                    </span>
+                                </div>
+                                <div class="pt-2.5 flex justify-between items-center">
+                                    <span class="text-slate-500 font-medium">Notification Email</span>
+                                    <span class="text-slate-900 font-medium">@model.Email</span>
+                                </div>
+                            </div>
+
+                            <!-- Success Message Banner -->
+                            <div class="p-3.5 bg-emerald-50 border border-emerald-200 rounded-xl text-xs text-emerald-800 text-left max-w-md mx-auto flex items-start gap-3 shadow-xs" role="status">
+                                <svg class="w-5 h-5 text-emerald-600 shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
+                                </svg>
+                                <div>
+                                    <p class="font-bold text-emerald-900">Email Notification Dispatched</p>
+                                    <p class="text-[11px] text-emerald-700 mt-0.5">
+                                        An automated onboarding email has been sent to <strong>@model.Email</strong> containing their generated Admin ID (<strong>@model.GeneratedId</strong>) and initial temporary password.
+                                    </p>
+                                </div>
+                            </div>
                         </div>
                     }
 
@@ -330,6 +394,18 @@
                         }
                     </button>
                 }
+                else if (currentStep == 4)
+                {
+                    <div></div>
+                    <button type="button" 
+                            class="px-6 py-2.5 rounded-lg bg-slate-900 hover:bg-black text-white text-xs font-semibold uppercase tracking-wider shadow-sm transition-colors flex items-center gap-2" 
+                            @onclick="CompleteAndCloseAsync">
+                        <span>Done</span>
+                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7" />
+                        </svg>
+                    </button>
+                }
             </div>
 
         </div>
@@ -368,6 +444,7 @@
     private bool isGeneratingCredentials = false;
     private bool isSaving = false;
     private bool saveSuccess = false;
+    private string? successMessage;
     private string? saveError;
     private bool showPassword = false;
     private bool copiedPassword = false;
@@ -398,6 +475,7 @@
         currentStep = 1;
         saveError = null;
         saveSuccess = false;
+        successMessage = null;
         showPassword = false;
         copiedPassword = false;
     }
@@ -452,28 +530,30 @@
             var result = await AdminService.CreateAdminAsync(model, _cts?.Token ?? CancellationToken.None);
             if (result.Success)
             {
+                isSaving = false;
                 saveSuccess = true;
+                currentStep = 4;
+                successMessage = $"Administrator account created! Credentials have been emailed to {model.Email}.";
                 StateHasChanged();
-
-                // Brief pause so the user sees the success state before closing
-                await Task.Delay(1200);
-
-                await OnSaved.InvokeAsync();
-                await CloseModal();
             }
             else
             {
                 saveError = result.ErrorMessage ?? "Failed to save administrator account.";
+                isSaving = false;
             }
         }
         catch (Exception ex)
         {
             saveError = ex.Message;
-        }
-        finally
-        {
             isSaving = false;
         }
+    }
+
+    private async Task CompleteAndCloseAsync()
+    {
+        await OnSaved.InvokeAsync();
+        InitializeContext();
+        await IsOpenChanged.InvokeAsync(false);
     }
 
     private async Task CopyPasswordAsync()
@@ -498,6 +578,11 @@
     private async Task CloseModal()
     {
         if (isSaving) return;
+        if (currentStep == 4)
+        {
+            await CompleteAndCloseAsync();
+            return;
+        }
         InitializeContext();
         await IsOpenChanged.InvokeAsync(false);
         await OnCancel.InvokeAsync();

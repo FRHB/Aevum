@@ -54,9 +54,34 @@ BEGIN
         END
     END
 
-    -- 4. Check for staff double-booking conflicts
+    -- 4. Check for staff double-booking conflicts, day off, and approved leave
     IF @EmployeeIDs IS NOT NULL AND LEN(@EmployeeIDs) > 0
     BEGIN
+        IF EXISTS (
+            SELECT 1 
+            FROM dbo.Employee e
+            INNER JOIN STRING_SPLIT(@EmployeeIDs, ',') s ON (e.EmployeeID = s.value)
+            WHERE COL_LENGTH(N'dbo.Employee', N'DaysOff') IS NOT NULL
+              AND CHARINDEX(DATENAME(dw, @EventDate), e.DaysOff) > 0
+        )
+        BEGIN
+            THROW 50003, 'Cannot assign staff: One or more selected employees have their scheduled Day Off on this date.', 1;
+        END
+
+        IF OBJECT_ID(N'dbo.EmployeeLeaves', N'U') IS NOT NULL
+        BEGIN
+            IF EXISTS (
+                SELECT 1
+                FROM dbo.EmployeeLeaves el
+                INNER JOIN STRING_SPLIT(@EmployeeIDs, ',') s ON (el.EmployeeStudioId = s.value)
+                WHERE el.Status = 'Approved'
+                  AND @EventDate BETWEEN el.StartDate AND el.EndDate
+            )
+            BEGIN
+                THROW 50004, 'Cannot assign staff: One or more selected employees are on approved leave on this date.', 1;
+            END
+        END
+
         IF EXISTS (
             SELECT 1 
             FROM EmployeeAssignments ea

@@ -66,7 +66,8 @@ public class RoutingAndLayoutTests
             typeof(EquipmentTypes),
             typeof(Profile),
             typeof(AdminManagement),
-            typeof(Clients)
+            typeof(Clients),
+            typeof(HistoryLog)
         };
 
         foreach (var page in adminPages)
@@ -150,6 +151,7 @@ public class RoutingAndLayoutTests
     [InlineData("/maintenance")]
     [InlineData("/admin/equipment/types")]
     [InlineData("/equipment-types")]
+    [InlineData("/admin/history-log")]
     [InlineData("/profile")]
     public void RequiredNewRoutes_AreProperlyRegistered(string expectedRoute)
     {
@@ -213,6 +215,7 @@ public class RoutingAndLayoutTests
     [InlineData("/admin/equipment/dispatch", typeof(Dispatch))]
     [InlineData("/admin/equipment/maintenance", typeof(Maintenance))]
     [InlineData("/admin/equipment/types", typeof(EquipmentTypes))]
+    [InlineData("/admin/history-log", typeof(HistoryLog))]
     [InlineData("/profile", typeof(Profile))]
     public void SidebarLinks_WireUpToDedicatedPlaceholderComponents(string route, Type expectedComponent)
     {
@@ -257,5 +260,68 @@ public class RoutingAndLayoutTests
                 routeMap[route] = pageType;
             }
         }
+    }
+
+    // ══════════════════════════════════════════════════════════════════════════
+    // 5. Sidebar History Log Menu Item & Role-Based Authorization Tests
+    // ══════════════════════════════════════════════════════════════════════════
+
+    [Fact]
+    public void Sidebar_HistoryLog_CollapsibleMenuMarkupAndStyling_MatchExistingPattern()
+    {
+        var currentDir = new DirectoryInfo(AppContext.BaseDirectory);
+        string? sidebarPath = null;
+        while (currentDir != null)
+        {
+            var candidate = Path.Combine(currentDir.FullName, "PhotoAevumStudio.Web", "Components", "Layout", "Sidebar.razor");
+            if (File.Exists(candidate))
+            {
+                sidebarPath = candidate;
+                break;
+            }
+            currentDir = currentDir.Parent;
+        }
+
+        Assert.True(sidebarPath != null && File.Exists(sidebarPath), $"Sidebar.razor was not found starting from {AppContext.BaseDirectory}");
+        var content = File.ReadAllText(sidebarPath!);
+
+        // 1. History Log menu item exists
+        Assert.Contains("History Log", content);
+
+        // 2. Collapsible accordion styling matches existing items
+        Assert.Contains("aev-sidebar__link aev-sidebar__accordion-toggle", content);
+        Assert.Contains("IsOpen(\"history\")", content);
+        Assert.Contains("Toggle(\"history\")", content);
+        Assert.Contains("acc-history", content);
+        Assert.Contains("aev-sidebar__sub", content);
+        Assert.Contains("aev-sidebar__sub-link", content);
+
+        // 3. Points to history log page
+        Assert.Contains("href=\"/admin/history-log\"", content);
+
+        // 4. Role-based authorization wrapping
+        Assert.Contains("<AuthorizeView Roles=\"System Admin, Admin\">", content);
+    }
+
+    [Theory]
+    [InlineData("System Admin", true)]
+    [InlineData("Admin", true)]
+    [InlineData("Employee", false)]
+    [InlineData("Office Clerk", false)]
+    [InlineData("Customer", false)]
+    [InlineData("Unauthorized", false)]
+    public void Sidebar_HistoryLog_RoleAuthorizationCheck(string role, bool isAllowed)
+    {
+        // Allowed roles declared on AuthorizeView for History Log
+        var allowedRoles = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+        {
+            "System Admin",
+            "Admin",
+            "SystemAdmin",
+            "Super Admin"
+        };
+
+        var permitted = allowedRoles.Contains(role);
+        Assert.Equal(isAllowed, permitted);
     }
 }

@@ -242,8 +242,12 @@ public static class PortfolioSections
 {
     public const string Photography = "Photography";
     public const string Videography = "Videography";
+    public const string Weddings = "Weddings";
+    public const string Portraits = "Portraits";
+    public const string Commercial = "Commercial";
+    public const string Events = "Events";
 
-    public static readonly string[] All = { Photography, Videography };
+    public static readonly string[] All = { Photography, Videography, Weddings, Portraits, Commercial, Events };
 }
 
 /// <summary>
@@ -263,6 +267,12 @@ public class PortfolioCategoryDto
     public bool ShowInPortfolio { get; set; } = true;
 
     public List<string> ServiceNames { get; set; } = new();
+
+    public IEnumerable<string> AssociatedServiceNames
+    {
+        get => ServiceNames;
+        set => ServiceNames = value?.ToList() ?? new();
+    }
 }
 
 /// <summary>Unified card shown in the Home page "Featured services" pool.</summary>

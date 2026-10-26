@@ -1,8 +1,14 @@
 @page "/staff"
 @layout EmployeeLayout
 @using PhotoAevumStudio.Web.Services
+@using PhotoAevumStudio.Web.Models
+@using System.Security.Claims
+@using Microsoft.AspNetCore.Components.Authorization
 @inject IUserService UserService
-@attribute [Authorize(Roles = "Employee")]
+@inject IEmployeeService Employees
+@inject IScheduleService ScheduleService
+@inject AuthenticationStateProvider AuthStateProvider
+@attribute [Authorize(Roles = "Employee,Office Clerk,Admin,SystemAdmin")]
 @rendermode InteractiveServer
 
 <PageTitle>Staff Dashboard | Photo Aevum Studio</PageTitle>
@@ -10,41 +16,212 @@
 @* ── Page header ─────────────────────────────────────────────────── *@
 <header class="aev-page-header">
     <div>
-        <h1 class="aev-page-header__title">Staff Dashboard</h1>
-        <p class="aev-page-header__subtitle">@DateTime.Today.ToString("dddd, MMMM d, yyyy")</p>
+        <h1 class="aev-page-header__title">
+            @(isCreative ? "My Staff Dashboard" : "Studio Staff Overview")
+        </h1>
+        <p class="aev-page-header__subtitle">
+            @DateTime.Today.ToString("dddd, MMMM d, yyyy") 
+            @if (isCreative && !string.IsNullOrWhiteSpace(employeeName))
+            {
+                <span class="text-teal-700 font-medium">&bull; Welcome, @employeeName</span>
+            }
+            else if (isClerk)
+            {
+                <span class="text-indigo-700 font-medium">&bull; Office Clerk Portal</span>
+            }
+        </p>
     </div>
 </header>
 
-@* ── Stat cards ──────────────────────────────────────────────────── *@
+@* ── Live Clock In / Clock Out Time Tracker Card ─────────────────── *@
+<section class="bg-white rounded-xl border border-slate-200 shadow-sm p-6 mb-6">
+    <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+        <div>
+            <div class="flex items-center gap-2 mb-1">
+                @if (clockStatus.IsClockedIn)
+                {
+                    <span class="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold bg-emerald-100 text-emerald-800">
+                        <span class="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-ping"></span>
+                        ON DUTY
+                    </span>
+                    <span class="text-xs text-slate-500">Clocked in at @(clockStatus.ClockIn?.ToString("hh:mm tt") ?? "earlier today")</span>
+                }
+                else if (clockStatus.IsOnLeaveToday)
+                {
+                    <span class="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold bg-amber-100 text-amber-900">
+                        🩺 ON APPROVED LEAVE (@clockStatus.ActiveLeaveType)
+                    </span>
+                }
+                else if (clockStatus.IsDayOffToday)
+                {
+                    <span class="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold bg-blue-50 text-blue-800 border border-blue-200">
+                        🏖️ SCHEDULED DAY OFF
+                    </span>
+                }
+                else
+                {
+                    <span class="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold bg-slate-100 text-slate-600">
+                        ⚪ OFF DUTY
+                    </span>
+                }
+            </div>
+            <h2 class="text-xl font-extrabold text-slate-900">Attendance &amp; Time Tracker</h2>
+            <p class="text-xs text-slate-500 mt-0.5">
+                @if (clockStatus.IsClockedIn)
+                {
+                    <span>Current Shift Duration: <strong class="text-slate-800">@clockStatus.ElapsedHours.ToString("0.#") hours</strong> elapsed.</span>
+                }
+                else
+                {
+                    <span>Record your punch times for scheduled studio appointments and shift roster.</span>
+                }
+            </p>
+        </div>
+
+        <div class="flex items-center gap-3">
+            @if (clockStatus.IsClockedIn)
+            {
+                <button type="button"
+                        @onclick="HandleClockOut"
+                        disabled="@isPunching"
+                        class="px-5 py-2.5 bg-rose-600 hover:bg-rose-700 text-white rounded-lg text-xs font-bold uppercase tracking-wider shadow-sm transition-all flex items-center gap-2">
+                    <span>⏹</span>
+                    <span>@(isPunching ? "Punching..." : "Clock Out")</span>
+                </button>
+            }
+            else if (!clockStatus.IsOnLeaveToday)
+            {
+                <button type="button"
+                        @onclick="HandleClockIn"
+                        disabled="@isPunching"
+                        class="px-5 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-bold uppercase tracking-wider shadow-sm transition-all flex items-center gap-2">
+                    <span>▶</span>
+                    <span>@(isPunching ? "Punching..." : "Clock In")</span>
+                </button>
+            }
+        </div>
+    </div>
+</section>
+
+@* ── Stat cards ───────────────────────────────────────────────────── *@
 <section class="aev-stat-grid" aria-label="My summary">
     <article class="aev-stat-card">
         <div class="aev-stat-card__icon aev-stat-card__icon--teal" aria-hidden="true">📅</div>
         <div>
-            <p class="aev-stat-card__label">Upcoming Shoots</p>
+            <p class="aev-stat-card__label">@(isCreative ? "My Upcoming Shoots" : "Upcoming Shoots")</p>
             <h2 class="aev-stat-card__value">@UpcomingShootsCount</h2>
         </div>
     </article>
     <article class="aev-stat-card">
-        <div class="aev-stat-card__icon aev-stat-card__icon--blue" aria-hidden="true">✅</div>
+        <div class="aev-stat-card__icon aev-stat-card__icon--blue" aria-hidden="true">✓</div>
         <div>
-            <p class="aev-stat-card__label">Completed This Week</p>
+            <p class="aev-stat-card__label">@(isCreative ? "My Completed (Week)" : "Completed (Week)")</p>
             <h2 class="aev-stat-card__value">@CompletedThisWeekCount</h2>
         </div>
     </article>
     <article class="aev-stat-card">
         <div class="aev-stat-card__icon aev-stat-card__icon--amber" aria-hidden="true">📷</div>
         <div>
-            <p class="aev-stat-card__label">Gear Checked Out</p>
+            <p class="aev-stat-card__label">@(isCreative ? "Assigned Equipment" : "Gear Checked Out")</p>
             <h2 class="aev-stat-card__value">@GearCheckedOutCount</h2>
         </div>
     </article>
+</section>
+
+@* ── UPCOMING EVENTS ASSIGNED TO ME (For Photographer/Editor/Videographer & Staff) ── *@
+<section class="bg-white rounded-xl border border-slate-200 shadow-sm p-6 mb-6">
+    <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 pb-3 border-b border-slate-100 mb-4">
+        <div>
+            <h2 class="text-base font-bold text-slate-900">
+                @(isCreative ? "Upcoming Events Assigned to You" : "Upcoming Studio Events & Shoots")
+            </h2>
+            <p class="text-xs text-slate-500">
+                @(isCreative 
+                    ? "Schedule of production sessions, photography calls, and shoot assignments designated specifically for your roster."
+                    : "Studio-wide events and scheduled client production sessions.")
+            </p>
+        </div>
+        <a href="/staff/calendar/master" class="text-xs font-semibold text-slate-800 hover:text-black hover:underline flex items-center gap-1">
+            <span>View Full Calendar &rarr;</span>
+        </a>
+    </div>
+
+    @if (!displayedEvents.Any())
+    {
+        <div class="py-10 text-center">
+            <div class="w-12 h-12 rounded-full bg-slate-100 text-slate-400 flex items-center justify-center mx-auto mb-2 text-xl">
+                📷
+            </div>
+            <h3 class="text-sm font-bold text-slate-800">
+                @(isCreative ? "No Upcoming Events Assigned to You" : "No Upcoming Events Scheduled")
+            </h3>
+            <p class="text-xs text-slate-500 mt-0.5">
+                @(isCreative ? "You have no upcoming shoot assignments at this time. Check back later or check with the Office Clerk." : "All upcoming sessions have concluded or none are booked.")
+            </p>
+        </div>
+    }
+    else
+    {
+        <div class="overflow-x-auto">
+            <table class="w-full text-left text-xs border-collapse">
+                <thead>
+                    <tr class="text-slate-500 border-b border-slate-100">
+                        <th class="py-2.5 font-semibold">Date &amp; Time</th>
+                        <th class="py-2.5 font-semibold">Client / Production</th>
+                        <th class="py-2.5 font-semibold">Service</th>
+                        <th class="py-2.5 font-semibold">Location / Space</th>
+                        @if (!isCreative)
+                        {
+                            <th class="py-2.5 font-semibold">Assigned Crew</th>
+                        }
+                        <th class="py-2.5 font-semibold text-right">Status</th>
+                    </tr>
+                </thead>
+                <tbody class="divide-y divide-slate-100">
+                    @foreach (var ev in displayedEvents)
+                    {
+                        <tr class="hover:bg-slate-50 transition-colors">
+                            <td class="py-3 font-mono font-bold text-slate-800">
+                                <div>@ev.Date.ToString("ddd, MMM d")</div>
+                                <div class="text-[11px] font-normal text-slate-500">@ev.FormattedTimeRange</div>
+                            </td>
+                            <td class="py-3">
+                                <div class="font-bold text-slate-900">@ev.ClientName</div>
+                                @if (!string.IsNullOrWhiteSpace(ev.ClientEmail))
+                                {
+                                    <div class="text-[11px] text-slate-400">@ev.ClientEmail</div>
+                                }
+                            </td>
+                            <td class="py-3">
+                                <span class="px-2 py-0.5 rounded font-medium bg-slate-100 text-slate-700">@ev.ServiceType</span>
+                            </td>
+                            <td class="py-3 text-slate-600">
+                                <span>@(!string.IsNullOrWhiteSpace(ev.StudioSpaceName) ? ev.StudioSpaceName : "Main Studio")</span>
+                            </td>
+                            @if (!isCreative)
+                            {
+                                <td class="py-3 font-medium text-slate-700">
+                                    📷 @ev.AssignedPhotographer
+                                </td>
+                            }
+                            <td class="py-3 text-right">
+                                <span class="px-2.5 py-0.5 rounded-full text-[10px] font-bold @(ev.Status == "Confirmed" ? "bg-emerald-100 text-emerald-800" : "bg-amber-100 text-amber-800")">
+                                    @ev.Status
+                                </span>
+                            </td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+    }
 </section>
 
 @* ── Navigation cards ─────────────────────────────────────────────── *@
 <div class="aev-content-row aev-content-row--wrap">
 
     <a href="/staff/assignments" class="aev-nav-card">
-        <span class="aev-nav-card__icon" aria-hidden="true">📋</span>
+        <span class="aev-nav-card__icon" aria-hidden="true">🎬</span>
         <h2 class="aev-nav-card__title">My Assignments</h2>
         <p class="aev-nav-card__desc">View upcoming shoots, call times, and shot lists.</p>
     </a>
@@ -63,30 +240,265 @@
 
 </div>
 
-@* ── Availability management ─────────────────────────────────────── *@
-<section class="aev-card" aria-label="Availability management">
-    <header class="aev-card__header">
-        <h2 class="aev-card__heading">Availability Management</h2>
-    </header>
-    <div class="aev-card__body">
-        <p class="aev-card__desc">Mark dates where you are unavailable for assignment.</p>
-        <div class="aev-inline-form">
-            <input type="date" class="aev-input" aria-label="Date to block" />
-            <button class="btn btn--primary">Block Date</button>
+@* ── Leave Requests Section ───────────────────────────────────────── *@
+<section class="bg-white rounded-xl border border-slate-200 shadow-sm p-6 mt-6">
+    <div class="flex items-center justify-between pb-3 border-b border-slate-100 mb-4">
+        <div>
+            <h2 class="text-base font-bold text-slate-900">Leave Requests &amp; Time Off</h2>
+            <p class="text-xs text-slate-500">File a request for Sick Leave, Vacation Leave, Maternity Leave, or Paternity Leave.</p>
         </div>
+        <button type="button" @onclick="() => isLeaveModalOpen = true" class="px-3 py-1.5 bg-slate-900 hover:bg-black text-white text-xs font-semibold rounded-lg shadow-xs">
+            + File Leave Request
+        </button>
     </div>
+
+    @if (myLeaves.Count == 0)
+    {
+        <p class="text-xs text-slate-400 py-3 italic">No leave requests filed yet.</p>
+    }
+    else
+    {
+        <div class="overflow-x-auto">
+            <table class="w-full text-left text-xs border-collapse">
+                <thead>
+                    <tr class="text-slate-500 border-b border-slate-100">
+                        <th class="py-2">Type</th>
+                        <th class="py-2">Dates</th>
+                        <th class="py-2">Reason</th>
+                        <th class="py-2">Status</th>
+                    </tr>
+                </thead>
+                <tbody class="divide-y divide-slate-50">
+                    @foreach (var l in myLeaves)
+                    {
+                        <tr>
+                            <td class="py-2.5 font-bold text-slate-800">@l.LeaveType</td>
+                            <td class="py-2.5 font-mono text-slate-600">@l.StartDate.ToString("MMM d") – @l.EndDate.ToString("MMM d, yyyy")</td>
+                            <td class="py-2.5 text-slate-500 italic">@(l.Reason ?? "None provided")</td>
+                            <td class="py-2.5">
+                                @if (l.Status == "Approved")
+                                {
+                                    <span class="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-800">Approved</span>
+                                }
+                                else if (l.Status == "Rejected")
+                                {
+                                    <span class="px-2 py-0.5 rounded-full text-[10px] font-bold bg-rose-100 text-rose-800" title="@l.RejectionReason">Rejected</span>
+                                }
+                                else
+                                {
+                                    <span class="px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-100 text-amber-800">Pending Review</span>
+                                }
+                            </td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+    }
 </section>
 
+<!-- Leave Request Modal -->
+@if (isLeaveModalOpen)
+{
+    <div class="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4" @onclick="() => isLeaveModalOpen = false">
+        <div class="bg-white rounded-2xl shadow-xl border border-slate-200 w-full max-w-md p-6" @onclick:stopPropagation="true">
+            <h3 class="text-sm font-bold text-slate-900 mb-1">Request Employee Leave</h3>
+            <p class="text-xs text-slate-500 mb-4">Requires approval by an Office Clerk or Studio Admin before taking effect.</p>
+
+            @if (!string.IsNullOrWhiteSpace(leaveError))
+            {
+                <div class="p-2 mb-3 bg-rose-50 text-rose-700 text-xs rounded">@leaveError</div>
+            }
+
+            <div class="space-y-3 text-xs">
+                <div>
+                    <label class="block font-semibold mb-1">Leave Type</label>
+                    <select @bind="newLeaveType" class="w-full p-2 border rounded-lg">
+                        <option value="Sick Leave">Sick Leave</option>
+                        <option value="Vacation Leave">Vacation Leave</option>
+                        <option value="Maternity Leave">Maternity Leave</option>
+                        <option value="Paternity Leave">Paternity Leave</option>
+                    </select>
+                </div>
+                <div class="grid grid-cols-2 gap-2">
+                    <div>
+                        <label class="block font-semibold mb-1">Start Date</label>
+                        <input type="date" @bind="newLeaveStart" class="w-full p-2 border rounded-lg" />
+                    </div>
+                    <div>
+                        <label class="block font-semibold mb-1">End Date</label>
+                        <input type="date" @bind="newLeaveEnd" class="w-full p-2 border rounded-lg" />
+                    </div>
+                </div>
+                <div>
+                    <label class="block font-semibold mb-1">Reason / Notes</label>
+                    <textarea @bind="newLeaveReason" rows="3" class="w-full p-2 border rounded-lg" placeholder="Reason or medical certificate notice..."></textarea>
+                </div>
+            </div>
+
+            <div class="flex justify-end gap-2 mt-5 pt-3 border-t">
+                <button type="button" @onclick="() => isLeaveModalOpen = false" class="px-3 py-1.5 border rounded text-xs">Cancel</button>
+                <button type="button" @onclick="SubmitLeave" disabled="@isSubmittingLeave" class="px-4 py-1.5 bg-slate-900 text-white rounded text-xs font-bold">
+                    @(isSubmittingLeave ? "Submitting..." : "Submit Request")
+                </button>
+            </div>
+        </div>
+    </div>
+}
+
 @code {
+    [CascadingParameter] Task<AuthenticationState>? AuthState { get; set; }
+
+    private ClaimsPrincipal? currentUser;
+    private bool isClerk;
+    private bool isCreative;
+    private string employeeName = string.Empty;
+    private string employeeId = string.Empty;
+
     private int UpcomingShootsCount;
     private int CompletedThisWeekCount;
     private int GearCheckedOutCount;
 
-    protected override void OnInitialized()
+    private List<EventBookingModel> displayedEvents = new();
+
+    private ClockStatusViewModel clockStatus = new();
+    private List<LeaveItemViewModel> myLeaves = new();
+    private bool isPunching = false;
+
+    private bool isLeaveModalOpen = false;
+    private bool isSubmittingLeave = false;
+    private string? leaveError;
+    private string newLeaveType = "Sick Leave";
+    private DateTime newLeaveStart = DateTime.Today;
+    private DateTime newLeaveEnd = DateTime.Today;
+    private string newLeaveReason = string.Empty;
+
+    protected override async Task OnInitializedAsync()
     {
-        var bookings = UserService.GetBookings();
-        UpcomingShootsCount = bookings.Count(b => b.EventDateTime >= DateTime.Today && !string.Equals(b.Status, "Cancelled", StringComparison.OrdinalIgnoreCase));
-        CompletedThisWeekCount = bookings.Count(b => string.Equals(b.Status, "Completed", StringComparison.OrdinalIgnoreCase) || string.Equals(b.Status, "Delivered", StringComparison.OrdinalIgnoreCase));
-        GearCheckedOutCount = UserService.GetEquipmentRows().Count(e => !string.Equals(e.Status, "Available", StringComparison.OrdinalIgnoreCase));
+        if (AuthState != null)
+        {
+            var state = await AuthState;
+            currentUser = state.User;
+        }
+
+        isClerk = EmployeeRoleHelper.IsOfficeClerk(currentUser, UserService);
+        isCreative = EmployeeRoleHelper.IsPhotographerOrCreative(currentUser, UserService);
+        employeeId = EmployeeRoleHelper.GetCurrentEmployeeId(currentUser);
+        employeeName = EmployeeRoleHelper.GetCurrentEmployeeName(currentUser, UserService);
+
+        // Load all bookings from ScheduleService and UserService
+        var scheduleBookings = ScheduleService.GetEventBookings();
+
+        if (isCreative)
+        {
+            // Requirement 4: Overview: Only show upcoming events assigned to them
+            displayedEvents = scheduleBookings
+                .Where(b => EmployeeRoleHelper.IsEventAssignedToEmployee(b, employeeName, employeeId) && b.Date.Date >= DateTime.Today && !string.Equals(b.Status, "Cancelled", StringComparison.OrdinalIgnoreCase))
+                .OrderBy(b => b.Date)
+                .ThenBy(b => b.StartTime)
+                .ToList();
+
+            UpcomingShootsCount = displayedEvents.Count;
+
+            CompletedThisWeekCount = scheduleBookings.Count(b => 
+                EmployeeRoleHelper.IsEventAssignedToEmployee(b, employeeName, employeeId) &&
+                string.Equals(b.Status, "Completed", StringComparison.OrdinalIgnoreCase) &&
+                b.Date >= DateTime.Today.AddDays(-7));
+
+            var reservations = ScheduleService.GetEquipmentReservations();
+            GearCheckedOutCount = reservations.Count(r => 
+                !string.IsNullOrWhiteSpace(employeeName) &&
+                r.TechnicianInCharge.Contains(employeeName, StringComparison.OrdinalIgnoreCase));
+        }
+        else
+        {
+            // Full access (Office Clerk / Admin)
+            displayedEvents = scheduleBookings
+                .Where(b => b.Date.Date >= DateTime.Today && !string.Equals(b.Status, "Cancelled", StringComparison.OrdinalIgnoreCase))
+                .OrderBy(b => b.Date)
+                .ThenBy(b => b.StartTime)
+                .ToList();
+
+            UpcomingShootsCount = displayedEvents.Count;
+
+            CompletedThisWeekCount = scheduleBookings.Count(b => 
+                string.Equals(b.Status, "Completed", StringComparison.OrdinalIgnoreCase) &&
+                b.Date >= DateTime.Today.AddDays(-7));
+
+            GearCheckedOutCount = UserService.GetEquipmentRows().Count(e => !string.Equals(e.Status, "Available", StringComparison.OrdinalIgnoreCase));
+        }
+
+        await RefreshStatus();
+    }
+
+    private async Task RefreshStatus()
+    {
+        clockStatus = await Employees.GetClockStatusAsync();
+        var leaves = await Employees.GetMyLeavesAsync();
+        myLeaves = leaves.ToList();
+    }
+
+    private async Task HandleClockIn()
+    {
+        isPunching = true;
+        try
+        {
+            var ok = await Employees.ClockInAsync();
+            if (ok) await RefreshStatus();
+        }
+        finally
+        {
+            isPunching = false;
+        }
+    }
+
+    private async Task HandleClockOut()
+    {
+        isPunching = true;
+        try
+        {
+            var ok = await Employees.ClockOutAsync();
+            if (ok) await RefreshStatus();
+        }
+        finally
+        {
+            isPunching = false;
+        }
+    }
+
+    private async Task SubmitLeave()
+    {
+        if (newLeaveEnd < newLeaveStart)
+        {
+            leaveError = "End Date cannot be before Start Date.";
+            return;
+        }
+
+        isSubmittingLeave = true;
+        leaveError = null;
+
+        try
+        {
+            var ok = await Employees.RequestLeaveAsync(
+                newLeaveType,
+                DateOnly.FromDateTime(newLeaveStart),
+                DateOnly.FromDateTime(newLeaveEnd),
+                newLeaveReason);
+
+            if (ok)
+            {
+                isLeaveModalOpen = false;
+                newLeaveReason = string.Empty;
+                await RefreshStatus();
+            }
+            else
+            {
+                leaveError = "Failed to submit leave request. Please check inputs.";
+            }
+        }
+        finally
+        {
+            isSubmittingLeave = false;
+        }
     }
 }

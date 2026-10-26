@@ -6,10 +6,31 @@
 @page "/admin/equipments-schedule"
 @layout AdminLayout
 @rendermode InteractiveServer
+@using PhotoAevumStudio.Web.Services
+@using Microsoft.AspNetCore.Components.Authorization
+@using System.Security.Claims
 @inject IScheduleService ScheduleService
+@inject AuthenticationStateProvider AuthStateProvider
+@inject IUserService UserService
 
 <PageTitle>Equipments Schedule | Aevum Studio</PageTitle>
 
+@if (_isUnauthorized)
+{
+    <div class="rounded-xl border border-rose-200 bg-rose-50 p-8 text-center my-6">
+        <div class="mx-auto flex h-14 w-14 items-center justify-center rounded-full bg-rose-100 text-rose-600 mb-4">
+            <svg class="h-8 w-8" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+            </svg>
+        </div>
+        <h2 class="text-xl font-bold text-rose-900 mb-2">Access Denied (403)</h2>
+        <p class="text-sm text-rose-700 max-w-md mx-auto">
+            You do not have authorization to view the Equipments Schedule. Access to equipment reservation timelines and dispatch schedules is restricted to Office Clerks and Studio Administrators.
+        </p>
+    </div>
+}
+else
+{
 <div class="space-y-4 pb-10">
     @* ── 1. COMPACT PAGE HEADER & STATUS STRIP ────────────────────────── *@
     <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 border-b border-gray-200 pb-3">
@@ -265,8 +286,29 @@
         </div>
     }
 </div>
+}
 
 @code {
+    [CascadingParameter] Task<AuthenticationState>? AuthState { get; set; }
+    private ClaimsPrincipal? _currentUser;
+    private bool _isUnauthorized;
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (AuthState != null)
+        {
+            var state = await AuthState;
+            _currentUser = state.User;
+        }
+        else if (AuthStateProvider != null)
+        {
+            var state = await AuthStateProvider.GetAuthenticationStateAsync();
+            _currentUser = state.User;
+        }
+
+        _isUnauthorized = EmployeeRoleHelper.IsPhotographerOrCreative(_currentUser, UserService);
+    }
+
     private ScheduleViewMode _currentView = ScheduleViewMode.Week;
     private DateTime _selectedDate = DateTime.Today;
     private string _searchQuery = string.Empty;

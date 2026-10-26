@@ -79,7 +79,7 @@ public static class AdminCredentialGenerator
         const string upperChars   = "ABCDEFGHJKLMNPQRSTUVWXYZ";  // No I, O
         const string lowerChars   = "abcdefghijkmnopqrstuvwxyz";  // No l
         const string digitChars   = "23456789";                   // No 0, 1
-        const string specialChars = "!@#$%^&*?";
+        const string specialChars = "!@#$%^&*-_=+";
 
         var passwordChars = new char[length];
 

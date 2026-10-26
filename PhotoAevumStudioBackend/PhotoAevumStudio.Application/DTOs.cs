@@ -29,11 +29,26 @@ public record UpdateServiceImageRequest(
 public record CategoryDto(
     string Id,
     string Name,
-    string Description);
+    string Description,
+    IReadOnlyList<string>? AssociatedServices = null,
+    IReadOnlyList<CategoryAssociationDetailDto>? Associations = null);
+
+public record CategoryAssociationDetailDto(
+    string JoinId,
+    string? ServiceId = null,
+    string? ServiceName = null,
+    string? AdditionalServiceId = null,
+    string? AdditionalServiceName = null,
+    string? ComboPackageId = null,
+    string? ComboPackageName = null);
 
 public record CreateCategoryDto(
     string Name,
-    string Description);
+    string Description,
+    IReadOnlyList<string>? AssociatedServiceIds = null,
+    IReadOnlyList<string>? AssociatedAdditionalServiceIds = null,
+    IReadOnlyList<string>? AssociatedComboPackageIds = null,
+    IReadOnlyList<string>? Associations = null);
 
 // Service Wizard Creation Models
 public record CreateServiceDto(

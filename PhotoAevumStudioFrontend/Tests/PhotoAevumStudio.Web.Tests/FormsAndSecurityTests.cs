@@ -1,4 +1,4 @@
-﻿using System.Security.Claims;
+using System.Security.Claims;
 using PhotoAevumStudio.Web.Components.Pages;
 using PhotoAevumStudio.Web.Components.Shared;
 using PhotoAevumStudio.Web.Models;
@@ -153,7 +153,10 @@ public class FormsAndSecurityTests
         {
             using var conn = new Microsoft.Data.SqlClient.SqlConnection(connStr);
             conn.Open();
-            using var cmd = new Microsoft.Data.SqlClient.SqlCommand("DELETE FROM dbo.Admin WHERE AdminID = @Id;", conn);
+            using var cmd = new Microsoft.Data.SqlClient.SqlCommand(@"
+                DELETE FROM dbo.Admin WHERE AdminID = @Id;
+                IF OBJECT_ID(N'dbo.SystemAdmin', N'U') IS NOT NULL
+                    DELETE FROM dbo.SystemAdmin WHERE SystemAdminID = @Id;", conn);
             cmd.Parameters.AddWithValue("@Id", adminId);
             cmd.ExecuteNonQuery();
         }

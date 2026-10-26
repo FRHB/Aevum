@@ -82,7 +82,15 @@
 
     protected override void OnInitialized()
     {
-        _admins = UserService.GetAdmins();
+        LoadAdmins();
+    }
+
+    private void LoadAdmins()
+    {
+        bool isSysAdmin = RequestingUserId.StartsWith("SADM-", StringComparison.OrdinalIgnoreCase);
+        _admins = UserService.GetAdmins()
+            .Where(a => isSysAdmin || (!a.IsSuperAdmin && !a.Role.Contains("System", StringComparison.OrdinalIgnoreCase) && !a.Id.StartsWith("SADM-", StringComparison.OrdinalIgnoreCase)))
+            .ToList();
     }
 
     private void TryDeleteAdmin(string targetId)
@@ -93,7 +101,7 @@
         try
         {
             UserService.DeleteAdmin(targetId, RequestingUserId);
-            _admins = UserService.GetAdmins();
+            LoadAdmins();
             _successMessage = $"Admin '{targetId}' has been removed.";
         }
         catch (InvalidOperationException ex)

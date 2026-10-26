@@ -1,0 +1,304 @@
+@page "/admin/history-log"
+@page "/admin/history-logs"
+@page "/admin/history"
+@page "/history-log"
+@page "/history-logs"
+@layout AdminLayout
+@rendermode InteractiveServer
+@attribute [Authorize(Roles = "Admin,SystemAdmin,System Admin,Super Admin")]
+@using System.Security.Claims
+@using PhotoAevumStudio.Web.Models
+@using PhotoAevumStudio.Web.Services
+@inject IUserService UserService
+@inject AuthenticationStateProvider AuthStateProvider
+
+<PageTitle>History Log | Photo Aevum Studio</PageTitle>
+
+<div class="space-y-6">
+    <!-- Header Section -->
+    <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 pb-2 border-b border-slate-200">
+        <div>
+            <h1 class="text-2xl font-bold text-slate-900 tracking-tight">History Log</h1>
+            <p class="text-sm text-slate-500 mt-0.5">Comprehensive audit trail, administrative actions, and hardware servicing records.</p>
+        </div>
+
+        <div class="flex items-center gap-3">
+            <button type="button"
+                    @onclick="LoadLogsAsync"
+                    disabled="@_isLoading"
+                    class="inline-flex items-center justify-center gap-2 px-4 py-2 bg-white border border-slate-300 hover:bg-slate-50 text-slate-700 text-xs font-semibold uppercase tracking-wider rounded-lg shadow-2xs transition-all focus:ring-2 focus:ring-slate-900">
+                @if (_isLoading)
+                {
+                    <span class="w-3.5 h-3.5 border-2 border-slate-400 border-t-transparent rounded-full animate-spin"></span>
+                }
+                else
+                {
+                    <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                    </svg>
+                }
+                Refresh
+            </button>
+        </div>
+    </div>
+
+    <!-- Quick Stats Cards -->
+    <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+        <div class="p-4 bg-white rounded-xl border border-slate-200 shadow-2xs flex items-center justify-between">
+            <div>
+                <p class="text-xs font-semibold text-slate-500 uppercase tracking-wider">Total Records</p>
+                <p class="text-2xl font-bold text-slate-900 mt-1">@_allLogs.Count</p>
+            </div>
+            <div class="w-10 h-10 rounded-lg bg-slate-100 flex items-center justify-center text-slate-700 font-bold text-lg">
+                📜
+            </div>
+        </div>
+
+        <div class="p-4 bg-white rounded-xl border border-slate-200 shadow-2xs flex items-center justify-between">
+            <div>
+                <p class="text-xs font-semibold text-slate-500 uppercase tracking-wider">Admin Actions</p>
+                <p class="text-2xl font-bold text-indigo-600 mt-1">@_allLogs.Count(l => l.EntityType.Equals("Admin", StringComparison.OrdinalIgnoreCase))</p>
+            </div>
+            <div class="w-10 h-10 rounded-lg bg-indigo-50 flex items-center justify-center text-indigo-700 font-bold text-lg">
+                🛡️
+            </div>
+        </div>
+
+        <div class="p-4 bg-white rounded-xl border border-slate-200 shadow-2xs flex items-center justify-between">
+            <div>
+                <p class="text-xs font-semibold text-slate-500 uppercase tracking-wider">Equipment Logs</p>
+                <p class="text-2xl font-bold text-amber-600 mt-1">@_allLogs.Count(l => l.EntityType.Equals("Equipment", StringComparison.OrdinalIgnoreCase))</p>
+            </div>
+            <div class="w-10 h-10 rounded-lg bg-amber-50 flex items-center justify-center text-amber-700 font-bold text-lg">
+                📷
+            </div>
+        </div>
+
+        <div class="p-4 bg-white rounded-xl border border-slate-200 shadow-2xs flex items-center justify-between">
+            <div>
+                <p class="text-xs font-semibold text-slate-500 uppercase tracking-wider">Last 24 Hours</p>
+                <p class="text-2xl font-bold text-emerald-600 mt-1">@_allLogs.Count(l => l.Timestamp >= DateTime.UtcNow.AddDays(-1))</p>
+            </div>
+            <div class="w-10 h-10 rounded-lg bg-emerald-50 flex items-center justify-center text-emerald-700 font-bold text-lg">
+                ⏱️
+            </div>
+        </div>
+    </div>
+
+    <!-- Filters & Search Toolbar -->
+    <div class="bg-white p-4 rounded-xl border border-slate-200 shadow-2xs flex flex-col md:flex-row gap-3 items-stretch md:items-center justify-between">
+        <div class="flex-1 relative">
+            <span class="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-slate-400">
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                </svg>
+            </span>
+            <input type="text"
+                   @bind="_searchTerm"
+                   @bind:event="oninput"
+                   placeholder="Search by action, entity, user ID, or details..."
+                   class="w-full pl-10 pr-4 py-2 border border-slate-200 rounded-lg text-xs focus:ring-1 focus:ring-slate-900 focus:border-slate-900 placeholder-slate-400 transition-colors" />
+        </div>
+
+        <div class="flex items-center gap-2">
+            <select @bind="_actionFilter" class="border border-slate-200 rounded-lg px-3 py-2 text-xs bg-white text-slate-700 font-medium focus:ring-1 focus:ring-slate-900">
+                <option value="">All Action Types</option>
+                <option value="Create">Create</option>
+                <option value="Update">Update</option>
+                <option value="Delete">Delete</option>
+                <option value="Maintenance">Maintenance</option>
+                <option value="Resolution">Resolution</option>
+                <option value="Login">Login</option>
+            </select>
+
+            <select @bind="_entityFilter" class="border border-slate-200 rounded-lg px-3 py-2 text-xs bg-white text-slate-700 font-medium focus:ring-1 focus:ring-slate-900">
+                <option value="">All Entities</option>
+                <option value="Admin">Admin</option>
+                <option value="Equipment">Equipment</option>
+                <option value="Booking">Booking</option>
+                <option value="Session">Session</option>
+                <option value="General">General</option>
+            </select>
+        </div>
+    </div>
+
+    <!-- History Logs Table -->
+    <div class="bg-white rounded-xl border border-slate-200 shadow-2xs overflow-hidden">
+        <div class="overflow-x-auto">
+            <table class="w-full text-left border-collapse text-xs">
+                <thead>
+                    <tr class="bg-slate-50/75 border-b border-slate-200 text-slate-600 font-semibold uppercase tracking-wider text-[11px]">
+                        <th class="px-5 py-3.5">Log ID</th>
+                        <th class="px-5 py-3.5">Action Type</th>
+                        <th class="px-5 py-3.5">Entity</th>
+                        <th class="px-5 py-3.5">Details</th>
+                        <th class="px-5 py-3.5">Changed By</th>
+                        <th class="px-5 py-3.5 text-right">Timestamp</th>
+                    </tr>
+                </thead>
+                <tbody class="divide-y divide-slate-100">
+                    @if (_isLoading)
+                    {
+                        <tr>
+                            <td colspan="6" class="px-5 py-12 text-center text-slate-400">
+                                <span class="inline-block w-4 h-4 border-2 border-slate-400/30 border-t-slate-600 rounded-full animate-spin mr-2"></span>
+                                Querying history audit trail from database...
+                            </td>
+                        </tr>
+                    }
+                    else if (!FilteredLogs.Any())
+                    {
+                        <tr>
+                            <td colspan="6" class="px-5 py-12 text-center text-slate-400">
+                                <div class="max-w-xs mx-auto space-y-2">
+                                    <p class="text-2xl">📜</p>
+                                    <p class="font-medium text-slate-700">No history logs found</p>
+                                    <p class="text-[11px]">Audit records will appear here as administrative actions and hardware servicing take place.</p>
+                                </div>
+                            </td>
+                        </tr>
+                    }
+                    else
+                    {
+                        @foreach (var log in FilteredLogs)
+                        {
+                            <tr class="hover:bg-slate-50/70 transition-colors">
+                                <!-- LOG ID -->
+                                <td class="px-5 py-3.5 font-mono font-bold text-slate-800">
+                                    #@log.Id
+                                </td>
+
+                                <!-- ACTION TYPE -->
+                                <td class="px-5 py-3.5">
+                                    <span class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-semibold border @GetActionBadgeClass(log.Action)">
+                                        @log.Action
+                                    </span>
+                                </td>
+
+                                <!-- ENTITY -->
+                                <td class="px-5 py-3.5">
+                                    <div class="flex items-center gap-2">
+                                        <span class="font-semibold text-slate-900">@log.EntityType</span>
+                                        @if (!string.IsNullOrEmpty(log.EntityId))
+                                        {
+                                            <span class="px-1.5 py-0.5 rounded text-[10px] font-mono bg-slate-100 text-slate-600 border border-slate-200">
+                                                @log.EntityId
+                                            </span>
+                                        }
+                                    </div>
+                                </td>
+
+                                <!-- DETAILS -->
+                                <td class="px-5 py-3.5 max-w-md">
+                                    <p class="text-xs text-slate-800 leading-relaxed font-normal">
+                                        @(string.IsNullOrWhiteSpace(log.ActionDetails) ? "No additional details recorded." : log.ActionDetails)
+                                    </p>
+                                </td>
+
+                                <!-- CHANGED BY -->
+                                <td class="px-5 py-3.5">
+                                    <div class="inline-flex items-center gap-1.5 px-2 py-0.5 rounded bg-slate-100 text-slate-700 font-mono text-[11px] font-semibold border border-slate-200">
+                                        <span>👤</span>
+                                        <span>@(string.IsNullOrWhiteSpace(log.UserId) ? "System" : log.UserId)</span>
+                                    </div>
+                                </td>
+
+                                <!-- TIMESTAMP -->
+                                <td class="px-5 py-3.5 text-right text-slate-600 text-[11px] whitespace-nowrap">
+                                    <div>@log.Timestamp.ToLocalTime().ToString("MMM dd, yyyy")</div>
+                                    <div class="text-slate-400 text-[10px]">@log.Timestamp.ToLocalTime().ToString("hh:mm:ss tt")</div>
+                                </td>
+                            </tr>
+                        }
+                    }
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+@code {
+    private List<AuditLogRowDto> _allLogs = new();
+    private bool _isLoading = true;
+    private string _searchTerm = string.Empty;
+    private string _actionFilter = string.Empty;
+    private string _entityFilter = string.Empty;
+    private string _requestingUserId = "SADM-001";
+
+    private IEnumerable<AuditLogRowDto> FilteredLogs
+    {
+        get
+        {
+            var result = _allLogs.AsEnumerable();
+
+            if (!string.IsNullOrWhiteSpace(_searchTerm))
+            {
+                var term = _searchTerm.Trim();
+                result = result.Where(l =>
+                    (l.Action?.Contains(term, StringComparison.OrdinalIgnoreCase) ?? false) ||
+                    (l.EntityType?.Contains(term, StringComparison.OrdinalIgnoreCase) ?? false) ||
+                    (l.EntityId?.Contains(term, StringComparison.OrdinalIgnoreCase) ?? false) ||
+                    (l.UserId?.Contains(term, StringComparison.OrdinalIgnoreCase) ?? false) ||
+                    (l.ActionDetails?.Contains(term, StringComparison.OrdinalIgnoreCase) ?? false));
+            }
+
+            if (!string.IsNullOrWhiteSpace(_actionFilter))
+            {
+                result = result.Where(l => l.Action.Equals(_actionFilter, StringComparison.OrdinalIgnoreCase));
+            }
+
+            if (!string.IsNullOrWhiteSpace(_entityFilter))
+            {
+                result = result.Where(l => l.EntityType.Equals(_entityFilter, StringComparison.OrdinalIgnoreCase));
+            }
+
+            return result;
+        }
+    }
+
+    protected override async Task OnInitializedAsync()
+    {
+        var authState = await AuthStateProvider.GetAuthenticationStateAsync();
+        var user = authState.User;
+        _requestingUserId = user.FindFirst("studio_id")?.Value
+            ?? user.FindFirst(ClaimTypes.NameIdentifier)?.Value
+            ?? user.FindFirst(ClaimTypes.Name)?.Value
+            ?? "SADM-001";
+
+        await LoadLogsAsync();
+    }
+
+    private async Task LoadLogsAsync()
+    {
+        _isLoading = true;
+        await Task.Yield();
+
+        try
+        {
+            var logs = UserService.GetHistoryLogs(_requestingUserId, 200);
+            _allLogs = logs?.ToList() ?? new List<AuditLogRowDto>();
+        }
+        catch
+        {
+            _allLogs = new List<AuditLogRowDto>();
+        }
+        finally
+        {
+            _isLoading = false;
+        }
+    }
+
+    private static string GetActionBadgeClass(string action)
+    {
+        return action.ToLowerInvariant() switch
+        {
+            "create" => "bg-emerald-50 text-emerald-800 border-emerald-200",
+            "update" => "bg-blue-50 text-blue-800 border-blue-200",
+            "delete" => "bg-rose-50 text-rose-800 border-rose-200",
+            "maintenance" => "bg-amber-50 text-amber-800 border-amber-200",
+            "resolution" => "bg-teal-50 text-teal-800 border-teal-200",
+            "login" => "bg-purple-50 text-purple-800 border-purple-200",
+            _ => "bg-slate-50 text-slate-800 border-slate-200"
+        };
+    }
+}

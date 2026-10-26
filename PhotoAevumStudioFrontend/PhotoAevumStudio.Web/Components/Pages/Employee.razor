@@ -1,9 +1,14 @@
 @page "/admin/employees"
 @layout AdminLayout
 @rendermode InteractiveServer
-@attribute [Authorize(Roles = "Admin")]
+@attribute [Authorize(Roles = "Admin, SystemAdmin, Super Admin, Office Clerk")]
 @using PhotoAevumStudio.Web.Models
+@using PhotoAevumStudio.Web.Services
+@using Microsoft.AspNetCore.Components.Authorization
+@using System.Security.Claims
 @inject IEmployeeService Employees
+@inject IUserService UserService
+@inject AuthenticationStateProvider AuthStateProvider
 @implements IDisposable
 
 <div class="space-y-6">
@@ -14,14 +19,17 @@
             <p class="text-sm text-slate-500 mt-0.5">Manage photo studio employees, active specializations, and system credentials.</p>
         </div>
 
-        <button type="button" 
-                @onclick="() => isWizardOpen = true"
-                class="inline-flex items-center justify-center gap-2 px-5 py-2.5 bg-slate-900 hover:bg-black text-white text-xs font-semibold uppercase tracking-wider rounded-lg shadow-sm transition-all focus:ring-2 focus:ring-slate-900 focus:ring-offset-2">
-            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M18 9v3m0 0v3m0-3h3m-3 0h-3m-2-5a4 4 0 11-8 0 4 4 0 018 0zM3 20a6 6 0 0112 0v1H3v-1z" />
-            </svg>
-            Add Employee
-        </button>
+        @if (!EffectiveReadOnly)
+        {
+            <button type="button" 
+                    @onclick="() => isWizardOpen = true"
+                    class="inline-flex items-center justify-center gap-2 px-5 py-2.5 bg-slate-900 hover:bg-black text-white text-xs font-semibold uppercase tracking-wider rounded-lg shadow-sm transition-all focus:ring-2 focus:ring-slate-900 focus:ring-offset-2">
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M18 9v3m0 0v3m0-3h3m-3 0h-3m-2-5a4 4 0 11-8 0 4 4 0 018 0zM3 20a6 6 0 0112 0v1H3v-1z" />
+                </svg>
+                Add Employee
+            </button>
+        }
     </div>
 
     <!-- Quick Stats Cards -->
@@ -84,14 +92,17 @@
                         <th class="px-5 py-3.5">Employee ID</th>
                         <th class="px-5 py-3.5">Specializations</th>
                         <th class="px-5 py-3.5">Status</th>
-                        <th class="px-5 py-3.5 text-right">Actions</th>
+                        @if (!EffectiveReadOnly)
+                        {
+                            <th class="px-5 py-3.5 text-right">Actions</th>
+                        }
                     </tr>
                 </thead>
                 <tbody class="divide-y divide-slate-100">
                     @if (isLoading)
                     {
                         <tr>
-                            <td colspan="5" class="px-5 py-10 text-center text-slate-400">
+                            <td colspan="@(EffectiveReadOnly ? 4 : 5)" class="px-5 py-10 text-center text-slate-400">
                                 <span class="inline-block w-4 h-4 border-2 border-slate-400/30 border-t-slate-600 rounded-full animate-spin mr-2"></span>
                                 Loading staff directory...
                             </td>
@@ -100,7 +111,7 @@
                     else if (FilteredEmployees.Count == 0)
                     {
                         <tr>
-                            <td colspan="5" class="px-5 py-10 text-center text-slate-400">
+                            <td colspan="@(EffectiveReadOnly ? 4 : 5)" class="px-5 py-10 text-center text-slate-400">
                                 @(employees.Count == 0 ? "No employees found in the database." : "No employees found matching your search.")
                             </td>
                         </tr>
@@ -142,9 +153,12 @@
                                         @emp.Status
                                     </span>
                                 </td>
-                                <td class="px-5 py-3.5 text-right">
-                                    <span class="text-slate-400 text-xs">@emp.Status</span>
-                                </td>
+                                @if (!EffectiveReadOnly)
+                                {
+                                    <td class="px-5 py-3.5 text-right">
+                                        <span class="text-slate-400 text-xs">@emp.Status</span>
+                                    </td>
+                                }
                             </tr>
                         }
                     }
@@ -155,9 +169,18 @@
 </div>
 
 <!-- Add Employee Wizard Modal -->
-<AddEmployeeWizard @bind-IsOpen="isWizardOpen" OnSaved="HandleEmployeeSaved" />
+@if (!EffectiveReadOnly)
+{
+    <AddEmployeeWizard @bind-IsOpen="isWizardOpen" OnSaved="HandleEmployeeSaved" />
+}
 
 @code {
+    [Parameter] public bool IsReadOnly { get; set; }
+    [CascadingParameter] Task<AuthenticationState>? AuthState { get; set; }
+    private ClaimsPrincipal? _currentUser;
+    private bool _isOfficeClerk;
+    public bool EffectiveReadOnly => IsReadOnly || _isOfficeClerk;
+
     private bool isWizardOpen = false;
     private bool isLoading = true;
     private string searchQuery = string.Empty;
@@ -173,6 +196,18 @@
 
     protected override async Task OnInitializedAsync()
     {
+        if (AuthState != null)
+        {
+            var state = await AuthState;
+            _currentUser = state.User;
+        }
+        else if (AuthStateProvider != null)
+        {
+            var state = await AuthStateProvider.GetAuthenticationStateAsync();
+            _currentUser = state.User;
+        }
+        _isOfficeClerk = EmployeeRoleHelper.IsOfficeClerk(_currentUser, UserService);
+
         _cts = new CancellationTokenSource();
         await LoadEmployeesAsync();
     }

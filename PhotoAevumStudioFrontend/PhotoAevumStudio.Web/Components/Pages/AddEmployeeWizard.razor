@@ -1,6 +1,7 @@
 @using System.ComponentModel.DataAnnotations
 @using PhotoAevumStudio.Web.Models
-@attribute [Authorize(Roles = "Admin")]
+@using PhotoAevumStudio.Web.Services
+@attribute [Authorize(Roles = "Admin,SystemAdmin,Office Clerk")]
 @inject IEmployeeService Employees
 @implements IDisposable
 
@@ -18,8 +19,8 @@
                 <button type="button" 
                         class="text-slate-400 hover:text-slate-700 p-1.5 rounded-lg hover:bg-slate-100 transition-colors"
                         aria-label="Close"
-                        @onclick="CloseModal" 
-                        disabled="@isSaving">
+                        @onclick="HandleCancelClick" 
+                        disabled="@(isSaving || saveSuccess)">
                     <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
                     </svg>
@@ -62,7 +63,7 @@
                             3
                         </span>
                         <span class="text-xs font-medium @(currentStep == 3 ? "text-slate-900 font-bold" : "text-slate-500")">
-                            Overview & Credentials
+                            Overview &amp; Credentials
                         </span>
                     </div>
                 </nav>
@@ -188,6 +189,26 @@
                                     </div>
                                 }
                             </div>
+
+                            <!-- Scheduled Days Off Picker -->
+                            <div class="p-4 bg-slate-50 rounded-xl border border-slate-200">
+                                <span class="block text-xs font-semibold uppercase tracking-wider text-slate-600 mb-1">
+                                    Scheduled Weekly Day(s) Off <span class="text-rose-500">*</span>
+                                </span>
+                                <p class="text-[11px] text-slate-500 mb-2.5">Employees cannot be booked or assigned work on these days.</p>
+                                <div class="flex flex-wrap gap-1.5">
+                                    @foreach (var day in AllDaysOfWeek)
+                                    {
+                                        var isSelected = model.SelectedDaysOff.Contains(day);
+                                        <button type="button"
+                                                @onclick="() => ToggleDayOff(day)"
+                                                class="px-2.5 py-1 text-xs font-semibold rounded-lg border transition-all @(isSelected ? "bg-slate-900 text-white border-slate-900 shadow-xs" : "bg-white text-slate-700 border-slate-200 hover:bg-slate-100")">
+                                            @(isSelected ? "✓ " : "")@day
+                                        </button>
+                                    }
+                                </div>
+                                <p class="text-[10px] text-slate-400 mt-2 font-mono">Assigned: @model.DaysOffString</p>
+                            </div>
                         </div>
                     }
 
@@ -203,6 +224,10 @@
                                 <div class="py-2.5 flex justify-between items-center">
                                     <span class="text-slate-500 font-medium">Email Address</span>
                                     <span class="text-slate-900 font-semibold text-right">@model.Email</span>
+                                </div>
+                                <div class="py-2 flex justify-between items-center">
+                                    <span class="text-slate-500 font-medium">Days Off</span>
+                                    <span class="text-slate-900 font-semibold text-right">@model.DaysOffString</span>
                                 </div>
                                 <div class="pt-2.5 flex flex-col sm:flex-row sm:justify-between sm:items-start gap-1">
                                     <span class="text-slate-500 font-medium shrink-0">Specializations</span>
@@ -246,6 +271,16 @@
                                     @saveError
                                 </div>
                             }
+
+                            @if (saveSuccess)
+                            {
+                                <div class="p-3 bg-emerald-50 border border-emerald-200 rounded-lg text-xs text-emerald-800 font-medium flex items-center gap-2" role="status">
+                                    <svg class="w-4 h-4 shrink-0 text-emerald-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7" />
+                                    </svg>
+                                    <span>Employee account created successfully! Login credentials have been sent to @model.Email.</span>
+                                </div>
+                            }
                         </div>
                     }
                 </EditForm>
@@ -255,7 +290,7 @@
             <div class="px-6 py-4 bg-slate-50 border-t border-slate-200 flex items-center justify-between">
                 @if (currentStep == 1)
                 {
-                    <button type="button" class="@GhostBtn" @onclick="CloseModal">Cancel</button>
+                    <button type="button" class="@GhostBtn" @onclick="HandleCancelClick">Cancel</button>
                     <button type="button" class="@PrimaryBtn flex items-center gap-1.5" @onclick="GoToStep2">
                         Next
                         <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -271,7 +306,7 @@
                         </svg>
                         Back
                     </button>
-                    <button type="button" class="@PrimaryBtn flex items-center gap-1.5" @onclick="GoToStep3">
+                    <button type="button" class="@PrimaryBtn flex items-center gap-1.5" @onclick="GoToStep3Async">
                         Next
                         <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7" />
@@ -280,13 +315,20 @@
                 }
                 else if (currentStep == 3)
                 {
-                    <button type="button" class="@GhostBtn" @onclick="() => currentStep = 2" disabled="@isSaving">Back</button>
+                    <button type="button" class="@GhostBtn" @onclick="() => currentStep = 2" disabled="@(isSaving || saveSuccess)">Back</button>
                     <button type="button" class="px-6 py-2.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-semibold uppercase tracking-wider shadow-sm transition-colors disabled:opacity-50 flex items-center gap-2" 
-                            @onclick="SubmitCompleteSetup" disabled="@isSaving">
+                            @onclick="SubmitCompleteSetup" disabled="@(isSaving || saveSuccess)">
                         @if (isSaving)
                         {
                             <span class="w-3.5 h-3.5 border-2 border-white/30 border-t-white rounded-full animate-spin"></span>
-                            <span>Saving...</span>
+                            <span>Saving &amp; Sending Email...</span>
+                        }
+                        else if (saveSuccess)
+                        {
+                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7" />
+                            </svg>
+                            <span>Saved!</span>
                         }
                         else
                         {
@@ -319,6 +361,8 @@
     private const string GhostBtn =
         "bg-transparent hover:bg-slate-100 text-slate-700 border border-slate-300 px-5 py-2.5 rounded-lg text-xs font-semibold uppercase tracking-wider transition-colors disabled:opacity-50";
 
+    private static readonly string[] AllDaysOfWeek = { "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday" };
+
     private EmployeeRegistrationModel model = new();
     private EditContext _editContext = default!;
     private ValidationMessageStore _messageStore = default!;
@@ -328,7 +372,9 @@
     private string? specError;
     private string? saveError;
     private bool isSaving;
+    private bool saveSuccess;
     private bool showPassword;
+    private bool _previousIsOpen;
 
     private IReadOnlyList<string> allSpecializations = Array.Empty<string>();
     private CancellationTokenSource? _cts;
@@ -340,15 +386,45 @@
     {
         InitializeContext();
         _cts = new CancellationTokenSource();
+        await LoadSpecializationsAsync();
+    }
+
+    protected override async Task OnParametersSetAsync()
+    {
+        if (IsOpen && !_previousIsOpen)
+        {
+            ResetForm();
+            await LoadSpecializationsAsync();
+        }
+        _previousIsOpen = IsOpen;
+    }
+
+    private async Task LoadSpecializationsAsync()
+    {
         try
         {
-            var specs = await Employees.GetSpecializationsAsync(_cts.Token);
+            var specs = await Employees.GetSpecializationsAsync(_cts?.Token ?? CancellationToken.None);
             allSpecializations = specs ?? Array.Empty<string>();
         }
         catch
         {
             allSpecializations = Array.Empty<string>();
         }
+    }
+
+    private void ResetForm()
+    {
+        currentStep = 1;
+        model = new EmployeeRegistrationModel();
+        specError = null;
+        saveError = null;
+        saveSuccess = false;
+        isSaving = false;
+        showPassword = false;
+        pendingSpec = null;
+        InitializeContext();
+        _cts?.Dispose();
+        _cts = new CancellationTokenSource();
     }
 
     private void InitializeContext()
@@ -361,12 +437,14 @@
     private async Task CloseModal()
     {
         IsOpen = false;
-        currentStep = 1;
-        model = new EmployeeRegistrationModel();
-        specError = null;
-        saveError = null;
-        InitializeContext();
+        ResetForm();
         await IsOpenChanged.InvokeAsync(IsOpen);
+    }
+
+    private async Task HandleCancelClick()
+    {
+        if (isSaving) return;
+        await CloseModal();
         await OnCancel.InvokeAsync();
     }
 
@@ -392,6 +470,19 @@
     private void RemoveSpecialization(string spec)
     {
         model.Specializations.Remove(spec);
+    }
+
+    private void ToggleDayOff(string day)
+    {
+        if (model.SelectedDaysOff.Contains(day))
+        {
+            if (model.SelectedDaysOff.Count > 1)
+                model.SelectedDaysOff.Remove(day);
+        }
+        else
+        {
+            model.SelectedDaysOff.Add(day);
+        }
     }
 
     private void GoToStep2()
@@ -429,7 +520,7 @@
         }
     }
 
-    private void GoToStep3()
+    private async Task GoToStep3Async()
     {
         if (!string.IsNullOrEmpty(pendingSpec))
         {
@@ -442,12 +533,32 @@
             return;
         }
 
+        if (string.IsNullOrWhiteSpace(model.EmployeeId))
+        {
+            try
+            {
+                var existing = await Employees.GetEmployeesAsync(_cts?.Token ?? CancellationToken.None);
+                model.EmployeeId = EmployeeCredentialGenerator.GenerateEmployeeId(existing.Select(e => e.EmployeeId));
+            }
+            catch
+            {
+                model.EmployeeId = "EMP-001";
+            }
+        }
+
+        if (string.IsNullOrWhiteSpace(model.Password))
+        {
+            model.Password = EmployeeCredentialGenerator.GenerateInitialPassword(12);
+        }
+
         specError = null;
         currentStep = 3;
     }
 
     private async Task SubmitCompleteSetup()
     {
+        if (isSaving || saveSuccess) return;
+
         _messageStore.Clear();
         bool isValid = true;
 
@@ -478,25 +589,33 @@
 
         isSaving = true;
         saveError = null;
+        saveSuccess = false;
+        StateHasChanged();
 
         try
         {
             var request = new NewEmployeeRequest(
-                model.EmployeeId,
-                model.FirstName,
-                model.LastName,
-                model.MiddleName,
-                model.Email,
+                model.EmployeeId.Trim().ToUpperInvariant(),
+                model.FirstName.Trim(),
+                model.LastName.Trim(),
+                model.MiddleName?.Trim(),
+                model.Email.Trim(),
                 model.Specializations.ToList(),
-                model.Password);
+                model.Password,
+                model.DaysOffString);
 
-            var result = await Employees.CreateEmployeeAsync(request, _cts!.Token);
+            var result = await Employees.CreateEmployeeAsync(request, _cts?.Token ?? CancellationToken.None);
 
             if (!result.Success)
             {
-                saveError = result.Error;
+                saveError = result.Error ?? "Failed to create employee.";
                 return;
             }
+
+            saveSuccess = true;
+            StateHasChanged();
+
+            await Task.Delay(1200);
 
             await OnSaved.InvokeAsync();
             await CloseModal();
@@ -505,9 +624,9 @@
         {
             // Cancelled
         }
-        catch
+        catch (Exception ex)
         {
-            saveError = "Something went wrong while saving. Try again in a moment.";
+            saveError = $"Something went wrong while saving: {ex.Message}";
         }
         finally
         {

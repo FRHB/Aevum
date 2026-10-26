@@ -251,9 +251,9 @@ public class AuthController : ControllerBase
         {
             return BadRequest(new ProblemDetails { Title = "Invalid Admin ID format", Detail = "Admin ID must be SADM-### or ADM-###" });
         }
-        if (request.Role == AppRoles.Employee && !System.Text.RegularExpressions.Regex.IsMatch(request.StudioId ?? "", @"^EMP-\d{3}$"))
+        if ((request.Role == AppRoles.Employee || request.Role == AppRoles.OfficeClerk) && !System.Text.RegularExpressions.Regex.IsMatch(request.StudioId ?? "", @"^(EMP|CLK)-\d{3}$"))
         {
-            return BadRequest(new ProblemDetails { Title = "Invalid Employee ID format", Detail = "Employee ID must be EMP-###" });
+            return BadRequest(new ProblemDetails { Title = "Invalid Staff ID format", Detail = "Staff ID must be EMP-### or CLK-###" });
         }
 
         if (!AppRoles.All.Contains(request.Role))
@@ -302,7 +302,7 @@ public class AuthController : ControllerBase
                 new { Id = request.StudioId, Email = request.Email, Role = request.Role });
         }
 
-        if (request.Role == AppRoles.Employee)
+        if (request.Role == AppRoles.Employee || request.Role == AppRoles.OfficeClerk)
         {
             var (success, message) = await _sqlAuthService.RegisterEmployeeAsync(
                 request.StudioId!, request.FirstName, request.LastName, request.MiddleName, request.Email, request.Password);
@@ -311,6 +311,24 @@ public class AuthController : ControllerBase
                 return BadRequest(new ProblemDetails { Title = "Registration failed", Detail = message, Status = 400 });
 
             _logger.LogInformation("Created Employee account {EmployeeId} ({Email})", request.StudioId, request.Email);
+
+            var fullName = string.Join(" ", new[] { request.FirstName, request.MiddleName, request.LastName }
+                .Where(s => !string.IsNullOrWhiteSpace(s)));
+
+            try
+            {
+                await _emailService.SendEmployeeWelcomeEmailAsync(
+                    toEmail: request.Email.Trim(),
+                    employeeName: string.IsNullOrWhiteSpace(fullName) ? request.Email : fullName,
+                    employeeId: request.StudioId!,
+                    initialPassword: request.Password,
+                    cancellationToken: HttpContext.RequestAborted);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Failed to dispatch employee welcome email to {Email}. Employee account was preserved.", request.Email);
+            }
+
             return StatusCode(StatusCodes.Status201Created,
                 new { Id = request.StudioId, Email = request.Email, Role = request.Role });
         }

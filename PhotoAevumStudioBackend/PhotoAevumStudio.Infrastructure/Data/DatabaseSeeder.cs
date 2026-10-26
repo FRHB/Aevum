@@ -95,6 +95,13 @@ public static class DatabaseSeeder
                 INSERT INTO [__EFMigrationsHistory] ([MigrationId], [ProductVersion])
                 VALUES ('20261013034024_AddMustChangePasswordToApplicationUser', '10.0.12');
             END;
+
+            IF COL_LENGTH(N'dbo.EmployeeSpecialization', N'SpecializationDescription') IS NOT NULL
+               AND NOT EXISTS (SELECT 1 FROM [__EFMigrationsHistory] WHERE [MigrationId] = '20261026081300_AddSpecializationMissingColumns')
+            BEGIN
+                INSERT INTO [__EFMigrationsHistory] ([MigrationId], [ProductVersion])
+                VALUES ('20261026081300_AddSpecializationMissingColumns', '10.0.12');
+            END;
         ";
 
         try
@@ -153,6 +160,49 @@ public static class DatabaseSeeder
                     BEGIN
                         ALTER TABLE dbo.Employee ADD isFirstLogin bit NOT NULL CONSTRAINT DF_Employee_isFirstLogin DEFAULT 1;
                     END;
+                    IF COL_LENGTH(N'dbo.Employee', N'DaysOff') IS NULL
+                    BEGIN
+                        ALTER TABLE dbo.Employee ADD DaysOff nvarchar(50) NOT NULL CONSTRAINT DF_Employee_DaysOff DEFAULT 'Sunday';
+                    END;
+                END;
+
+                IF OBJECT_ID(N'dbo.EmployeeLeaves', N'U') IS NULL AND OBJECT_ID(N'dbo.EmployeeLeave', N'U') IS NULL
+                BEGIN
+                    CREATE TABLE dbo.EmployeeLeaves (
+                        Id int IDENTITY(1,1) NOT NULL PRIMARY KEY,
+                        LeaveId nvarchar(50) NOT NULL,
+                        EmployeeStudioId nvarchar(50) NOT NULL,
+                        EmployeeName nvarchar(255) NOT NULL,
+                        LeaveType nvarchar(50) NOT NULL,
+                        StartDate date NOT NULL,
+                        EndDate date NOT NULL,
+                        Reason nvarchar(500) NULL,
+                        Status nvarchar(20) NOT NULL CONSTRAINT DF_Leave_Status DEFAULT 'Pending',
+                        ApprovedBy nvarchar(255) NULL,
+                        ApprovedAt datetime2 NULL,
+                        RejectionReason nvarchar(500) NULL,
+                        CreatedAt datetime2 NOT NULL CONSTRAINT DF_Leave_CreatedAt DEFAULT SYSUTCDATETIME()
+                    );
+                END;
+
+                IF OBJECT_ID(N'dbo.EmployeeTimesheets', N'U') IS NULL AND OBJECT_ID(N'dbo.EmployeeTimesheet', N'U') IS NULL
+                BEGIN
+                    CREATE TABLE dbo.EmployeeTimesheets (
+                        Id int IDENTITY(1,1) NOT NULL PRIMARY KEY,
+                        TimesheetId nvarchar(50) NOT NULL,
+                        EmployeeStudioId nvarchar(50) NOT NULL,
+                        EmployeeName nvarchar(255) NOT NULL,
+                        WorkDate date NOT NULL,
+                        ClockIn datetime2 NOT NULL,
+                        ClockOut datetime2 NULL,
+                        TotalHours float NOT NULL CONSTRAINT DF_Timesheet_Hours DEFAULT 0.0,
+                        Status nvarchar(20) NOT NULL CONSTRAINT DF_Timesheet_Status DEFAULT 'Open',
+                        IsDayOffWork bit NOT NULL CONSTRAINT DF_Timesheet_DayOff DEFAULT 0,
+                        Notes nvarchar(500) NULL,
+                        AdjustedBy nvarchar(255) NULL,
+                        AdjustmentReason nvarchar(500) NULL,
+                        CreatedAt datetime2 NOT NULL CONSTRAINT DF_Timesheet_CreatedAt DEFAULT SYSUTCDATETIME()
+                    );
                 END;
 
                 IF OBJECT_ID(N'dbo.Services', N'U') IS NOT NULL

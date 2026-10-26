@@ -1,6 +1,11 @@
 using System.ComponentModel.DataAnnotations;
+using System.Security.Claims;
+using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Logging.Abstractions;
+using PhotoAevumStudio.Api.Controllers;
 using PhotoAevumStudio.Application.DTOs;
+using PhotoAevumStudio.Application.Interfaces;
 using PhotoAevumStudio.Application.Utils;
 using PhotoAevumStudio.Infrastructure.Services;
 using PhotoAevumStudio.Web.Models;
@@ -263,5 +268,357 @@ public class AdminManagementTests
     {
         bool expectedSystemAdminTable = id.StartsWith("SADM-", StringComparison.OrdinalIgnoreCase);
         Assert.Equal(expectedSystemAdminTable, isSystemAdmin);
+    }
+
+    // ══════════════════════════════════════════════════════════════════════════
+    // 5. ADMINS CONTROLLER RBAC & 200 OK SAVE ACTION TESTS
+    // ══════════════════════════════════════════════════════════════════════════
+
+    [Fact]
+    public async Task AdminsController_CreateAdmin_Returns200Ok_WhenCalledBySystemAdmin()
+    {
+        var fakeService = new FakeAdminManagementService();
+        var controller = CreateController(fakeService, userId: "SADM-001", role: "System Admin");
+
+        var createDto = new CreateAdminDto(
+            FirstName: "Eleanor",
+            LastName: "Rigby",
+            Email: "eleanor.rigby@photoaevum.studio",
+            Role: "Admin",
+            MiddleName: null,
+            CustomId: "ADM-010",
+            TemporaryPassword: "InitialPassword123!");
+
+        var result = await controller.CreateAdmin(createDto, CancellationToken.None);
+
+        var okResult = Assert.IsType<OkObjectResult>(result);
+        Assert.Equal(StatusCodes.Status200OK, okResult.StatusCode);
+
+        var returnedAdmin = Assert.IsType<AdminDto>(okResult.Value);
+        Assert.Equal("ADM-010", returnedAdmin.Id);
+        Assert.Equal("Eleanor", returnedAdmin.FirstName);
+        Assert.Equal("Rigby", returnedAdmin.LastName);
+        Assert.Equal("eleanor.rigby@photoaevum.studio", returnedAdmin.Email);
+        Assert.Equal("Admin", returnedAdmin.Role);
+        Assert.False(returnedAdmin.IsSuperAdmin);
+    }
+
+    [Fact]
+    public async Task AdminsController_CreateAdmin_Returns403Forbidden_WhenCalledByRegularAdmin()
+    {
+        var fakeService = new FakeAdminManagementService();
+        var controller = CreateController(fakeService, userId: "ADM-001", role: "Admin");
+
+        var createDto = new CreateAdminDto(
+            FirstName: "Lucas",
+            LastName: "Morales",
+            Email: "lucas.morales@photoaevum.studio",
+            Role: "Admin",
+            MiddleName: null,
+            CustomId: "ADM-011",
+            TemporaryPassword: "InitialPassword123!");
+
+        var result = await controller.CreateAdmin(createDto, CancellationToken.None);
+
+        var statusCodeResult = Assert.IsType<ObjectResult>(result);
+        Assert.Equal(StatusCodes.Status403Forbidden, statusCodeResult.StatusCode);
+    }
+
+    [Fact]
+    public async Task AdminsController_UpdateAdmin_Returns200Ok_WhenSystemAdminUpdatesRegularAdmin()
+    {
+        var fakeService = new FakeAdminManagementService();
+        fakeService.Admins.Add(new AdminDto("ADM-002", "Elena", "Rostova", null, "Elena Rostova", "elena@photoaevum.studio", "Admin", false, false, "Active"));
+
+        var controller = CreateController(fakeService, userId: "SADM-001", role: "System Admin");
+
+        var updateDto = new UpdateAdminDto(
+            FirstName: "Elena",
+            LastName: "Rostova-Updated",
+            MiddleName: null,
+            Email: "elena.updated@photoaevum.studio");
+
+        var result = await controller.UpdateAdmin("ADM-002", updateDto, CancellationToken.None);
+
+        var okResult = Assert.IsType<OkObjectResult>(result);
+        Assert.Equal(StatusCodes.Status200OK, okResult.StatusCode);
+
+        var updated = Assert.IsType<AdminDto>(okResult.Value);
+        Assert.Equal("Elena Rostova-Updated", updated.FullName);
+    }
+
+    [Fact]
+    public async Task AdminsController_UpdateAdmin_Returns403Forbidden_WhenRegularAdminAttemptsUpdate()
+    {
+        var fakeService = new FakeAdminManagementService();
+        fakeService.Admins.Add(new AdminDto("ADM-002", "Elena", "Rostova", null, "Elena Rostova", "elena@photoaevum.studio", "Admin", false, false, "Active"));
+
+        // Regular admin attempting to update another admin
+        var controller = CreateController(fakeService, userId: "ADM-001", role: "Admin");
+
+        var updateDto = new UpdateAdminDto(
+            FirstName: "Elena",
+            LastName: "Rostova-Hacked",
+            MiddleName: null,
+            Email: "elena.hacked@photoaevum.studio");
+
+        var result = await controller.UpdateAdmin("ADM-002", updateDto, CancellationToken.None);
+
+        var forbiddenResult = Assert.IsType<ObjectResult>(result);
+        Assert.Equal(StatusCodes.Status403Forbidden, forbiddenResult.StatusCode);
+    }
+
+    [Fact]
+    public async Task AdminsController_UpdateAdmin_Returns403Forbidden_WhenSystemAdminAttemptsToUpdateSystemAdmin()
+    {
+        var fakeService = new FakeAdminManagementService();
+        fakeService.Admins.Add(new AdminDto("SADM-002", "Clara", "Oswald", null, "Clara Oswald", "clara@photoaevum.studio", "System Admin", true, false, "Active"));
+
+        var controller = CreateController(fakeService, userId: "SADM-001", role: "System Admin");
+
+        var updateDto = new UpdateAdminDto(
+            FirstName: "Clara",
+            LastName: "Oswald-Changed",
+            MiddleName: null,
+            Email: "clara.changed@photoaevum.studio");
+
+        var result = await controller.UpdateAdmin("SADM-002", updateDto, CancellationToken.None);
+
+        var forbiddenResult = Assert.IsType<ObjectResult>(result);
+        Assert.Equal(StatusCodes.Status403Forbidden, forbiddenResult.StatusCode);
+    }
+
+    [Fact]
+    public async Task AdminsController_GetAdmins_FiltersOutSystemAdmins_ForRegularAdminCaller()
+    {
+        var fakeService = new FakeAdminManagementService();
+        fakeService.Admins.AddRange(new[]
+        {
+            new AdminDto("SADM-001", "Root", "SuperAdmin", null, "Root SuperAdmin", "root@photoaevum.studio", "System Admin", true, false, "Active"),
+            new AdminDto("SADM-002", "Clara", "Oswald", null, "Clara Oswald", "clara@photoaevum.studio", "System Admin", true, false, "Active"),
+            new AdminDto("ADM-001", "Marcus", "Vance", null, "Marcus Vance", "marcus@photoaevum.studio", "Admin", false, false, "Active"),
+            new AdminDto("ADM-002", "Elena", "Rostova", null, "Elena Rostova", "elena@photoaevum.studio", "Admin", false, false, "Active")
+        });
+
+        // Caller is regular Admin
+        var controller = CreateController(fakeService, userId: "ADM-001", role: "Admin");
+
+        var result = await controller.GetAdmins(CancellationToken.None);
+
+        var okResult = Assert.IsType<OkObjectResult>(result);
+        var visibleAdmins = Assert.IsAssignableFrom<IEnumerable<AdminDto>>(okResult.Value).ToList();
+
+        // Must ONLY see the regular Admins
+        Assert.Equal(2, visibleAdmins.Count);
+        Assert.All(visibleAdmins, a =>
+        {
+            Assert.False(a.IsSuperAdmin);
+            Assert.StartsWith("ADM-", a.Id);
+            Assert.DoesNotContain("System", a.Role, StringComparison.OrdinalIgnoreCase);
+        });
+    }
+
+    [Fact]
+    public async Task AdminsController_GetAdmins_ReturnsAllAdmins_ForSystemAdminCaller()
+    {
+        var fakeService = new FakeAdminManagementService();
+        fakeService.Admins.AddRange(new[]
+        {
+            new AdminDto("SADM-001", "Root", "SuperAdmin", null, "Root SuperAdmin", "root@photoaevum.studio", "System Admin", true, false, "Active"),
+            new AdminDto("SADM-002", "Clara", "Oswald", null, "Clara Oswald", "clara@photoaevum.studio", "System Admin", true, false, "Active"),
+            new AdminDto("ADM-001", "Marcus", "Vance", null, "Marcus Vance", "marcus@photoaevum.studio", "Admin", false, false, "Active"),
+            new AdminDto("ADM-002", "Elena", "Rostova", null, "Elena Rostova", "elena@photoaevum.studio", "Admin", false, false, "Active")
+        });
+
+        // Caller is System Admin
+        var controller = CreateController(fakeService, userId: "SADM-001", role: "System Admin");
+
+        var result = await controller.GetAdmins(CancellationToken.None);
+
+        var okResult = Assert.IsType<OkObjectResult>(result);
+        var visibleAdmins = Assert.IsAssignableFrom<IEnumerable<AdminDto>>(okResult.Value).ToList();
+
+        // System Admin sees all 4 admins
+        Assert.Equal(4, visibleAdmins.Count);
+        Assert.Contains(visibleAdmins, a => a.Id == "SADM-001");
+        Assert.Contains(visibleAdmins, a => a.Id == "ADM-001");
+    }
+
+    [Fact]
+    public async Task AdminsController_GetAdminById_Returns404NotFound_WhenRegularAdminRequestsSystemAdmin()
+    {
+        var fakeService = new FakeAdminManagementService();
+        fakeService.Admins.Add(new AdminDto("SADM-001", "Root", "SuperAdmin", null, "Root SuperAdmin", "root@photoaevum.studio", "System Admin", true, false, "Active"));
+
+        // Regular admin trying to view a System Admin directly
+        var controller = CreateController(fakeService, userId: "ADM-001", role: "Admin");
+
+        var result = await controller.GetAdminById("SADM-001", CancellationToken.None);
+
+        Assert.IsType<NotFoundObjectResult>(result);
+    }
+
+    // ══════════════════════════════════════════════════════════════════════════
+    // 6. EMAIL SERVICE INTEGRATION & AUTOMATED CREDENTIAL DELIVERY TESTS
+    // ══════════════════════════════════════════════════════════════════════════
+
+    [Fact]
+    public async Task EmailService_DispatchesAutomatedWelcomeEmail_ContainingGeneratedIdAndInitialPassword()
+    {
+        var emailStub = new AdminEmailStubService(NullLogger<AdminEmailStubService>.Instance);
+
+        string generatedAdminId = "ADM-007";
+        string initialTemporaryPassword = AdminCredentialGenerator.GenerateTemporaryPassword(12);
+        string recipientEmail = "james.bond@photoaevum.studio";
+        string adminFullName = "James Bond";
+
+        await emailStub.SendAdminWelcomeEmailAsync(
+            toEmail: recipientEmail,
+            adminName: adminFullName,
+            adminId: generatedAdminId,
+            temporaryPassword: initialTemporaryPassword,
+            role: "Admin");
+
+        var sentEmail = Assert.Single(emailStub.SentEmails);
+        Assert.Equal(recipientEmail, sentEmail.ToEmail);
+        Assert.Contains("Welcome to Photo Aevum Studio", sentEmail.Subject);
+        Assert.Contains(generatedAdminId, sentEmail.Body);
+        Assert.Contains(initialTemporaryPassword, sentEmail.Body);
+        Assert.Contains(adminFullName, sentEmail.Body);
+    }
+
+    // ══════════════════════════════════════════════════════════════════════════
+    // 7. SAVE ACTION COMPLETION STATE VERIFICATION
+    // ══════════════════════════════════════════════════════════════════════════
+
+    [Fact]
+    public void SaveAction_SuccessfulCreation_PopulatesStep4CompletionSummary()
+    {
+        var model = new AddAdminWizardModel
+        {
+            FirstName = "Seraphina",
+            LastName = "Kovacs",
+            Email = "seraphina.kovacs@photoaevum.studio",
+            Role = "Admin",
+            GeneratedId = "ADM-012",
+            TemporaryPassword = "Password!2026"
+        };
+
+        // Assert all completion data needed by Step 4 is present
+        Assert.Equal("ADM-012", model.GeneratedId);
+        Assert.Equal("Seraphina Kovacs", model.FullName);
+        Assert.Equal("Admin", model.Role);
+        Assert.Equal("seraphina.kovacs@photoaevum.studio", model.Email);
+        Assert.False(model.IsSystemAdmin);
+
+        // Completion success message format
+        string expectedMessage = $"Administrator account created! Credentials have been emailed to {model.Email}.";
+        Assert.Contains(model.Email, expectedMessage);
+        Assert.Contains("Administrator account created!", expectedMessage);
+    }
+
+    // ──────────────────────────────────────────────────────────────────────────
+    // Test Helpers & Fake Implementations
+    // ──────────────────────────────────────────────────────────────────────────
+
+    private static AdminsController CreateController(IAdminManagementService service, string userId, string role)
+    {
+        var controller = new AdminsController(service, NullLogger<AdminsController>.Instance);
+        var claims = new List<Claim>
+        {
+            new("studio_id", userId),
+            new(ClaimTypes.NameIdentifier, userId),
+            new(ClaimTypes.Role, role)
+        };
+        var identity = new ClaimsIdentity(claims, "TestAuth");
+        var user = new ClaimsPrincipal(identity);
+        controller.ControllerContext = new ControllerContext
+        {
+            HttpContext = new DefaultHttpContext { User = user }
+        };
+        return controller;
+    }
+
+    private class FakeAdminManagementService : IAdminManagementService
+    {
+        public List<AdminDto> Admins { get; } = new();
+
+        public Task<IReadOnlyList<AdminDto>> GetAdminsAsync(string requestingUserId, bool isSystemAdmin, CancellationToken cancellationToken = default)
+        {
+            var result = Admins
+                .Where(a => isSystemAdmin || (!a.Role.Contains("System", StringComparison.OrdinalIgnoreCase) && !a.Id.StartsWith("SADM-", StringComparison.OrdinalIgnoreCase)))
+                .ToList();
+            return Task.FromResult<IReadOnlyList<AdminDto>>(result);
+        }
+
+        public Task<AdminDto?> GetAdminByIdAsync(string id, CancellationToken cancellationToken = default)
+        {
+            var admin = Admins.FirstOrDefault(a => a.Id.Equals(id, StringComparison.OrdinalIgnoreCase));
+            return Task.FromResult(admin);
+        }
+
+        public Task<string> GetNextAdminIdAsync(string role, CancellationToken cancellationToken = default)
+        {
+            bool isSys = AdminCredentialGenerator.IsSystemAdminRole(role);
+            return Task.FromResult(isSys ? "SADM-002" : "ADM-003");
+        }
+
+        public Task<AdminDto> CreateAdminAsync(CreateAdminDto dto, string requestingUserId, bool isSystemAdmin, CancellationToken cancellationToken = default)
+        {
+            if (!isSystemAdmin && !requestingUserId.StartsWith("SADM-", StringComparison.OrdinalIgnoreCase))
+            {
+                throw new UnauthorizedAccessException("Permission Denied: Only a SystemAdmin (SADM-###) is authorized to create new Admin accounts.");
+            }
+
+            bool isSys = AdminCredentialGenerator.IsSystemAdminRole(dto.Role);
+            var id = dto.CustomId ?? (isSys ? "SADM-002" : "ADM-003");
+            var admin = new AdminDto(
+                Id: id,
+                FirstName: dto.FirstName,
+                LastName: dto.LastName,
+                MiddleName: dto.MiddleName,
+                FullName: $"{dto.FirstName} {dto.LastName}".Trim(),
+                Email: dto.Email,
+                Role: isSys ? "System Admin" : "Admin",
+                IsSuperAdmin: isSys,
+                IsFirstLogin: true,
+                Status: "Active");
+
+            Admins.Add(admin);
+            return Task.FromResult(admin);
+        }
+
+        public Task<AdminDto> UpdateAdminAsync(string id, UpdateAdminDto dto, string requestingUserId, bool isSystemAdmin, CancellationToken cancellationToken = default)
+        {
+            if (!isSystemAdmin && !requestingUserId.StartsWith("SADM-", StringComparison.OrdinalIgnoreCase))
+            {
+                throw new UnauthorizedAccessException("Permission Denied: Admins have read-only access and cannot edit administrator records.");
+            }
+
+            var target = Admins.FirstOrDefault(a => a.Id.Equals(id, StringComparison.OrdinalIgnoreCase));
+            if (target != null && target.IsSuperAdmin)
+            {
+                throw new UnauthorizedAccessException("Permission Denied: System Admin accounts cannot be edited or modified.");
+            }
+
+            var updated = new AdminDto(
+                Id: id,
+                FirstName: dto.FirstName,
+                LastName: dto.LastName,
+                MiddleName: dto.MiddleName,
+                FullName: $"{dto.FirstName} {dto.LastName}".Trim(),
+                Email: dto.Email,
+                Role: target?.Role ?? "Admin",
+                IsSuperAdmin: target?.IsSuperAdmin ?? false,
+                IsFirstLogin: false,
+                Status: target?.Status ?? "Active");
+
+            return Task.FromResult(updated);
+        }
+
+        public Task<bool> DeleteAdminAsync(string id, string requestingUserId, bool isSystemAdmin, CancellationToken cancellationToken = default)
+        {
+            return Task.FromResult(true);
+        }
     }
 }

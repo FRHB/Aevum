@@ -78,7 +78,11 @@ CREATE UNIQUE INDEX UX_Employee_Email ON dbo.Employee(EmployeeEmail) WHERE Emplo
 CREATE TABLE dbo.EmployeeSpecialization (
     SpecializationID nvarchar(30) NOT NULL PRIMARY KEY,
     SpecializationName nvarchar(255) NOT NULL,
-    Specialization nvarchar(255) NOT NULL
+    SpecializationDescription nvarchar(1000) NULL,
+    Specialization nvarchar(255) NOT NULL,
+    Description nvarchar(1000) NULL,
+    ColorTag nvarchar(50) NOT NULL CONSTRAINT DF_EmployeeSpecialization_ColorTag DEFAULT 'Blue',
+    CreatedAt datetime2 NOT NULL CONSTRAINT DF_EmployeeSpecialization_CreatedAt DEFAULT SYSUTCDATETIME()
 );
 
 CREATE TABLE dbo.EquipmentType (

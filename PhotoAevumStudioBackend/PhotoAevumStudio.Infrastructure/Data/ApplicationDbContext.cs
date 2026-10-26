@@ -24,10 +24,20 @@ public class ApplicationDbContext : IdentityDbContext<ApplicationUser>
     public DbSet<Booking> Bookings => Set<Booking>();
     public DbSet<EmployeeAssignment> EmployeeAssignments => Set<EmployeeAssignment>();
     public DbSet<EquipmentAssignment> EquipmentAssignments => Set<EquipmentAssignment>();
+    public DbSet<EmployeeLeave> EmployeeLeaves => Set<EmployeeLeave>();
+    public DbSet<EmployeeTimesheet> EmployeeTimesheets => Set<EmployeeTimesheet>();
+    public DbSet<EmployeeSpecialization> EmployeeSpecializations => Set<EmployeeSpecialization>();
+    public DbSet<EmployeeSpecialization> Specializations => EmployeeSpecializations;
+
+    public DbSet<EventCategory> EventCategories => Set<EventCategory>();
+    public DbSet<EventCategory> ServiceCategories => EventCategories;
+    public DbSet<ServiceCategoryJoin> ServiceCategoryJoins => Set<ServiceCategoryJoin>();
 
     protected override void OnModelCreating(ModelBuilder builder)
     {
         base.OnModelCreating(builder); // Must call base — creates Identity tables
+
+        builder.Ignore<Specialization>();
 
         // ── Photos ───────────────────────────────────────────────────────────
         builder.Entity<Photo>(e =>
@@ -86,7 +96,7 @@ public class ApplicationDbContext : IdentityDbContext<ApplicationUser>
              .OnDelete(DeleteBehavior.SetNull);
         });
 
-                        // Prevent Double-Booking Staff
+        // Prevent Double-Booking Staff
         builder.Entity<EmployeeAssignment>(e =>
         {
             e.HasIndex(ea => new { ea.EmployeeId, ea.ScheduleDate, ea.ScheduleTime }).IsUnique();
@@ -101,7 +111,7 @@ public class ApplicationDbContext : IdentityDbContext<ApplicationUser>
              .OnDelete(DeleteBehavior.Cascade);
         });
 
-                // Prevent Double-Booking Gear
+        // Prevent Double-Booking Gear
         builder.Entity<EquipmentAssignment>(e =>
         {
             e.HasIndex(eq => new { eq.EquipmentId, eq.ScheduleDate, eq.ScheduleTime }).IsUnique();
@@ -115,9 +125,53 @@ public class ApplicationDbContext : IdentityDbContext<ApplicationUser>
              .HasForeignKey(ea => ea.BookingId)
              .OnDelete(DeleteBehavior.Cascade);
         });
+
+        // ── EmployeeSpecialization ───────────────────────────────────────────
+        builder.Entity<EmployeeSpecialization>(e =>
+        {
+            e.ToTable("EmployeeSpecialization", "dbo");
+            e.HasKey(s => s.SpecializationID);
+            e.Property(s => s.SpecializationID).HasMaxLength(30).IsRequired();
+            e.Property(s => s.SpecializationName).HasMaxLength(255).IsRequired();
+            e.Property(s => s.Specialization).HasMaxLength(255).IsRequired();
+            e.Property(s => s.SpecializationDescription).HasMaxLength(1000);
+            e.Property(s => s.Description).HasMaxLength(1000);
+            e.Property(s => s.ColorTag).HasMaxLength(50).IsRequired().HasDefaultValue("Blue");
+            e.Property(s => s.CreatedAt).HasDefaultValueSql("SYSUTCDATETIME()");
+        });
+
+        // ── EventCategory / ServiceCategory ──────────────────────────────────
+        builder.Entity<EventCategory>(e =>
+        {
+            e.ToTable("ServiceCategory", "dbo");
+            e.HasKey(c => c.Id);
+            e.Property(c => c.Id).HasColumnName("ServiceCategoryID").HasMaxLength(30).IsRequired();
+            e.Property(c => c.Name).HasColumnName("ServiceCategoryName").HasMaxLength(255).IsRequired();
+            e.Property(c => c.Description).HasColumnName("ServiceCategoryDescription").HasMaxLength(1000).IsRequired();
+
+            e.HasMany(c => c.Associations)
+             .WithOne(a => a.Category)
+             .HasForeignKey(a => a.CategoryId)
+             .OnDelete(DeleteBehavior.Cascade);
+        });
+
+        // ── ServiceCategoryJoin / Category Associations ───────────────────────
+        builder.Entity<ServiceCategoryJoin>(e =>
+        {
+            e.ToTable("ServiceCategoryJoins", "dbo");
+            e.HasKey(j => j.Id);
+            e.Property(j => j.Id).HasColumnName("ServiceCategoryJoinID").HasMaxLength(30).IsRequired();
+            e.Property(j => j.CategoryId).HasColumnName("ServiceCategoryID").HasMaxLength(30).IsRequired();
+            e.Property(j => j.ServiceId).HasColumnName("ServicesID").HasMaxLength(30);
+            e.Property(j => j.AdditionalServiceId).HasColumnName("AdditionalServicesID").HasMaxLength(30);
+            e.Property(j => j.ComboPackageId).HasColumnName("ComboPackageID").HasMaxLength(30);
+
+            e.HasOne(j => j.Category)
+             .WithMany(c => c.Associations)
+             .HasForeignKey(j => j.CategoryId)
+             .OnDelete(DeleteBehavior.Cascade);
+        });
+
+        builder.Ignore<EventCategoryAssociation>();
     }
 }
-
-
-
-

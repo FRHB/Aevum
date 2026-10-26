@@ -116,8 +116,7 @@ public class AdminManagementService : IAdminManagementService
                 var isFirstLogin = reader.IsDBNull(6) ? false : Convert.ToBoolean(reader.GetValue(6));
 
                 bool isSuper = id.StartsWith("SADM-", StringComparison.OrdinalIgnoreCase)
-                               || rawRole.Equals("SystemAdmin", StringComparison.OrdinalIgnoreCase)
-                               || rawRole.Equals("Super Admin", StringComparison.OrdinalIgnoreCase);
+                               || AdminCredentialGenerator.IsSystemAdminRole(rawRole);
 
                 // ── Strict Role Visibility Rule ──
                 // If caller is an Admin (not a System Admin), they CANNOT see any System Admin accounts.
@@ -260,8 +259,7 @@ public class AdminManagementService : IAdminManagementService
         var isFirstLogin = reader.IsDBNull(6) ? false : Convert.ToBoolean(reader.GetValue(6));
 
         bool isSuper = dbId.StartsWith("SADM-", StringComparison.OrdinalIgnoreCase)
-                       || rawRole.Equals("SystemAdmin", StringComparison.OrdinalIgnoreCase)
-                       || rawRole.Equals("Super Admin", StringComparison.OrdinalIgnoreCase);
+                       || AdminCredentialGenerator.IsSystemAdminRole(rawRole);
 
         var adminFullName = string.Join(" ", new[] { adminFirst, adminMiddle, adminLast }.Where(s => !string.IsNullOrWhiteSpace(s)));
         var adminEmail = !string.IsNullOrWhiteSpace(emailVal)

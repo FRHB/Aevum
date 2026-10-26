@@ -4,7 +4,12 @@
 @page "/calendar/events"
 @layout AdminLayout
 @rendermode InteractiveServer
+@using PhotoAevumStudio.Web.Services
+@using Microsoft.AspNetCore.Components.Authorization
+@using System.Security.Claims
 @inject IScheduleService ScheduleService
+@inject AuthenticationStateProvider AuthStateProvider
+@inject IUserService UserService
 
 <PageTitle>Calendar of Events | Aevum Studio</PageTitle>
 
@@ -39,9 +44,12 @@
         </div>
 
         <div class="header-right">
-            <button type="button" @onclick="OpenCreateModal" class="btn-create-event">
-                <span class="plus-icon">+</span> New Event
-            </button>
+            @if (!_isPhotographerOrCreative)
+            {
+                <button type="button" @onclick="OpenCreateModal" class="btn-create-event">
+                    <span class="plus-icon">+</span> New Event
+                </button>
+            }
         </div>
     </div>
 
@@ -168,9 +176,12 @@
                                                     <div class="chip-photog">📷 @booking.AssignedPhotographer</div>
                                                 </div>
                                             }
-                                            <button type="button"
-                                                    @onclick="() => OpenCreateModalForSlot(space.Id, day)"
-                                                    class="cell-add-btn" title="Add event in this slot">+</button>
+                                            @if (!_isPhotographerOrCreative)
+                                            {
+                                                <button type="button"
+                                                        @onclick="() => OpenCreateModalForSlot(space.Id, day)"
+                                                        class="cell-add-btn" title="Add event in this slot">+</button>
+                                            }
                                         </div>
                                     </td>
                                 }
@@ -223,7 +234,10 @@
                         {
                             <div class="empty-day-slot">
                                 <span>No events scheduled</span>
-                                <button type="button" @onclick="() => OpenCreateModalForSlot(space.Id, _selectedDate)" class="text-xs text-blue-600 underline">+ Book</button>
+                                @if (!_isPhotographerOrCreative)
+                                {
+                                    <button type="button" @onclick="() => OpenCreateModalForSlot(space.Id, _selectedDate)" class="text-xs text-blue-600 underline">+ Book</button>
+                                }
                             </div>
                         }
                     </div>
@@ -358,14 +372,17 @@
                         </div>
                     }
 
-                    <div class="drawer-actions-section mt-4 pt-4 border-t">
-                        <span class="text-xs font-bold text-gray-600 block mb-2">Update Status</span>
-                        <div class="flex gap-2">
-                            <button type="button" @onclick='() => UpdateBookingStatus("Confirmed")' class="btn-status-toggle">Confirm</button>
-                            <button type="button" @onclick='() => UpdateBookingStatus("Completed")' class="btn-status-toggle">Complete</button>
-                            <button type="button" @onclick="DeleteSelectedBooking" class="btn-status-danger">Cancel Event</button>
+                    @if (!_isPhotographerOrCreative)
+                    {
+                        <div class="drawer-actions-section mt-4 pt-4 border-t">
+                            <span class="text-xs font-bold text-gray-600 block mb-2">Update Status</span>
+                            <div class="flex gap-2">
+                                <button type="button" @onclick='() => UpdateBookingStatus("Confirmed")' class="btn-status-toggle">Confirm</button>
+                                <button type="button" @onclick='() => UpdateBookingStatus("Completed")' class="btn-status-toggle">Complete</button>
+                                <button type="button" @onclick="DeleteSelectedBooking" class="btn-status-danger">Cancel Event</button>
+                            </div>
                         </div>
-                    </div>
+                    }
                 </div>
             </div>
         </div>
@@ -441,6 +458,13 @@
 </div>
 
 @code {
+    [CascadingParameter] Task<AuthenticationState>? AuthState { get; set; }
+    private ClaimsPrincipal? _currentUser;
+    private string _currentEmployeeName = string.Empty;
+    private string _currentEmployeeId = string.Empty;
+    private bool _isPhotographerOrCreative;
+    private bool _isOfficeClerk;
+
     private ScheduleViewMode _currentView = ScheduleViewMode.Week;
     private DateTime _selectedDate = DateTime.Today;
     private string _searchQuery = string.Empty;
@@ -458,10 +482,33 @@
     private TimeOnly _newStartTime = new(9, 0);
     private TimeOnly _newEndTime = new(13, 0);
 
-    private List<StudioSpaceResource> StudioSpaces => ScheduleService.GetStudioSpaces();
-    private List<EventBookingModel> AllBookings => ScheduleService.GetEventBookings();
+    protected override async Task OnInitializedAsync()
+    {
+        if (AuthState != null)
+        {
+            var state = await AuthState;
+            _currentUser = state.User;
+        }
+        else if (AuthStateProvider != null)
+        {
+            var state = await AuthStateProvider.GetAuthenticationStateAsync();
+            _currentUser = state.User;
+        }
 
-    private int ConflictCount => ScheduleService.GetEventConflictCount();
+        _isOfficeClerk = EmployeeRoleHelper.IsOfficeClerk(_currentUser, UserService);
+        _isPhotographerOrCreative = EmployeeRoleHelper.IsPhotographerOrCreative(_currentUser, UserService);
+        _currentEmployeeName = EmployeeRoleHelper.GetCurrentEmployeeName(_currentUser, UserService);
+        _currentEmployeeId = EmployeeRoleHelper.GetCurrentEmployeeId(_currentUser);
+    }
+
+    private List<StudioSpaceResource> StudioSpaces => ScheduleService.GetStudioSpaces();
+    private List<EventBookingModel> AllBookings => _isPhotographerOrCreative
+        ? ScheduleService.GetEventBookings().Where(b => EmployeeRoleHelper.IsEventAssignedToEmployee(b, _currentEmployeeName, _currentEmployeeId)).ToList()
+        : ScheduleService.GetEventBookings();
+
+    private int ConflictCount => _isPhotographerOrCreative
+        ? AllBookings.Count(b => b.HasConflict)
+        : ScheduleService.GetEventConflictCount();
     private int TotalBookingsCount => AllBookings.Count;
     private int ThisWeekBookingsCount => AllBookings.Count(b => WeekDays.Any(w => w.Date == b.Date.Date));
     private double ThisWeekHoursCount => AllBookings.Where(b => WeekDays.Any(w => w.Date == b.Date.Date)).Sum(b => b.DurationHours);

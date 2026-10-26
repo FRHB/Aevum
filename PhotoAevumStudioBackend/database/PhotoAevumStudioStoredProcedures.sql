@@ -330,6 +330,36 @@ CREATE OR ALTER PROCEDURE dbo.sp_AssignEmployeeToEvent
 AS
 BEGIN
     SET NOCOUNT ON;
+
+    DECLARE @EventDate DATE;
+    SELECT @EventDate = EventDate FROM dbo.EventAppointment WHERE EventAppointmentID = @EventAppointmentID;
+
+    IF @EventDate IS NOT NULL
+    BEGIN
+        IF EXISTS (
+            SELECT 1 FROM dbo.Employee e
+            WHERE e.EmployeeID = @EmployeeID
+              AND COL_LENGTH(N'dbo.Employee', N'DaysOff') IS NOT NULL
+              AND CHARINDEX(DATENAME(dw, @EventDate), e.DaysOff) > 0
+        )
+        BEGIN
+            THROW 50003, 'Cannot assign employee: Scheduled Day Off on event date.', 1;
+        END
+
+        IF OBJECT_ID(N'dbo.EmployeeLeaves', N'U') IS NOT NULL
+        BEGIN
+            IF EXISTS (
+                SELECT 1 FROM dbo.EmployeeLeaves el
+                WHERE el.EmployeeStudioId = @EmployeeID
+                  AND el.Status = 'Approved'
+                  AND @EventDate BETWEEN el.StartDate AND el.EndDate
+            )
+            BEGIN
+                THROW 50004, 'Cannot assign employee: On approved leave on event date.', 1;
+            END
+        END
+    END
+
     IF NOT EXISTS (SELECT 1 FROM dbo.EventEmployee WHERE EventAppointmentID = @EventAppointmentID AND EmployeeID = @EmployeeID)
     BEGIN
         INSERT INTO dbo.EventEmployee (EventAppointmentID, EmployeeID)
@@ -702,6 +732,57 @@ BEGIN
         VALUES (
             @CreatedCategoryID, @ServiceCategoryName, @ServiceCategoryDescription
         );
+
+        -- Automatically assign relevant or default associations in dbo.ServiceCategoryJoins
+        IF OBJECT_ID(N'dbo.ServiceCategoryJoins', N'U') IS NOT NULL
+        BEGIN
+            DECLARE @AssocServiceID NVARCHAR(30) = NULL;
+
+            -- 1. Check for relevant existing service matching category name
+            SELECT TOP 1 @AssocServiceID = ServicesID
+            FROM dbo.Services
+            WHERE @ServiceCategoryName LIKE '%' + ServiceName + '%'
+               OR ServiceName LIKE '%' + @ServiceCategoryName + '%'
+            ORDER BY ServicesID;
+
+            -- 2. If no direct match, take the first available service
+            IF @AssocServiceID IS NULL
+            BEGIN
+                SELECT TOP 1 @AssocServiceID = ServicesID
+                FROM dbo.Services
+                ORDER BY ServicesID;
+            END
+
+            -- 3. If no services exist at all in dbo.Services, create a baseline default service
+            IF @AssocServiceID IS NULL
+            BEGIN
+                DECLARE @MaxSrvNum INT = 0;
+                SELECT @MaxSrvNum = ISNULL(MAX(TRY_CAST(SUBSTRING(ServicesID, CHARINDEX('-', ServicesID) + 1, 20) AS INT)), 0)
+                FROM dbo.Services WITH (UPDLOCK, HOLDLOCK)
+                WHERE ServicesID LIKE 'SRV-%';
+
+                SET @AssocServiceID = 'SRV-' + RIGHT('0000' + CAST((@MaxSrvNum + 1) AS VARCHAR(10)), 4);
+                WHILE EXISTS (SELECT 1 FROM dbo.Services WHERE ServicesID = @AssocServiceID)
+                BEGIN
+                    SET @MaxSrvNum = @MaxSrvNum + 1;
+                    SET @AssocServiceID = 'SRV-' + RIGHT('0000' + CAST((@MaxSrvNum + 1) AS VARCHAR(10)), 4);
+                END
+
+                INSERT INTO dbo.Services (ServicesID, ServiceName, ServicesDescription, ServicePrice)
+                VALUES (@AssocServiceID, @ServiceCategoryName + ' Session', 'Default baseline service for ' + @ServiceCategoryName, 150.00);
+            END
+
+            -- 4. Automatically insert the join association
+            IF @AssocServiceID IS NOT NULL AND NOT EXISTS (
+                SELECT 1 FROM dbo.ServiceCategoryJoins 
+                WHERE ServiceCategoryID = @CreatedCategoryID AND ServicesID = @AssocServiceID
+            )
+            BEGIN
+                DECLARE @JoinID NVARCHAR(30) = 'SCJ-' + SUBSTRING(CONVERT(NVARCHAR(36), NEWID()), 1, 8);
+                INSERT INTO dbo.ServiceCategoryJoins (ServiceCategoryJoinID, ServiceCategoryID, ServicesID)
+                VALUES (@JoinID, @CreatedCategoryID, @AssocServiceID);
+            END
+        END
 
         IF OBJECT_ID(N'dbo.sp_AddHistoryLog', N'P') IS NOT NULL
         BEGIN

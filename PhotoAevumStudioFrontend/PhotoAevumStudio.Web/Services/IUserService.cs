@@ -95,6 +95,7 @@ public sealed record AuditLogRowDto(
     DateTime Timestamp)
 {
     public string EntityName => EntityType;
+    public string? ActionDetails => IpAddress;
 }
 
 /// <summary>

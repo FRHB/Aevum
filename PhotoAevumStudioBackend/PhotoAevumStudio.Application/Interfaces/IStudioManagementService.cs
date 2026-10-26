@@ -37,6 +37,7 @@ public interface IStudioManagementService
     Task<string> GetNextCategoryIdAsync(CancellationToken cancellationToken = default);
     Task<string> GetNextAdditionalServiceIdAsync(CancellationToken cancellationToken = default);
     Task<IReadOnlyList<CategoryDto>> GetCategoriesAsync(CancellationToken cancellationToken = default);
+    Task<CategoryDto?> GetCategoryByIdAsync(string id, CancellationToken cancellationToken = default);
     Task<ServiceCreatedResponseDto> CreateServiceAsync(CreateServiceDto dto, string? requestingAdminId = null, CancellationToken cancellationToken = default);
     Task<CategoryDto> CreateCategoryAsync(CreateCategoryDto dto, string? requestingAdminId = null, CancellationToken cancellationToken = default);
     Task<AdditionalServiceResponseDto> CreateAdditionalServiceAsync(CreateAdditionalServiceDto dto, string? requestingAdminId = null, CancellationToken cancellationToken = default);

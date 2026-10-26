@@ -371,8 +371,9 @@
 
     private async Task HandleAdminSaved()
     {
-        notificationMessage = "Administrator saved successfully and directory updated.";
+        notificationMessage = "Administrator saved successfully and directory updated. Welcome email dispatched.";
         await LoadAdminsAsync();
+        StateHasChanged();
     }
 
     public void Dispose()

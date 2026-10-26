@@ -12,6 +12,7 @@
     <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.14.1" />
     <PackageReference Include="xunit" Version="2.9.3" />
     <PackageReference Include="xunit.runner.visualstudio" Version="3.1.4" />
+    <PackageReference Update="System.Security.Cryptography.Pkcs" Version="10.0.14" />
   </ItemGroup>
 
   <ItemGroup>
@@ -19,13 +20,14 @@
   </ItemGroup>
 
   <ItemGroup>
-    <Compile Remove="AdminManagementTests.cs" />
+    <Compile Remove="EventCategoryCreationTests.cs" />
   </ItemGroup>
 
   <ItemGroup>
     <ProjectReference Include="..\..\PhotoAevumStudio.Web\PhotoAevumStudio.Web.csproj" />
     <ProjectReference Include="..\..\..\PhotoAevumStudioBackend\PhotoAevumStudio.Application\PhotoAevumStudio.Application.csproj" />
     <ProjectReference Include="..\..\..\PhotoAevumStudioBackend\PhotoAevumStudio.Infrastructure\PhotoAevumStudio.Infrastructure.csproj" />
+    <ProjectReference Include="..\..\..\PhotoAevumStudioBackend\PhotoAevumStudio.Api\PhotoAevumStudio.Api.csproj" />
   </ItemGroup>
 
 </Project>

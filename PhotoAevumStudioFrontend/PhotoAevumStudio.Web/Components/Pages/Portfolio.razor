@@ -1,0 +1,156 @@
+@page "/portfolio"
+@page "/staff/portfolio"
+@layout EmployeeLayout
+@rendermode InteractiveServer
+@using PhotoAevumStudio.Web.Models
+@using PhotoAevumStudio.Web.Services
+@inject IServicesApiClient ServicesApi
+@inject NavigationManager Nav
+
+<PageTitle>Portfolio Showcase | Photo Aevum Studio</PageTitle>
+
+<div class="space-y-6 pb-12 max-w-7xl mx-auto px-4 sm:px-6">
+    <!-- Header -->
+    <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 pb-4 border-b border-gray-200">
+        <div>
+            <div class="flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-gray-500 mb-1">
+                <span>Showcase</span>
+                <span>/</span>
+                <span class="text-gray-900 font-bold">Studio Portfolio</span>
+            </div>
+            <h1 class="text-2xl sm:text-3xl font-extrabold text-gray-900 tracking-tight">Studio Portfolio &amp; Galleries</h1>
+            <p class="text-sm text-gray-500 mt-1">
+                Explore our public portfolio collections, photography bay setups, and client deliverable albums.
+            </p>
+        </div>
+
+        <div class="flex items-center gap-3">
+            <a href="/#portfolio" class="inline-flex items-center gap-2 px-4 py-2.5 bg-gray-900 hover:bg-black text-white text-xs font-semibold rounded-lg shadow-sm transition-all">
+                <span>View Public Showcase ↗</span>
+            </a>
+        </div>
+    </div>
+
+    <!-- Section Filter Tabs -->
+    <div class="flex flex-wrap items-center gap-2 border-b border-gray-100 pb-3">
+        <button type="button"
+                @onclick='() => _selectedSection = "All"'
+                class="px-3.5 py-1.5 text-xs font-semibold rounded-full transition-colors @(_selectedSection == "All" ? "bg-gray-900 text-white" : "bg-gray-100 text-gray-700 hover:bg-gray-200")">
+            All Collections (@_portfolioCategories.Count)
+        </button>
+        @foreach (var section in PortfolioSections.All)
+        {
+            var count = _portfolioCategories.Count(c => string.Equals(c.ParentSection, section, StringComparison.OrdinalIgnoreCase));
+            <button type="button"
+                    @onclick="() => _selectedSection = section"
+                    class="px-3.5 py-1.5 text-xs font-semibold rounded-full transition-colors @(_selectedSection == section ? "bg-gray-900 text-white" : "bg-gray-100 text-gray-700 hover:bg-gray-200")">
+                @section (@count)
+            </button>
+        }
+    </div>
+
+    <!-- Gallery Grid -->
+    @if (_isLoading)
+    {
+        <div class="p-12 text-center text-gray-400 text-sm">
+            <div class="animate-spin inline-block w-6 h-6 border-2 border-current border-t-transparent text-gray-600 rounded-full mb-2"></div>
+            <p>Loading portfolio showcases...</p>
+        </div>
+    }
+    else if (!FilteredCategories.Any())
+    {
+        <div class="bg-white rounded-xl border border-gray-200 p-12 text-center shadow-xs">
+            <div class="w-12 h-12 rounded-full bg-gray-100 text-gray-500 flex items-center justify-center mx-auto mb-3 text-xl">🖼️</div>
+            <h3 class="text-base font-bold text-gray-900">No Portfolio Items in this Category</h3>
+            <p class="text-xs text-gray-500 mt-1">Select another section or browse all collections.</p>
+        </div>
+    }
+    else
+    {
+        <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+            @foreach (var cat in FilteredCategories)
+            {
+                <div class="bg-white rounded-2xl border border-gray-200 shadow-xs hover:shadow-md transition-shadow overflow-hidden flex flex-col">
+                    <div class="h-44 bg-gradient-to-br from-slate-800 to-slate-950 p-6 flex flex-col justify-between text-white relative">
+                        <div class="flex items-center justify-between">
+                            <span class="text-[10px] uppercase font-bold tracking-wider px-2 py-0.5 rounded-full bg-white/20 backdrop-blur-xs">
+                                @cat.ParentSection
+                            </span>
+                            <span class="text-xs text-white/70">@cat.ColorTag</span>
+                        </div>
+                        <div>
+                            <h3 class="text-lg font-bold text-white tracking-tight">@cat.Name</h3>
+                            <p class="text-xs text-slate-300 line-clamp-1 mt-0.5">@cat.Code</p>
+                        </div>
+                    </div>
+
+                    <div class="p-5 flex-1 flex flex-col justify-between space-y-4">
+                        <p class="text-xs text-gray-600 leading-relaxed">
+                            @(!string.IsNullOrWhiteSpace(cat.Description) ? cat.Description : "Premium visual portfolio showcase curated by Photo Aevum Studio artisans.")
+                        </p>
+
+                        @if (cat.ServiceNames?.Any() == true)
+                        {
+                            <div class="space-y-1.5 pt-2 border-t border-gray-100">
+                                <span class="text-[10px] font-bold text-gray-400 uppercase tracking-wider">Associated Services</span>
+                                <div class="flex flex-wrap gap-1.5">
+                                    @foreach (var s in cat.ServiceNames)
+                                    {
+                                        <span class="text-[11px] font-medium bg-gray-50 text-gray-700 px-2 py-0.5 rounded border border-gray-200">
+                                            @s
+                                        </span>
+                                    }
+                                </div>
+                            </div>
+                        }
+
+                        <div class="pt-2 flex items-center justify-between text-xs text-gray-400">
+                            <span>Status: @(cat.IsActive ? "Published" : "Draft")</span>
+                            <a href="/#portfolio" class="text-gray-900 font-semibold hover:underline">Preview Collection &rarr;</a>
+                        </div>
+                    </div>
+                </div>
+            }
+        </div>
+    }
+</div>
+
+@code {
+    private bool _isLoading = true;
+    private string _selectedSection = "All";
+    private List<PortfolioCategoryDto> _portfolioCategories = new();
+
+    private IEnumerable<PortfolioCategoryDto> FilteredCategories =>
+        _selectedSection == "All"
+            ? _portfolioCategories
+            : _portfolioCategories.Where(c => string.Equals(c.ParentSection, _selectedSection, StringComparison.OrdinalIgnoreCase));
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            var cats = await ServicesApi.GetPortfolioCategoriesAsync();
+            _portfolioCategories = cats.Where(c => c.ShowInPortfolio || c.IsActive).OrderBy(c => c.Name).ToList();
+
+            if (!_portfolioCategories.Any())
+            {
+                // Provide fallback portfolio categories if none configured yet
+                _portfolioCategories = new List<PortfolioCategoryDto>
+                {
+                    new() { Code = "PORT-WED", Name = "Wedding Ceremonies & Pre-Nup", Description = "Full-day wedding captures, golden hour ceremony albums, and editorial framing.", ParentSection = PortfolioSections.Photography, ColorTag = "Purple", ShowInPortfolio = true, IsActive = true, ServiceNames = new List<string> { "Full Day Wedding Coverage", "Pre-Nup Creative Session" } },
+                    new() { Code = "PORT-PORT", Name = "Executive & Studio Portraits", Description = "High-key studio portraits, natural light headshots, and corporate branding.", ParentSection = PortfolioSections.Photography, ColorTag = "Blue", ShowInPortfolio = true, IsActive = true, ServiceNames = new List<string> { "Express Headshot", "Full Studio Session" } },
+                    new() { Code = "PORT-COMM", Name = "Commercial & Product Lines", Description = "Catalogue macro stills, multi-light commercial rigging, and e-commerce assets.", ParentSection = PortfolioSections.Photography, ColorTag = "Emerald", ShowInPortfolio = true, IsActive = true, ServiceNames = new List<string> { "Commercial Campaign", "Product Catalog" } },
+                    new() { Code = "PORT-EVENT", Name = "Private Celebrations & Galas", Description = "Event candids, red carpet step-and-repeat, and evening ballroom photography.", ParentSection = PortfolioSections.Videography, ColorTag = "Amber", ShowInPortfolio = true, IsActive = true, ServiceNames = new List<string> { "Bridal Prep", "Celebration Gala" } }
+                };
+            }
+        }
+        catch
+        {
+            _portfolioCategories = new();
+        }
+        finally
+        {
+            _isLoading = false;
+        }
+    }
+}

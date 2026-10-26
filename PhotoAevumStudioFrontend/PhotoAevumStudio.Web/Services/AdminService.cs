@@ -179,14 +179,54 @@ public class AdminService : IAdminService
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "API call to create admin failed.");
-            return new SaveAdminResult(false, ex.Message);
+            _logger.LogWarning(ex, "API call to create admin failed. Falling back to direct database service.");
+            try
+            {
+                var (currentUserId, isSystemAdmin) = await GetCurrentUserInfoAsync();
+                if (!isSystemAdmin)
+                {
+                    return new SaveAdminResult(false, "Permission Denied: Only a SystemAdmin (SADM-###) is authorized to create new Admin accounts.");
+                }
+
+                var admin = new Admin
+                {
+                    Id = model.GeneratedId,
+                    Name = model.FullName,
+                    Email = model.Email,
+                    Role = model.IsSystemAdmin ? "System Admin" : "Admin"
+                };
+                _userService.AddAdmin(admin, currentUserId);
+
+                var createdVm = new AdminViewModel
+                {
+                    Id = admin.Id,
+                    FirstName = model.FirstName,
+                    LastName = model.LastName,
+                    MiddleName = model.MiddleName,
+                    Email = admin.Email,
+                    Role = admin.Role,
+                    IsSuperAdmin = model.IsSystemAdmin,
+                    Status = "Active"
+                };
+                return new SaveAdminResult(true, null, createdVm);
+            }
+            catch (Exception dbEx)
+            {
+                _logger.LogError(dbEx, "Database fallback to create admin failed.");
+                return new SaveAdminResult(false, ex.Message);
+            }
         }
     }
 
     public async Task<SaveAdminResult> UpdateAdminAsync(string id, EditAdminModel model, CancellationToken cancellationToken = default)
     {
         await _tokenStore.GetTokenAsync(cancellationToken);
+
+        var (_, isCallerSystemAdmin) = await GetCurrentUserInfoAsync();
+        if (!isCallerSystemAdmin)
+        {
+            return new SaveAdminResult(false, "Permission Denied: Admins have read-only access and cannot edit administrator records.");
+        }
 
         var payload = new
         {

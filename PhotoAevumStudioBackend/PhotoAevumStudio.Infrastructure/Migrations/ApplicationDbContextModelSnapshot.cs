@@ -17,7 +17,7 @@ namespace PhotoAevumStudio.Infrastructure.Migrations
         {
 #pragma warning disable 612, 618
             modelBuilder
-                .HasAnnotation("ProductVersion", "10.0.12")
+                .HasAnnotation("ProductVersion", "10.0.14")
                 .HasAnnotation("Relational:MaxIdentifierLength", 128);
 
             SqlServerModelBuilderExtensions.UseIdentityColumns(modelBuilder);
@@ -327,6 +327,10 @@ namespace PhotoAevumStudio.Infrastructure.Migrations
 
                     SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
 
+                    b.Property<string>("DaysOff")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
                     b.Property<string>("IdentityUserId")
                         .IsRequired()
                         .HasColumnType("nvarchar(450)");
@@ -377,6 +381,157 @@ namespace PhotoAevumStudio.Infrastructure.Migrations
                     b.ToTable("EmployeeAssignments");
                 });
 
+            modelBuilder.Entity("PhotoAevumStudio.Application.Entities.EmployeeLeave", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
+
+                    b.Property<DateTime?>("ApprovedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("ApprovedBy")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("EmployeeName")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("EmployeeStudioId")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<DateOnly>("EndDate")
+                        .HasColumnType("date");
+
+                    b.Property<string>("LeaveId")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("LeaveType")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("Reason")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("RejectionReason")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<DateOnly>("StartDate")
+                        .HasColumnType("date");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.HasKey("Id");
+
+                    b.ToTable("EmployeeLeaves");
+                });
+
+            modelBuilder.Entity("PhotoAevumStudio.Application.Entities.EmployeeSpecialization", b =>
+                {
+                    b.Property<string>("SpecializationID")
+                        .HasMaxLength(30)
+                        .HasColumnType("nvarchar(30)");
+
+                    b.Property<string>("ColorTag")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasMaxLength(50)
+                        .HasColumnType("nvarchar(50)")
+                        .HasDefaultValue("Blue");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("datetime2")
+                        .HasDefaultValueSql("SYSUTCDATETIME()");
+
+                    b.Property<string>("Description")
+                        .HasMaxLength(1000)
+                        .HasColumnType("nvarchar(1000)");
+
+                    b.Property<string>("Specialization")
+                        .IsRequired()
+                        .HasMaxLength(255)
+                        .HasColumnType("nvarchar(255)");
+
+                    b.Property<string>("SpecializationDescription")
+                        .HasMaxLength(1000)
+                        .HasColumnType("nvarchar(1000)");
+
+                    b.Property<string>("SpecializationName")
+                        .IsRequired()
+                        .HasMaxLength(255)
+                        .HasColumnType("nvarchar(255)");
+
+                    b.HasKey("SpecializationID");
+
+                    b.ToTable("EmployeeSpecialization", "dbo");
+                });
+
+            modelBuilder.Entity("PhotoAevumStudio.Application.Entities.EmployeeTimesheet", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
+
+                    b.Property<string>("AdjustedBy")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("AdjustmentReason")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<DateTime>("ClockIn")
+                        .HasColumnType("datetime2");
+
+                    b.Property<DateTime?>("ClockOut")
+                        .HasColumnType("datetime2");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("EmployeeName")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("EmployeeStudioId")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<bool>("IsDayOffWork")
+                        .HasColumnType("bit");
+
+                    b.Property<string>("Notes")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("TimesheetId")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<double>("TotalHours")
+                        .HasColumnType("float");
+
+                    b.Property<DateOnly>("WorkDate")
+                        .HasColumnType("date");
+
+                    b.HasKey("Id");
+
+                    b.ToTable("EmployeeTimesheets");
+                });
+
             modelBuilder.Entity("PhotoAevumStudio.Application.Entities.Equipment", b =>
                 {
                     b.Property<int>("Id")
@@ -387,6 +542,23 @@ namespace PhotoAevumStudio.Infrastructure.Migrations
 
                     b.Property<int?>("AssignedEmployeeId")
                         .HasColumnType("int");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("Description")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("EquipmentID")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("EquipmentTypeID")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("ImagePath")
+                        .HasColumnType("nvarchar(max)");
 
                     b.Property<string>("Name")
                         .IsRequired()
@@ -439,6 +611,30 @@ namespace PhotoAevumStudio.Infrastructure.Migrations
                     b.ToTable("EquipmentAssignments");
                 });
 
+            modelBuilder.Entity("PhotoAevumStudio.Application.Entities.EventCategory", b =>
+                {
+                    b.Property<string>("Id")
+                        .HasMaxLength(30)
+                        .HasColumnType("nvarchar(30)")
+                        .HasColumnName("ServiceCategoryID");
+
+                    b.Property<string>("Description")
+                        .IsRequired()
+                        .HasMaxLength(1000)
+                        .HasColumnType("nvarchar(1000)")
+                        .HasColumnName("ServiceCategoryDescription");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(255)
+                        .HasColumnType("nvarchar(255)")
+                        .HasColumnName("ServiceCategoryName");
+
+                    b.HasKey("Id");
+
+                    b.ToTable("ServiceCategory", "dbo");
+                });
+
             modelBuilder.Entity("PhotoAevumStudio.Application.Entities.Photo", b =>
                 {
                     b.Property<int>("Id")
@@ -470,6 +666,41 @@ namespace PhotoAevumStudio.Infrastructure.Migrations
                     b.HasIndex("BookingId");
 
                     b.ToTable("Photos");
+                });
+
+            modelBuilder.Entity("PhotoAevumStudio.Application.Entities.ServiceCategoryJoin", b =>
+                {
+                    b.Property<string>("Id")
+                        .HasMaxLength(30)
+                        .HasColumnType("nvarchar(30)")
+                        .HasColumnName("ServiceCategoryJoinID");
+
+                    b.Property<string>("AdditionalServiceId")
+                        .HasMaxLength(30)
+                        .HasColumnType("nvarchar(30)")
+                        .HasColumnName("AdditionalServicesID");
+
+                    b.Property<string>("CategoryId")
+                        .IsRequired()
+                        .HasMaxLength(30)
+                        .HasColumnType("nvarchar(30)")
+                        .HasColumnName("ServiceCategoryID");
+
+                    b.Property<string>("ComboPackageId")
+                        .HasMaxLength(30)
+                        .HasColumnType("nvarchar(30)")
+                        .HasColumnName("ComboPackageID");
+
+                    b.Property<string>("ServiceId")
+                        .HasMaxLength(30)
+                        .HasColumnType("nvarchar(30)")
+                        .HasColumnName("ServicesID");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("CategoryId");
+
+                    b.ToTable("ServiceCategoryJoins", "dbo");
                 });
 
             modelBuilder.Entity("PhotoAevumStudio.Application.Entities.StudioService", b =>
@@ -641,6 +872,17 @@ namespace PhotoAevumStudio.Infrastructure.Migrations
                     b.Navigation("Booking");
                 });
 
+            modelBuilder.Entity("PhotoAevumStudio.Application.Entities.ServiceCategoryJoin", b =>
+                {
+                    b.HasOne("PhotoAevumStudio.Application.Entities.EventCategory", "Category")
+                        .WithMany("Associations")
+                        .HasForeignKey("CategoryId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Category");
+                });
+
             modelBuilder.Entity("PhotoAevumStudio.Application.Entities.Booking", b =>
                 {
                     b.Navigation("EmployeeAssignments");
@@ -651,6 +893,11 @@ namespace PhotoAevumStudio.Infrastructure.Migrations
             modelBuilder.Entity("PhotoAevumStudio.Application.Entities.Employee", b =>
                 {
                     b.Navigation("AssignedEquipment");
+                });
+
+            modelBuilder.Entity("PhotoAevumStudio.Application.Entities.EventCategory", b =>
+                {
+                    b.Navigation("Associations");
                 });
 #pragma warning restore 612, 618
         }

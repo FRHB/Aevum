@@ -3,10 +3,31 @@
 @page "/admin/staff-schedule"
 @layout AdminLayout
 @rendermode InteractiveServer
+@using PhotoAevumStudio.Web.Services
+@using Microsoft.AspNetCore.Components.Authorization
+@using System.Security.Claims
 @inject IScheduleService ScheduleService
+@inject AuthenticationStateProvider AuthStateProvider
+@inject IUserService UserService
 
 <PageTitle>Staff Schedule | Aevum Studio</PageTitle>
 
+@if (_isUnauthorized)
+{
+    <div class="rounded-xl border border-rose-200 bg-rose-50 p-8 text-center my-6">
+        <div class="mx-auto flex h-14 w-14 items-center justify-center rounded-full bg-rose-100 text-rose-600 mb-4">
+            <svg class="h-8 w-8" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+            </svg>
+        </div>
+        <h2 class="text-xl font-bold text-rose-900 mb-2">Access Denied (403)</h2>
+        <p class="text-sm text-rose-700 max-w-md mx-auto">
+            You do not have authorization to view the Staff Schedule. Access to staff rosters and scheduling is restricted to Office Clerks and Studio Administrators.
+        </p>
+    </div>
+}
+else
+{
 <div class="space-y-4 pb-10">
     @* ── 1. COMPACT PAGE HEADER & STATUS STRIP ────────────────────────── *@
     <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 border-b border-gray-200 pb-3">
@@ -283,6 +304,22 @@
                             <input type="time" @bind="_newEndTime" class="w-full p-1.5 border rounded" />
                         </div>
                     </div>
+                    <div>
+                        <label class="block font-semibold mb-1">Shift / Leave Type</label>
+                        <select @bind="_newShift.ShiftType" class="w-full p-1.5 border rounded">
+                            <option value="Full Day">Full Day Shift</option>
+                            <option value="Half Day">Half Day Shift</option>
+                            <option value="Sick Leave">Sick Leave</option>
+                            <option value="Vacation Leave">Vacation Leave</option>
+                            <option value="Maternity Leave">Maternity Leave</option>
+                            <option value="Paternity Leave">Paternity Leave</option>
+                            <option value="Overtime">Overtime</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label class="block font-semibold mb-1">Notes / Reason</label>
+                        <input type="text" @bind="_newShift.Notes" placeholder="Reason or assignment notes..." class="w-full p-1.5 border rounded" />
+                    </div>
                 </div>
                 <div class="flex justify-end gap-2 mt-4 pt-3 border-t">
                     <button type="button" @onclick="CloseCreateModal" class="px-3 py-1 text-xs border rounded">Cancel</button>
@@ -292,8 +329,29 @@
         </div>
     }
 </div>
+}
 
 @code {
+    [CascadingParameter] Task<AuthenticationState>? AuthState { get; set; }
+    private ClaimsPrincipal? _currentUser;
+    private bool _isUnauthorized;
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (AuthState != null)
+        {
+            var state = await AuthState;
+            _currentUser = state.User;
+        }
+        else if (AuthStateProvider != null)
+        {
+            var state = await AuthStateProvider.GetAuthenticationStateAsync();
+            _currentUser = state.User;
+        }
+
+        _isUnauthorized = EmployeeRoleHelper.IsPhotographerOrCreative(_currentUser, UserService);
+    }
+
     private ScheduleViewMode _currentView = ScheduleViewMode.Week;
     private DateTime _selectedDate = DateTime.Today;
     private string _searchQuery = string.Empty;
@@ -461,6 +519,12 @@
             return;
         }
 
+        if (_newShiftDate.DayOfWeek == DayOfWeek.Sunday && !_newShift.ShiftType.Contains("Leave"))
+        {
+            _modalErrorMessage = "Cannot assign work: Sunday is the designated Day Off for this staff member.";
+            return;
+        }
+
         _newShift.Date = _newShiftDate;
         _newShift.StartTime = _newStartTime.ToTimeSpan();
         _newShift.EndTime = _newEndTime.ToTimeSpan();
@@ -474,6 +538,8 @@
     {
         if (shift.HasConflict)
             return "bg-rose-50 border-rose-300 text-rose-950";
+        if (shift.ShiftType.Contains("Leave") || shift.ShiftType == "Sick Leave")
+            return "bg-amber-100/80 border-amber-300 text-amber-950";
         if (shift.IsOpenShift)
             return "bg-amber-50 border-dashed border-amber-300 text-amber-950";
         return "bg-emerald-50/70 border-emerald-200 text-emerald-950";

@@ -119,7 +119,7 @@ public class AdminsController : ControllerBase
         try
         {
             var createdAdmin = await _adminService.CreateAdminAsync(dto, requesterId, isSystemAdmin, ct);
-            return StatusCode(StatusCodes.Status201Created, createdAdmin);
+            return Ok(createdAdmin);
         }
         catch (ArgumentException ex)
         {
