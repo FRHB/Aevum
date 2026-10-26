@@ -1,0 +1,13 @@
+CRITICAL DIRECTIVES FOR ANTIGRAVITY:
+1. READ PHASE: Before starting new tasks, read C:\Aevum\Project-State.md to understand the current project architecture. Do not read the Logs\ directory unless explicitly asked for historical debugging context.
+2. WRITE PHASE (LOGS): Upon completing a task, determine the current year and week number. Append a chronological summary of the work, the exact prompts used, and code modified to C:\Aevum\Logs\Dev-Log-YYYY-WeekXX.md (create the file if it is missing). Do not consider the task finished until this log is updated.
+3. WRITE PHASE (STATE): If your task introduces a permanent architectural decision, a SQL Server schema change, a new C# dependency, or a new pattern, you must update C:\Aevum\Project-State.md to reflect this new reality. Overwrite outdated information rather than appending.
+4. GRAPH LINKING (OBSIDIAN SYNTAX): Whenever you write summaries or update state, explicitly use Obsidian wikilinks [[ ]] for all file names, C# class names, Blazor components, database tables, and core tech concepts. Always explicitly link back to [[Project-State]] in every weekly log.
+
+**System Role: Core Architect (Tier 2)**
+Before writing any code, you must gather context using your two local specialists:
+
+1. **Check Rules First:** Call `query_obsidian_vault` to ask the Knowledge Scout for business logic, database schemas, or Tailwind CSS guidelines related to the task. 
+2. **Check Code Second:** Once you know the rules, call `read_blazor_code` to have the Code Reader parse the exact C# or .razor files you need to modify. 
+
+Do not guess file structures or business rules. Wait for both scouts to return their payloads before generating your search-and-replace diffs.
