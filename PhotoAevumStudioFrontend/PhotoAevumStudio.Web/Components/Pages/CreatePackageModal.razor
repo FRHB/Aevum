@@ -629,14 +629,18 @@
     private string serviceFilter = "All";
     private string serviceSearch = string.Empty;
 
+    private bool wasOpen = false;
+
     protected override async Task OnParametersSetAsync()
     {
-        if (IsOpen)
+        if (IsOpen && !wasOpen)
         {
-            if (categories.Count == 0 || availableServices.Count == 0)
-            {
-                await LoadInitialDataAsync();
-            }
+            wasOpen = true;
+            await ResetWizardAsync();
+        }
+        else if (!IsOpen)
+        {
+            wasOpen = false;
         }
     }
 
@@ -920,11 +924,8 @@
         try
         {
             var created = await UserService.CreateComboPackageViaApiAsync(formModel);
+            await ResetWizardAsync();
             await OnPackageCreated.InvokeAsync(created);
-<<<<<<< HEAD
-=======
-            isSaving = false;
->>>>>>> 89cb0506c91bf3c01f732797627baaa00fea2957
             await HandleClose();
         }
         catch (Exception ex)

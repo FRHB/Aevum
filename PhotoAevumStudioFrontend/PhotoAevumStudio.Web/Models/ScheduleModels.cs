@@ -43,15 +43,6 @@ public class EventBookingModel
     public string AssignedPhotographer { get; set; } = "Elena Rostova";
     public string Notes { get; set; } = string.Empty;
     public decimal EstimatedPrice { get; set; } = 350.00m;
-<<<<<<< HEAD
-
-    // Category-driven associations (auto-filled when a category is picked, editable afterwards)
-    public string CategoryCode { get; set; } = string.Empty;
-    public string CategoryName { get; set; } = string.Empty;
-    public List<string> AssignedStaffIds { get; set; } = new();
-    public List<string> AssignedEquipmentIds { get; set; } = new();
-=======
->>>>>>> 89cb0506c91bf3c01f732797627baaa00fea2957
     public bool HasConflict { get; set; }
     public string? ConflictMessage { get; set; }
 
@@ -67,19 +58,6 @@ public class EventBookingModel
 
         return StartTime < other.EndTime && EndTime > other.StartTime;
     }
-<<<<<<< HEAD
-
-    /// <summary>True when both events overlap in time and have at least one assigned staff member in common.</summary>
-    public bool SharesStaffWith(EventBookingModel other)
-    {
-        if (Id == other.Id || Date.Date != other.Date.Date)
-            return false;
-
-        return StartTime < other.EndTime && EndTime > other.StartTime
-               && AssignedStaffIds.Intersect(other.AssignedStaffIds).Any();
-    }
-=======
->>>>>>> 89cb0506c91bf3c01f732797627baaa00fea2957
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -158,12 +136,6 @@ public class EquipmentReservationModel
     public string TechnicianInCharge { get; set; } = "Marcus Vance";
     public string Location { get; set; } = "Studio A";
     public string MaintenanceStatus { get; set; } = "Ready"; // Ready, In-Use, Maintenance Required, Calibration Due
-<<<<<<< HEAD
-
-    /// <summary>Set when the reservation was created automatically for an event; removed with that event.</summary>
-    public string? SourceEventId { get; set; }
-=======
->>>>>>> 89cb0506c91bf3c01f732797627baaa00fea2957
     public string Notes { get; set; } = string.Empty;
     public bool HasConflict { get; set; }
     public string? ConflictMessage { get; set; }
@@ -181,24 +153,3 @@ public class EquipmentReservationModel
         return StartTime < other.EndTime && EndTime > other.StartTime;
     }
 }
-<<<<<<< HEAD
-
-// ─────────────────────────────────────────────────────────────────────────────
-// 4. SHARED LOOKUPS
-// ─────────────────────────────────────────────────────────────────────────────
-
-/// <summary>Service types selectable on an event; also the valid values for a category's default service type.</summary>
-public static class EventServiceTypes
-{
-    public static readonly string[] All =
-    {
-        "Express Headshot",
-        "Full Studio Session",
-        "Commercial Campaign",
-        "Bridal Prep",
-        "Product Catalog",
-        "Event Coverage"
-    };
-}
-=======
->>>>>>> 89cb0506c91bf3c01f732797627baaa00fea2957

@@ -373,11 +373,21 @@
     private bool copiedPassword = false;
 
     private CancellationTokenSource? _cts;
+    private bool wasOpen = false;
 
     protected override void OnInitialized()
     {
         InitializeContext();
         _cts = new CancellationTokenSource();
+    }
+
+    protected override void OnParametersSet()
+    {
+        if (IsOpen && !wasOpen)
+        {
+            InitializeContext();
+        }
+        wasOpen = IsOpen;
     }
 
     private void InitializeContext()
@@ -449,10 +459,6 @@
                 await Task.Delay(1200);
 
                 await OnSaved.InvokeAsync();
-<<<<<<< HEAD
-=======
-                isSaving = false;
->>>>>>> 89cb0506c91bf3c01f732797627baaa00fea2957
                 await CloseModal();
             }
             else

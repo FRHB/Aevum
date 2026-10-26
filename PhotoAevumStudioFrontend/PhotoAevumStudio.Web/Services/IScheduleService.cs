@@ -29,17 +29,4 @@ public interface IScheduleService
     void UpdateEquipmentReservation(EquipmentReservationModel reservation);
     void DeleteEquipmentReservation(string id);
     int GetEquipmentConflictCount();
-<<<<<<< HEAD
-
-    List<CategoryAssociationProfile> GetCategoryProfiles();
-    CategoryAssociationProfile? GetCategoryProfile(string? categoryIdOrCode, string? categoryName = null);
-    void SaveCategoryProfile(CategoryAssociationProfile profile);
-    void RemoveCategoryProfile(string categoryCode);
-    void ApplyCategoryProfiles(IEnumerable<CategoryAssociationProfile> profiles);
-    HashSet<string> GetBusyStaffIds(DateTime date, TimeSpan start, TimeSpan end, string? ignoreEventId = null);
-    HashSet<string> GetBusyEquipmentIds(DateTime date, TimeSpan start, TimeSpan end, string? ignoreEventId = null);
-    string ResolveLeadStaffName(IEnumerable<string> staffIds, string fallback);
-
-=======
->>>>>>> 89cb0506c91bf3c01f732797627baaa00fea2957
 }

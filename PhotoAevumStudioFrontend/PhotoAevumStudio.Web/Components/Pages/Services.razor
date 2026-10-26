@@ -3,13 +3,9 @@
 @rendermode InteractiveServer
 @attribute [Authorize(Roles = "Admin")]
 @using PhotoAevumStudio.Web.Models
-<<<<<<< HEAD
 @using PhotoAevumStudio.Web.Services
 @inject IUserService UserService
 @inject IServicesApiClient ServicesApi
-=======
-@inject IUserService UserService
->>>>>>> 89cb0506c91bf3c01f732797627baaa00fea2957
 
 <div class="space-y-6">
     <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 pb-2 border-b border-gray-200">
@@ -71,10 +67,7 @@
                     <th class="px-6 py-4">Code</th>
                     <th class="px-6 py-4">Service Name</th>
                     <th class="px-6 py-4">Description</th>
-<<<<<<< HEAD
                     <th class="px-6 py-4">Featured</th>
-=======
->>>>>>> 89cb0506c91bf3c01f732797627baaa00fea2957
                     <th class="px-6 py-4 text-right">Status</th>
                 </tr>
             </thead>
@@ -82,11 +75,7 @@
                 @if (_services.Count == 0)
                 {
                     <tr>
-<<<<<<< HEAD
                         <td colspan="5" class="px-6 py-8 text-center text-gray-400">
-=======
-                        <td colspan="4" class="px-6 py-8 text-center text-gray-400">
->>>>>>> 89cb0506c91bf3c01f732797627baaa00fea2957
                             No services found in the database.
                         </td>
                     </tr>
@@ -99,7 +88,6 @@
                             <td class="px-6 py-4 font-mono text-xs text-gray-600">@service.Code</td>
                             <td class="px-6 py-4 font-medium text-gray-900">@service.Title</td>
                             <td class="px-6 py-4 text-gray-500">@(string.IsNullOrWhiteSpace(service.Description) ? service.Category : service.Description)</td>
-<<<<<<< HEAD
                             <td class="px-6 py-4">
                                     <button type="button"
                                             @onclick="() => ToggleFeaturedAsync(service)"
@@ -112,9 +100,6 @@
                                     </button>
                                 </td>
                                 <td class="px-6 py-4 text-right font-semibold text-gray-900">@service.Status</td>
-=======
-                            <td class="px-6 py-4 text-right font-semibold text-gray-900">@service.Status</td>
->>>>>>> 89cb0506c91bf3c01f732797627baaa00fea2957
                         </tr>
                     }
                 }
@@ -143,7 +128,6 @@
     private void LoadServices()
     {
         _services = UserService.GetMainServices();
-<<<<<<< HEAD
         ApplyFeaturedFlags();
     }
 
@@ -188,8 +172,6 @@
         {
             _busyCodes.Remove(item.Code);
         }
-=======
->>>>>>> 89cb0506c91bf3c01f732797627baaa00fea2957
     }
 
     private void HandleMainServiceSaved(string serviceId)

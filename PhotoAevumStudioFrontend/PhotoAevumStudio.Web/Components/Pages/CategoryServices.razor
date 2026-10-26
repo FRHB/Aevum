@@ -10,10 +10,6 @@
 @using PhotoAevumStudio.Web.Models
 @using PhotoAevumStudio.Web.Services
 @inject IServicesApiClient ServicesApi
-<<<<<<< HEAD
-@inject IScheduleService ScheduleService
-=======
->>>>>>> 89cb0506c91bf3c01f732797627baaa00fea2957
 
 <PageTitle>Service Categories Management | Photo Aevum Studio</PageTitle>
 
@@ -39,11 +35,7 @@
                 <svg class="w-4 h-4 text-emerald-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M12 4v16m8-8H4" />
                 </svg>
-<<<<<<< HEAD
-                <span>Add New Category</span>
-=======
                 <span>+ Add New Category</span>
->>>>>>> 89cb0506c91bf3c01f732797627baaa00fea2957
             </button>
         </div>
     </div>
@@ -265,10 +257,6 @@
                         @foreach (var cat in FilteredCategories)
                         {
                             var classes = SpecializationColorHelper.GetClasses(cat.ColorTag);
-<<<<<<< HEAD
-                            var catProfile = ScheduleService.GetCategoryProfile(cat.Code, cat.Name);
-=======
->>>>>>> 89cb0506c91bf3c01f732797627baaa00fea2957
 
                             <tr class="hover:bg-gray-50/60 transition-colors duration-100">
                                 
@@ -287,28 +275,17 @@
                                                         ★ Featured
                                                     </span>
                                                 }
-<<<<<<< HEAD
                                                 @if (cat.ShowInPortfolio)
                                                 {
                                                     <span class="inline-flex items-center text-[10px] font-bold text-indigo-700 bg-indigo-50 px-1.5 py-0.2 rounded border border-indigo-200" title="Shown in the public Portfolio under @cat.PortfolioSection">
                                                         🖼 Portfolio · @cat.PortfolioSection
                                                     </span>
                                                 }
-=======
->>>>>>> 89cb0506c91bf3c01f732797627baaa00fea2957
                                             </div>
                                             <div class="text-[11px] text-gray-400 mt-0.5 flex items-center gap-2">
                                                 <span>@cat.Type</span>
                                                 <span>&bull;</span>
                                                 <span>@cat.AssociatedServices.Count Services</span>
-<<<<<<< HEAD
-                                                @if (catProfile is not null)
-                                                {
-                                                    <span>&bull;</span>
-                                                    <span title="Auto-assigned to events in this category">⚙ @catProfile.StaffIds.Count staff · @catProfile.EquipmentIds.Count gear</span>
-                                                }
-=======
->>>>>>> 89cb0506c91bf3c01f732797627baaa00fea2957
                                             </div>
                                         </div>
                                     </div>
@@ -556,7 +533,6 @@
                             <span class="text-xs font-medium text-gray-700">Feature this category on the public studio booking flow</span>
                         </label>
                     </div>
-<<<<<<< HEAD
 
                     <!-- Public Portfolio placement -->
                     <div class="pt-3 mt-1 border-t border-gray-100 space-y-3">
@@ -584,19 +560,6 @@
                             </div>
                         }
                     </div>
-
-                    <!-- Default event associations (auto-assigned when this category is picked for an event) -->
-                    <div class="pt-3 mt-1 border-t border-gray-100 space-y-3">
-                        <div>
-                            <h4 class="text-xs font-bold text-gray-700 uppercase tracking-wider">Default Event Associations</h4>
-                            <p class="text-[11px] text-gray-400 mt-0.5">
-                                Space, service type, staff and equipment that are filled in automatically when this category is selected for an event on the calendar.
-                            </p>
-                        </div>
-                        <CategoryAssociationPicker Profile="formProfile" />
-                    </div>
-=======
->>>>>>> 89cb0506c91bf3c01f732797627baaa00fea2957
                 </div>
 
                 <!-- Modal Footer -->
@@ -712,30 +675,6 @@
                         <p class="text-xs text-gray-400 italic">No services currently associated with this category.</p>
                     }
                 </div>
-<<<<<<< HEAD
-
-                <!-- Auto-assigned event associations -->
-                @{
-                    var detailProfile = ScheduleService.GetCategoryProfile(selectedCategoryForDetails.Code, selectedCategoryForDetails.Name);
-                }
-                <div>
-                    <h3 class="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2">Auto-Assigned to Events</h3>
-                    @if (detailProfile is null)
-                    {
-                        <p class="text-xs text-gray-400 italic">No default associations. Events in this category are assigned manually.</p>
-                    }
-                    else
-                    {
-                        <div class="text-xs text-gray-700 space-y-1">
-                            <p><span class="font-semibold">Space:</span> @(ScheduleService.GetStudioSpaces().FirstOrDefault(sp => sp.Id == detailProfile.DefaultSpaceId)?.Name ?? "—")</p>
-                            <p><span class="font-semibold">Service type:</span> @(detailProfile.DefaultServiceType ?? "—") &bull; @detailProfile.DefaultDurationHours.ToString("0.##")h &bull; $@detailProfile.DefaultPrice.ToString("N0")</p>
-                            <p><span class="font-semibold">Staff:</span> @AssociationNames(detailProfile.StaffIds, true)</p>
-                            <p><span class="font-semibold">Equipment:</span> @AssociationNames(detailProfile.EquipmentIds, false)</p>
-                        </div>
-                    }
-                </div>
-=======
->>>>>>> 89cb0506c91bf3c01f732797627baaa00fea2957
             </div>
 
             <!-- Details Modal Footer -->
@@ -776,10 +715,6 @@
     private ServiceCategoryItem? editingCategory;
     private ServiceCategoryItem? selectedCategoryForDetails;
     private CategoryModel formModel = new();
-<<<<<<< HEAD
-    private CategoryAssociationProfile formProfile = new();
-=======
->>>>>>> 89cb0506c91bf3c01f732797627baaa00fea2957
 
     // Data Source List
     private List<ServiceCategoryItem> categories = new();
@@ -799,28 +734,59 @@
         LoadDefaultCategories();
     }
 
-<<<<<<< HEAD
     protected override async Task OnInitializedAsync()
     {
-        // Overlay the saved portfolio placement (and mapped service names) onto the category list.
-        var saved = await ServicesApi.GetPortfolioCategoriesAsync();
-        foreach (var row in saved)
-        {
-            var cat = categories.FirstOrDefault(c => c.Code.Equals(row.Code, StringComparison.OrdinalIgnoreCase));
-            if (cat is null) continue;
-
-            cat.ShowInPortfolio = true;
-            cat.PortfolioSection = row.ParentSection;
-            if (row.ServiceNames.Count > 0)
-                cat.AssociatedServices = row.ServiceNames.ToList();
-        }
-
-        // Overlay the saved default associations (staff / equipment / space) used by the Calendar of Events.
-        ScheduleService.ApplyCategoryProfiles(await ServicesApi.GetCategoryAssociationsAsync());
+        await RefreshCategoriesAsync();
     }
 
-=======
->>>>>>> 89cb0506c91bf3c01f732797627baaa00fea2957
+    private async Task RefreshCategoriesAsync()
+    {
+        try
+        {
+            var apiCategories = await ServicesApi.GetCategoriesAsync();
+            if (apiCategories != null && apiCategories.Count > 0)
+            {
+                foreach (var c in apiCategories)
+                {
+                    if (!categories.Any(x => x.Id.Equals(c.Id, StringComparison.OrdinalIgnoreCase) || x.Code.Equals(c.Id, StringComparison.OrdinalIgnoreCase)))
+                    {
+                        categories.Add(new ServiceCategoryItem
+                        {
+                            Id = c.Id,
+                            Code = c.Id,
+                            Name = c.Name,
+                            Type = "Main Services",
+                            Description = c.Description,
+                            ColorTag = "Blue",
+                            Status = "Active",
+                            IsFeatured = false,
+                            AssociatedServices = new List<string>(),
+                            CreatedAt = DateTime.UtcNow
+                        });
+                    }
+                }
+            }
+        }
+        catch { }
+
+        // Overlay the saved portfolio placement (and mapped service names) onto the category list.
+        try
+        {
+            var saved = await ServicesApi.GetPortfolioCategoriesAsync();
+            foreach (var row in saved)
+            {
+                var cat = categories.FirstOrDefault(c => c.Code.Equals(row.Code, StringComparison.OrdinalIgnoreCase));
+                if (cat is null) continue;
+
+                cat.ShowInPortfolio = true;
+                cat.PortfolioSection = row.ParentSection;
+                if (row.ServiceNames.Count > 0)
+                    cat.AssociatedServices = row.ServiceNames.ToList();
+            }
+        }
+        catch { }
+    }
+
     private void ResetFilters()
     {
         searchQuery = string.Empty;
@@ -890,42 +856,13 @@
     // Modal & Action Handlers
     private void OpenAddModal()
     {
-<<<<<<< HEAD
-        formProfile = new CategoryAssociationProfile();
-=======
->>>>>>> 89cb0506c91bf3c01f732797627baaa00fea2957
+        formModel = new CategoryModel();
         isCategoryWizardOpen = true;
     }
 
     private async Task HandleCategoryWizardSaved(string categoryId)
     {
-        try
-        {
-            var apiCategories = await ServicesApi.GetCategoriesAsync();
-            if (apiCategories != null && apiCategories.Count > 0)
-            {
-                foreach (var c in apiCategories)
-                {
-                    if (!categories.Any(x => x.Id.Equals(c.Id, StringComparison.OrdinalIgnoreCase)))
-                    {
-                        categories.Add(new ServiceCategoryItem
-                        {
-                            Id = c.Id,
-                            Code = c.Id,
-                            Name = c.Name,
-                            Type = "Main Services",
-                            Description = c.Description,
-                            ColorTag = "Blue",
-                            Status = "Active",
-                            IsFeatured = false,
-                            AssociatedServices = new List<string>(),
-                            CreatedAt = DateTime.UtcNow
-                        });
-                    }
-                }
-            }
-        }
-        catch { }
+        await RefreshCategoriesAsync();
         notificationMessage = $"Service Category '{categoryId}' was registered successfully in the database.";
     }
 
@@ -942,17 +879,10 @@
             ColorTag = category.ColorTag,
             Status = category.Status,
             IsFeatured = category.IsFeatured,
-<<<<<<< HEAD
             ShowInPortfolio = category.ShowInPortfolio,
             PortfolioSection = category.PortfolioSection,
             ServicesRaw = string.Join(", ", category.AssociatedServices)
         };
-        formProfile = ScheduleService.GetCategoryProfile(category.Code, category.Name)?.Clone()
-                      ?? new CategoryAssociationProfile();
-=======
-            ServicesRaw = string.Join(", ", category.AssociatedServices)
-        };
->>>>>>> 89cb0506c91bf3c01f732797627baaa00fea2957
         isModalOpen = true;
     }
 
@@ -966,13 +896,10 @@
     {
         isModalOpen = false;
         editingCategory = null;
+        formModel = new CategoryModel();
     }
 
-<<<<<<< HEAD
     private async Task HandleSaveCategory()
-=======
-    private void HandleSaveCategory()
->>>>>>> 89cb0506c91bf3c01f732797627baaa00fea2957
     {
         var parsedServices = formModel.ServicesRaw
             .Split(new[] { ',', ';' }, StringSplitOptions.RemoveEmptyEntries)
@@ -981,17 +908,12 @@
             .Distinct(StringComparer.OrdinalIgnoreCase)
             .ToList();
 
-<<<<<<< HEAD
         ServiceCategoryItem savedCategory;
         string? previousCode = null;
 
         if (isEditMode && editingCategory != null)
         {
             previousCode = editingCategory.Code;
-=======
-        if (isEditMode && editingCategory != null)
-        {
->>>>>>> 89cb0506c91bf3c01f732797627baaa00fea2957
             editingCategory.Name = formModel.Name;
             editingCategory.Code = formModel.Code;
             editingCategory.Type = formModel.Type;
@@ -999,14 +921,10 @@
             editingCategory.ColorTag = formModel.ColorTag;
             editingCategory.Status = formModel.Status;
             editingCategory.IsFeatured = formModel.IsFeatured;
-<<<<<<< HEAD
             editingCategory.ShowInPortfolio = formModel.ShowInPortfolio;
             editingCategory.PortfolioSection = formModel.PortfolioSection;
             editingCategory.AssociatedServices = parsedServices;
             savedCategory = editingCategory;
-=======
-            editingCategory.AssociatedServices = parsedServices;
->>>>>>> 89cb0506c91bf3c01f732797627baaa00fea2957
 
             notificationMessage = $"Service Category \"{editingCategory.Name}\" was updated successfully.";
         }
@@ -1022,24 +940,17 @@
                 ColorTag = formModel.ColorTag,
                 Status = formModel.Status,
                 IsFeatured = formModel.IsFeatured,
-<<<<<<< HEAD
                 ShowInPortfolio = formModel.ShowInPortfolio,
                 PortfolioSection = formModel.PortfolioSection,
-=======
->>>>>>> 89cb0506c91bf3c01f732797627baaa00fea2957
                 AssociatedServices = parsedServices,
                 CreatedAt = DateTime.UtcNow
             };
 
-<<<<<<< HEAD
             savedCategory = newCategory;
-=======
->>>>>>> 89cb0506c91bf3c01f732797627baaa00fea2957
             categories.Insert(0, newCategory);
             notificationMessage = $"Service Category \"{newCategory.Name}\" ({newCategory.Code}) added to the master catalog registry.";
         }
 
-<<<<<<< HEAD
         // Persist portfolio placement so the public sidebar can read it.
         // If the code changed, drop the row stored under the old code first.
         if (previousCode is not null && !previousCode.Equals(savedCategory.Code, StringComparison.OrdinalIgnoreCase))
@@ -1068,41 +979,11 @@
             notificationMessage += " (Portfolio placement could not be saved — please try again.)";
         }
 
-        // Persist the default event associations. If the code changed, drop the mapping stored under the old code.
-        if (previousCode is not null && !previousCode.Equals(savedCategory.Code, StringComparison.OrdinalIgnoreCase))
-        {
-            ScheduleService.RemoveCategoryProfile(previousCode);
-            await ServicesApi.SaveCategoryAssociationsAsync(new CategoryAssociationProfile { CategoryCode = previousCode });
-        }
-
-        formProfile.CategoryCode = savedCategory.Code;
-        formProfile.CategoryName = savedCategory.Name;
-        ScheduleService.SaveCategoryProfile(formProfile);
-
-        if (!await ServicesApi.SaveCategoryAssociationsAsync(formProfile))
-        {
-            notificationMessage += " (Default event associations could not be saved — please try again.)";
-        }
-
-=======
->>>>>>> 89cb0506c91bf3c01f732797627baaa00fea2957
         isModalOpen = false;
         editingCategory = null;
+        formModel = new CategoryModel();
     }
 
-<<<<<<< HEAD
-    private string AssociationNames(IEnumerable<string> ids, bool staff)
-    {
-        var names = staff
-            ? ids.Select(id => ScheduleService.GetStaffMembers().FirstOrDefault(m => m.Id == id)?.FullName)
-            : ids.Select(id => ScheduleService.GetEquipmentResources().FirstOrDefault(e => e.Id == id)?.Name);
-
-        var list = names.OfType<string>().ToList();
-        return list.Count == 0 ? "—" : string.Join(", ", list);
-    }
-
-=======
->>>>>>> 89cb0506c91bf3c01f732797627baaa00fea2957
     private void ToggleCategoryStatus(ServiceCategoryItem category)
     {
         category.Status = category.Status == "Active" ? "Inactive" : "Active";

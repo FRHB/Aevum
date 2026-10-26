@@ -18,11 +18,7 @@
                 <button type="button" 
                         class="text-slate-400 hover:text-slate-700 p-1.5 rounded-lg hover:bg-slate-100 transition-colors"
                         aria-label="Close"
-<<<<<<< HEAD
                         @onclick="CloseModal" 
-=======
-                        @onclick="HandleCancelClick" 
->>>>>>> 89cb0506c91bf3c01f732797627baaa00fea2957
                         disabled="@isSaving">
                     <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
@@ -72,19 +68,11 @@
                 </nav>
             </div>
 
-<<<<<<< HEAD
             <!-- Form Content -->
             <div class="p-6 overflow-y-auto flex-1">
                 <EditForm EditContext="_editContext">
                     <DataAnnotationsValidator />
 
-=======
-            <!-- Form Content & Footer -->
-            <EditForm EditContext="_editContext" OnSubmit="HandleFormSubmitAsync" class="flex flex-col flex-1 min-h-0">
-                <DataAnnotationsValidator />
-
-                <div class="p-6 overflow-y-auto flex-1">
->>>>>>> 89cb0506c91bf3c01f732797627baaa00fea2957
                     @if (currentStep == 1)
                     {
                         <div class="space-y-4">
@@ -260,7 +248,6 @@
                             }
                         </div>
                     }
-<<<<<<< HEAD
                 </EditForm>
             </div>
 
@@ -308,55 +295,6 @@
                     </button>
                 }
             </div>
-=======
-                </div>
-
-                <!-- Modal Footer -->
-                <div class="px-6 py-4 bg-slate-50 border-t border-slate-200 flex items-center justify-between">
-                    @if (currentStep == 1)
-                    {
-                        <button type="button" class="@GhostBtn" @onclick="HandleCancelClick">Cancel</button>
-                        <button type="button" class="@PrimaryBtn flex items-center gap-1.5" @onclick="GoToStep2">
-                            Next
-                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7" />
-                            </svg>
-                        </button>
-                    }
-                    else if (currentStep == 2)
-                    {
-                        <button type="button" class="@GhostBtn flex items-center gap-1.5" @onclick="() => currentStep = 1">
-                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7" />
-                            </svg>
-                            Back
-                        </button>
-                        <button type="button" class="@PrimaryBtn flex items-center gap-1.5" @onclick="GoToStep3Async">
-                            Next
-                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7" />
-                            </svg>
-                        </button>
-                    }
-                    else if (currentStep == 3)
-                    {
-                        <button type="button" class="@GhostBtn" @onclick="() => currentStep = 2" disabled="@isSaving">Back</button>
-                        <button type="submit" class="px-6 py-2.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-semibold uppercase tracking-wider shadow-sm transition-colors disabled:opacity-50 flex items-center gap-2" 
-                                disabled="@isSaving">
-                            @if (isSaving)
-                            {
-                                <span class="w-3.5 h-3.5 border-2 border-white/30 border-t-white rounded-full animate-spin"></span>
-                                <span>Saving...</span>
-                            }
-                            else
-                            {
-                                <span>Complete Setup</span>
-                            }
-                        </button>
-                    }
-                </div>
-            </EditForm>
->>>>>>> 89cb0506c91bf3c01f732797627baaa00fea2957
         </div>
     </div>
 }
@@ -402,29 +340,9 @@
     {
         InitializeContext();
         _cts = new CancellationTokenSource();
-<<<<<<< HEAD
         try
         {
             var specs = await Employees.GetSpecializationsAsync(_cts.Token);
-=======
-        await LoadSpecializationsAsync();
-    }
-
-    protected override async Task OnParametersSetAsync()
-    {
-        if (IsOpen)
-        {
-            await LoadSpecializationsAsync();
-        }
-    }
-
-    private async Task LoadSpecializationsAsync()
-    {
-        try
-        {
-            var token = _cts?.Token ?? CancellationToken.None;
-            var specs = await Employees.GetSpecializationsAsync(token);
->>>>>>> 89cb0506c91bf3c01f732797627baaa00fea2957
             allSpecializations = specs ?? Array.Empty<string>();
         }
         catch
@@ -440,32 +358,6 @@
         _editContext.OnFieldChanged += (s, e) => _messageStore.Clear(e.FieldIdentifier);
     }
 
-<<<<<<< HEAD
-=======
-    private async Task HandleFormSubmitAsync(EditContext _)
-    {
-        if (currentStep == 1)
-        {
-            GoToStep2();
-        }
-        else if (currentStep == 2)
-        {
-            await GoToStep3Async();
-        }
-        else if (currentStep == 3)
-        {
-            await SubmitCompleteSetup();
-        }
-    }
-
-    private async Task HandleCancelClick()
-    {
-        if (isSaving) return;
-        await CloseModal();
-        await OnCancel.InvokeAsync();
-    }
-
->>>>>>> 89cb0506c91bf3c01f732797627baaa00fea2957
     private async Task CloseModal()
     {
         IsOpen = false;
@@ -475,10 +367,7 @@
         saveError = null;
         InitializeContext();
         await IsOpenChanged.InvokeAsync(IsOpen);
-<<<<<<< HEAD
         await OnCancel.InvokeAsync();
-=======
->>>>>>> 89cb0506c91bf3c01f732797627baaa00fea2957
     }
 
     private void AddSpecialization()
@@ -540,11 +429,7 @@
         }
     }
 
-<<<<<<< HEAD
     private void GoToStep3()
-=======
-    private async Task GoToStep3Async()
->>>>>>> 89cb0506c91bf3c01f732797627baaa00fea2957
     {
         if (!string.IsNullOrEmpty(pendingSpec))
         {
@@ -557,42 +442,12 @@
             return;
         }
 
-<<<<<<< HEAD
-=======
-        if (string.IsNullOrWhiteSpace(model.EmployeeId))
-        {
-            try
-            {
-                var existing = await Employees.GetEmployeesAsync(_cts?.Token ?? CancellationToken.None);
-                int maxNum = 0;
-                foreach (var emp in existing)
-                {
-                    if (emp.EmployeeId.StartsWith("EMP-", StringComparison.OrdinalIgnoreCase) &&
-                        int.TryParse(emp.EmployeeId[4..], out int n) && n < 900 && n > maxNum)
-                    {
-                        maxNum = n;
-                    }
-                }
-                model.EmployeeId = $"EMP-{maxNum + 1:D3}";
-            }
-            catch
-            {
-                model.EmployeeId = "EMP-001";
-            }
-        }
-
->>>>>>> 89cb0506c91bf3c01f732797627baaa00fea2957
         specError = null;
         currentStep = 3;
     }
 
     private async Task SubmitCompleteSetup()
     {
-<<<<<<< HEAD
-=======
-        if (isSaving) return;
-
->>>>>>> 89cb0506c91bf3c01f732797627baaa00fea2957
         _messageStore.Clear();
         bool isValid = true;
 
@@ -627,7 +482,6 @@
         try
         {
             var request = new NewEmployeeRequest(
-<<<<<<< HEAD
                 model.EmployeeId,
                 model.FirstName,
                 model.LastName,
@@ -637,17 +491,6 @@
                 model.Password);
 
             var result = await Employees.CreateEmployeeAsync(request, _cts!.Token);
-=======
-                model.EmployeeId.Trim().ToUpperInvariant(),
-                model.FirstName.Trim(),
-                model.LastName.Trim(),
-                model.MiddleName?.Trim(),
-                model.Email.Trim(),
-                model.Specializations.ToList(),
-                model.Password);
-
-            var result = await Employees.CreateEmployeeAsync(request, _cts?.Token ?? CancellationToken.None);
->>>>>>> 89cb0506c91bf3c01f732797627baaa00fea2957
 
             if (!result.Success)
             {
@@ -662,15 +505,9 @@
         {
             // Cancelled
         }
-<<<<<<< HEAD
         catch
         {
             saveError = "Something went wrong while saving. Try again in a moment.";
-=======
-        catch (Exception ex)
-        {
-            saveError = $"Something went wrong while saving: {ex.Message}";
->>>>>>> 89cb0506c91bf3c01f732797627baaa00fea2957
         }
         finally
         {

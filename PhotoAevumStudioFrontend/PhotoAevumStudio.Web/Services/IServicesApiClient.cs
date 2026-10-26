@@ -12,15 +12,9 @@ public interface IServicesApiClient
     Task<string> GetNextAdditionalServiceIdAsync(CancellationToken cancellationToken = default);
     Task<IReadOnlyList<string>> GetAdditionalServiceCategoriesAsync(CancellationToken cancellationToken = default);
     Task<(bool Success, string? ErrorMessage, string? CreatedId)> CreateAdditionalServiceAsync(AdditionalServiceWizardFormModel model, CancellationToken cancellationToken = default);
-<<<<<<< HEAD
     Task<IReadOnlySet<string>> GetFeaturedCodesAsync(string entityType, CancellationToken cancellationToken = default);
     Task<bool> SetFeaturedAsync(string entityType, string code, bool isFeatured, CancellationToken cancellationToken = default);
     Task<IReadOnlyList<PortfolioCategoryDto>> GetPortfolioCategoriesAsync(CancellationToken cancellationToken = default);
     Task<bool> SavePortfolioCategoryAsync(PortfolioCategoryDto category, CancellationToken cancellationToken = default);
 
-    Task<IReadOnlyList<CategoryAssociationProfile>> GetCategoryAssociationsAsync(CancellationToken cancellationToken = default);
-    Task<bool> SaveCategoryAssociationsAsync(CategoryAssociationProfile profile, CancellationToken cancellationToken = default);
-
-=======
->>>>>>> 89cb0506c91bf3c01f732797627baaa00fea2957
 }

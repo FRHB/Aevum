@@ -10,10 +10,7 @@ builder.Services.AddRazorComponents()
 builder.Services.AddScoped<ITokenStore, ProtectedSessionTokenStore>();
 builder.Services.AddScoped<AevumAuthenticationStateProvider>();
 builder.Services.AddScoped<AuthenticationStateProvider>(sp => sp.GetRequiredService<AevumAuthenticationStateProvider>());
-<<<<<<< HEAD
 builder.Services.AddAuthentication();
-=======
->>>>>>> 89cb0506c91bf3c01f732797627baaa00fea2957
 builder.Services.AddCascadingAuthenticationState();
 builder.Services.AddAuthorizationCore();
 

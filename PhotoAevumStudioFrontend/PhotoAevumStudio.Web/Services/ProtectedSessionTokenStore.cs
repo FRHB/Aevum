@@ -8,28 +8,17 @@ public sealed class ProtectedSessionTokenStore : ITokenStore
     private readonly ProtectedSessionStorage _sessionStorage;
     private const string TokenKey = "jwt_token";
 
-<<<<<<< HEAD
     // Cached per-circuit and globally across scopes so IHttpClientFactory handler scopes
     // and background HTTP calls can access the active circuit's JWT without failing.
     private static readonly AsyncLocal<string?> AmbientToken = new();
     private static volatile string? _cachedToken;
-=======
-    // Cached per-circuit and in AsyncLocal so IHttpClientFactory handler scopes
-    // and prerendering passes can access the active circuit's JWT without failing.
-    private static readonly AsyncLocal<string?> AmbientToken = new();
-    private string? _cachedToken;
->>>>>>> 89cb0506c91bf3c01f732797627baaa00fea2957
 
     public ProtectedSessionTokenStore(ProtectedSessionStorage sessionStorage)
     {
         _sessionStorage = sessionStorage;
     }
 
-<<<<<<< HEAD
     internal static string? GetAmbientToken() => AmbientToken.Value ?? _cachedToken;
-=======
-    internal static string? GetAmbientToken() => AmbientToken.Value;
->>>>>>> 89cb0506c91bf3c01f732797627baaa00fea2957
 
     public async Task<string?> GetTokenAsync(CancellationToken cancellationToken = default)
     {
@@ -55,19 +44,11 @@ public sealed class ProtectedSessionTokenStore : ITokenStore
                 return result.Value;
             }
 
-<<<<<<< HEAD
             return _cachedToken ?? AmbientToken.Value;
         }
         catch (InvalidOperationException)
         {
             // Expected during Blazor Server static prerendering or when outside circuit JS interop.
-=======
-            return null;
-        }
-        catch (InvalidOperationException)
-        {
-            // Expected during Blazor Server static prerendering when JS interop is not yet available.
->>>>>>> 89cb0506c91bf3c01f732797627baaa00fea2957
             return _cachedToken ?? AmbientToken.Value;
         }
         catch (JSDisconnectedException)

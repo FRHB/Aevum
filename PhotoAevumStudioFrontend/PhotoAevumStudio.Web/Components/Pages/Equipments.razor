@@ -54,11 +54,7 @@
 
                 </svg>
 
-<<<<<<< HEAD
                 <span>Add New Type</span>
-=======
-                <span>+ Add New Type</span>
->>>>>>> 89cb0506c91bf3c01f732797627baaa00fea2957
 
             </button>
 
@@ -652,7 +648,7 @@
 
 <!-- ══════════════════════════════════════════════════════════════════════════ -->
 
-<AddEquipmentWizard @bind-IsOpen="isAddModalOpen" OnEquipmentSaved="LoadDataAsync" />
+<AddEquipmentWizard @bind-IsOpen="isAddModalOpen" OnEquipmentSaved="HandleWizardSaved" />
 
 
 
@@ -1198,9 +1194,19 @@ private async Task LoadDataAsync()
 
         {
 
+            var savedName = newEquipment.EquipmentName;
+
+            newEquipment = new NewEquipmentFormModel
+
+            {
+
+                EquipmentTypeID = equipmentTypes.FirstOrDefault()?.EquipmentTypeID ?? string.Empty
+
+            };
+
             isAddModalOpen = false;
 
-            notificationMessage = $"Equipment '{newEquipment.EquipmentName}' was successfully added via dbo.sp_AddEquipment.";
+            notificationMessage = $"Equipment '{savedName}' was successfully added via dbo.sp_AddEquipment.";
 
             await LoadDataAsync();
 

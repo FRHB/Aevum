@@ -60,17 +60,10 @@
                 </ol>
             </div>
 
-<<<<<<< HEAD
             <div class="p-6 overflow-y-auto flex-1">
                 <EditForm EditContext="@editContext">
                     <DataAnnotationsValidator />
 
-=======
-            <EditForm EditContext="@editContext" OnSubmit="HandleFormSubmitAsync" class="flex flex-col flex-1 min-h-0">
-                <DataAnnotationsValidator />
-
-                <div class="p-6 overflow-y-auto flex-1">
->>>>>>> 89cb0506c91bf3c01f732797627baaa00fea2957
                     @if (currentStep == 1)
                     {
                         <div class="space-y-5">
@@ -183,7 +176,6 @@
                             }
                         </div>
                     }
-<<<<<<< HEAD
                 </EditForm>
             </div>
 
@@ -222,46 +214,6 @@
                     }
                 </div>
             </div>
-=======
-                </div>
-
-                <div class="px-6 py-4 bg-gray-50 border-t border-gray-100 flex items-center justify-between">
-                    <div>
-                        @if (currentStep > 1)
-                        {
-                            <button type="button" @onclick="HandlePrevStep" disabled="@isSaving"
-                                    class="inline-flex items-center gap-1.5 px-4 py-2.5 bg-white border border-gray-300 hover:bg-gray-100 text-gray-700 text-xs font-semibold rounded-lg shadow-xs">
-                                Back
-                            </button>
-                        }
-                        else
-                        {
-                            <button type="button" @onclick="HandleClose" disabled="@isSaving"
-                                    class="px-4 py-2.5 bg-white border border-gray-300 hover:bg-gray-100 text-gray-700 text-xs font-semibold rounded-lg shadow-xs">
-                                Cancel
-                            </button>
-                        }
-                    </div>
-
-                    <div class="flex items-center gap-3">
-                        @if (currentStep < TotalSteps)
-                        {
-                            <button type="button" @onclick="HandleNextStep"
-                                    class="inline-flex items-center gap-1.5 px-5 py-2.5 bg-gray-900 hover:bg-black text-white text-xs font-semibold rounded-lg shadow-sm">
-                                Next
-                            </button>
-                        }
-                        else
-                        {
-                            <button type="submit" disabled="@isSaving"
-                                    class="inline-flex items-center gap-2 px-6 py-2.5 bg-gray-900 hover:bg-black text-white text-xs font-semibold rounded-lg shadow-sm disabled:opacity-60">
-                                <span>@(isSaving ? "Saving..." : "Save Specialization")</span>
-                            </button>
-                        }
-                    </div>
-                </div>
-            </EditForm>
->>>>>>> 89cb0506c91bf3c01f732797627baaa00fea2957
         </div>
     </div>
 }
@@ -295,6 +247,8 @@
         new("Cyan", "Cyan Modern")
     };
 
+    private bool wasOpen = false;
+
     protected override void OnInitialized()
     {
         ResetWizard();
@@ -302,9 +256,14 @@
 
     protected override void OnParametersSet()
     {
-        if (IsOpen && currentStep == 1 && string.IsNullOrWhiteSpace(model.Name))
+        if (IsOpen && !wasOpen)
         {
             ResetWizard();
+            wasOpen = true;
+        }
+        else if (!IsOpen)
+        {
+            wasOpen = false;
         }
     }
 
@@ -318,21 +277,6 @@
         messageStore = new ValidationMessageStore(editContext);
     }
 
-<<<<<<< HEAD
-=======
-    private async Task HandleFormSubmitAsync(EditContext _)
-    {
-        if (currentStep < TotalSteps)
-        {
-            HandleNextStep();
-        }
-        else
-        {
-            await HandleSaveAsync();
-        }
-    }
-
->>>>>>> 89cb0506c91bf3c01f732797627baaa00fea2957
     private void HandleNextStep()
     {
         saveErrorMessage = null;
@@ -343,11 +287,7 @@
             editContext.NotifyFieldChanged(nameField);
             messageStore.Clear(nameField);
 
-<<<<<<< HEAD
             if (string.IsNullOrWhiteSpace(model.Name) || model.Name.Length < 2)
-=======
-            if (string.IsNullOrWhiteSpace(model.Name) || model.Name.Trim().Length < 2)
->>>>>>> 89cb0506c91bf3c01f732797627baaa00fea2957
             {
                 messageStore.Add(nameField, "Specialization name must be at least 2 characters.");
                 editContext.NotifyValidationStateChanged();
@@ -374,36 +314,14 @@
     private async Task HandleClose()
     {
         if (isSaving) return;
-<<<<<<< HEAD
         ResetWizard();
-=======
-        await CloseModalAsync();
-    }
-
-    private async Task CloseModalAsync()
-    {
-        ResetWizard();
-        IsOpen = false;
->>>>>>> 89cb0506c91bf3c01f732797627baaa00fea2957
         await IsOpenChanged.InvokeAsync(false);
     }
 
     private async Task HandleSaveAsync()
     {
-<<<<<<< HEAD
         if (!editContext.Validate())
         {
-=======
-        if (isSaving) return;
-
-        messageStore.Clear();
-        if (!editContext.Validate())
-        {
-            var errors = editContext.GetValidationMessages().ToList();
-            saveErrorMessage = errors.Count > 0
-                ? string.Join(" ", errors)
-                : "Please review the required fields before saving.";
->>>>>>> 89cb0506c91bf3c01f732797627baaa00fea2957
             currentStep = 1;
             return;
         }
@@ -415,12 +333,9 @@
 
             var newMasterItem = UserService.AddSpecialization(model);
 
+            ResetWizard();
             await OnSpecializationCreated.InvokeAsync(newMasterItem);
-<<<<<<< HEAD
             await HandleClose();
-=======
-            await CloseModalAsync();
->>>>>>> 89cb0506c91bf3c01f732797627baaa00fea2957
         }
         catch (Exception ex)
         {

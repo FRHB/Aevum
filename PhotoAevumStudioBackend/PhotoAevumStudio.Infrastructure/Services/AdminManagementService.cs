@@ -45,63 +45,108 @@ public class AdminManagementService : IAdminManagementService
         CancellationToken cancellationToken = default)
     {
         var admins = new List<AdminDto>();
+        var seenIds = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         await using var conn = CreateConnection();
         await conn.OpenAsync(cancellationToken);
 
-        const string sql = @"
+        // 1. If caller is System Admin, query dbo.SystemAdmin for System Admin accounts
+        if (isSystemAdmin)
+        {
+            const string sysAdminSql = @"
+                IF OBJECT_ID(N'dbo.SystemAdmin', N'U') IS NOT NULL
+                BEGIN
+                    SELECT SystemAdminID, FirstName, LastName, MiddleName
+                    FROM dbo.SystemAdmin
+                    ORDER BY SystemAdminID;
+                END";
+
+            await using var sysCmd = new SqlCommand(sysAdminSql, conn);
+            await using var sysReader = await sysCmd.ExecuteReaderAsync(cancellationToken);
+            while (await sysReader.ReadAsync(cancellationToken))
+            {
+                var id = sysReader.GetString(0).Trim().ToUpperInvariant();
+                var first = sysReader.IsDBNull(1) ? string.Empty : sysReader.GetString(1);
+                var last = sysReader.IsDBNull(2) ? string.Empty : sysReader.GetString(2);
+                var middle = sysReader.IsDBNull(3) ? null : sysReader.GetString(3);
+
+                var fullName = string.Join(" ", new[] { first, middle, last }.Where(s => !string.IsNullOrWhiteSpace(s)));
+                var email = $"{id.ToLowerInvariant()}@photoaevum.studio";
+
+                admins.Add(new AdminDto(
+                    Id: id,
+                    FirstName: first,
+                    LastName: last,
+                    MiddleName: middle,
+                    FullName: fullName,
+                    Email: email,
+                    Role: "System Admin",
+                    IsSuperAdmin: true,
+                    IsFirstLogin: false,
+                    Status: "Active"));
+
+                seenIds.Add(id);
+            }
+        }
+
+        // 2. Query dbo.Admin for Admin accounts (and any system admins not in dbo.SystemAdmin)
+        const string adminSql = @"
             IF OBJECT_ID(N'dbo.Admin', N'U') IS NOT NULL
             BEGIN
                 SELECT AdminID, AdminRole, AdminFirstName, AdminLastName, AdminMiddleName,
                        CASE WHEN COL_LENGTH(N'dbo.Admin', N'Email') IS NOT NULL THEN Email ELSE NULL END AS Email,
-                       CASE WHEN COL_LENGTH(N'dbo.Admin', N'isFirstLogin') IS NOT NULL THEN isFirstLogin ELSE 1 END AS isFirstLogin
+                       CASE WHEN COL_LENGTH(N'dbo.Admin', N'isFirstLogin') IS NOT NULL THEN isFirstLogin ELSE CAST(1 AS bit) END AS isFirstLogin
                 FROM dbo.Admin
                 ORDER BY AdminID;
             END";
 
-        await using var cmd = new SqlCommand(sql, conn);
-        await using var reader = await cmd.ExecuteReaderAsync(cancellationToken);
-
-        while (await reader.ReadAsync(cancellationToken))
+        await using (var adminCmd = new SqlCommand(adminSql, conn))
+        await using (var reader = await adminCmd.ExecuteReaderAsync(cancellationToken))
         {
-            var id = reader.GetString(0).Trim().ToUpperInvariant();
-            if (!ValidAdminIdRegex.IsMatch(id)) continue;
-
-            var rawRole = reader.IsDBNull(1) ? "Admin" : reader.GetString(1);
-            var first   = reader.IsDBNull(2) ? string.Empty : reader.GetString(2);
-            var last    = reader.IsDBNull(3) ? string.Empty : reader.GetString(3);
-            var middle  = reader.IsDBNull(4) ? null : reader.GetString(4);
-            var emailVal = reader.IsDBNull(5) ? null : reader.GetString(5);
-            var isFirstLogin = reader.IsDBNull(6) || reader.GetBoolean(6);
-
-            bool isSuper = id.StartsWith("SADM-", StringComparison.OrdinalIgnoreCase)
-                           || rawRole.Equals("SystemAdmin", StringComparison.OrdinalIgnoreCase)
-                           || rawRole.Equals("Super Admin", StringComparison.OrdinalIgnoreCase);
-
-            // ── Strict Role Visibility Rule ──
-            // If the caller is an Admin (not a System Admin), they CANNOT see any System Admin accounts.
-            if (!isSystemAdmin && isSuper)
+            while (await reader.ReadAsync(cancellationToken))
             {
-                continue;
+                var id = reader.GetString(0).Trim().ToUpperInvariant();
+                if (!ValidAdminIdRegex.IsMatch(id)) continue;
+                if (seenIds.Contains(id)) continue; // Avoid duplicate if already loaded from dbo.SystemAdmin
+
+                var rawRole = reader.IsDBNull(1) ? "Admin" : reader.GetString(1);
+                var first   = reader.IsDBNull(2) ? string.Empty : reader.GetString(2);
+                var last    = reader.IsDBNull(3) ? string.Empty : reader.GetString(3);
+                var middle  = reader.IsDBNull(4) ? null : reader.GetString(4);
+                var emailVal = reader.IsDBNull(5) ? null : reader.GetString(5);
+                var isFirstLogin = reader.IsDBNull(6) ? false : Convert.ToBoolean(reader.GetValue(6));
+
+                bool isSuper = id.StartsWith("SADM-", StringComparison.OrdinalIgnoreCase)
+                               || rawRole.Equals("SystemAdmin", StringComparison.OrdinalIgnoreCase)
+                               || rawRole.Equals("Super Admin", StringComparison.OrdinalIgnoreCase);
+
+                // ── Strict Role Visibility Rule ──
+                // If caller is an Admin (not a System Admin), they CANNOT see any System Admin accounts.
+                if (!isSystemAdmin && isSuper)
+                {
+                    continue;
+                }
+
+                var fullName = string.Join(" ", new[] { first, middle, last }.Where(s => !string.IsNullOrWhiteSpace(s)));
+                var email = !string.IsNullOrWhiteSpace(emailVal)
+                    ? emailVal
+                    : $"{id.ToLowerInvariant()}@photoaevum.studio";
+
+                var normalizedRole = isSuper ? "System Admin" : "Admin";
+
+                admins.Add(new AdminDto(
+                    Id: id,
+                    FirstName: first,
+                    LastName: last,
+                    MiddleName: middle,
+                    FullName: fullName,
+                    Email: email,
+                    Role: normalizedRole,
+                    IsSuperAdmin: isSuper,
+                    IsFirstLogin: isFirstLogin,
+                    Status: "Active"));
+
+                seenIds.Add(id);
             }
-
-            var fullName = string.Join(" ", new[] { first, middle, last }.Where(s => !string.IsNullOrWhiteSpace(s)));
-            var email = !string.IsNullOrWhiteSpace(emailVal)
-                ? emailVal
-                : $"{id.ToLowerInvariant()}@photoaevum.studio";
-
-            var normalizedRole = isSuper ? "System Admin" : "Admin";
-
-            admins.Add(new AdminDto(
-                Id: id,
-                FirstName: first,
-                LastName: last,
-                MiddleName: middle,
-                FullName: fullName,
-                Email: email,
-                Role: normalizedRole,
-                IsSuperAdmin: isSuper,
-                IsFirstLogin: isFirstLogin,
-                Status: "Active"));
         }
 
         return admins;
@@ -115,12 +160,50 @@ public class AdminManagementService : IAdminManagementService
         await using var conn = CreateConnection();
         await conn.OpenAsync(cancellationToken);
 
+        // 1. If ID starts with SADM- or might be a System Admin, check dbo.SystemAdmin first
+        if (trimmedId.StartsWith("SADM-", StringComparison.OrdinalIgnoreCase))
+        {
+            const string sysSql = @"
+                IF OBJECT_ID(N'dbo.SystemAdmin', N'U') IS NOT NULL
+                BEGIN
+                    SELECT SystemAdminID, FirstName, LastName, MiddleName
+                    FROM dbo.SystemAdmin
+                    WHERE UPPER(SystemAdminID) = @Id;
+                END";
+
+            await using var sysCmd = new SqlCommand(sysSql, conn);
+            sysCmd.Parameters.AddWithValue("@Id", trimmedId);
+            await using var sysReader = await sysCmd.ExecuteReaderAsync(cancellationToken);
+            if (await sysReader.ReadAsync(cancellationToken))
+            {
+                var sysId = sysReader.GetString(0).Trim().ToUpperInvariant();
+                var first = sysReader.IsDBNull(1) ? string.Empty : sysReader.GetString(1);
+                var last = sysReader.IsDBNull(2) ? string.Empty : sysReader.GetString(2);
+                var middle = sysReader.IsDBNull(3) ? null : sysReader.GetString(3);
+                var fullName = string.Join(" ", new[] { first, middle, last }.Where(s => !string.IsNullOrWhiteSpace(s)));
+                var email = $"{sysId.ToLowerInvariant()}@photoaevum.studio";
+
+                return new AdminDto(
+                    Id: sysId,
+                    FirstName: first,
+                    LastName: last,
+                    MiddleName: middle,
+                    FullName: fullName,
+                    Email: email,
+                    Role: "System Admin",
+                    IsSuperAdmin: true,
+                    IsFirstLogin: false,
+                    Status: "Active");
+            }
+        }
+
+        // 2. Check dbo.Admin
         const string sql = @"
             IF OBJECT_ID(N'dbo.Admin', N'U') IS NOT NULL
             BEGIN
                 SELECT AdminID, AdminRole, AdminFirstName, AdminLastName, AdminMiddleName,
                        CASE WHEN COL_LENGTH(N'dbo.Admin', N'Email') IS NOT NULL THEN Email ELSE NULL END AS Email,
-                       CASE WHEN COL_LENGTH(N'dbo.Admin', N'isFirstLogin') IS NOT NULL THEN isFirstLogin ELSE 1 END AS isFirstLogin
+                       CASE WHEN COL_LENGTH(N'dbo.Admin', N'isFirstLogin') IS NOT NULL THEN isFirstLogin ELSE CAST(1 AS bit) END AS isFirstLogin
                 FROM dbo.Admin
                 WHERE UPPER(AdminID) = @Id;
             END";
@@ -129,22 +212,59 @@ public class AdminManagementService : IAdminManagementService
         cmd.Parameters.AddWithValue("@Id", trimmedId);
 
         await using var reader = await cmd.ExecuteReaderAsync(cancellationToken);
-        if (!await reader.ReadAsync(cancellationToken)) return null;
+        if (!await reader.ReadAsync(cancellationToken))
+        {
+            // Fallback: check dbo.SystemAdmin in case it was not prefixed with SADM
+            reader.Close();
+            const string sysFallbackSql = @"
+                IF OBJECT_ID(N'dbo.SystemAdmin', N'U') IS NOT NULL
+                BEGIN
+                    SELECT SystemAdminID, FirstName, LastName, MiddleName
+                    FROM dbo.SystemAdmin
+                    WHERE UPPER(SystemAdminID) = @Id;
+                END";
+            await using var sysFbCmd = new SqlCommand(sysFallbackSql, conn);
+            sysFbCmd.Parameters.AddWithValue("@Id", trimmedId);
+            await using var sysFbReader = await sysFbCmd.ExecuteReaderAsync(cancellationToken);
+            if (await sysFbReader.ReadAsync(cancellationToken))
+            {
+                var sysId = sysFbReader.GetString(0).Trim().ToUpperInvariant();
+                var first = sysFbReader.IsDBNull(1) ? string.Empty : sysFbReader.GetString(1);
+                var last = sysFbReader.IsDBNull(2) ? string.Empty : sysFbReader.GetString(2);
+                var middle = sysFbReader.IsDBNull(3) ? null : sysFbReader.GetString(3);
+                var fullName = string.Join(" ", new[] { first, middle, last }.Where(s => !string.IsNullOrWhiteSpace(s)));
+                var email = $"{sysId.ToLowerInvariant()}@photoaevum.studio";
+
+                return new AdminDto(
+                    Id: sysId,
+                    FirstName: first,
+                    LastName: last,
+                    MiddleName: middle,
+                    FullName: fullName,
+                    Email: email,
+                    Role: "System Admin",
+                    IsSuperAdmin: true,
+                    IsFirstLogin: false,
+                    Status: "Active");
+            }
+
+            return null;
+        }
 
         var dbId = reader.GetString(0).Trim().ToUpperInvariant();
         var rawRole = reader.IsDBNull(1) ? "Admin" : reader.GetString(1);
-        var first   = reader.IsDBNull(2) ? string.Empty : reader.GetString(2);
-        var last    = reader.IsDBNull(3) ? string.Empty : reader.GetString(3);
-        var middle  = reader.IsDBNull(4) ? null : reader.GetString(4);
+        var adminFirst   = reader.IsDBNull(2) ? string.Empty : reader.GetString(2);
+        var adminLast    = reader.IsDBNull(3) ? string.Empty : reader.GetString(3);
+        var adminMiddle  = reader.IsDBNull(4) ? null : reader.GetString(4);
         var emailVal = reader.IsDBNull(5) ? null : reader.GetString(5);
-        var isFirstLogin = reader.IsDBNull(6) || reader.GetBoolean(6);
+        var isFirstLogin = reader.IsDBNull(6) ? false : Convert.ToBoolean(reader.GetValue(6));
 
         bool isSuper = dbId.StartsWith("SADM-", StringComparison.OrdinalIgnoreCase)
                        || rawRole.Equals("SystemAdmin", StringComparison.OrdinalIgnoreCase)
                        || rawRole.Equals("Super Admin", StringComparison.OrdinalIgnoreCase);
 
-        var fullName = string.Join(" ", new[] { first, middle, last }.Where(s => !string.IsNullOrWhiteSpace(s)));
-        var email = !string.IsNullOrWhiteSpace(emailVal)
+        var adminFullName = string.Join(" ", new[] { adminFirst, adminMiddle, adminLast }.Where(s => !string.IsNullOrWhiteSpace(s)));
+        var adminEmail = !string.IsNullOrWhiteSpace(emailVal)
             ? emailVal
             : $"{dbId.ToLowerInvariant()}@photoaevum.studio";
 
@@ -152,11 +272,11 @@ public class AdminManagementService : IAdminManagementService
 
         return new AdminDto(
             Id: dbId,
-            FirstName: first,
-            LastName: last,
-            MiddleName: middle,
-            FullName: fullName,
-            Email: email,
+            FirstName: adminFirst,
+            LastName: adminLast,
+            MiddleName: adminMiddle,
+            FullName: adminFullName,
+            Email: adminEmail,
             Role: normalizedRole,
             IsSuperAdmin: isSuper,
             IsFirstLogin: isFirstLogin,
@@ -173,6 +293,10 @@ public class AdminManagementService : IAdminManagementService
             IF OBJECT_ID(N'dbo.Admin', N'U') IS NOT NULL
             BEGIN
                 SELECT AdminID FROM dbo.Admin;
+            END
+            IF OBJECT_ID(N'dbo.SystemAdmin', N'U') IS NOT NULL
+            BEGIN
+                SELECT SystemAdminID FROM dbo.SystemAdmin;
             END";
 
         await using var cmd = new SqlCommand(sql, conn);
@@ -180,6 +304,14 @@ public class AdminManagementService : IAdminManagementService
         while (await reader.ReadAsync(cancellationToken))
         {
             existingIds.Add(reader.GetString(0));
+        }
+
+        if (await reader.NextResultAsync(cancellationToken))
+        {
+            while (await reader.ReadAsync(cancellationToken))
+            {
+                existingIds.Add(reader.GetString(0));
+            }
         }
 
         return AdminCredentialGenerator.GenerateAdminId(role, existingIds);
@@ -239,8 +371,11 @@ public class AdminManagementService : IAdminManagementService
         await using var conn = CreateConnection();
         await conn.OpenAsync(cancellationToken);
 
-        // Check uniqueness
-        const string checkSql = "SELECT 1 FROM dbo.Admin WHERE UPPER(AdminID) = @Id;";
+        // Check uniqueness across both dbo.Admin and dbo.SystemAdmin
+        const string checkSql = @"
+            SELECT 1 FROM dbo.Admin WHERE UPPER(AdminID) = @Id
+            UNION
+            SELECT 1 FROM dbo.SystemAdmin WHERE UPPER(SystemAdminID) = @Id;";
         await using (var checkCmd = new SqlCommand(checkSql, conn))
         {
             checkCmd.Parameters.AddWithValue("@Id", adminId);
@@ -272,21 +407,23 @@ public class AdminManagementService : IAdminManagementService
         }
         catch (SqlException)
         {
-            // Direct SQL fallback
+            // Direct SQL fallback: System Admin into dbo.SystemAdmin, Admin into dbo.Admin
             const string fallbackSql = @"
-                INSERT INTO dbo.Admin (AdminID, AdminRole, AdminFirstName, AdminLastName, AdminMiddleName, Email, AdminPassword, isFirstLogin)
-                VALUES (@AdminID, @AdminRole, @AdminFirstName, @AdminLastName, @AdminMiddleName, @AdminEmail, @AdminPassword, 1);
-
                 IF (@AdminRole = 'SystemAdmin' OR @AdminID LIKE 'SADM-%')
                 BEGIN
                     IF OBJECT_ID(N'dbo.SystemAdmin', N'U') IS NOT NULL
                     BEGIN
                         IF NOT EXISTS (SELECT 1 FROM dbo.SystemAdmin WHERE SystemAdminID = @AdminID)
                         BEGIN
-                            INSERT INTO dbo.SystemAdmin (SystemAdminID, FirstName, LastName, MiddleName, PasswordHash)
-                            VALUES (@AdminID, @AdminFirstName, @AdminLastName, @AdminMiddleName, @AdminPassword);
+                            INSERT INTO dbo.SystemAdmin (SystemAdminID, FirstName, LastName, MiddleName, PasswordHash, CreatedAt)
+                            VALUES (@AdminID, @AdminFirstName, @AdminLastName, @AdminMiddleName, @AdminPassword, SYSUTCDATETIME());
                         END
                     END
+                END
+                ELSE
+                BEGIN
+                    INSERT INTO dbo.Admin (AdminID, AdminRole, AdminFirstName, AdminLastName, AdminMiddleName, Email, AdminPassword, isFirstLogin)
+                    VALUES (@AdminID, @AdminRole, @AdminFirstName, @AdminLastName, @AdminMiddleName, @AdminEmail, @AdminPassword, 1);
                 END";
 
             await using var fbCmd = new SqlCommand(fallbackSql, conn);

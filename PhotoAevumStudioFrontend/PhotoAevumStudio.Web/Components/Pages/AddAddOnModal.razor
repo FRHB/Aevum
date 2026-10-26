@@ -449,6 +449,7 @@
     private AdditionalServiceWizardFormModel formModel = new();
     private EditContext editContext = default!;
     private List<string> availableCategories = new();
+    private bool wasOpen = false;
 
     protected override void OnInitialized()
     {
@@ -457,9 +458,15 @@
 
     protected override async Task OnParametersSetAsync()
     {
-        if (IsOpen && (!formModel.IsIdLoaded || availableCategories.Count == 0))
+        if (IsOpen && !wasOpen)
         {
+            wasOpen = true;
+            InitializeForm();
             await LoadCategoriesAndNextIdAsync();
+        }
+        else if (!IsOpen)
+        {
+            wasOpen = false;
         }
     }
 
@@ -633,6 +640,7 @@
                 Status = "Active"
             };
 
+            InitializeForm();
             await OnAddOnCreated.InvokeAsync(createdItem);
             await CloseModal();
         }

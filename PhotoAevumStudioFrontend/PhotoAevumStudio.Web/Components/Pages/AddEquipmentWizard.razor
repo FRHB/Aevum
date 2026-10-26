@@ -549,12 +549,28 @@
 
     // ── Validation Errors Dictionary ─────────────────────────────────────────
     private readonly Dictionary<string, string> errors = new(StringComparer.OrdinalIgnoreCase);
+    private bool wasOpen = false;
 
     protected override async Task OnParametersSetAsync()
     {
-        if (IsOpen && string.IsNullOrEmpty(systemGeneratedId))
+        if (IsOpen && !wasOpen)
         {
+            wasOpen = true;
+            currentStep = 1;
+            formModel = new EquipmentWizardModel();
+            customTypeName = string.Empty;
+            imageFile = null;
+            imagePreviewDataUrl = null;
+            selectedFileName = null;
+            selectedFileSizeBytes = 0;
+            systemGeneratedId = string.Empty;
+            errors.Clear();
+            submissionErrorMessage = null;
             await PreloadNextEquipmentIdAsync();
+        }
+        else if (!IsOpen)
+        {
+            wasOpen = false;
         }
     }
 

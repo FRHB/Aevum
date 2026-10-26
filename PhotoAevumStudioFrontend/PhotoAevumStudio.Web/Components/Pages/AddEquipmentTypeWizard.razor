@@ -303,6 +303,8 @@
     private EquipmentTypeWizardFormModel formModel = new();
     private EditContext editContext = default!;
 
+    private bool wasOpen = false;
+
     protected override void OnInitialized()
     {
         ResetWizard();
@@ -310,9 +312,14 @@
 
     protected override void OnParametersSet()
     {
-        if (IsOpen && currentStep == 0)
+        if (IsOpen && !wasOpen)
         {
+            wasOpen = true;
             ResetWizard();
+        }
+        else if (!IsOpen)
+        {
+            wasOpen = false;
         }
     }
 

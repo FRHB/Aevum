@@ -124,6 +124,7 @@ public interface IUserService
     IReadOnlyList<SpecializationLookupItem> GetSpecializationLookups();
     IReadOnlyList<EmployeeSpecializationDto> GetEmployeeSpecializations();
     SpecializationLookupItem AddSpecialization(SpecializationModel model);
+    bool DeleteSpecialization(string id);
 
     // ── Studio Services & Packages ──────────────────────────────────────────
     IReadOnlyList<MainServiceItem> GetMainServices();

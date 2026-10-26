@@ -16,11 +16,6 @@ public class ScheduleService : IScheduleService
     private readonly List<EquipmentItemResource> _equipmentResources = new();
     private readonly List<EquipmentReservationModel> _equipmentReservations = new();
 
-<<<<<<< HEAD
-    private readonly List<CategoryAssociationProfile> _categoryProfiles = new();
-
-=======
->>>>>>> 89cb0506c91bf3c01f732797627baaa00fea2957
     public ScheduleService()
     {
         SeedStudioSpaces();
@@ -29,10 +24,6 @@ public class ScheduleService : IScheduleService
         SeedStaffShifts();
         SeedEquipment();
         SeedEquipmentReservations();
-<<<<<<< HEAD
-        SeedCategoryProfiles();
-=======
->>>>>>> 89cb0506c91bf3c01f732797627baaa00fea2957
 
         RecalculateEventConflicts();
         RecalculateShiftConflicts();
@@ -58,10 +49,6 @@ public class ScheduleService : IScheduleService
 
         _eventBookings.Add(booking);
         RecalculateEventConflicts();
-<<<<<<< HEAD
-        SyncEventAssociations(booking);
-=======
->>>>>>> 89cb0506c91bf3c01f732797627baaa00fea2957
     }
 
     public void UpdateEventBooking(EventBookingModel booking)
@@ -75,10 +62,6 @@ public class ScheduleService : IScheduleService
 
             _eventBookings[existingIndex] = booking;
             RecalculateEventConflicts();
-<<<<<<< HEAD
-            SyncEventAssociations(booking);
-=======
->>>>>>> 89cb0506c91bf3c01f732797627baaa00fea2957
         }
     }
 
@@ -86,13 +69,6 @@ public class ScheduleService : IScheduleService
     {
         _eventBookings.RemoveAll(b => b.Id == id);
         RecalculateEventConflicts();
-<<<<<<< HEAD
-
-        // Release the equipment that was auto-reserved for this event.
-        _equipmentReservations.RemoveAll(r => r.SourceEventId == id);
-        RecalculateEquipmentConflicts();
-=======
->>>>>>> 89cb0506c91bf3c01f732797627baaa00fea2957
     }
 
     public int GetEventConflictCount()
@@ -123,17 +99,6 @@ public class ScheduleService : IScheduleService
                     b2.HasConflict = true;
                     b2.ConflictMessage = $"Double-booked with '{b1.ClientName}' ({b1.FormattedTimeRange})";
                 }
-<<<<<<< HEAD
-                else if (b1.SharesStaffWith(b2))
-                {
-                    b1.HasConflict = true;
-                    b1.ConflictMessage = $"Assigned staff also booked on '{b2.ClientName}' ({b2.FormattedTimeRange})";
-
-                    b2.HasConflict = true;
-                    b2.ConflictMessage = $"Assigned staff also booked on '{b1.ClientName}' ({b1.FormattedTimeRange})";
-                }
-=======
->>>>>>> 89cb0506c91bf3c01f732797627baaa00fea2957
             }
         }
     }
@@ -311,204 +276,6 @@ public class ScheduleService : IScheduleService
     }
 
     // ─────────────────────────────────────────────────────────────────────────
-<<<<<<< HEAD
-    // CATEGORY → ASSOCIATION PROFILES (auto-assignment when a category is chosen)
-    // ─────────────────────────────────────────────────────────────────────────
-
-    public List<CategoryAssociationProfile> GetCategoryProfiles() => _categoryProfiles;
-
-    public CategoryAssociationProfile? GetCategoryProfile(string? categoryIdOrCode, string? categoryName = null)
-        => _categoryProfiles.FirstOrDefault(p => p.Matches(categoryIdOrCode, categoryName));
-
-    /// <summary>
-    /// Inserts or replaces the profile for a category. Replaces any existing profile with the same
-    /// code OR the same name, so a database-saved profile supersedes the built-in seed for that category.
-    /// A profile with nothing configured removes the mapping.
-    /// </summary>
-    public void SaveCategoryProfile(CategoryAssociationProfile profile)
-    {
-        ArgumentNullException.ThrowIfNull(profile);
-        if (string.IsNullOrWhiteSpace(profile.CategoryCode)) return;
-
-        var clean = profile.Clone();
-        clean.CategoryCode = clean.CategoryCode.Trim();
-        clean.CategoryName = (clean.CategoryName ?? string.Empty).Trim();
-        clean.StaffIds = clean.StaffIds.Distinct().Where(id => _staffMembers.Any(s => s.Id == id)).ToList();
-        clean.EquipmentIds = clean.EquipmentIds.Distinct().Where(id => _equipmentResources.Any(e => e.Id == id)).ToList();
-        if (!_studioSpaces.Any(s => s.Id == clean.DefaultSpaceId)) clean.DefaultSpaceId = null;
-        if (!EventServiceTypes.All.Contains(clean.DefaultServiceType ?? string.Empty)) clean.DefaultServiceType = null;
-        clean.DefaultDurationHours = Math.Clamp(clean.DefaultDurationHours, 0.25m, 48m);
-        clean.DefaultPrice = Math.Max(0m, clean.DefaultPrice);
-
-        _categoryProfiles.RemoveAll(p => p.Matches(clean.CategoryCode, clean.CategoryName));
-        if (clean.HasAny)
-            _categoryProfiles.Add(clean);
-    }
-
-    public void RemoveCategoryProfile(string categoryCode)
-    {
-        if (string.IsNullOrWhiteSpace(categoryCode)) return;
-        _categoryProfiles.RemoveAll(p => p.CategoryCode.Equals(categoryCode.Trim(), StringComparison.OrdinalIgnoreCase));
-    }
-
-    /// <summary>Merges profiles loaded from persistent storage into the in-memory set (idempotent).</summary>
-    public void ApplyCategoryProfiles(IEnumerable<CategoryAssociationProfile> profiles)
-    {
-        foreach (var p in profiles)
-            SaveCategoryProfile(p);
-    }
-
-    /// <summary>Staff who cannot take a new assignment in the window (inactive, on leave, or already on another event).</summary>
-    public HashSet<string> GetBusyStaffIds(DateTime date, TimeSpan start, TimeSpan end, string? ignoreEventId = null)
-    {
-        var busy = new HashSet<string>();
-
-        foreach (var m in _staffMembers.Where(m => !m.Status.Equals("Active", StringComparison.OrdinalIgnoreCase)))
-            busy.Add(m.Id);
-
-        foreach (var e in _eventBookings.Where(e => e.Id != ignoreEventId
-                                                    && e.Date.Date == date.Date
-                                                    && e.StartTime < end && e.EndTime > start))
-            foreach (var id in e.AssignedStaffIds)
-                busy.Add(id);
-
-        foreach (var sh in _staffShifts.Where(sh => !sh.IsOpenShift
-                                                    && sh.Date.Date == date.Date
-                                                    && sh.StartTime < end && sh.EndTime > start
-                                                    && (sh.ShiftType == "Sick Leave" || sh.ShiftType == "Unpaid Leave")))
-            busy.Add(sh.StaffId!);
-
-        return busy;
-    }
-
-    /// <summary>Equipment that is in maintenance or already reserved in the window.</summary>
-    public HashSet<string> GetBusyEquipmentIds(DateTime date, TimeSpan start, TimeSpan end, string? ignoreEventId = null)
-    {
-        var busy = new HashSet<string>();
-
-        foreach (var eq in _equipmentResources.Where(e => e.Status.Equals("In Maintenance", StringComparison.OrdinalIgnoreCase)))
-            busy.Add(eq.Id);
-
-        foreach (var r in _equipmentReservations.Where(r => (ignoreEventId == null || r.SourceEventId != ignoreEventId)
-                                                            && r.Date.Date == date.Date
-                                                            && r.StartTime < end && r.EndTime > start))
-            busy.Add(r.EquipmentId);
-
-        return busy;
-    }
-
-    /// <summary>The first assigned photographer (by role) or, failing that, the first assigned staff member.</summary>
-    public string ResolveLeadStaffName(IEnumerable<string> staffIds, string fallback)
-    {
-        var members = staffIds
-            .Select(id => _staffMembers.FirstOrDefault(s => s.Id == id))
-            .Where(s => s is not null)
-            .Select(s => s!)
-            .ToList();
-
-        var lead = members.FirstOrDefault(s => s.Role.Contains("Photographer", StringComparison.OrdinalIgnoreCase))
-                   ?? members.FirstOrDefault();
-
-        return lead?.FullName ?? fallback;
-    }
-
-    /// <summary>
-    /// Keeps equipment reservations in step with an event: removes the ones previously created for it
-    /// and re-creates one per assigned equipment item, so double-booked gear shows up as a conflict.
-    /// </summary>
-    private void SyncEventAssociations(EventBookingModel booking)
-    {
-        _equipmentReservations.RemoveAll(r => r.SourceEventId == booking.Id);
-
-        foreach (var eqId in booking.AssignedEquipmentIds.Distinct())
-        {
-            var eq = _equipmentResources.FirstOrDefault(e => e.Id == eqId);
-            if (eq is null) continue;
-
-            var note = string.IsNullOrWhiteSpace(booking.CategoryName)
-                ? $"Auto-reserved for event '{booking.ClientName}'."
-                : $"Auto-reserved for event '{booking.ClientName}' ({booking.CategoryName}).";
-
-            _equipmentReservations.Add(new EquipmentReservationModel
-            {
-                EquipmentId = eq.Id,
-                EquipmentName = eq.Name,
-                Category = eq.Category,
-                Date = booking.Date,
-                StartTime = booking.StartTime,
-                EndTime = booking.EndTime,
-                ProjectOrClient = booking.ClientName,
-                TechnicianInCharge = booking.AssignedPhotographer,
-                Location = booking.StudioSpaceName,
-                MaintenanceStatus = "Ready",
-                Notes = note,
-                SourceEventId = booking.Id
-            });
-        }
-
-        RecalculateEquipmentConflicts();
-    }
-
-    private void SeedCategoryProfiles()
-    {
-        // Codes/names mirror the default categories on the Service Category page.
-        // Anything an admin saves there replaces these (see SaveCategoryProfile).
-        _categoryProfiles.AddRange(new[]
-        {
-            new CategoryAssociationProfile
-            {
-                CategoryCode = "CAT-PORT", CategoryName = "Portrait Photography",
-                DefaultSpaceId = "studio-a", DefaultServiceType = "Full Studio Session",
-                DefaultDurationHours = 2m, DefaultPrice = 350m,
-                StaffIds = { "staff-01", "staff-05" },
-                EquipmentIds = { "eq-01", "eq-06", "eq-03" }
-            },
-            new CategoryAssociationProfile
-            {
-                CategoryCode = "CAT-WEDD", CategoryName = "Wedding & Nuptials",
-                DefaultSpaceId = "wedding-venue", DefaultServiceType = "Bridal Prep",
-                DefaultDurationHours = 8m, DefaultPrice = 2400m,
-                StaffIds = { "staff-01", "staff-02", "staff-05" },
-                EquipmentIds = { "eq-01", "eq-05", "eq-04", "eq-02" }
-            },
-            new CategoryAssociationProfile
-            {
-                CategoryCode = "CAT-COMM", CategoryName = "Commercial & Branding",
-                DefaultSpaceId = "studio-b", DefaultServiceType = "Commercial Campaign",
-                DefaultDurationHours = 4m, DefaultPrice = 1200m,
-                StaffIds = { "staff-06", "staff-03" },
-                EquipmentIds = { "eq-01", "eq-05", "eq-03" }
-            },
-            new CategoryAssociationProfile
-            {
-                CategoryCode = "CAT-EVENT", CategoryName = "Event & Gala Coverage",
-                DefaultSpaceId = "wedding-venue", DefaultServiceType = "Event Coverage",
-                DefaultDurationHours = 5m, DefaultPrice = 1500m,
-                StaffIds = { "staff-06", "staff-02" },
-                EquipmentIds = { "eq-01", "eq-05", "eq-04" }
-            },
-            new CategoryAssociationProfile
-            {
-                CategoryCode = "CAT-AER", CategoryName = "Aerial & Drone Operations",
-                DefaultSpaceId = "outdoor-shoot", DefaultServiceType = "Commercial Campaign",
-                DefaultDurationHours = 3m, DefaultPrice = 900m,
-                StaffIds = { "staff-02", "staff-03" },
-                EquipmentIds = { "eq-02", "eq-07" }
-            },
-            new CategoryAssociationProfile
-            {
-                CategoryCode = "CAT-PROD", CategoryName = "Product Photography",
-                DefaultSpaceId = "studio-b", DefaultServiceType = "Product Catalog",
-                DefaultDurationHours = 3m, DefaultPrice = 600m,
-                StaffIds = { "staff-06", "staff-03" },
-                EquipmentIds = { "eq-01", "eq-05", "eq-03" }
-            }
-        });
-    }
-
-    // ─────────────────────────────────────────────────────────────────────────
-=======
->>>>>>> 89cb0506c91bf3c01f732797627baaa00fea2957
     // SEED DATA INITIALIZERS
     // ─────────────────────────────────────────────────────────────────────────
 

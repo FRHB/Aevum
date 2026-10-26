@@ -238,4 +238,30 @@ public class AdminManagementTests
         var admin3 = new AdminViewModel { FirstName = "", LastName = "" };
         Assert.Equal("?", admin3.Initials);
     }
+
+    [Fact]
+    public void SpecializationIdSequencing_DeterminesNextId_WithoutCollidingWithGaps()
+    {
+        var existingIds = new[] { "SP-001", "SP-003", "SP-004", "SP-010" };
+        int maxNum = 0;
+        foreach (var id in existingIds)
+        {
+            if (id.StartsWith("SP-", StringComparison.OrdinalIgnoreCase) &&
+                int.TryParse(id[3..], out int num))
+            {
+                if (num > maxNum) maxNum = num;
+            }
+        }
+        var nextId = $"SP-{maxNum + 1:D3}";
+        Assert.Equal("SP-011", nextId);
+    }
+
+    [Theory]
+    [InlineData("SADM-001", true)]
+    [InlineData("ADM-001", false)]
+    public void RoleTableMapping_DistinguishesSystemAdminVsAdmin(string id, bool isSystemAdmin)
+    {
+        bool expectedSystemAdminTable = id.StartsWith("SADM-", StringComparison.OrdinalIgnoreCase);
+        Assert.Equal(expectedSystemAdminTable, isSystemAdmin);
+    }
 }

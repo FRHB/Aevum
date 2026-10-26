@@ -18,12 +18,9 @@ public class MainServiceItem
     public string Status { get; set; } = "Active";
     public bool IsActive => Status.Equals("Active", StringComparison.OrdinalIgnoreCase);
 
-<<<<<<< HEAD
     /// <summary>True when an admin has marked this service as featured on the public site.</summary>
     public bool IsFeatured { get; set; }
 
-=======
->>>>>>> 89cb0506c91bf3c01f732797627baaa00fea2957
     public string Id => Code;
     public string Name => Title;
     public decimal Price => BasePrice;
@@ -76,12 +73,9 @@ public class PackageServiceItem
     public string? Description { get; set; }
     public string Status { get; set; } = "Active";
     public bool IsActive => Status.Equals("Active", StringComparison.OrdinalIgnoreCase);
-<<<<<<< HEAD
 
     /// <summary>True when an admin has marked this package as featured on the public site.</summary>
     public bool IsFeatured { get; set; }
-=======
->>>>>>> 89cb0506c91bf3c01f732797627baaa00fea2957
 }
 
 /// <summary>
@@ -127,12 +121,9 @@ public class AddOnServiceItem
     public string? Description { get; set; }
     public string Status { get; set; } = "Active";
     public bool IsActive => Status.Equals("Active", StringComparison.OrdinalIgnoreCase);
-<<<<<<< HEAD
 
     /// <summary>True when an admin has marked this add-on as featured on the public site.</summary>
     public bool IsFeatured { get; set; }
-=======
->>>>>>> 89cb0506c91bf3c01f732797627baaa00fea2957
 }
 
 /// <summary>
@@ -179,7 +170,6 @@ public class ServiceCategoryItem
     public string Type { get; set; } = "Main Services"; // "Main Services", "Packages", "Add-Ons", "Specialty"
     public string Status { get; set; } = "Active"; // "Active", "Draft", "Inactive", "Archived"
     public bool IsFeatured { get; set; } = false;
-<<<<<<< HEAD
 
     /// <summary>When true the category is listed in the public Portfolio sidebar.</summary>
     public bool ShowInPortfolio { get; set; } = false;
@@ -187,8 +177,6 @@ public class ServiceCategoryItem
     /// <summary>Parent portfolio folder: "Photography" or "Videography".</summary>
     public string PortfolioSection { get; set; } = PortfolioSections.Photography;
 
-=======
->>>>>>> 89cb0506c91bf3c01f732797627baaa00fea2957
     public string ColorTag { get; set; } = "Blue"; // "Blue", "Rose", "Purple", "Emerald", "Amber", "Indigo", "Cyan"
     public List<string> AssociatedServices { get; set; } = new();
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
@@ -233,7 +221,6 @@ public class CategoryModel
 
     public bool IsFeatured { get; set; } = false;
 
-<<<<<<< HEAD
     public bool ShowInPortfolio { get; set; } = false;
 
     public string PortfolioSection { get; set; } = PortfolioSections.Photography;
@@ -286,65 +273,3 @@ public record FeaturedServiceCard(
     string PriceText,
     string Description,
     string Meta);
-
-
-/// <summary>
-/// Default associations that are auto-assigned to an event when its category is selected:
-/// the studio space, service type, pricing/duration defaults, and the staff and equipment
-/// that normally work that kind of shoot. One profile per category (matched by code or name).
-/// </summary>
-public class CategoryAssociationProfile
-{
-    public string CategoryCode { get; set; } = string.Empty;
-    public string CategoryName { get; set; } = string.Empty;
-
-    /// <summary><see cref="StudioSpaceResource.Id"/> of the default space (e.g. "studio-a").</summary>
-    public string? DefaultSpaceId { get; set; }
-
-    /// <summary>One of <see cref="EventServiceTypes.All"/>.</summary>
-    public string? DefaultServiceType { get; set; }
-
-    public decimal DefaultDurationHours { get; set; } = 3m;
-    public decimal DefaultPrice { get; set; } = 350m;
-
-    /// <summary><see cref="StaffMemberResource.Id"/> values. The first photographer in the list becomes the event lead.</summary>
-    public List<string> StaffIds { get; set; } = new();
-
-    /// <summary><see cref="EquipmentItemResource.Id"/> values reserved automatically with the event.</summary>
-    public List<string> EquipmentIds { get; set; } = new();
-
-    /// <summary>True when at least one association is configured (otherwise the profile is not worth storing).</summary>
-    public bool HasAny =>
-        !string.IsNullOrWhiteSpace(DefaultSpaceId) ||
-        !string.IsNullOrWhiteSpace(DefaultServiceType) ||
-        StaffIds.Count > 0 ||
-        EquipmentIds.Count > 0;
-
-    /// <summary>Matches on category code/id first, then on a case-insensitive name.</summary>
-    public bool Matches(string? idOrCode, string? name)
-    {
-        if (!string.IsNullOrWhiteSpace(idOrCode) &&
-            CategoryCode.Equals(idOrCode.Trim(), StringComparison.OrdinalIgnoreCase))
-            return true;
-
-        return !string.IsNullOrWhiteSpace(name) &&
-               !string.IsNullOrWhiteSpace(CategoryName) &&
-               CategoryName.Trim().Equals(name.Trim(), StringComparison.OrdinalIgnoreCase);
-    }
-
-    public CategoryAssociationProfile Clone() => new()
-    {
-        CategoryCode = CategoryCode,
-        CategoryName = CategoryName,
-        DefaultSpaceId = DefaultSpaceId,
-        DefaultServiceType = DefaultServiceType,
-        DefaultDurationHours = DefaultDurationHours,
-        DefaultPrice = DefaultPrice,
-        StaffIds = StaffIds.ToList(),
-        EquipmentIds = EquipmentIds.ToList()
-    };
-}
-=======
-    public string ServicesRaw { get; set; } = string.Empty;
-}
->>>>>>> 89cb0506c91bf3c01f732797627baaa00fea2957

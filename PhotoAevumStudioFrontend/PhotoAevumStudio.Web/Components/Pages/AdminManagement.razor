@@ -40,6 +40,18 @@
         }
     </div>
 
+    <!-- Notification Banner -->
+    @if (!string.IsNullOrWhiteSpace(notificationMessage))
+    {
+        <div class="p-3.5 bg-emerald-50 border border-emerald-200 text-emerald-900 rounded-xl flex items-center justify-between text-xs shadow-xs animate-in fade-in duration-200">
+            <div class="flex items-center gap-2.5">
+                <span class="w-6 h-6 rounded-full bg-emerald-600 text-white flex items-center justify-center shrink-0 text-xs font-bold">✓</span>
+                <span class="font-medium">@notificationMessage</span>
+            </div>
+            <button type="button" @onclick="() => notificationMessage = null" class="text-emerald-700 hover:text-emerald-950 p-1 font-bold text-sm cursor-pointer">&times;</button>
+        </div>
+    }
+
     <!-- Role Status Notice for Regular Admins -->
     @if (!isSystemAdmin && !isLoading)
     {
@@ -283,6 +295,7 @@
     private bool isLoading = true;
     private bool isSystemAdmin = false;
     private string currentUserId = string.Empty;
+    private string? notificationMessage;
 
     private string searchQuery = string.Empty;
     private string selectedRoleFilter = "All";
@@ -358,6 +371,7 @@
 
     private async Task HandleAdminSaved()
     {
+        notificationMessage = "Administrator saved successfully and directory updated.";
         await LoadAdminsAsync();
     }
 

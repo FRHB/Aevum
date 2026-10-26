@@ -5,10 +5,6 @@
 @layout AdminLayout
 @rendermode InteractiveServer
 @inject IScheduleService ScheduleService
-<<<<<<< HEAD
-@inject IServicesApiClient ServicesApi
-=======
->>>>>>> 89cb0506c91bf3c01f732797627baaa00fea2957
 
 <PageTitle>Calendar of Events | Aevum Studio</PageTitle>
 
@@ -349,37 +345,6 @@
                         <span class="drawer-field-label">Photographer</span>
                         <span class="drawer-field-val">@_selectedBooking.AssignedPhotographer</span>
                     </div>
-<<<<<<< HEAD
-                    @if (!string.IsNullOrWhiteSpace(_selectedBooking.CategoryName))
-                    {
-                        <div class="drawer-field">
-                            <span class="drawer-field-label">Category</span>
-                            <span class="drawer-field-val">@_selectedBooking.CategoryName</span>
-                        </div>
-                    }
-                    @if (_selectedBooking.AssignedStaffIds.Count > 0)
-                    {
-                        <div class="drawer-field">
-                            <span class="drawer-field-label">Assigned Staff</span>
-                            <span class="drawer-field-val">@StaffNames(_selectedBooking.AssignedStaffIds)</span>
-                        </div>
-                    }
-                    @if (_selectedBooking.AssignedEquipmentIds.Count > 0)
-                    {
-                        <div class="drawer-field">
-                            <span class="drawer-field-label">Reserved Equipment</span>
-                            <span class="drawer-field-val">@EquipmentNames(_selectedBooking.AssignedEquipmentIds)</span>
-                        </div>
-                    }
-                    @if (_selectedBooking.HasConflict && !string.IsNullOrWhiteSpace(_selectedBooking.ConflictMessage))
-                    {
-                        <div class="drawer-field">
-                            <span class="drawer-field-label">Conflict</span>
-                            <span class="drawer-field-val text-xs" style="color:#991b1b">@_selectedBooking.ConflictMessage</span>
-                        </div>
-                    }
-=======
->>>>>>> 89cb0506c91bf3c01f732797627baaa00fea2957
                     <div class="drawer-field">
                         <span class="drawer-field-label">Price</span>
                         <span class="drawer-field-val font-bold">$@_selectedBooking.EstimatedPrice.ToString("N2")</span>
@@ -409,13 +374,6 @@
     @* ── CREATE NEW EVENT MODAL ───────────────────────────────────────── *@
     @if (_isCreateModalOpen)
     {
-<<<<<<< HEAD
-        var busyStaff = BusyStaffIds;
-        var busyEquipment = BusyEquipmentIds;
-        var busyPicked = _assignedStaffIds.Count(busyStaff.Contains) + _assignedEquipmentIds.Count(busyEquipment.Contains);
-
-=======
->>>>>>> 89cb0506c91bf3c01f732797627baaa00fea2957
         <div class="drawer-backdrop" @onclick="CloseCreateModal">
             <div class="compact-modal" @onclick:stopPropagation="true">
                 <div class="modal-header">
@@ -436,34 +394,6 @@
                         <input type="text" @bind="_newEvent.ClientName" class="form-control text-xs" placeholder="e.g. Acme Corp Shoot" />
                     </div>
 
-<<<<<<< HEAD
-                    @* Category: choosing one auto-assigns space, service, price, duration, staff and equipment *@
-                    <div class="form-group mb-2">
-                        <label class="form-label text-xs">Event Category</label>
-                        <select value="@_selectedCategoryId" @onchange="OnCategoryChanged" class="form-control text-xs">
-                            <option value="">— None (assign manually) —</option>
-                            @foreach (var c in _categories)
-                            {
-                                <option value="@c.Id">@c.Name</option>
-                            }
-                        </select>
-
-                        @if (_activeProfile is not null)
-                        {
-                            <p class="assoc-hint assoc-hint-ok">
-                                ✓ Space, service, staff and equipment were assigned from this category. Adjust anything below.
-                            </p>
-                        }
-                        else if (!string.IsNullOrEmpty(_selectedCategoryId))
-                        {
-                            <p class="assoc-hint">
-                                No default associations are mapped to this category yet. Set them under Services → Service Category.
-                            </p>
-                        }
-                    </div>
-
-=======
->>>>>>> 89cb0506c91bf3c01f732797627baaa00fea2957
                     <div class="grid grid-cols-2 gap-2 mb-2">
                         <div>
                             <label class="form-label text-xs">Studio Space</label>
@@ -477,17 +407,10 @@
                         <div>
                             <label class="form-label text-xs">Service Type</label>
                             <select @bind="_newEvent.ServiceType" class="form-control text-xs">
-<<<<<<< HEAD
-                                @foreach (var t in EventServiceTypes.All)
-                                {
-                                    <option value="@t">@t</option>
-                                }
-=======
                                 <option value="Express Headshot">Express Headshot</option>
                                 <option value="Full Studio Session">Full Studio Session</option>
                                 <option value="Commercial Campaign">Commercial Campaign</option>
                                 <option value="Bridal Prep">Bridal Prep</option>
->>>>>>> 89cb0506c91bf3c01f732797627baaa00fea2957
                             </select>
                         </div>
                     </div>
@@ -507,77 +430,6 @@
                         </div>
                     </div>
 
-<<<<<<< HEAD
-                    <div class="grid grid-cols-2 gap-2 mb-2">
-                        <div>
-                            <label class="form-label text-xs">Estimated Price ($)</label>
-                            <input type="number" step="1" min="0" @bind="_newEvent.EstimatedPrice" class="form-control text-xs" />
-                        </div>
-                        <div>
-                            <label class="form-label text-xs">Lead Photographer</label>
-                            <div class="assoc-readonly">@LeadPhotographerName</div>
-                        </div>
-                    </div>
-
-                    @* Staff chips *@
-                    <div class="assoc-section">
-                        <div class="assoc-section-head">
-                            <span>Assigned Staff</span>
-                            <span class="assoc-count">@_assignedStaffIds.Count selected</span>
-                        </div>
-                        <div class="assoc-chip-row">
-                            @foreach (var m in StaffMembers)
-                            {
-                                var on = _assignedStaffIds.Contains(m.Id);
-                                var busy = busyStaff.Contains(m.Id);
-                                var auto = _activeProfile?.StaffIds.Contains(m.Id) == true;
-
-                                <button type="button"
-                                        @onclick="() => ToggleStaff(m.Id)"
-                                        title="@(busy ? "Unavailable in this time window" : m.Role)"
-                                        class="assoc-chip @(on ? "selected" : "") @(busy ? "busy" : "")">
-                                    @m.FullName
-                                    @if (auto) { <span class="assoc-tag">auto</span> }
-                                    @if (busy) { <span class="assoc-warn">⚠</span> }
-                                </button>
-                            }
-                        </div>
-                    </div>
-
-                    @* Equipment chips *@
-                    <div class="assoc-section">
-                        <div class="assoc-section-head">
-                            <span>Reserved Equipment</span>
-                            <span class="assoc-count">@_assignedEquipmentIds.Count selected</span>
-                        </div>
-                        <div class="assoc-chip-row">
-                            @foreach (var eq in EquipmentItems)
-                            {
-                                var on = _assignedEquipmentIds.Contains(eq.Id);
-                                var busy = busyEquipment.Contains(eq.Id);
-                                var auto = _activeProfile?.EquipmentIds.Contains(eq.Id) == true;
-
-                                <button type="button"
-                                        @onclick="() => ToggleEquipment(eq.Id)"
-                                        title="@(busy ? "Already reserved or under maintenance in this time window" : eq.Category)"
-                                        class="assoc-chip @(on ? "selected" : "") @(busy ? "busy" : "")">
-                                    @eq.Name
-                                    @if (auto) { <span class="assoc-tag">auto</span> }
-                                    @if (busy) { <span class="assoc-warn">⚠</span> }
-                                </button>
-                            }
-                        </div>
-                    </div>
-
-                    @if (busyPicked > 0)
-                    {
-                        <p class="assoc-hint assoc-hint-warn">
-                            ⚠ @busyPicked selected item@(busyPicked == 1 ? " is" : "s are") unavailable in this time window. You can still save, but the event will be flagged as a conflict.
-                        </p>
-                    }
-
-=======
->>>>>>> 89cb0506c91bf3c01f732797627baaa00fea2957
                     <div class="modal-footer pt-3 mt-3 border-t flex justify-end gap-2">
                         <button type="button" @onclick="CloseCreateModal" class="btn btn-sm btn-outline-secondary">Cancel</button>
                         <button type="button" @onclick="SaveNewEvent" class="btn btn-sm btn-dark">Save Event</button>
@@ -602,56 +454,13 @@
     private string? _modalErrorMessage;
 
     private EventBookingModel _newEvent = new();
-<<<<<<< HEAD
-
-    // Category-driven auto-assignment state for the create modal
-    private List<CategoryLookupItem> _categories = new();
-    private string _selectedCategoryId = string.Empty;
-    private CategoryAssociationProfile? _activeProfile;
-    private readonly List<string> _assignedStaffIds = new();
-    private readonly List<string> _assignedEquipmentIds = new();
-    private bool _spaceLockedFromSlot;
-=======
->>>>>>> 89cb0506c91bf3c01f732797627baaa00fea2957
     private DateTime _newEventDate = DateTime.Today;
     private TimeOnly _newStartTime = new(9, 0);
     private TimeOnly _newEndTime = new(13, 0);
 
     private List<StudioSpaceResource> StudioSpaces => ScheduleService.GetStudioSpaces();
-<<<<<<< HEAD
-    private List<StaffMemberResource> StaffMembers => ScheduleService.GetStaffMembers();
-    private List<EquipmentItemResource> EquipmentItems => ScheduleService.GetEquipmentResources();
-
-    private HashSet<string> BusyStaffIds =>
-        ScheduleService.GetBusyStaffIds(_newEventDate, _newStartTime.ToTimeSpan(), _newEndTime.ToTimeSpan(), _newEvent.Id);
-
-    private HashSet<string> BusyEquipmentIds =>
-        ScheduleService.GetBusyEquipmentIds(_newEventDate, _newStartTime.ToTimeSpan(), _newEndTime.ToTimeSpan(), _newEvent.Id);
-
-    private string LeadPhotographerName =>
-        _assignedStaffIds.Count == 0
-            ? "— none assigned —"
-            : ScheduleService.ResolveLeadStaffName(_assignedStaffIds, "— none assigned —");
     private List<EventBookingModel> AllBookings => ScheduleService.GetEventBookings();
 
-    protected override async Task OnInitializedAsync()
-    {
-        try
-        {
-            // Pull admin-saved category defaults into the schedule service, then list the categories.
-            ScheduleService.ApplyCategoryProfiles(await ServicesApi.GetCategoryAssociationsAsync());
-            _categories = (await ServicesApi.GetCategoriesAsync()).ToList();
-        }
-        catch
-        {
-            // The calendar still works without categories; events can be assigned manually.
-        }
-    }
-
-=======
-    private List<EventBookingModel> AllBookings => ScheduleService.GetEventBookings();
-
->>>>>>> 89cb0506c91bf3c01f732797627baaa00fea2957
     private int ConflictCount => ScheduleService.GetEventConflictCount();
     private int TotalBookingsCount => AllBookings.Count;
     private int ThisWeekBookingsCount => AllBookings.Count(b => WeekDays.Any(w => w.Date == b.Date.Date));
@@ -837,10 +646,6 @@
         _newStartTime = new TimeOnly(9, 0);
         _newEndTime = new TimeOnly(13, 0);
         _modalErrorMessage = null;
-<<<<<<< HEAD
-        ResetAssociationState(spaceLockedFromSlot: false);
-=======
->>>>>>> 89cb0506c91bf3c01f732797627baaa00fea2957
         _isCreateModalOpen = true;
     }
 
@@ -859,10 +664,6 @@
         _newStartTime = new TimeOnly(10, 0);
         _newEndTime = new TimeOnly(13, 0);
         _modalErrorMessage = null;
-<<<<<<< HEAD
-        ResetAssociationState(spaceLockedFromSlot: true);
-=======
->>>>>>> 89cb0506c91bf3c01f732797627baaa00fea2957
         _isCreateModalOpen = true;
     }
 
@@ -890,95 +691,11 @@
         _newEvent.StartTime = _newStartTime.ToTimeSpan();
         _newEvent.EndTime = _newEndTime.ToTimeSpan();
 
-<<<<<<< HEAD
-        _newEvent.AssignedStaffIds = _assignedStaffIds.ToList();
-        _newEvent.AssignedEquipmentIds = _assignedEquipmentIds.ToList();
-        _newEvent.AssignedPhotographer = ScheduleService.ResolveLeadStaffName(_assignedStaffIds, _newEvent.AssignedPhotographer);
-
-=======
->>>>>>> 89cb0506c91bf3c01f732797627baaa00fea2957
         ScheduleService.AddEventBooking(_newEvent);
         _isCreateModalOpen = false;
         _modalErrorMessage = null;
     }
 
-<<<<<<< HEAD
-    private void ResetAssociationState(bool spaceLockedFromSlot)
-    {
-        _selectedCategoryId = string.Empty;
-        _activeProfile = null;
-        _assignedStaffIds.Clear();
-        _assignedEquipmentIds.Clear();
-        _spaceLockedFromSlot = spaceLockedFromSlot;
-        _newEvent.CategoryCode = string.Empty;
-        _newEvent.CategoryName = string.Empty;
-    }
-
-    /// <summary>
-    /// Picking a category swaps in that category's default associations: the studio space (unless the modal
-    /// was opened from a specific space/day slot), service type, price, duration, staff and equipment.
-    /// Anything that was auto-assigned by the previous category is removed first; manual picks are kept.
-    /// </summary>
-    private void OnCategoryChanged(ChangeEventArgs e)
-    {
-        var previous = _activeProfile;
-
-        _selectedCategoryId = e.Value?.ToString() ?? string.Empty;
-        var category = _categories.FirstOrDefault(c => c.Id == _selectedCategoryId);
-
-        _newEvent.CategoryCode = category?.Id ?? string.Empty;
-        _newEvent.CategoryName = category?.Name ?? string.Empty;
-        _activeProfile = category is null ? null : ScheduleService.GetCategoryProfile(category.Id, category.Name);
-
-        if (previous is not null)
-        {
-            _assignedStaffIds.RemoveAll(id => previous.StaffIds.Contains(id));
-            _assignedEquipmentIds.RemoveAll(id => previous.EquipmentIds.Contains(id));
-        }
-
-        var profile = _activeProfile;
-        if (profile is null)
-            return;
-
-        if (!_spaceLockedFromSlot && StudioSpaces.Any(s => s.Id == profile.DefaultSpaceId))
-            _newEvent.StudioSpaceId = profile.DefaultSpaceId!;
-
-        if (!string.IsNullOrWhiteSpace(profile.DefaultServiceType))
-            _newEvent.ServiceType = profile.DefaultServiceType;
-
-        _newEvent.EstimatedPrice = profile.DefaultPrice;
-
-        var end = _newStartTime.ToTimeSpan() + TimeSpan.FromHours((double)profile.DefaultDurationHours);
-        var latest = new TimeSpan(23, 59, 0);
-        _newEndTime = TimeOnly.FromTimeSpan(end > latest ? latest : end);
-
-        foreach (var id in profile.StaffIds.Where(id => !_assignedStaffIds.Contains(id)))
-            _assignedStaffIds.Add(id);
-
-        foreach (var id in profile.EquipmentIds.Where(id => !_assignedEquipmentIds.Contains(id)))
-            _assignedEquipmentIds.Add(id);
-    }
-
-    private void ToggleStaff(string id)
-    {
-        if (!_assignedStaffIds.Remove(id))
-            _assignedStaffIds.Add(id);
-    }
-
-    private void ToggleEquipment(string id)
-    {
-        if (!_assignedEquipmentIds.Remove(id))
-            _assignedEquipmentIds.Add(id);
-    }
-
-    private string StaffNames(IEnumerable<string> ids) =>
-        string.Join(", ", ids.Select(id => StaffMembers.FirstOrDefault(m => m.Id == id)?.FullName).OfType<string>());
-
-    private string EquipmentNames(IEnumerable<string> ids) =>
-        string.Join(", ", ids.Select(id => EquipmentItems.FirstOrDefault(q => q.Id == id)?.Name).OfType<string>());
-
-=======
->>>>>>> 89cb0506c91bf3c01f732797627baaa00fea2957
     private string GetSpaceDotColor(string spaceId) => spaceId switch
     {
         "studio-a" => "bg-blue-500",

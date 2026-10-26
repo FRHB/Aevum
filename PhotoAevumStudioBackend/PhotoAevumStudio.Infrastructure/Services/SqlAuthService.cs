@@ -1,8 +1,4 @@
-<<<<<<< HEAD
-﻿using System.Data;
-=======
 using System.Data;
->>>>>>> 89cb0506c91bf3c01f732797627baaa00fea2957
 using Microsoft.Data.SqlClient;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
@@ -40,11 +36,52 @@ public class SqlAuthService : ISqlAuthService
         await using var conn = CreateConnection();
         await conn.OpenAsync(cancellationToken);
 
+        // 0. Check dbo.SystemAdmin for System Admin accounts
+        const string sysAdminQuery = @"
+            IF OBJECT_ID(N'dbo.SystemAdmin', N'U') IS NOT NULL
+            BEGIN
+                SELECT SystemAdminID, FirstName, LastName, MiddleName, PasswordHash
+                FROM dbo.SystemAdmin
+                WHERE UPPER(SystemAdminID) = UPPER(@UserId)
+                   OR UPPER(SystemAdminID) = UPPER(@CandidateAdminId);
+            END";
+
+        await using (var sysCmd = new SqlCommand(sysAdminQuery, conn))
+        {
+            sysCmd.Parameters.AddWithValue("@UserId", trimmedId);
+            sysCmd.Parameters.AddWithValue("@CandidateAdminId", candidateAdminId);
+            await using var sysReader = await sysCmd.ExecuteReaderAsync(cancellationToken);
+            if (await sysReader.ReadAsync(cancellationToken))
+            {
+                var sysId = sysReader.GetString(sysReader.GetOrdinal("SystemAdminID"));
+                var first = sysReader.IsDBNull(sysReader.GetOrdinal("FirstName")) ? string.Empty : sysReader.GetString(sysReader.GetOrdinal("FirstName"));
+                var last = sysReader.IsDBNull(sysReader.GetOrdinal("LastName")) ? string.Empty : sysReader.GetString(sysReader.GetOrdinal("LastName"));
+                var middle = sysReader.IsDBNull(sysReader.GetOrdinal("MiddleName")) ? null : sysReader.GetString(sysReader.GetOrdinal("MiddleName"));
+                var storedPassword = sysReader.GetString(sysReader.GetOrdinal("PasswordHash"));
+
+                var fullName = string.Join(" ", new[] { first, middle, last }.Where(s => !string.IsNullOrWhiteSpace(s)));
+                var email = $"{sysId.ToLowerInvariant()}@photoaevum.studio";
+
+                var authUser = new AuthUser(sysId, AppRoles.SystemAdmin, fullName, email, storedPassword, false);
+
+                bool match = VerifyPasswordFlexible(password, storedPassword, allowPlainText: true);
+                if (!match)
+                {
+                    _logger.LogWarning("Failed login attempt for System Admin {SystemAdminId}.", sysId);
+                    return new AuthValidationResult(Success: false, ErrorMessage: "Invalid credentials.");
+                }
+
+                _logger.LogInformation("Successful login for System Admin {SystemAdminId}.", sysId);
+                return new AuthValidationResult(Success: true, RequiresPasswordChange: false, User: authUser, IsFirstLogin: false);
+            }
+        }
+
         // 1. Check dbo.Admin
         const string adminQuery = @"
             SELECT AdminID, AdminRole, AdminFirstName, AdminLastName, AdminMiddleName,
                    CASE WHEN COL_LENGTH(N'dbo.Admin', N'Email') IS NOT NULL THEN Email ELSE NULL END AS Email,
-                   AdminPassword, isFirstLogin
+                   AdminPassword,
+                   CASE WHEN COL_LENGTH(N'dbo.Admin', N'isFirstLogin') IS NOT NULL THEN isFirstLogin ELSE CAST(1 AS bit) END AS isFirstLogin
             FROM dbo.Admin
             WHERE AdminID = @UserId 
                OR AdminID = @CandidateAdminId 
@@ -66,7 +103,7 @@ public class SqlAuthService : ISqlAuthService
                 var middle = reader.IsDBNull(reader.GetOrdinal("AdminMiddleName")) ? null : reader.GetString(reader.GetOrdinal("AdminMiddleName"));
                 var emailVal = reader.IsDBNull(reader.GetOrdinal("Email")) ? null : reader.GetString(reader.GetOrdinal("Email"));
                 var storedPassword = reader.GetString(reader.GetOrdinal("AdminPassword"));
-                var isFirstLogin = reader.IsDBNull(reader.GetOrdinal("isFirstLogin")) || reader.GetBoolean(reader.GetOrdinal("isFirstLogin"));
+                var isFirstLogin = reader.IsDBNull(reader.GetOrdinal("isFirstLogin")) || Convert.ToBoolean(reader.GetValue(reader.GetOrdinal("isFirstLogin")));
 
                 var fullName = string.Join(" ", new[] { first, middle, last }.Where(s => !string.IsNullOrWhiteSpace(s)));
                 var email = !string.IsNullOrWhiteSpace(emailVal) ? emailVal : $"{adminId.ToLowerInvariant()}@photoaevum.studio";
@@ -625,8 +662,19 @@ public class SqlAuthService : ISqlAuthService
         catch (SqlException)
         {
             const string fallbackSql = @"
-                INSERT INTO dbo.Admin (AdminID, AdminRole, AdminFirstName, AdminLastName, AdminMiddleName, Email, AdminPassword, isFirstLogin)
-                VALUES (@AdminID, @AdminRole, @AdminFirstName, @AdminLastName, @AdminMiddleName, @AdminEmail, @AdminPassword, 1);";
+                IF (@AdminRole = 'SystemAdmin' OR @AdminID LIKE 'SADM-%')
+                BEGIN
+                    IF OBJECT_ID(N'dbo.SystemAdmin', N'U') IS NOT NULL
+                    BEGIN
+                        INSERT INTO dbo.SystemAdmin (SystemAdminID, FirstName, LastName, MiddleName, PasswordHash, CreatedAt)
+                        VALUES (@AdminID, @AdminFirstName, @AdminLastName, @AdminMiddleName, @AdminPassword, SYSUTCDATETIME());
+                    END
+                END
+                ELSE
+                BEGIN
+                    INSERT INTO dbo.Admin (AdminID, AdminRole, AdminFirstName, AdminLastName, AdminMiddleName, Email, AdminPassword, isFirstLogin)
+                    VALUES (@AdminID, @AdminRole, @AdminFirstName, @AdminLastName, @AdminMiddleName, @AdminEmail, @AdminPassword, 1);
+                END";
             await using var fbCmd = new SqlCommand(fallbackSql, conn);
             fbCmd.Parameters.AddWithValue("@AdminID", adminId.Trim());
             fbCmd.Parameters.AddWithValue("@AdminRole", role.Trim());
@@ -803,7 +851,6 @@ public class SqlAuthService : ISqlAuthService
 
         try
         {
-<<<<<<< HEAD
             if (BCrypt.Net.BCrypt.Verify(provided, storedHash))
                 return true;
         }
@@ -826,14 +873,6 @@ public class SqlAuthService : ISqlAuthService
         }
 
         return false;
-=======
-            return BCrypt.Net.BCrypt.Verify(provided, storedHash);
-        }
-        catch
-        {
-            return false;
-        }
->>>>>>> 89cb0506c91bf3c01f732797627baaa00fea2957
     }
 
     private static bool VerifyPasswordFlexible(string provided, string stored, bool allowPlainText)

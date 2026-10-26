@@ -1,8 +1,4 @@
-<<<<<<< HEAD
 ﻿using System.Security.Claims;
-=======
-using System.Security.Claims;
->>>>>>> 89cb0506c91bf3c01f732797627baaa00fea2957
 using PhotoAevumStudio.Web.Components.Pages;
 using PhotoAevumStudio.Web.Components.Shared;
 using PhotoAevumStudio.Web.Models;
@@ -150,11 +146,7 @@ public class FormsAndSecurityTests
     [Fact]
     public void Profile_EnrichesFromUserService_ForAdmin()
     {
-<<<<<<< HEAD
         const string connStr = "Data Source=localhost\\SQLEXPRESS;Initial Catalog=PhotoAevumStudio;Integrated Security=True;Persist Security Info=False;Pooling=False;MultipleActiveResultSets=False;Encrypt=True;TrustServerCertificate=True;Application Name=\"SQL Server Management Studio\";Command Timeout=0";
-=======
-        const string connStr = "Data Source=LAPTOP-VJQ60GP3\\SQLEXPRESS;Initial Catalog=PhotoAevumStudio;Integrated Security=True;Persist Security Info=False;Pooling=False;MultipleActiveResultSets=False;Encrypt=True;TrustServerCertificate=True;Application Name=\"SQL Server Management Studio\";Command Timeout=0";
->>>>>>> 89cb0506c91bf3c01f732797627baaa00fea2957
         const string adminId = "SADM-998";
 
         static void CleanupSuperAdmin()
