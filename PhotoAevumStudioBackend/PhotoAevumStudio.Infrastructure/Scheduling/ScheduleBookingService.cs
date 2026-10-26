@@ -63,6 +63,47 @@ public sealed class ScheduleBookingService(
         return new MonthAvailabilityDto(year, month, days);
     }
 
+    public async Task<DayAvailabilityDto> GetDayAvailabilityAsync(DateOnly date, CancellationToken cancellationToken = default)
+    {
+        var taken = (await db.Appointments.AsNoTracking()
+                .Where(a => a.SlotDate == date && a.Status != AppointmentStatus.Cancelled)
+                .Select(a => a.SlotStart)
+                .ToListAsync(cancellationToken))
+            .ToHashSet();
+
+        var now = StudioNow();
+        return new DayAvailabilityDto(date, StudioSlots.All
+            .Select(s => new SlotAvailabilityDto(s.Start, s.End, IsBookable(date, s.Start, now) && !taken.Contains(s.Start)))
+            .ToList());
+    }
+
+    public async Task<IReadOnlyList<MyBookingDto>> GetMyBookingsAsync(string customerId, CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrWhiteSpace(customerId)) return [];
+
+        var rows = await db.Appointments.AsNoTracking()
+            .Where(a => a.CustomerId == customerId)
+            .OrderByDescending(a => a.SlotDate).ThenByDescending(a => a.SlotStart)
+            .Select(a => new
+            {
+                a.AppointmentId,
+                a.SlotDate,
+                a.SlotStart,
+                a.SlotEnd,
+                a.Status,
+                a.TotalPrice,
+                a.Platform,
+                a.MeetingLink,
+                a.EventLocation,
+                Services = a.Services.Select(s => s.ServiceName).ToList()
+            })
+            .ToListAsync(cancellationToken);
+
+        return rows.Select(r => new MyBookingDto(
+            r.AppointmentId, string.Join(", ", r.Services), r.SlotDate, r.SlotStart, r.SlotEnd,
+            r.Status.ToString(), r.TotalPrice, r.Platform, r.MeetingLink, r.EventLocation)).ToList();
+    }
+
     public async Task<MeetingLinkDto> PreviewMeetingLinkAsync(MeetingPlatform platform, DateOnly date, TimeOnly slotStart, CancellationToken cancellationToken = default)
     {
         if (!Enum.IsDefined(platform)) throw new ScheduleValidationException("Unsupported meeting platform.");

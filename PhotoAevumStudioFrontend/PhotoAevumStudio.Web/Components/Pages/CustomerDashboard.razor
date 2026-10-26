@@ -2,8 +2,11 @@
 @layout CustomerLayout
 @using System.Security.Claims
 @using Microsoft.AspNetCore.Components.Authorization
+@using PhotoAevumStudio.Web.Models
 @using PhotoAevumStudio.Web.Services
-@inject IUserService UserService
+@implements IDisposable
+@inject IBookScheduleClient Api
+@inject BookingEvents Events
 @attribute [Authorize(Roles = "Customer")]
 @rendermode InteractiveServer
 
@@ -69,10 +72,16 @@
                 </tr>
             </thead>
             <tbody>
-                @if (!UpcomingBookings.Any())
+                @if (_loading)
                 {
                     <tr>
-                        <td colspan="3" class="text-center text-gray-500 py-8">No upcoming appointments found in the database.</td>
+                        <td colspan="3" class="text-center text-gray-500 py-8">Loading appointments…</td>
+                    </tr>
+                }
+                else if (!UpcomingBookings.Any())
+                {
+                    <tr>
+                        <td colspan="3" class="text-center text-gray-500 py-8">No upcoming appointments yet.</td>
                     </tr>
                 }
                 else
@@ -81,7 +90,7 @@
                     {
                         <tr>
                             <td>@booking.ServiceTitle</td>
-                            <td>@booking.EventDateTime.ToString("MMM dd, yyyy – h:mm tt")</td>
+                            <td>@booking.Start.ToString("MMM dd, yyyy – h:mm tt")</td>
                             <td>
                                 <span class="aev-badge @(booking.Status == "Confirmed" ? "aev-badge--green" : "aev-badge--amber")">
                                     @booking.Status
@@ -96,23 +105,38 @@
 </section>
 
 @code {
-    [CascadingParameter]
-    private Task<AuthenticationState>? AuthState { get; set; }
-
-    private List<BookingRow> UpcomingBookings = new();
+    private List<MyBooking> UpcomingBookings = new();
     private bool _showBookScheduleModal;
+    private bool _loading = true;
     private int PendingCount => UpcomingBookings.Count(b => string.Equals(b.Status, "Pending", StringComparison.OrdinalIgnoreCase));
 
-    protected override async Task OnInitializedAsync()
-    {
-        string? customerId = null;
-        if (AuthState != null)
-        {
-            var state = await AuthState;
-            customerId = state.User.FindFirst(ClaimTypes.NameIdentifier)?.Value
-                      ?? state.User.FindFirst("sub")?.Value;
-        }
+    protected override void OnInitialized() => Events.Changed += OnBookingsChanged;
 
-        UpcomingBookings = UserService.GetBookings(customerId);
+    // The API call needs the auth token, which is only available after the first render.
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender) return;
+        await LoadAsync();
+        StateHasChanged();
     }
+
+    private async Task LoadAsync()
+    {
+        var result = await Api.GetMyBookingsAsync();
+        if (result.IsSuccess)
+        {
+            var today = DateOnly.FromDateTime(DateTime.Today);
+            UpcomingBookings = result.Value!
+                .Where(b => b.Date >= today && !string.Equals(b.Status, "Cancelled", StringComparison.OrdinalIgnoreCase))
+                .OrderBy(b => b.Start)
+                .Take(5)
+                .ToList();
+        }
+        _loading = false;
+    }
+
+    // Raised by the wizard (page or modal) right after a booking is confirmed.
+    private void OnBookingsChanged() => _ = InvokeAsync(async () => { await LoadAsync(); StateHasChanged(); });
+
+    public void Dispose() => Events.Changed -= OnBookingsChanged;
 }

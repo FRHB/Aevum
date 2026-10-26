@@ -683,3 +683,109 @@
 .btn-outline-dark:hover {
     border-color: #111827;
 }
+/* ── Append to CustomerBookingFlow.razor.css ─────────────────────────── */
+
+/* Steps 1–4 use the full width (no side summary) */
+.booking-main-col--full {
+    width: 100%;
+}
+
+.booking-alert {
+    max-width: 1180px;
+    margin: 0 auto 1.25rem auto;
+    padding: 0.85rem 1rem;
+    border: 1px solid #fecaca;
+    background: #fef2f2;
+    color: #991b1b;
+    border-radius: 8px;
+    font-size: 0.9rem;
+}
+
+/* Calendar: only dates with open slots are highlighted */
+.calendar-card {
+    border: 1px solid #e5e7eb;
+    border-radius: 10px;
+    padding: 1rem;
+    background: #ffffff;
+}
+
+.calendar-nav {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 0.75rem;
+}
+
+    .calendar-nav .btn {
+        padding: 0.25rem 0.75rem;
+    }
+
+.calendar-weekdays,
+.calendar-grid {
+    display: grid;
+    grid-template-columns: repeat(7, 1fr);
+    gap: 4px;
+}
+
+    .calendar-weekdays span {
+        text-align: center;
+        font-size: 0.7rem;
+        font-weight: 700;
+        text-transform: uppercase;
+        color: #9ca3af;
+        padding-bottom: 0.25rem;
+    }
+
+.calendar-cell {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    aspect-ratio: 1;
+    border-radius: 8px;
+    font-size: 0.85rem;
+    border: 1px solid transparent;
+    background: transparent;
+    color: #9ca3af;
+}
+
+.calendar-cell--blank {
+    visibility: hidden;
+}
+
+.calendar-cell.is-unavailable {
+    cursor: not-allowed;
+}
+
+.calendar-cell.is-available {
+    background: #ecfdf5;
+    border-color: #a7f3d0;
+    color: #065f46;
+    font-weight: 700;
+    cursor: pointer;
+    transition: all 0.15s ease;
+}
+
+    .calendar-cell.is-available:hover {
+        border-color: #111827;
+    }
+
+    .calendar-cell.is-available.is-selected {
+        background: #111827;
+        border-color: #111827;
+        color: #ffffff;
+    }
+
+.slot-group-header--spaced {
+    margin-top: 1rem;
+}
+
+/* Wider time column on step 2 */
+.date-time-picker-grid {
+    grid-template-columns: 320px 1fr;
+}
+
+@media (max-width: 720px) {
+    .date-time-picker-grid {
+        grid-template-columns: 1fr;
+    }
+}

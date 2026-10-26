@@ -10,6 +10,7 @@ public interface IBookScheduleClient
     Task<ApiResult<MonthAvailability>> GetAvailabilityAsync(int year, int month, CancellationToken ct = default);
     Task<ApiResult<MeetingLinkPreview>> PreviewMeetingLinkAsync(MeetingPlatform platform, DateOnly date, TimeOnly slotStart, CancellationToken ct = default);
     Task<ApiResult<ScheduleBookingResult>> BookAsync(ScheduleBookingRequest request, CancellationToken ct = default);
+    Task<ApiResult<IReadOnlyList<MyBooking>>> GetMyBookingsAsync(CancellationToken ct = default);
 }
 
 /// <summary>Calls api/schedule/*. Never throws; every failure becomes an <see cref="ApiError"/>.</summary>
@@ -31,6 +32,12 @@ public sealed class BookScheduleClient(IHttpClientFactory httpClientFactory, ITo
 
     public Task<ApiResult<ScheduleBookingResult>> BookAsync(ScheduleBookingRequest request, CancellationToken ct = default) =>
         SendAsync<ScheduleBookingResult>(() => _http.PostAsJsonAsync("api/schedule/bookings", request, ct), ct);
+
+    public async Task<ApiResult<IReadOnlyList<MyBooking>>> GetMyBookingsAsync(CancellationToken ct = default)
+    {
+        var result = await SendAsync<List<MyBooking>>(() => _http.GetAsync("api/schedule/my-bookings", ct), ct);
+        return result.IsSuccess ? ApiResult<IReadOnlyList<MyBooking>>.Ok(result.Value!) : new(null, result.Error);
+    }
 
     private async Task<ApiResult<T>> SendAsync<T>(Func<Task<HttpResponseMessage>> send, CancellationToken ct)
     {

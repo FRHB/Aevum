@@ -2,412 +2,405 @@
 @page "/book"
 @page "/schedule"
 @layout CustomerLayout
+@rendermode InteractiveServer
 @attribute [Authorize(Roles = "Customer")]
 @using PhotoAevumStudio.Web.Models
 @using PhotoAevumStudio.Web.Services
-@using Microsoft.AspNetCore.Components.Authorization
-@using System.Security.Claims
-@inject IUserService UserService
-@inject AuthenticationStateProvider AuthStateProvider
-@inject NavigationManager NavManager
+@inject IBookScheduleClient Api
+@inject BookScheduleState Wizard
+@inject BookingEvents Events
 
 <PageTitle>Schedule Your Session | Photo Aevum Studio</PageTitle>
 
 <div class="booking-wizard-container">
-    @* ── Studio Header ─────────────────────────────────────────────── *@
     <div class="booking-header">
         <span class="booking-subtitle-chip">Online Scheduling</span>
         <h1 class="booking-title">Book a Studio Session</h1>
         <p class="booking-description">
-            Select your preferred photography package, pick an available studio slot, and customize your shoot.
+            Choose your services, pick an available slot, add your event details, and set up your online session.
         </p>
 
-        @* ── Progress Stepper ─────────────────────────────────────────── *@
-        <div class="stepper-bar" role="tablist">
-            <button type="button" class="step-item @(CurrentStep == 1 ? "is-active" : (CurrentStep > 1 ? "is-completed" : ""))"
-                    @onclick="() => SetStep(1)">
-                <span class="step-num">@(CurrentStep > 1 ? "✓" : "1")</span>
-                <span class="step-label">Service</span>
-            </button>
-            <div class="step-divider @(CurrentStep > 1 ? "is-completed" : "")"></div>
-
-            <button type="button" class="step-item @(CurrentStep == 2 ? "is-active" : (CurrentStep > 2 ? "is-completed" : ""))"
-                    disabled="@(SelectedService == null)"
-                    @onclick="() => SetStep(2)">
-                <span class="step-num">@(CurrentStep > 2 ? "✓" : "2")</span>
-                <span class="step-label">Date & Time</span>
-            </button>
-            <div class="step-divider @(CurrentStep > 2 ? "is-completed" : "")"></div>
-
-            <button type="button" class="step-item @(CurrentStep == 3 ? "is-active" : (CurrentStep > 3 ? "is-completed" : ""))"
-                    disabled="@(SelectedService == null || SelectedTime == null)"
-                    @onclick="() => SetStep(3)">
-                <span class="step-num">@(CurrentStep > 3 ? "✓" : "3")</span>
-                <span class="step-label">Customization</span>
-            </button>
-            <div class="step-divider @(CurrentStep > 3 ? "is-completed" : "")"></div>
-
-            <button type="button" class="step-item @(CurrentStep == 4 ? "is-active" : "")"
-                    disabled="@(!CanProceedToReview)"
-                    @onclick="() => SetStep(4)">
-                <span class="step-num">4</span>
-                <span class="step-label">Review</span>
-            </button>
-        </div>
+        @if (_result is null)
+        {
+            <div class="stepper-bar" role="tablist">
+                @for (var n = 1; n <= BookScheduleState.LastStep; n++)
+                {
+                    var step = n;
+                    <button type="button"
+                            class="step-item @(Wizard.Step == step ? "is-active" : (Wizard.Step > step ? "is-completed" : ""))"
+                            disabled="@(step > Wizard.Step || _busy)"
+                            @onclick="() => GoBackToAsync(step)">
+                        <span class="step-num">@(Wizard.Step > step ? "✓" : step.ToString())</span>
+                        <span class="step-label">@StepLabels[step - 1]</span>
+                    </button>
+                    @if (step < BookScheduleState.LastStep)
+                    {
+                        <div class="step-divider @(Wizard.Step > step ? "is-completed" : "")"></div>
+                    }
+                }
+            </div>
+        }
     </div>
 
-    @if (BookingConfirmed)
+    @if (_error is not null)
     {
+        <div class="booking-alert" role="alert">@_error</div>
+    }
+
+    @if (_result is not null)
+    {
+        @* ── Confirmation ─────────────────────────────────────────── *@
         <div class="confirmation-card">
             <div class="confirmation-icon">✨</div>
-            <h2 class="confirmation-title">Session Scheduled Successfully!</h2>
-            <p class="confirmation-lead">
-                Thank you, <strong>@CustomerName</strong>. Your appointment for <strong>@SelectedService?.Name</strong> has been requested for:
-            </p>
+            <h2 class="confirmation-title">Session Scheduled!</h2>
+            <p class="confirmation-lead">Your booking <strong>#@_result.AppointmentId</strong> is confirmed.</p>
             <div class="confirmation-details">
+                <div class="detail-row"><span class="detail-label">Services:</span><span class="detail-val">@string.Join(", ", _result.Services.Select(s => s.Name))</span></div>
+                <div class="detail-row"><span class="detail-label">Date:</span><span class="detail-val">@_result.Date.ToString("dddd, MMMM d, yyyy")</span></div>
+                <div class="detail-row"><span class="detail-label">Time:</span><span class="detail-val">@FormatRange(_result.SlotStart, _result.SlotEnd)</span></div>
+                @if (!string.IsNullOrWhiteSpace(_result.EventLocation))
+                {
+                    <div class="detail-row"><span class="detail-label">Venue:</span><span class="detail-val">@_result.EventLocation</span></div>
+                }
+                <div class="detail-row"><span class="detail-label">Teleconference:</span><span class="detail-val">@MeetingPlatformInfo.Label(_result.Platform)</span></div>
                 <div class="detail-row">
-                    <span class="detail-label">Date:</span>
-                    <span class="detail-val">@SelectedDate.ToString("dddd, MMMM d, yyyy")</span>
+                    <span class="detail-label">Session link:</span>
+                    <span class="detail-val">
+                        @if (IsHttpUrl(_result.MeetingLink))
+                        {
+                            <a href="@_result.MeetingLink" target="_blank" rel="noopener noreferrer">Join session</a>
+                        }
+                        else
+                        {
+                            @_result.MeetingLink
+                        }
+                    </span>
                 </div>
-                <div class="detail-row">
-                    <span class="detail-label">Time:</span>
-                    <span class="detail-val">@SelectedTime?.ToString("h:mm tt")</span>
-                </div>
-                <div class="detail-row">
-                    <span class="detail-label">Location:</span>
-                    <span class="detail-val">Photo Aevum Studio (Main Bay)</span>
-                </div>
-                <div class="detail-row">
-                    <span class="detail-label">Total Amount:</span>
-                    <span class="detail-val font-bold">₱@CalculateTotal().ToString("N2")</span>
-                </div>
+                <div class="detail-row"><span class="detail-label">Total:</span><span class="detail-val">₱@_result.TotalPrice.ToString("N2")</span></div>
             </div>
-            <p class="text-sm text-gray-500 mb-6">A studio coordinator will review your schedule and send a confirmation email.</p>
-            <div class="flex justify-center gap-3">
+            <p class="calendar-hint">
+                @(_result.ConfirmationEmailSent
+                    ? "A confirmation email with your summary and session link is on its way."
+                    : "Your booking is saved, but we couldn't send the confirmation email. Your session link is shown above and in My Bookings.")
+            </p>
+            <div class="wizard-footer" style="justify-content:center; gap:.75rem;">
                 <a href="/my/bookings" class="btn btn-outline-dark">View My Bookings</a>
-                <button type="button" class="btn btn-dark" @onclick="ResetBooking">Book Another Session</button>
+                <button type="button" class="btn btn-dark" @onclick="BookAnotherAsync">Book Another Session</button>
             </div>
+        </div>
+    }
+    else if (_loadingServices)
+    {
+        <div class="wizard-panel"><p class="calendar-hint">Loading studio services…</p></div>
+    }
+    else if (Wizard.Step < 5)
+    {
+        @* ── Steps 1–4: full width, no Booking Summary ────────────── *@
+        <div class="booking-main-col booking-main-col--full">
+
+            @if (Wizard.Step == 1)
+            {
+                <div class="wizard-panel">
+                    <div class="panel-header">
+                        <h2>1. Select Services</h2>
+                        <p>Choose one or more services or packages for your session.</p>
+                    </div>
+
+                    @if (_services.Count == 0)
+                    {
+                        <p class="calendar-hint">No studio services are currently available.</p>
+                    }
+                    else
+                    {
+                        <div class="service-cards-stack">
+                            @foreach (var svc in _services)
+                            {
+                                var id = svc.ServicesId;
+                                var selected = Wizard.ServiceIds.Contains(id);
+                                <div class="service-card @(selected ? "is-selected" : "")"
+                                     role="checkbox" aria-checked="@selected" tabindex="0"
+                                     @onclick="() => ToggleService(id)"
+                                     @onkeydown="e => OnServiceKey(e, id)">
+                                    <div class="service-card__left">
+                                        <div class="addon-checkbox @(selected ? "is-active" : "")">@(selected ? "✓" : "")</div>
+                                        <div>
+                                            <span class="service-title">@svc.Name</span>
+                                            <p class="service-desc">@svc.Description</p>
+                                        </div>
+                                    </div>
+                                    <div class="service-card__right">
+                                        <div class="service-price">₱@svc.Price.ToString("N2")</div>
+                                    </div>
+                                </div>
+                            }
+                        </div>
+                    }
+
+                    <div class="wizard-footer">
+                        <span class="calendar-hint">@Wizard.ServiceIds.Count selected</span>
+                        <button type="button" class="btn btn-dark btn-lg" disabled="@(Wizard.ServiceIds.Count == 0 || _busy)" @onclick="NextAsync">
+                            Next: Date &amp; Time →
+                        </button>
+                    </div>
+                </div>
+            }
+            else if (Wizard.Step == 2)
+            {
+                <div class="wizard-panel">
+                    <div class="panel-header">
+                        <h2>2. Pick a Date &amp; Time</h2>
+                        <p>Highlighted dates have open slots. Morning: 9–11 AM. Afternoon: 1–5 PM.</p>
+                    </div>
+
+                    <div class="date-time-picker-grid">
+                        <div class="date-col">
+                            <div class="calendar-card">
+                                <div class="calendar-nav">
+                                    <button type="button" class="btn btn-outline-dark" aria-label="Previous month"
+                                            disabled="@(!CanGoPrevMonth || _loadingMonth)" @onclick="PrevMonthAsync">
+                                        ‹
+                                    </button>
+                                    <strong>@Wizard.VisibleMonth.ToString("MMMM yyyy")</strong>
+                                    <button type="button" class="btn btn-outline-dark" aria-label="Next month"
+                                            disabled="@_loadingMonth" @onclick="NextMonthAsync">
+                                        ›
+                                    </button>
+                                </div>
+                                <div class="calendar-weekdays">
+                                    @foreach (var d in WeekdayNames)
+                                    {
+                                        <span>@d</span>
+                                    }
+                                </div>
+                                @if (_loadingMonth)
+                                {
+                                    <p class="calendar-hint">Loading availability…</p>
+                                }
+                                else if (_month is not null)
+                                {
+                                    <div class="calendar-grid">
+                                        @for (var i = 0; i < (int)Wizard.VisibleMonth.DayOfWeek; i++)
+                                        {
+                                            <span class="calendar-cell calendar-cell--blank"></span>
+                                        }
+                                        @foreach (var day in _month.Days)
+                                        {
+                                            var date = day.Date;
+                                            @if (day.HasAvailability)
+                                            {
+                                                <button type="button"
+                                                        class="calendar-cell is-available @(Wizard.Date == date ? "is-selected" : "")"
+                                                        @onclick="() => SelectDate(date)">
+                                                    @date.Day
+                                                </button>
+                                            }
+                                            else
+                                            {
+                                                <span class="calendar-cell is-unavailable" aria-disabled="true">@date.Day</span>
+                                            }
+                                        }
+                                    </div>
+                                }
+                            </div>
+                        </div>
+
+                        <div class="time-col">
+                            @if (Wizard.Date is null)
+                            {
+                                <p class="calendar-hint">Select a highlighted date to see its available times.</p>
+                            }
+                            else
+                            {
+                                var date = Wizard.Date.Value;
+                                var morning = SlotsFor(date).Where(s => SessionWindows.IsMorning(s.Start, s.End)).ToList();
+                                var afternoon = SlotsFor(date).Where(s => SessionWindows.IsAfternoon(s.Start, s.End)).ToList();
+
+                                <label class="picker-label">Available times for @date.ToString("MMM d, yyyy")</label>
+
+                                @if (morning.Count == 0 && afternoon.Count == 0)
+                                {
+                                    <p class="calendar-hint">No open slots on this date. Please choose another.</p>
+                                }
+                                @if (morning.Count > 0)
+                                {
+                                    <span class="slot-group-header">Morning Sessions (9:00 AM – 11:00 AM)</span>
+                                    <div class="slots-grid">
+                                        @foreach (var s in morning)
+                                        {
+                                            var slot = s;
+                                            <button type="button" class="slot-btn @(Wizard.SlotStart == slot.Start ? "is-selected" : "")"
+                                                    @onclick="() => SelectSlot(slot)">
+                                                @slot.Start.ToString("h:mm tt")
+                                            </button>
+                                        }
+                                    </div>
+                                }
+                                @if (afternoon.Count > 0)
+                                {
+                                    <span class="slot-group-header slot-group-header--spaced">Afternoon Sessions (1:00 PM – 5:00 PM)</span>
+                                    <div class="slots-grid">
+                                        @foreach (var s in afternoon)
+                                        {
+                                            var slot = s;
+                                            <button type="button" class="slot-btn @(Wizard.SlotStart == slot.Start ? "is-selected" : "")"
+                                                    @onclick="() => SelectSlot(slot)">
+                                                @slot.Start.ToString("h:mm tt")
+                                            </button>
+                                        }
+                                    </div>
+                                }
+                            }
+                        </div>
+                    </div>
+
+                    <div class="wizard-footer">
+                        <button type="button" class="btn btn-outline-dark" @onclick="BackAsync">← Back</button>
+                        <button type="button" class="btn btn-dark btn-lg" disabled="@(Wizard.SlotStart is null || _busy)" @onclick="NextAsync">
+                            Next: Event Details →
+                        </button>
+                    </div>
+                </div>
+            }
+            else if (Wizard.Step == 3)
+            {
+                <div class="wizard-panel">
+                    <div class="panel-header">
+                        <h2>3. Event Details &amp; Location</h2>
+                        <p>Confirm your expected schedule and tell us where the event takes place.</p>
+                    </div>
+
+                    <div class="review-details-box">
+                        <div class="review-row"><span class="review-label">Expected date</span><span class="review-val">@Wizard.Date?.ToString("dddd, MMMM d, yyyy")</span></div>
+                        <div class="review-row"><span class="review-label">Expected time</span><span class="review-val">@FormatRange(Wizard.SlotStart, Wizard.SlotEnd)</span></div>
+                    </div>
+                    <label class="addon-card @(Wizard.DateTimeConfirmed ? "is-checked" : "")" style="margin-bottom:1.5rem;">
+                        <input type="checkbox" checked="@Wizard.DateTimeConfirmed"
+                               @onchange="e => Wizard.DateTimeConfirmed = (bool)(e.Value ?? false)" />
+                        <span class="addon-title">I confirm this date and time</span>
+                    </label>
+
+                    <label class="picker-label" for="event-location">Event place / venue (optional)</label>
+                    <input id="event-location" type="text" class="negotiation-textarea" maxlength="300"
+                           placeholder="e.g. Wedding venue, event hall, outdoor location, studio…"
+                           @bind="Wizard.EventLocation" @bind:event="oninput" />
+
+                    <div class="wizard-footer">
+                        <button type="button" class="btn btn-outline-dark" @onclick="BackAsync">← Back</button>
+                        <button type="button" class="btn btn-dark btn-lg" disabled="@(!Wizard.DateTimeConfirmed || _busy)" @onclick="NextAsync">
+                            Next: Teleconference →
+                        </button>
+                    </div>
+                </div>
+            }
+            else if (Wizard.Step == 4)
+            {
+                <div class="wizard-panel">
+                    <div class="panel-header">
+                        <h2>4. Teleconference Setup</h2>
+                        <p>Which app would you like to use for your online session?</p>
+                    </div>
+
+                    <div class="service-cards-stack" role="radiogroup">
+                        @foreach (var p in MeetingPlatformInfo.All)
+                        {
+                            var platform = p;
+                            var selected = Wizard.Platform == platform;
+                            <div class="service-card @(selected ? "is-selected" : "")"
+                                 role="radio" aria-checked="@selected" tabindex="0"
+                                 @onclick="() => Wizard.SelectPlatform(platform)"
+                                 @onkeydown="e => OnPlatformKey(e, platform)">
+                                <div class="service-card__left">
+                                    <div class="service-radio @(selected ? "is-checked" : "")"></div>
+                                    <span class="service-title">@MeetingPlatformInfo.Label(platform)</span>
+                                </div>
+                            </div>
+                        }
+                    </div>
+
+                    <div class="wizard-footer">
+                        <button type="button" class="btn btn-outline-dark" @onclick="BackAsync">← Back</button>
+                        <button type="button" class="btn btn-dark btn-lg" disabled="@(Wizard.Platform is null || _busy)" @onclick="NextAsync">
+                            @(_busy ? "Generating link…" : "Next: Review →")
+                        </button>
+                    </div>
+                </div>
+            }
         </div>
     }
     else
     {
+        @* ── Step 5: review + the only place the Booking Summary appears ── *@
         <div class="booking-grid-layout">
-            @* ── Main Workflow Content ────────────────────────────────── *@
             <div class="booking-main-col">
-
-                @* ── STEP 1: SERVICE SELECTION ───────────────────────── *@
-                @if (CurrentStep == 1)
-                {
-                    <div class="wizard-panel">
-                        <div class="panel-header">
-                            <h2>1. Select Studio Service</h2>
-                            <p>Choose the photography package that matches your vision.</p>
-                        </div>
-
-                        @if (!AvailableServices.Any())
-                        {
-                            <div class="empty-state">
-                                <p>No active studio services are currently listed in the catalog.</p>
-                            </div>
-                        }
-                        else
-                        {
-                            <div class="service-cards-stack">
-                                @foreach (var svc in AvailableServices)
-                                {
-                                    bool isSelected = SelectedService?.Id == svc.Id;
-                                    <div class="service-card @(isSelected ? "is-selected" : "")"
-                                         @onclick="() => SelectService(svc)">
-                                        <div class="service-card__left">
-                                            <div class="service-radio @(isSelected ? "is-checked" : "")"></div>
-                                            <div>
-                                                <div class="flex items-center gap-2">
-                                                    <span class="service-title">@svc.Name</span>
-                                                    <span class="badge-category">@svc.Category</span>
-                                                </div>
-                                                <p class="service-desc">@svc.Description</p>
-                                                <div class="service-meta">
-                                                    <span class="meta-item">⏱ @svc.DurationHrs hr(s)</span>
-                                                    <span class="meta-item">📍 In-Studio</span>
-                                                </div>
-                                            </div>
-                                        </div>
-                                        <div class="service-card__right">
-                                            <div class="service-price">₱@svc.Price.ToString("N2")</div>
-                                            <button type="button" class="btn-select-svc">
-                                                @(isSelected ? "Selected" : "Select")
-                                            </button>
-                                        </div>
-                                    </div>
-                                }
-                            </div>
-                        }
-
-                        <div class="wizard-footer">
-                            <div></div>
-                            <button type="button" class="btn btn-dark btn-lg"
-                                    disabled="@(SelectedService == null)"
-                                    @onclick="() => SetStep(2)">
-                                Next: Choose Date & Time →
-                            </button>
-                        </div>
+                <div class="wizard-panel">
+                    <div class="panel-header">
+                        <h2>5. Summary &amp; Confirmation</h2>
+                        <p>Check everything, then confirm your booking.</p>
                     </div>
-                }
 
-                @* ── STEP 2: DATE & TIME SELECTION ───────────────────── *@
-                else if (CurrentStep == 2)
-                {
-                    <div class="wizard-panel">
-                        <div class="panel-header">
-                            <h2>2. Pick Date & Available Slot</h2>
-                            <p>Select when you would like to arrive at the studio.</p>
+                    <div class="review-details-box">
+                        <div class="review-row"><span class="review-label">Date</span><span class="review-val">@Wizard.Date?.ToString("dddd, MMMM d, yyyy")</span></div>
+                        <div class="review-row"><span class="review-label">Time</span><span class="review-val">@FormatRange(Wizard.SlotStart, Wizard.SlotEnd)</span></div>
+                        <div class="review-row">
+                            <span class="review-label">Event place / venue</span>
+                            <span class="review-val">@(string.IsNullOrWhiteSpace(Wizard.EventLocation) ? "Not specified" : Wizard.EventLocation)</span>
                         </div>
-
-                        <div class="date-time-picker-grid">
-                            <div class="date-col">
-                                <label class="picker-label">Select Date</label>
-                                <input type="date"
-                                       class="calendar-date-input"
-                                       min="@DateTime.Today.AddDays(1).ToString("yyyy-MM-dd")"
-                                       @bind="SelectedDate" />
-                                <div class="calendar-hint">
-                                    Studio hours: 9:00 AM – 7:00 PM Tuesday through Sunday.
-                                </div>
-                            </div>
-
-                            <div class="time-col">
-                                <label class="picker-label">
-                                    Available Time Slots for @SelectedDate.ToString("MMM d, yyyy")
-                                </label>
-
-                                <div class="time-slots-group">
-                                    <span class="slot-group-header">Morning Sessions</span>
-                                    <div class="slots-grid">
-                                        @foreach (var time in MorningSlots)
-                                        {
-                                            bool isSlotSelected = SelectedTime == time;
-                                            <button type="button"
-                                                    class="slot-btn @(isSlotSelected ? "is-selected" : "")"
-                                                    @onclick="() => SelectedTime = time">
-                                                @time.ToString("h:mm tt")
-                                            </button>
-                                        }
-                                    </div>
-
-                                    <span class="slot-group-header mt-3">Afternoon Sessions</span>
-                                    <div class="slots-grid">
-                                        @foreach (var time in AfternoonSlots)
-                                        {
-                                            bool isSlotSelected = SelectedTime == time;
-                                            <button type="button"
-                                                    class="slot-btn @(isSlotSelected ? "is-selected" : "")"
-                                                    @onclick="() => SelectedTime = time">
-                                                @time.ToString("h:mm tt")
-                                            </button>
-                                        }
-                                    </div>
-                                </div>
-                            </div>
+                        <div class="review-row">
+                            <span class="review-label">Teleconference</span>
+                            <span class="review-val">@(Wizard.Platform is { } p ? MeetingPlatformInfo.Label(p) : "—")</span>
                         </div>
-
-                        <div class="wizard-footer">
-                            <button type="button" class="btn btn-outline-dark" @onclick="() => SetStep(1)">
-                                ← Back to Services
-                            </button>
-                            <button type="button" class="btn btn-dark btn-lg"
-                                    disabled="@(SelectedTime == null)"
-                                    @onclick="() => SetStep(3)">
-                                Next: Add-ons & Notes →
-                            </button>
-                        </div>
-                    </div>
-                }
-
-                @* ── STEP 3: CUSTOMIZATION & NEGOTIATION ──────────────── *@
-                else if (CurrentStep == 3)
-                {
-                    <div class="wizard-panel">
-                        <div class="panel-header">
-                            <h2>3. Add-ons & Session Customization</h2>
-                            <p>Enhance your shoot with add-ons or outline special creative requirements.</p>
-                        </div>
-
-                        @if (AvailableAddOns.Any())
-                        {
-                            <label class="picker-label mb-2">Optional Studio Add-Ons</label>
-                            <div class="addons-grid mb-6">
-                                @foreach (var addon in AvailableAddOns)
+                        <div class="review-row">
+                            <span class="review-label">Session link</span>
+                            <span class="review-val">
+                                @if (IsHttpUrl(Wizard.MeetingLink))
                                 {
-                                    bool isChecked = SelectedAddOnCodes.Contains(addon.Code);
-                                    <div class="addon-card @(isChecked ? "is-checked" : "")"
-                                         @onclick="() => ToggleAddOn(addon.Code)">
-                                        <div class="addon-checkbox @(isChecked ? "is-active" : "")">
-                                            @(isChecked ? "✓" : "")
-                                        </div>
-                                        <div class="addon-content">
-                                            <div class="addon-title">@addon.Title</div>
-                                            <div class="addon-desc">@addon.Description</div>
-                                            <div class="addon-price">@addon.PriceText</div>
-                                        </div>
-                                    </div>
-                                }
-                            </div>
-                        }
-
-                        <div class="negotiation-section">
-                            <label class="picker-label" for="session-notes">
-                                Negotiation & Special Directives (Optional)
-                            </label>
-                            <p class="text-xs text-gray-500 mb-2">
-                                Request specific backdrops, lighting styles, props, or discuss customized packages.
-                            </p>
-                            <textarea id="session-notes"
-                                      class="negotiation-textarea"
-                                      rows="4"
-                                      placeholder="e.g. Would like a minimalist black backdrop, 2 outfit changes, and RAW files..."
-                                      @bind="SessionNotes"></textarea>
-                        </div>
-
-                        <div class="wizard-footer">
-                            <button type="button" class="btn btn-outline-dark" @onclick="() => SetStep(2)">
-                                ← Back to Schedule
-                            </button>
-                            <button type="button" class="btn btn-dark btn-lg" @onclick="() => SetStep(4)">
-                                Review & Confirm →
-                            </button>
-                        </div>
-                    </div>
-                }
-
-                @* ── STEP 4: REVIEW & CONFIRMATION ───────────────────── *@
-                else if (CurrentStep == 4)
-                {
-                    <div class="wizard-panel">
-                        <div class="panel-header">
-                            <h2>4. Review Your Booking Summary</h2>
-                            <p>Verify all details before submitting your appointment request.</p>
-                        </div>
-
-                        <div class="review-details-box">
-                            <div class="review-row">
-                                <span class="review-label">Client Name:</span>
-                                <span class="review-val">@CustomerName</span>
-                            </div>
-                            <div class="review-row">
-                                <span class="review-label">Selected Service:</span>
-                                <span class="review-val font-semibold">@SelectedService?.Name</span>
-                            </div>
-                            <div class="review-row">
-                                <span class="review-label">Scheduled Date:</span>
-                                <span class="review-val">@SelectedDate.ToString("dddd, MMMM d, yyyy")</span>
-                            </div>
-                            <div class="review-row">
-                                <span class="review-label">Session Time:</span>
-                                <span class="review-val">@SelectedTime?.ToString("h:mm tt") (@SelectedService?.DurationHrs hr session)</span>
-                            </div>
-
-                            @if (SelectedAddOnCodes.Any())
-                            {
-                                <div class="review-row">
-                                    <span class="review-label">Selected Add-Ons:</span>
-                                    <span class="review-val">
-                                        @string.Join(", ", AvailableAddOns.Where(a => SelectedAddOnCodes.Contains(a.Code)).Select(a => a.Title))
-                                    </span>
-                                </div>
-                            }
-
-                            @if (!string.IsNullOrWhiteSpace(SessionNotes))
-                            {
-                                <div class="review-row">
-                                    <span class="review-label">Client Notes:</span>
-                                    <span class="review-val italic">"@SessionNotes"</span>
-                                </div>
-                            }
-                        </div>
-
-                        <div class="policy-note">
-                            <strong>Studio Policy:</strong> Complimentary rescheduling is available up to 24 hours prior to your scheduled session.
-                        </div>
-
-                        <div class="wizard-footer">
-                            <button type="button" class="btn btn-outline-dark" @onclick="() => SetStep(3)">
-                                ← Back to Customization
-                            </button>
-                            <button type="button" class="btn btn-dark btn-lg"
-                                    disabled="@isSubmitting"
-                                    @onclick="SubmitBooking">
-                                @if (isSubmitting)
-                                {
-                                    <span>Submitting Booking...</span>
+                                    <a href="@Wizard.MeetingLink" target="_blank" rel="noopener noreferrer">@Wizard.MeetingLink</a>
                                 }
                                 else
                                 {
-                                    <span>Confirm Booking (₱@CalculateTotal().ToString("N2"))</span>
+                                    @(Wizard.MeetingLink ?? "—")
                                 }
-                            </button>
+                            </span>
                         </div>
                     </div>
-                }
 
+                    <div class="policy-note">
+                        <strong>Studio Policy:</strong> Complimentary rescheduling is available up to 24 hours prior to your scheduled session.
+                    </div>
+
+                    <div class="wizard-footer">
+                        <button type="button" class="btn btn-outline-dark" disabled="@_submitting" @onclick="BackAsync">← Back</button>
+                        <button type="button" class="btn btn-dark btn-lg" disabled="@_submitting" @onclick="ConfirmAsync">
+                            @(_submitting ? "Confirming…" : $"Confirm Booking (₱{Total.ToString("N2")})")
+                        </button>
+                    </div>
+                </div>
             </div>
 
-            @* ── Sidebar Order Summary ────────────────────────────────── *@
             <aside class="booking-summary-sidebar">
                 <div class="summary-card">
                     <h3 class="summary-title">Booking Summary</h3>
-                    
-                    @if (SelectedService != null)
+                    @foreach (var svc in SelectedServices)
                     {
                         <div class="summary-item">
-                            <div class="item-info">
-                                <span class="item-name">@SelectedService.Name</span>
-                                <span class="item-meta">@SelectedService.DurationHrs hr shoot</span>
-                            </div>
-                            <span class="item-price">₱@SelectedService.Price.ToString("N2")</span>
+                            <span class="item-name">@svc.Name</span>
+                            <span class="item-price">₱@svc.Price.ToString("N2")</span>
                         </div>
-
-                        @foreach (var code in SelectedAddOnCodes)
+                    }
+                    <div class="summary-divider"></div>
+                    <div class="summary-schedule-info">
+                        <div class="sched-row"><span>📅 Date:</span><strong>@Wizard.Date?.ToString("MMM d, yyyy")</strong></div>
+                        <div class="sched-row"><span>⏰ Time:</span><strong>@FormatRange(Wizard.SlotStart, Wizard.SlotEnd)</strong></div>
+                        @if (!string.IsNullOrWhiteSpace(Wizard.EventLocation))
                         {
-                            var add = AvailableAddOns.FirstOrDefault(a => a.Code == code);
-                            if (add != null)
-                            {
-                                <div class="summary-item summary-item--sub">
-                                    <span class="item-name">+ @add.Title</span>
-                                    <span class="item-price">@add.PriceText</span>
-                                </div>
-                            }
+                            <div class="sched-row"><span>📍 Venue:</span><strong>@Wizard.EventLocation</strong></div>
                         }
-
-                        <div class="summary-divider"></div>
-
-                        <div class="summary-schedule-info">
-                            <div class="sched-row">
-                                <span>📅 Date:</span>
-                                <strong>@SelectedDate.ToString("MMM d, yyyy")</strong>
-                            </div>
-                            <div class="sched-row">
-                                <span>⏰ Time:</span>
-                                <strong>@(SelectedTime?.ToString("h:mm tt") ?? "Pending selection")</strong>
-                            </div>
-                        </div>
-
-                        <div class="summary-divider"></div>
-
-                        <div class="summary-total-row">
-                            <span>Estimated Total:</span>
-                            <span class="total-figure">₱@CalculateTotal().ToString("N2")</span>
-                        </div>
-                    }
-                    else
-                    {
-                        <div class="summary-empty">
-                            <p>No service selected yet. Choose a package on the left to get started.</p>
-                        </div>
-                    }
-
-                    <div class="summary-badges">
-                        <span class="badge-guarantee">🛡 Professional Studio Guarantee</span>
-                        <span class="badge-guarantee">⚡ Instant Slot Reservation</span>
+                        <div class="sched-row"><span>💻 Session:</span><strong>@(Wizard.Platform is { } sp ? MeetingPlatformInfo.Label(sp) : "—")</strong></div>
+                    </div>
+                    <div class="summary-divider"></div>
+                    <div class="summary-total-row">
+                        <span>Total:</span>
+                        <span class="total-figure">₱@Total.ToString("N2")</span>
                     </div>
                 </div>
             </aside>
@@ -416,110 +409,225 @@
 </div>
 
 @code {
-    private int CurrentStep = 1;
-    private List<MainServiceItem> AvailableServices = new();
-    private List<AddOnServiceItem> AvailableAddOns = new();
-    private MainServiceItem? SelectedService;
-    private DateOnly SelectedDate = DateOnly.FromDateTime(DateTime.Today.AddDays(1));
-    private TimeOnly? SelectedTime;
-    private HashSet<string> SelectedAddOnCodes = new();
-    private string SessionNotes = "";
-    private string CustomerId = "";
-    private string CustomerName = "Valued Customer";
-    private bool isSubmitting = false;
-    private bool BookingConfirmed = false;
+    private static readonly string[] StepLabels =
+        ["Service", "Date & Time", "Event Details", "Teleconference", "Summary"];
+    private static readonly string[] WeekdayNames = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 
-    private List<TimeOnly> MorningSlots = new()
+    private List<ScheduleServiceOption> _services = new();
+    private MonthAvailability? _month;
+    private ScheduleBookingResult? _result;
+    private string? _error;
+    private bool _loadingServices = true;
+    private bool _loadingMonth;
+    private bool _busy;
+    private bool _submitting;
+    private int _loadSeq;
+
+    private IEnumerable<ScheduleServiceOption> SelectedServices =>
+        _services.Where(s => Wizard.ServiceIds.Contains(s.ServicesId));
+    private decimal Total => SelectedServices.Sum(s => s.Price);
+
+    private bool CanGoPrevMonth =>
+        Wizard.VisibleMonth > BookScheduleState.FirstOfMonth(DateOnly.FromDateTime(DateTime.Now));
+
+    // HTTP calls need the auth token, which is only readable after the first render (no JS interop while prerendering).
+    protected override async Task OnAfterRenderAsync(bool firstRender)
     {
-        new TimeOnly(9, 0),
-        new TimeOnly(10, 0),
-        new TimeOnly(11, 0)
-    };
+        if (!firstRender) return;
 
-    private List<TimeOnly> AfternoonSlots = new()
+        var result = await Api.GetServicesAsync();
+        if (result.IsSuccess)
+        {
+            _services = result.Value!.ToList();
+            // Drop selections for services that no longer exist.
+            Wizard.ServiceIds.RemoveWhere(id => !_services.Any(s => s.ServicesId.Equals(id, StringComparison.OrdinalIgnoreCase)));
+        }
+        else
+        {
+            _error = result.Error!.Message;
+        }
+        _loadingServices = false;
+
+        if (Wizard.Step == 2) await LoadMonthAsync();
+        StateHasChanged();
+    }
+
+    // ── Step 1 ──────────────────────────────────────────────────────
+    private void ToggleService(string id)
     {
-        new TimeOnly(13, 0),
-        new TimeOnly(14, 0),
-        new TimeOnly(15, 0),
-        new TimeOnly(16, 0),
-        new TimeOnly(17, 0)
-    };
+        if (!Wizard.ServiceIds.Remove(id)) Wizard.ServiceIds.Add(id);
+    }
 
-    private bool CanProceedToReview => SelectedService != null && SelectedTime != null;
-
-    protected override async Task OnInitializedAsync()
+    private void OnServiceKey(KeyboardEventArgs e, string id)
     {
-        AvailableServices = UserService.GetMainServices()
-            .Where(s => s.IsActive)
-            .ToList();
+        if (e.Key is "Enter" or " ") ToggleService(id);
+    }
 
+    private void OnPlatformKey(KeyboardEventArgs e, MeetingPlatform platform)
+    {
+        if (e.Key is "Enter" or " ") Wizard.SelectPlatform(platform);
+    }
+
+    // ── Step 2 ──────────────────────────────────────────────────────
+    private async Task LoadMonthAsync()
+    {
+        var seq = ++_loadSeq;
+        _loadingMonth = true;
+        var m = Wizard.VisibleMonth;
+        var result = await Api.GetAvailabilityAsync(m.Year, m.Month);
+        if (seq != _loadSeq) return; // a newer request superseded this one
+
+        _loadingMonth = false;
+        if (result.IsSuccess) _month = result.Value;
+        else { _month = null; _error = result.Error!.Message; }
+    }
+
+    private async Task PrevMonthAsync() { Wizard.VisibleMonth = Wizard.VisibleMonth.AddMonths(-1); await LoadMonthAsync(); }
+    private async Task NextMonthAsync() { Wizard.VisibleMonth = Wizard.VisibleMonth.AddMonths(1); await LoadMonthAsync(); }
+
+    private void SelectDate(DateOnly date) { _error = null; Wizard.SelectDate(date); }
+
+    private void SelectSlot(SlotAvailability slot) { _error = null; Wizard.SelectSlot(slot.Start, slot.End); }
+
+    // Only open slots inside the studio windows, for the selected date.
+    private IEnumerable<SlotAvailability> SlotsFor(DateOnly date) =>
+        _month?.Days.FirstOrDefault(d => d.Date == date)?.Slots
+            .Where(s => s.IsAvailable && SessionWindows.IsInWindow(s.Start, s.End))
+        ?? Enumerable.Empty<SlotAvailability>();
+
+    // ── Navigation ──────────────────────────────────────────────────
+    private async Task NextAsync()
+    {
+        _error = null;
+        _busy = true;
         try
         {
-            AvailableAddOns = UserService.GetAdditionalServices()
-                .Where(a => a.IsActive)
-                .ToList();
+            switch (Wizard.Step)
+            {
+                case 1:
+                    if (Wizard.ServiceIds.Count == 0) { _error = "Select at least one service."; return; }
+                    Wizard.Step = 2;
+                    await LoadMonthAsync();
+                    break;
+
+                case 2:
+                    await ContinueFromScheduleAsync();
+                    break;
+
+                case 3:
+                    if (!Wizard.DateTimeConfirmed) { _error = "Please confirm your date and time."; return; }
+                    Wizard.Step = 4;
+                    break;
+
+                case 4:
+                    await ContinueFromPlatformAsync();
+                    break;
+            }
         }
-        catch
+        finally { _busy = false; }
+    }
+
+    // Re-check the slot before moving on, so a slot another client just took is caught early.
+    private async Task ContinueFromScheduleAsync()
+    {
+        if (Wizard.Date is not { } date || Wizard.SlotStart is not { } start) { _error = "Pick a date and time."; return; }
+
+        await LoadMonthAsync();
+        if (!SlotsFor(date).Any(s => s.Start == start))
         {
-            AvailableAddOns = new();
+            Wizard.ClearSlot();
+            _error = "That time slot was just booked by another client. Please choose a different time.";
+            return;
         }
+        Wizard.Step = 3;
+    }
 
-        var authState = await AuthStateProvider.GetAuthenticationStateAsync();
-        var user = authState.User;
-        if (user.Identity?.IsAuthenticated == true)
+    private async Task ContinueFromPlatformAsync()
+    {
+        if (Wizard.Platform is not { } platform || Wizard.Date is not { } date || Wizard.SlotStart is not { } start)
         {
-            CustomerId = user.FindFirst("studio_id")?.Value
-                         ?? user.FindFirst(ClaimTypes.NameIdentifier)?.Value
-                         ?? user.Identity.Name
-                         ?? "";
-
-            CustomerName = user.FindFirst("full_name")?.Value
-                           ?? user.FindFirst("name")?.Value
-                           ?? user.Identity.Name
-                           ?? "Valued Customer";
+            _error = "Choose a teleconference app.";
+            return;
         }
+
+        if (string.IsNullOrEmpty(Wizard.MeetingLink))
+        {
+            var preview = await Api.PreviewMeetingLinkAsync(platform, date, start);
+            if (!preview.IsSuccess) { _error = preview.Error!.Message; return; }
+            Wizard.MeetingLink = preview.Value!.MeetingLink;
+        }
+        Wizard.Step = 5;
     }
 
-    private void SetStep(int step)
+    private async Task BackAsync() => await GoBackToAsync(Wizard.Step - 1);
+
+    private async Task GoBackToAsync(int step)
     {
-        CurrentStep = step;
+        if (step < 1 || step >= Wizard.Step) return;
+        _error = null;
+        Wizard.Step = step;
+        if (step == 2) await LoadMonthAsync();
     }
 
-    private void SelectService(MainServiceItem svc)
+    // ── Step 5: submit ──────────────────────────────────────────────
+    private async Task ConfirmAsync()
     {
-        SelectedService = svc;
+        if (_submitting) return;
+        if (Wizard.Date is not { } date || Wizard.SlotStart is not { } start ||
+            Wizard.Platform is not { } platform || Wizard.ServiceIds.Count == 0)
+        {
+            _error = "Some booking details are missing. Please go back and complete every step.";
+            return;
+        }
+
+        _submitting = true;
+        _error = null;
+        try
+        {
+            var request = new ScheduleBookingRequest
+            {
+                ServiceIds = Wizard.ServiceIds.ToList(),
+                Date = date,
+                SlotStart = start,
+                EventLocation = Wizard.EventLocation,
+                Platform = platform,
+                MeetingLink = Wizard.MeetingLink
+            };
+
+            var result = await Api.BookAsync(request);
+            if (result.IsSuccess)
+            {
+                _result = result.Value;
+                Wizard.Reset();
+                Events.NotifyBookingsChanged(); // Overview and Appointments reload
+                return;
+            }
+
+            _error = result.Error!.Message;
+            if (result.Error.Kind == ApiErrorKind.SlotTaken)
+            {
+                // The server rolled the reservation back: send the client to pick a new time.
+                Wizard.ClearSlot();
+                Wizard.Step = 2;
+                await LoadMonthAsync();
+            }
+        }
+        finally { _submitting = false; }
     }
 
-    private void ToggleAddOn(string code)
+    private async Task BookAnotherAsync()
     {
-        if (!SelectedAddOnCodes.Remove(code))
-            SelectedAddOnCodes.Add(code);
+        _result = null;
+        _error = null;
+        await LoadMonthAsync();
     }
 
-    private decimal CalculateTotal()
-    {
-        if (SelectedService == null) return 0m;
-        return SelectedService.Price;
-    }
+    // ── Helpers ─────────────────────────────────────────────────────
+    private static string FormatRange(TimeOnly? start, TimeOnly? end) =>
+        start is { } s && end is { } e ? $"{s:h:mm tt} – {e:h:mm tt}" : "—";
 
-    private async Task SubmitBooking()
-    {
-        if (SelectedService == null || SelectedTime == null) return;
+    private static string FormatRange(TimeOnly start, TimeOnly end) => $"{start:h:mm tt} – {end:h:mm tt}";
 
-        isSubmitting = true;
-        await Task.Delay(400); // UI feel
-
-        BookingConfirmed = true;
-        isSubmitting = false;
-    }
-
-    private void ResetBooking()
-    {
-        SelectedService = null;
-        SelectedTime = null;
-        SelectedAddOnCodes.Clear();
-        SessionNotes = "";
-        CurrentStep = 1;
-        BookingConfirmed = false;
-    }
+    private static bool IsHttpUrl(string? url) =>
+        Uri.TryCreate(url, UriKind.Absolute, out var u) && (u.Scheme == Uri.UriSchemeHttps || u.Scheme == Uri.UriSchemeHttp);
 }

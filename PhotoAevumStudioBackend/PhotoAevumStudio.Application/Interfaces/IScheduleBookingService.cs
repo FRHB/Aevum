@@ -21,6 +21,10 @@ public interface IScheduleBookingService
         ScheduleBookingRequest request,
         BookingCustomer customer,
         CancellationToken cancellationToken = default);
+
+    Task<DayAvailabilityDto> GetDayAvailabilityAsync(DateOnly date, CancellationToken cancellationToken = default);
+
+    Task<IReadOnlyList<MyBookingDto>> GetMyBookingsAsync(string customerId, CancellationToken cancellationToken = default);
 }
 
 /// <summary>Creates online meeting links. Swap the mock for a real Zoom / Graph / Calendar API client.</summary>
