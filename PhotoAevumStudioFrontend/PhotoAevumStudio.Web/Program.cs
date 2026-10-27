@@ -26,6 +26,7 @@ builder.Services.AddSingleton<IEquipmentService, EquipmentService>();
 builder.Services.AddScoped<IServicesApiClient, ServicesApiClient>();
 builder.Services.AddScoped<PhotoAevumStudio.Web.Models.BookScheduleState>();
 builder.Services.AddScoped<IBookScheduleClient, BookScheduleClient>();
+builder.Services.AddScoped<IConsultationClient, ConsultationClient>();
 builder.Services.AddScoped<BookingEvents>();
 
 var apiBaseUrl = builder.Configuration["Api:BaseUrl"]

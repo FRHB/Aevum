@@ -8,6 +8,11 @@ namespace PhotoAevumStudio.Web.Models;
 public class MainServiceItem
 {
     public string Code { get; set; } = string.Empty;
+    public string ServiceID
+    {
+        get => Code;
+        set => Code = value;
+    }
     public string Title { get; set; } = string.Empty;
     public string Category { get; set; } = string.Empty;
     public string CategorySpec { get; set; } = string.Empty;
@@ -18,6 +23,7 @@ public class MainServiceItem
     public string? ImageBase64 { get; set; }
     public string Status { get; set; } = "Active";
     public bool IsActive => Status.Equals("Active", StringComparison.OrdinalIgnoreCase);
+    public string RateType { get; set; } = "per hour";
 
     /// <summary>True when an admin has marked this service as featured on the public site.</summary>
     public bool IsFeatured { get; set; }
@@ -40,6 +46,11 @@ public class MainServiceModel
     [Required(ErrorMessage = "Service code is required.")]
     [StringLength(20, MinimumLength = 3, ErrorMessage = "Service code must be between 3 and 20 characters.")]
     public string Code { get; set; } = string.Empty;
+    public string ServiceID
+    {
+        get => Code;
+        set => Code = value;
+    }
 
     [Required(ErrorMessage = "Please select a category.")]
     public string Category { get; set; } = "Portrait";
@@ -57,6 +68,8 @@ public class MainServiceModel
 
     public List<(string Label, string ColorTag)> Deliverables { get; set; } = new();
 
+    public string RateType { get; set; } = "per hour";
+
     public string Status { get; set; } = "Active";
 }
 
@@ -66,6 +79,17 @@ public class MainServiceModel
 public class PackageServiceItem
 {
     public string Code { get; set; } = string.Empty;
+    public string Id => Code;
+    public string PackageID
+    {
+        get => Code;
+        set => Code = value;
+    }
+    public string ServiceID
+    {
+        get => Code;
+        set => Code = value;
+    }
     public string Title { get; set; } = string.Empty;
     public string BundleCategory { get; set; } = string.Empty;
     public List<(string Label, string ColorTag)> Inclusions { get; set; } = new();
@@ -74,6 +98,7 @@ public class PackageServiceItem
     public string? Description { get; set; }
     public string Status { get; set; } = "Active";
     public bool IsActive => Status.Equals("Active", StringComparison.OrdinalIgnoreCase);
+    public string RateType { get; set; } = "per hour";
 
     /// <summary>True when an admin has marked this package as featured on the public site.</summary>
     public bool IsFeatured { get; set; }
@@ -91,6 +116,11 @@ public class PackageServiceModel
     [Required(ErrorMessage = "Package code is required.")]
     [StringLength(20, MinimumLength = 3, ErrorMessage = "Package code must be between 3 and 20 characters.")]
     public string Code { get; set; } = string.Empty;
+    public string ServiceID
+    {
+        get => Code;
+        set => Code = value;
+    }
 
     [Required(ErrorMessage = "Please select a target category.")]
     public string TargetCategory { get; set; } = "Portrait Bundles";
@@ -114,6 +144,17 @@ public class PackageServiceModel
 public class AddOnServiceItem
 {
     public string Code { get; set; } = string.Empty;
+    public string Id => Code;
+    public string AddOnID
+    {
+        get => Code;
+        set => Code = value;
+    }
+    public string ServiceID
+    {
+        get => Code;
+        set => Code = value;
+    }
     public string Title { get; set; } = string.Empty;
     public string TypeCategory { get; set; } = string.Empty;
     public string PriceText { get; set; } = string.Empty;
@@ -122,6 +163,7 @@ public class AddOnServiceItem
     public string? Description { get; set; }
     public string Status { get; set; } = "Active";
     public bool IsActive => Status.Equals("Active", StringComparison.OrdinalIgnoreCase);
+    public string RateType { get; set; } = "per hour";
 
     /// <summary>True when an admin has marked this add-on as featured on the public site.</summary>
     public bool IsFeatured { get; set; }
@@ -139,6 +181,11 @@ public class AddOnServiceModel
     [Required(ErrorMessage = "Add-On code is required.")]
     [StringLength(20, MinimumLength = 3, ErrorMessage = "Add-On code must be between 3 and 20 characters.")]
     public string Code { get; set; } = string.Empty;
+    public string ServiceID
+    {
+        get => Code;
+        set => Code = value;
+    }
 
     [Required(ErrorMessage = "Please select a type category.")]
     public string TypeCategory { get; set; } = "Post-Processing";
@@ -165,7 +212,12 @@ public class AddOnServiceModel
 public class ServiceCategoryItem
 {
     public string Id { get; set; } = string.Empty;
-    public string Code { get; set; } = string.Empty; // e.g. "CAT-001" or "CAT-PORT"
+    public string Code { get; set; } = string.Empty;
+    public string ServiceID
+    {
+        get => Code;
+        set => Code = value;
+    } // e.g. "CAT-001" or "CAT-PORT"
     public string Name { get; set; } = string.Empty; // e.g. "Portrait Photography"
     public string? Description { get; set; }
     public string Type { get; set; } = "Main Services"; // "Main Services", "Packages", "Add-Ons", "Specialty"
@@ -208,6 +260,11 @@ public class CategoryModel
     [Required(ErrorMessage = "Category code is required.")]
     [StringLength(20, MinimumLength = 3, ErrorMessage = "Category code must be between 3 and 20 characters.")]
     public string Code { get; set; } = string.Empty;
+    public string ServiceID
+    {
+        get => Code;
+        set => Code = value;
+    }
 
     [Required(ErrorMessage = "Please select a category type.")]
     public string Type { get; set; } = "Main Services";
@@ -258,6 +315,11 @@ public static class PortfolioSections
 public class PortfolioCategoryDto
 {
     public string Code { get; set; } = string.Empty;
+    public string ServiceID
+    {
+        get => Code;
+        set => Code = value;
+    }
     public string Name { get; set; } = string.Empty;
     public string? Description { get; set; }
     public string ParentSection { get; set; } = PortfolioSections.Photography;

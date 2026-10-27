@@ -1,32 +1,33 @@
+using System;
+using System.Collections.Generic;
+using System.Linq;
 using System.Security.Claims;
+using System.Threading;
+using System.Threading.Tasks;
 using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using PhotoAevumStudio.Application.Entities;
-using PhotoAevumStudio.Application.Interfaces;
 using PhotoAevumStudio.Infrastructure.Data;
+using PhotoAevumStudio.Application.Interfaces;
+using PhotoAevumStudio.Infrastructure.Services;
 
 namespace PhotoAevumStudio.Api.Controllers;
 
 [ApiController]
-[Route("api/[controller]")]
+[Route("api/portfolio")]
 public class PortfolioController : ControllerBase
 {
     private readonly ApplicationDbContext _db;
     private readonly IR2StorageService _r2Service;
     private readonly ISqlAuthService _sqlAuthService;
-    private readonly ILogger<PortfolioController> _logger;
 
-    public PortfolioController(
-        ApplicationDbContext db,
-        IR2StorageService r2Service,
-        ISqlAuthService sqlAuthService,
-        ILogger<PortfolioController> logger)
+    public PortfolioController(ApplicationDbContext db, IR2StorageService r2Service, ISqlAuthService sqlAuthService)
     {
         _db = db;
         _r2Service = r2Service;
         _sqlAuthService = sqlAuthService;
-        _logger = logger;
     }
 
     // ── Categories ────────────────────────────────────────────────────────────
@@ -37,6 +38,7 @@ public class PortfolioController : ControllerBase
     {
         var categories = await _db.PortfolioCategories
             .AsNoTracking()
+            .Where(c => c.IsActive)
             .OrderBy(c => c.CategoryName)
             .ToListAsync(cancellationToken);
 
@@ -50,18 +52,36 @@ public class PortfolioController : ControllerBase
         if (string.IsNullOrWhiteSpace(request.CategoryName))
             return BadRequest(new ProblemDetails { Title = "Category name required", Status = 400 });
 
-        var code = string.IsNullOrWhiteSpace(request.CategoryCode)
-            ? request.CategoryName.Trim().ToUpperInvariant().Replace(" ", "_")
-            : request.CategoryCode.Trim().ToUpperInvariant();
+        string categoryId;
+        if (!string.IsNullOrWhiteSpace(request.CategoryID))
+        {
+            categoryId = request.CategoryID.Trim().ToUpperInvariant();
+        }
+        else
+        {
+            var existing = await _db.PortfolioCategories
+                .Where(c => c.CategoryID.StartsWith("PCAT-"))
+                .Select(c => c.CategoryID)
+                .ToListAsync(cancellationToken);
 
-        if (code.Length > 50) code = code[..50];
+            var maxNum = 0;
+            foreach (var id in existing)
+            {
+                var parts = id.Split('-');
+                if (parts.Length > 1 && int.TryParse(parts[1], out var n) && n > maxNum)
+                {
+                    maxNum = n;
+                }
+            }
+            categoryId = $"PCAT-{(maxNum + 1):D4}";
+        }
 
-        if (await _db.PortfolioCategories.AnyAsync(c => c.CategoryCode == code, cancellationToken))
-            return BadRequest(new ProblemDetails { Title = "Category already exists", Detail = $"A category with code '{code}' already exists.", Status = 400 });
+        if (await _db.PortfolioCategories.AnyAsync(c => c.CategoryID == categoryId, cancellationToken))
+            return BadRequest(new ProblemDetails { Title = "Category already exists", Detail = $"A category with ID '{categoryId}' already exists.", Status = 400 });
 
         var category = new PortfolioCategoryEntity
         {
-            CategoryCode = code,
+            CategoryID = categoryId,
             CategoryName = request.CategoryName.Trim(),
             Description = request.Description?.Trim(),
             ParentSection = string.IsNullOrWhiteSpace(request.ParentSection) ? "Photography" : request.ParentSection.Trim(),
@@ -75,7 +95,7 @@ public class PortfolioController : ControllerBase
         await _db.SaveChangesAsync(cancellationToken);
 
         var actorId = User.FindFirstValue("studio_id") ?? User.FindFirstValue(ClaimTypes.NameIdentifier) ?? "Admin";
-        await _sqlAuthService.LogActivityAsync("CREATE", "PortfolioCategory", category.CategoryCode, $"Created portfolio category {category.CategoryName}", "Admin", actorId, cancellationToken);
+        await _sqlAuthService.LogActivityAsync("CREATE", "PortfolioCategory", category.CategoryID, $"Created portfolio category {category.CategoryName}", "Admin", actorId, cancellationToken);
 
         return StatusCode(StatusCodes.Status201Created, category);
     }
@@ -92,7 +112,7 @@ public class PortfolioController : ControllerBase
 
         if (!string.IsNullOrWhiteSpace(category) && !category.Equals("All", StringComparison.OrdinalIgnoreCase))
         {
-            query = query.Where(p => p.CategoryCode == category);
+            query = query.Where(p => p.CategoryID == category);
         }
 
         if (featuredOnly == true)
@@ -104,12 +124,16 @@ public class PortfolioController : ControllerBase
             .OrderByDescending(p => p.CreatedAt)
             .ToListAsync(cancellationToken);
 
+        var categories = await _db.PortfolioCategories.AsNoTracking().ToListAsync(cancellationToken);
+        var catDict = categories.ToDictionary(c => c.CategoryID, c => c.CategoryName, StringComparer.OrdinalIgnoreCase);
+
         var result = list.Select(p => new
         {
             p.PortfolioId,
             p.PortfolioName,
             p.PortfolioDescription,
-            p.CategoryCode,
+            p.CategoryID,
+            CategoryName = catDict.TryGetValue(p.CategoryID, out var cName) ? cName : p.CategoryID,
             p.IsFeatured,
             p.HighlightImageFileName,
             HighlightImageUrl = !string.IsNullOrEmpty(p.HighlightImageFileName) ? _r2Service.GetPresignedUrl(p.HighlightImageFileName) : (p.Images.FirstOrDefault() != null ? _r2Service.GetPresignedUrl(p.Images.First().FileName) : string.Empty),
@@ -138,15 +162,15 @@ public class PortfolioController : ControllerBase
             .ToListAsync(cancellationToken);
 
         var categories = await _db.PortfolioCategories.AsNoTracking().ToListAsync(cancellationToken);
-        var catDict = categories.ToDictionary(c => c.CategoryCode, c => c.CategoryName, StringComparer.OrdinalIgnoreCase);
+        var catDict = categories.ToDictionary(c => c.CategoryID, c => c.CategoryName, StringComparer.OrdinalIgnoreCase);
 
         var result = list.Select(p => new
         {
             p.PortfolioId,
             p.PortfolioName,
             p.PortfolioDescription,
-            p.CategoryCode,
-            CategoryName = catDict.TryGetValue(p.CategoryCode, out var cName) ? cName : p.CategoryCode,
+            p.CategoryID,
+            CategoryName = catDict.TryGetValue(p.CategoryID, out var cName) ? cName : p.CategoryID,
             p.IsFeatured,
             HighlightImageUrl = !string.IsNullOrEmpty(p.HighlightImageFileName) ? _r2Service.GetPresignedUrl(p.HighlightImageFileName) : (p.Images.FirstOrDefault() != null ? _r2Service.GetPresignedUrl(p.Images.First().FileName) : string.Empty),
             Images = p.Images.Select(img => new
@@ -166,17 +190,31 @@ public class PortfolioController : ControllerBase
     {
         if (string.IsNullOrWhiteSpace(request.PortfolioName))
             return BadRequest(new ProblemDetails { Title = "Portfolio name required", Status = 400 });
-        if (string.IsNullOrWhiteSpace(request.CategoryCode))
+        if (string.IsNullOrWhiteSpace(request.CategoryID))
             return BadRequest(new ProblemDetails { Title = "Portfolio category required", Status = 400 });
 
-        var portfolioId = $"PORT-{Guid.NewGuid():N}"[..12].ToUpperInvariant();
+        var existing = await _db.Portfolios
+            .Where(p => p.PortfolioId.StartsWith("PRF-"))
+            .Select(p => p.PortfolioId)
+            .ToListAsync(cancellationToken);
+
+        var maxNum = 0;
+        foreach (var id in existing)
+        {
+            var parts = id.Split('-');
+            if (parts.Length > 1 && int.TryParse(parts[1], out var n) && n > maxNum)
+            {
+                maxNum = n;
+            }
+        }
+        var portfolioId = $"PRF-{(maxNum + 1):D4}";
 
         var portfolio = new PortfolioEntity
         {
             PortfolioId = portfolioId,
             PortfolioName = request.PortfolioName.Trim(),
             PortfolioDescription = request.PortfolioDescription?.Trim(),
-            CategoryCode = request.CategoryCode.Trim(),
+            CategoryID = request.CategoryID.Trim(),
             IsFeatured = request.IsFeatured,
             HighlightImageFileName = request.HighlightImageFileName,
             CreatedAt = DateTime.UtcNow
@@ -204,15 +242,51 @@ public class PortfolioController : ControllerBase
         await _db.SaveChangesAsync(cancellationToken);
 
         var actorId = User.FindFirstValue("studio_id") ?? User.FindFirstValue(ClaimTypes.NameIdentifier) ?? "Admin";
-        await _sqlAuthService.LogActivityAsync("CREATE", "Portfolio", portfolio.PortfolioId, $"Created portfolio folder {portfolio.PortfolioName}", "Admin", actorId, cancellationToken);
+        await _sqlAuthService.LogActivityAsync("CREATE", "Portfolio", portfolio.PortfolioId, $"Created portfolio folder {portfolio.PortfolioName} ({portfolio.PortfolioId})", "Admin", actorId, cancellationToken);
 
         return StatusCode(StatusCodes.Status201Created, new
         {
             portfolio.PortfolioId,
             portfolio.PortfolioName,
-            portfolio.CategoryCode,
+            portfolio.CategoryID,
             portfolio.IsFeatured
         });
+    }
+
+    [HttpPut("{id}")]
+    [Authorize(Roles = "Admin,SystemAdmin")]
+    public async Task<IActionResult> UpdatePortfolio(string id, [FromBody] UpdatePortfolioRequest request, CancellationToken cancellationToken)
+    {
+        var portfolio = await _db.Portfolios.Include(p => p.Images).FirstOrDefaultAsync(p => p.PortfolioId == id, cancellationToken);
+        if (portfolio == null)
+            return NotFound(new ProblemDetails { Title = "Portfolio not found", Status = 404 });
+
+        if (!string.IsNullOrWhiteSpace(request.PortfolioName))
+            portfolio.PortfolioName = request.PortfolioName.Trim();
+        if (request.PortfolioDescription != null)
+            portfolio.PortfolioDescription = request.PortfolioDescription.Trim();
+        if (!string.IsNullOrWhiteSpace(request.CategoryID))
+            portfolio.CategoryID = request.CategoryID.Trim();
+
+        if (request.NewImageFileNames != null && request.NewImageFileNames.Count > 0)
+        {
+            foreach (var fn in request.NewImageFileNames)
+            {
+                portfolio.Images.Add(new PortfolioImage
+                {
+                    PortfolioId = id,
+                    FileName = fn,
+                    UploadedAt = DateTime.UtcNow
+                });
+            }
+        }
+
+        await _db.SaveChangesAsync(cancellationToken);
+
+        var actorId = User.FindFirstValue("studio_id") ?? User.FindFirstValue(ClaimTypes.NameIdentifier) ?? "Admin";
+        await _sqlAuthService.LogActivityAsync("UPDATE", "Portfolio", id, $"Updated portfolio {portfolio.PortfolioName} ({id})", "Admin", actorId, cancellationToken);
+
+        return Ok(portfolio);
     }
 
     [HttpPatch("{id}/toggle-feature")]
@@ -244,11 +318,12 @@ public class PortfolioController : ControllerBase
         await _db.SaveChangesAsync(cancellationToken);
 
         var actorId = User.FindFirstValue("studio_id") ?? User.FindFirstValue(ClaimTypes.NameIdentifier) ?? "Admin";
-        await _sqlAuthService.LogActivityAsync("DELETE", "Portfolio", id, $"Deleted portfolio {portfolio.PortfolioName}", "Admin", actorId, cancellationToken);
+        await _sqlAuthService.LogActivityAsync("DELETE", "Portfolio", id, $"Deleted portfolio {portfolio.PortfolioName} ({id})", "Admin", actorId, cancellationToken);
 
         return NoContent();
     }
 }
 
-public record CreatePortfolioCategoryRequest(string CategoryCode, string CategoryName, string? Description, string? ParentSection, string? ColorTag);
-public record CreatePortfolioRequest(string PortfolioName, string? PortfolioDescription, string CategoryCode, bool IsFeatured, string? HighlightImageFileName, List<string>? ImageFileNames);
+public record CreatePortfolioCategoryRequest(string? CategoryID, string CategoryName, string? Description, string? ParentSection, string? ColorTag);
+public record CreatePortfolioRequest(string PortfolioName, string? PortfolioDescription, string CategoryID, bool IsFeatured, string? HighlightImageFileName, List<string>? ImageFileNames);
+public record UpdatePortfolioRequest(string? PortfolioName, string? PortfolioDescription, string? CategoryID, List<string>? NewImageFileNames);

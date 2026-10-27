@@ -11,4 +11,5 @@ public class StudioService
     
     public string? Description { get; set; }
     public bool IsActive { get; set; } = true;
+    public string RateType { get; set; } = "per hour";
 }

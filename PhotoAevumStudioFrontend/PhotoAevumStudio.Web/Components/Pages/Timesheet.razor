@@ -1,0 +1,529 @@
+@page "/staff/timesheet"
+@page "/admin/timesheet"
+@page "/timesheet"
+@layout SidebarLayout
+@rendermode InteractiveServer
+@using PhotoAevumStudio.Web.Models
+@using PhotoAevumStudio.Web.Services
+@using System.Security.Claims
+@using Microsoft.AspNetCore.Components.Authorization
+@inject IEmployeeService Employees
+@inject IUserService UserService
+@inject AuthenticationStateProvider AuthStateProvider
+@inject NavigationManager Nav
+@attribute [Authorize(Roles = "Employee,Office Clerk,Admin,SystemAdmin")]
+
+<PageTitle>Timesheet &amp; Attendance | Photo Aevum Studio</PageTitle>
+
+<div class="space-y-6">
+    @* ── Page header ─────────────────────────────────────────────────── *@
+    <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 pb-2 border-b border-slate-200">
+        <div>
+            <div class="flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-slate-500 mb-1">
+                <span>Attendance &amp; Workforce</span>
+                <span>/</span>
+                <span class="text-slate-900 font-bold">Timesheets</span>
+            </div>
+            <h1 class="text-2xl sm:text-3xl font-extrabold text-slate-900 tracking-tight">Timesheet &amp; Attendance</h1>
+            <p class="text-xs text-slate-500 mt-1">
+                Record daily shift punches, monitor duty duration, and review historical work logs.
+            </p>
+        </div>
+
+        <div class="flex items-center gap-2">
+            <span class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-mono font-bold bg-slate-100 text-slate-700 border border-slate-200">
+                <span class="w-2 h-2 rounded-full bg-emerald-500"></span>
+                @DateTime.Now.ToString("dddd, MMM d, yyyy")
+            </span>
+        </div>
+    </div>
+
+    @* ── Live Clock In / Clock Out Card ─────────────────────────────── *@
+    <section class="bg-white rounded-2xl border border-slate-200 shadow-sm p-6">
+        <div class="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-6">
+            <div class="space-y-2">
+                <div class="flex items-center gap-2">
+                    @if (clockStatus.IsClockedIn)
+                    {
+                        <span class="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-extrabold bg-emerald-100 text-emerald-800 border border-emerald-300">
+                            <span class="w-2 h-2 rounded-full bg-emerald-500 animate-ping"></span>
+                            ACTIVE SHIFT &bull; ON DUTY
+                        </span>
+                    }
+                    else if (clockStatus.IsOnLeaveToday)
+                    {
+                        <span class="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold bg-amber-100 text-amber-900 border border-amber-300">
+                            ON APPROVED LEAVE (@(clockStatus.ActiveLeaveType ?? "Leave"))
+                        </span>
+                    }
+                    else if (clockStatus.IsDayOffToday)
+                    {
+                        <span class="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold bg-blue-50 text-blue-800 border border-blue-200">
+                            SCHEDULED DAY OFF
+                        </span>
+                    }
+                    else
+                    {
+                        <span class="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold bg-slate-100 text-slate-600 border border-slate-200">
+                            OFF DUTY
+                        </span>
+                    }
+
+                    <span class="text-xs text-slate-400 font-medium">@employeeName (@employeeId)</span>
+                </div>
+
+                <h2 class="text-xl font-extrabold text-slate-900">
+                    @(clockStatus.IsClockedIn ? "Current Shift in Progress" : "Ready to Start Your Shift?")
+                </h2>
+
+                <p class="text-xs text-slate-500 max-w-xl">
+                    @if (clockStatus.IsClockedIn)
+                    {
+                        <span>Clocked in at <strong class="text-slate-800">@(clockStatus.ClockIn?.ToString("hh:mm tt") ?? "earlier")</strong> &bull; Total elapsed shift duration: <strong class="text-emerald-700">@clockStatus.ElapsedHours.ToString("0.0#") hours</strong>.</span>
+                    }
+                    else if (clockStatus.ClockOut != null)
+                    {
+                        <span>You completed your shift today (Clocked out at @clockStatus.ClockOut?.ToString("hh:mm tt")). Total hours: <strong>@clockStatus.ElapsedHours.ToString("0.0#") hrs</strong>.</span>
+                    }
+                    else
+                    {
+                        <span>Punch in to log your work hours for scheduled studio appointments, equipment prep, and client sessions.</span>
+                    }
+                </p>
+
+                @if (!string.IsNullOrWhiteSpace(punchError))
+                {
+                    <div class="p-2.5 bg-rose-50 border border-rose-200 text-rose-700 rounded-lg text-xs font-medium">
+                        @punchError
+                    </div>
+                }
+            </div>
+
+            <div class="flex flex-col sm:flex-row items-stretch sm:items-center gap-3">
+                <div class="w-full sm:w-64">
+                    <input type="text"
+                           @bind="punchNotes"
+                           class="w-full px-3 py-2 text-xs border border-slate-300 rounded-lg bg-slate-50 text-slate-800 focus:bg-white focus:outline-none focus:ring-2 focus:ring-slate-900" />
+                </div>
+
+                @if (clockStatus.IsClockedIn)
+                {
+                    <button type="button"
+                            @onclick="HandleClockOut"
+                            disabled="@isPunching"
+                            class="px-6 py-2.5 bg-rose-600 hover:bg-rose-700 text-white rounded-xl text-xs font-bold uppercase tracking-wider shadow-sm transition-all flex items-center justify-center gap-2 active:scale-95 disabled:opacity-50">
+                        <span>⏹</span>
+                        <span>@(isPunching ? "Recording..." : "Clock Out")</span>
+                    </button>
+                }
+                else
+                {
+                    <button type="button"
+                            @onclick="HandleClockIn"
+                            disabled="@(isPunching || clockStatus.IsOnLeaveToday)"
+                            class="px-6 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold uppercase tracking-wider shadow-sm transition-all flex items-center justify-center gap-2 active:scale-95 disabled:opacity-50">
+                        <span>▶</span>
+                        <span>@(isPunching ? "Recording..." : "Clock In")</span>
+                    </button>
+                }
+            </div>
+        </div>
+    </section>
+
+    @* ── Navigation / View Tabs for Office Clerk and Admin ──────────── *@
+    @if (isClerk || isAdmin)
+    {
+        <div class="flex items-center gap-2 border-b border-slate-200 pb-2">
+            <button type="button"
+                    @onclick='() => currentTab = "my"'
+                    class="px-4 py-2 text-xs font-bold rounded-lg transition-all @(currentTab == "my" ? "bg-slate-900 text-white" : "text-slate-600 hover:bg-slate-100")">
+                My Timesheet History
+            </button>
+            <button type="button"
+                    @onclick='() => currentTab = "roster"'
+                    class="px-4 py-2 text-xs font-bold rounded-lg transition-all @(currentTab == "roster" ? "bg-slate-900 text-white" : "text-slate-600 hover:bg-slate-100")">
+                Today's Staff Attendance Roster (@todayAttendance.Count)
+            </button>
+        </div>
+    }
+
+    @if (currentTab == "my")
+    {
+        @* ── Personal Punch History Table ───────────────────────────── *@
+        <section class="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
+            <div class="px-6 py-4 bg-slate-50/50 border-b border-slate-200 flex items-center justify-between">
+                <div>
+                    <h3 class="text-sm font-bold text-slate-900">Recent Timesheet Activity</h3>
+                    <p class="text-xs text-slate-500">Your recent punch-in and punch-out records.</p>
+                </div>
+                <button type="button" @onclick="RefreshTimesheets" class="text-xs text-slate-600 hover:text-black font-semibold">
+                    🔄 Refresh
+                </button>
+            </div>
+
+            @if (loadingHistory)
+            {
+                <div class="py-12 text-center text-xs text-slate-400">Loading punch history…</div>
+            }
+            else if (!myHistory.Any())
+            {
+                <div class="py-12 text-center text-xs text-slate-500 italic">No timesheet records recorded yet.</div>
+            }
+            else
+            {
+                <div class="overflow-x-auto">
+                    <table class="w-full text-left text-xs border-collapse">
+                        <thead>
+                            <tr class="bg-slate-50/80 border-b border-slate-200 text-[11px] font-semibold uppercase tracking-wider text-slate-500">
+                                <th class="py-3 px-6">Work Date</th>
+                                <th class="py-3 px-6">Clock In</th>
+                                <th class="py-3 px-6">Clock Out</th>
+                                <th class="py-3 px-6">Duration</th>
+                                <th class="py-3 px-6">Status</th>
+                                <th class="py-3 px-6">Notes</th>
+                            </tr>
+                        </thead>
+                        <tbody class="divide-y divide-slate-100">
+                            @foreach (var h in myHistory)
+                            {
+                                <tr class="hover:bg-slate-50/60 transition-colors">
+                                    <td class="py-3 px-6 font-mono font-bold text-slate-800">
+                                        @h.WorkDate.ToString("ddd, MMM dd, yyyy")
+                                    </td>
+                                    <td class="py-3 px-6 font-mono text-slate-700">
+                                        @h.ClockIn.ToString("hh:mm tt")
+                                    </td>
+                                    <td class="py-3 px-6 font-mono text-slate-700">
+                                        @(h.ClockOut.HasValue ? h.ClockOut.Value.ToString("hh:mm tt") : "— (Active)")
+                                    </td>
+                                    <td class="py-3 px-6">
+                                        <span class="font-bold font-mono text-slate-900">
+                                            @(h.ClockOut.HasValue ? $"{h.TotalHours:0.0#} hrs" : "In Progress")
+                                        </span>
+                                    </td>
+                                    <td class="py-3 px-6">
+                                        @if (h.ClockOut == null)
+                                        {
+                                            <span class="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-800">Open</span>
+                                        }
+                                        else if (h.Status == "Adjusted")
+                                        {
+                                            <span class="px-2 py-0.5 rounded-full text-[10px] font-bold bg-purple-100 text-purple-800" title="@h.AdjustmentReason">Adjusted</span>
+                                        }
+                                        else
+                                        {
+                                            <span class="px-2 py-0.5 rounded-full text-[10px] font-bold bg-slate-100 text-slate-700">Completed</span>
+                                        }
+                                    </td>
+                                    <td class="py-3 px-6 text-slate-500 max-w-xs truncate">
+                                        @(string.IsNullOrWhiteSpace(h.Notes) ? "—" : h.Notes)
+                                    </td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                </div>
+            }
+        </section>
+    }
+    else if (currentTab == "roster" && (isClerk || isAdmin))
+    {
+        @* ── Staff Roster & Attendance View (Office Clerk / Admin) ────── *@
+        <section class="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
+            <div class="px-6 py-4 bg-slate-50/50 border-b border-slate-200 flex items-center justify-between">
+                <div>
+                    <h3 class="text-sm font-bold text-slate-900">Today's Studio Attendance Roster</h3>
+                    <p class="text-xs text-slate-500">Live attendance status across all employees.</p>
+                </div>
+                <button type="button" @onclick="RefreshTimesheets" class="text-xs text-slate-600 hover:text-black font-semibold">
+                    🔄 Refresh
+                </button>
+            </div>
+
+            <div class="overflow-x-auto">
+                <table class="w-full text-left text-xs border-collapse">
+                    <thead>
+                        <tr class="bg-slate-50/80 border-b border-slate-200 text-[11px] font-semibold uppercase tracking-wider text-slate-500">
+                            <th class="py-3 px-6">Employee</th>
+                            <th class="py-3 px-6">Status</th>
+                            <th class="py-3 px-6">Clock In</th>
+                            <th class="py-3 px-6">Clock Out</th>
+                            <th class="py-3 px-6">Total Hours</th>
+                            <th class="py-3 px-6 text-right">Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody class="divide-y divide-slate-100">
+                        @foreach (var row in todayAttendance)
+                        {
+                            <tr class="hover:bg-slate-50/60 transition-colors">
+                                <td class="py-3 px-6">
+                                    <div class="font-bold text-slate-900">@row.EmployeeName</div>
+                                    <div class="text-[11px] font-mono text-slate-400">@row.EmployeeStudioId</div>
+                                </td>
+                                <td class="py-3 px-6">
+                                    @if (row.IsClockedIn)
+                                    {
+                                        <span class="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-800">
+                                            <span class="w-1.5 h-1.5 rounded-full bg-emerald-500"></span>
+                                            On Duty
+                                        </span>
+                                    }
+                                    else if (row.IsOnLeaveToday)
+                                    {
+                                        <span class="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-amber-100 text-amber-900">
+                                            On Leave (@row.ActiveLeaveType)
+                                        </span>
+                                    }
+                                    else if (row.IsDayOffToday)
+                                    {
+                                        <span class="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[10px] font-semibold bg-blue-50 text-blue-800">
+                                            Day Off
+                                        </span>
+                                    }
+                                    else
+                                    {
+                                        <span class="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[10px] font-semibold bg-slate-100 text-slate-600">
+                                            Off Duty
+                                        </span>
+                                    }
+                                </td>
+                                <td class="py-3 px-6 font-mono text-slate-700">
+                                    @(row.ClockIn.HasValue ? row.ClockIn.Value.ToString("hh:mm tt") : "—")
+                                </td>
+                                <td class="py-3 px-6 font-mono text-slate-700">
+                                    @(row.ClockOut.HasValue ? row.ClockOut.Value.ToString("hh:mm tt") : (row.IsClockedIn ? "Active" : "—"))
+                                </td>
+                                <td class="py-3 px-6 font-mono font-bold text-slate-900">
+                                    @(row.TotalHours > 0 ? $"{row.TotalHours:0.0#} hrs" : "0.0 hrs")
+                                </td>
+                                <td class="py-3 px-6 text-right">
+                                    <button type="button"
+                                            @onclick="() => OpenAdjustModal(row)"
+                                            class="px-2.5 py-1 bg-slate-100 hover:bg-slate-200 text-slate-800 rounded font-semibold text-[11px] transition-colors">
+                                        Adjust Punch
+                                    </button>
+                                </td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+        </section>
+    }
+</div>
+
+@* ── Punch Adjustment Modal (Office Clerk & Admin) ──────────────────── *@
+@if (isAdjustModalOpen)
+{
+    <div class="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4" @onclick="() => isAdjustModalOpen = false">
+        <div class="bg-white rounded-2xl shadow-xl border border-slate-200 w-full max-w-md p-6" @onclick:stopPropagation="true">
+            <h3 class="text-base font-bold text-slate-900 mb-1">Adjust Employee Punch</h3>
+            <p class="text-xs text-slate-500 mb-4">Adjust clock in/out timestamps for @adjustTarget?.EmployeeName (@adjustTarget?.EmployeeStudioId).</p>
+
+            @if (!string.IsNullOrWhiteSpace(adjustError))
+            {
+                <div class="p-2.5 mb-3 bg-rose-50 border border-rose-200 text-rose-700 text-xs rounded-lg">@adjustError</div>
+            }
+
+            <div class="space-y-3 text-xs">
+                <div>
+                    <label class="block font-semibold mb-1 text-slate-700">Clock In Time</label>
+                    <input type="datetime-local" @bind="adjustClockIn" class="w-full p-2 border border-slate-300 rounded-lg" />
+                </div>
+                <div>
+                    <label class="block font-semibold mb-1 text-slate-700">Clock Out Time</label>
+                    <input type="datetime-local" @bind="adjustClockOut" class="w-full p-2 border border-slate-300 rounded-lg" />
+                </div>
+                <div>
+                    <label class="block font-semibold mb-1 text-slate-700">Reason for Adjustment <span class="text-rose-500">*</span></label>
+                    <textarea @bind="adjustReason" rows="3" class="w-full p-2 border border-slate-300 rounded-lg" placeholder="Reason (e.g. Employee forgot to punch out after outdoor event)..."></textarea>
+                </div>
+            </div>
+
+            <div class="flex justify-end gap-2 mt-5 pt-3 border-t border-slate-100">
+                <button type="button" @onclick="() => isAdjustModalOpen = false" class="px-3.5 py-1.5 border border-slate-300 rounded-lg text-xs font-semibold text-slate-700 hover:bg-slate-50">Cancel</button>
+                <button type="button" @onclick="SubmitPunchAdjustment" disabled="@isSubmittingAdjust" class="px-4 py-1.5 bg-slate-900 hover:bg-black text-white rounded-lg text-xs font-bold disabled:opacity-50">
+                    @(isSubmittingAdjust ? "Saving…" : "Save Adjustment")
+                </button>
+            </div>
+        </div>
+    </div>
+}
+
+@code {
+    [CascadingParameter] Task<AuthenticationState>? AuthState { get; set; }
+
+    private ClaimsPrincipal? currentUser;
+    private bool isClerk;
+    private bool isAdmin;
+    private string employeeName = string.Empty;
+    private string employeeId = string.Empty;
+
+    private ClockStatusViewModel clockStatus = new();
+    private List<EmployeeTimesheetHistoryDto> myHistory = new();
+    private List<TodayAttendanceSummaryDto> todayAttendance = new();
+
+    private string currentTab = "my";
+    private string punchNotes = string.Empty;
+    private bool isPunching = false;
+    private bool loadingHistory = true;
+    private string? punchError;
+
+    // Adjustment modal state
+    private bool isAdjustModalOpen = false;
+    private bool isSubmittingAdjust = false;
+    private string? adjustError;
+    private TodayAttendanceSummaryDto? adjustTarget;
+    private DateTime adjustClockIn = DateTime.Now;
+    private DateTime adjustClockOut = DateTime.Now;
+    private string adjustReason = string.Empty;
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (AuthState != null)
+        {
+            var state = await AuthState;
+            currentUser = state.User;
+        }
+
+        isClerk = EmployeeRoleHelper.IsOfficeClerk(currentUser, UserService);
+        isAdmin = EmployeeRoleHelper.IsAdmin(currentUser) || EmployeeRoleHelper.IsSystemAdmin(currentUser);
+        employeeId = EmployeeRoleHelper.GetCurrentEmployeeId(currentUser);
+        employeeName = EmployeeRoleHelper.GetCurrentEmployeeName(currentUser, UserService);
+
+        if (isClerk || isAdmin)
+        {
+            currentTab = "roster";
+        }
+
+        await RefreshTimesheets();
+    }
+
+    private async Task RefreshTimesheets()
+    {
+        loadingHistory = true;
+        punchError = null;
+
+        try
+        {
+            clockStatus = await Employees.GetClockStatusAsync(employeeId);
+            var history = await Employees.GetTimesheetHistoryAsync(employeeId);
+            myHistory = history.ToList();
+
+            if (isClerk || isAdmin)
+            {
+                var roster = await Employees.GetTodayAttendanceAsync();
+                todayAttendance = roster.ToList();
+            }
+        }
+        catch (Exception ex)
+        {
+            punchError = ex.Message;
+        }
+        finally
+        {
+            loadingHistory = false;
+        }
+    }
+
+    private async Task HandleClockIn()
+    {
+        isPunching = true;
+        punchError = null;
+        try
+        {
+            var ok = await Employees.ClockInAsync(employeeId, punchNotes);
+            if (ok)
+            {
+                punchNotes = string.Empty;
+                await RefreshTimesheets();
+            }
+            else
+            {
+                punchError = "Clock-in failed. Please ensure you are not already clocked in.";
+            }
+        }
+        finally
+        {
+            isPunching = false;
+        }
+    }
+
+    private async Task HandleClockOut()
+    {
+        isPunching = true;
+        punchError = null;
+        try
+        {
+            var ok = await Employees.ClockOutAsync(employeeId, punchNotes);
+            if (ok)
+            {
+                punchNotes = string.Empty;
+                await RefreshTimesheets();
+            }
+            else
+            {
+                punchError = "Clock-out failed. No active shift found.";
+            }
+        }
+        finally
+        {
+            isPunching = false;
+        }
+    }
+
+    private void OpenAdjustModal(TodayAttendanceSummaryDto target)
+    {
+        adjustTarget = target;
+        adjustClockIn = target.ClockIn ?? DateTime.Now;
+        adjustClockOut = target.ClockOut ?? DateTime.Now;
+        adjustReason = string.Empty;
+        adjustError = null;
+        isAdjustModalOpen = true;
+    }
+
+    private async Task SubmitPunchAdjustment()
+    {
+        if (string.IsNullOrWhiteSpace(adjustReason))
+        {
+            adjustError = "Adjustment reason is required.";
+            return;
+        }
+
+        isSubmittingAdjust = true;
+        adjustError = null;
+
+        try
+        {
+            // Find existing timesheet record or history for this employee
+            var targetEmpId = adjustTarget?.EmployeeStudioId ?? string.Empty;
+            var empHistory = await Employees.GetTimesheetHistoryAsync(targetEmpId);
+            var record = empHistory.FirstOrDefault(h => h.WorkDate == DateOnly.FromDateTime(DateTime.Today));
+            if (record != null)
+            {
+                var ok = await Employees.AdjustTimesheetPunchAsync(record.Id, adjustClockIn, adjustClockOut, adjustReason);
+                if (ok)
+                {
+                    isAdjustModalOpen = false;
+                    await RefreshTimesheets();
+                }
+                else
+                {
+                    adjustError = "Failed to adjust timesheet record.";
+                }
+            }
+            else
+            {
+                adjustError = $"No timesheet record found today for {targetEmpId} to adjust.";
+            }
+        }
+        catch (Exception ex)
+        {
+            adjustError = ex.Message;
+        }
+        finally
+        {
+            isSubmittingAdjust = false;
+        }
+    }
+}

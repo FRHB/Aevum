@@ -40,12 +40,12 @@
         </button>
         @foreach (var cat in _categories)
         {
-            var count = _featuredPortfolios.Count(p => p.CategoryCode.Equals(cat.CategoryCode, StringComparison.OrdinalIgnoreCase));
+            var count = _featuredPortfolios.Count(p => p.CategoryID.Equals(cat.CategoryID, StringComparison.OrdinalIgnoreCase));
             if (count > 0)
             {
                 <button type="button"
-                        @onclick="() => _selectedCategory = cat.CategoryCode"
-                        class="px-3.5 py-1.5 text-xs font-semibold rounded-lg transition-colors @(_selectedCategory == cat.CategoryCode ? "bg-slate-900 text-white" : "bg-white border border-slate-200 text-slate-700 hover:bg-slate-50")">
+                        @onclick="() => _selectedCategory = cat.CategoryID"
+                        class="px-3.5 py-1.5 text-xs font-semibold rounded-lg transition-colors @(_selectedCategory == cat.CategoryID ? "bg-slate-900 text-white" : "bg-white border border-slate-200 text-slate-700 hover:bg-slate-50")">
                     @cat.CategoryName (@count)
                 </button>
             }
@@ -172,7 +172,7 @@
     private PortfolioFolderModel? _activeGallery;
 
     private List<PortfolioFolderModel> FilteredPortfolios => _featuredPortfolios
-        .Where(p => _selectedCategory == "All" || p.CategoryCode.Equals(_selectedCategory, StringComparison.OrdinalIgnoreCase))
+        .Where(p => _selectedCategory == "All" || p.CategoryID.Equals(_selectedCategory, StringComparison.OrdinalIgnoreCase))
         .ToList();
 
     protected override async Task OnInitializedAsync()

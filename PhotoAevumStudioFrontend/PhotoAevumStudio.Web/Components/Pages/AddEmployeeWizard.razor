@@ -313,9 +313,17 @@
                                 </div>
                             </div>
 
-                            <div class="p-3 bg-emerald-50 border border-emerald-200 rounded-lg text-xs text-emerald-800 text-left w-full flex items-start gap-2">
-                                <span class="text-base shrink-0">✉️</span>
-                                <span>Initial temporary credentials have been set. The staff member can now sign in using their Employee ID or Email.</span>
+                            <!-- Email Sent Banner -->
+                            <div class="p-3.5 bg-emerald-50 border border-emerald-200 rounded-xl text-xs text-emerald-800 text-left w-full flex items-start gap-3 shadow-xs" role="status">
+                                <svg class="w-5 h-5 text-emerald-600 shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
+                                </svg>
+                                <div>
+                                    <p class="font-bold text-emerald-900">Email Notification Dispatched</p>
+                                    <p class="text-[11px] text-emerald-700 mt-0.5">
+                                        An automated onboarding email has been sent to <strong>@model.Email</strong> containing their generated Employee ID (<strong>@model.EmployeeId</strong>) and temporary login credentials.
+                                    </p>
+                                </div>
                             </div>
                         </div>
                     }

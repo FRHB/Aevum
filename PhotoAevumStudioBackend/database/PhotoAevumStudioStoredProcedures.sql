@@ -816,6 +816,8 @@ CREATE OR ALTER PROCEDURE dbo.sp_CreateService
     @ServiceCategoryID     nvarchar(30)   = NULL,
     @ServiceImage          varbinary(max) = NULL,
     @ServiceImageMimeType  nvarchar(100)  = 'image/jpeg',
+    @RateType              nvarchar(50)   = 'Per Hour',
+    @RateTypeID            nvarchar(30)   = NULL,
     @CreatedByAdminID      nvarchar(30)   = NULL,
     @CreatedServiceID      nvarchar(30)   = NULL OUTPUT
 AS
@@ -838,12 +840,33 @@ BEGIN
             SET @CreatedServiceID = 'SRV-' + RIGHT('0000' + CAST((@MaxNum + 1) AS VARCHAR(10)), 4);
         END
 
+        DECLARE @EffectiveRateType nvarchar(50) = ISNULL(@RateType, 'Per Hour');
+
         INSERT INTO dbo.Services (
-            ServicesID, ServiceName, ServicesDescription, ServicePrice, ServiceImage, ServiceImageMimeType
+            ServicesID, ServiceName, ServicesDescription, ServicePrice, RateType, ServiceImage, ServiceImageMimeType
         )
         VALUES (
-            @CreatedServiceID, @ServiceName, @ServicesDescription, @ServicePrice, @ServiceImage, @ServiceImageMimeType
+            @CreatedServiceID, @ServiceName, @ServicesDescription, @ServicePrice, @EffectiveRateType, @ServiceImage, @ServiceImageMimeType
         );
+
+        -- Add default primary ServiceRate record
+        IF OBJECT_ID(N'dbo.ServiceRate', N'U') IS NOT NULL
+        BEGIN
+            DECLARE @ResolvedRateTypeID nvarchar(30) = @RateTypeID;
+            IF @ResolvedRateTypeID IS NULL AND OBJECT_ID(N'dbo.RateType', N'U') IS NOT NULL
+            BEGIN
+                SELECT TOP 1 @ResolvedRateTypeID = RateTypeID FROM dbo.RateType WHERE RateTypeName = @EffectiveRateType OR RateTypeCode = @EffectiveRateType;
+            END
+            IF @ResolvedRateTypeID IS NULL SET @ResolvedRateTypeID = 'RT-0001';
+
+            DECLARE @NewRateID nvarchar(30) = 'SRT-' + RIGHT('0000' + CAST((@MaxNum + 1) AS VARCHAR(10)), 4);
+            INSERT INTO dbo.ServiceRate (
+                ServiceRateID, ServicesID, RateTypeID, RateTypeName, Price, UnitsIncluded, RateDescription, IsDefault
+            )
+            VALUES (
+                @NewRateID, @CreatedServiceID, @ResolvedRateTypeID, @EffectiveRateType, @ServicePrice, 1, 'Primary rate for service', 1
+            );
+        END
 
         IF @ServiceCategoryID IS NOT NULL AND RTRIM(LTRIM(@ServiceCategoryID)) <> ''
         BEGIN
@@ -870,7 +893,7 @@ BEGIN
                 @ActionType = 'INSERT',
                 @EntityName = 'Services',
                 @EntityID = @CreatedServiceID,
-                @ActionDetails = 'New main service created via Wizard.',
+                @ActionDetails = 'New main service created with multi-rate pricing configuration.',
                 @ChangedByType = 'Admin',
                 @ActorID = @CreatedByAdminID;
         END
@@ -878,7 +901,7 @@ BEGIN
         COMMIT TRANSACTION;
 
         SELECT 
-            s.ServicesID, s.ServiceName, s.ServicesDescription, s.ServicePrice, 
+            s.ServicesID, s.ServiceName, s.ServicesDescription, s.ServicePrice, s.RateType,
             @ServiceCategoryID AS ServiceCategoryID, c.ServiceCategoryName, 
             CAST(CASE WHEN s.ServiceImage IS NOT NULL THEN 1 ELSE 0 END AS bit) AS HasImage
         FROM dbo.Services s
@@ -915,12 +938,112 @@ GO
    5. SERVICE & CATALOG IMAGES 
    ===================================================================== */
 
+/* =====================================================================
+   4B. RATE TYPES & SERVICE PRICING
+   ===================================================================== */
+
+CREATE OR ALTER PROCEDURE dbo.sp_GetRateTypes
+AS
+BEGIN
+    SET NOCOUNT ON;
+    SELECT RateTypeID, RateTypeName, RateTypeCode, RateDescription
+    FROM dbo.RateType
+    ORDER BY RateTypeID;
+END;
+GO
+
+CREATE OR ALTER PROCEDURE dbo.sp_GetServiceRates
+    @ServicesID nvarchar(30)
+AS
+BEGIN
+    SET NOCOUNT ON;
+    SELECT 
+        sr.ServiceRateID,
+        sr.ServicesID,
+        sr.RateTypeID,
+        sr.RateTypeName,
+        sr.Price,
+        sr.UnitsIncluded,
+        sr.RateDescription,
+        sr.IsDefault
+    FROM dbo.ServiceRate sr
+    WHERE sr.ServicesID = @ServicesID
+    ORDER BY sr.IsDefault DESC, sr.ServiceRateID;
+END;
+GO
+
+CREATE OR ALTER PROCEDURE dbo.sp_AddServiceRate
+    @ServicesID           nvarchar(30),
+    @RateTypeID           nvarchar(30),
+    @Price                decimal(18,2),
+    @UnitsIncluded        int = 1,
+    @RateDescription      nvarchar(255) = NULL,
+    @IsDefault            bit = 0,
+    @CreatedServiceRateID nvarchar(30) = NULL OUTPUT
+AS
+BEGIN
+    SET NOCOUNT ON;
+    SET XACT_ABORT ON;
+    
+    DECLARE @RateTypeName nvarchar(50);
+    SELECT @RateTypeName = RateTypeName FROM dbo.RateType WHERE RateTypeID = @RateTypeID;
+    IF @RateTypeName IS NULL
+    BEGIN
+        SELECT TOP 1 @RateTypeID = RateTypeID, @RateTypeName = RateTypeName 
+        FROM dbo.RateType 
+        WHERE RateTypeCode = @RateTypeID OR RateTypeName = @RateTypeID;
+    END
+
+    IF @RateTypeName IS NULL
+    BEGIN
+        SET @RateTypeID = 'RT-0001';
+        SET @RateTypeName = 'Per Hour';
+    END
+
+    DECLARE @MaxNum INT = 0;
+    SELECT @MaxNum = ISNULL(MAX(TRY_CAST(SUBSTRING(ServiceRateID, CHARINDEX('-', ServiceRateID) + 1, 20) AS INT)), 0)
+    FROM dbo.ServiceRate WITH (UPDLOCK, HOLDLOCK)
+    WHERE ServiceRateID LIKE 'SRT-%';
+
+    SET @CreatedServiceRateID = 'SRT-' + RIGHT('0000' + CAST((@MaxNum + 1) AS VARCHAR(10)), 4);
+
+    WHILE EXISTS (SELECT 1 FROM dbo.ServiceRate WHERE ServiceRateID = @CreatedServiceRateID)
+    BEGIN
+        SET @MaxNum = @MaxNum + 1;
+        SET @CreatedServiceRateID = 'SRT-' + RIGHT('0000' + CAST((@MaxNum + 1) AS VARCHAR(10)), 4);
+    END
+
+    IF @IsDefault = 1
+    BEGIN
+        UPDATE dbo.ServiceRate SET IsDefault = 0 WHERE ServicesID = @ServicesID;
+        UPDATE dbo.Services SET RateType = @RateTypeName, ServicePrice = @Price WHERE ServicesID = @ServicesID;
+    END
+
+    INSERT INTO dbo.ServiceRate (
+        ServiceRateID, ServicesID, RateTypeID, RateTypeName, Price, UnitsIncluded, RateDescription, IsDefault
+    )
+    VALUES (
+        @CreatedServiceRateID, @ServicesID, @RateTypeID, @RateTypeName, @Price, @UnitsIncluded, @RateDescription, @IsDefault
+    );
+
+    SELECT 
+        @CreatedServiceRateID AS ServiceRateID,
+        @ServicesID AS ServicesID,
+        @RateTypeID AS RateTypeID,
+        @RateTypeName AS RateTypeName,
+        @Price AS Price,
+        @UnitsIncluded AS UnitsIncluded,
+        @IsDefault AS IsDefault;
+END;
+GO
+
 CREATE OR ALTER PROCEDURE dbo.sp_GetServicesSummary
 AS
 BEGIN
     SET NOCOUNT ON;
     SELECT 
         ServicesID, ServiceName, ServicesDescription, ServicePrice,
+        ISNULL(RateType, 'Per Hour') AS RateType,
         CAST(CASE WHEN ServiceImage IS NOT NULL THEN 1 ELSE 0 END AS bit) AS HasImage
     FROM dbo.Services
     ORDER BY ServicesID;
@@ -933,7 +1056,9 @@ AS
 BEGIN
     SET NOCOUNT ON;
     SELECT 
-        ServicesID, ServiceName, ServicesDescription, ServicePrice, ServiceImage,
+        ServicesID, ServiceName, ServicesDescription, ServicePrice,
+        ISNULL(RateType, 'Per Hour') AS RateType,
+        ServiceImage,
         ISNULL(ServiceImageMimeType, 'image/jpeg') AS ServiceImageMimeType,
         CAST(CASE WHEN ServiceImage IS NOT NULL THEN 1 ELSE 0 END AS bit) AS HasImage
     FROM dbo.Services
@@ -1393,5 +1518,392 @@ BEGIN
         WHERE ChangedByAdminID = @RequestingUserID OR EntityName IN ('Services', 'AdditionalServices', 'ComboPackage', 'Equipment', 'EventAppointment')
         ORDER BY LoggedAt DESC;
     END
+END;
+GO
+
+
+/* =====================================================================
+   8. EMPLOYEE TIMESHEET & ATTENDANCE MANAGEMENT
+   ===================================================================== */
+
+CREATE OR ALTER PROCEDURE dbo.sp_ClockIn
+    @EmployeeStudioId  nvarchar(30),
+    @EmployeeName      nvarchar(255) = NULL,
+    @Notes             nvarchar(1000) = NULL,
+    @ClockInTime       datetime2 = NULL,
+    @TimesheetId       nvarchar(50) = NULL OUTPUT
+AS
+BEGIN
+    SET NOCOUNT ON;
+    SET XACT_ABORT ON;
+
+    IF @ClockInTime IS NULL
+    BEGIN
+        SET @ClockInTime = SYSUTCDATETIME();
+    END
+
+    DECLARE @WorkDate date = CAST(@ClockInTime AS date);
+
+    -- 1. Check if already clocked in with an active shift
+    IF EXISTS (
+        SELECT 1 FROM dbo.EmployeeTimesheets 
+        WHERE EmployeeStudioId = @EmployeeStudioId AND ClockOut IS NULL
+    )
+    BEGIN
+        THROW 50010, 'Employee is already clocked in with an active shift.', 1;
+    END
+
+    -- 2. Check if employee is on approved leave today
+    IF OBJECT_ID(N'dbo.EmployeeLeaves', N'U') IS NOT NULL
+    BEGIN
+        IF EXISTS (
+            SELECT 1 FROM dbo.EmployeeLeaves
+            WHERE EmployeeStudioId = @EmployeeStudioId 
+              AND Status = 'Approved' 
+              AND @WorkDate >= StartDate AND @WorkDate <= EndDate
+        )
+        BEGIN
+            THROW 50011, 'Cannot clock in: Employee is on scheduled approved leave.', 1;
+        END
+    END
+
+    -- 3. Resolve employee name
+    IF @EmployeeName IS NULL OR RTRIM(LTRIM(@EmployeeName)) = ''
+    BEGIN
+        SELECT @EmployeeName = CONCAT(EmployeeFirstName, ' ', EmployeeLastName)
+        FROM dbo.Employees
+        WHERE EmployeeID = @EmployeeStudioId;
+    END
+
+    IF @EmployeeName IS NULL SET @EmployeeName = @EmployeeStudioId;
+
+    -- 4. Check if today is a scheduled day off
+    DECLARE @IsDayOff bit = 0;
+    IF EXISTS (
+        SELECT 1 FROM dbo.Employees e
+        WHERE e.EmployeeID = @EmployeeStudioId
+          AND COL_LENGTH(N'dbo.Employees', N'DaysOff') IS NOT NULL
+          AND CHARINDEX(DATENAME(dw, @WorkDate), e.DaysOff) > 0
+    )
+    BEGIN
+        SET @IsDayOff = 1;
+    END
+
+    -- 5. Generate TimesheetId
+    SET @TimesheetId = 'TS-' + FORMAT(@WorkDate, 'yyyyMMdd') + '-' + SUBSTRING(CONVERT(NVARCHAR(36), NEWID()), 1, 6);
+
+    INSERT INTO dbo.EmployeeTimesheets (
+        TimesheetId, EmployeeStudioId, EmployeeName, WorkDate, 
+        ClockIn, ClockOut, TotalHours, Status, IsDayOffWork, Notes, CreatedAt
+    )
+    VALUES (
+        @TimesheetId, @EmployeeStudioId, @EmployeeName, @WorkDate,
+        @ClockInTime, NULL, 0.0, 'Open', @IsDayOff, @Notes, @ClockInTime
+    );
+
+    IF OBJECT_ID(N'dbo.sp_AddHistoryLog', N'P') IS NOT NULL
+    BEGIN
+        EXEC dbo.sp_AddHistoryLog
+            @ActionType = 'CLOCK_IN',
+            @EntityName = 'EmployeeTimesheet',
+            @EntityID = @TimesheetId,
+            @ActionDetails = 'Employee clocked in.',
+            @ChangedByType = 'Employee',
+            @ActorID = @EmployeeStudioId;
+    END
+
+    SELECT 
+        TimesheetId, EmployeeStudioId, EmployeeName, WorkDate, ClockIn, ClockOut, TotalHours, Status, IsDayOffWork, Notes
+    FROM dbo.EmployeeTimesheets
+    WHERE TimesheetId = @TimesheetId;
+END;
+GO
+
+CREATE OR ALTER PROCEDURE dbo.sp_ClockOut
+    @EmployeeStudioId  nvarchar(30),
+    @Notes             nvarchar(1000) = NULL,
+    @ClockOutTime      datetime2 = NULL,
+    @TotalHours        float = NULL OUTPUT
+AS
+BEGIN
+    SET NOCOUNT ON;
+    SET XACT_ABORT ON;
+
+    IF @ClockOutTime IS NULL
+    BEGIN
+        SET @ClockOutTime = SYSUTCDATETIME();
+    END
+
+    DECLARE @TimesheetId nvarchar(50);
+    DECLARE @ClockIn datetime2;
+
+    SELECT TOP 1 
+        @TimesheetId = TimesheetId,
+        @ClockIn = ClockIn
+    FROM dbo.EmployeeTimesheets
+    WHERE EmployeeStudioId = @EmployeeStudioId AND ClockOut IS NULL
+    ORDER BY ClockIn DESC;
+
+    IF @TimesheetId IS NULL
+    BEGIN
+        THROW 50012, 'No active clocked-in session found for this employee.', 1;
+    END
+
+    SET @TotalHours = ROUND(DATEDIFF(SECOND, @ClockIn, @ClockOutTime) / 3600.0, 2);
+
+    UPDATE dbo.EmployeeTimesheets
+    SET ClockOut = @ClockOutTime,
+        TotalHours = @TotalHours,
+        Status = 'Completed',
+        Notes = CASE 
+            WHEN @Notes IS NOT NULL AND RTRIM(LTRIM(@Notes)) <> '' 
+            THEN ISNULL(Notes + ' | ', '') + @Notes 
+            ELSE Notes 
+        END
+    WHERE TimesheetId = @TimesheetId;
+
+    IF OBJECT_ID(N'dbo.sp_AddHistoryLog', N'P') IS NOT NULL
+    BEGIN
+        EXEC dbo.sp_AddHistoryLog
+            @ActionType = 'CLOCK_OUT',
+            @EntityName = 'EmployeeTimesheet',
+            @EntityID = @TimesheetId,
+            @ActionDetails = 'Employee clocked out.',
+            @ChangedByType = 'Employee',
+            @ActorID = @EmployeeStudioId;
+    END
+
+    SELECT 
+        TimesheetId, EmployeeStudioId, EmployeeName, WorkDate, ClockIn, ClockOut, TotalHours, Status, IsDayOffWork, Notes
+    FROM dbo.EmployeeTimesheets
+    WHERE TimesheetId = @TimesheetId;
+END;
+GO
+
+CREATE OR ALTER PROCEDURE dbo.sp_GetEmployeeTimesheetStatus
+    @EmployeeStudioId nvarchar(30)
+AS
+BEGIN
+    SET NOCOUNT ON;
+    DECLARE @Today date = CAST(SYSUTCDATETIME() AS date);
+
+    SELECT TOP 1 
+        TimesheetId, EmployeeStudioId, EmployeeName, WorkDate, ClockIn, ClockOut, TotalHours, Status, IsDayOffWork, Notes
+    FROM dbo.EmployeeTimesheets
+    WHERE EmployeeStudioId = @EmployeeStudioId AND (ClockOut IS NULL OR WorkDate = @Today)
+    ORDER BY ClockIn DESC;
+END;
+GO
+
+CREATE OR ALTER PROCEDURE dbo.sp_GetEmployeeTimesheets
+    @EmployeeStudioId nvarchar(30) = NULL,
+    @StartDate        date = NULL,
+    @EndDate          date = NULL,
+    @MaxRows          int = 100
+AS
+BEGIN
+    SET NOCOUNT ON;
+
+    SELECT TOP (@MaxRows)
+        Id, TimesheetId, EmployeeStudioId, EmployeeName, WorkDate, ClockIn, ClockOut, TotalHours, Status, IsDayOffWork, Notes, AdjustedBy, AdjustmentReason, CreatedAt
+    FROM dbo.EmployeeTimesheets
+    WHERE (@EmployeeStudioId IS NULL OR EmployeeStudioId = @EmployeeStudioId)
+      AND (@StartDate IS NULL OR WorkDate >= @StartDate)
+      AND (@EndDate IS NULL OR WorkDate <= @EndDate)
+    ORDER BY ClockIn DESC;
+END;
+GO
+
+CREATE OR ALTER PROCEDURE dbo.sp_AdjustTimesheet
+    @TimesheetId      nvarchar(50),
+    @ClockIn          datetime2 = NULL,
+    @ClockOut         datetime2 = NULL,
+    @AdjustedBy       nvarchar(100),
+    @AdjustmentReason nvarchar(500)
+AS
+BEGIN
+    SET NOCOUNT ON;
+    SET XACT_ABORT ON;
+
+    DECLARE @CurrentClockIn datetime2;
+    DECLARE @CurrentClockOut datetime2;
+
+    SELECT @CurrentClockIn = ClockIn, @CurrentClockOut = ClockOut
+    FROM dbo.EmployeeTimesheets
+    WHERE TimesheetId = @TimesheetId;
+
+    IF @CurrentClockIn IS NULL
+    BEGIN
+        THROW 50013, 'Timesheet record not found.', 1;
+    END
+
+    IF @ClockIn IS NOT NULL SET @CurrentClockIn = @ClockIn;
+    IF @ClockOut IS NOT NULL SET @CurrentClockOut = @ClockOut;
+
+    DECLARE @TotalHours float = 0.0;
+    IF @CurrentClockOut IS NOT NULL
+    BEGIN
+        SET @TotalHours = ROUND(DATEDIFF(SECOND, @CurrentClockIn, @CurrentClockOut) / 3600.0, 2);
+    END
+
+    UPDATE dbo.EmployeeTimesheets
+    SET ClockIn = @CurrentClockIn,
+        ClockOut = @CurrentClockOut,
+        TotalHours = @TotalHours,
+        Status = 'Adjusted',
+        AdjustedBy = @AdjustedBy,
+        AdjustmentReason = @AdjustmentReason
+    WHERE TimesheetId = @TimesheetId;
+
+    IF OBJECT_ID(N'dbo.sp_AddHistoryLog', N'P') IS NOT NULL
+    BEGIN
+        EXEC dbo.sp_AddHistoryLog
+            @ActionType = 'ADJUST_TIMESHEET',
+            @EntityName = 'EmployeeTimesheet',
+            @EntityID = @TimesheetId,
+            @ActionDetails = @AdjustmentReason,
+            @ChangedByType = 'Admin',
+            @ActorID = @AdjustedBy;
+    END
+
+    SELECT 
+        Id, TimesheetId, EmployeeStudioId, EmployeeName, WorkDate, ClockIn, ClockOut, TotalHours, Status, IsDayOffWork, Notes, AdjustedBy, AdjustmentReason, CreatedAt
+    FROM dbo.EmployeeTimesheets
+    WHERE TimesheetId = @TimesheetId;
+END;
+GO
+
+/* =====================================================================
+   PORTFOLIO IDENTIFIER SEQUENCERS
+   ===================================================================== */
+
+CREATE OR ALTER PROCEDURE dbo.sp_GetNextPortfolioID
+    @NextPortfolioID nvarchar(30) = NULL OUTPUT
+AS
+BEGIN
+    SET NOCOUNT ON;
+    DECLARE @MaxNum INT = 0;
+    SELECT @MaxNum = ISNULL(MAX(TRY_CAST(SUBSTRING(PortfolioId, CHARINDEX('-', PortfolioId) + 1, 20) AS INT)), 0)
+    FROM dbo.Portfolios WITH (UPDLOCK, HOLDLOCK)
+    WHERE PortfolioId LIKE 'PRF-%';
+
+    SET @NextPortfolioID = 'PRF-' + RIGHT('0000' + CAST((@MaxNum + 1) AS VARCHAR(10)), 4);
+    SELECT @NextPortfolioID AS NextPortfolioID;
+END;
+GO
+
+CREATE OR ALTER PROCEDURE dbo.sp_GetNextPortfolioCategoryID
+    @NextCategoryID nvarchar(30) = NULL OUTPUT
+AS
+BEGIN
+    SET NOCOUNT ON;
+    DECLARE @MaxNum INT = 0;
+    SELECT @MaxNum = ISNULL(MAX(TRY_CAST(SUBSTRING(CategoryID, CHARINDEX('-', CategoryID) + 1, 20) AS INT)), 0)
+    FROM dbo.PortfolioCategory WITH (UPDLOCK, HOLDLOCK)
+    WHERE CategoryID LIKE 'PCAT-%';
+
+    SET @NextCategoryID = 'PCAT-' + RIGHT('0000' + CAST((@MaxNum + 1) AS VARCHAR(10)), 4);
+    SELECT @NextCategoryID AS NextCategoryID;
+END;
+GO
+
+CREATE OR ALTER PROCEDURE dbo.sp_GetNextNegotiationID
+    @NextNegotiationID nvarchar(30) = NULL OUTPUT
+AS
+BEGIN
+    SET NOCOUNT ON;
+    DECLARE @MaxNum INT = 0;
+    SELECT @MaxNum = ISNULL(MAX(TRY_CAST(SUBSTRING(NegotiationID, CHARINDEX('-', NegotiationID) + 1, 20) AS INT)), 0)
+    FROM dbo.BookingNegotiation WITH (UPDLOCK, HOLDLOCK)
+    WHERE NegotiationID LIKE 'NEG-%';
+
+    SET @NextNegotiationID = 'NEG-' + RIGHT('0000' + CAST((@MaxNum + 1) AS VARCHAR(10)), 4);
+    SELECT @NextNegotiationID AS NextNegotiationID;
+END;
+GO
+
+CREATE OR ALTER PROCEDURE dbo.sp_GetNextEventAppointmentID
+    @NextEventAppointmentID nvarchar(30) = NULL OUTPUT
+AS
+BEGIN
+    SET NOCOUNT ON;
+    DECLARE @MaxNum INT = 0;
+    SELECT @MaxNum = ISNULL(MAX(TRY_CAST(SUBSTRING(EventAppointmentID, CHARINDEX('-', EventAppointmentID) + 1, 20) AS INT)), 0)
+    FROM dbo.EventAppointment WITH (UPDLOCK, HOLDLOCK)
+    WHERE EventAppointmentID LIKE 'EVT-%';
+
+    SET @NextEventAppointmentID = 'EVT-' + RIGHT('0000' + CAST((@MaxNum + 1) AS VARCHAR(10)), 4);
+    SELECT @NextEventAppointmentID AS NextEventAppointmentID;
+END;
+GO
+
+CREATE OR ALTER PROCEDURE dbo.sp_GetNextPaymentTransactionID
+    @NextTransactionID nvarchar(50) = NULL OUTPUT
+AS
+BEGIN
+    SET NOCOUNT ON;
+    DECLARE @MaxNum INT = 0;
+    SELECT @MaxNum = ISNULL(MAX(TRY_CAST(SUBSTRING(TransactionID, CHARINDEX('-', TransactionID) + 1, 20) AS INT)), 0)
+    FROM dbo.PaymentTransactions WITH (UPDLOCK, HOLDLOCK)
+    WHERE TransactionID LIKE 'TXN-%';
+
+    SET @NextTransactionID = 'TXN-' + RIGHT('0000' + CAST((@MaxNum + 1) AS VARCHAR(10)), 4);
+    SELECT @NextTransactionID AS NextTransactionID;
+END;
+GO
+
+CREATE OR ALTER PROCEDURE dbo.sp_AssignOfficeClerkRoundRobin
+    @AssignedEmployeeID nvarchar(30) = NULL OUTPUT,
+    @AssignedEmployeeName nvarchar(255) = NULL OUTPUT,
+    @AssignedEmployeeEmail nvarchar(255) = NULL OUTPUT
+AS
+BEGIN
+    SET NOCOUNT ON;
+
+    -- Look for clerks or front desk coordinators first
+    SELECT TOP 1 
+        @AssignedEmployeeID = e.EmployeeID,
+        @AssignedEmployeeName = e.EmployeeFirstName + ' ' + e.EmployeeLastName,
+        @AssignedEmployeeEmail = e.EmployeeEmail
+    FROM dbo.Employees e
+    LEFT JOIN (
+        SELECT EmployeeID, MAX(CreatedAt) AS LastAssignedAt
+        FROM dbo.BookingNegotiation
+        GROUP BY EmployeeID
+    ) bn ON e.EmployeeID = bn.EmployeeID
+    WHERE (e.EmployeeStatus = 'Active' OR e.Status = 'Active')
+      AND (
+          EXISTS (
+              SELECT 1 FROM dbo.EmployeeSpecialization es
+              JOIN dbo.Specialization s ON es.SpecializationID = s.SpecializationID
+              WHERE es.EmployeeID = e.EmployeeID
+                AND (s.SpecializationName LIKE '%Clerk%' OR s.SpecializationName LIKE '%Front Desk%' OR s.SpecializationName LIKE '%Office%')
+          )
+          OR NOT EXISTS (
+              SELECT 1 FROM dbo.EmployeeSpecialization es2
+              JOIN dbo.Specialization s2 ON es2.SpecializationID = s2.SpecializationID
+              WHERE s2.SpecializationName LIKE '%Clerk%' OR s2.SpecializationName LIKE '%Front Desk%' OR s2.SpecializationName LIKE '%Office%'
+          )
+      )
+    ORDER BY COALESCE(bn.LastAssignedAt, '1900-01-01') ASC, e.EmployeeID ASC;
+
+    -- Fallback to any active employee if no clerk specialized employee found
+    IF @AssignedEmployeeID IS NULL
+    BEGIN
+        SELECT TOP 1 
+            @AssignedEmployeeID = e.EmployeeID,
+            @AssignedEmployeeName = e.EmployeeFirstName + ' ' + e.EmployeeLastName,
+            @AssignedEmployeeEmail = e.EmployeeEmail
+        FROM dbo.Employees e
+        LEFT JOIN (
+            SELECT EmployeeID, MAX(CreatedAt) AS LastAssignedAt
+            FROM dbo.BookingNegotiation
+            GROUP BY EmployeeID
+        ) bn ON e.EmployeeID = bn.EmployeeID
+        WHERE (e.EmployeeStatus = 'Active' OR e.Status = 'Active')
+        ORDER BY COALESCE(bn.LastAssignedAt, '1900-01-01') ASC, e.EmployeeID ASC;
+    END
+
+    SELECT @AssignedEmployeeID AS EmployeeID, @AssignedEmployeeName AS EmployeeName, @AssignedEmployeeEmail AS EmployeeEmail;
 END;
 GO

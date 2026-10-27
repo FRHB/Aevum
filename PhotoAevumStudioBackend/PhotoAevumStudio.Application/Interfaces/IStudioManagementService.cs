@@ -15,6 +15,11 @@ public interface IStudioManagementService
     // Equipment
     Task<IReadOnlyList<Equipment>> GetEquipmentAsync(CancellationToken cancellationToken = default);
 
+    // Rate Types & Multi-Rate Pricing
+    Task<IReadOnlyList<RateTypeDto>> GetRateTypesAsync(CancellationToken cancellationToken = default);
+    Task<IReadOnlyList<ServiceRateDto>> GetServiceRatesAsync(string serviceId, CancellationToken cancellationToken = default);
+    Task<bool> AddOrUpdateServiceRateAsync(string serviceId, string rateTypeId, decimal rateAmount, CancellationToken cancellationToken = default);
+
     // Stored Procedure Image & Catalog Services
     Task<IReadOnlyList<ServiceSummaryDto>> GetServicesSummaryAsync(CancellationToken cancellationToken = default);
     Task<ServiceDetailDto?> GetServiceDetailWithImageAsync(string serviceId, CancellationToken cancellationToken = default);

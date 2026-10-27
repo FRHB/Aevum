@@ -36,14 +36,14 @@ public class PortfolioService : IPortfolioService
             await conn.OpenAsync(ct);
 
             const string sql = @"
-                SELECT pc.CategoryCode,
+                SELECT pc.CategoryID,
                        pc.CategoryName,
                        pc.Description,
                        pc.ParentSection,
                        pc.ColorTag,
                        pc.IsActive,
                        pc.CreatedAt,
-                       (SELECT COUNT(*) FROM dbo.Portfolios p WHERE p.CategoryCode = pc.CategoryCode) AS PortfolioCount
+                       (SELECT COUNT(*) FROM dbo.Portfolios p WHERE p.CategoryID = pc.CategoryID) AS PortfolioCount
                 FROM dbo.PortfolioCategory pc
                 ORDER BY pc.CategoryName;";
 
@@ -52,9 +52,10 @@ public class PortfolioService : IPortfolioService
 
             while (await reader.ReadAsync(ct))
             {
+                var catId = reader.GetString(0);
                 list.Add(new PortfolioCategoryModel
                 {
-                    CategoryCode = reader.GetString(0),
+                    CategoryID = catId,
                     CategoryName = reader.GetString(1),
                     Description = reader.IsDBNull(2) ? null : reader.GetString(2),
                     ParentSection = reader.IsDBNull(3) ? "Photography" : reader.GetString(3),
@@ -76,59 +77,55 @@ public class PortfolioService : IPortfolioService
     {
         if (string.IsNullOrWhiteSpace(name)) return null;
 
-        var code = name.Trim().ToUpperInvariant().Replace(" ", "_");
-        if (code.Length > 50) code = code[..50];
-
         try
         {
             using var conn = CreateConnection();
             await conn.OpenAsync(ct);
 
-            const string checkSql = "SELECT COUNT(*) FROM dbo.PortfolioCategory WHERE CategoryCode = @Code;";
-            using (var checkCmd = new SqlCommand(checkSql, conn))
+            string nextId;
+            const string idSql = @"
+                DECLARE @NextID nvarchar(30);
+                IF OBJECT_ID(N'dbo.sp_GetNextPortfolioCategoryID', N'P') IS NOT NULL
+                BEGIN
+                    EXEC dbo.sp_GetNextPortfolioCategoryID @NextCategoryID = @NextID OUTPUT;
+                END
+                ELSE
+                BEGIN
+                    DECLARE @MaxNum INT = 0;
+                    SELECT @MaxNum = ISNULL(MAX(TRY_CAST(SUBSTRING(CategoryID, CHARINDEX('-', CategoryID) + 1, 20) AS INT)), 0)
+                    FROM dbo.PortfolioCategory
+                    WHERE CategoryID LIKE 'PCAT-%';
+                    SET @NextID = 'PCAT-' + RIGHT('0000' + CAST((@MaxNum + 1) AS VARCHAR(10)), 4);
+                END
+                SELECT @NextID;";
+
+            using (var idCmd = new SqlCommand(idSql, conn))
             {
-                checkCmd.Parameters.AddWithValue("@Code", code);
-                var exists = (int)(await checkCmd.ExecuteScalarAsync(ct) ?? 0) > 0;
-                if (exists)
-                {
-                    code = $"{code}_{Guid.NewGuid():N}"[..Math.Min(code.Length + 5, 50)];
-                }
+                var val = await idCmd.ExecuteScalarAsync(ct);
+                nextId = val?.ToString() ?? ("PCAT-" + DateTime.UtcNow.Ticks.ToString()[^4..]);
             }
 
             const string insertSql = @"
                 INSERT INTO dbo.PortfolioCategory 
-                    (CategoryCode, CategoryName, Description, ParentSection, ColorTag, IsActive, CreatedAt, UpdatedAt)
+                    (CategoryID, CategoryName, Description, ParentSection, ColorTag, IsActive, CreatedAt, UpdatedAt)
                 VALUES 
-                    (@Code, @Name, @Desc, @Section, @Color, 1, SYSUTCDATETIME(), SYSUTCDATETIME());";
+                    (@Id, @Name, @Desc, @Section, @Color, 1, SYSUTCDATETIME(), SYSUTCDATETIME());";
 
             using (var cmd = new SqlCommand(insertSql, conn))
             {
-                cmd.Parameters.AddWithValue("@Code", code);
+                cmd.Parameters.AddWithValue("@Id", nextId);
                 cmd.Parameters.AddWithValue("@Name", name.Trim());
-                cmd.Parameters.AddWithValue("@Desc", ((object)description?.Trim()) ?? DBNull.Value);
+                cmd.Parameters.AddWithValue("@Desc", ((object?)description?.Trim()) ?? DBNull.Value);
                 cmd.Parameters.AddWithValue("@Section", string.IsNullOrWhiteSpace(parentSection) ? "Photography" : parentSection.Trim());
                 cmd.Parameters.AddWithValue("@Color", string.IsNullOrWhiteSpace(colorTag) ? "Blue" : colorTag.Trim());
                 await cmd.ExecuteNonQueryAsync(ct);
             }
 
-            // Log activity
-            const string logSql = @"
-                IF OBJECT_ID(N'dbo.HistoryLog', N'U') IS NOT NULL
-                BEGIN
-                    INSERT INTO dbo.HistoryLog (ActionType, EntityName, EntityID, ChangedBy, ActionDetails, LoggedAt)
-                    VALUES ('Create', 'PortfolioCategory', @Code, 'Admin', @Details, SYSUTCDATETIME());
-                END";
-
-            using (var logCmd = new SqlCommand(logSql, conn))
-            {
-                logCmd.Parameters.AddWithValue("@Code", code);
-                logCmd.Parameters.AddWithValue("@Details", $"Created portfolio category '{name.Trim()}' ({code})");
-                await logCmd.ExecuteNonQueryAsync(ct);
-            }
+            await LogHistorySafeAsync(conn, "CREATE", "PortfolioCategory", nextId, $"Created portfolio category '{name.Trim()}' ({nextId})", ct);
 
             return new PortfolioCategoryModel
             {
-                CategoryCode = code,
+                CategoryID = nextId,
                 CategoryName = name.Trim(),
                 Description = description?.Trim(),
                 ParentSection = parentSection,
@@ -141,6 +138,34 @@ public class PortfolioService : IPortfolioService
         catch
         {
             return null;
+        }
+    }
+
+    public async Task<bool> DeleteCategoryAsync(string categoryId, CancellationToken ct = default)
+    {
+        if (string.IsNullOrWhiteSpace(categoryId)) return false;
+
+        try
+        {
+            using var conn = CreateConnection();
+            await conn.OpenAsync(ct);
+
+            const string delSql = "DELETE FROM dbo.PortfolioCategory WHERE CategoryID = @Id;";
+            using var cmd = new SqlCommand(delSql, conn);
+            cmd.Parameters.AddWithValue("@Id", categoryId.Trim());
+            var affected = await cmd.ExecuteNonQueryAsync(ct);
+
+            if (affected > 0)
+            {
+                await LogHistorySafeAsync(conn, "DELETE", "PortfolioCategory", categoryId.Trim(), $"Deleted portfolio category {categoryId.Trim()}", ct);
+                return true;
+            }
+
+            return false;
+        }
+        catch
+        {
+            return false;
         }
     }
 
@@ -157,18 +182,18 @@ public class PortfolioService : IPortfolioService
                 SELECT p.PortfolioId,
                        p.PortfolioName,
                        p.PortfolioDescription,
-                       p.CategoryCode,
-                       COALESCE(pc.CategoryName, p.CategoryCode) AS CategoryName,
+                       p.CategoryID,
+                       COALESCE(pc.CategoryName, p.CategoryID) AS CategoryName,
                        p.IsFeatured,
                        p.HighlightImageFileName,
                        p.CreatedAt
                 FROM dbo.Portfolios p
-                LEFT JOIN dbo.PortfolioCategory pc ON pc.CategoryCode = p.CategoryCode
+                LEFT JOIN dbo.PortfolioCategory pc ON pc.CategoryID = p.CategoryID
                 WHERE 1 = 1";
 
             if (!string.IsNullOrWhiteSpace(category) && !category.Equals("All", StringComparison.OrdinalIgnoreCase))
             {
-                sql += " AND (UPPER(p.CategoryCode) = UPPER(@Category) OR UPPER(pc.CategoryName) = UPPER(@Category))";
+                sql += " AND (UPPER(p.CategoryID) = UPPER(@Category) OR UPPER(pc.CategoryName) = UPPER(@Category))";
             }
 
             if (featuredOnly == true)
@@ -191,7 +216,7 @@ public class PortfolioService : IPortfolioService
                     var id = reader.GetString(0);
                     var name = reader.GetString(1);
                     var desc = reader.IsDBNull(2) ? null : reader.GetString(2);
-                    var catCode = reader.GetString(3);
+                    var catId = reader.GetString(3);
                     var catName = reader.GetString(4);
                     var isFeatured = reader.GetBoolean(5);
                     var highlight = reader.IsDBNull(6) ? null : reader.GetString(6);
@@ -202,7 +227,7 @@ public class PortfolioService : IPortfolioService
                         PortfolioId = id,
                         PortfolioName = name,
                         PortfolioDescription = desc,
-                        CategoryCode = catCode,
+                        CategoryID = catId,
                         CategoryName = catName,
                         IsFeatured = isFeatured,
                         HighlightImageFileName = highlight,
@@ -266,14 +291,13 @@ public class PortfolioService : IPortfolioService
     public async Task<PortfolioFolderModel?> CreatePortfolioAsync(
         string name,
         string? description,
-        string categoryCode,
+        string categoryId,
         bool isFeatured,
         List<(string FileName, string ContentType, byte[] Data)> images,
         CancellationToken ct = default)
     {
         if (string.IsNullOrWhiteSpace(name)) return null;
 
-        var portfolioId = "PORT-" + Guid.NewGuid().ToString("N")[..8].ToUpperInvariant();
         var savedImageFileNames = new List<string>();
 
         // Ensure upload directory exists
@@ -303,7 +327,6 @@ public class PortfolioService : IPortfolioService
             }
             catch
             {
-                // Fallback store base64 string
                 savedImageFileNames.Add($"data:{img.ContentType};base64,{Convert.ToBase64String(img.Data)}");
             }
         }
@@ -315,20 +338,43 @@ public class PortfolioService : IPortfolioService
             using var conn = CreateConnection();
             await conn.OpenAsync(ct);
 
+            string portfolioId;
+            const string idSql = @"
+                DECLARE @NextID nvarchar(30);
+                IF OBJECT_ID(N'dbo.sp_GetNextPortfolioID', N'P') IS NOT NULL
+                BEGIN
+                    EXEC dbo.sp_GetNextPortfolioID @NextPortfolioID = @NextID OUTPUT;
+                END
+                ELSE
+                BEGIN
+                    DECLARE @MaxNum INT = 0;
+                    SELECT @MaxNum = ISNULL(MAX(TRY_CAST(SUBSTRING(PortfolioId, CHARINDEX('-', PortfolioId) + 1, 20) AS INT)), 0)
+                    FROM dbo.Portfolios
+                    WHERE PortfolioId LIKE 'PRF-%';
+                    SET @NextID = 'PRF-' + RIGHT('0000' + CAST((@MaxNum + 1) AS VARCHAR(10)), 4);
+                END
+                SELECT @NextID;";
+
+            using (var idCmd = new SqlCommand(idSql, conn))
+            {
+                var val = await idCmd.ExecuteScalarAsync(ct);
+                portfolioId = val?.ToString() ?? ("PRF-" + DateTime.UtcNow.Ticks.ToString()[^4..]);
+            }
+
             const string insertSql = @"
                 INSERT INTO dbo.Portfolios 
-                    (PortfolioId, PortfolioName, PortfolioDescription, CategoryCode, IsFeatured, HighlightImageFileName, CreatedAt)
+                    (PortfolioId, PortfolioName, PortfolioDescription, CategoryID, IsFeatured, HighlightImageFileName, CreatedAt)
                 VALUES 
-                    (@Id, @Name, @Desc, @CatCode, @Featured, @Highlight, SYSUTCDATETIME());";
+                    (@Id, @Name, @Desc, @CatId, @Featured, @Highlight, SYSUTCDATETIME());";
 
             using (var cmd = new SqlCommand(insertSql, conn))
             {
                 cmd.Parameters.AddWithValue("@Id", portfolioId);
                 cmd.Parameters.AddWithValue("@Name", name.Trim());
-                cmd.Parameters.AddWithValue("@Desc", ((object)description?.Trim()) ?? DBNull.Value);
-                cmd.Parameters.AddWithValue("@CatCode", categoryCode.Trim());
+                cmd.Parameters.AddWithValue("@Desc", ((object?)description?.Trim()) ?? DBNull.Value);
+                cmd.Parameters.AddWithValue("@CatId", categoryId.Trim());
                 cmd.Parameters.AddWithValue("@Featured", isFeatured);
-                cmd.Parameters.AddWithValue("@Highlight", ((object)highlightFileName) ?? DBNull.Value);
+                cmd.Parameters.AddWithValue("@Highlight", ((object?)highlightFileName) ?? DBNull.Value);
                 await cmd.ExecuteNonQueryAsync(ct);
             }
 
@@ -345,27 +391,14 @@ public class PortfolioService : IPortfolioService
                 await imgCmd.ExecuteNonQueryAsync(ct);
             }
 
-            // Log activity
-            const string logSql = @"
-                IF OBJECT_ID(N'dbo.HistoryLog', N'U') IS NOT NULL
-                BEGIN
-                    INSERT INTO dbo.HistoryLog (ActionType, EntityName, EntityID, ChangedBy, ActionDetails, LoggedAt)
-                    VALUES ('Create', 'Portfolio', @Id, 'Admin', @Details, SYSUTCDATETIME());
-                END";
-
-            using (var logCmd = new SqlCommand(logSql, conn))
-            {
-                logCmd.Parameters.AddWithValue("@Id", portfolioId);
-                logCmd.Parameters.AddWithValue("@Details", $"Created portfolio album '{name.Trim()}' with {savedImageFileNames.Count} image(s)");
-                await logCmd.ExecuteNonQueryAsync(ct);
-            }
+            await LogHistorySafeAsync(conn, "CREATE", "Portfolio", portfolioId, $"Created portfolio album '{name.Trim()}' ({portfolioId}) with {savedImageFileNames.Count} image(s)", ct);
 
             return new PortfolioFolderModel
             {
                 PortfolioId = portfolioId,
                 PortfolioName = name.Trim(),
                 PortfolioDescription = description?.Trim(),
-                CategoryCode = categoryCode.Trim(),
+                CategoryID = categoryId.Trim(),
                 IsFeatured = isFeatured,
                 HighlightImageFileName = highlightFileName,
                 HighlightImageUrl = ResolveImageUrl(highlightFileName),
@@ -383,6 +416,75 @@ public class PortfolioService : IPortfolioService
         catch
         {
             return null;
+        }
+    }
+
+    public async Task<bool> UpdatePortfolioAsync(
+        string portfolioId,
+        string name,
+        string? description,
+        string categoryId,
+        List<(string FileName, string ContentType, byte[] Data)>? newImages = null,
+        CancellationToken ct = default)
+    {
+        if (string.IsNullOrWhiteSpace(portfolioId) || string.IsNullOrWhiteSpace(name)) return false;
+
+        try
+        {
+            using var conn = CreateConnection();
+            await conn.OpenAsync(ct);
+
+            const string updateSql = @"
+                UPDATE dbo.Portfolios 
+                SET PortfolioName = @Name,
+                    PortfolioDescription = @Desc,
+                    CategoryID = @CatId
+                WHERE PortfolioId = @Id;";
+
+            using (var cmd = new SqlCommand(updateSql, conn))
+            {
+                cmd.Parameters.AddWithValue("@Id", portfolioId.Trim());
+                cmd.Parameters.AddWithValue("@Name", name.Trim());
+                cmd.Parameters.AddWithValue("@Desc", ((object?)description?.Trim()) ?? DBNull.Value);
+                cmd.Parameters.AddWithValue("@CatId", categoryId.Trim());
+                await cmd.ExecuteNonQueryAsync(ct);
+            }
+
+            // Upload and insert any new images
+            if (newImages != null && newImages.Count > 0)
+            {
+                var uploadRoot = Path.Combine(_env.WebRootPath ?? Path.Combine(Directory.GetCurrentDirectory(), "wwwroot"), "uploads", "portfolio");
+                Directory.CreateDirectory(uploadRoot);
+
+                foreach (var img in newImages)
+                {
+                    if (img.Data == null || img.Data.Length == 0) continue;
+
+                    var ext = Path.GetExtension(img.FileName);
+                    if (string.IsNullOrEmpty(ext)) ext = ".jpg";
+                    var uniqueFileName = $"{Guid.NewGuid():N}{ext}";
+                    var filePath = Path.Combine(uploadRoot, uniqueFileName);
+
+                    await File.WriteAllBytesAsync(filePath, img.Data, ct);
+
+                    const string imgSql = @"
+                        INSERT INTO dbo.PortfolioImages (PortfolioId, FileName, UploadedAt)
+                        VALUES (@PId, @FileName, SYSUTCDATETIME());";
+
+                    using var imgCmd = new SqlCommand(imgSql, conn);
+                    imgCmd.Parameters.AddWithValue("@PId", portfolioId.Trim());
+                    imgCmd.Parameters.AddWithValue("@FileName", uniqueFileName);
+                    await imgCmd.ExecuteNonQueryAsync(ct);
+                }
+            }
+
+            await LogHistorySafeAsync(conn, "UPDATE", "Portfolio", portfolioId.Trim(), $"Updated portfolio '{name.Trim()}' ({portfolioId.Trim()})", ct);
+
+            return true;
+        }
+        catch
+        {
+            return false;
         }
     }
 
@@ -420,20 +522,7 @@ public class PortfolioService : IPortfolioService
                 }
             }
 
-            // Log activity
-            const string logSql = @"
-                IF OBJECT_ID(N'dbo.HistoryLog', N'U') IS NOT NULL
-                BEGIN
-                    INSERT INTO dbo.HistoryLog (ActionType, EntityName, EntityID, ChangedBy, ActionDetails, LoggedAt)
-                    VALUES ('Update', 'Portfolio', @Id, 'Admin', @Details, SYSUTCDATETIME());
-                END";
-
-            using (var logCmd = new SqlCommand(logSql, conn))
-            {
-                logCmd.Parameters.AddWithValue("@Id", portfolioId.Trim());
-                logCmd.Parameters.AddWithValue("@Details", $"Toggled featured status of portfolio '{portName}' to {newFeaturedState}");
-                await logCmd.ExecuteNonQueryAsync(ct);
-            }
+            await LogHistorySafeAsync(conn, "UPDATE", "Portfolio", portfolioId.Trim(), $"Toggled featured status of portfolio '{portName}' to {newFeaturedState}", ct);
 
             return true;
         }
@@ -452,28 +541,44 @@ public class PortfolioService : IPortfolioService
             using var conn = CreateConnection();
             await conn.OpenAsync(ct);
 
-            const string deleteSql = @"
+            // Fetch images to delete from disk
+            var imagesToDelete = new List<string>();
+            const string fetchImgSql = "SELECT FileName FROM dbo.PortfolioImages WHERE PortfolioId = @Id;";
+            using (var fetchCmd = new SqlCommand(fetchImgSql, conn))
+            {
+                fetchCmd.Parameters.AddWithValue("@Id", portfolioId.Trim());
+                using var reader = await fetchCmd.ExecuteReaderAsync(ct);
+                while (await reader.ReadAsync(ct))
+                {
+                    imagesToDelete.Add(reader.GetString(0));
+                }
+            }
+
+            const string delSql = @"
                 DELETE FROM dbo.PortfolioImages WHERE PortfolioId = @Id;
                 DELETE FROM dbo.Portfolios WHERE PortfolioId = @Id;";
 
-            using (var cmd = new SqlCommand(deleteSql, conn))
+            using (var cmd = new SqlCommand(delSql, conn))
             {
                 cmd.Parameters.AddWithValue("@Id", portfolioId.Trim());
-                var count = await cmd.ExecuteNonQueryAsync(ct);
-                if (count == 0) return false;
+                await cmd.ExecuteNonQueryAsync(ct);
             }
 
-            const string logSql = @"
-                IF OBJECT_ID(N'dbo.HistoryLog', N'U') IS NOT NULL
-                BEGIN
-                    INSERT INTO dbo.HistoryLog (ActionType, EntityName, EntityID, ChangedBy, ActionDetails, LoggedAt)
-                    VALUES ('Delete', 'Portfolio', @Id, 'Admin', @Details, SYSUTCDATETIME());
-                END";
+            // Remove files from disk
+            var uploadRoot = Path.Combine(_env.WebRootPath ?? Path.Combine(Directory.GetCurrentDirectory(), "wwwroot"), "uploads", "portfolio");
+            foreach (var fn in imagesToDelete)
+            {
+                try
+                {
+                    var p = Path.Combine(uploadRoot, fn);
+                    if (File.Exists(p)) File.Delete(p);
+                }
+                catch
+                {
+                }
+            }
 
-            using var logCmd = new SqlCommand(logSql, conn);
-            logCmd.Parameters.AddWithValue("@Id", portfolioId.Trim());
-            logCmd.Parameters.AddWithValue("@Details", $"Deleted portfolio {portfolioId}");
-            await logCmd.ExecuteNonQueryAsync(ct);
+            await LogHistorySafeAsync(conn, "DELETE", "Portfolio", portfolioId.Trim(), $"Deleted portfolio {portfolioId.Trim()}", ct);
 
             return true;
         }
@@ -483,18 +588,50 @@ public class PortfolioService : IPortfolioService
         }
     }
 
-    private static string ResolveImageUrl(string? fileName)
+    private static async Task LogHistorySafeAsync(SqlConnection conn, string actionType, string entityName, string entityId, string details, CancellationToken ct)
     {
-        if (string.IsNullOrWhiteSpace(fileName))
-            return "images/studio-placeholder.jpg";
+        try
+        {
+            const string logSql = @"
+                IF OBJECT_ID(N'dbo.sp_AddHistoryLog', N'P') IS NOT NULL
+                BEGIN
+                    EXEC dbo.sp_AddHistoryLog
+                        @ActionType = @Action,
+                        @EntityName = @Entity,
+                        @EntityID = @Id,
+                        @ActionDetails = @Details,
+                        @ChangedByType = 'Admin',
+                        @ActorID = 'Admin';
+                END
+                ELSE IF OBJECT_ID(N'dbo.HistoryLog', N'U') IS NOT NULL
+                BEGIN
+                    INSERT INTO dbo.HistoryLog (ActionType, EntityName, EntityID, ChangedByType, ChangedByAdminID, ActionDetails, LoggedAt)
+                    VALUES (@Action, @Entity, @Id, 'Admin', 'Admin', @Details, SYSUTCDATETIME());
+                END";
 
-        if (fileName.StartsWith("http://") || fileName.StartsWith("https://") || fileName.StartsWith("data:image/"))
+            using var logCmd = new SqlCommand(logSql, conn);
+            logCmd.Parameters.AddWithValue("@Action", actionType);
+            logCmd.Parameters.AddWithValue("@Entity", entityName);
+            logCmd.Parameters.AddWithValue("@Id", entityId);
+            logCmd.Parameters.AddWithValue("@Details", details);
+            await logCmd.ExecuteNonQueryAsync(ct);
+        }
+        catch
+        {
+            // Do not fail the main operation if logging encounters an issue
+        }
+    }
+
+    private string ResolveImageUrl(string? fileName)
+    {
+        if (string.IsNullOrWhiteSpace(fileName)) return "images/AevumLogo.jpg";
+        if (fileName.StartsWith("http://", StringComparison.OrdinalIgnoreCase) ||
+            fileName.StartsWith("https://", StringComparison.OrdinalIgnoreCase) ||
+            fileName.StartsWith("data:image", StringComparison.OrdinalIgnoreCase))
+        {
             return fileName;
+        }
 
-        var clean = fileName.TrimStart('/');
-        if (clean.StartsWith("uploads/"))
-            return "/" + clean;
-
-        return "/uploads/portfolio/" + clean;
+        return $"/uploads/portfolio/{fileName}";
     }
 }

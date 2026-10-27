@@ -238,3 +238,21 @@ public class TodayAttendanceSummaryDto
     public bool IsOnLeaveToday { get; set; }
     public string? ActiveLeaveType { get; set; }
 }
+
+public class EmployeeTimesheetHistoryDto
+{
+    public int Id { get; set; }
+    public string TimesheetId { get; set; } = string.Empty;
+    public string EmployeeStudioId { get; set; } = string.Empty;
+    public string EmployeeName { get; set; } = string.Empty;
+    public DateOnly WorkDate { get; set; }
+    public DateTime ClockIn { get; set; }
+    public DateTime? ClockOut { get; set; }
+    public double TotalHours { get; set; }
+    public string Status { get; set; } = "Open";
+    public bool IsDayOffWork { get; set; }
+    public string? Notes { get; set; }
+    public string? AdjustedBy { get; set; }
+    public string? AdjustmentReason { get; set; }
+    public DateTime CreatedAt { get; set; }
+}

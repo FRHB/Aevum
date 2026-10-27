@@ -10,7 +10,8 @@ public record ServiceSummaryDto(
     string Name,
     string Description,
     decimal Price,
-    bool HasImage);
+    bool HasImage,
+    string RateType = "per hour");
 
 public record ServiceDetailDto(
     string Id,
@@ -19,7 +20,28 @@ public record ServiceDetailDto(
     decimal Price,
     byte[]? Image,
     string? MimeType,
-    bool HasImage);
+    bool HasImage,
+    string RateType = "per hour");
+
+// Rate Types & Multi-rate Pricing
+public record RateTypeDto(
+    string RateTypeId,
+    string RateTypeName,
+    string? Description,
+    string? UnitLabel);
+
+public record ServiceRateDto(
+    string ServiceRateId,
+    string ServiceId,
+    string RateTypeId,
+    string RateTypeName,
+    decimal RateAmount,
+    string? UnitLabel,
+    bool IsActive);
+
+public record SetServiceRateDto(
+    string RateTypeId,
+    decimal RateAmount);
 
 public record UpdateServiceImageRequest(
     byte[] ImageBytes,
@@ -58,7 +80,8 @@ public record CreateServiceDto(
     string CategoryId,
     byte[]? ImageBytes,
     string? ImageMimeType,
-    string? ImageFileName = null);
+    string? ImageFileName = null,
+    string RateType = "per hour");
 
 public record ServiceCreatedResponseDto(
     string Id,

@@ -5,7 +5,15 @@ namespace PhotoAevumStudio.Web.Models;
 
 public class PortfolioCategoryModel
 {
-    public string CategoryCode { get; set; } = string.Empty;
+    public string CategoryID { get; set; } = string.Empty;
+
+    // Backward-compatible alias
+    public string CategoryCode
+    {
+        get => CategoryID;
+        set => CategoryID = value;
+    }
+
     public string CategoryName { get; set; } = string.Empty;
     public string? Description { get; set; }
     public string ParentSection { get; set; } = "Photography";
@@ -29,7 +37,15 @@ public class PortfolioFolderModel
     public string PortfolioId { get; set; } = string.Empty;
     public string PortfolioName { get; set; } = string.Empty;
     public string? PortfolioDescription { get; set; }
-    public string CategoryCode { get; set; } = string.Empty;
+    public string CategoryID { get; set; } = string.Empty;
+
+    // Backward-compatible alias
+    public string CategoryCode
+    {
+        get => CategoryID;
+        set => CategoryID = value;
+    }
+
     public string CategoryName { get; set; } = string.Empty;
     public bool IsFeatured { get; set; }
     public string? HighlightImageFileName { get; set; }
@@ -42,9 +58,24 @@ public class CreatePortfolioDto
 {
     public string PortfolioName { get; set; } = string.Empty;
     public string? PortfolioDescription { get; set; }
-    public string CategoryCode { get; set; } = string.Empty;
+    public string CategoryID { get; set; } = string.Empty;
+
+    public string CategoryCode
+    {
+        get => CategoryID;
+        set => CategoryID = value;
+    }
+
     public bool IsFeatured { get; set; }
     public List<string> ImageFileNames { get; set; } = new();
     public List<byte[]> ImageBytes { get; set; } = new();
     public List<string> ImageContentTypes { get; set; } = new();
+}
+
+public class UpdatePortfolioDto
+{
+    public string PortfolioId { get; set; } = string.Empty;
+    public string PortfolioName { get; set; } = string.Empty;
+    public string? PortfolioDescription { get; set; }
+    public string CategoryID { get; set; } = string.Empty;
 }

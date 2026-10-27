@@ -146,6 +146,7 @@
             saveErrorMessage = null;
             var created = UserService.AddMainService(model);
             await OnServiceCreated.InvokeAsync(created);
+            await Task.Delay(500);
             await HandleClose();
         }
         catch (Exception ex)

@@ -174,6 +174,7 @@ public class ServicesApiClient : IServicesApiClient
             formData.Add(new StringContent(model.Description.Trim()), "Description");
             formData.Add(new StringContent(model.Price.ToString(CultureInfo.InvariantCulture)), "Price");
             formData.Add(new StringContent(model.CategoryId.Trim()), "CategoryId");
+            formData.Add(new StringContent(string.IsNullOrWhiteSpace(model.RateType) ? "per hour" : model.RateType.Trim()), "RateType");
 
             if (model.ImageBytes != null && model.ImageBytes.Length > 0)
             {
@@ -594,7 +595,7 @@ public class ServicesApiClient : IServicesApiClient
 
                 IF OBJECT_ID(N'dbo.PortfolioCategory', N'U') IS NULL
                     CREATE TABLE dbo.PortfolioCategory (
-                        CategoryCode  NVARCHAR(50)  NOT NULL CONSTRAINT PK_PortfolioCategory PRIMARY KEY,
+                        CategoryID    NVARCHAR(30)  NOT NULL CONSTRAINT PK_PortfolioCategory PRIMARY KEY,
                         CategoryName  NVARCHAR(120) NOT NULL,
                         Description   NVARCHAR(400) NULL,
                         ParentSection NVARCHAR(30)  NOT NULL,  -- Photography | Videography
@@ -605,11 +606,11 @@ public class ServicesApiClient : IServicesApiClient
 
                 IF OBJECT_ID(N'dbo.PortfolioCategoryService', N'U') IS NULL
                     CREATE TABLE dbo.PortfolioCategoryService (
-                        CategoryCode NVARCHAR(50)  NOT NULL,
+                        CategoryID   NVARCHAR(30)  NOT NULL,
                         ServiceName  NVARCHAR(120) NOT NULL,
-                        CONSTRAINT PK_PortfolioCategoryService PRIMARY KEY (CategoryCode, ServiceName),
-                        CONSTRAINT FK_PortfolioCategoryService_Category FOREIGN KEY (CategoryCode)
-                            REFERENCES dbo.PortfolioCategory (CategoryCode) ON DELETE CASCADE
+                        CONSTRAINT PK_PortfolioCategoryService PRIMARY KEY (CategoryID, ServiceName),
+                        CONSTRAINT FK_PortfolioCategoryService_Category FOREIGN KEY (CategoryID)
+                            REFERENCES dbo.PortfolioCategory (CategoryID) ON DELETE CASCADE
                     );";
 
             await using var cmd = new SqlCommand(ddl, conn);
@@ -693,7 +694,7 @@ public class ServicesApiClient : IServicesApiClient
             await EnsureFeaturedSchemaAsync(conn, cancellationToken);
 
             await using (var cmd = new SqlCommand(@"
-                SELECT CategoryCode, CategoryName, Description, ParentSection, ColorTag, IsActive
+                SELECT CategoryID, CategoryName, Description, ParentSection, ColorTag, IsActive
                 FROM dbo.PortfolioCategory
                 ORDER BY ParentSection, CategoryName;", conn))
             await using (var reader = await cmd.ExecuteReaderAsync(cancellationToken))
@@ -715,7 +716,7 @@ public class ServicesApiClient : IServicesApiClient
             }
 
             await using (var cmd = new SqlCommand(
-                "SELECT CategoryCode, ServiceName FROM dbo.PortfolioCategoryService;", conn))
+                "SELECT CategoryID, ServiceName FROM dbo.PortfolioCategoryService;", conn))
             await using (var reader = await cmd.ExecuteReaderAsync(cancellationToken))
             {
                 while (await reader.ReadAsync(cancellationToken))
@@ -757,23 +758,23 @@ public class ServicesApiClient : IServicesApiClient
                 {
                     // Child rows are removed by ON DELETE CASCADE.
                     await using var del = new SqlCommand(
-                        "DELETE FROM dbo.PortfolioCategory WHERE CategoryCode = @Code;", conn, trans);
-                    del.Parameters.AddWithValue("@Code", category.Code.Trim());
+                        "DELETE FROM dbo.PortfolioCategory WHERE CategoryID = @Id;", conn, trans);
+                    del.Parameters.AddWithValue("@Id", category.Code.Trim());
                     await del.ExecuteNonQueryAsync(cancellationToken);
                 }
                 else
                 {
                     const string upsert = @"
                         MERGE dbo.PortfolioCategory WITH (HOLDLOCK) AS t
-                        USING (SELECT @Code AS CategoryCode) AS s ON t.CategoryCode = s.CategoryCode
+                        USING (SELECT @Id AS CategoryID) AS s ON t.CategoryID = s.CategoryID
                         WHEN MATCHED THEN UPDATE SET
                             CategoryName = @Name, Description = @Desc, ParentSection = @Section,
                             ColorTag = @Color, IsActive = @Active, UpdatedAt = SYSUTCDATETIME()
-                        WHEN NOT MATCHED THEN INSERT (CategoryCode, CategoryName, Description, ParentSection, ColorTag, IsActive)
-                            VALUES (@Code, @Name, @Desc, @Section, @Color, @Active);";
+                        WHEN NOT MATCHED THEN INSERT (CategoryID, CategoryName, Description, ParentSection, ColorTag, IsActive)
+                            VALUES (@Id, @Name, @Desc, @Section, @Color, @Active);";
 
                     await using var up = new SqlCommand(upsert, conn, trans);
-                    up.Parameters.AddWithValue("@Code", category.Code.Trim());
+                    up.Parameters.AddWithValue("@Id", category.Code.Trim());
                     up.Parameters.AddWithValue("@Name", category.Name.Trim());
                     up.Parameters.AddWithValue("@Desc", (object?)category.Description?.Trim() ?? DBNull.Value);
                     up.Parameters.AddWithValue("@Section", section);
@@ -782,9 +783,9 @@ public class ServicesApiClient : IServicesApiClient
                     await up.ExecuteNonQueryAsync(cancellationToken);
 
                     await using (var clear = new SqlCommand(
-                        "DELETE FROM dbo.PortfolioCategoryService WHERE CategoryCode = @Code;", conn, trans))
+                        "DELETE FROM dbo.PortfolioCategoryService WHERE CategoryID = @Id;", conn, trans))
                     {
-                        clear.Parameters.AddWithValue("@Code", category.Code.Trim());
+                        clear.Parameters.AddWithValue("@Id", category.Code.Trim());
                         await clear.ExecuteNonQueryAsync(cancellationToken);
                     }
 
@@ -794,8 +795,8 @@ public class ServicesApiClient : IServicesApiClient
                                  .Distinct(StringComparer.OrdinalIgnoreCase))
                     {
                         await using var ins = new SqlCommand(
-                            "INSERT INTO dbo.PortfolioCategoryService (CategoryCode, ServiceName) VALUES (@Code, @Name);", conn, trans);
-                        ins.Parameters.AddWithValue("@Code", category.Code.Trim());
+                            "INSERT INTO dbo.PortfolioCategoryService (CategoryID, ServiceName) VALUES (@Id, @Name);", conn, trans);
+                        ins.Parameters.AddWithValue("@Id", category.Code.Trim());
                         ins.Parameters.AddWithValue("@Name", name);
                         await ins.ExecuteNonQueryAsync(cancellationToken);
                     }

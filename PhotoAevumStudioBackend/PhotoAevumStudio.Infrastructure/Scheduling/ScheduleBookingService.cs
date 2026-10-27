@@ -236,10 +236,19 @@ public sealed class ScheduleBookingService(
                             END
                         END
 
+                        IF OBJECT_ID(N'dbo.BookingNegotiation', N'U') IS NOT NULL
+                        BEGIN
+                            IF NOT EXISTS (SELECT 1 FROM dbo.BookingNegotiation WHERE NegotiationID = @NegId)
+                            BEGIN
+                                INSERT INTO dbo.BookingNegotiation (NegotiationID, EventAppointmentID, CustomerID, EmployeeID, ConsultationDate, ConsultationTime, MeetingLink, InquiryNotes, NegotiationStatus, CreatedAt)
+                                VALUES (@NegId, @EvtId, @CustId, @EmpId, @EvtDate, @EvtTime, @MeetingLink, @InquiryNotes, 'Pending_Call', SYSUTCDATETIME());
+                            END
+                        END
+
                         IF OBJECT_ID(N'dbo.HistoryLog', N'U') IS NOT NULL
                         BEGIN
-                            INSERT INTO dbo.HistoryLog (ActionType, EntityName, EntityID, ActionDetails, ChangedBy, ChangedByType, LoggedAt)
-                            VALUES ('BOOKING', 'EventAppointment', @EvtId, @LogMsg, @CustId, 'Customer', SYSUTCDATETIME());
+                            INSERT INTO dbo.HistoryLog (ActionType, EntityName, EntityID, ActionDetails, ChangedByCustomerID, ChangedByType, LoggedAt)
+                            VALUES ('CREATE', 'EventAppointment', @EvtId, @LogMsg, @CustId, 'Customer', SYSUTCDATETIME());
                         END";
 
                     var pEvtId = evtCmd.CreateParameter(); pEvtId.ParameterName = "@EvtId"; pEvtId.Value = evtId; evtCmd.Parameters.Add(pEvtId);
@@ -249,6 +258,9 @@ public sealed class ScheduleBookingService(
                     var pEvtDate = evtCmd.CreateParameter(); pEvtDate.ParameterName = "@EvtDate"; pEvtDate.Value = request.Date.ToDateTime(TimeOnly.MinValue); evtCmd.Parameters.Add(pEvtDate);
                     var pEvtTime = evtCmd.CreateParameter(); pEvtTime.ParameterName = "@EvtTime"; pEvtTime.Value = slot.Start.ToTimeSpan(); evtCmd.Parameters.Add(pEvtTime);
                     var pEmpId = evtCmd.CreateParameter(); pEmpId.ParameterName = "@EmpId"; pEmpId.Value = assignedEmployeeId; evtCmd.Parameters.Add(pEmpId);
+                    var pNegId = evtCmd.CreateParameter(); pNegId.ParameterName = "@NegId"; pNegId.Value = $"NEG-{entity.AppointmentId:D4}"; evtCmd.Parameters.Add(pNegId);
+                    var pMeetingLink = evtCmd.CreateParameter(); pMeetingLink.ParameterName = "@MeetingLink"; pMeetingLink.Value = meetingLink ?? (object)DBNull.Value; evtCmd.Parameters.Add(pMeetingLink);
+                    var pInquiryNotes = evtCmd.CreateParameter(); pInquiryNotes.ParameterName = "@InquiryNotes"; pInquiryNotes.Value = location ?? "Consultation Booking"; evtCmd.Parameters.Add(pInquiryNotes);
                     var pLogMsg = evtCmd.CreateParameter(); pLogMsg.ParameterName = "@LogMsg"; pLogMsg.Value = $"New session booked by {customer.FullName} ({customer.Email}). Assigned staff {assignedEmployeeId}. Total: {total:C2}"; evtCmd.Parameters.Add(pLogMsg);
 
                     await evtCmd.ExecuteNonQueryAsync(ct);

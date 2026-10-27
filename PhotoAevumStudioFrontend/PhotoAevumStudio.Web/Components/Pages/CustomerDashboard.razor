@@ -7,6 +7,9 @@
 @implements IDisposable
 @inject IBookScheduleClient Api
 @inject BookingEvents Events
+@inject IUserService UserService
+@inject IPortfolioService PortfolioService
+@inject IConsultationClient ConsultationApi
 @attribute [Authorize(Roles = "Customer")]
 @rendermode InteractiveServer
 
@@ -16,7 +19,7 @@
 <header class="aev-page-header">
     <div>
         <h1 class="aev-page-header__title">Welcome to Aevum</h1>
-        <p class="aev-page-header__subtitle">Your photography portal</p>
+        <p class="aev-page-header__subtitle">Your photography portal &amp; client experience</p>
     </div>
 </header>
 
@@ -24,7 +27,94 @@
 {
     <div class="aev-alert-banner" role="status">
         <span aria-hidden="true">🔔</span>
-        You have <strong>@PendingCount pending action(s)</strong> — please review your upcoming session status.
+        You have <strong>@PendingCount pending action(s)</strong> &mdash; please review your upcoming session status.
+    </div>
+}
+
+@* ── Live 30-Minute Downpayment Hold Card ────────────────────────── *@
+@if (_awaitingDepositAppointment != null)
+{
+    var isExpired = _remainingHoldSeconds <= 0;
+    <div class="rounded-xl border @(isExpired ? "border-red-300 bg-red-50/90" : "border-amber-300 bg-amber-50/90") p-5 mb-6 shadow-sm" role="alert">
+        <div class="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+            <div class="space-y-1">
+                <div class="flex items-center gap-2">
+                    <span class="px-2.5 py-0.5 rounded-full text-xs font-bold @(isExpired ? "bg-red-200 text-red-900" : "bg-amber-200 text-amber-900")">
+                        @(isExpired ? "⚠️ Reservation Hold Expired" : "⏳ 30-Min Reservation Hold Active")
+                    </span>
+                    <span class="font-mono text-xs font-bold @(isExpired ? "text-red-700" : "text-amber-800")">
+                        #@_awaitingDepositAppointment.EventAppointmentId
+                    </span>
+                </div>
+                <h3 class="text-base font-extrabold text-slate-900">
+                    25% Downpayment Required for @_awaitingDepositAppointment.EventName
+                </h3>
+                <p class="text-xs text-slate-600">
+                    Your appointment has been set up following consultation. Settle the 25% deposit within 30 minutes to lock your reserved crew and equipment.
+                </p>
+                <div class="flex items-center gap-4 text-xs font-semibold text-slate-700 pt-1">
+                    <span>Total: <strong>₱@_awaitingDepositAppointment.TotalAmount.ToString("N2")</strong></span>
+                    <span class="text-emerald-700 font-bold">25% Deposit: <strong>₱@_awaitingDepositAppointment.DownpaymentAmount.ToString("N2")</strong></span>
+                </div>
+            </div>
+
+            <div class="flex flex-col sm:flex-row items-center gap-3">
+                <div class="text-center px-4 py-2 rounded-xl bg-white border @(isExpired ? "border-red-200 text-red-700" : "border-amber-200 text-amber-800") shadow-xs">
+                    <div class="text-[10px] uppercase font-bold tracking-wider text-slate-400">Hold Timer</div>
+                    <div class="font-mono text-xl font-black">@_countdownDisplay</div>
+                </div>
+
+                @if (!isExpired)
+                {
+                    <a href="@(_awaitingDepositAppointment.XenditInvoiceUrl ?? "#")" target="_blank" rel="noopener noreferrer"
+                       class="px-4 py-2.5 bg-emerald-700 hover:bg-emerald-800 text-white rounded-lg text-xs font-bold shadow-sm transition-all text-center">
+                        Pay Deposit (Xendit) &rarr;
+                    </a>
+                    <button type="button" @onclick="() => VerifyPaymentAsync(_awaitingDepositAppointment.EventAppointmentId)"
+                            class="px-3.5 py-2.5 bg-white hover:bg-slate-50 border border-slate-300 text-slate-700 rounded-lg text-xs font-semibold transition-all">
+                        Refresh Status
+                    </button>
+                }
+                else
+                {
+                    <button type="button" @onclick="() => RequestExtensionAsync(_awaitingDepositAppointment.EventAppointmentId)"
+                            class="px-4 py-2.5 bg-red-700 hover:bg-red-800 text-white rounded-lg text-xs font-bold shadow-sm transition-all">
+                        Request Extension / Reactivate Link
+                    </button>
+                }
+            </div>
+        </div>
+    </div>
+}
+
+@* ── Active Video Consultation Call Card ─────────────────────────── *@
+@if (_activeConsultation != null)
+{
+    <div class="rounded-xl border border-teal-200 bg-teal-50/70 p-5 mb-6 shadow-sm">
+        <div class="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+            <div class="space-y-1">
+                <div class="flex items-center gap-2">
+                    <span class="px-2.5 py-0.5 rounded-full text-xs font-bold bg-teal-200 text-teal-900">
+                        🎥 Upcoming Video Consultation
+                    </span>
+                    <span class="font-mono text-xs font-bold text-teal-800">#@_activeConsultation.NegotiationId</span>
+                </div>
+                <h3 class="text-base font-extrabold text-slate-900">
+                    Online Consultation with Clerk @_activeConsultation.EmployeeName
+                </h3>
+                <p class="text-xs text-slate-600">
+                    Scheduled on <strong>@_activeConsultation.ConsultationDate.ToString("dddd, MMMM d, yyyy")</strong> at <strong>@_activeConsultation.ConsultationTime.ToString("h:mm tt")</strong> via Google Meet.
+                </p>
+            </div>
+
+            <div class="flex items-center gap-2">
+                <a href="@_activeConsultation.MeetingLink" target="_blank" rel="noopener noreferrer"
+                   class="inline-flex items-center gap-2 px-5 py-2.5 bg-teal-700 hover:bg-teal-800 text-white rounded-lg text-xs font-bold shadow-xs transition-colors">
+                    <span>🎥</span>
+                    <span>Join Google Meet Call</span>
+                </a>
+            </div>
+        </div>
     </div>
 }
 
@@ -40,7 +130,7 @@
     <a href="/my/book" class="aev-nav-card">
         <span class="aev-nav-card__icon" aria-hidden="true">➕</span>
         <h2 class="aev-nav-card__title">Book a Schedule</h2>
-        <p class="aev-nav-card__desc">Request a new photography session with our team.</p>
+        <p class="aev-nav-card__desc">Request a new photography session with our creative team.</p>
     </a>
 
     <a href="/my/bookings" class="aev-nav-card">
@@ -52,7 +142,7 @@
 </div>
 
 @* ── Upcoming appointments mini-list ─────────────────────────────── *@
-<section class="aev-card" aria-label="Upcoming appointments">
+<section class="aev-card mb-8" aria-label="Upcoming appointments">
     <header class="aev-card__header">
         <h2 class="aev-card__heading">Upcoming Appointments</h2>
         <a href="/my/bookings" class="aev-card__action-link">View All</a>
@@ -84,7 +174,7 @@
                     @foreach (var booking in UpcomingBookings)
                     {
                         <tr>
-                            <td>@booking.ServiceTitle</td>
+                            <td class="font-semibold text-slate-800">@booking.ServiceTitle</td>
                             <td>@booking.Start.ToString("MMM dd, yyyy – h:mm tt")</td>
                             <td>
                                 <span class="aev-badge @(booking.Status == "Confirmed" ? "aev-badge--green" : "aev-badge--amber")">
@@ -99,10 +189,201 @@
     </div>
 </section>
 
+@* ── Studio Services & Packages Section ───────────────────────────── *@
+<section class="bg-white rounded-xl border border-slate-200 shadow-sm p-6 mb-8" aria-label="Studio Services & Packages">
+    <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 pb-4 border-b border-slate-100 mb-6">
+        <div>
+            <div class="flex items-center gap-2">
+                <span class="w-2 h-2 rounded-full bg-teal-500"></span>
+                <h2 class="text-lg font-extrabold text-slate-900 tracking-tight">Studio Services &amp; Packages</h2>
+            </div>
+            <p class="text-xs text-slate-500 mt-0.5">Explore our professional studio photography offerings, portrait packages, and commercial rates.</p>
+        </div>
+        <a href="/my/book" class="inline-flex items-center gap-1.5 px-4 py-2 bg-slate-900 hover:bg-black text-white text-xs font-bold rounded-lg shadow-xs transition-all">
+            <span>Book a Session</span>
+            <span>&rarr;</span>
+        </a>
+    </div>
+
+    @if (_loadingServices)
+    {
+        <div class="py-12 text-center text-slate-400 text-xs">
+            Loading studio services catalog…
+        </div>
+    }
+    else if (!_services.Any())
+    {
+        <div class="py-10 text-center text-slate-500 text-xs italic">
+            No studio services currently published. Check back soon!
+        </div>
+    }
+    else
+    {
+        <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
+            @foreach (var svc in _services)
+            {
+                <article class="flex flex-col justify-between bg-slate-50/50 hover:bg-white rounded-xl border border-slate-200 hover:border-slate-300 p-5 shadow-xs hover:shadow-md transition-all duration-200">
+                    <div>
+                        <div class="flex items-center justify-between gap-2 mb-2">
+                            <span class="px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-teal-50 text-teal-800 border border-teal-200">
+                                @(string.IsNullOrWhiteSpace(svc.Category) ? "Photography" : svc.Category)
+                            </span>
+                            <span class="text-[11px] text-slate-400 font-mono">@svc.Code</span>
+                        </div>
+
+                        <h3 class="text-base font-bold text-slate-900 mb-1.5">@svc.Title</h3>
+                        
+                        <p class="text-xs text-slate-600 line-clamp-3 mb-4 leading-relaxed">
+                            @(string.IsNullOrWhiteSpace(svc.Description) ? "Professional high-resolution studio session with dedicated lighting, creative direction, and digital proof delivery." : svc.Description)
+                        </p>
+                    </div>
+
+                    <div class="pt-4 border-t border-slate-200/80 flex items-center justify-between">
+                        <div>
+                            <div class="text-[10px] uppercase font-bold tracking-wider text-slate-400">Rate</div>
+                            <div class="flex items-baseline gap-1">
+                                <span class="font-mono text-base font-extrabold text-slate-900">₱@svc.BasePrice.ToString("N2")</span>
+                                <span class="text-xs text-slate-500 font-medium">/ @(string.IsNullOrWhiteSpace(svc.RateType) ? "per hour" : svc.RateType)</span>
+                            </div>
+                        </div>
+
+                        <a href="/my/book" class="px-3 py-1.5 bg-slate-900 hover:bg-teal-700 text-white rounded-lg text-xs font-semibold shadow-xs transition-colors">
+                            Book Now
+                        </a>
+                    </div>
+                </article>
+            }
+        </div>
+    }
+</section>
+
+@* ── Featured Studio Portfolio Section ───────────────────────────── *@
+<section class="bg-white rounded-xl border border-slate-200 shadow-sm p-6 mb-8" aria-label="Featured Studio Portfolio">
+    <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 pb-4 border-b border-slate-100 mb-6">
+        <div>
+            <div class="flex items-center gap-2">
+                <span class="w-2 h-2 rounded-full bg-indigo-500"></span>
+                <h2 class="text-lg font-extrabold text-slate-900 tracking-tight">Featured Studio Portfolio</h2>
+            </div>
+            <p class="text-xs text-slate-500 mt-0.5">A curated gallery of recent client highlights, editorial shoots, and creative visual stories.</p>
+        </div>
+
+        @if (_portfolioCategories.Any())
+        {
+            <div class="flex flex-wrap items-center gap-1.5">
+                <button type="button"
+                        @onclick='() => _selectedPortfolioCategory = "All"'
+                        class="px-3 py-1 rounded-full text-xs font-semibold transition-all @(_selectedPortfolioCategory == "All" ? "bg-slate-900 text-white shadow-xs" : "bg-slate-100 text-slate-600 hover:bg-slate-200")">
+                    All
+                </button>
+                @foreach (var cat in _portfolioCategories.Take(5))
+                {
+                    <button type="button"
+                            @onclick="() => _selectedPortfolioCategory = cat.CategoryID"
+                            class="px-3 py-1 rounded-full text-xs font-semibold transition-all @(_selectedPortfolioCategory == cat.CategoryID ? "bg-slate-900 text-white shadow-xs" : "bg-slate-100 text-slate-600 hover:bg-slate-200")">
+                        @cat.CategoryName
+                    </button>
+                }
+            </div>
+        }
+    </div>
+
+    @if (_loadingPortfolios)
+    {
+        <div class="py-12 text-center text-slate-400 text-xs">
+            Loading portfolio galleries…
+        </div>
+    }
+    else if (!FilteredPortfolios.Any())
+    {
+        <div class="py-12 text-center">
+            <div class="w-12 h-12 rounded-full bg-slate-100 text-slate-400 flex items-center justify-center mx-auto mb-2 text-xl">
+                🖼️
+            </div>
+            <h3 class="text-sm font-bold text-slate-800">No Portfolio Items in this Category</h3>
+            <p class="text-xs text-slate-500 mt-0.5">Please check back soon as our team curates new creative showcases.</p>
+        </div>
+    }
+    else
+    {
+        <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
+            @foreach (var item in FilteredPortfolios)
+            {
+                <article class="group bg-slate-50 rounded-xl border border-slate-200 overflow-hidden shadow-xs hover:shadow-lg transition-all duration-200 flex flex-col">
+                    <div class="relative aspect-4/3 bg-slate-200 overflow-hidden flex items-center justify-center">
+                        @if (!string.IsNullOrWhiteSpace(item.HighlightImageUrl))
+                        {
+                            <img src="@item.HighlightImageUrl"
+                                 alt="@item.PortfolioName"
+                                 class="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300" />
+                        }
+                        else
+                        {
+                            <div class="flex flex-col items-center justify-center text-slate-400 p-6 text-center">
+                                <span class="text-3xl mb-1">📷</span>
+                                <span class="text-xs font-medium">Studio Showcase</span>
+                            </div>
+                        }
+
+                        <div class="absolute top-3 left-3">
+                            <span class="px-2.5 py-1 rounded-full text-[10px] font-extrabold uppercase tracking-wider bg-black/75 text-white backdrop-blur-xs">
+                                @(string.IsNullOrWhiteSpace(item.CategoryName) ? "Portfolio" : item.CategoryName)
+                            </span>
+                        </div>
+
+                        <div class="absolute bottom-3 right-3">
+                            <span class="px-2 py-0.5 rounded text-[10px] font-bold bg-white/90 text-slate-800 backdrop-blur-xs shadow-xs">
+                                @(item.Images?.Count ?? 0) photos
+                            </span>
+                        </div>
+                    </div>
+
+                    <div class="p-4 flex-1 flex flex-col justify-between">
+                        <div>
+                            <h3 class="font-bold text-slate-900 group-hover:text-teal-700 transition-colors text-sm mb-1">
+                                @item.PortfolioName
+                            </h3>
+                            <p class="text-xs text-slate-500 line-clamp-2 leading-relaxed">
+                                @(string.IsNullOrWhiteSpace(item.PortfolioDescription) ? "Curated studio session showcasing bespoke lighting and styling." : item.PortfolioDescription)
+                            </p>
+                        </div>
+
+                        <div class="mt-4 pt-3 border-t border-slate-200 flex items-center justify-between text-xs text-slate-400">
+                            <span>@item.CreatedAt.ToString("MMM yyyy")</span>
+                            <a href="/my/book" class="text-xs font-semibold text-slate-900 hover:text-teal-700 transition-colors">
+                                Book Similar &rarr;
+                            </a>
+                        </div>
+                    </div>
+                </article>
+            }
+        </div>
+    }
+</section>
+
 @code {
     private List<MyBooking> UpcomingBookings = new();
+    private List<MainServiceItem> _services = new();
+    private List<PortfolioFolderModel> _portfolios = new();
+    private List<PortfolioCategoryModel> _portfolioCategories = new();
+    private string _selectedPortfolioCategory = "All";
+
+    private ConsultationNegotiationDto? _activeConsultation;
+    private EventAppointmentDto? _awaitingDepositAppointment;
+    private System.Threading.Timer? _countdownTimer;
+    private int _remainingHoldSeconds = 0;
+    private string _countdownDisplay = "--:--";
+
     private bool _loading = true;
+    private bool _loadingServices = true;
+    private bool _loadingPortfolios = true;
+
     private int PendingCount => UpcomingBookings.Count(b => string.Equals(b.Status, "Pending", StringComparison.OrdinalIgnoreCase));
+
+    private IEnumerable<PortfolioFolderModel> FilteredPortfolios =>
+        string.Equals(_selectedPortfolioCategory, "All", StringComparison.OrdinalIgnoreCase)
+            ? _portfolios
+            : _portfolios.Where(p => string.Equals(p.CategoryID, _selectedPortfolioCategory, StringComparison.OrdinalIgnoreCase));
 
     protected override void OnInitialized() => Events.Changed += OnBookingsChanged;
 
@@ -116,21 +397,146 @@
 
     private async Task LoadAsync()
     {
-        var result = await Api.GetMyBookingsAsync();
-        if (result.IsSuccess)
+        // 1. Load Bookings
+        try
         {
-            var today = DateOnly.FromDateTime(DateTime.Today);
-            UpcomingBookings = result.Value!
-                .Where(b => b.Date >= today && !string.Equals(b.Status, "Cancelled", StringComparison.OrdinalIgnoreCase))
-                .OrderBy(b => b.Start)
-                .Take(5)
-                .ToList();
+            var result = await Api.GetMyBookingsAsync();
+            if (result.IsSuccess)
+            {
+                var today = DateOnly.FromDateTime(DateTime.Today);
+                UpcomingBookings = result.Value!
+                    .Where(b => b.Date >= today && !string.Equals(b.Status, "Cancelled", StringComparison.OrdinalIgnoreCase))
+                    .OrderBy(b => b.Start)
+                    .Take(5)
+                    .ToList();
+            }
         }
-        _loading = false;
+        catch { }
+        finally
+        {
+            _loading = false;
+        }
+
+        // 2. Load Services
+        try
+        {
+            _services = UserService.GetMainServices().Take(6).ToList();
+        }
+        catch { }
+        finally
+        {
+            _loadingServices = false;
+        }
+
+        // 3. Load Portfolios & Categories
+        try
+        {
+            _portfolios = await PortfolioService.GetPortfoliosAsync();
+            _portfolioCategories = await PortfolioService.GetCategoriesAsync();
+        }
+        catch { }
+        finally
+        {
+            _loadingPortfolios = false;
+        }
+
+        // 4. Load Consultations & Awaiting Downpayment Holds
+        try
+        {
+            var negs = await ConsultationApi.GetNegotiationsAsync();
+            if (negs.IsSuccess && negs.Value != null)
+            {
+                _activeConsultation = negs.Value.FirstOrDefault(n => n.NegotiationStatus == "Pending_Call");
+            }
+
+            var appts = await ConsultationApi.GetCustomerAppointmentsAsync(status: "Awaiting_Downpayment");
+            if (appts.IsSuccess && appts.Value != null && appts.Value.Count > 0)
+            {
+                _awaitingDepositAppointment = appts.Value.FirstOrDefault();
+                StartHoldCountdown();
+            }
+            else
+            {
+                _awaitingDepositAppointment = null;
+                _countdownTimer?.Dispose();
+            }
+        }
+        catch { }
     }
 
     // Raised by the wizard (page or modal) right after a booking is confirmed.
     private void OnBookingsChanged() => _ = InvokeAsync(async () => { await LoadAsync(); StateHasChanged(); });
+    private void StartHoldCountdown()
+    {
+        _countdownTimer?.Dispose();
+        UpdateCountdown();
 
-    public void Dispose() => Events.Changed -= OnBookingsChanged;
+        _countdownTimer = new System.Threading.Timer(_ =>
+        {
+            InvokeAsync(() =>
+            {
+                UpdateCountdown();
+                StateHasChanged();
+            });
+        }, null, 1000, 1000);
+    }
+
+    private void UpdateCountdown()
+    {
+        if (_awaitingDepositAppointment?.HoldExpiresAt == null)
+        {
+            _countdownDisplay = "30:00";
+            return;
+        }
+
+        var diff = _awaitingDepositAppointment.HoldExpiresAt.Value - DateTime.UtcNow;
+        _remainingHoldSeconds = (int)Math.Max(0, diff.TotalSeconds);
+
+        if (_remainingHoldSeconds > 0)
+        {
+            var m = _remainingHoldSeconds / 60;
+            var s = _remainingHoldSeconds % 60;
+            _countdownDisplay = $"{m:D2}:{s:D2}";
+        }
+        else
+        {
+            _countdownDisplay = "Expired";
+        }
+    }
+
+    private async Task VerifyPaymentAsync(string appointmentId)
+    {
+        try
+        {
+            var res = await ConsultationApi.VerifyDownpaymentAsync(appointmentId);
+            if (res.IsSuccess && res.Value?.DownpaymentStatus == "Paid")
+            {
+                _countdownTimer?.Dispose();
+                _awaitingDepositAppointment = null;
+                await LoadAsync();
+                StateHasChanged();
+            }
+        }
+        catch { }
+    }
+
+    private async Task RequestExtensionAsync(string appointmentId)
+    {
+        try
+        {
+            var res = await ConsultationApi.RequestExtensionAsync(appointmentId);
+            if (res.IsSuccess)
+            {
+                await LoadAsync();
+                StateHasChanged();
+            }
+        }
+        catch { }
+    }
+
+    public void Dispose()
+    {
+        Events.Changed -= OnBookingsChanged;
+        _countdownTimer?.Dispose();
+    }
 }

@@ -153,7 +153,12 @@
                                         </div>
                                         <div>
                                             <div class="font-semibold text-gray-900">@svc.Title</div>
-                                            <div class="font-mono text-[11px] text-gray-400">@svc.Code</div>
+                                            <div class="flex items-center gap-2">
+                                                <span class="font-mono text-[11px] text-gray-400">@svc.Code</span>
+                                                <span class="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-bold bg-emerald-50 text-emerald-800 border border-emerald-200">
+                                                    ₱@svc.BasePrice.ToString("N2") / @(string.IsNullOrWhiteSpace(svc.RateType) ? "per hour" : svc.RateType)
+                                                </span>
+                                            </div>
                                         </div>
                                     </div>
                                 </td>

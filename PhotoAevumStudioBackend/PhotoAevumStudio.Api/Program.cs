@@ -168,6 +168,14 @@ builder.Services.AddScoped<IStudioManagementService, StudioManagementService>();
 builder.Services.AddScoped<IAdminManagementService, AdminManagementService>();
 builder.Services.AddScoped<IStorageProvider, LocalStorageProvider>();
 builder.Services.AddScoped<IEquipmentTypeService, EquipmentTypeService>();
+builder.Services.Configure<PhotoAevumStudio.Application.Models.GoogleMeetSettings>(builder.Configuration.GetSection("GoogleMeetSettings"));
+builder.Services.Configure<PhotoAevumStudio.Application.Models.XenditSettings>(builder.Configuration.GetSection("XenditSettings"));
+builder.Services.AddScoped<PhotoAevumStudio.Application.Interfaces.IGoogleMeetAdapter, PhotoAevumStudio.Infrastructure.Services.GoogleMeetAdapter>();
+builder.Services.AddHttpClient<PhotoAevumStudio.Application.Interfaces.IXenditPaymentService, PhotoAevumStudio.Infrastructure.Services.XenditPaymentService>(c =>
+{
+    c.BaseAddress = new Uri("https://api.xendit.co/");
+});
+builder.Services.AddScoped<PhotoAevumStudio.Application.Interfaces.IConsultationNegotiationService, PhotoAevumStudio.Infrastructure.Services.ConsultationNegotiationService>();
 builder.Services.Configure<PhotoAevumStudio.Application.Models.SmtpSettings>(builder.Configuration.GetSection("SmtpSettings"));
 builder.Services.AddScoped<PhotoAevumStudio.Application.Interfaces.IEmailService, PhotoAevumStudio.Infrastructure.Services.EmailService>();
 builder.Services.AddScoped<PhotoAevumStudio.Application.Interfaces.ISqlAuthService, PhotoAevumStudio.Infrastructure.Services.SqlAuthService>();

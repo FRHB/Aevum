@@ -25,6 +25,7 @@ public class StudioManagementService : IStudioManagementService
     {
         await using var conn = new SqlConnection(GetConnectionString());
         await conn.OpenAsync(cancellationToken);
+        await EnsureServicesRateTypeSchemaAsync(conn, cancellationToken);
 
         var specializationsByEmployee = new Dictionary<string, List<string>>(StringComparer.OrdinalIgnoreCase);
 
@@ -107,6 +108,7 @@ public class StudioManagementService : IStudioManagementService
     {
         await using var conn = new SqlConnection(GetConnectionString());
         await conn.OpenAsync(cancellationToken);
+        await EnsureServicesRateTypeSchemaAsync(conn, cancellationToken);
 
         var specs = new List<string>();
         const string sql = @"
@@ -137,6 +139,7 @@ public class StudioManagementService : IStudioManagementService
     {
         await using var conn = new SqlConnection(GetConnectionString());
         await conn.OpenAsync(cancellationToken);
+        await EnsureServicesRateTypeSchemaAsync(conn, cancellationToken);
 
         var services = new List<StudioService>();
         const string sql = @"
@@ -171,6 +174,7 @@ public class StudioManagementService : IStudioManagementService
     {
         await using var conn = new SqlConnection(GetConnectionString());
         await conn.OpenAsync(cancellationToken);
+        await EnsureServicesRateTypeSchemaAsync(conn, cancellationToken);
 
         var equipmentList = new List<Equipment>();
         const string sql = @"
@@ -200,10 +204,27 @@ public class StudioManagementService : IStudioManagementService
 
     // ── Service Images & Stored Procedures ────────────────────────────────────
 
+    private static async Task EnsureServicesRateTypeSchemaAsync(SqlConnection conn, CancellationToken ct)
+    {
+        try
+        {
+            await using var chkCmd = new SqlCommand("SELECT COL_LENGTH(N'dbo.Services', N'RateType');", conn);
+            var chkVal = await chkCmd.ExecuteScalarAsync(ct);
+            if (chkVal == null || chkVal == DBNull.Value)
+            {
+                await using var altCmd = new SqlCommand("ALTER TABLE dbo.Services ADD RateType nvarchar(50) NOT NULL CONSTRAINT DF_Services_RateType DEFAULT 'Per Hour';", conn);
+                await altCmd.ExecuteNonQueryAsync(ct);
+            }
+        }
+        catch { /* Best-effort schema alignment */ }
+    }
+
     public async Task<IReadOnlyList<ServiceSummaryDto>> GetServicesSummaryAsync(CancellationToken cancellationToken = default)
     {
         await using var conn = new SqlConnection(GetConnectionString());
         await conn.OpenAsync(cancellationToken);
+        await EnsureServicesRateTypeSchemaAsync(conn, cancellationToken);
+        await EnsureServicesRateTypeSchemaAsync(conn, cancellationToken);
 
         var list = new List<ServiceSummaryDto>();
         await using var cmd = new SqlCommand("dbo.sp_GetServicesSummary", conn)
@@ -216,32 +237,47 @@ public class StudioManagementService : IStudioManagementService
             await using var reader = await cmd.ExecuteReaderAsync(cancellationToken);
             while (await reader.ReadAsync(cancellationToken))
             {
+                var rateType = reader.FieldCount > 5 && !reader.IsDBNull(5) ? reader.GetString(5) : "per hour";
                 list.Add(new ServiceSummaryDto(
                     Id: reader.GetString(0),
                     Name: reader.GetString(1),
                     Description: reader.IsDBNull(2) ? string.Empty : reader.GetString(2),
                     Price: reader.IsDBNull(3) ? 0m : reader.GetDecimal(3),
-                    HasImage: !reader.IsDBNull(4) && reader.GetBoolean(4)
+                    HasImage: !reader.IsDBNull(4) && reader.GetBoolean(4),
+                    RateType: rateType
                 ));
             }
         }
         catch (SqlException)
         {
-            // Direct query fallback
-            const string fallbackSql = @"
+            // Direct query fallback with schema safety
+            var hasRateType = false;
+            try
+            {
+                await using var chkCmd = new SqlCommand("SELECT COL_LENGTH(N'dbo.Services', N'RateType');", conn);
+                var chkVal = await chkCmd.ExecuteScalarAsync(cancellationToken);
+                hasRateType = chkVal != null && chkVal != DBNull.Value;
+            }
+            catch { }
+
+            var rateTypeCol = hasRateType ? "ISNULL(RateType, 'per hour')" : "'per hour'";
+            var fallbackSql = $@"
                 SELECT ServicesID, ServiceName, ServicesDescription, ServicePrice,
-                       CAST(CASE WHEN ServiceImage IS NOT NULL THEN 1 ELSE 0 END AS bit)
+                       CAST(CASE WHEN ServiceImage IS NOT NULL THEN 1 ELSE 0 END AS bit),
+                       {rateTypeCol}
                 FROM dbo.Services ORDER BY ServicesID;";
             await using var fbCmd = new SqlCommand(fallbackSql, conn);
             await using var reader = await fbCmd.ExecuteReaderAsync(cancellationToken);
             while (await reader.ReadAsync(cancellationToken))
             {
+                var rateType = reader.FieldCount > 5 && !reader.IsDBNull(5) ? reader.GetString(5) : "per hour";
                 list.Add(new ServiceSummaryDto(
                     Id: reader.GetString(0),
                     Name: reader.GetString(1),
                     Description: reader.IsDBNull(2) ? string.Empty : reader.GetString(2),
                     Price: reader.IsDBNull(3) ? 0m : reader.GetDecimal(3),
-                    HasImage: !reader.IsDBNull(4) && reader.GetBoolean(4)
+                    HasImage: !reader.IsDBNull(4) && reader.GetBoolean(4),
+                    RateType: rateType
                 ));
             }
         }
@@ -253,25 +289,65 @@ public class StudioManagementService : IStudioManagementService
     {
         await using var conn = new SqlConnection(GetConnectionString());
         await conn.OpenAsync(cancellationToken);
+        await EnsureServicesRateTypeSchemaAsync(conn, cancellationToken);
+        await EnsureServicesRateTypeSchemaAsync(conn, cancellationToken);
 
-        await using var cmd = new SqlCommand("dbo.sp_GetServiceDetailWithImage", conn)
+        try
         {
-            CommandType = CommandType.StoredProcedure
-        };
-        cmd.Parameters.AddWithValue("@ServicesID", serviceId.Trim());
+            await using var cmd = new SqlCommand("dbo.sp_GetServiceDetailWithImage", conn)
+            {
+                CommandType = CommandType.StoredProcedure
+            };
+            cmd.Parameters.AddWithValue("@ServicesID", serviceId.Trim());
 
-        await using var reader = await cmd.ExecuteReaderAsync(cancellationToken);
-        if (await reader.ReadAsync(cancellationToken))
+            await using var reader = await cmd.ExecuteReaderAsync(cancellationToken);
+            if (await reader.ReadAsync(cancellationToken))
+            {
+                var id = reader.GetString(0);
+                var name = reader.GetString(1);
+                var desc = reader.IsDBNull(2) ? string.Empty : reader.GetString(2);
+                var price = reader.IsDBNull(3) ? 0m : reader.GetDecimal(3);
+                byte[]? imageBytes = reader.IsDBNull(4) ? null : (byte[])reader[4];
+                var mime = reader.IsDBNull(5) ? "image/jpeg" : reader.GetString(5);
+                var hasImage = !reader.IsDBNull(6) && reader.GetBoolean(6);
+                var rateType = reader.FieldCount > 7 && !reader.IsDBNull(7) ? reader.GetString(7) : "per hour";
+
+                return new ServiceDetailDto(id, name, desc, price, imageBytes, mime, hasImage, rateType);
+            }
+        }
+        catch (SqlException)
         {
-            var id = reader.GetString(0);
-            var name = reader.GetString(1);
-            var desc = reader.IsDBNull(2) ? string.Empty : reader.GetString(2);
-            var price = reader.IsDBNull(3) ? 0m : reader.GetDecimal(3);
-            byte[]? imageBytes = reader.IsDBNull(4) ? null : (byte[])reader[4];
-            var mime = reader.IsDBNull(5) ? "image/jpeg" : reader.GetString(5);
-            var hasImage = !reader.IsDBNull(6) && reader.GetBoolean(6);
+            var hasRateType = false;
+            try
+            {
+                await using var chkCmd = new SqlCommand("SELECT COL_LENGTH(N'dbo.Services', N'RateType');", conn);
+                var chkVal = await chkCmd.ExecuteScalarAsync(cancellationToken);
+                hasRateType = chkVal != null && chkVal != DBNull.Value;
+            }
+            catch { }
 
-            return new ServiceDetailDto(id, name, desc, price, imageBytes, mime, hasImage);
+            var rateTypeCol = hasRateType ? "ISNULL(RateType, 'per hour')" : "'per hour'";
+            var fallbackSql = $@"
+                SELECT ServicesID, ServiceName, ServicesDescription, ServicePrice, ServiceImage, ServiceImageMimeType,
+                       CAST(CASE WHEN ServiceImage IS NOT NULL THEN 1 ELSE 0 END AS bit),
+                       {rateTypeCol}
+                FROM dbo.Services WHERE ServicesID = @ServicesID;";
+            await using var fbCmd = new SqlCommand(fallbackSql, conn);
+            fbCmd.Parameters.AddWithValue("@ServicesID", serviceId.Trim());
+            await using var reader = await fbCmd.ExecuteReaderAsync(cancellationToken);
+            if (await reader.ReadAsync(cancellationToken))
+            {
+                var id = reader.GetString(0);
+                var name = reader.GetString(1);
+                var desc = reader.IsDBNull(2) ? string.Empty : reader.GetString(2);
+                var price = reader.IsDBNull(3) ? 0m : reader.GetDecimal(3);
+                byte[]? imageBytes = reader.IsDBNull(4) ? null : (byte[])reader[4];
+                var mime = reader.IsDBNull(5) ? "image/jpeg" : reader.GetString(5);
+                var hasImage = !reader.IsDBNull(6) && reader.GetBoolean(6);
+                var rateType = reader.FieldCount > 7 && !reader.IsDBNull(7) ? reader.GetString(7) : "per hour";
+
+                return new ServiceDetailDto(id, name, desc, price, imageBytes, mime, hasImage, rateType);
+            }
         }
 
         return null;
@@ -281,6 +357,7 @@ public class StudioManagementService : IStudioManagementService
     {
         await using var conn = new SqlConnection(GetConnectionString());
         await conn.OpenAsync(cancellationToken);
+        await EnsureServicesRateTypeSchemaAsync(conn, cancellationToken);
 
         await using var cmd = new SqlCommand("dbo.sp_UpdateServiceImage", conn)
         {
@@ -301,6 +378,7 @@ public class StudioManagementService : IStudioManagementService
     {
         await using var conn = new SqlConnection(GetConnectionString());
         await conn.OpenAsync(cancellationToken);
+        await EnsureServicesRateTypeSchemaAsync(conn, cancellationToken);
 
         var list = new List<ServiceSummaryDto>();
         await using var cmd = new SqlCommand("dbo.sp_GetAdditionalServicesSummary", conn)
@@ -352,6 +430,7 @@ public class StudioManagementService : IStudioManagementService
     {
         await using var conn = new SqlConnection(GetConnectionString());
         await conn.OpenAsync(cancellationToken);
+        await EnsureServicesRateTypeSchemaAsync(conn, cancellationToken);
 
         await using var cmd = new SqlCommand("dbo.sp_GetAdditionalServiceDetailWithImage", conn)
         {
@@ -386,6 +465,7 @@ public class StudioManagementService : IStudioManagementService
     {
         await using var conn = new SqlConnection(GetConnectionString());
         await conn.OpenAsync(cancellationToken);
+        await EnsureServicesRateTypeSchemaAsync(conn, cancellationToken);
 
         await using var cmd = new SqlCommand("dbo.sp_UpdateAdditionalServiceImage", conn)
         {
@@ -406,6 +486,7 @@ public class StudioManagementService : IStudioManagementService
     {
         await using var conn = new SqlConnection(GetConnectionString());
         await conn.OpenAsync(cancellationToken);
+        await EnsureServicesRateTypeSchemaAsync(conn, cancellationToken);
 
         var list = new List<ServiceSummaryDto>();
         await using var cmd = new SqlCommand("dbo.sp_GetComboPackagesSummary", conn)
@@ -459,6 +540,7 @@ public class StudioManagementService : IStudioManagementService
     {
         await using var conn = new SqlConnection(GetConnectionString());
         await conn.OpenAsync(cancellationToken);
+        await EnsureServicesRateTypeSchemaAsync(conn, cancellationToken);
 
         await using var cmd = new SqlCommand("dbo.sp_GetComboPackageDetailWithImage", conn)
         {
@@ -493,6 +575,7 @@ public class StudioManagementService : IStudioManagementService
     {
         await using var conn = new SqlConnection(GetConnectionString());
         await conn.OpenAsync(cancellationToken);
+        await EnsureServicesRateTypeSchemaAsync(conn, cancellationToken);
 
         await using var cmd = new SqlCommand("dbo.sp_UpdateComboPackageImage", conn)
         {
@@ -513,6 +596,7 @@ public class StudioManagementService : IStudioManagementService
     {
         await using var conn = new SqlConnection(GetConnectionString());
         await conn.OpenAsync(cancellationToken);
+        await EnsureServicesRateTypeSchemaAsync(conn, cancellationToken);
 
         var list = new List<HistoryLogDto>();
         await using var cmd = new SqlCommand("dbo.sp_GetHistoryLogs", conn)
@@ -580,6 +664,7 @@ public class StudioManagementService : IStudioManagementService
     {
         await using var conn = new SqlConnection(GetConnectionString());
         await conn.OpenAsync(cancellationToken);
+        await EnsureServicesRateTypeSchemaAsync(conn, cancellationToken);
 
         try
         {
@@ -620,6 +705,7 @@ public class StudioManagementService : IStudioManagementService
     {
         await using var conn = new SqlConnection(GetConnectionString());
         await conn.OpenAsync(cancellationToken);
+        await EnsureServicesRateTypeSchemaAsync(conn, cancellationToken);
 
         try
         {
@@ -660,6 +746,7 @@ public class StudioManagementService : IStudioManagementService
     {
         await using var conn = new SqlConnection(GetConnectionString());
         await conn.OpenAsync(cancellationToken);
+        await EnsureServicesRateTypeSchemaAsync(conn, cancellationToken);
 
         var list = new List<CategoryDto>();
         try
@@ -780,6 +867,7 @@ public class StudioManagementService : IStudioManagementService
 
         await using var conn = new SqlConnection(GetConnectionString());
         await conn.OpenAsync(cancellationToken);
+        await EnsureServicesRateTypeSchemaAsync(conn, cancellationToken);
 
         try
         {
@@ -794,6 +882,7 @@ public class StudioManagementService : IStudioManagementService
             cmd.Parameters.AddWithValue("@ServiceImage", (object?)dto.ImageBytes ?? DBNull.Value);
             cmd.Parameters.AddWithValue("@ServiceImageMimeType", (object?)dto.ImageMimeType ?? "image/jpeg");
             cmd.Parameters.AddWithValue("@CreatedByAdminID", (object?)requestingAdminId ?? DBNull.Value);
+            cmd.Parameters.AddWithValue("@RateType", (object?)dto.RateType ?? "per hour");
 
             var outId = new SqlParameter("@CreatedServiceID", SqlDbType.NVarChar, 30)
             {
@@ -835,10 +924,10 @@ public class StudioManagementService : IStudioManagementService
 
             const string insertSql = @"
                 INSERT INTO dbo.Services (
-                    ServicesID, ServiceName, ServicesDescription, ServicePrice, ServiceImage, ServiceImageMimeType
+                    ServicesID, ServiceName, ServicesDescription, ServicePrice, ServiceImage, ServiceImageMimeType, RateType
                 )
                 VALUES (
-                    @Id, @Name, @Desc, @Price, @Img, @Mime
+                    @Id, @Name, @Desc, @Price, @Img, @Mime, @RateType
                 );";
 
             await using var insertCmd = new SqlCommand(insertSql, conn, trans);
@@ -848,6 +937,7 @@ public class StudioManagementService : IStudioManagementService
             insertCmd.Parameters.AddWithValue("@Price", dto.Price);
             insertCmd.Parameters.AddWithValue("@Img", (object?)dto.ImageBytes ?? DBNull.Value);
             insertCmd.Parameters.AddWithValue("@Mime", (object?)dto.ImageMimeType ?? "image/jpeg");
+            insertCmd.Parameters.AddWithValue("@RateType", (object?)dto.RateType ?? "per hour");
             await insertCmd.ExecuteNonQueryAsync(cancellationToken);
 
             string? resolvedCategoryName = null;
@@ -1375,6 +1465,7 @@ public class StudioManagementService : IStudioManagementService
     {
         await using var conn = new SqlConnection(GetConnectionString());
         await conn.OpenAsync(cancellationToken);
+        await EnsureServicesRateTypeSchemaAsync(conn, cancellationToken);
 
         try
         {
@@ -1422,6 +1513,7 @@ public class StudioManagementService : IStudioManagementService
 
         await using var conn = new SqlConnection(GetConnectionString());
         await conn.OpenAsync(cancellationToken);
+        await EnsureServicesRateTypeSchemaAsync(conn, cancellationToken);
 
         try
         {
@@ -1526,6 +1618,7 @@ public class StudioManagementService : IStudioManagementService
     {
         await using var conn = new SqlConnection(GetConnectionString());
         await conn.OpenAsync(cancellationToken);
+        await EnsureServicesRateTypeSchemaAsync(conn, cancellationToken);
 
         try
         {
@@ -1585,6 +1678,7 @@ public class StudioManagementService : IStudioManagementService
     {
         await using var conn = new SqlConnection(GetConnectionString());
         await conn.OpenAsync(cancellationToken);
+        await EnsureServicesRateTypeSchemaAsync(conn, cancellationToken);
 
         var list = new List<BundledServiceSelectionItem>();
 
@@ -1662,6 +1756,7 @@ public class StudioManagementService : IStudioManagementService
     {
         await using var conn = new SqlConnection(GetConnectionString());
         await conn.OpenAsync(cancellationToken);
+        await EnsureServicesRateTypeSchemaAsync(conn, cancellationToken);
 
         string? generatedId = null;
         var selectedIdsJson = System.Text.Json.JsonSerializer.Serialize(model.SelectedServiceIds ?? Array.Empty<string>());
@@ -1851,5 +1946,171 @@ public class StudioManagementService : IStudioManagementService
             HasImage: imageBytes != null && imageBytes.Length > 0,
             CreatedAt: DateTime.UtcNow
         );
+    }
+
+    // ── Rate Types & Multi-Rate Pricing ──────────────────────────────────────
+
+    public async Task<IReadOnlyList<RateTypeDto>> GetRateTypesAsync(CancellationToken cancellationToken = default)
+    {
+        await using var conn = new SqlConnection(GetConnectionString());
+        await conn.OpenAsync(cancellationToken);
+        await EnsureServicesRateTypeSchemaAsync(conn, cancellationToken);
+
+        var list = new List<RateTypeDto>();
+        try
+        {
+            await using var cmd = new SqlCommand("dbo.sp_GetRateTypes", conn)
+            {
+                CommandType = CommandType.StoredProcedure
+            };
+            await using var reader = await cmd.ExecuteReaderAsync(cancellationToken);
+            while (await reader.ReadAsync(cancellationToken))
+            {
+                list.Add(new RateTypeDto(
+                    RateTypeId: reader.GetString(0),
+                    RateTypeName: reader.GetString(1),
+                    Description: reader.IsDBNull(2) ? null : reader.GetString(2),
+                    UnitLabel: reader.IsDBNull(3) ? null : reader.GetString(3)
+                ));
+            }
+        }
+        catch
+        {
+            const string fallbackSql = "SELECT RateTypeID, RateTypeName, Description, UnitLabel FROM dbo.RateType WHERE IsActive = 1 ORDER BY RateTypeID;";
+            try
+            {
+                await using var fbCmd = new SqlCommand(fallbackSql, conn);
+                await using var reader = await fbCmd.ExecuteReaderAsync(cancellationToken);
+                while (await reader.ReadAsync(cancellationToken))
+                {
+                    list.Add(new RateTypeDto(
+                        RateTypeId: reader.GetString(0),
+                        RateTypeName: reader.GetString(1),
+                        Description: reader.IsDBNull(2) ? null : reader.GetString(2),
+                        UnitLabel: reader.IsDBNull(3) ? null : reader.GetString(3)
+                    ));
+                }
+            }
+            catch
+            {
+                list.AddRange(new[]
+                {
+                    new RateTypeDto("RT-001", "per hour", "Billed on an hourly rate", "hr"),
+                    new RateTypeDto("RT-002", "per picture", "Billed per edited picture delivered", "picture"),
+                    new RateTypeDto("RT-003", "per single shot", "Billed for an individual studio shot", "shot"),
+                    new RateTypeDto("RT-004", "multi-shot", "Billed for a multi-shot sequence or burst bundle", "session")
+                });
+            }
+        }
+        return list;
+    }
+
+    public async Task<IReadOnlyList<ServiceRateDto>> GetServiceRatesAsync(string serviceId, CancellationToken cancellationToken = default)
+    {
+        await using var conn = new SqlConnection(GetConnectionString());
+        await conn.OpenAsync(cancellationToken);
+        await EnsureServicesRateTypeSchemaAsync(conn, cancellationToken);
+
+        var list = new List<ServiceRateDto>();
+        try
+        {
+            await using var cmd = new SqlCommand("dbo.sp_GetServiceRates", conn)
+            {
+                CommandType = CommandType.StoredProcedure
+            };
+            cmd.Parameters.AddWithValue("@ServicesID", serviceId.Trim());
+
+            await using var reader = await cmd.ExecuteReaderAsync(cancellationToken);
+            while (await reader.ReadAsync(cancellationToken))
+            {
+                list.Add(new ServiceRateDto(
+                    ServiceRateId: reader.GetString(0),
+                    ServiceId: reader.GetString(1),
+                    RateTypeId: reader.GetString(2),
+                    RateTypeName: reader.GetString(3),
+                    RateAmount: reader.GetDecimal(4),
+                    UnitLabel: reader.IsDBNull(5) ? null : reader.GetString(5),
+                    IsActive: !reader.IsDBNull(6) && reader.GetBoolean(6)
+                ));
+            }
+        }
+        catch
+        {
+            const string fallbackSql = @"
+                SELECT sr.ServiceRateID, sr.ServicesID, sr.RateTypeID, rt.RateTypeName, sr.RateAmount, rt.UnitLabel, sr.IsActive
+                FROM dbo.ServiceRate sr
+                INNER JOIN dbo.RateType rt ON rt.RateTypeID = sr.RateTypeID
+                WHERE sr.ServicesID = @ServicesID AND sr.IsActive = 1
+                ORDER BY rt.RateTypeName;";
+            try
+            {
+                await using var fbCmd = new SqlCommand(fallbackSql, conn);
+                fbCmd.Parameters.AddWithValue("@ServicesID", serviceId.Trim());
+                await using var reader = await fbCmd.ExecuteReaderAsync(cancellationToken);
+                while (await reader.ReadAsync(cancellationToken))
+                {
+                    list.Add(new ServiceRateDto(
+                        ServiceRateId: reader.GetString(0),
+                        ServiceId: reader.GetString(1),
+                        RateTypeId: reader.GetString(2),
+                        RateTypeName: reader.GetString(3),
+                        RateAmount: reader.GetDecimal(4),
+                        UnitLabel: reader.IsDBNull(5) ? null : reader.GetString(5),
+                        IsActive: !reader.IsDBNull(6) && reader.GetBoolean(6)
+                    ));
+                }
+            }
+            catch { }
+        }
+        return list;
+    }
+
+    public async Task<bool> AddOrUpdateServiceRateAsync(string serviceId, string rateTypeId, decimal rateAmount, CancellationToken cancellationToken = default)
+    {
+        await using var conn = new SqlConnection(GetConnectionString());
+        await conn.OpenAsync(cancellationToken);
+        await EnsureServicesRateTypeSchemaAsync(conn, cancellationToken);
+
+        try
+        {
+            await using var cmd = new SqlCommand("dbo.sp_AddServiceRate", conn)
+            {
+                CommandType = CommandType.StoredProcedure
+            };
+            cmd.Parameters.AddWithValue("@ServicesID", serviceId.Trim());
+            cmd.Parameters.AddWithValue("@RateTypeID", rateTypeId.Trim());
+            cmd.Parameters.AddWithValue("@RateAmount", rateAmount);
+
+            await cmd.ExecuteNonQueryAsync(cancellationToken);
+            return true;
+        }
+        catch
+        {
+            const string sql = @"
+                IF EXISTS (SELECT 1 FROM dbo.ServiceRate WHERE ServicesID = @SrvId AND RateTypeID = @RtId)
+                BEGIN
+                    UPDATE dbo.ServiceRate
+                    SET RateAmount = @Amount, IsActive = 1
+                    WHERE ServicesID = @SrvId AND RateTypeID = @RtId;
+                END
+                ELSE
+                BEGIN
+                    INSERT INTO dbo.ServiceRate (ServiceRateID, ServicesID, RateTypeID, RateAmount, EffectiveDate, IsActive, CreatedAt)
+                    VALUES (CONCAT('SRATE-', LEFT(REPLACE(CONVERT(NVARCHAR(36), NEWID()), '-', ''), 12)), @SrvId, @RtId, @Amount, CAST(GETDATE() AS DATE), 1, SYSUTCDATETIME());
+                END";
+            try
+            {
+                await using var cmd = new SqlCommand(sql, conn);
+                cmd.Parameters.AddWithValue("@SrvId", serviceId.Trim());
+                cmd.Parameters.AddWithValue("@RtId", rateTypeId.Trim());
+                cmd.Parameters.AddWithValue("@Amount", rateAmount);
+                await cmd.ExecuteNonQueryAsync(cancellationToken);
+                return true;
+            }
+            catch
+            {
+                return false;
+            }
+        }
     }
 }

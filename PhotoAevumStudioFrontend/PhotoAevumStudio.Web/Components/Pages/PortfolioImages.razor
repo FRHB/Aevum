@@ -86,10 +86,10 @@
             </button>
             @foreach (var cat in _categories)
             {
-                var count = _portfolios.Count(p => p.CategoryCode.Equals(cat.CategoryCode, StringComparison.OrdinalIgnoreCase));
+                var count = _portfolios.Count(p => p.CategoryID.Equals(cat.CategoryID, StringComparison.OrdinalIgnoreCase));
                 <button type="button"
-                        @onclick="() => _selectedCategory = cat.CategoryCode"
-                        class="px-3 py-1.5 text-xs font-semibold rounded-lg transition-colors @(_selectedCategory == cat.CategoryCode ? "bg-slate-900 text-white" : "bg-slate-100 text-slate-700 hover:bg-slate-200")">
+                        @onclick="() => _selectedCategory = cat.CategoryID"
+                        class="px-3 py-1.5 text-xs font-semibold rounded-lg transition-colors @(_selectedCategory == cat.CategoryID ? "bg-slate-900 text-white" : "bg-slate-100 text-slate-700 hover:bg-slate-200")">
                     @cat.CategoryName (@count)
                 </button>
             }
@@ -130,7 +130,7 @@
             {
                 <div class="bg-white rounded-2xl border border-slate-200 shadow-sm hover:shadow-md transition-all overflow-hidden flex flex-col group">
                     <!-- Top Highlight Image Container -->
-                    <div class="relative h-56 bg-slate-900 overflow-hidden cursor-pointer" @onclick="() => OpenPreview(port)">
+                    <div class="relative h-56 bg-slate-900 overflow-hidden cursor-pointer" @onclick="() => OpenDetailsPanel(port)">
                         <img src="@port.HighlightImageUrl"
                              alt="@port.PortfolioName"
                              class="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
@@ -161,7 +161,7 @@
                         <!-- Bottom Title Overlay -->
                         <div class="absolute bottom-3 left-3 right-3 text-white">
                             <h3 class="font-bold text-base tracking-tight leading-tight drop-shadow-sm">@port.PortfolioName</h3>
-                            <p class="text-[11px] text-slate-300 line-clamp-1 mt-0.5">@port.PortfolioId</p>
+                            <p class="text-[11px] text-amber-300 font-mono font-bold mt-0.5">@port.PortfolioId</p>
                         </div>
                     </div>
 
@@ -181,7 +181,7 @@
                                            class="sr-only peer"
                                            disabled="@_isReadOnly" />
                                     <div class="w-9 h-5 bg-slate-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-amber-500"></div>
-                                    <span class="ml-2 text-xs font-semibold @(port.IsFeatured ? "text-amber-700" : "text-slate-500")">
+                                    <span class="ml-2 text-xs font-semibold @(port.IsFeatured ? "text-amber-700 font-bold" : "text-slate-500")">
                                         @(port.IsFeatured ? "Featured" : "Regular")
                                     </span>
                                 </label>
@@ -189,9 +189,9 @@
 
                             <div class="flex items-center gap-2">
                                 <button type="button"
-                                        @onclick="() => OpenPreview(port)"
+                                        @onclick="() => OpenDetailsPanel(port)"
                                         class="p-1.5 rounded-lg text-slate-500 hover:text-slate-900 hover:bg-slate-100 transition-colors"
-                                        title="View gallery images">
+                                        title="View portfolio details">
                                     👁️
                                 </button>
                                 @if (!_isReadOnly)
@@ -211,6 +211,190 @@
         </div>
     }
 </div>
+
+<!-- ════════════════════════════════════════════════════════════════════════ -->
+<!-- FLOATING PANEL / DETAILS & EDIT DRAWER MODAL                            -->
+<!-- ════════════════════════════════════════════════════════════════════════ -->
+@if (_activeDetailPortfolio != null)
+{
+    <div class="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-md flex items-center justify-center p-4">
+        <div class="bg-white rounded-2xl shadow-2xl border border-slate-200 w-full max-w-4xl overflow-hidden flex flex-col max-h-[92vh]">
+            <!-- Drawer Header -->
+            <div class="px-6 py-4 border-b border-slate-100 flex items-center justify-between bg-slate-50/75">
+                <div class="flex items-center gap-3">
+                    <span class="px-2.5 py-1 rounded-md text-xs font-mono font-bold bg-slate-900 text-white">
+                        @_activeDetailPortfolio.PortfolioId
+                    </span>
+                    <div>
+                        <h3 class="font-bold text-base text-slate-900 leading-tight">
+                            @(_isEditing ? "Edit Portfolio Details" : _activeDetailPortfolio.PortfolioName)
+                        </h3>
+                        <p class="text-xs text-slate-500">
+                            @_activeDetailPortfolio.CategoryName &bull; @_activeDetailPortfolio.Images.Count photo(s) &bull; Added @_activeDetailPortfolio.CreatedAt.ToString("MMM d, yyyy")
+                        </p>
+                    </div>
+                </div>
+                <div class="flex items-center gap-2">
+                    @if (!_isReadOnly && !_isEditing)
+                    {
+                        <button type="button"
+                                @onclick="StartEditing"
+                                class="px-3.5 py-1.5 text-xs font-semibold bg-slate-900 hover:bg-black text-white rounded-lg shadow-sm transition-all flex items-center gap-1.5">
+                            <span>✏️ Edit Album</span>
+                        </button>
+                    }
+                    <button type="button" @onclick="CloseDetailsPanel" class="text-slate-400 hover:text-slate-700 text-xl font-bold ml-2">✕</button>
+                </div>
+            </div>
+
+            <!-- Drawer Body -->
+            <div class="p-6 overflow-y-auto flex-1 space-y-6">
+                @if (!string.IsNullOrEmpty(_editError))
+                {
+                    <div class="p-3 bg-rose-50 border border-rose-200 text-rose-700 rounded-lg text-xs font-medium">@_editError</div>
+                }
+
+                @if (_isEditing)
+                {
+                    <!-- EDIT FORM -->
+                    <div class="space-y-4 text-xs bg-slate-50/60 p-4 rounded-xl border border-slate-200">
+                        <div>
+                            <label class="block font-semibold uppercase tracking-wider text-slate-700 mb-1">Portfolio Title <span class="text-rose-500">*</span></label>
+                            <input type="text" @bind="_editName" class="w-full px-3 py-2 border border-slate-300 rounded-lg text-xs focus:ring-1 focus:ring-slate-900 focus:outline-none" />
+                        </div>
+
+                        <div>
+                            <label class="block font-semibold uppercase tracking-wider text-slate-700 mb-1">Category <span class="text-rose-500">*</span></label>
+                            <select @bind="_editCategoryId" class="w-full px-3 py-2 border border-slate-300 rounded-lg text-xs bg-white focus:ring-1 focus:ring-slate-900 focus:outline-none">
+                                @foreach (var c in _categories)
+                                {
+                                    <option value="@c.CategoryID">@c.CategoryName (@c.CategoryID)</option>
+                                }
+                            </select>
+                        </div>
+
+                        <div>
+                            <label class="block font-semibold uppercase tracking-wider text-slate-700 mb-1">Description</label>
+                            <textarea @bind="_editDesc" rows="3" class="w-full px-3 py-2 border border-slate-300 rounded-lg text-xs focus:ring-1 focus:ring-slate-900 focus:outline-none resize-none"></textarea>
+                        </div>
+
+                        <!-- Add More Pictures Section -->
+                        <div class="pt-2">
+                            <label class="block font-semibold uppercase tracking-wider text-slate-700 mb-1.5">Add More Photos to this Album</label>
+                            <div class="border-2 border-dashed border-slate-300 rounded-xl p-4 text-center hover:border-slate-500 transition-colors bg-white">
+                                <InputFile OnChange="HandleAppendFileSelection" multiple accept="image/*" class="hidden" id="append-file-input" />
+                                <label for="append-file-input" class="cursor-pointer block">
+                                    <span class="text-xs font-bold text-slate-900 hover:underline">Click to browse more photos</span>
+                                    <p class="text-[11px] text-slate-500 mt-0.5">Select additional image files to append</p>
+                                </label>
+                            </div>
+
+                            @if (_appendImages.Count > 0)
+                            {
+                                <div class="mt-3">
+                                    <p class="font-bold text-slate-800 mb-2">New Photos Queued (@_appendImages.Count):</p>
+                                    <div class="grid grid-cols-4 sm:grid-cols-6 gap-2">
+                                        @for (int i = 0; i < _appendImages.Count; i++)
+                                        {
+                                            var idx = i;
+                                            var item = _appendImages[i];
+                                            <div class="relative rounded-lg overflow-hidden border border-slate-200 aspect-square bg-slate-100">
+                                                <img src="@item.PreviewUrl" alt="New upload" class="w-full h-full object-cover" />
+                                                <button type="button"
+                                                        @onclick="() => _appendImages.RemoveAt(idx)"
+                                                        class="absolute top-1 right-1 w-4 h-4 rounded-full bg-black/75 text-white flex items-center justify-center text-[10px]">
+                                                    ✕
+                                                </button>
+                                            </div>
+                                        }
+                                    </div>
+                                </div>
+                            }
+                        </div>
+
+                        <!-- Edit Action Buttons -->
+                        <div class="pt-3 border-t border-slate-200 flex items-center justify-end gap-2">
+                            <button type="button" @onclick="() => _isEditing = false" class="px-4 py-2 border border-slate-300 rounded-lg text-xs font-semibold text-slate-700 hover:bg-slate-100">
+                                Cancel
+                            </button>
+                            <button type="button" @onclick="HandleSaveEdit" disabled="@_isSaving" class="px-5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-semibold uppercase tracking-wider shadow-sm flex items-center gap-1.5 disabled:opacity-50">
+                                @if (_isSaving)
+                                {
+                                    <span class="w-3 h-3 border-2 border-white/30 border-t-white rounded-full animate-spin"></span>
+                                    <span>Saving...</span>
+                                }
+                                else
+                                {
+                                    <span>Save Changes</span>
+                                }
+                            </button>
+                        </div>
+                    </div>
+                }
+                else
+                {
+                    <!-- METADATA OVERVIEW -->
+                    <div class="bg-slate-50 p-4 rounded-xl border border-slate-200 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 text-xs">
+                        <div class="space-y-1">
+                            <span class="font-bold text-slate-900 block text-sm">@_activeDetailPortfolio.PortfolioName</span>
+                            <p class="text-slate-600">
+                                @(string.IsNullOrWhiteSpace(_activeDetailPortfolio.PortfolioDescription) ? "No description provided." : _activeDetailPortfolio.PortfolioDescription)
+                            </p>
+                        </div>
+                        <div class="flex items-center gap-3 shrink-0">
+                            <label class="relative inline-flex items-center cursor-pointer select-none">
+                                <input type="checkbox"
+                                       checked="@_activeDetailPortfolio.IsFeatured"
+                                       @onchange="() => HandleToggleFeature(_activeDetailPortfolio)"
+                                       class="sr-only peer"
+                                       disabled="@_isReadOnly" />
+                                <div class="w-9 h-5 bg-slate-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-amber-500"></div>
+                                <span class="ml-2 text-xs font-semibold @(_activeDetailPortfolio.IsFeatured ? "text-amber-700 font-bold" : "text-slate-500")">
+                                    @(_activeDetailPortfolio.IsFeatured ? "Featured" : "Regular")
+                                </span>
+                            </label>
+                        </div>
+                    </div>
+                }
+
+                <!-- PHOTO GALLERY GRID -->
+                <div>
+                    <h4 class="font-bold text-xs uppercase tracking-wider text-slate-500 mb-3">Album Photographs (@_activeDetailPortfolio.Images.Count)</h4>
+                    @if (_activeDetailPortfolio.Images.Count == 0)
+                    {
+                        <p class="text-slate-400 text-xs py-6 text-center">No images currently uploaded for this portfolio.</p>
+                    }
+                    else
+                    {
+                        <div class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-4">
+                            @foreach (var img in _activeDetailPortfolio.Images)
+                            {
+                                <div class="group relative rounded-xl overflow-hidden border border-slate-200 aspect-square bg-slate-100 shadow-sm cursor-pointer"
+                                     @onclick="() => _lightboxImageUrl = img.Url">
+                                    <img src="@img.Url" alt="Photo" class="w-full h-full object-cover group-hover:scale-105 transition-transform duration-200" />
+                                    <div class="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center text-white text-xs font-bold">
+                                        View Full
+                                    </div>
+                                </div>
+                            }
+                        </div>
+                    }
+                </div>
+            </div>
+        </div>
+    </div>
+}
+
+<!-- Lightbox Popup -->
+@if (!string.IsNullOrEmpty(_lightboxImageUrl))
+{
+    <div class="fixed inset-0 z-60 bg-black/90 backdrop-blur-md flex items-center justify-center p-4" @onclick="() => _lightboxImageUrl = null">
+        <div class="relative max-w-5xl max-h-[90vh]">
+            <img src="@_lightboxImageUrl" alt="Full photo" class="max-w-full max-h-[85vh] rounded-xl object-contain shadow-2xl" />
+            <button type="button" @onclick="() => _lightboxImageUrl = null" class="absolute -top-10 right-0 text-white font-bold text-xl hover:text-slate-300">✕ Close</button>
+        </div>
+    </div>
+}
 
 <!-- ════════════════════════════════════════════════════════════════════════ -->
 <!-- MODAL: 3-STEP ADD NEW PORTFOLIO WIZARD                                 -->
@@ -270,7 +454,7 @@
                                 <option value="">-- Select a Category --</option>
                                 @foreach (var c in _categories)
                                 {
-                                    <option value="@c.CategoryCode">@c.CategoryName (@c.ParentSection)</option>
+                                    <option value="@c.CategoryID">@c.CategoryName (@c.CategoryID)</option>
                                 }
                             </select>
                         </div>
@@ -354,34 +538,25 @@
                                 <span class="font-bold text-slate-800">@GetCategoryName(_newPortfolioCategory)</span>
                             </div>
                             <div class="flex justify-between items-center py-2.5">
-                                <span class="font-semibold text-slate-500 uppercase tracking-wider text-[11px]">Feature Status</span>
-                                <span class="font-bold @(_newPortfolioIsFeatured ? "text-amber-600" : "text-slate-700")">
-                                    @(_newPortfolioIsFeatured ? "★ Featured on Showcase" : "Standard Archive")
+                                <span class="font-semibold text-slate-500 uppercase tracking-wider text-[11px]">Featured Status</span>
+                                <span class="font-bold @(_newPortfolioIsFeatured ? "text-amber-600" : "text-slate-600")">
+                                    @(_newPortfolioIsFeatured ? "★ Featured" : "Regular Album")
                                 </span>
                             </div>
-                            <div class="py-2.5">
-                                <span class="font-semibold text-slate-500 uppercase tracking-wider text-[11px] block mb-1">Description</span>
-                                <p class="text-slate-700 italic leading-relaxed">
-                                    @(string.IsNullOrWhiteSpace(_newPortfolioDesc) ? "No description provided." : _newPortfolioDesc)
-                                </p>
+                            <div class="flex justify-between items-center pt-2.5">
+                                <span class="font-semibold text-slate-500 uppercase tracking-wider text-[11px]">Total Photos Selected</span>
+                                <span class="font-bold text-slate-900">@_selectedImages.Count file(s)</span>
                             </div>
-                            <div class="pt-2.5">
-                                <span class="font-semibold text-slate-500 uppercase tracking-wider text-[11px] block mb-2">Total Photos Selected (@_selectedImages.Count)</span>
-                                <div class="grid grid-cols-4 gap-2">
-                                    @foreach (var img in _selectedImages.Take(4))
-                                    {
-                                        <div class="rounded-lg overflow-hidden border border-slate-200 aspect-square">
-                                            <img src="@img.PreviewUrl" alt="Thumb" class="w-full h-full object-cover" />
-                                        </div>
-                                    }
-                                    @if (_selectedImages.Count > 4)
-                                    {
-                                        <div class="rounded-lg border border-slate-200 bg-slate-100 flex items-center justify-center font-bold text-slate-500 aspect-square">
-                                            +@(_selectedImages.Count - 4) more
-                                        </div>
-                                    }
+                        </div>
+
+                        <div>
+                            <span class="font-bold text-slate-900 block mb-2">Highlight Cover Photo Preview:</span>
+                            @if (_selectedImages.Count > 0)
+                            {
+                                <div class="rounded-xl overflow-hidden border border-slate-200 h-44 bg-slate-100">
+                                    <img src="@_selectedImages[0].PreviewUrl" alt="Cover preview" class="w-full h-full object-cover" />
                                 </div>
-                            </div>
+                            }
                         </div>
                     </div>
                 }
@@ -431,42 +606,6 @@
     </div>
 }
 
-<!-- ════════════════════════════════════════════════════════════════════════ -->
-<!-- MODAL: ALBUM IMAGE GALLERY PREVIEW                                     -->
-<!-- ════════════════════════════════════════════════════════════════════════ -->
-@if (_previewPortfolio != null)
-{
-    <div class="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-md flex items-center justify-center p-4">
-        <div class="bg-white rounded-2xl shadow-2xl border border-slate-200 w-full max-w-4xl overflow-hidden flex flex-col max-h-[90vh]">
-            <div class="px-6 py-4 border-b border-slate-100 flex items-center justify-between bg-white">
-                <div>
-                    <h3 class="font-bold text-base text-slate-900">@_previewPortfolio.PortfolioName</h3>
-                    <p class="text-xs text-slate-500">@_previewPortfolio.CategoryName &bull; @_previewPortfolio.Images.Count photo(s)</p>
-                </div>
-                <button type="button" @onclick="() => _previewPortfolio = null" class="text-slate-400 hover:text-slate-700 text-lg">✕</button>
-            </div>
-
-            <div class="p-6 overflow-y-auto flex-1">
-                @if (_previewPortfolio.Images.Count == 0)
-                {
-                    <p class="text-center text-slate-400 text-xs py-8">No photos in this album.</p>
-                }
-                else
-                {
-                    <div class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-4">
-                        @foreach (var img in _previewPortfolio.Images)
-                        {
-                            <div class="group relative rounded-xl overflow-hidden border border-slate-200 aspect-square bg-slate-100 shadow-sm">
-                                <img src="@img.Url" alt="Album photo" class="w-full h-full object-cover group-hover:scale-105 transition-transform duration-200" />
-                            </div>
-                        }
-                    </div>
-                }
-            </div>
-        </div>
-    </div>
-}
-
 @code {
     [CascadingParameter] Task<AuthenticationState>? AuthState { get; set; }
     private ClaimsPrincipal? _currentUser;
@@ -479,7 +618,16 @@
     private string _searchQuery = string.Empty;
     private string? _notification;
 
-    private PortfolioFolderModel? _previewPortfolio;
+    // Floating details / edit drawer
+    private PortfolioFolderModel? _activeDetailPortfolio;
+    private bool _isEditing;
+    private string _editName = string.Empty;
+    private string _editCategoryId = string.Empty;
+    private string _editDesc = string.Empty;
+    private string? _editError;
+    private record AppendItem(string FileName, string ContentType, byte[] Data, string PreviewUrl);
+    private List<AppendItem> _appendImages = new();
+    private string? _lightboxImageUrl;
 
     // Wizard state
     private bool _isWizardOpen;
@@ -497,7 +645,7 @@
     private List<UploadItem> _selectedImages = new();
 
     private List<PortfolioFolderModel> FilteredPortfolios => _portfolios
-        .Where(p => (_selectedCategory == "All" || p.CategoryCode.Equals(_selectedCategory, StringComparison.OrdinalIgnoreCase)) &&
+        .Where(p => (_selectedCategory == "All" || p.CategoryID.Equals(_selectedCategory, StringComparison.OrdinalIgnoreCase)) &&
                     (string.IsNullOrWhiteSpace(_searchQuery) ||
                      p.PortfolioName.Contains(_searchQuery, StringComparison.OrdinalIgnoreCase) ||
                      (p.PortfolioDescription != null && p.PortfolioDescription.Contains(_searchQuery, StringComparison.OrdinalIgnoreCase))))
@@ -526,30 +674,120 @@
         }
     }
 
-    private string GetCategoryName(string code) =>
-        _categories.FirstOrDefault(c => c.CategoryCode.Equals(code, StringComparison.OrdinalIgnoreCase))?.CategoryName ?? code;
+    private string GetCategoryName(string catId) =>
+        _categories.FirstOrDefault(c => c.CategoryID.Equals(catId, StringComparison.OrdinalIgnoreCase))?.CategoryName ?? catId;
 
     private void OpenAddWizard()
     {
         _wizardStep = 1;
         _wizardError = null;
         _newPortfolioName = string.Empty;
-        _newPortfolioCategory = _categories.FirstOrDefault()?.CategoryCode ?? string.Empty;
+        _newPortfolioCategory = _categories.FirstOrDefault()?.CategoryID ?? string.Empty;
         _newPortfolioDesc = string.Empty;
         _newPortfolioIsFeatured = false;
         _selectedImages.Clear();
         _isWizardOpen = true;
     }
 
-    private void OpenPreview(PortfolioFolderModel p)
+    private void OpenDetailsPanel(PortfolioFolderModel p)
     {
-        _previewPortfolio = p;
+        _activeDetailPortfolio = p;
+        _isEditing = false;
+        _editError = null;
+        _appendImages.Clear();
+    }
+
+    private void CloseDetailsPanel()
+    {
+        _activeDetailPortfolio = null;
+        _isEditing = false;
+        _appendImages.Clear();
+    }
+
+    private void StartEditing()
+    {
+        if (_activeDetailPortfolio == null) return;
+        _editName = _activeDetailPortfolio.PortfolioName;
+        _editCategoryId = _activeDetailPortfolio.CategoryID;
+        _editDesc = _activeDetailPortfolio.PortfolioDescription ?? string.Empty;
+        _editError = null;
+        _appendImages.Clear();
+        _isEditing = true;
+    }
+
+    private async Task HandleAppendFileSelection(InputFileChangeEventArgs e)
+    {
+        _editError = null;
+        const long maxFileSize = 10 * 1024 * 1024;
+
+        foreach (var file in e.GetMultipleFiles(20))
+        {
+            try
+            {
+                using var stream = file.OpenReadStream(maxFileSize);
+                using var ms = new MemoryStream();
+                await stream.CopyToAsync(ms);
+                var data = ms.ToArray();
+                var previewUrl = $"data:{file.ContentType};base64,{Convert.ToBase64String(data)}";
+
+                _appendImages.Add(new AppendItem(file.Name, file.ContentType, data, previewUrl));
+            }
+            catch (Exception ex)
+            {
+                _editError = $"Error reading '{file.Name}': {ex.Message}";
+            }
+        }
+    }
+
+    private async Task HandleSaveEdit()
+    {
+        if (_activeDetailPortfolio == null) return;
+        if (string.IsNullOrWhiteSpace(_editName))
+        {
+            _editError = "Portfolio Title is required.";
+            return;
+        }
+
+        _isSaving = true;
+        _editError = null;
+
+        try
+        {
+            var newImgTuples = _appendImages.Select(i => (i.FileName, i.ContentType, i.Data)).ToList();
+            var ok = await PortfolioService.UpdatePortfolioAsync(
+                _activeDetailPortfolio.PortfolioId,
+                _editName,
+                _editDesc,
+                _editCategoryId,
+                newImgTuples);
+
+            if (ok)
+            {
+                _notification = $"Portfolio '{_editName}' ({_activeDetailPortfolio.PortfolioId}) updated successfully!";
+                _isEditing = false;
+                _appendImages.Clear();
+                await LoadData();
+                _activeDetailPortfolio = _portfolios.FirstOrDefault(p => p.PortfolioId == _activeDetailPortfolio.PortfolioId);
+            }
+            else
+            {
+                _editError = "Failed to update portfolio details. Please check your inputs.";
+            }
+        }
+        catch (Exception ex)
+        {
+            _editError = ex.Message;
+        }
+        finally
+        {
+            _isSaving = false;
+        }
     }
 
     private async Task HandleFileSelection(InputFileChangeEventArgs e)
     {
         _wizardError = null;
-        const long maxFileSize = 10 * 1024 * 1024; // 10MB per file
+        const long maxFileSize = 10 * 1024 * 1024;
 
         foreach (var file in e.GetMultipleFiles(20))
         {
@@ -623,8 +861,17 @@
 
             if (res != null)
             {
+                // Instant exit wizard setup
                 _isWizardOpen = false;
-                _notification = $"Portfolio '{res.PortfolioName}' created successfully with {res.Images.Count} photo(s)!";
+                _wizardStep = 1;
+                _selectedImages.Clear();
+                _newPortfolioName = string.Empty;
+                _newPortfolioCategory = string.Empty;
+                _newPortfolioDesc = string.Empty;
+                _newPortfolioIsFeatured = false;
+
+                // Show success message and refresh table
+                _notification = $"Portfolio '{res.PortfolioName}' ({res.PortfolioId}) created successfully with {res.Images.Count} photo(s)!";
                 await LoadData();
             }
             else
@@ -655,7 +902,7 @@
         }
         else
         {
-            _notification = $"Portfolio '{port.PortfolioName}' feature status updated to {(port.IsFeatured ? "Featured" : "Regular")}.";
+            _notification = $"Portfolio '{port.PortfolioName}' ({port.PortfolioId}) status updated to {(port.IsFeatured ? "Featured" : "Regular")}.";
         }
     }
 
@@ -666,7 +913,11 @@
         if (ok)
         {
             _portfolios.Remove(port);
-            _notification = $"Portfolio '{port.PortfolioName}' deleted.";
+            if (_activeDetailPortfolio?.PortfolioId == port.PortfolioId)
+            {
+                _activeDetailPortfolio = null;
+            }
+            _notification = $"Portfolio '{port.PortfolioName}' ({port.PortfolioId}) deleted.";
         }
     }
 }

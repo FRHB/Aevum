@@ -68,7 +68,12 @@ public class StaffMemberResource
 {
     public string Id { get; set; } = string.Empty;
     public string FullName { get; set; } = string.Empty;
-    public string StaffCode { get; set; } = string.Empty;
+    public string EmployeeID { get; set; } = string.Empty;
+    public string StaffCode
+    {
+        get => string.IsNullOrEmpty(EmployeeID) ? Id : EmployeeID;
+        set => EmployeeID = value;
+    }
     public string Role { get; set; } = string.Empty; // Senior Photographer, Lead Videographer, Lighting Specialist, Creative Director, Studio Assistant, Lead Editor
     public string AvatarInitials { get; set; } = string.Empty;
     public string AvatarColor { get; set; } = "bg-indigo-100 text-indigo-700";

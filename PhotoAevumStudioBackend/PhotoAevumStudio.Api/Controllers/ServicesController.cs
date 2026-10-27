@@ -25,6 +25,8 @@ public class CreateServiceFormRequest
     [Required(ErrorMessage = "Service category is required.")]
     public string CategoryId { get; set; } = string.Empty;
 
+    public string RateType { get; set; } = "per hour";
+
     public IFormFile? Image { get; set; }
 }
 
@@ -115,7 +117,8 @@ public class ServicesController : ControllerBase
             Price: request.Price,
             CategoryId: request.CategoryId.Trim(),
             ImageBytes: imageBytes,
-            ImageMimeType: mimeType
+            ImageMimeType: mimeType,
+            RateType: string.IsNullOrWhiteSpace(request.RateType) ? "per hour" : request.RateType.Trim()
         );
 
         try
@@ -128,5 +131,40 @@ public class ServicesController : ControllerBase
             _logger.LogError(ex, "Error creating main service {ServiceName}", request.Name);
             return StatusCode(StatusCodes.Status500InternalServerError, new { Message = ex.Message });
         }
+    }
+
+    /// <summary>
+    /// Retrieves all available rate types (per hour, per picture, per single shot, multi-shot).
+    /// </summary>
+    [HttpGet("rate-types")]
+    [AllowAnonymous]
+    public async Task<IActionResult> GetRateTypes(CancellationToken ct)
+    {
+        var list = await _service.GetRateTypesAsync(ct);
+        return Ok(list);
+    }
+
+    /// <summary>
+    /// Retrieves all configured rates for a specific service.
+    /// </summary>
+    [HttpGet("{serviceId}/rates")]
+    [AllowAnonymous]
+    public async Task<IActionResult> GetServiceRates(string serviceId, CancellationToken ct)
+    {
+        var list = await _service.GetServiceRatesAsync(serviceId, ct);
+        return Ok(list);
+    }
+
+    /// <summary>
+    /// Adds or updates a rate configuration for a service.
+    /// </summary>
+    [HttpPost("{serviceId}/rates")]
+    [Authorize(Policy = "StaffOrAbove")]
+    public async Task<IActionResult> SetServiceRate(string serviceId, [FromBody] SetServiceRateDto dto, CancellationToken ct)
+    {
+        var success = await _service.AddOrUpdateServiceRateAsync(serviceId, dto.RateTypeId, dto.RateAmount, ct);
+        return success
+            ? Ok(new { Message = "Rate updated successfully." })
+            : BadRequest(new { Message = "Failed to update service rate." });
     }
 }

@@ -7,6 +7,7 @@
 @inject IUserService UserService
 @inject IEmployeeService Employees
 @inject IScheduleService ScheduleService
+@inject IConsultationClient ConsultationApi
 @inject AuthenticationStateProvider AuthStateProvider
 @attribute [Authorize(Roles = "Employee,Office Clerk,Admin,SystemAdmin")]
 @rendermode InteractiveServer
@@ -205,9 +206,17 @@
                                 </td>
                             }
                             <td class="py-3 text-right">
-                                <span class="px-2.5 py-0.5 rounded-full text-[10px] font-bold @(ev.Status == "Confirmed" ? "bg-emerald-100 text-emerald-800" : "bg-amber-100 text-amber-800")">
+                                <span class="px-2.5 py-0.5 rounded-full text-[10px] font-bold @(ev.Status == "Confirmed" ? "bg-emerald-100 text-emerald-800" : (ev.Status == "Completed" ? "bg-slate-100 text-slate-700" : "bg-amber-100 text-amber-800"))">
                                     @ev.Status
                                 </span>
+                                @if (ev.Status != "Completed")
+                                {
+                                    <button type="button"
+                                            @onclick="() => OpenEventFinishModal(ev)"
+                                            class="ml-2 px-2.5 py-1 bg-slate-900 hover:bg-black text-white text-[11px] font-bold rounded-md shadow-xs transition-all">
+                                        Event Finish &rarr;
+                                    </button>
+                                }
                             </td>
                         </tr>
                     }
@@ -346,7 +355,202 @@
     </div>
 }
 
+
+@* ── TEAM LEADER ON-SITE EVENT FINISH & SETTLEMENT MODAL ────────────────── *@
+@if (isFinishModalOpen && selectedFinishEvent != null)
+{
+    <div class="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-xs p-4 animate-in fade-in duration-200">
+        <div class="bg-white rounded-2xl shadow-2xl border border-slate-200 w-full max-w-xl max-h-[90vh] flex flex-col overflow-hidden">
+            
+            <div class="px-6 py-4 border-b border-slate-200 flex items-center justify-between bg-slate-50">
+                <div>
+                    <span class="px-2 py-0.5 rounded text-[10px] font-bold bg-amber-400 text-slate-950 uppercase tracking-wider">Team Leader POS</span>
+                    <h2 class="text-base font-black text-slate-900 mt-1">Conclude Event &amp; Final Settlement</h2>
+                </div>
+                <button type="button" @onclick="() => isFinishModalOpen = false" class="text-slate-400 hover:text-slate-700 p-2">✕</button>
+            </div>
+
+            <div class="p-6 overflow-y-auto space-y-4 text-xs">
+                @if (!string.IsNullOrWhiteSpace(finishModalError))
+                {
+                    <div class="p-3 rounded-lg bg-red-50 border border-red-200 text-red-700 font-semibold">
+                        @finishModalError
+                    </div>
+                }
+
+                @* Event Context Card *@
+                <div class="bg-slate-50 rounded-xl border border-slate-200 p-4 space-y-1">
+                    <div class="flex items-center justify-between">
+                        <span class="font-mono font-bold text-slate-500">#@selectedFinishEvent.Id</span>
+                        <span class="font-bold text-slate-800">@selectedFinishEvent.ServiceType</span>
+                    </div>
+                    <div class="text-sm font-black text-slate-900">@selectedFinishEvent.ClientName</div>
+                    <div class="text-slate-500">Date: @selectedFinishEvent.Date.ToString("MMMM dd, yyyy") &bull; @selectedFinishEvent.FormattedTimeRange</div>
+                    <div class="text-slate-500">Venue: @(!string.IsNullOrWhiteSpace(selectedFinishEvent.StudioSpaceName) ? selectedFinishEvent.StudioSpaceName : "Main Studio Room")</div>
+                </div>
+
+                @* Overtime & Add-on Surcharges Section *@
+                <div class="bg-amber-50/50 rounded-xl border border-amber-200 p-4 space-y-3">
+                    <div class="flex items-center justify-between">
+                        <span class="font-bold text-amber-900 uppercase tracking-wider text-[11px]">Billable Overtime &amp; Surcharges</span>
+                        <span class="text-[10px] text-amber-700 font-semibold">Rate: ₱1,500.00 / hr</span>
+                    </div>
+
+                    <div class="grid grid-cols-2 gap-3">
+                        <div>
+                            <label class="block font-bold text-slate-700 mb-1">Extra Overtime Hours</label>
+                            <input type="number" step="0.5" min="0" max="12" @bind="extraHours" @bind:after="RecalculateSettlement"
+                                   class="w-full px-3 py-2 bg-white border border-slate-200 rounded-lg text-xs font-bold" />
+                        </div>
+                        <div>
+                            <label class="block font-bold text-slate-700 mb-1">Additional Surcharges (₱)</label>
+                            <input type="number" step="100" min="0" @bind="extraSurcharges" @bind:after="RecalculateSettlement"
+                                   class="w-full px-3 py-2 bg-white border border-slate-200 rounded-lg text-xs font-bold" />
+                        </div>
+                    </div>
+
+                    <div>
+                        <label class="block font-bold text-slate-700 mb-1">Reason for Overtime / Add-ons</label>
+                        <input type="text" @bind="overtimeNotes" placeholder="e.g. Extended reception shoot + 2 extra roll proofs"
+                               class="w-full px-3 py-2 bg-white border border-slate-200 rounded-lg text-xs" />
+                    </div>
+                </div>
+
+                @* Balance Breakdown *@
+                <div class="bg-slate-900 text-white rounded-xl p-4 flex items-center justify-between">
+                    <div>
+                        <div class="text-[10px] uppercase font-bold text-slate-400">Base Remaining 75%</div>
+                        <div class="font-mono text-sm font-bold text-slate-300">₱@baseRemainingBalance.ToString("N2")</div>
+                        <div class="text-[10px] text-amber-400 mt-1">+ Overtime &amp; Surcharges: ₱@totalSurcharges.ToString("N2")</div>
+                    </div>
+                    <div class="text-right">
+                        <div class="text-[10px] uppercase font-bold text-emerald-400">Total Settlement Due</div>
+                        <div class="font-mono text-xl font-black text-emerald-400">₱@finalDueAmount.ToString("N2")</div>
+                    </div>
+                </div>
+
+                @* Payment Method Selection *@
+                <div class="space-y-2">
+                    <span class="block font-bold text-slate-700 text-[11px] uppercase tracking-wider">Select Payment Method</span>
+                    <div class="grid grid-cols-2 gap-2">
+                        <button type="button"
+                                @onclick='() => selectedPaymentMethod = "Cash_OnHand"'
+                                class="p-3 rounded-xl border text-left font-bold transition-all @(selectedPaymentMethod == "Cash_OnHand" ? "border-slate-900 bg-slate-50 ring-1 ring-slate-900" : "border-slate-200 hover:border-slate-300")">
+                            <div class="text-xs text-slate-900">💵 Cash On Hand</div>
+                            <div class="text-[10px] font-normal text-slate-500 mt-0.5">Collect cash on site</div>
+                        </button>
+                        <button type="button"
+                                @onclick='() => selectedPaymentMethod = "Xendit_QR"'
+                                class="p-3 rounded-xl border text-left font-bold transition-all @(selectedPaymentMethod == "Xendit_QR" ? "border-slate-900 bg-slate-50 ring-1 ring-slate-900" : "border-slate-200 hover:border-slate-300")">
+                            <div class="text-xs text-slate-900">📱 Dynamic Xendit QR</div>
+                            <div class="text-[10px] font-normal text-slate-500 mt-0.5">GCash / Maya / QR Ph scan</div>
+                        </button>
+                    </div>
+                </div>
+
+                @if (selectedPaymentMethod == "Xendit_QR")
+                {
+                    <div class="p-4 rounded-xl border border-teal-200 bg-teal-50/50 text-center space-y-2">
+                        <div class="text-xs font-bold text-teal-900">Scan QR Ph with Banking / e-Wallet App</div>
+                        <div class="w-32 h-32 mx-auto bg-white border border-teal-200 rounded-lg p-2 shadow-xs flex items-center justify-center">
+                            <img src="https://api.qrserver.com/v1/create-qr-code/?size=120x120&amp;data=xendit-ph-settlement-@selectedFinishEvent.Id"
+                                 alt="Xendit Dynamic QR Ph" class="w-full h-full object-contain" />
+                        </div>
+                        <div class="text-[11px] text-teal-700 font-mono font-bold">Amount: ₱@finalDueAmount.ToString("N2")</div>
+                    </div>
+                }
+
+            </div>
+
+            <div class="px-6 py-4 border-t border-slate-200 bg-slate-50 flex items-center justify-between">
+                <button type="button" @onclick="() => isFinishModalOpen = false" class="px-4 py-2 border rounded-lg text-xs font-semibold">
+                    Cancel
+                </button>
+                <button type="button"
+                        @onclick="SubmitEventSettlementAsync"
+                        disabled="@isSubmittingSettlement"
+                        class="px-5 py-2.5 bg-emerald-700 hover:bg-emerald-800 text-white rounded-lg text-xs font-bold shadow-sm transition-all">
+                    @(isSubmittingSettlement ? "Processing Settlement..." : $"Confirm Payment & Close Event (₱{finalDueAmount:N2})")
+                </button>
+            </div>
+
+        </div>
+    </div>
+}
+
+
 @code {
+    // Event Finish & Settlement State
+    private bool isFinishModalOpen = false;
+    private EventBookingModel? selectedFinishEvent;
+    private decimal extraHours = 0m;
+    private decimal hourlyRate = 1500m;
+    private decimal extraSurcharges = 0m;
+    private string overtimeNotes = string.Empty;
+    private decimal baseRemainingBalance = 0m;
+    private decimal totalSurcharges = 0m;
+    private decimal finalDueAmount = 0m;
+    private string selectedPaymentMethod = "Cash_OnHand";
+    private bool isSubmittingSettlement = false;
+    private string? finishModalError;
+
+    private void OpenEventFinishModal(EventBookingModel ev)
+    {
+        selectedFinishEvent = ev;
+        extraHours = 0m;
+        hourlyRate = 1500m;
+        extraSurcharges = 0m;
+        overtimeNotes = string.Empty;
+        baseRemainingBalance = Math.Round(ev.EstimatedPrice * 0.75m, 2);
+        selectedPaymentMethod = "Cash_OnHand";
+        finishModalError = null;
+        RecalculateSettlement();
+        isFinishModalOpen = true;
+    }
+
+    private void RecalculateSettlement()
+    {
+        totalSurcharges = Math.Round((extraHours * hourlyRate) + extraSurcharges, 2);
+        finalDueAmount = baseRemainingBalance + totalSurcharges;
+    }
+
+    private async Task SubmitEventSettlementAsync()
+    {
+        if (selectedFinishEvent == null) return;
+        isSubmittingSettlement = true;
+        finishModalError = null;
+
+        try
+        {
+            var req = new CompleteEventRequest
+            {
+                EventAppointmentId = selectedFinishEvent.Id,
+                ExtraHours = extraHours,
+                HourlyRate = hourlyRate,
+                SurchargeAmount = totalSurcharges,
+                OvertimeNotes = overtimeNotes,
+                PaymentMethod = selectedPaymentMethod,
+                TeamLeaderEmployeeId = employeeId,
+                Notes = $"Event marked finished by {employeeName} ({employeeId})."
+            };
+
+            await ConsultationApi.CompleteEventAsync(selectedFinishEvent.Id, req);
+
+            selectedFinishEvent.Status = "Completed";
+            isFinishModalOpen = false;
+            await OnInitializedAsync();
+            StateHasChanged();
+        }
+        catch (Exception ex)
+        {
+            finishModalError = ex.Message;
+        }
+        finally
+        {
+            isSubmittingSettlement = false;
+        }
+    }
+
     [CascadingParameter] Task<AuthenticationState>? AuthState { get; set; }
 
     private ClaimsPrincipal? currentUser;

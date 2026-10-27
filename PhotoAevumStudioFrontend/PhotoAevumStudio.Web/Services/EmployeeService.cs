@@ -328,6 +328,31 @@ public class EmployeeService : IEmployeeService
         catch { return false; }
     }
 
+    public async Task<IReadOnlyList<EmployeeTimesheetHistoryDto>> GetTimesheetHistoryAsync(string? employeeId = null, CancellationToken cancellationToken = default)
+    {
+        await _tokenStore.GetTokenAsync(cancellationToken);
+        try
+        {
+            var url = string.IsNullOrWhiteSpace(employeeId) ? "api/timesheet/my-history" : $"api/timesheet/my-history?employeeId={employeeId}";
+            var res = await _http.GetFromJsonAsync<List<EmployeeTimesheetHistoryDto>>(url, cancellationToken);
+            if (res != null) return res;
+        }
+        catch { }
+        return new List<EmployeeTimesheetHistoryDto>();
+    }
+
+    public async Task<bool> AdjustTimesheetPunchAsync(int id, DateTime? clockIn, DateTime? clockOut, string? reason, CancellationToken cancellationToken = default)
+    {
+        await _tokenStore.GetTokenAsync(cancellationToken);
+        try
+        {
+            var payload = new { ClockIn = clockIn, ClockOut = clockOut, AdjustmentReason = reason };
+            var res = await _http.PostAsJsonAsync($"api/timesheet/{id}/adjust", payload, cancellationToken);
+            return res.IsSuccessStatusCode;
+        }
+        catch { return false; }
+    }
+
     // ── Leaves ───────────────────────────────────────────────────────────────
 
     public async Task<bool> RequestLeaveAsync(string leaveType, DateOnly startDate, DateOnly endDate, string? reason, string? employeeId = null, CancellationToken cancellationToken = default)

@@ -28,6 +28,8 @@ public class MainServiceWizardModel
 
     public string CategoryName { get; set; } = string.Empty;
 
+    public string RateType { get; set; } = "per hour";
+
     /// <summary>
     /// Auto-generated custom Service ID (format: SRV-####). Strictly read-only and assigned by system.
     /// </summary>

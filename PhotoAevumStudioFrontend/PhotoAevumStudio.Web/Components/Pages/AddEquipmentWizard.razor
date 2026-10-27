@@ -142,8 +142,7 @@
                             <input type="text"
                                    @bind="formModel.EquipmentName"
                                    @bind:event="oninput"
-                                   placeholder="e.g. Sony Alpha 7 IV Mirrorless Camera, Godox AD600Pro Strobe"
-                                   class="w-full px-3.5 py-2.5 text-xs rounded-lg border @(HasError(nameof(formModel.EquipmentName)) ? "border-rose-400 focus:ring-rose-500" : "border-slate-300 focus:ring-slate-900") focus:outline-none focus:ring-2 focus:border-transparent transition-all placeholder:text-slate-400" />
+                                   class="w-full px-3.5 py-2.5 text-xs rounded-lg border @(HasError(nameof(formModel.EquipmentName)) ? "border-rose-400 focus:ring-rose-500" : "border-slate-300 focus:ring-slate-900") focus:outline-none focus:ring-2 focus:border-transparent transition-all " />
                             @if (HasError(nameof(formModel.EquipmentName)))
                             {
                                 <p class="text-[11px] text-rose-600 font-medium mt-1">@GetError(nameof(formModel.EquipmentName))</p>
@@ -163,8 +162,7 @@
                             <textarea @bind="formModel.EquipmentDescription"
                                       rows="3"
                                       maxlength="1000"
-                                      placeholder="Technical specifications, mounting bracket, included batteries, filter size, or notes..."
-                                      class="w-full px-3.5 py-2.5 text-xs rounded-lg border border-slate-300 focus:outline-none focus:ring-2 focus:ring-slate-900 focus:border-transparent transition-all placeholder:text-slate-400 resize-none"></textarea>
+                                      class="w-full px-3.5 py-2.5 text-xs rounded-lg border border-slate-300 focus:outline-none focus:ring-2 focus:ring-slate-900 focus:border-transparent transition-all  resize-none"></textarea>
                             <p class="text-[11px] text-slate-400 mt-0.5">Optional notes to assist staff during shoot dispatch and gear inspection.</p>
                         </div>
 
@@ -198,7 +196,6 @@
                                 {
                                     <input type="text"
                                            @bind="customTypeName"
-                                           placeholder="Enter custom category name..."
                                            class="w-full px-3.5 py-2.5 text-xs rounded-lg border border-slate-300 focus:outline-none focus:ring-2 focus:ring-slate-900" />
                                 }
                             </div>
@@ -217,8 +214,7 @@
                                 <input type="text"
                                        @bind="formModel.SerialNo"
                                        @bind:event="oninput"
-                                       placeholder="e.g. SN-A74-884021"
-                                       class="w-full pl-8 pr-4 py-2.5 text-xs font-mono rounded-lg border @(HasError(nameof(formModel.SerialNo)) ? "border-rose-400 focus:ring-rose-500" : "border-slate-300 focus:ring-slate-900") focus:outline-none focus:ring-2 focus:border-transparent transition-all uppercase placeholder:normal-case placeholder:text-slate-400" />
+                                       class="w-full pl-8 pr-4 py-2.5 text-xs font-mono rounded-lg border @(HasError(nameof(formModel.SerialNo)) ? "border-rose-400 focus:ring-rose-500" : "border-slate-300 focus:ring-slate-900") focus:outline-none focus:ring-2 focus:border-transparent transition-all uppercase  " />
                                 <span class="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400 text-xs font-mono">#</span>
                             </div>
                             <p class="text-[11px] text-slate-400 mt-1">

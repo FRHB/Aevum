@@ -8,7 +8,7 @@ public class PortfolioCategoryEntity
 {
     [Key]
     [MaxLength(100)]
-    public string CategoryCode { get; set; } = string.Empty;
+    public string CategoryID { get; set; } = string.Empty;
 
     [Required]
     [MaxLength(240)]
@@ -45,7 +45,7 @@ public class PortfolioEntity
 
     [Required]
     [MaxLength(100)]
-    public string CategoryCode { get; set; } = string.Empty;
+    public string CategoryID { get; set; } = string.Empty;
 
     public bool IsFeatured { get; set; } = false;
 

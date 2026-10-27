@@ -15,6 +15,13 @@ CREATE SEQUENCE dbo.Seq_AdditionalServicesID AS INT START WITH 1 INCREMENT BY 1;
 CREATE SEQUENCE dbo.Seq_ComboPackageID AS INT START WITH 1 INCREMENT BY 1;
 CREATE SEQUENCE dbo.Seq_ServicesID AS INT START WITH 1 INCREMENT BY 1;
 CREATE SEQUENCE dbo.Seq_ServiceCategoryID AS INT START WITH 1 INCREMENT BY 1;
+CREATE SEQUENCE dbo.Seq_ServiceRateID AS INT START WITH 1 INCREMENT BY 1;
+CREATE SEQUENCE dbo.Seq_RateTypeID AS INT START WITH 1 INCREMENT BY 1;
+CREATE SEQUENCE dbo.Seq_NegotiationID AS INT START WITH 1 INCREMENT BY 1;
+CREATE SEQUENCE dbo.Seq_EventAppointmentID AS INT START WITH 1 INCREMENT BY 1;
+CREATE SEQUENCE dbo.Seq_PaymentTransactionID AS INT START WITH 1 INCREMENT BY 1;
+CREATE SEQUENCE dbo.Seq_PortfolioID AS INT START WITH 1 INCREMENT BY 1;
+CREATE SEQUENCE dbo.Seq_PortfolioCategoryID AS INT START WITH 1 INCREMENT BY 1;
 GO
 
 /* =====================================================================
@@ -40,6 +47,23 @@ CREATE TABLE dbo.SystemAdmin (
     MiddleName nvarchar(255) NULL,
     PasswordHash nvarchar(255) NOT NULL,
     CreatedAt datetime2 NOT NULL CONSTRAINT DF_SystemAdmin_CreatedAt DEFAULT SYSUTCDATETIME()
+);
+
+CREATE TABLE dbo.EmployeeTimesheets (
+    Id INT IDENTITY(1,1) NOT NULL PRIMARY KEY,
+    TimesheetId nvarchar(50) NOT NULL UNIQUE,
+    EmployeeStudioId nvarchar(30) NOT NULL,
+    EmployeeName nvarchar(255) NOT NULL,
+    WorkDate date NOT NULL,
+    ClockIn datetime2 NOT NULL,
+    ClockOut datetime2 NULL,
+    TotalHours float NOT NULL CONSTRAINT DF_EmployeeTimesheets_TotalHours DEFAULT 0.0,
+    Status nvarchar(50) NOT NULL CONSTRAINT DF_EmployeeTimesheets_Status DEFAULT 'Open',
+    IsDayOffWork bit NOT NULL CONSTRAINT DF_EmployeeTimesheets_IsDayOff DEFAULT 0,
+    Notes nvarchar(1000) NULL,
+    AdjustedBy nvarchar(100) NULL,
+    AdjustmentReason nvarchar(500) NULL,
+    CreatedAt datetime2 NOT NULL CONSTRAINT DF_EmployeeTimesheets_CreatedAt DEFAULT SYSUTCDATETIME()
 );
 
 CREATE TABLE dbo.Employees (
@@ -115,14 +139,35 @@ CREATE TABLE dbo.AdditionalServices (
     CreatedAt datetime2 NOT NULL CONSTRAINT DF_AdditionalServices_CreatedAt DEFAULT SYSUTCDATETIME()
 );
 
+CREATE TABLE dbo.RateType (
+    RateTypeID nvarchar(30) NOT NULL PRIMARY KEY,
+    RateTypeName nvarchar(50) NOT NULL,
+    RateTypeCode nvarchar(30) NOT NULL UNIQUE,
+    RateDescription nvarchar(255) NULL,
+    CreatedAt datetime2 NOT NULL CONSTRAINT DF_RateType_CreatedAt DEFAULT SYSUTCDATETIME()
+);
+
 CREATE TABLE dbo.Services (
     ServicesID nvarchar(30) NOT NULL PRIMARY KEY,
     ServiceName nvarchar(255) NOT NULL,
     ServicesDescription nvarchar(1000) NOT NULL,
     ServicePrice decimal(18,2) NOT NULL CONSTRAINT DF_Services_Price DEFAULT 0.00,
+    RateType nvarchar(50) NOT NULL CONSTRAINT DF_Services_RateType DEFAULT 'Per Hour',
     ServiceImage varbinary(max) NULL,
     ServiceImageMimeType nvarchar(100) NULL CONSTRAINT DF_Services_MimeType DEFAULT 'image/jpeg',
     CreatedAt datetime2 NOT NULL CONSTRAINT DF_Services_CreatedAt DEFAULT SYSUTCDATETIME()
+);
+
+CREATE TABLE dbo.ServiceRate (
+    ServiceRateID nvarchar(30) NOT NULL PRIMARY KEY,
+    ServicesID nvarchar(30) NOT NULL,
+    RateTypeID nvarchar(30) NOT NULL,
+    RateTypeName nvarchar(50) NOT NULL,
+    Price decimal(18,2) NOT NULL CONSTRAINT DF_ServiceRate_Price DEFAULT 0.00,
+    UnitsIncluded int NOT NULL CONSTRAINT DF_ServiceRate_Units DEFAULT 1,
+    RateDescription nvarchar(255) NULL,
+    IsDefault bit NOT NULL CONSTRAINT DF_ServiceRate_IsDefault DEFAULT 0,
+    CreatedAt datetime2 NOT NULL CONSTRAINT DF_ServiceRate_CreatedAt DEFAULT SYSUTCDATETIME()
 );
 
 CREATE TABLE dbo.ServiceCategory ( 
@@ -170,23 +215,38 @@ CREATE TABLE dbo.EventAppointment (
     EventDate date NOT NULL,
     EventTime time NOT NULL,
     EventStatus nvarchar(30) NOT NULL CONSTRAINT DF_EventAppointment_Status DEFAULT 'Pending',
+    TotalAmount decimal(18,2) NOT NULL CONSTRAINT DF_EventAppointment_Total DEFAULT 0.00,
+    DownpaymentAmount decimal(18,2) NOT NULL CONSTRAINT DF_EventAppointment_Downpayment DEFAULT 0.00,
+    FinalBalanceAmount decimal(18,2) NOT NULL CONSTRAINT DF_EventAppointment_Balance DEFAULT 0.00,
+    DownpaymentStatus nvarchar(30) NOT NULL CONSTRAINT DF_EventAppointment_DownpaymentStatus DEFAULT 'Pending',
+    DownpaymentPaidAt datetime2 NULL,
+    HoldExpiresAt datetime2 NULL,
+    XenditInvoiceId nvarchar(100) NULL,
+    XenditExternalId nvarchar(100) NULL,
+    XenditInvoiceUrl nvarchar(500) NULL,
     CreatedAt datetime2 NOT NULL CONSTRAINT DF_EventAppointment_Created DEFAULT SYSUTCDATETIME(),
     RowVer rowversion, 
-    CONSTRAINT CK_EventAppointment_Status CHECK (EventStatus IN ('Pending','Confirmed','Shot','Editing','Delivered','Cancelled'))
+    CONSTRAINT CK_EventAppointment_Status CHECK (EventStatus IN ('Pending','Awaiting_Downpayment','Confirmed','Shot','Editing','Delivered','Cancelled','Expired'))
 );
 
 CREATE TABLE dbo.BookingNegotiation (
     NegotiationID nvarchar(30) NOT NULL PRIMARY KEY,
-    EventAppointmentID nvarchar(30) NOT NULL,
+    EventAppointmentID nvarchar(30) NULL,
     CustomerID nvarchar(30) NOT NULL,
     EmployeeID nvarchar(30) NOT NULL, 
-    NegotiationStatus nvarchar(50)
+    ConsultationDate date NOT NULL,
+    ConsultationTime time NOT NULL,
+    MeetingLink nvarchar(500) NULL,
+    InquiryNotes nvarchar(1000) NULL,
+    NegotiationStatus nvarchar(50) NOT NULL CONSTRAINT DF_BookingNegotiation_Status DEFAULT 'Pending_Call',
+    CreatedAt datetime2 NOT NULL CONSTRAINT DF_BookingNegotiation_Created DEFAULT SYSUTCDATETIME()
 );
 
 CREATE TABLE dbo.EventEmployee (
     EventEmployeeID int IDENTITY(1,1) NOT NULL PRIMARY KEY,
     EventAppointmentID nvarchar(30) NOT NULL,
     EmployeeID nvarchar(30) NOT NULL,
+    IsTeamLeader bit NOT NULL CONSTRAINT DF_EventEmployee_IsTeamLeader DEFAULT 0,
     CONSTRAINT UQ_EventEmployee_Assign UNIQUE (EventAppointmentID, EmployeeID)
 );
 
@@ -257,12 +317,83 @@ CREATE TABLE dbo.HistoryLog (
 GO
 
 /* =====================================================================
-   6. FOREIGN KEY RELATIONSHIPS
+   6. OVERTIME CHARGES & PAYMENT TRANSACTIONS TABLES
+   ===================================================================== */
+
+CREATE TABLE dbo.EventOvertimeCharges (
+    OvertimeChargeID int IDENTITY(1,1) NOT NULL PRIMARY KEY,
+    EventAppointmentID nvarchar(30) NOT NULL,
+    ExtraHours decimal(5,2) NOT NULL CONSTRAINT DF_EventOvertime_Hours DEFAULT 0.00,
+    HourlyRate decimal(18,2) NOT NULL CONSTRAINT DF_EventOvertime_Rate DEFAULT 0.00,
+    SurchargeAmount decimal(18,2) NOT NULL CONSTRAINT DF_EventOvertime_Surcharge DEFAULT 0.00,
+    TotalOvertimeFee AS (ExtraHours * HourlyRate + SurchargeAmount) PERSISTED,
+    ReasonNotes nvarchar(500) NULL,
+    LoggedByEmployeeID nvarchar(30) NOT NULL,
+    CreatedAt datetime2 NOT NULL CONSTRAINT DF_EventOvertime_CreatedAt DEFAULT SYSUTCDATETIME()
+);
+
+CREATE TABLE dbo.PaymentTransactions (
+    PaymentTransactionID nvarchar(50) NOT NULL PRIMARY KEY,
+    EventAppointmentID nvarchar(30) NOT NULL,
+    PaymentType nvarchar(50) NOT NULL, -- 'Downpayment_25', 'Final_Balance', 'Overtime'
+    PaymentMethod nvarchar(50) NOT NULL, -- 'Xendit_GCash', 'Xendit_Maya', 'Xendit_Card', 'Cash'
+    Amount decimal(18,2) NOT NULL,
+    XenditPaymentId nvarchar(100) NULL,
+    XenditInvoiceId nvarchar(100) NULL,
+    XenditPaymentChannel nvarchar(100) NULL,
+    Status nvarchar(30) NOT NULL CONSTRAINT DF_PaymentTransactions_Status DEFAULT 'Pending', -- 'Pending', 'Paid', 'Failed', 'Expired'
+    ReceivedByEmployeeID nvarchar(30) NULL, -- For cash collected by Team Leader
+    PaidAt datetime2 NULL,
+    CreatedAt datetime2 NOT NULL CONSTRAINT DF_PaymentTransactions_CreatedAt DEFAULT SYSUTCDATETIME()
+);
+GO
+
+/* =====================================================================
+   7. PORTFOLIO & SHOWCASE TABLES
+   ===================================================================== */
+
+CREATE TABLE dbo.PortfolioCategory (
+    CategoryID nvarchar(30) NOT NULL CONSTRAINT PK_PortfolioCategory PRIMARY KEY,
+    CategoryName nvarchar(120) NOT NULL,
+    Description nvarchar(400) NULL,
+    ParentSection nvarchar(30) NOT NULL CONSTRAINT DF_PortfolioCategory_Parent DEFAULT 'Photography',
+    ColorTag nvarchar(20) NOT NULL CONSTRAINT DF_PortfolioCategory_Color DEFAULT 'Blue',
+    IsActive bit NOT NULL CONSTRAINT DF_PortfolioCategory_Active DEFAULT 1,
+    CreatedAt datetime2 NOT NULL CONSTRAINT DF_PortfolioCategory_CreatedAt DEFAULT SYSUTCDATETIME(),
+    UpdatedAt datetime2 NOT NULL CONSTRAINT DF_PortfolioCategory_UpdatedAt DEFAULT SYSUTCDATETIME()
+);
+
+CREATE TABLE dbo.PortfolioCategoryService (
+    CategoryID nvarchar(30) NOT NULL,
+    ServiceName nvarchar(120) NOT NULL,
+    CONSTRAINT PK_PortfolioCategoryService PRIMARY KEY (CategoryID, ServiceName)
+);
+
+CREATE TABLE dbo.Portfolios (
+    PortfolioId nvarchar(50) NOT NULL PRIMARY KEY,
+    PortfolioName nvarchar(255) NOT NULL,
+    PortfolioDescription nvarchar(1000) NULL,
+    CategoryID nvarchar(30) NOT NULL,
+    IsFeatured bit NOT NULL CONSTRAINT DF_Portfolios_Featured DEFAULT 0,
+    HighlightImageFileName nvarchar(255) NULL,
+    CreatedAt datetime2 NOT NULL CONSTRAINT DF_Portfolios_CreatedAt DEFAULT SYSUTCDATETIME()
+);
+
+CREATE TABLE dbo.PortfolioImages (
+    Id int IDENTITY(1,1) NOT NULL PRIMARY KEY,
+    PortfolioId nvarchar(50) NOT NULL,
+    FileName nvarchar(255) NOT NULL,
+    UploadedAt datetime2 NOT NULL CONSTRAINT DF_PortfolioImages_UploadedAt DEFAULT SYSUTCDATETIME()
+);
+GO
+
+/* =====================================================================
+   8. FOREIGN KEY RELATIONSHIPS
    ===================================================================== */
 ALTER TABLE dbo.Equipment ADD CONSTRAINT FK_Equipment_EquipmentType FOREIGN KEY (EquipmentTypeID) REFERENCES dbo.EquipmentType(EquipmentTypeID);
 ALTER TABLE dbo.BookingNegotiation ADD CONSTRAINT FK_BookingNegotiation_Employee FOREIGN KEY (EmployeeID) REFERENCES dbo.Employees(EmployeeID);
 ALTER TABLE dbo.BookingNegotiation ADD CONSTRAINT FK_BookingNegotiation_Customer FOREIGN KEY (CustomerID) REFERENCES dbo.Customer(CustomerID);
-ALTER TABLE dbo.BookingNegotiation ADD CONSTRAINT FK_BookingNegotiation_EventAppointment FOREIGN KEY (EventAppointmentID) REFERENCES dbo.EventAppointment(EventAppointmentID);
+ALTER TABLE dbo.BookingNegotiation ADD CONSTRAINT FK_BookingNegotiation_EventAppointment FOREIGN KEY (EventAppointmentID) REFERENCES dbo.EventAppointment(EventAppointmentID) ON DELETE SET NULL;
 ALTER TABLE dbo.EventEmployee ADD CONSTRAINT FK_EventEmployee_Employee FOREIGN KEY (EmployeeID) REFERENCES dbo.Employees(EmployeeID);
 ALTER TABLE dbo.EventEquipment ADD CONSTRAINT FK_EventEquipment_Equipment FOREIGN KEY (EquipmentID) REFERENCES dbo.Equipment(EquipmentID);
 ALTER TABLE dbo.EventAppointment ADD CONSTRAINT FK_EventAppointment_Customer FOREIGN KEY (CustomerID) REFERENCES dbo.Customer(CustomerID);
@@ -288,10 +419,20 @@ ALTER TABLE dbo.HistoryLog ADD CONSTRAINT FK_HistoryLog_Employee FOREIGN KEY (Em
 ALTER TABLE dbo.HistoryLog ADD CONSTRAINT FK_HistoryLog_ChangedByCustomer FOREIGN KEY (ChangedByCustomerID) REFERENCES dbo.Customer(CustomerID) ON DELETE SET NULL;
 ALTER TABLE dbo.HistoryLog ADD CONSTRAINT FK_HistoryLog_ChangedByEmployee FOREIGN KEY (ChangedByEmployeeID) REFERENCES dbo.Employees(EmployeeID) ON DELETE SET NULL;
 ALTER TABLE dbo.HistoryLog ADD CONSTRAINT FK_HistoryLog_ChangedByAdmin FOREIGN KEY (ChangedByAdminID) REFERENCES dbo.Admin(AdminID) ON DELETE SET NULL;
+ALTER TABLE dbo.ServiceRate ADD CONSTRAINT FK_ServiceRate_Services FOREIGN KEY (ServicesID) REFERENCES dbo.Services(ServicesID) ON DELETE CASCADE;
+ALTER TABLE dbo.ServiceRate ADD CONSTRAINT FK_ServiceRate_RateType FOREIGN KEY (RateTypeID) REFERENCES dbo.RateType(RateTypeID);
+ALTER TABLE dbo.EmployeeTimesheets ADD CONSTRAINT FK_EmployeeTimesheets_Employees FOREIGN KEY (EmployeeStudioId) REFERENCES dbo.Employees(EmployeeID) ON DELETE CASCADE;
+ALTER TABLE dbo.PortfolioCategoryService ADD CONSTRAINT FK_PortfolioCategoryService_Category FOREIGN KEY (CategoryID) REFERENCES dbo.PortfolioCategory(CategoryID) ON DELETE CASCADE;
+ALTER TABLE dbo.Portfolios ADD CONSTRAINT FK_Portfolios_PortfolioCategory FOREIGN KEY (CategoryID) REFERENCES dbo.PortfolioCategory(CategoryID);
+ALTER TABLE dbo.PortfolioImages ADD CONSTRAINT FK_PortfolioImages_Portfolios FOREIGN KEY (PortfolioId) REFERENCES dbo.Portfolios(PortfolioId) ON DELETE CASCADE;
+ALTER TABLE dbo.EventOvertimeCharges ADD CONSTRAINT FK_EventOvertime_EventAppointment FOREIGN KEY (EventAppointmentID) REFERENCES dbo.EventAppointment(EventAppointmentID) ON DELETE CASCADE;
+ALTER TABLE dbo.EventOvertimeCharges ADD CONSTRAINT FK_EventOvertime_Employee FOREIGN KEY (LoggedByEmployeeID) REFERENCES dbo.Employees(EmployeeID);
+ALTER TABLE dbo.PaymentTransactions ADD CONSTRAINT FK_PaymentTransactions_EventAppointment FOREIGN KEY (EventAppointmentID) REFERENCES dbo.EventAppointment(EventAppointmentID) ON DELETE CASCADE;
+ALTER TABLE dbo.PaymentTransactions ADD CONSTRAINT FK_PaymentTransactions_Employee FOREIGN KEY (ReceivedByEmployeeID) REFERENCES dbo.Employees(EmployeeID);
 GO
 
 /* =====================================================================
-   7. INDEXES FOR COMMON AUDIT, CATALOG & BOOKING LOOKUPS
+   9. INDEXES FOR COMMON AUDIT, CATALOG, BOOKING & PORTFOLIO LOOKUPS
    ===================================================================== */
 CREATE INDEX IX_HistoryLog_EventAppointment ON dbo.HistoryLog (EventAppointmentID, LoggedAt DESC);
 CREATE INDEX IX_HistoryLog_Entity           ON dbo.HistoryLog (EntityName, EntityID, LoggedAt DESC);
@@ -303,4 +444,14 @@ CREATE INDEX IX_EventLineItem_Event         ON dbo.EventLineItem (EventAppointme
 CREATE INDEX IX_ServiceCategoryJoins_Cat    ON dbo.ServiceCategoryJoins (ServiceCategoryID);
 CREATE INDEX IX_ComboPackageJoin_Package    ON dbo.ComboPackageJoin (ComboPackageID);
 CREATE INDEX IX_Equipment_EquipmentType     ON dbo.Equipment (EquipmentTypeID);
+CREATE INDEX IX_EmployeeTimesheets_EmpDate ON dbo.EmployeeTimesheets (EmployeeStudioId, WorkDate);
+CREATE INDEX IX_EmployeeTimesheets_ClockIn ON dbo.EmployeeTimesheets (ClockIn DESC);
+CREATE INDEX IX_ServiceRate_Services       ON dbo.ServiceRate (ServicesID);
+CREATE INDEX IX_ServiceRate_RateType       ON dbo.ServiceRate (RateTypeID);
+CREATE INDEX IX_Portfolios_CategoryID      ON dbo.Portfolios (CategoryID);
+CREATE INDEX IX_PortfolioImages_PortfolioId ON dbo.PortfolioImages (PortfolioId);
+CREATE INDEX IX_PaymentTransactions_Event  ON dbo.PaymentTransactions (EventAppointmentID, CreatedAt DESC);
+CREATE INDEX IX_EventOvertime_Event        ON dbo.EventOvertimeCharges (EventAppointmentID);
+CREATE INDEX IX_BookingNegotiation_Customer ON dbo.BookingNegotiation (CustomerID, ConsultationDate DESC);
+CREATE INDEX IX_BookingNegotiation_Employee ON dbo.BookingNegotiation (EmployeeID, ConsultationDate DESC);
 GO

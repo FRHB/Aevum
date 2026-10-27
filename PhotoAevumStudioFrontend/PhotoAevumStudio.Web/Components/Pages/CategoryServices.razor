@@ -261,16 +261,18 @@
                 <tbody class="divide-y divide-gray-100 text-sm">
                     @if (FilteredCategories.Any())
                     {
+                        var catIndex = 0;
                         @foreach (var cat in FilteredCategories)
                         {
-                            var classes = SpecializationColorHelper.GetClasses(cat.ColorTag);
+                            var colorTag = GetCategoryColor(cat, catIndex++);
+                            var classes = SpecializationColorHelper.GetClasses(colorTag);
 
                             <tr class="hover:bg-gray-50/60 transition-colors duration-100">
                                 
                                 <!-- Category Name & Initials Avatar Chip -->
                                 <td class="py-4 px-6">
                                     <div class="flex items-center gap-3">
-                                        <div class="w-10 h-10 rounded-full bg-gray-900 text-white font-bold text-xs flex items-center justify-center shrink-0 shadow-xs">
+                                        <div class="w-10 h-10 rounded-full font-bold text-xs flex items-center justify-center shrink-0 shadow-xs border @classes.BadgeClass">
                                             @cat.Initials
                                         </div>
                                         <div>
@@ -306,16 +308,27 @@
                                     <div class="font-mono text-[11px] text-gray-400 mt-1">@cat.Code</div>
                                 </td>
 
-                                <!-- Associated Services Pills (Matching reference image chips) -->
+                                <!-- Associated Services Pills (Limited to 3 with overflow badge and distinct color-coding) -->
                                 <td class="py-4 px-6">
                                     @if (cat.AssociatedServices.Any())
                                     {
-                                        <div class="flex flex-wrap gap-1.5 max-w-md">
-                                            @foreach (var service in cat.AssociatedServices)
+                                        var displayedServices = cat.AssociatedServices.Take(3).ToList();
+                                        var remainingCount = cat.AssociatedServices.Count - displayedServices.Count;
+                                        var remainingTitle = remainingCount > 0 ? string.Join(", ", cat.AssociatedServices.Skip(3)) : string.Empty;
+
+                                        <div class="flex flex-wrap items-center gap-1.5 max-w-md">
+                                            @foreach (var service in displayedServices)
                                             {
                                                 <span class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium border @classes.BadgeClass shadow-2xs">
                                                     <span class="w-1.5 h-1.5 rounded-full @classes.DotClass"></span>
                                                     @service
+                                                </span>
+                                            }
+                                            @if (remainingCount > 0)
+                                            {
+                                                <span class="inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-semibold bg-slate-100 text-slate-700 border border-slate-200 cursor-help"
+                                                      title="@remainingTitle">
+                                                    +@remainingCount more
                                                 </span>
                                             }
                                         </div>
@@ -719,6 +732,15 @@
 }
 
 @code {
+    private static readonly string[] CategoryColorPalette = ["Blue", "Emerald", "Purple", "Amber", "Rose", "Indigo", "Cyan"];
+
+    private string GetCategoryColor(ServiceCategoryItem cat, int index)
+    {
+        if (!string.IsNullOrWhiteSpace(cat.ColorTag) && !cat.ColorTag.Equals("Blue", StringComparison.OrdinalIgnoreCase))
+            return cat.ColorTag;
+        return CategoryColorPalette[Math.Abs(index) % CategoryColorPalette.Length];
+    }
+
     [Parameter] public bool IsReadOnly { get; set; }
     [CascadingParameter] Task<AuthenticationState>? AuthState { get; set; }
     private ClaimsPrincipal? _currentUser;
