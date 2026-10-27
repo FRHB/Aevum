@@ -500,3 +500,12 @@ appsettings.Staging.json
 # Security: Ignore all appsettings to prevent credential leaks
 appsettings.json
 appsettings.*.json
+
+.agyrules
+litellm_config.yaml
+Employee.
+Project-State.md
+tools/
+Logs/
+
+
