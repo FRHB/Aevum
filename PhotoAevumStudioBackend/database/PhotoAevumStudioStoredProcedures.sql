@@ -1793,7 +1793,7 @@ END;
 GO
 
 CREATE OR ALTER PROCEDURE dbo.sp_GetNextPortfolioCategoryID
-    @NextCategoryID nvarchar(30) = NULL OUTPUT
+    @NextCategoryID nvarchar(50) = NULL OUTPUT
 AS
 BEGIN
     SET NOCOUNT ON;
@@ -1843,9 +1843,9 @@ AS
 BEGIN
     SET NOCOUNT ON;
     DECLARE @MaxNum INT = 0;
-    SELECT @MaxNum = ISNULL(MAX(TRY_CAST(SUBSTRING(TransactionID, CHARINDEX('-', TransactionID) + 1, 20) AS INT)), 0)
+    SELECT @MaxNum = ISNULL(MAX(TRY_CAST(SUBSTRING(PaymentTransactionID, CHARINDEX('-', PaymentTransactionID) + 1, 20) AS INT)), 0)
     FROM dbo.PaymentTransactions WITH (UPDLOCK, HOLDLOCK)
-    WHERE TransactionID LIKE 'TXN-%';
+    WHERE PaymentTransactionID LIKE 'TXN-%';
 
     SET @NextTransactionID = 'TXN-' + RIGHT('0000' + CAST((@MaxNum + 1) AS VARCHAR(10)), 4);
     SELECT @NextTransactionID AS NextTransactionID;

@@ -8,6 +8,7 @@ using System.Threading.Tasks;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.Data.SqlClient;
 using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.Logging;
 using PhotoAevumStudio.Web.Models;
 
 namespace PhotoAevumStudio.Web.Services;
@@ -16,10 +17,12 @@ public class PortfolioService : IPortfolioService
 {
     private readonly string _connectionString;
     private readonly IWebHostEnvironment _env;
+    private readonly ILogger<PortfolioService>? _logger;
 
-    public PortfolioService(IConfiguration? configuration, IWebHostEnvironment env)
+    public PortfolioService(IConfiguration? configuration, IWebHostEnvironment env, ILogger<PortfolioService>? logger = null)
     {
         _env = env;
+        _logger = logger;
         _connectionString = configuration?.GetConnectionString("DefaultConnection")
             ?? "Data Source=localhost\\SQLEXPRESS;Initial Catalog=PhotoAevumStudio;Integrated Security=True;Persist Security Info=False;Pooling=False;MultipleActiveResultSets=False;Encrypt=True;TrustServerCertificate=True;Application Name=\"SQL Server Management Studio\";Command Timeout=0";
     }
@@ -66,8 +69,9 @@ public class PortfolioService : IPortfolioService
                 });
             }
         }
-        catch
+        catch (Exception ex)
         {
+            _logger?.LogError(ex, "Failed to load portfolio categories.");
         }
 
         return list;
@@ -135,8 +139,9 @@ public class PortfolioService : IPortfolioService
                 PortfolioCount = 0
             };
         }
-        catch
+        catch (Exception ex)
         {
+            _logger?.LogError(ex, "Failed to create portfolio category '{CategoryName}'.", name);
             return null;
         }
     }
@@ -276,8 +281,9 @@ public class PortfolioService : IPortfolioService
                 }
             }
         }
-        catch
+        catch (Exception ex)
         {
+            _logger?.LogError(ex, "Failed to load portfolio categories.");
         }
 
         return list;
@@ -306,8 +312,9 @@ public class PortfolioService : IPortfolioService
         {
             Directory.CreateDirectory(uploadRoot);
         }
-        catch
+        catch (Exception ex)
         {
+            _logger?.LogError(ex, "Failed to load portfolio categories.");
         }
 
         // Save image files
@@ -413,8 +420,9 @@ public class PortfolioService : IPortfolioService
                 }).ToList()
             };
         }
-        catch
+        catch (Exception ex)
         {
+            _logger?.LogError(ex, "Failed to create portfolio category '{CategoryName}'.", name);
             return null;
         }
     }

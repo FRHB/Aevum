@@ -353,7 +353,7 @@ GO
    ===================================================================== */
 
 CREATE TABLE dbo.PortfolioCategory (
-    CategoryID nvarchar(30) NOT NULL CONSTRAINT PK_PortfolioCategory PRIMARY KEY,
+    CategoryID nvarchar(50) NOT NULL CONSTRAINT PK_PortfolioCategory PRIMARY KEY,
     CategoryName nvarchar(120) NOT NULL,
     Description nvarchar(400) NULL,
     ParentSection nvarchar(30) NOT NULL CONSTRAINT DF_PortfolioCategory_Parent DEFAULT 'Photography',
@@ -364,7 +364,7 @@ CREATE TABLE dbo.PortfolioCategory (
 );
 
 CREATE TABLE dbo.PortfolioCategoryService (
-    CategoryID nvarchar(30) NOT NULL,
+    CategoryID nvarchar(50) NOT NULL,
     ServiceName nvarchar(120) NOT NULL,
     CONSTRAINT PK_PortfolioCategoryService PRIMARY KEY (CategoryID, ServiceName)
 );
@@ -373,7 +373,7 @@ CREATE TABLE dbo.Portfolios (
     PortfolioId nvarchar(50) NOT NULL PRIMARY KEY,
     PortfolioName nvarchar(255) NOT NULL,
     PortfolioDescription nvarchar(1000) NULL,
-    CategoryID nvarchar(30) NOT NULL,
+    CategoryID nvarchar(50) NOT NULL,
     IsFeatured bit NOT NULL CONSTRAINT DF_Portfolios_Featured DEFAULT 0,
     HighlightImageFileName nvarchar(255) NULL,
     CreatedAt datetime2 NOT NULL CONSTRAINT DF_Portfolios_CreatedAt DEFAULT SYSUTCDATETIME()
