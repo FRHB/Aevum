@@ -66,6 +66,10 @@ public sealed class ScheduleController(IScheduleBookingService schedule, ILogger
         {
             return Problem(ex.Message, statusCode: StatusCodes.Status400BadRequest, title: "VALIDATION_FAILED");
         }
+        catch (InvalidOperationException ex)
+        {
+            return Problem(ex.Message, statusCode: StatusCodes.Status400BadRequest, title: "INVALID_OPERATION");
+        }
         catch (OperationCanceledException) when (HttpContext.RequestAborted.IsCancellationRequested)
         {
             return StatusCode(499); // client went away

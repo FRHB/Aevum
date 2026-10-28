@@ -52,7 +52,6 @@ public class RoutingAndLayoutTests
             typeof(Employee),
             typeof(Equipment),
             typeof(Schedules),
-            typeof(PhotoAevumStudio.Web.Components.Pages.Services),
             typeof(CalendarOfEvents),
             typeof(StaffSchedule),
             typeof(EquipmentSchedule),

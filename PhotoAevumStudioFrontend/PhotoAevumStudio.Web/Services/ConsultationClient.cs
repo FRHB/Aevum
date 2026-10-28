@@ -62,6 +62,31 @@ public sealed class ConsultationClient(
     public Task<ApiResult<EventAppointmentDto>> CompleteEventAsync(string appointmentId, CompleteEventRequest request, CancellationToken ct = default) =>
         SendAsync<EventAppointmentDto>(() => _http.PostAsJsonAsync($"api/payments/complete-event/{appointmentId}", request, ct), ct);
 
+    public Task<ApiResult<PaymentBreakdownModel>> CalculateReservationFeeAsync(decimal total, CancellationToken ct = default) =>
+        SendAsync<PaymentBreakdownModel>(() => _http.GetAsync($"api/payments/calculate-deposit?total={total}", ct), ct);
+
+    public Task<ApiResult<PaymentSummaryModel>> SubmitCustomerPaymentAsync(CustomerSubmitPaymentModel request, CancellationToken ct = default) =>
+        SendAsync<PaymentSummaryModel>(() => _http.PostAsJsonAsync("api/payments/submit-customer-payment", request, ct), ct);
+
+    public Task<ApiResult<PaymentSummaryModel>> LogEmployeeCashAsync(EmployeeLogCashModel request, CancellationToken ct = default) =>
+        SendAsync<PaymentSummaryModel>(() => _http.PostAsJsonAsync("api/payments/log-employee-cash", request, ct), ct);
+
+    public Task<ApiResult<PaymentSummaryModel>> ApproveRemittanceAsync(int paymentId, AdminApproveRemittanceModel? request = null, CancellationToken ct = default) =>
+        SendAsync<PaymentSummaryModel>(() => _http.PostAsJsonAsync($"api/payments/{paymentId}/approve-remittance", request ?? new(), ct), ct);
+
+    public async Task<ApiResult<IReadOnlyList<PaymentSummaryModel>>> GetPendingRemittancesAsync(CancellationToken ct = default)
+    {
+        var result = await SendAsync<List<PaymentSummaryModel>>(() => _http.GetAsync("api/payments/pending-remittances", ct), ct);
+        return result.IsSuccess ? ApiResult<IReadOnlyList<PaymentSummaryModel>>.Ok(result.Value!) : new(null, result.Error);
+    }
+
+    public async Task<ApiResult<IReadOnlyList<PaymentSummaryModel>>> GetEmployeeLedgerAsync(string? employeeId = null, CancellationToken ct = default)
+    {
+        var url = "api/payments/employee-ledger" + (!string.IsNullOrWhiteSpace(employeeId) ? $"?employeeId={Uri.EscapeDataString(employeeId)}" : "");
+        var result = await SendAsync<List<PaymentSummaryModel>>(() => _http.GetAsync(url, ct), ct);
+        return result.IsSuccess ? ApiResult<IReadOnlyList<PaymentSummaryModel>>.Ok(result.Value!) : new(null, result.Error);
+    }
+
     private async Task<ApiResult<T>> SendAsync<T>(Func<Task<HttpResponseMessage>> send, CancellationToken ct)
     {
         try

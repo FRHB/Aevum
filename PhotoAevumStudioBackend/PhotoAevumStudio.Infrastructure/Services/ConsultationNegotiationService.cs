@@ -1,3 +1,4 @@
+using System.Net;
 using System.Data;
 using Microsoft.Data.SqlClient;
 using Microsoft.EntityFrameworkCore;
@@ -39,6 +40,11 @@ public class ConsultationNegotiationService : IConsultationNegotiationService
         CreateConsultationRequest request,
         CancellationToken cancellationToken = default)
     {
+        if (!request.HasAcceptedDataPolicy)
+        {
+            throw new ArgumentException("Client must accept the Data Privacy Policy and Terms before scheduling a consultation.");
+        }
+
         await using var conn = await OpenConnectionAsync(cancellationToken);
 
         // 1. Get next negotiation ID (NEG-####)
@@ -306,6 +312,8 @@ public class ConsultationNegotiationService : IConsultationNegotiationService
         const string sql = @"
             UPDATE dbo.BookingNegotiation
             SET NegotiationStatus = @Status,
+                ConsultationDate = CASE WHEN @NewDate IS NOT NULL THEN @NewDate ELSE ConsultationDate END,
+                ConsultationTime = CASE WHEN @NewTime IS NOT NULL THEN @NewTime ELSE ConsultationTime END,
                 InquiryNotes = CASE 
                     WHEN @Notes IS NOT NULL AND LEN(@Notes) > 0 
                     THEN ISNULL(InquiryNotes, '') + CHAR(13) + CHAR(10) + '[Outcome Note]: ' + @Notes 
@@ -316,9 +324,64 @@ public class ConsultationNegotiationService : IConsultationNegotiationService
         await using var cmd = new SqlCommand(sql, conn);
         cmd.Parameters.AddWithValue("@Status", request.NegotiationStatus);
         cmd.Parameters.AddWithValue("@Notes", (object?)request.Notes ?? DBNull.Value);
+        cmd.Parameters.AddWithValue("@NewDate", request.NewConsultationDate.HasValue ? request.NewConsultationDate.Value.ToDateTime(TimeOnly.MinValue) : DBNull.Value);
+        cmd.Parameters.AddWithValue("@NewTime", request.NewConsultationTime.HasValue ? request.NewConsultationTime.Value.ToTimeSpan() : DBNull.Value);
         cmd.Parameters.AddWithValue("@NegId", negotiationId);
 
         var rows = await cmd.ExecuteNonQueryAsync(cancellationToken);
+
+        if (rows > 0 && request.NegotiationStatus.Equals("Rescheduled", StringComparison.OrdinalIgnoreCase))
+        {
+            try
+            {
+                var details = await GetNegotiationByIdAsync(negotiationId, cancellationToken);
+                if (details != null && !string.IsNullOrWhiteSpace(details.CustomerEmail))
+                {
+                    var clientName = string.IsNullOrWhiteSpace(details.CustomerName) ? "Valued Client" : details.CustomerName;
+                    var clerkName = string.IsNullOrWhiteSpace(details.EmployeeName) ? "Office Clerk" : details.EmployeeName;
+                    var meetLink = details.MeetingLink;
+                    var notesText = !string.IsNullOrWhiteSpace(request.Notes)
+                        ? $"<p style=\"margin:8px 0;font-size:13px;color:#475569\"><strong>Clerk / Reschedule Notes:</strong> {WebUtility.HtmlEncode(request.Notes)}</p>"
+                        : "";
+
+                    var meetLinkHtml = string.IsNullOrWhiteSpace(meetLink) ? "" : $@"
+                    <div style=""text-align:center;margin:28px 0"">
+                        <a href=""{meetLink}"" style=""background:#0f172a;color:#ffffff;padding:12px 24px;border-radius:8px;text-decoration:none;font-weight:bold;display:inline-block"">
+                            Join Google Meet Consultation
+                        </a>
+                    </div>
+                    <p style=""font-size:12px;color:#64748b"">Direct Link: <a href=""{meetLink}"">{meetLink}</a></p>";
+
+                    var rescheduleBody = $@"
+<div style=""font-family:Arial,sans-serif;color:#1e293b;max-width:600px;margin:0 auto;padding:24px;border:1px solid #e2e8f0;border-radius:12px"">
+    <h2 style=""color:#0f172a;margin-top:0"">Consultation Rescheduled</h2>
+    <p>Dear {WebUtility.HtmlEncode(clientName)},</p>
+    <p>Your online consultation (<strong>#{negotiationId}</strong>) with Photo Aevum Studio has been rescheduled.</p>
+    <div style=""background:#f8fafc;padding:16px;border-radius:8px;margin:20px 0;border:1px solid #cbd5e1"">
+        <p style=""margin:4px 0""><strong>New Date:</strong> {details.ConsultationDate:dddd, MMMM d, yyyy}</p>
+        <p style=""margin:4px 0""><strong>New Time:</strong> {DateTime.Today.Add(details.ConsultationTime.ToTimeSpan()):h:mm tt}</p>
+        <p style=""margin:4px 0""><strong>Assigned Clerk:</strong> {WebUtility.HtmlEncode(clerkName)}</p>
+        <p style=""margin:4px 0""><strong>Platform:</strong> Google Meet</p>
+        {notesText}
+    </div>
+    {meetLinkHtml}
+    <hr style=""border:none;border-top:1px solid #e2e8f0;margin:20px 0"" />
+    <p style=""font-size:12px;color:#94a3b8"">Photo Aevum Studio &bull; Transforming moments into timeless art.</p>
+</div>";
+
+                    await _emailService.SendEmailAsync(
+                        details.CustomerEmail,
+                        $"Consultation Rescheduled: #{negotiationId} - Photo Aevum Studio",
+                        rescheduleBody);
+                    _logger.LogInformation("Reschedule confirmation email sent to {Email} for negotiation {NegotiationId}", details.CustomerEmail, negotiationId);
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Failed to dispatch consultation reschedule notification email for {NegotiationId}", negotiationId);
+            }
+        }
+
         return rows > 0;
     }
 
@@ -355,7 +418,7 @@ public class ConsultationNegotiationService : IConsultationNegotiationService
         var totalAmount = serviceLines.Sum(s => s.ServicePrice);
         if (totalAmount <= 0) totalAmount = 5000.00m; // reasonable fallback studio base rate if services unpriced
 
-        var downpaymentPercentage = _xenditSettings.DownpaymentPercentage <= 0 ? 0.25m : _xenditSettings.DownpaymentPercentage;
+        var downpaymentPercentage = _xenditSettings.DownpaymentPercentage <= 0 ? 0.15m : _xenditSettings.DownpaymentPercentage;
         var downpaymentAmount = Math.Round(totalAmount * downpaymentPercentage, 2);
         var finalBalanceAmount = totalAmount - downpaymentAmount;
 
@@ -388,7 +451,7 @@ public class ConsultationNegotiationService : IConsultationNegotiationService
 
         var invoiceResult = await _xenditPaymentService.CreateInvoiceAsync(
             appointmentId,
-            $"Photo Aevum Studio - 25% Deposit for {request.EventName}",
+            $"Photo Aevum Studio - 15% Reservation Deposit for {request.EventName}",
             downpaymentAmount,
             custName,
             custEmail,
@@ -1235,7 +1298,7 @@ public class ConsultationNegotiationService : IConsultationNegotiationService
                     PaymentMethod, Amount, Status, ReceivedByEmployeeID, CreatedAt
                 )
                 VALUES (
-                    @TxnId, @EvtId, 'Final_Settlement_75',
+                    @TxnId, @EvtId, 'BalanceSettlement_85',
                     @Method, @Amount, 'Paid', @EmpId, SYSUTCDATETIME()
                 );
 
@@ -1295,37 +1358,27 @@ public class ConsultationNegotiationService : IConsultationNegotiationService
         return result?.ToString() ?? $"{prefix}0001";
     }
 
-    // Helper: Least-recently-assigned clerk round robin
+    // Helper: Least-recently-assigned clerk round robin (strictly Office Clerk specialization only)
     private static async Task<(string EmployeeId, string EmployeeName, string EmployeeEmail)> AssignOfficeClerkAsync(
         SqlConnection conn,
         CancellationToken ct)
     {
-        // Query active employees with Clerk/Office specialization who have gone longest without assignment
+        // Query active employees who strictly have the verified 'Office Clerk' specialization
         const string clerkSql = @"
             SELECT TOP 1 
                 e.EmployeeID, 
                 e.EmployeeFirstName + ' ' + e.EmployeeLastName AS EmployeeName, 
                 ISNULL(e.EmployeeEmail, '') AS EmployeeEmail
             FROM dbo.Employees e
+            JOIN dbo.EmployeeJointSpecialization ejs ON e.EmployeeID = ejs.EmployeeID
+            JOIN dbo.EmployeeSpecialization es ON ejs.SpecializationID = es.SpecializationID
             LEFT JOIN (
                 SELECT EmployeeID, MAX(CreatedAt) AS LastAssignedAt
                 FROM dbo.BookingNegotiation
                 GROUP BY EmployeeID
             ) bn ON e.EmployeeID = bn.EmployeeID
             WHERE (e.EmployeeStatus = 'Active' OR e.Status = 'Active')
-              AND (
-                  EXISTS (
-                      SELECT 1 FROM dbo.EmployeeSpecialization es
-                      JOIN dbo.Specialization s ON es.SpecializationID = s.SpecializationID
-                      WHERE es.EmployeeID = e.EmployeeID
-                        AND (s.SpecializationName LIKE '%Clerk%' OR s.SpecializationName LIKE '%Front Desk%' OR s.SpecializationName LIKE '%Office%')
-                  )
-                  OR NOT EXISTS (
-                      SELECT 1 FROM dbo.EmployeeSpecialization es2
-                      JOIN dbo.Specialization s2 ON es2.SpecializationID = s2.SpecializationID
-                      WHERE s2.SpecializationName LIKE '%Clerk%' OR s2.SpecializationName LIKE '%Front Desk%' OR s2.SpecializationName LIKE '%Office%'
-                  )
-              )
+              AND UPPER(LTRIM(RTRIM(COALESCE(NULLIF(es.SpecializationName, ''), es.Specialization)))) = 'OFFICE CLERK'
             ORDER BY COALESCE(bn.LastAssignedAt, '1900-01-01') ASC, e.EmployeeID ASC;";
 
         await using var cmd = new SqlCommand(clerkSql, conn);
@@ -1339,31 +1392,6 @@ public class ConsultationNegotiationService : IConsultationNegotiationService
         }
         await reader.CloseAsync();
 
-        // Fallback to any active employee if none matched
-        const string fallbackSql = @"
-            SELECT TOP 1 
-                e.EmployeeID, 
-                e.EmployeeFirstName + ' ' + e.EmployeeLastName AS EmployeeName, 
-                ISNULL(e.EmployeeEmail, '') AS EmployeeEmail
-            FROM dbo.Employees e
-            LEFT JOIN (
-                SELECT EmployeeID, MAX(CreatedAt) AS LastAssignedAt
-                FROM dbo.BookingNegotiation
-                GROUP BY EmployeeID
-            ) bn ON e.EmployeeID = bn.EmployeeID
-            WHERE (e.EmployeeStatus = 'Active' OR e.Status = 'Active')
-            ORDER BY COALESCE(bn.LastAssignedAt, '1900-01-01') ASC, e.EmployeeID ASC;";
-
-        await using var fbCmd = new SqlCommand(fallbackSql, conn);
-        await using var fbReader = await fbCmd.ExecuteReaderAsync(ct);
-        if (await fbReader.ReadAsync(ct))
-        {
-            var id = fbReader.GetString(0);
-            var name = fbReader.GetString(1);
-            var email = fbReader.GetString(2);
-            return (id, name, email);
-        }
-
-        return ("EMP-001", "Default Studio Clerk", "clerk@photoaevum.com");
+        throw new InvalidOperationException("No active employee with the Office Clerk specialization is available to be assigned to this consultation.");
     }
 }

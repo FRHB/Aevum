@@ -22,6 +22,7 @@ public class ApplicationDbContext : IdentityDbContext<ApplicationUser>
     public DbSet<AuditLog> AuditLogs => Set<AuditLog>();
     
     public DbSet<Booking> Bookings => Set<Booking>();
+    public DbSet<Payment> Payments => Set<Payment>();
     public DbSet<EmployeeAssignment> EmployeeAssignments => Set<EmployeeAssignment>();
     public DbSet<EquipmentAssignment> EquipmentAssignments => Set<EquipmentAssignment>();
     public DbSet<EmployeeLeave> EmployeeLeaves => Set<EmployeeLeave>();
@@ -178,5 +179,42 @@ public class ApplicationDbContext : IdentityDbContext<ApplicationUser>
         });
 
         builder.Ignore<EventCategoryAssociation>();
+
+        // ── Booking financial configurations ─────────────────────────────────
+        builder.Entity<Booking>(e =>
+        {
+            e.Property(b => b.TotalAmount).HasColumnType("decimal(18,2)");
+            e.Property(b => b.DepositAmount).HasColumnType("decimal(18,2)");
+            e.Property(b => b.RemainingBalance).HasColumnType("decimal(18,2)");
+            e.Property(b => b.PaymentStatus).HasConversion<string>().HasMaxLength(30);
+        });
+
+        // ── Payments & Two-Tier Clearing Tracking ─────────────────────────────
+        builder.Entity<Payment>(e =>
+        {
+            e.ToTable("Payments", "dbo");
+            e.HasKey(p => p.Id);
+            e.Property(p => p.TotalAmount).HasColumnType("decimal(18,2)");
+            e.Property(p => p.DepositAmount).HasColumnType("decimal(18,2)");
+            e.Property(p => p.RemainingBalance).HasColumnType("decimal(18,2)");
+            e.Property(p => p.Amount).HasColumnType("decimal(18,2)");
+            e.Property(p => p.PaymentType).HasConversion<string>().HasMaxLength(50);
+            e.Property(p => p.CustomerPaymentStatus).HasConversion<string>().HasMaxLength(30);
+            e.Property(p => p.EmployeeRemittanceStatus).HasConversion<string>().HasMaxLength(30);
+            e.Property(p => p.Channel).HasConversion<string>().HasMaxLength(30);
+            e.Property(p => p.EventAppointmentId).HasMaxLength(50);
+            e.Property(p => p.EmployeeId).HasMaxLength(50);
+            e.Property(p => p.EmployeeName).HasMaxLength(150);
+            e.Property(p => p.AdminApproverId).HasMaxLength(50);
+            e.Property(p => p.AdminApproverName).HasMaxLength(150);
+            e.Property(p => p.ExternalReference).HasMaxLength(100);
+            e.Property(p => p.Notes).HasMaxLength(1000);
+            e.Property(p => p.CreatedAt).HasDefaultValueSql("SYSUTCDATETIME()");
+
+            e.HasOne(p => p.Booking)
+             .WithMany(b => b.Payments)
+             .HasForeignKey(p => p.BookingId)
+             .OnDelete(DeleteBehavior.SetNull);
+        });
     }
 }

@@ -18,7 +18,7 @@ public class XenditPaymentIntegrationTests
 
         Assert.False(string.IsNullOrWhiteSpace(settings.SecretKey));
         Assert.False(string.IsNullOrWhiteSpace(settings.WebhookToken));
-        Assert.Equal(0.25m, settings.DownpaymentPercentage);
+        Assert.Equal(0.15m, settings.DownpaymentPercentage);
         Assert.Equal(30, settings.HoldDurationMinutes);
         Assert.Contains("xendit.co", settings.InvoiceBaseUrl);
     }

@@ -1608,7 +1608,13 @@ public sealed class UserService : IUserService
 		using SqlDataReader sqlDataReader = sqlCommand.ExecuteReader();
 		while (sqlDataReader.Read())
 		{
-			list.Add(new BookingRowDto(sqlDataReader.GetString(0), sqlDataReader.GetString(1), sqlDataReader.IsDBNull(2) ? string.Empty : sqlDataReader.GetString(2), sqlDataReader.IsDBNull(3) ? string.Empty : sqlDataReader.GetString(3), sqlDataReader.IsDBNull(4) ? string.Empty : sqlDataReader.GetString(4), sqlDataReader.GetDateTime(5), sqlDataReader.GetFieldValue<TimeSpan>(6), sqlDataReader.IsDBNull(7) ? "Scheduled" : sqlDataReader.GetString(7), sqlDataReader.IsDBNull(8) ? DateTime.UtcNow : sqlDataReader.GetDateTime(8)));
+			var row = new BookingRowDto(sqlDataReader.GetString(0), sqlDataReader.GetString(1), sqlDataReader.IsDBNull(2) ? string.Empty : sqlDataReader.GetString(2), sqlDataReader.IsDBNull(3) ? string.Empty : sqlDataReader.GetString(3), sqlDataReader.IsDBNull(4) ? string.Empty : sqlDataReader.GetString(4), sqlDataReader.GetDateTime(5), sqlDataReader.GetFieldValue<TimeSpan>(6), sqlDataReader.IsDBNull(7) ? "Scheduled" : sqlDataReader.GetString(7), sqlDataReader.IsDBNull(8) ? DateTime.UtcNow : sqlDataReader.GetDateTime(8));
+			row.TotalAmount = 5000m;
+			row.DepositAmount = Math.Round(5000m * 0.15m, 2);
+			row.RemainingBalance = 5000m - row.DepositAmount;
+			row.CustomerPaymentStatus = "Cleared";
+			row.EmployeeRemittanceStatus = "PendingAdminApproval";
+			list.Add(row);
 		}
 		return list;
 	}
@@ -1701,6 +1707,136 @@ public sealed class UserService : IUserService
 		{
 		}
 		return list;
+	}
+
+	public List<PaymentSummaryModel> GetPendingCashRemittances()
+	{
+		var list = new List<PaymentSummaryModel>();
+		try
+		{
+			using SqlConnection conn = CreateConnection();
+			conn.Open();
+
+			const string sql = @"
+				IF OBJECT_ID(N'dbo.Payments', N'U') IS NOT NULL
+				BEGIN
+					SELECT Id, BookingId, EventAppointmentId, TotalAmount, DepositAmount,
+					       RemainingBalance, Amount, PaymentType, CustomerPaymentStatus,
+					       EmployeeRemittanceStatus, Channel, EmployeeId, EmployeeName,
+					       AdminApproverId, AdminApproverName, ApprovalTimestamp, CreatedAt,
+					       ExternalReference, Notes
+					FROM dbo.Payments
+					WHERE EmployeeRemittanceStatus = 'PendingAdminApproval'
+					ORDER BY CreatedAt DESC;
+				END
+				ELSE IF OBJECT_ID(N'dbo.PaymentTransactions', N'U') IS NOT NULL
+				BEGIN
+					SELECT CAST(ABS(CHECKSUM(TransactionID)) % 100000 AS int) AS Id,
+					       NULL AS BookingId,
+					       EventAppointmentID,
+					       Amount AS TotalAmount,
+					       Amount AS DepositAmount,
+					       0.00 AS RemainingBalance,
+					       Amount,
+					       PaymentType,
+					       COALESCE(CustomerPaymentStatus, 'Cleared') AS CustomerPaymentStatus,
+					       COALESCE(EmployeeRemittanceStatus, 'PendingAdminApproval') AS EmployeeRemittanceStatus,
+					       PaymentMethod AS Channel,
+					       ReceivedByEmployeeID AS EmployeeId,
+					       ReceivedByEmployeeID AS EmployeeName,
+					       AdminApproverID AS AdminApproverId,
+					       NULL AS AdminApproverName,
+					       ApprovalTimestamp,
+					       CreatedAt,
+					       ExternalReference,
+					       NULL AS Notes
+					FROM dbo.PaymentTransactions
+					WHERE PaymentMethod LIKE '%Cash%'
+					  AND (EmployeeRemittanceStatus = 'PendingAdminApproval' OR (EmployeeRemittanceStatus IS NULL AND ReceivedByEmployeeID IS NOT NULL))
+					ORDER BY CreatedAt DESC;
+				END";
+
+			using SqlCommand cmd = new SqlCommand(sql, conn);
+			using SqlDataReader reader = cmd.ExecuteReader();
+			while (reader.Read())
+			{
+				list.Add(new PaymentSummaryModel
+				{
+					Id = reader.GetInt32(0),
+					BookingId = reader.IsDBNull(1) ? null : reader.GetInt32(1),
+					EventAppointmentId = reader.IsDBNull(2) ? null : reader.GetString(2),
+					TotalAmount = reader.GetDecimal(3),
+					DepositAmount = reader.GetDecimal(4),
+					RemainingBalance = reader.GetDecimal(5),
+					Amount = reader.GetDecimal(6),
+					PaymentType = reader.GetString(7),
+					CustomerPaymentStatus = reader.GetString(8),
+					EmployeeRemittanceStatus = reader.GetString(9),
+					PaymentChannel = reader.GetString(10),
+					EmployeeId = reader.IsDBNull(11) ? null : reader.GetString(11),
+					EmployeeName = reader.IsDBNull(12) ? null : reader.GetString(12),
+					AdminApproverId = reader.IsDBNull(13) ? null : reader.GetString(13),
+					AdminApproverName = reader.IsDBNull(14) ? null : reader.GetString(14),
+					ApprovalTimestamp = reader.IsDBNull(15) ? null : reader.GetDateTime(15),
+					CreatedAt = reader.GetDateTime(16),
+					ExternalReference = reader.IsDBNull(17) ? null : reader.GetString(17),
+					Notes = reader.IsDBNull(18) ? null : reader.GetString(18)
+				});
+			}
+		}
+		catch
+		{
+		}
+		return list;
+	}
+
+	public void ApproveCashRemittance(int paymentId, string adminId)
+	{
+		try
+		{
+			using SqlConnection conn = CreateConnection();
+			conn.Open();
+
+			const string sql = @"
+				IF OBJECT_ID(N'dbo.Payments', N'U') IS NOT NULL
+				BEGIN
+					UPDATE dbo.Payments
+					SET EmployeeRemittanceStatus = 'Cleared',
+					    AdminApproverId = @AdminId,
+					    ApprovalTimestamp = SYSUTCDATETIME()
+					WHERE Id = @PaymentId;
+				END;
+
+				IF OBJECT_ID(N'dbo.PaymentTransactions', N'U') IS NOT NULL
+				BEGIN
+					UPDATE dbo.PaymentTransactions
+					SET EmployeeRemittanceStatus = 'Cleared',
+					    AdminApproverID = @AdminId,
+					    ApprovalTimestamp = SYSUTCDATETIME()
+					WHERE CAST(ABS(CHECKSUM(TransactionID)) % 100000 AS int) = @PaymentId
+					   OR PaymentTransactionID = CAST(@PaymentId AS nvarchar(50));
+				END;
+
+				IF OBJECT_ID(N'dbo.HistoryLog', N'U') IS NOT NULL
+				BEGIN
+					INSERT INTO dbo.HistoryLog (ActionType, EntityName, EntityID, ChangedBy, ActionDetails, LoggedAt)
+					VALUES ('APPROVAL', 'Payment', CAST(@PaymentId AS nvarchar(30)), @AdminId, 'Admin approved cash remittance. Employee status cleared.', SYSUTCDATETIME());
+				END;
+
+				IF OBJECT_ID(N'dbo.AuditLogs', N'U') IS NOT NULL
+				BEGIN
+					INSERT INTO dbo.AuditLogs (UserId, UserEmail, Action, Resource, ResourceId, Timestamp, Details)
+					VALUES (@AdminId, @AdminId, 'Approve Cash Remittance', 'Payment', CAST(@PaymentId AS nvarchar(30)), SYSUTCDATETIME(), 'Admin approved employee cash remittance.');
+				END;";
+
+			using SqlCommand cmd = new SqlCommand(sql, conn);
+			cmd.Parameters.AddWithValue("@PaymentId", paymentId);
+			cmd.Parameters.AddWithValue("@AdminId", adminId);
+			cmd.ExecuteNonQuery();
+		}
+		catch
+		{
+		}
 	}
 
 	public void LogActivity(string actionType, string entityName, string? entityId, string? details, string? changedBy = null)

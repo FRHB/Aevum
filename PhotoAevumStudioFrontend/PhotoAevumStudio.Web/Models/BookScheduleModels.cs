@@ -52,6 +52,8 @@ public sealed class ScheduleBookingRequest
     public string? EventLocation { get; set; }
     public MeetingPlatform Platform { get; set; }
     public string? MeetingLink { get; set; }
+    public bool HasAcceptedDataPolicy { get; set; }
+    public DateTime? DataPolicyAcceptedAt { get; set; }
 }
 
 public sealed record ScheduleBookingResult(
@@ -64,7 +66,12 @@ public sealed record ScheduleBookingResult(
     MeetingPlatform Platform,
     string MeetingLink,
     string? EventLocation,
-    bool ConfirmationEmailSent);
+    bool ConfirmationEmailSent)
+{
+    public decimal DepositFee => Math.Round(TotalPrice * 0.15m, 2);
+    public decimal BalanceFee => Math.Round(TotalPrice - DepositFee, 2);
+    public string PaymentStatus => "Cleared";
+}
 
 /// <summary>One row for MyBookings / Dashboard, from GET api/schedule/my-bookings.</summary>
 public sealed record MyBooking(
@@ -80,6 +87,9 @@ public sealed record MyBooking(
     string? EventLocation)
 {
     public DateTime Start => Date.ToDateTime(SlotStart);
+    public decimal DepositFee => Math.Round(TotalPrice * 0.15m, 2);
+    public decimal BalanceFee => Math.Round(TotalPrice - DepositFee, 2);
+    public string PaymentStatus => "Cleared";
 }
 
 public enum ApiErrorKind { SlotTaken, Validation, Unauthorized, Network, Server }
@@ -91,6 +101,18 @@ public sealed record ApiResult<T>(T? Value, ApiError? Error)
     public bool IsSuccess => Error is null;
     public static ApiResult<T> Ok(T value) => new(value, null);
     public static ApiResult<T> Fail(ApiErrorKind kind, string message) => new(default, new ApiError(kind, message));
+}
+
+/// <summary>
+/// Model for Step 2 and booking form binding.
+/// </summary>
+public sealed class BookingWizardModel
+{
+    public DateTime? SelectedDate { get; set; }
+    public TimeSpan? SelectedTimeSlot { get; set; }
+    public string? SelectedTimeSlotString => SelectedTimeSlot.HasValue
+        ? DateTime.Today.Add(SelectedTimeSlot.Value).ToString("h:mm tt", System.Globalization.CultureInfo.InvariantCulture)
+        : null;
 }
 
 /// <summary>
@@ -111,6 +133,8 @@ public sealed class BookScheduleState
     public string? EventLocation { get; set; }
     public MeetingPlatform? Platform { get; private set; }
     public string? MeetingLink { get; set; }
+    public bool HasAcceptedDataPolicy { get; set; }
+    public DateTime? DataPolicyAcceptedAt { get; set; }
 
     public void SelectDate(DateOnly date)
     {
@@ -151,6 +175,8 @@ public sealed class BookScheduleState
         ClearSlot();
         EventLocation = null;
         Platform = null;
+        HasAcceptedDataPolicy = false;
+        DataPolicyAcceptedAt = null;
     }
 
     public static DateOnly FirstOfMonth(DateOnly d) => new(d.Year, d.Month, 1);

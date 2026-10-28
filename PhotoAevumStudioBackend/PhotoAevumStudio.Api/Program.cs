@@ -1,5 +1,6 @@
 using FluentValidation;
 using FluentValidation.AspNetCore;
+using InfisicalConfiguration;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Identity;
@@ -17,6 +18,22 @@ using System.Text;
 using System.Threading.RateLimiting;
 
 var builder = WebApplication.CreateBuilder(args);
+
+// Fetch local Infisical auth keys from .NET Secret Manager
+var infisicalClientId = builder.Configuration["Infisical:ClientId"];
+var infisicalClientSecret = builder.Configuration["Infisical:ClientSecret"];
+
+// Only connect to Infisical if the keys are present (prevents crashes in environments without Infisical)
+if (!string.IsNullOrEmpty(infisicalClientId) && !string.IsNullOrEmpty(infisicalClientSecret))
+{
+    builder.Configuration.AddInfisical(new InfisicalConfigBuilder()
+        .SetProjectId("260578dd-9816-4519-9533-d40f180c7a17") 
+        .SetEnvironment("dev") 
+        .SetAuth(new InfisicalAuthBuilder()
+            .SetUniversalAuth(infisicalClientId, infisicalClientSecret)
+            .Build())
+        .Build());
+}
 
 // ── Services ─────────────────────────────────────────────────────────────────
 
@@ -176,6 +193,7 @@ builder.Services.AddHttpClient<PhotoAevumStudio.Application.Interfaces.IXenditPa
     c.BaseAddress = new Uri("https://api.xendit.co/");
 });
 builder.Services.AddScoped<PhotoAevumStudio.Application.Interfaces.IConsultationNegotiationService, PhotoAevumStudio.Infrastructure.Services.ConsultationNegotiationService>();
+builder.Services.AddScoped<PhotoAevumStudio.Application.Interfaces.IPaymentService, PhotoAevumStudio.Infrastructure.Services.PaymentService>();
 builder.Services.Configure<PhotoAevumStudio.Application.Models.SmtpSettings>(builder.Configuration.GetSection("SmtpSettings"));
 builder.Services.AddScoped<PhotoAevumStudio.Application.Interfaces.IEmailService, PhotoAevumStudio.Infrastructure.Services.EmailService>();
 builder.Services.AddScoped<PhotoAevumStudio.Application.Interfaces.ISqlAuthService, PhotoAevumStudio.Infrastructure.Services.SqlAuthService>();

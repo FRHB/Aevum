@@ -10,6 +10,8 @@ public class CreateConsultationRequest
     public TimeOnly ConsultationTime { get; set; }
     public string? InquiryNotes { get; set; }
     public string Platform { get; set; } = "GoogleMeet";
+    public bool HasAcceptedDataPolicy { get; set; }
+    public DateTime? DataPolicyAcceptedAt { get; set; }
 }
 
 public class ConsultationNegotiationDto
@@ -36,6 +38,8 @@ public class UpdateNegotiationOutcomeRequest
 {
     public string NegotiationStatus { get; set; } = "Deal_Won";
     public string? Notes { get; set; }
+    public DateOnly? NewConsultationDate { get; set; }
+    public TimeOnly? NewConsultationTime { get; set; }
 }
 
 public class CreateEventAppointmentFromNegotiationRequest
@@ -141,5 +145,10 @@ public class PaymentTransactionDto
     public string? XenditPaymentId { get; set; }
     public string? XenditPaymentChannel { get; set; }
     public string? ReceivedByEmployeeId { get; set; }
+    public string CustomerPaymentStatus { get; set; } = "Cleared";
+    public string EmployeeRemittanceStatus { get; set; } = "NotApplicable";
+    public string? AdminApproverId { get; set; }
+    public DateTime? ApprovalTimestamp { get; set; }
     public DateTime CreatedAt { get; set; }
 }
+

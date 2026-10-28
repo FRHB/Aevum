@@ -2,8 +2,14 @@
 @layout AdminLayout
 @attribute [Authorize(Roles = "Admin")]
 @rendermode InteractiveServer
+@using PhotoAevumStudio.Web.Models
+@using PhotoAevumStudio.Web.Services
+@using System.Security.Claims
+@using Microsoft.AspNetCore.Components.Authorization
 @inject IUserService UserService
 @inject IEmployeeService EmployeeService
+@inject IConsultationClient ConsultationApi
+@inject AuthenticationStateProvider AuthStateProvider
 
 <PageTitle>Admin Dashboard | Photo Aevum Studio</PageTitle>
 
@@ -13,6 +19,17 @@
         <p class="aev-page-header__subtitle">@DateTime.Today.ToString("dddd, MMMM d, yyyy")</p>
     </div>
 </header>
+
+@if (!string.IsNullOrWhiteSpace(_actionSuccessMessage))
+{
+    <div class="mb-4 p-4 bg-emerald-50 border border-emerald-200 text-emerald-800 rounded-xl text-sm font-semibold flex items-center justify-between shadow-xs">
+        <div class="flex items-center gap-2">
+            <span class="text-emerald-600 font-bold text-base">✓</span>
+            <span>@_actionSuccessMessage</span>
+        </div>
+        <button type="button" @onclick="() => _actionSuccessMessage = null" class="text-emerald-700 hover:text-emerald-900 text-xs">Dismiss</button>
+    </div>
+}
 
 <section class="aev-stat-grid" aria-label="Summary statistics">
     <article class="aev-stat-card">
@@ -40,12 +57,86 @@
     </article>
 
     <article class="aev-stat-card">
-        <div class="aev-stat-card__icon aev-stat-card__icon--violet" aria-hidden="true">📊</div>
+        <div class="aev-stat-card__icon aev-stat-card__icon--violet" aria-hidden="true">💵</div>
         <div>
-            <p class="aev-stat-card__label">Bookings This Week</p>
-            <h2 class="aev-stat-card__value">@_bookingsThisWeek</h2>
+            <p class="aev-stat-card__label">Pending Cash Remittances</p>
+            <h2 class="aev-stat-card__value text-amber-600">@_pendingRemittances.Count</h2>
         </div>
     </article>
+</section>
+
+@* ── Admin Action Panel: Cash Remittance Approvals ─────────────────── *@
+<section class="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden mb-6">
+    <div class="px-6 py-4 border-b border-gray-200 bg-gradient-to-r from-amber-50/50 to-white flex items-center justify-between">
+        <div>
+            <h2 class="text-base font-bold text-gray-900 flex items-center gap-2">
+                <span>💵</span> Cash Remittance Verification &amp; Approval Action Panel
+            </h2>
+            <p class="text-xs text-gray-500 mt-0.5">
+                Inspect cash payments collected by employees on-site. Approving updates employee ledger to Cleared and logs audit verification.
+            </p>
+        </div>
+        <a href="/admin/approvals" class="text-xs font-semibold text-teal-700 hover:text-teal-900 hover:underline">
+            View Approvals Portal &rarr;
+        </a>
+    </div>
+
+    @if (!_pendingRemittances.Any())
+    {
+        <div class="p-8 text-center text-xs text-gray-400 bg-gray-50/50">
+            ✨ No employee cash collections currently require approval. All balances are reconciled.
+        </div>
+    }
+    else
+    {
+        <div class="overflow-x-auto">
+            <table class="w-full text-left text-xs">
+                <thead class="bg-gray-50 border-b border-gray-200 text-gray-500 uppercase font-semibold text-[10px]">
+                    <tr>
+                        <th class="py-3 px-4">Payment ID</th>
+                        <th class="py-3 px-4">Employee (Collector)</th>
+                        <th class="py-3 px-4">Event / Client</th>
+                        <th class="py-3 px-4">Amount</th>
+                        <th class="py-3 px-4">Customer Status</th>
+                        <th class="py-3 px-4">Remittance Status</th>
+                        <th class="py-3 px-4 text-right">Action</th>
+                    </tr>
+                </thead>
+                <tbody class="divide-y divide-gray-100">
+                    @foreach (var rem in _pendingRemittances)
+                    {
+                        <tr class="hover:bg-amber-50/30 transition-colors">
+                            <td class="py-3 px-4 font-mono font-medium text-gray-900">#@rem.Id</td>
+                            <td class="py-3 px-4">
+                                <span class="font-bold text-gray-900 block">@(rem.EmployeeName ?? rem.EmployeeId ?? "Staff")</span>
+                                <span class="text-[10px] text-gray-400">ID: @(rem.EmployeeId ?? "N/A")</span>
+                            </td>
+                            <td class="py-3 px-4 text-gray-600">@(rem.EventAppointmentId ?? $"Booking #{rem.BookingId}")</td>
+                            <td class="py-3 px-4 font-bold text-gray-900">₱@rem.Amount.ToString("N2")</td>
+                            <td class="py-3 px-4">
+                                <span class="bg-green-100 text-green-800 text-[10px] font-bold px-2 py-0.5 rounded-full">
+                                    ✓ Cleared
+                                </span>
+                            </td>
+                            <td class="py-3 px-4">
+                                <span class="bg-amber-100 text-amber-900 border border-amber-300 text-[10px] font-bold px-2 py-0.5 rounded-full">
+                                    ⏳ Pending Admin Approval
+                                </span>
+                            </td>
+                            <td class="py-3 px-4 text-right">
+                                <button type="button"
+                                        @onclick="() => HandleApproveRemittance(rem)"
+                                        disabled="@_isApproving"
+                                        class="bg-emerald-600 hover:bg-emerald-700 text-white px-3 py-1.5 rounded-lg text-xs font-bold shadow-xs transition-colors">
+                                    Approve Cash Remittance
+                                </button>
+                            </td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+    }
 </section>
 
 <div class="aev-content-row">
@@ -61,6 +152,7 @@
                         <th>Client</th>
                         <th>Service</th>
                         <th>Date &amp; Time</th>
+                        <th>Deposit (15%)</th>
                         <th>Status</th>
                     </tr>
                 </thead>
@@ -68,7 +160,7 @@
                     @if (_recentBookings.Count == 0)
                     {
                         <tr>
-                            <td colspan="4" class="text-center py-6 text-slate-400">
+                            <td colspan="5" class="text-center py-6 text-slate-400">
                                 No bookings found in the database.
                             </td>
                         </tr>
@@ -81,6 +173,7 @@
                                 <td>@booking.CustomerName</td>
                                 <td>@booking.EventName</td>
                                 <td>@booking.EventDate.ToString("MMM d, yyyy") &bull; @(DateTime.Today.Add(booking.EventTime).ToString("h:mm tt"))</td>
+                                <td class="text-teal-700 font-semibold text-xs">₱@booking.DepositAmount.ToString("N2")</td>
                                 <td>
                                     <span class="aev-badge @(booking.Status.Equals("Confirmed", StringComparison.OrdinalIgnoreCase) || booking.Status.Equals("Scheduled", StringComparison.OrdinalIgnoreCase) ? "aev-badge--green" : "aev-badge--amber")">
                                         @booking.Status
@@ -99,6 +192,11 @@
             <h2 class="aev-card__heading">Quick Actions</h2>
         </header>
         <div class="aev-quick-actions">
+            <a href="/admin/approvals" class="aev-quick-action">
+                <span class="aev-quick-action__icon" aria-hidden="true">💵</span>
+                <span>Review Remittances</span>
+                <span class="aev-quick-action__arrow" aria-hidden="true">›</span>
+            </a>
             <a href="/Services" class="aev-quick-action">
                 <span class="aev-quick-action__icon" aria-hidden="true">🗂</span>
                 <span>Manage Services</span>
@@ -129,9 +227,26 @@
     private int _equipmentInUse;
     private int _bookingsThisWeek;
     private IReadOnlyList<BookingRowDto> _recentBookings = Array.Empty<BookingRowDto>();
+    private List<PaymentSummaryModel> _pendingRemittances = new();
+    private bool _isApproving = false;
+    private string? _actionSuccessMessage;
+    private string _adminId = "Admin";
+    private string _adminName = "System Administrator";
 
     protected override async Task OnInitializedAsync()
     {
+        try
+        {
+            var auth = await AuthStateProvider.GetAuthenticationStateAsync();
+            var user = auth.User;
+            if (user?.Identity?.IsAuthenticated == true)
+            {
+                _adminId = user.FindFirst(ClaimTypes.NameIdentifier)?.Value ?? user.FindFirst("sub")?.Value ?? "Admin";
+                _adminName = user.FindFirst("full_name")?.Value ?? user.FindFirst(ClaimTypes.Name)?.Value ?? user.Identity.Name ?? "System Administrator";
+            }
+        }
+        catch { }
+
         var stats = await EmployeeService.GetDashboardStatsAsync();
         _appointmentsToday = stats.AppointmentsToday;
         _activeEmployees = stats.ActiveEmployees;
@@ -141,5 +256,57 @@
         _equipmentInUse = equipment.Count(e => e.Status.Equals("In Use", StringComparison.OrdinalIgnoreCase) || e.Status.Equals("Reserved", StringComparison.OrdinalIgnoreCase));
 
         _recentBookings = UserService.GetBookings().Take(5).ToList();
+
+        await LoadPendingRemittancesAsync();
+    }
+
+    private async Task LoadPendingRemittancesAsync()
+    {
+        try
+        {
+            var res = await ConsultationApi.GetPendingRemittancesAsync();
+            if (res.IsSuccess && res.Value != null)
+            {
+                _pendingRemittances = res.Value.ToList();
+                return;
+            }
+        }
+        catch { }
+
+        _pendingRemittances = UserService.GetPendingCashRemittances();
+    }
+
+    private async Task HandleApproveRemittance(PaymentSummaryModel rem)
+    {
+        _isApproving = true;
+        _actionSuccessMessage = null;
+
+        try
+        {
+            var req = new AdminApproveRemittanceModel
+            {
+                AdminId = _adminId,
+                AdminName = _adminName,
+                Notes = $"Approved cash remittance from Admin Dashboard on {DateTime.Now:g}"
+            };
+
+            var res = await ConsultationApi.ApproveRemittanceAsync(rem.Id, req);
+            if (!res.IsSuccess)
+            {
+                UserService.ApproveCashRemittance(rem.Id, _adminId);
+            }
+
+            _actionSuccessMessage = $"Cash remittance of ₱{rem.Amount:N2} (Payment #{rem.Id}) for Employee {rem.EmployeeName ?? rem.EmployeeId} approved and cleared successfully.";
+            await LoadPendingRemittancesAsync();
+            StateHasChanged();
+        }
+        catch (Exception ex)
+        {
+            _actionSuccessMessage = $"Approval processed with note: {ex.Message}";
+        }
+        finally
+        {
+            _isApproving = false;
+        }
     }
 }

@@ -46,6 +46,8 @@ public sealed class ScheduleBookingRequest
 
     /// <summary>Link previewed on step 5. Re-generated server-side if it isn't one of ours.</summary>
     public string? MeetingLink { get; set; }
+    public bool HasAcceptedDataPolicy { get; set; }
+    public DateTime? DataPolicyAcceptedAt { get; set; }
 }
 
 /// <summary>Customer identity taken from the JWT, never from the request body.</summary>
@@ -86,3 +88,4 @@ public sealed class SlotUnavailableException : Exception
 
 /// <summary>Request failed business validation. Message is safe to show to the user.</summary>
 public sealed class ScheduleValidationException(string message) : Exception(message);
+

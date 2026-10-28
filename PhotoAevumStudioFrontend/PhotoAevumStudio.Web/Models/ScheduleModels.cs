@@ -45,6 +45,8 @@ public class EventBookingModel
     public decimal EstimatedPrice { get; set; } = 350.00m;
     public bool HasConflict { get; set; }
     public string? ConflictMessage { get; set; }
+    public bool IsConsultation { get; set; }
+    public string? MeetingLink { get; set; }
 
     public double DurationHours => (EndTime - StartTime).TotalHours;
 
@@ -53,6 +55,9 @@ public class EventBookingModel
 
     public bool OverlapsWith(EventBookingModel other)
     {
+        if (IsConsultation || other.IsConsultation)
+            return false;
+
         if (Id == other.Id || StudioSpaceId != other.StudioSpaceId || Date.Date != other.Date.Date)
             return false;
 

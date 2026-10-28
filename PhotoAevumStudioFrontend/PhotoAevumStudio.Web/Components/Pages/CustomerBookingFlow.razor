@@ -6,6 +6,7 @@
 @attribute [Authorize(Roles = "Customer")]
 @using PhotoAevumStudio.Web.Models
 @using PhotoAevumStudio.Web.Services
+@using PhotoAevumStudio.Web.Components.Shared
 @inject IBookScheduleClient Api
 @inject BookScheduleState Wizard
 @inject BookingEvents Events
@@ -76,7 +77,10 @@
                         }
                     </span>
                 </div>
-                <div class="detail-row"><span class="detail-label">Total:</span><span class="detail-val">₱@_result.TotalPrice.ToString("N2")</span></div>
+                <div class="detail-row"><span class="detail-label">Total Package:</span><span class="detail-val">₱@_result.TotalPrice.ToString("N2")</span></div>
+                <div class="detail-row"><span class="detail-label">15% Reservation Deposit:</span><span class="detail-val" style="color:#047857; font-weight:700;">₱@_result.DepositFee.ToString("N2")</span></div>
+                <div class="detail-row"><span class="detail-label">Remaining Balance (85%):</span><span class="detail-val">₱@_result.BalanceFee.ToString("N2")</span></div>
+                <div class="detail-row"><span class="detail-label">Payment Status:</span><span class="detail-val"><span style="background:#dcfce7; color:#15803d; font-weight:700; padding:2px 8px; border-radius:12px; font-size:12px;">Paid / Cleared</span></span></div>
             </div>
             <p class="calendar-hint">
                 @(_result.ConfirmationEmailSent
@@ -146,13 +150,14 @@
             }
             else if (Wizard.Step == 2)
             {
-                <div class="wizard-panel">
+                <div class="wizard-panel" data-testid="step2-datetime">
                     <div class="panel-header">
                         <h2>2. Pick a Date &amp; Time</h2>
-                        <p>Highlighted dates have open slots. Morning: 9–11 AM. Afternoon: 1–5 PM.</p>
+                        <p>Highlighted dates have open slots. Morning: 9:00 AM – 11:00 AM. Afternoon: 1:00 PM – 5:00 PM.</p>
                     </div>
 
                     <div class="date-time-picker-grid">
+                        <!-- Calendar Column (Left Side) -->
                         <div class="date-col">
                             <div class="calendar-card">
                                 <div class="calendar-nav">
@@ -174,7 +179,9 @@
                                 </div>
                                 @if (_loadingMonth)
                                 {
-                                    <p class="calendar-hint">Loading availability…</p>
+                                    <div class="py-8">
+                                        <LoadingSpinner Message="Checking month availability…" />
+                                    </div>
                                 }
                                 else if (_month is not null)
                                 {
@@ -186,68 +193,125 @@
                                         @foreach (var day in _month.Days)
                                         {
                                             var date = day.Date;
-                                            @if (day.HasAvailability)
+                                            var dateTime = date.ToDateTime(TimeOnly.MinValue);
+                                            var isSelected = bookingModel.SelectedDate.HasValue &&
+                                                             DateOnly.FromDateTime(bookingModel.SelectedDate.Value) == date;
+                                            var available = IsDateAvailable(date);
+
+                                            @if (available)
                                             {
                                                 <button type="button"
-                                                        class="calendar-cell is-available @(Wizard.Date == date ? "is-selected" : "")"
-                                                        @onclick="() => SelectDate(date)">
+                                                        class="calendar-cell is-available @(isSelected ? "is-selected" : "")"
+                                                        @onclick="() => SelectDate(dateTime)"
+                                                        aria-label="@date.ToString("MMMM d, yyyy") - Available">
                                                     @date.Day
                                                 </button>
                                             }
                                             else
                                             {
-                                                <span class="calendar-cell is-unavailable" aria-disabled="true">@date.Day</span>
+                                                <span class="calendar-cell is-disabled is-unavailable"
+                                                      style="pointer-events: none; opacity: 0.4;"
+                                                      aria-disabled="true"
+                                                      aria-label="@date.ToString("MMMM d, yyyy") - Unavailable">
+                                                    @date.Day
+                                                </span>
                                             }
                                         }
                                     </div>
+                                    <p class="mt-3 text-[11px] text-gray-500 flex items-center gap-2">
+                                        <span class="inline-block w-2.5 h-2.5 rounded bg-emerald-100 border border-emerald-400"></span>
+                                        Green highlighted dates have open slots.
+                                    </p>
                                 }
                             </div>
                         </div>
 
+                        <!-- Time Slot Selection Panel (Right Side) -->
                         <div class="time-col">
-                            @if (Wizard.Date is null)
+                            @if (!bookingModel.SelectedDate.HasValue)
                             {
-                                <p class="calendar-hint">Select a highlighted date to see its available times.</p>
+                                <div class="empty-selection-placeholder">
+                                    <EmptyState Title="Select a Date" Description="Select a highlighted date on the calendar to view morning and afternoon open slots." />
+                                </div>
+                            }
+                            else if (_loadingSlots)
+                            {
+                                <div class="py-12">
+                                    <LoadingSpinner Message="Fetching open time slots for selected date…" />
+                                </div>
                             }
                             else
                             {
-                                var date = Wizard.Date.Value;
-                                var morning = SlotsFor(date).Where(s => SessionWindows.IsMorning(s.Start, s.End)).ToList();
-                                var afternoon = SlotsFor(date).Where(s => SessionWindows.IsAfternoon(s.Start, s.End)).ToList();
+                                var dateOnly = DateOnly.FromDateTime(bookingModel.SelectedDate.Value);
+                                var morningSlots = _selectedDaySlots.Where(s => SessionWindows.IsMorning(s.Start, s.End)).ToList();
+                                var afternoonSlots = _selectedDaySlots.Where(s => SessionWindows.IsAfternoon(s.Start, s.End)).ToList();
+                                var totalAvailable = morningSlots.Count(s => s.IsAvailable) + afternoonSlots.Count(s => s.IsAvailable);
 
-                                <label class="picker-label">Available times for @date.ToString("MMM d, yyyy")</label>
+                                <div class="flex items-center justify-between mb-3">
+                                    <label class="picker-label mb-0">Available times for @dateOnly.ToString("dddd, MMMM d, yyyy")</label>
+                                    @if (bookingModel.SelectedTimeSlot.HasValue)
+                                    {
+                                        <span class="text-xs font-semibold text-emerald-700 bg-emerald-50 px-2.5 py-1 rounded-full border border-emerald-200">
+                                            ✓ Selected: @DateTime.Today.Add(bookingModel.SelectedTimeSlot.Value).ToString("h:mm tt")
+                                        </span>
+                                    }
+                                </div>
 
-                                @if (morning.Count == 0 && afternoon.Count == 0)
+                                @if (totalAvailable == 0)
                                 {
-                                    <p class="calendar-hint">No open slots on this date. Please choose another.</p>
+                                    <EmptyState Title="No Available Slots" Description="No available slots for this date. Please pick another highlighted day." />
                                 }
-                                @if (morning.Count > 0)
+                                else
                                 {
-                                    <span class="slot-group-header">Morning Sessions (9:00 AM – 11:00 AM)</span>
-                                    <div class="slots-grid">
-                                        @foreach (var s in morning)
-                                        {
-                                            var slot = s;
-                                            <button type="button" class="slot-btn @(Wizard.SlotStart == slot.Start ? "is-selected" : "")"
-                                                    @onclick="() => SelectSlot(slot)">
-                                                @slot.Start.ToString("h:mm tt")
-                                            </button>
-                                        }
-                                    </div>
-                                }
-                                @if (afternoon.Count > 0)
-                                {
-                                    <span class="slot-group-header slot-group-header--spaced">Afternoon Sessions (1:00 PM – 5:00 PM)</span>
-                                    <div class="slots-grid">
-                                        @foreach (var s in afternoon)
-                                        {
-                                            var slot = s;
-                                            <button type="button" class="slot-btn @(Wizard.SlotStart == slot.Start ? "is-selected" : "")"
-                                                    @onclick="() => SelectSlot(slot)">
-                                                @slot.Start.ToString("h:mm tt")
-                                            </button>
-                                        }
-                                    </div>
+                                    @if (morningSlots.Count > 0)
+                                    {
+                                        <span class="slot-group-header">Morning Sessions (9:00 AM – 11:00 AM)</span>
+                                        <div class="slots-grid mb-4">
+                                            @foreach (var s in morningSlots)
+                                            {
+                                                var slot = s;
+                                                var slotTimeSpan = slot.Start.ToTimeSpan();
+                                                var isChosen = bookingModel.SelectedTimeSlot == slotTimeSpan;
+                                                var status = isChosen ? "Selected" : (slot.IsAvailable ? "Available" : "Booked");
+
+                                                <button type="button"
+                                                        disabled="@(!slot.IsAvailable)"
+                                                        @onclick="() => SelectTimeSlot(slot)"
+                                                        class="slot-btn @(isChosen ? "is-selected" : "") @(!slot.IsAvailable ? "is-booked" : "")"
+                                                        aria-pressed="@isChosen">
+                                                    <span class="slot-time">@slot.Start.ToString("h:mm tt") – @slot.End.ToString("h:mm tt")</span>
+                                                    <span class="slot-status-badge @(isChosen ? "badge-selected" : slot.IsAvailable ? "badge-available" : "badge-booked")">
+                                                        @status
+                                                    </span>
+                                                </button>
+                                            }
+                                        </div>
+                                    }
+
+                                    @if (afternoonSlots.Count > 0)
+                                    {
+                                        <span class="slot-group-header slot-group-header--spaced">Afternoon Sessions (1:00 PM – 5:00 PM)</span>
+                                        <div class="slots-grid">
+                                            @foreach (var s in afternoonSlots)
+                                            {
+                                                var slot = s;
+                                                var slotTimeSpan = slot.Start.ToTimeSpan();
+                                                var isChosen = bookingModel.SelectedTimeSlot == slotTimeSpan;
+                                                var status = isChosen ? "Selected" : (slot.IsAvailable ? "Available" : "Booked");
+
+                                                <button type="button"
+                                                        disabled="@(!slot.IsAvailable)"
+                                                        @onclick="() => SelectTimeSlot(slot)"
+                                                        class="slot-btn @(isChosen ? "is-selected" : "") @(!slot.IsAvailable ? "is-booked" : "")"
+                                                        aria-pressed="@isChosen">
+                                                    <span class="slot-time">@slot.Start.ToString("h:mm tt") – @slot.End.ToString("h:mm tt")</span>
+                                                    <span class="slot-status-badge @(isChosen ? "badge-selected" : slot.IsAvailable ? "badge-available" : "badge-booked")">
+                                                        @status
+                                                    </span>
+                                                </button>
+                                            }
+                                        </div>
+                                    }
                                 }
                             }
                         </div>
@@ -255,7 +319,11 @@
 
                     <div class="wizard-footer">
                         <button type="button" class="btn btn-outline-dark" @onclick="BackAsync">← Back</button>
-                        <button type="button" class="btn btn-dark btn-lg" disabled="@(Wizard.SlotStart is null || _busy)" @onclick="NextAsync">
+                        <button type="button"
+                                id="btnNextToEventDetails"
+                                class="btn btn-dark btn-lg"
+                                disabled="@(!CanProceedToStep3())"
+                                @onclick="NextAsync">
                             Next: Event Details →
                         </button>
                     </div>
@@ -368,10 +436,74 @@
                         <strong>Studio Policy:</strong> Complimentary rescheduling is available up to 24 hours prior to your scheduled session.
                     </div>
 
+                    <!-- Data Privacy & Terms Agreement Section -->
+                    <div class="data-privacy-section mt-4 mb-3">
+                        <div class="d-flex align-items-center justify-content-between mb-2">
+                            <h3 style="font-size: 1.05rem; font-weight: 700; margin: 0; color: #111827;">
+                                Data Privacy &amp; Terms Agreement
+                            </h3>
+                            <span class="badge bg-secondary-subtle text-secondary" style="font-size: 0.75rem; font-weight: 600;">
+                                Required
+                            </span>
+                        </div>
+
+                        <!-- Scrollable Card / Box Containing Data Policy -->
+                        <div class="border rounded p-3 bg-light" style="max-height: 170px; overflow-y: auto; font-size: 0.85rem; line-height: 1.55; color: #4b5563; border-color: #e5e7eb !important;">
+                            <p class="fw-semibold text-dark mb-2">PhotoAevum Studio Client Data Protection &amp; Consultation Policy</p>
+                            <p class="mb-2">
+                                At PhotoAevum Studio, we prioritize your personal privacy, sensitive schedule information, and digital media assets in accordance with applicable data privacy regulations. By scheduling an appointment or consultation session, you expressly agree to the collection, secure storage, and processing of your personal information.
+                            </p>
+                            <p class="mb-2">
+                                <strong>1. Information Collection &amp; Purpose:</strong> Personal information (including your name, email address, phone number, and event locations) is collected solely for coordinating photo sessions, preparing creative briefs, facilitating teleconference sessions, and generating invoicing statements.
+                            </p>
+                            <p class="mb-2">
+                                <strong>2. Confidentiality &amp; Media Handling:</strong> Raw footage, proofs, and teleconference notes are strictly confidential and stored on encrypted studio infrastructure. PhotoAevum Studio will never distribute or publish your photographs for commercial or marketing purposes without prior written authorization.
+                            </p>
+                            <p class="mb-2">
+                                <strong>3. Teleconference &amp; Session Access:</strong> Generated meeting links (Google Meet, Zoom, or Microsoft Teams) are uniquely assigned to you and our studio personnel. Sharing links with unauthorized external parties is prohibited.
+                            </p>
+                            <p class="mb-0">
+                                <strong>4. Rescheduling &amp; Retention:</strong> Client session records are retained for historical booking tracking and portfolio delivery. Complimentary schedule modifications are honored up to 24 hours before your confirmed time slot.
+                            </p>
+                        </div>
+
+                        <!-- Consent Checkbox -->
+                        <div class="form-check mt-3 d-flex align-items-start">
+                            <input class="form-check-input"
+                                   type="checkbox"
+                                   id="chkDataPolicyConsent"
+                                   @bind="isPolicyAccepted"
+                                   @bind:after="OnPolicyAcceptedChanged"
+                                   style="cursor: pointer; margin-top: 0.2rem;" />
+                            <label class="form-check-label ms-2 text-dark" for="chkDataPolicyConsent" style="font-size: 0.875rem; cursor: pointer; user-select: none;">
+                                I have read and agree to the <strong>PhotoAevum Studio Data Privacy Policy and Terms</strong>.
+                            </label>
+                        </div>
+
+                        @if (isPolicyAccepted && policyAcceptedAt.HasValue)
+                        {
+                            <div class="text-muted mt-1 ps-4" style="font-size: 0.75rem;">
+                                <span class="text-success fw-semibold">✓ Accepted</span> on @policyAcceptedAt.Value.ToLocalTime().ToString("MMM dd, yyyy 'at' hh:mm:ss tt")
+                            </div>
+                        }
+
+                        @if (!string.IsNullOrWhiteSpace(_policyValidationError))
+                        {
+                            <div class="alert alert-danger mt-3 d-flex align-items-center py-2 px-3" role="alert" style="font-size: 0.85rem; border-radius: 6px;">
+                                <span class="me-2">⚠️</span>
+                                <div>@_policyValidationError</div>
+                            </div>
+                        }
+                    </div>
+
                     <div class="wizard-footer">
                         <button type="button" class="btn btn-outline-dark" disabled="@_submitting" @onclick="BackAsync">← Back</button>
-                        <button type="button" class="btn btn-dark btn-lg" disabled="@_submitting" @onclick="ConfirmAsync">
-                            @(_submitting ? "Confirming…" : $"Confirm Booking (₱{Total.ToString("N2")})")
+                        <button type="button"
+                                id="btnConfirmBooking"
+                                class="btn btn-dark btn-lg"
+                                disabled="@(!isPolicyAccepted || _submitting)"
+                                @onclick="ConfirmAsync">
+                            @(_submitting ? "Confirming…" : $"Confirm & Schedule Consultation (15% Deposit: ₱{DepositFee.ToString("N2")})")
                         </button>
                     </div>
                 </div>
@@ -402,6 +534,19 @@
                         <span>Total:</span>
                         <span class="total-figure">₱@Total.ToString("N2")</span>
                     </div>
+                    <div style="background:#f0fdf4; border:1px solid #bbf7d0; border-radius:8px; padding:10px; margin-top:12px;">
+                        <div style="display:flex; justify-content:space-between; font-size:13px; font-weight:700; color:#065f46;">
+                            <span>15% Reservation Deposit:</span>
+                            <span>₱@DepositFee.ToString("N2")</span>
+                        </div>
+                        <div style="display:flex; justify-content:space-between; font-size:12px; color:#475569; margin-top:4px;">
+                            <span>Remaining Balance (85%):</span>
+                            <span>₱@BalanceFee.ToString("N2")</span>
+                        </div>
+                        <div style="margin-top:6px; font-size:11px; color:#15803d; font-weight:600;">
+                            ✓ Status: Paid / Cleared on submission
+                        </div>
+                    </div>
                 </div>
             </aside>
         </div>
@@ -419,18 +564,41 @@
     private string? _error;
     private bool _loadingServices = true;
     private bool _loadingMonth;
+    private bool _loadingSlots;
     private bool _busy;
     private bool _submitting;
     private int _loadSeq;
+    private bool isPolicyAccepted;
+    private DateTime? policyAcceptedAt;
+    private string? _policyValidationError;
+
+    // Model properties for Step 2 and booking form binding
+    private BookingWizardModel bookingModel = new();
+    private List<SlotAvailability> _selectedDaySlots = new();
+
+    private void OnPolicyAcceptedChanged()
+    {
+        if (isPolicyAccepted)
+        {
+            policyAcceptedAt = DateTime.UtcNow;
+            _policyValidationError = null;
+            _error = null;
+        }
+        else
+        {
+            policyAcceptedAt = null;
+        }
+    }
 
     private IEnumerable<ScheduleServiceOption> SelectedServices =>
         _services.Where(s => Wizard.ServiceIds.Contains(s.ServicesId));
     private decimal Total => SelectedServices.Sum(s => s.Price);
+    private decimal DepositFee => Math.Round(Total * 0.15m, 2);
+    private decimal BalanceFee => Math.Round(Total - DepositFee, 2);
 
     private bool CanGoPrevMonth =>
         Wizard.VisibleMonth > BookScheduleState.FirstOfMonth(DateOnly.FromDateTime(DateTime.Now));
 
-    // HTTP calls need the auth token, which is only readable after the first render (no JS interop while prerendering).
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
         if (!firstRender) return;
@@ -439,7 +607,6 @@
         if (result.IsSuccess)
         {
             _services = result.Value!.ToList();
-            // Drop selections for services that no longer exist.
             Wizard.ServiceIds.RemoveWhere(id => !_services.Any(s => s.ServicesId.Equals(id, StringComparison.OrdinalIgnoreCase)));
         }
         else
@@ -448,8 +615,37 @@
         }
         _loadingServices = false;
 
-        if (Wizard.Step == 2) await LoadMonthAsync();
+        if (Wizard.Step == 2)
+        {
+            SyncModelFromWizard();
+            await LoadMonthAsync();
+            if (Wizard.Date is { } d)
+            {
+                await LoadDaySlotsAsync(d);
+            }
+        }
         StateHasChanged();
+    }
+
+    private void SyncModelFromWizard()
+    {
+        if (Wizard.Date.HasValue)
+        {
+            bookingModel.SelectedDate = Wizard.Date.Value.ToDateTime(TimeOnly.MinValue);
+        }
+        else
+        {
+            bookingModel.SelectedDate = null;
+        }
+
+        if (Wizard.SlotStart.HasValue)
+        {
+            bookingModel.SelectedTimeSlot = Wizard.SlotStart.Value.ToTimeSpan();
+        }
+        else
+        {
+            bookingModel.SelectedTimeSlot = null;
+        }
     }
 
     // ── Step 1 ──────────────────────────────────────────────────────
@@ -475,19 +671,132 @@
         _loadingMonth = true;
         var m = Wizard.VisibleMonth;
         var result = await Api.GetAvailabilityAsync(m.Year, m.Month);
-        if (seq != _loadSeq) return; // a newer request superseded this one
+        if (seq != _loadSeq) return;
 
         _loadingMonth = false;
-        if (result.IsSuccess) _month = result.Value;
-        else { _month = null; _error = result.Error!.Message; }
+        if (result.IsSuccess)
+        {
+            _month = result.Value;
+        }
+        else
+        {
+            _month = null;
+            _error = result.Error!.Message;
+        }
     }
 
-    private async Task PrevMonthAsync() { Wizard.VisibleMonth = Wizard.VisibleMonth.AddMonths(-1); await LoadMonthAsync(); }
-    private async Task NextMonthAsync() { Wizard.VisibleMonth = Wizard.VisibleMonth.AddMonths(1); await LoadMonthAsync(); }
+    private async Task PrevMonthAsync()
+    {
+        Wizard.VisibleMonth = Wizard.VisibleMonth.AddMonths(-1);
+        await LoadMonthAsync();
+    }
 
-    private void SelectDate(DateOnly date) { _error = null; Wizard.SelectDate(date); }
+    private async Task NextMonthAsync()
+    {
+        Wizard.VisibleMonth = Wizard.VisibleMonth.AddMonths(1);
+        await LoadMonthAsync();
+    }
 
-    private void SelectSlot(SlotAvailability slot) { _error = null; Wizard.SelectSlot(slot.Start, slot.End); }
+    public bool IsDateAvailable(DateTime date) => IsDateAvailable(DateOnly.FromDateTime(date));
+
+    public bool IsDateAvailable(DateOnly date)
+    {
+        return _month?.Days.FirstOrDefault(d => d.Date == date)?.HasAvailability == true;
+    }
+
+    public async Task SelectDate(DateTime date)
+    {
+        await SelectDateInternalAsync(DateOnly.FromDateTime(date));
+    }
+
+    public async Task SelectDate(DateOnly date)
+    {
+        await SelectDateInternalAsync(date);
+    }
+
+    private async Task SelectDateInternalAsync(DateOnly date)
+    {
+        _error = null;
+        bookingModel.SelectedDate = date.ToDateTime(TimeOnly.MinValue);
+        bookingModel.SelectedTimeSlot = null;
+        Wizard.SelectDate(date);
+
+        await LoadDaySlotsAsync(date);
+    }
+
+    private async Task LoadDaySlotsAsync(DateOnly date)
+    {
+        _loadingSlots = true;
+        StateHasChanged();
+        try
+        {
+            var res = await Api.GetDayAvailabilityAsync(date);
+            if (res.IsSuccess && res.Value is not null)
+            {
+                _selectedDaySlots = res.Value.Slots.ToList();
+            }
+            else
+            {
+                _selectedDaySlots = _month?.Days.FirstOrDefault(d => d.Date == date)?.Slots.ToList() ?? [];
+            }
+        }
+        catch
+        {
+            _selectedDaySlots = _month?.Days.FirstOrDefault(d => d.Date == date)?.Slots.ToList() ?? [];
+        }
+        finally
+        {
+            _loadingSlots = false;
+            if (Wizard.SlotStart.HasValue)
+            {
+                var matchingSlot = _selectedDaySlots.FirstOrDefault(s => s.Start == Wizard.SlotStart.Value && s.IsAvailable);
+                if (matchingSlot is not null)
+                {
+                    bookingModel.SelectedTimeSlot = matchingSlot.Start.ToTimeSpan();
+                }
+                else
+                {
+                    bookingModel.SelectedTimeSlot = null;
+                    Wizard.ClearSlot();
+                }
+            }
+            StateHasChanged();
+        }
+    }
+
+    public void SelectTimeSlot(TimeSpan time)
+    {
+        SelectTimeSlotInternal(TimeOnly.FromTimeSpan(time));
+    }
+
+    public void SelectTimeSlot(TimeOnly time)
+    {
+        SelectTimeSlotInternal(time);
+    }
+
+    public void SelectTimeSlot(SlotAvailability slot)
+    {
+        if (!slot.IsAvailable) return;
+        SelectTimeSlotInternal(slot.Start);
+    }
+
+    private void SelectTimeSlotInternal(TimeOnly start)
+    {
+        _error = null;
+        bookingModel.SelectedTimeSlot = start.ToTimeSpan();
+
+        var slot = _selectedDaySlots.FirstOrDefault(s => s.Start == start);
+        var end = slot?.End ?? start.AddHours(1);
+        Wizard.SelectSlot(start, end);
+    }
+
+    public bool CanProceedToStep3()
+    {
+        return bookingModel.SelectedDate.HasValue &&
+               bookingModel.SelectedTimeSlot.HasValue &&
+               !_loadingSlots &&
+               !_busy;
+    }
 
     // Only open slots inside the studio windows, for the selected date.
     private IEnumerable<SlotAvailability> SlotsFor(DateOnly date) =>
@@ -507,10 +816,20 @@
                 case 1:
                     if (Wizard.ServiceIds.Count == 0) { _error = "Select at least one service."; return; }
                     Wizard.Step = 2;
+                    SyncModelFromWizard();
                     await LoadMonthAsync();
+                    if (Wizard.Date is { } d1)
+                    {
+                        await LoadDaySlotsAsync(d1);
+                    }
                     break;
 
                 case 2:
+                    if (!CanProceedToStep3())
+                    {
+                        _error = "Please select both an available date and a time slot.";
+                        return;
+                    }
                     await ContinueFromScheduleAsync();
                     break;
 
@@ -527,15 +846,19 @@
         finally { _busy = false; }
     }
 
-    // Re-check the slot before moving on, so a slot another client just took is caught early.
     private async Task ContinueFromScheduleAsync()
     {
-        if (Wizard.Date is not { } date || Wizard.SlotStart is not { } start) { _error = "Pick a date and time."; return; }
+        if (!CanProceedToStep3() || Wizard.Date is not { } date || Wizard.SlotStart is not { } start)
+        {
+            _error = "Pick a date and time.";
+            return;
+        }
 
         await LoadMonthAsync();
         if (!SlotsFor(date).Any(s => s.Start == start))
         {
             Wizard.ClearSlot();
+            bookingModel.SelectedTimeSlot = null;
             _error = "That time slot was just booked by another client. Please choose a different time.";
             return;
         }
@@ -566,13 +889,29 @@
         if (step < 1 || step >= Wizard.Step) return;
         _error = null;
         Wizard.Step = step;
-        if (step == 2) await LoadMonthAsync();
+        if (step == 2)
+        {
+            SyncModelFromWizard();
+            await LoadMonthAsync();
+            if (Wizard.Date is { } d)
+            {
+                await LoadDaySlotsAsync(d);
+            }
+        }
     }
 
     // ── Step 5: submit ──────────────────────────────────────────────
     private async Task ConfirmAsync()
     {
         if (_submitting) return;
+
+        if (!isPolicyAccepted)
+        {
+            _policyValidationError = "You must read and agree to the PhotoAevum Studio Data Privacy Policy and Terms before confirming.";
+            _error = _policyValidationError;
+            return;
+        }
+
         if (Wizard.Date is not { } date || Wizard.SlotStart is not { } start ||
             Wizard.Platform is not { } platform || Wizard.ServiceIds.Count == 0)
         {
@@ -582,6 +921,7 @@
 
         _submitting = true;
         _error = null;
+        _policyValidationError = null;
         try
         {
             var request = new ScheduleBookingRequest
@@ -591,7 +931,9 @@
                 SlotStart = start,
                 EventLocation = Wizard.EventLocation,
                 Platform = platform,
-                MeetingLink = Wizard.MeetingLink
+                MeetingLink = Wizard.MeetingLink,
+                HasAcceptedDataPolicy = isPolicyAccepted,
+                DataPolicyAcceptedAt = policyAcceptedAt
             };
 
             var result = await Api.BookAsync(request);
@@ -599,17 +941,22 @@
             {
                 _result = result.Value;
                 Wizard.Reset();
-                Events.NotifyBookingsChanged(); // Overview and Appointments reload
+                bookingModel = new();
+                Events.NotifyBookingsChanged();
                 return;
             }
 
             _error = result.Error!.Message;
             if (result.Error.Kind == ApiErrorKind.SlotTaken)
             {
-                // The server rolled the reservation back: send the client to pick a new time.
                 Wizard.ClearSlot();
+                bookingModel.SelectedTimeSlot = null;
                 Wizard.Step = 2;
                 await LoadMonthAsync();
+                if (Wizard.Date is { } d)
+                {
+                    await LoadDaySlotsAsync(d);
+                }
             }
         }
         finally { _submitting = false; }
@@ -619,6 +966,11 @@
     {
         _result = null;
         _error = null;
+        _policyValidationError = null;
+        isPolicyAccepted = false;
+        policyAcceptedAt = null;
+        bookingModel = new();
+        _selectedDaySlots.Clear();
         await LoadMonthAsync();
     }
 

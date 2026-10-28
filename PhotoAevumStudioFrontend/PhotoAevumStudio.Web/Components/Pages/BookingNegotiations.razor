@@ -1,14 +1,15 @@
 @page "/admin/negotiations"
 @page "/staff/negotiations"
-@layout AdminLayout
+@layout SidebarLayout
 @using Microsoft.AspNetCore.Components.Authorization
 @using PhotoAevumStudio.Web.Models
 @using PhotoAevumStudio.Web.Services
-@attribute [Authorize(Roles = "Admin,Employee")]
+@attribute [Authorize(Roles = "Admin,Employee,Office Clerk")]
 @rendermode InteractiveServer
 @inject IConsultationClient ConsultationApi
 @inject IEmployeeService EmployeeService
 @inject IEquipmentService EquipmentService
+@inject IUserService UserService
 @inject IBookScheduleClient ScheduleApi
 @inject AuthenticationStateProvider AuthStateProvider
 @inject NavigationManager Nav
@@ -567,6 +568,61 @@
     </div>
 }
 
+@* ── Consultation Reschedule Modal ────────────────────────────────────────── *@
+@if (_isRescheduleModalOpen && _selectedNegotiation != null)
+{
+    <div class="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-xs p-4 animate-in fade-in duration-200">
+        <div class="bg-white rounded-2xl shadow-xl border border-slate-200 w-full max-w-md p-6 space-y-4">
+            <div class="flex items-center justify-between border-b border-slate-100 pb-3">
+                <div>
+                    <h3 class="text-sm font-black text-slate-900">Reschedule Consultation</h3>
+                    <p class="text-xs text-slate-500 mt-0.5">@_selectedNegotiation.CustomerName &bull; <span class="font-mono text-[11px]">#@_selectedNegotiation.NegotiationId</span></p>
+                </div>
+                <button type="button" @onclick="() => _isRescheduleModalOpen = false" class="text-slate-400 hover:text-slate-700">✕</button>
+            </div>
+
+            <div class="p-3 bg-blue-50 border border-blue-200 rounded-xl text-xs text-blue-800 space-y-1">
+                <p><strong>Current Schedule:</strong> @_selectedNegotiation.ConsultationDate.ToString("ddd, MMM d, yyyy") at @_selectedNegotiation.ConsultationTime.ToString("h:mm tt")</p>
+                <p class="text-[11px] text-blue-600">Selecting a new date/time will update the Events Calendar and notify the client.</p>
+            </div>
+
+            @if (!string.IsNullOrEmpty(_rescheduleError))
+            {
+                <div class="p-2.5 bg-red-50 border border-red-200 rounded-lg text-xs text-red-700">
+                    @_rescheduleError
+                </div>
+            }
+
+            <div class="space-y-3 text-xs">
+                <div>
+                    <label class="block font-bold text-slate-700 mb-1">New Consultation Date *</label>
+                    <input type="date" @bind="_rescheduleDate" min="@DateTime.Today.ToString("yyyy-MM-dd")"
+                           class="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg font-medium" />
+                </div>
+                <div>
+                    <label class="block font-bold text-slate-700 mb-1">New Consultation Time *</label>
+                    <input type="time" @bind="_rescheduleTime"
+                           class="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg font-medium" />
+                </div>
+                <div>
+                    <label class="block font-bold text-slate-700 mb-1">Reschedule Reason &amp; Client Notes</label>
+                    <textarea @bind="_rescheduleNotes" rows="2"
+                              class="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg"
+                              placeholder="Client requested weekend morning slot instead..."></textarea>
+                </div>
+            </div>
+
+            <div class="flex justify-end gap-2 pt-2 border-t border-slate-100">
+                <button type="button" @onclick="() => _isRescheduleModalOpen = false" class="px-3 py-1.5 border border-slate-300 rounded-lg text-xs font-semibold text-slate-700">Cancel</button>
+                <button type="button" @onclick="ConfirmRescheduleAsync" disabled="@_submittingReschedule"
+                        class="px-4 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-xs font-bold transition-colors">
+                    @(_submittingReschedule ? "Updating Calendar..." : "Confirm & Update Calendar")
+                </button>
+            </div>
+        </div>
+    </div>
+}
+
 @* ── Client Simulation Modal ─────────────────────────────────────────────── *@
 @if (_isSimulateModalOpen)
 {
@@ -645,6 +701,21 @@
 
     protected override async Task OnInitializedAsync()
     {
+        if (AuthStateProvider != null)
+        {
+            var authState = await AuthStateProvider.GetAuthenticationStateAsync();
+            var user = authState.User;
+            bool isAdmin = EmployeeRoleHelper.IsAdmin(user) || EmployeeRoleHelper.IsSystemAdmin(user);
+            bool isClerk = EmployeeRoleHelper.IsOfficeClerk(user, UserService);
+
+            if (!isAdmin && !isClerk)
+            {
+                // Access restricted to verified Office Clerks and Admins
+                Nav.NavigateTo("/staff");
+                return;
+            }
+        }
+
         await LoadNegotiationsAsync();
         await LoadCatalogDataAsync();
     }
@@ -725,12 +796,58 @@
         }
     }
 
+    private bool _isRescheduleModalOpen = false;
+    private DateTime _rescheduleDate = DateTime.Today.AddDays(1);
+    private DateTime _rescheduleTime = DateTime.Today.AddHours(10);
+    private string _rescheduleNotes = string.Empty;
+    private string? _rescheduleError;
+    private bool _submittingReschedule = false;
+
     private void OpenRescheduleModal()
     {
-        // Simple fast outcome update to Rescheduled
-        if (_selectedNegotiation != null)
+        if (_selectedNegotiation == null) return;
+        _rescheduleDate = _selectedNegotiation.ConsultationDate.ToDateTime(TimeOnly.MinValue);
+        if (_rescheduleDate < DateTime.Today) _rescheduleDate = DateTime.Today.AddDays(1);
+        _rescheduleTime = DateTime.Today.Add(_selectedNegotiation.ConsultationTime.ToTimeSpan());
+        _rescheduleNotes = string.Empty;
+        _rescheduleError = null;
+        _isRescheduleModalOpen = true;
+    }
+
+    private async Task ConfirmRescheduleAsync()
+    {
+        if (_selectedNegotiation == null) return;
+        _submittingReschedule = true;
+        _rescheduleError = null;
+        try
         {
-            _ = MarkDealOutcomeAsync(_selectedNegotiation.NegotiationId, "Rescheduled");
+            var res = await ConsultationApi.UpdateNegotiationOutcomeAsync(_selectedNegotiation.NegotiationId, new UpdateNegotiationOutcomeRequest
+            {
+                NegotiationStatus = "Rescheduled",
+                Notes = string.IsNullOrWhiteSpace(_rescheduleNotes) ? "Consultation rescheduled by office clerk." : _rescheduleNotes,
+                NewConsultationDate = DateOnly.FromDateTime(_rescheduleDate),
+                NewConsultationTime = TimeOnly.FromDateTime(_rescheduleTime)
+            });
+
+            if (res.IsSuccess)
+            {
+                _isRescheduleModalOpen = false;
+                await LoadNegotiationsAsync();
+                _selectedNegotiation = _negotiations.FirstOrDefault(n => n.NegotiationId == _selectedNegotiation.NegotiationId);
+                await DisplayToast("Consultation rescheduled and notification email dispatched to client.");
+            }
+            else
+            {
+                _rescheduleError = res.Error?.Message ?? "Failed to reschedule consultation.";
+            }
+        }
+        catch (Exception ex)
+        {
+            _rescheduleError = ex.Message;
+        }
+        finally
+        {
+            _submittingReschedule = false;
         }
     }
 
@@ -928,4 +1045,24 @@
         "Rescheduled" => "bg-blue-100 text-blue-800",
         _ => "bg-slate-100 text-slate-800"
     };
+    private bool showToast = false;
+    private string toastMessage = string.Empty;
+
+    private async Task DisplayToast(string message)
+    {
+        toastMessage = message;
+        showToast = true;
+        StateHasChanged();
+        await Task.Delay(3500);
+        showToast = false;
+        StateHasChanged();
+    }
+
+}
+
+@if (showToast)
+{
+    <div class="fixed bottom-6 right-6 z-50 bg-slate-900 text-white px-4 py-3 rounded-xl shadow-xl border border-slate-700 text-xs font-semibold flex items-center gap-2 animate-in fade-in slide-in-from-bottom-2 duration-200">
+        <span class="text-emerald-400 font-bold text-sm">✓</span> @toastMessage
+    </div>
 }

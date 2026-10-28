@@ -249,6 +249,71 @@
 
 </div>
 
+@* ── Cash Collections & Remittance Ledger ───────────────────────────── *@
+<section class="bg-white rounded-xl border border-slate-200 shadow-sm p-6 mt-6">
+    <div class="flex items-center justify-between pb-3 border-b border-slate-100 mb-4">
+        <div>
+            <h2 class="text-base font-bold text-slate-900">💵 Cash Collections &amp; Remittance Ledger</h2>
+            <p class="text-xs text-slate-500">Track on-site cash payments received from customers and pending admin verification.</p>
+        </div>
+        <span class="text-xs font-semibold px-2.5 py-1 bg-amber-50 text-amber-800 border border-amber-200 rounded-lg">
+            @(myCashRemittances.Count(r => r.EmployeeRemittanceStatus == "PendingAdminApproval")) Pending Clearance
+        </span>
+    </div>
+
+    @if (!myCashRemittances.Any())
+    {
+        <div class="p-6 text-center text-xs text-slate-400 bg-slate-50 rounded-lg border border-dashed border-slate-200">
+            No on-site cash collections recorded yet.
+        </div>
+    }
+    else
+    {
+        <div class="overflow-x-auto">
+            <table class="w-full text-xs text-left">
+                <thead class="text-slate-400 uppercase font-semibold text-[10px] border-b">
+                    <tr>
+                        <th class="py-2 px-3">Date</th>
+                        <th class="py-2 px-3">Booking / Event</th>
+                        <th class="py-2 px-3">Amount Collected</th>
+                        <th class="py-2 px-3">Customer View</th>
+                        <th class="py-2 px-3">Employee Remittance State</th>
+                    </tr>
+                </thead>
+                <tbody class="divide-y divide-slate-100">
+                    @foreach (var rem in myCashRemittances)
+                    {
+                        <tr>
+                            <td class="py-2.5 px-3 text-slate-600">@rem.CreatedAt.ToLocalTime().ToString("MMM d, yyyy • h:mm tt")</td>
+                            <td class="py-2.5 px-3 font-semibold text-slate-800">@(rem.EventAppointmentId ?? $"#{rem.BookingId}")</td>
+                            <td class="py-2.5 px-3 font-bold text-slate-900">₱@rem.Amount.ToString("N2")</td>
+                            <td class="py-2.5 px-3">
+                                <span class="bg-green-100 text-green-800 px-2 py-0.5 rounded-full font-bold text-[10px]">
+                                    Cleared (Confirmed)
+                                </span>
+                            </td>
+                            <td class="py-2.5 px-3">
+                                @if (rem.EmployeeRemittanceStatus == "Cleared")
+                                {
+                                    <span class="inline-flex items-center gap-1 bg-emerald-100 text-emerald-800 border border-emerald-200 px-2.5 py-0.5 rounded-full font-bold text-[10px]">
+                                        ✓ Cleared &amp; Approved
+                                    </span>
+                                }
+                                else
+                                {
+                                    <span class="inline-flex items-center gap-1 bg-amber-100 text-amber-900 border border-amber-300 px-2.5 py-0.5 rounded-full font-bold text-[10px]">
+                                        ⏳ Pending Admin Clearance
+                                    </span>
+                                }
+                            </td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+    }
+</section>
+
 @* ── Leave Requests Section ───────────────────────────────────────── *@
 <section class="bg-white rounded-xl border border-slate-200 shadow-sm p-6 mt-6">
     <div class="flex items-center justify-between pb-3 border-b border-slate-100 mb-4">
@@ -448,6 +513,18 @@
                     </div>
                 </div>
 
+                @if (selectedPaymentMethod == "Cash_OnHand")
+                {
+                    <div class="p-3.5 rounded-xl border border-amber-200 bg-amber-50/70 text-xs text-amber-900 space-y-1">
+                        <div class="font-bold flex items-center gap-1.5">
+                            <span>ℹ️</span> Two-Tier Payment Workflow Note
+                        </div>
+                        <p class="text-[11px] leading-relaxed">
+                            Upon logging cash received from the client, the customer payment status is immediately marked as <strong>Cleared</strong> (immediate booking confirmation). On your employee ledger, the cash will be tagged as <span class="font-bold text-amber-900 bg-amber-200 px-1.5 py-0.5 rounded">Pending Admin Clearance</span> until approved by management.
+                        </p>
+                    </div>
+                }
+
                 @if (selectedPaymentMethod == "Xendit_QR")
                 {
                     <div class="p-4 rounded-xl border border-teal-200 bg-teal-50/50 text-center space-y-2">
@@ -480,6 +557,8 @@
 
 
 @code {
+    private List<PaymentSummaryModel> myCashRemittances = new();
+
     // Event Finish & Settlement State
     private bool isFinishModalOpen = false;
     private EventBookingModel? selectedFinishEvent;
@@ -501,7 +580,7 @@
         hourlyRate = 1500m;
         extraSurcharges = 0m;
         overtimeNotes = string.Empty;
-        baseRemainingBalance = Math.Round(ev.EstimatedPrice * 0.75m, 2);
+        baseRemainingBalance = Math.Round(ev.EstimatedPrice * 0.85m, 2);
         selectedPaymentMethod = "Cash_OnHand";
         finishModalError = null;
         RecalculateSettlement();
@@ -640,6 +719,18 @@
         clockStatus = await Employees.GetClockStatusAsync();
         var leaves = await Employees.GetMyLeavesAsync();
         myLeaves = leaves.ToList();
+
+        try
+        {
+            var res = await ConsultationApi.GetEmployeeLedgerAsync(employeeId);
+            if (res.IsSuccess && res.Value != null)
+            {
+                myCashRemittances = res.Value.Where(p => string.Equals(p.PaymentChannel, "Cash", StringComparison.OrdinalIgnoreCase)).ToList();
+            }
+        }
+        catch
+        {
+        }
     }
 
     private async Task HandleClockIn()

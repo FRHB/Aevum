@@ -30,12 +30,31 @@
                             <h2 class="text-xl font-bold">#@item.BookingId - @item.ServiceTitle</h2>
                             <p class="text-gray-500">Client: @item.ClientName</p>
                         </div>
-                        <span class="bg-yellow-100 text-yellow-800 text-xs font-bold px-3 py-1 rounded-full">@item.Status</span>
+                        <div class="flex flex-col items-end gap-1">
+                            <span class="bg-yellow-100 text-yellow-800 text-xs font-bold px-3 py-1 rounded-full">@item.Status</span>
+                            <span class="@(item.EmployeeRemittanceStatus == "Cleared" ? "bg-emerald-100 text-emerald-800 border-emerald-200" : "bg-amber-100 text-amber-900 border-amber-300") border text-[11px] font-bold px-2.5 py-0.5 rounded-full">
+                                Cash Remittance: @(item.EmployeeRemittanceStatus == "Cleared" ? "Cleared" : "Pending Admin Clearance")
+                            </span>
+                        </div>
                     </div>
                     
-                    <div class="grid grid-cols-2 gap-4 text-sm text-gray-600 mb-6">
+                    <div class="grid grid-cols-2 gap-4 text-sm text-gray-600 mb-4">
                         <div><strong>Call Time:</strong> @item.EventDateTime.AddMinutes(-30).ToString("MMM dd, hh:mm tt")</div>
                         <div><strong>Shoot Start:</strong> @item.EventDateTime.ToString("MMM dd, hh:mm tt")</div>
+                    </div>
+
+                    <div class="bg-slate-50 border border-slate-200 rounded-lg p-3 text-xs flex flex-wrap items-center justify-between gap-2">
+                        <div>
+                            <span class="text-slate-500">Total Price:</span> <strong>₱@item.TotalAmount.ToString("N2")</strong>
+                            <span class="text-slate-300 mx-2">•</span>
+                            <span class="text-slate-500">15% Deposit:</span> <strong class="text-teal-700">₱@item.DepositAmount.ToString("N2")</strong>
+                            <span class="text-slate-300 mx-2">•</span>
+                            <span class="text-slate-500">85% Balance:</span> <strong>₱@item.RemainingBalance.ToString("N2")</strong>
+                        </div>
+                        <div class="flex items-center gap-2">
+                            <span class="text-slate-500">Customer Status:</span>
+                            <span class="bg-green-100 text-green-800 px-2 py-0.5 rounded font-bold">Cleared</span>
+                        </div>
                     </div>
                 </div>
             }

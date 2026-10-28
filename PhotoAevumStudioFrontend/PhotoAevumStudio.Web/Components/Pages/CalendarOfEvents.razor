@@ -167,13 +167,13 @@
                                             {
                                                 <div @onclick="() => OpenDetailDrawer(booking)"
                                                      title="@booking.ClientName (@booking.ServiceType) with @booking.AssignedPhotographer"
-                                                     class="compact-event-chip @(booking.HasConflict ? "conflict-chip" : "") @(booking.Status.ToLowerInvariant())">
+                                                     class="compact-event-chip @(booking.IsConsultation ? "is-consultation-chip" : "") @(booking.HasConflict ? "conflict-chip" : "") @(booking.Status.ToLowerInvariant())">
                                                     <div class="chip-top-row">
-                                                        <span class="chip-time">@booking.StartTime.ToString(@"hh\:mm")</span>
+                                                        <span class="chip-time">@(booking.IsConsultation ? "💬 " : "")@booking.StartTime.ToString(@"hh\:mm")</span>
                                                         <span class="chip-status-dot"></span>
                                                     </div>
                                                     <div class="chip-client">@booking.ClientName</div>
-                                                    <div class="chip-photog">📷 @booking.AssignedPhotographer</div>
+                                                    <div class="chip-photog">@(booking.IsConsultation ? "Clerk: " : "📷 ")@booking.AssignedPhotographer</div>
                                                 </div>
                                             }
                                             @if (!_isPhotographerOrCreative)
@@ -219,11 +219,17 @@
                                 @foreach (var ev in dayEvents)
                                 {
                                     <div @onclick="() => OpenDetailDrawer(ev)"
-                                         class="day-event-row @(ev.HasConflict ? "conflict-chip" : "") @(ev.Status.ToLowerInvariant())">
+                                         class="day-event-row @(ev.IsConsultation ? "border-l-4 border-l-teal-600 bg-teal-50/40" : "") @(ev.HasConflict ? "conflict-chip" : "") @(ev.Status.ToLowerInvariant())">
                                         <div class="event-time-badge">@ev.FormattedTimeRange</div>
                                         <div class="event-info">
-                                            <div class="font-bold text-xs">@ev.ClientName</div>
-                                            <div class="text-[11px] text-gray-500">@ev.ServiceType &bull; @ev.AssignedPhotographer</div>
+                                            <div class="font-bold text-xs">
+                                                @if (ev.IsConsultation)
+                                                {
+                                                    <span class="px-1.5 py-0.5 rounded text-[10px] font-bold bg-teal-100 text-teal-800 mr-1">Consultation</span>
+                                                }
+                                                @ev.ClientName
+                                            </div>
+                                            <div class="text-[11px] text-gray-500">@ev.ServiceType &bull; @(ev.IsConsultation ? "Clerk: " : "")@ev.AssignedPhotographer</div>
                                         </div>
                                         <span class="status-pill text-[10px]">@ev.Status</span>
                                     </div>
@@ -266,8 +272,8 @@
                         <div class="month-events-mini">
                             @foreach (var ev in dayEvents)
                             {
-                                <div class="mini-event-pill @(ev.HasConflict ? "conflict" : "")">
-                                    @ev.StartTime.ToString(@"hh\:mm") @ev.ClientName
+                                <div class="mini-event-pill @(ev.IsConsultation ? "bg-teal-50 text-teal-800 border border-teal-200" : "") @(ev.HasConflict ? "conflict" : "")">
+                                    @(ev.IsConsultation ? "💬 " : "")@ev.StartTime.ToString(@"hh\:mm") @ev.ClientName
                                 </div>
                             }
                             @if (totalEvts > 3)
@@ -343,6 +349,27 @@
                 </div>
 
                 <div class="drawer-body">
+                    @if (_selectedBooking.IsConsultation)
+                    {
+                        <div class="drawer-field">
+                            <span class="drawer-field-label">Type</span>
+                            <span class="drawer-field-val inline-flex items-center gap-1 font-bold text-teal-700 bg-teal-50 px-2 py-0.5 rounded border border-teal-200">
+                                <span>💬</span> Consultation &amp; Inquiry Call
+                            </span>
+                        </div>
+                        @if (!string.IsNullOrWhiteSpace(_selectedBooking.MeetingLink))
+                        {
+                            <div class="drawer-field">
+                                <span class="drawer-field-label">Meeting Room</span>
+                                <div class="drawer-field-val">
+                                    <a href="@_selectedBooking.MeetingLink" target="_blank"
+                                       class="inline-flex items-center gap-1.5 px-3 py-1.5 bg-teal-700 hover:bg-teal-800 text-white text-xs font-bold rounded-lg transition-colors shadow-xs">
+                                        <span>📹</span> Join Video Call
+                                    </a>
+                                </div>
+                            </div>
+                        }
+                    }
                     <div class="drawer-field">
                         <span class="drawer-field-label">Service</span>
                         <span class="drawer-field-val">@_selectedBooking.ServiceType</span>

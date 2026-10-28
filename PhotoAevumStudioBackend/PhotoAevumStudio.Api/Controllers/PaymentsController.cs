@@ -4,6 +4,8 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Options;
 using PhotoAevumStudio.Application;
 using PhotoAevumStudio.Application.Auth;
+using PhotoAevumStudio.Application.DTOs;
+using PhotoAevumStudio.Application.Entities;
 using PhotoAevumStudio.Application.Interfaces;
 using PhotoAevumStudio.Application.Models;
 
@@ -14,17 +16,123 @@ namespace PhotoAevumStudio.Api.Controllers;
 public class PaymentsController : ControllerBase
 {
     private readonly IConsultationNegotiationService _consultationService;
+    private readonly IPaymentService _paymentService;
     private readonly XenditSettings _xenditSettings;
     private readonly ILogger<PaymentsController> _logger;
 
     public PaymentsController(
         IConsultationNegotiationService consultationService,
+        IPaymentService paymentService,
         IOptions<XenditSettings> xenditOptions,
         ILogger<PaymentsController> logger)
     {
         _consultationService = consultationService;
+        _paymentService = paymentService;
         _xenditSettings = xenditOptions.Value;
         _logger = logger;
+    }
+
+    // GET api/payments/calculate-deposit?total={amount}
+    [HttpGet("calculate-deposit")]
+    [AllowAnonymous]
+    public IActionResult CalculateDeposit([FromQuery] decimal total)
+    {
+        var breakdown = _paymentService.CalculateReservationFee(total);
+        return Ok(breakdown);
+    }
+
+    // POST api/payments/submit-customer-payment
+    // Endpoint for Customer Payment Submission (calculates 15% deposit and updates customer status to Cleared)
+    [HttpPost("submit-customer-payment")]
+    [Authorize(Roles = $"{AppRoles.Customer},{AppRoles.Admin},{AppRoles.Employee}")]
+    public async Task<IActionResult> SubmitCustomerPayment(
+        [FromBody] CustomerSubmitPaymentRequest request,
+        CancellationToken cancellationToken)
+    {
+        var userId = User.FindFirstValue(ClaimTypes.NameIdentifier) ?? User.FindFirstValue("sub") ?? string.Empty;
+        var result = await _paymentService.SubmitCustomerPaymentAsync(request, userId, cancellationToken);
+        return Ok(result);
+    }
+
+    // POST api/payments/log-employee-cash
+    // Endpoint for Employee Cash Collection logging (EmployeeRemittanceStatus = PendingAdminApproval)
+    [HttpPost("log-employee-cash")]
+    [Authorize(Roles = $"{AppRoles.Employee},{AppRoles.Admin}")]
+    public async Task<IActionResult> LogEmployeeCash(
+        [FromBody] EmployeeLogCashCollectionRequest request,
+        CancellationToken cancellationToken)
+    {
+        var empId = User.FindFirstValue(ClaimTypes.NameIdentifier) ?? User.FindFirstValue("sub") ?? request.EmployeeId;
+        var empName = User.FindFirstValue("full_name") ?? User.FindFirstValue(ClaimTypes.Name) ?? request.EmployeeName;
+
+        var fullRequest = request with
+        {
+            EmployeeId = string.IsNullOrWhiteSpace(request.EmployeeId) ? empId : request.EmployeeId,
+            EmployeeName = string.IsNullOrWhiteSpace(request.EmployeeName) ? empName : request.EmployeeName
+        };
+
+        var result = await _paymentService.LogEmployeeCashCollectionAsync(fullRequest, empId, cancellationToken);
+        return Ok(result);
+    }
+
+    // POST api/payments/{id}/approve-remittance
+    // Endpoint for Admin Approval updating employee status to Cleared
+    [HttpPost("{id}/approve-remittance")]
+    [Authorize(Roles = AppRoles.Admin)]
+    public async Task<IActionResult> ApproveRemittance(
+        int id,
+        [FromBody] AdminApproveRemittanceRequest? request,
+        CancellationToken cancellationToken)
+    {
+        var adminId = User.FindFirstValue(ClaimTypes.NameIdentifier) ?? User.FindFirstValue("sub") ?? request?.AdminId ?? "Admin";
+        var adminName = User.FindFirstValue("full_name") ?? User.FindFirstValue(ClaimTypes.Name) ?? request?.AdminName ?? "System Administrator";
+
+        var result = await _paymentService.ApproveRemittanceAsync(id, adminId, adminName, request?.Notes, cancellationToken);
+        return Ok(result);
+    }
+
+    // GET api/payments/pending-remittances
+    // Endpoint for Admin to inspect cash payments logged by employees pending clearance
+    [HttpGet("pending-remittances")]
+    [Authorize(Roles = AppRoles.Admin)]
+    public async Task<IActionResult> GetPendingRemittances(CancellationToken cancellationToken)
+    {
+        var list = await _paymentService.GetPendingRemittancesAsync(cancellationToken);
+        return Ok(list);
+    }
+
+    // GET api/payments/employee-ledger
+    [HttpGet("employee-ledger")]
+    [Authorize(Roles = $"{AppRoles.Employee},{AppRoles.Admin}")]
+    public async Task<IActionResult> GetEmployeeLedger(
+        [FromQuery] string? employeeId,
+        CancellationToken cancellationToken)
+    {
+        var currentEmpId = User.FindFirstValue(ClaimTypes.NameIdentifier) ?? User.FindFirstValue("sub") ?? string.Empty;
+        var targetEmpId = !string.IsNullOrWhiteSpace(employeeId) && User.IsInRole(AppRoles.Admin)
+            ? employeeId
+            : currentEmpId;
+
+        var list = await _paymentService.GetEmployeeLedgerAsync(targetEmpId, cancellationToken);
+        return Ok(list);
+    }
+
+    // GET api/payments/history
+    [HttpGet("history")]
+    [Authorize(Roles = $"{AppRoles.Admin},{AppRoles.Employee}")]
+    public async Task<IActionResult> GetAllPayments(CancellationToken cancellationToken)
+    {
+        var list = await _paymentService.GetAllPaymentsAsync(cancellationToken);
+        return Ok(list);
+    }
+
+    // GET api/payments/booking/{bookingId}
+    [HttpGet("booking/{bookingId:int}")]
+    [Authorize]
+    public async Task<IActionResult> GetPaymentsByBooking(int bookingId, CancellationToken cancellationToken)
+    {
+        var list = await _paymentService.GetPaymentsByBookingAsync(bookingId, cancellationToken);
+        return Ok(list);
     }
 
     // GET api/payments/appointment/{id}
@@ -98,7 +206,6 @@ public class PaymentsController : ControllerBase
     }
 
     // POST api/payments/xendit-webhook
-    // Webhook listener for Xendit asynchronous notifications
     [HttpPost("xendit-webhook")]
     [HttpPost("webhook")]
     [AllowAnonymous]
@@ -109,7 +216,6 @@ public class PaymentsController : ControllerBase
     {
         try
         {
-            // Verify x-callback-token against configured WebhookToken
             var configuredToken = _xenditSettings.WebhookToken;
             if (!string.IsNullOrWhiteSpace(configuredToken))
             {

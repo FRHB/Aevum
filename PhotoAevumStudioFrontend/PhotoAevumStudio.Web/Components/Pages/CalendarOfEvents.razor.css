@@ -383,6 +383,37 @@
     border-color: #fca5a5;
 }
 
+.compact-event-chip.is-consultation-chip {
+    border-left-color: #0d9488;
+    background: #f0fdfa;
+    border-color: #ccfbf1;
+}
+
+.compact-event-chip.pending_call {
+    border-left-color: #f59e0b;
+    background: #fffbeb;
+}
+
+.compact-event-chip.rescheduled {
+    border-left-color: #3b82f6;
+    background: #eff6ff;
+}
+
+.compact-event-chip.deal_won {
+    border-left-color: #10b981;
+    background: #f0fdf4;
+}
+
+.compact-event-chip.deal_lost {
+    border-left-color: #ef4444;
+    background: #fef2f2;
+    opacity: 0.65;
+}
+.compact-event-chip.deal_lost .chip-client {
+    text-decoration: line-through;
+    color: #991b1b;
+}
+
 .chip-top-row {
     display: flex;
     justify-content: space-between;

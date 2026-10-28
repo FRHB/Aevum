@@ -31,14 +31,27 @@ public class ConsultationsController : ControllerBase
         [FromBody] CreateConsultationRequest request,
         CancellationToken cancellationToken)
     {
+        if (!request.HasAcceptedDataPolicy)
+        {
+            return BadRequest(new { message = "You must read and agree to the PhotoAevum Studio Data Privacy Policy and Terms before scheduling a consultation." });
+        }
+
         if (string.IsNullOrWhiteSpace(request.CustomerId))
         {
             var userId = User.FindFirstValue(ClaimTypes.NameIdentifier) ?? User.FindFirstValue("sub") ?? string.Empty;
             request.CustomerId = userId;
         }
 
-        var result = await _consultationService.CreateConsultationAsync(request, cancellationToken);
-        return StatusCode(StatusCodes.Status201Created, result);
+        try
+        {
+            var result = await _consultationService.CreateConsultationAsync(request, cancellationToken);
+            return StatusCode(StatusCodes.Status201Created, result);
+        }
+        catch (InvalidOperationException ex)
+        {
+            _logger.LogWarning(ex, "Consultation scheduling failed: {Message}", ex.Message);
+            return BadRequest(new { message = ex.Message });
+        }
     }
 
     // GET api/consultations

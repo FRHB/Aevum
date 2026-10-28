@@ -68,7 +68,13 @@ public sealed class BookingRowDto
     public string ClientName => CustomerName;
     public string ServiceTitle => EventName;
     public DateTime EventDateTime => EventDate.Date + EventTime;
-    public decimal TotalPrice => 0m;
+    public decimal TotalAmount { get; set; }
+    public decimal DepositAmount { get; set; }
+    public decimal RemainingBalance { get; set; }
+    public string CustomerPaymentStatus { get; set; } = "Cleared";
+    public string EmployeeRemittanceStatus { get; set; } = "NotApplicable";
+    public string PaymentMethod { get; set; } = "Cash";
+    public decimal TotalPrice => TotalAmount > 0 ? TotalAmount : 0m;
 }
 
 public sealed record PhotoRowDto(
@@ -170,4 +176,6 @@ public interface IUserService
     List<AuditLogRowDto> GetAuditLogs(string? userId = null);
     IReadOnlyList<AuditLogRowDto> GetHistoryLogs(string requestingUserId, int topCount = 100);
     void LogActivity(string actionType, string entityName, string? entityId, string? details, string? changedBy = null);
+    List<PaymentSummaryModel> GetPendingCashRemittances();
+    void ApproveCashRemittance(int paymentId, string adminId);
 }

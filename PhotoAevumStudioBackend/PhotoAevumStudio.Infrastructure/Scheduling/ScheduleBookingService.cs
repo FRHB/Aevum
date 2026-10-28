@@ -240,8 +240,28 @@ public sealed class ScheduleBookingService(
                         BEGIN
                             IF NOT EXISTS (SELECT 1 FROM dbo.BookingNegotiation WHERE NegotiationID = @NegId)
                             BEGIN
+                                DECLARE @ClerkId nvarchar(30);
+                                SELECT TOP 1 @ClerkId = e.EmployeeID
+                                FROM dbo.Employees e
+                                JOIN dbo.EmployeeJointSpecialization ejs ON e.EmployeeID = ejs.EmployeeID
+                                JOIN dbo.EmployeeSpecialization es ON ejs.SpecializationID = es.SpecializationID
+                                LEFT JOIN (
+                                    SELECT EmployeeID, MAX(CreatedAt) AS LastAssignedAt
+                                    FROM dbo.BookingNegotiation
+                                    GROUP BY EmployeeID
+                                ) bn ON e.EmployeeID = bn.EmployeeID
+                                WHERE (e.EmployeeStatus = 'Active' OR e.Status = 'Active')
+                                  AND UPPER(LTRIM(RTRIM(COALESCE(NULLIF(es.SpecializationName, ''), es.Specialization)))) = 'OFFICE CLERK'
+                                ORDER BY COALESCE(bn.LastAssignedAt, '1900-01-01') ASC, e.EmployeeID ASC;
+
+                                IF @ClerkId IS NULL
+                                BEGIN
+                                    RAISERROR('No active employee with the Office Clerk specialization is available to process consultations & deals.', 16, 1);
+                                    RETURN;
+                                END
+
                                 INSERT INTO dbo.BookingNegotiation (NegotiationID, EventAppointmentID, CustomerID, EmployeeID, ConsultationDate, ConsultationTime, MeetingLink, InquiryNotes, NegotiationStatus, CreatedAt)
-                                VALUES (@NegId, @EvtId, @CustId, @EmpId, @EvtDate, @EvtTime, @MeetingLink, @InquiryNotes, 'Pending_Call', SYSUTCDATETIME());
+                                VALUES (@NegId, @EvtId, @CustId, @ClerkId, @EvtDate, @EvtTime, @MeetingLink, @InquiryNotes, 'Pending_Call', SYSUTCDATETIME());
                             END
                         END
 
@@ -274,6 +294,16 @@ public sealed class ScheduleBookingService(
         {
             logger.LogWarning("Double-booking race on {Date} {Slot} rejected by UX_Appointment_Slot; transaction rolled back.", request.Date, slot.Start);
             throw new SlotUnavailableException(request.Date, slot.Start);
+        }
+        catch (SqlException ex) when (ex.Message.Contains("Office Clerk") || ex.Number == 50000)
+        {
+            logger.LogWarning("Booking rejected by business rule: {Message}", ex.Message);
+            throw new ScheduleValidationException(ex.Message);
+        }
+        catch (Exception ex) when (ex.InnerException is SqlException sqlEx && (sqlEx.Message.Contains("Office Clerk") || sqlEx.Number == 50000))
+        {
+            logger.LogWarning("Booking rejected by business rule: {Message}", ex.InnerException!.Message);
+            throw new ScheduleValidationException(ex.InnerException!.Message);
         }
 
         logger.LogInformation("Appointment {AppointmentId} booked for {Date} {Slot} by {CustomerId}. Assigned: {AssignedEmployeeId}",
@@ -477,6 +507,9 @@ public sealed class ScheduleBookingService(
     {
         if (string.IsNullOrWhiteSpace(customer.UserId) || string.IsNullOrWhiteSpace(customer.Email))
             throw new ScheduleValidationException("Your account has no email address on file.");
+
+        if (!request.HasAcceptedDataPolicy)
+            throw new ScheduleValidationException("You must read and agree to the PhotoAevum Studio Data Privacy Policy and Terms before confirming your booking.");
 
         var ids = (request.ServiceIds ?? [])
             .Where(id => !string.IsNullOrWhiteSpace(id))

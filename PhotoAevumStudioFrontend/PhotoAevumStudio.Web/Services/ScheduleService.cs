@@ -87,16 +87,38 @@ public class ScheduleService : IScheduleService
                        COALESCE(NULLIF(LTRIM(RTRIM(c.CustomerFirstName + ' ' + ISNULL(c.CustomerLastName, ''))), ''), ea.CustomerID, 'Studio Client') AS CustomerName,
                        c.CustomerEmail,
                        c.CustomerPhoneNumber,
-                       ea.EventDate,
+                       CAST(ea.EventDate AS datetime2) AS EventDate,
                        ea.EventTime,
                        ea.EventStatus,
                        emp.EmployeeID,
-                       COALESCE(NULLIF(LTRIM(RTRIM(emp.EmployeeFirstName + ' ' + ISNULL(emp.EmployeeLastName, ''))), ''), emp.EmployeeID, 'Unassigned') AS EmployeeName
+                       COALESCE(NULLIF(LTRIM(RTRIM(emp.EmployeeFirstName + ' ' + ISNULL(emp.EmployeeLastName, ''))), ''), emp.EmployeeID, 'Unassigned') AS EmployeeName,
+                       CAST(0 AS bit) AS IsConsultation,
+                       NULL AS MeetingLink
                 FROM dbo.EventAppointment ea
                 LEFT JOIN dbo.Customer c ON c.CustomerID = ea.CustomerID
                 LEFT JOIN dbo.EventEmployee ee ON ee.EventAppointmentID = ea.EventAppointmentID
                 LEFT JOIN dbo.Employees emp ON emp.EmployeeID = ee.EmployeeID
-                ORDER BY ea.EventDate DESC, ea.EventTime DESC;";
+
+                UNION ALL
+
+                SELECT bn.NegotiationID AS EventAppointmentID,
+                       'Consultation: ' + ISNULL(NULLIF(bn.InquiryNotes, ''), 'Client Video Inquiry') AS EventName,
+                       bn.InquiryNotes AS EventDescription,
+                       bn.CustomerID,
+                       COALESCE(NULLIF(LTRIM(RTRIM(c.CustomerFirstName + ' ' + ISNULL(c.CustomerLastName, ''))), ''), bn.CustomerID, 'Studio Client') AS CustomerName,
+                       c.CustomerEmail,
+                       c.CustomerPhoneNumber,
+                       CAST(bn.ConsultationDate AS datetime2) AS EventDate,
+                       bn.ConsultationTime AS EventTime,
+                       bn.NegotiationStatus AS EventStatus,
+                       emp.EmployeeID,
+                       COALESCE(NULLIF(LTRIM(RTRIM(emp.EmployeeFirstName + ' ' + ISNULL(emp.EmployeeLastName, ''))), ''), emp.EmployeeID, 'Office Clerk') AS EmployeeName,
+                       CAST(1 AS bit) AS IsConsultation,
+                       bn.MeetingLink
+                FROM dbo.BookingNegotiation bn
+                LEFT JOIN dbo.Customer c ON c.CustomerID = bn.CustomerID
+                LEFT JOIN dbo.Employees emp ON emp.EmployeeID = bn.EmployeeID
+                ORDER BY EventDate DESC, EventTime DESC;";
 
             using var cmd = new SqlCommand(sql, conn);
             using var reader = cmd.ExecuteReader();
@@ -114,9 +136,14 @@ public class ScheduleService : IScheduleService
                 var eventTime = reader.GetFieldValue<TimeSpan>(8);
                 var status = reader.IsDBNull(9) ? "Confirmed" : reader.GetString(9);
                 var empName = reader.IsDBNull(11) ? "Unassigned" : reader.GetString(11);
+                var isConsultation = !reader.IsDBNull(12) && reader.GetBoolean(12);
+                var meetingLink = reader.IsDBNull(13) ? null : reader.GetString(13);
 
-                // Default 2-hour duration for events
-                var endTime = eventTime.Add(TimeSpan.FromHours(2));
+                // Default duration: 30 mins for consultation, 2 hours for shoot events
+                var endTime = isConsultation
+                    ? eventTime.Add(TimeSpan.FromMinutes(30))
+                    : eventTime.Add(TimeSpan.FromHours(2));
+
                 if (endTime > new TimeSpan(23, 59, 0))
                     endTime = new TimeSpan(23, 59, 0);
 
@@ -130,14 +157,16 @@ public class ScheduleService : IScheduleService
                     ClientName = clientName,
                     ClientEmail = email,
                     ClientPhone = phone,
-                    ServiceType = string.IsNullOrWhiteSpace(eventName) ? "Studio Photography" : eventName,
+                    ServiceType = isConsultation ? "Online Consultation" : (string.IsNullOrWhiteSpace(eventName) ? "Studio Photography" : eventName),
                     Date = eventDate,
                     StartTime = eventTime,
                     EndTime = endTime,
                     Status = status,
                     AssignedPhotographer = empName,
                     Notes = desc,
-                    EstimatedPrice = 350.00m
+                    EstimatedPrice = isConsultation ? 0.00m : 350.00m,
+                    IsConsultation = isConsultation,
+                    MeetingLink = meetingLink
                 });
             }
         }

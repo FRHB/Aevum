@@ -15,7 +15,22 @@ public class Booking
     public TimeSpan ScheduleTime { get; set; }
     public BookingStatus Status { get; set; }
 
+    // Two-Tier Payment & Reservation Fee Tracking (15% deposit vs total amount)
+    public decimal TotalAmount { get; set; }
+    public decimal DepositAmount { get; set; }
+    public decimal RemainingBalance { get; set; }
+    public CustomerPaymentStatus PaymentStatus { get; set; } = CustomerPaymentStatus.Pending;
+
+    public void RecalculateReservationFee(decimal totalAmount)
+    {
+        TotalAmount = totalAmount;
+        var (deposit, balance) = Payment.CalculateReservationFee(totalAmount);
+        DepositAmount = deposit;
+        RemainingBalance = balance;
+    }
+
     // Navigation
+    public ICollection<Payment> Payments { get; set; } = new List<Payment>();
     public ICollection<EmployeeAssignment> EmployeeAssignments { get; set; } = new List<EmployeeAssignment>();
     public ICollection<EquipmentAssignment> EquipmentAssignments { get; set; } = new List<EquipmentAssignment>();
 }

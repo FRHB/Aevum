@@ -323,7 +323,12 @@
 }
 
 .slot-btn {
-    padding: 0.65rem 0.5rem;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 0.15rem;
+    padding: 0.55rem 0.4rem;
     border: 1px solid #d1d5db;
     background: #ffffff;
     border-radius: 6px;
@@ -334,7 +339,7 @@
     transition: all 0.15s ease;
 }
 
-.slot-btn:hover {
+.slot-btn:hover:not(:disabled) {
     border-color: #111827;
 }
 
@@ -342,6 +347,28 @@
     background: #111827;
     color: #ffffff;
     border-color: #111827;
+}
+
+.slot-btn.is-unavailable,
+.slot-btn:disabled {
+    background: #f1f5f9;
+    border-color: #e2e8f0;
+    color: #94a3b8;
+    cursor: not-allowed;
+    opacity: 0.85;
+}
+
+.slot-btn.is-unavailable .slot-time {
+    text-decoration: line-through;
+    opacity: 0.75;
+}
+
+.slot-status-badge {
+    font-size: 0.65rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: #ef4444;
 }
 
 /* Add-ons & Negotiation */
@@ -788,4 +815,112 @@
     .date-time-picker-grid {
         grid-template-columns: 1fr;
     }
+}
+
+
+/* Distinct styles for disabled/fully-booked and active/selected dates */
+.calendar-cell.is-disabled,
+.calendar-cell.is-unavailable {
+    pointer-events: none !important;
+    opacity: 0.4 !important;
+    cursor: not-allowed !important;
+}
+
+.calendar-cell.is-available {
+    background: #ecfdf5 !important;
+    border-color: #a7f3d0 !important;
+    color: #065f46 !important;
+    font-weight: 700 !important;
+    cursor: pointer !important;
+    transition: all 0.15s ease !important;
+}
+
+.calendar-cell.is-available:hover {
+    border-color: #111827 !important;
+    background: #d1fae5 !important;
+}
+
+.calendar-cell.is-available.is-selected,
+.calendar-cell.is-selected {
+    background: #111827 !important;
+    border-color: #111827 !important;
+    color: #ffffff !important;
+    box-shadow: 0 0 0 2px #ffffff, 0 0 0 3px #111827 !important;
+}
+
+/* Enhanced Time Slot Buttons and Badges */
+.slot-btn {
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0.75rem 1rem;
+    border: 1.5px solid #e5e7eb;
+    background: #ffffff;
+    border-radius: 8px;
+    font-size: 0.875rem;
+    font-weight: 600;
+    color: #1f2937;
+    cursor: pointer;
+    transition: all 0.15s ease;
+    text-align: left;
+    width: 100%;
+}
+
+.slot-btn:hover:not(:disabled) {
+    border-color: #111827;
+    background: #f9fafb;
+}
+
+.slot-btn.is-selected {
+    background: #111827 !important;
+    color: #ffffff !important;
+    border-color: #111827 !important;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+}
+
+.slot-btn.is-booked,
+.slot-btn:disabled {
+    background: #f3f4f6;
+    border-color: #e5e7eb;
+    color: #9ca3af;
+    cursor: not-allowed !important;
+    opacity: 0.55;
+    pointer-events: none;
+}
+
+.slot-time {
+    font-size: 0.875rem;
+    font-weight: 700;
+}
+
+.slot-status-badge {
+    font-size: 0.7rem;
+    font-weight: 700;
+    padding: 0.15rem 0.5rem;
+    border-radius: 9999px;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+}
+
+.badge-available {
+    background: #ecfdf5;
+    color: #065f46;
+    border: 1px solid #a7f3d0;
+}
+
+.badge-selected {
+    background: #374151;
+    color: #f9fafb;
+    border: 1px solid #4b5563;
+}
+
+.badge-booked {
+    background: #e5e7eb;
+    color: #6b7280;
+    border: 1px solid #d1d5db;
+}
+
+.empty-selection-placeholder {
+    padding: 1rem 0;
 }

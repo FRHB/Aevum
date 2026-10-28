@@ -58,17 +58,17 @@
     private System.Security.Claims.ClaimsPrincipal? _currentUser;
 
     public bool IsSystemAdmin => EmployeeRoleHelper.IsSystemAdmin(_currentUser) ||
-        (UserRole ?? "").Trim().Equals("systemadmin", StringComparison.OrdinalIgnoreCase) ||
-        (UserRole ?? "").Trim().Equals("super admin", StringComparison.OrdinalIgnoreCase);
+        (_currentUser == null && ((UserRole ?? "").Trim().Equals("systemadmin", StringComparison.OrdinalIgnoreCase) ||
+                                  (UserRole ?? "").Trim().Equals("super admin", StringComparison.OrdinalIgnoreCase)));
 
     public bool IsAdmin => EmployeeRoleHelper.IsAdmin(_currentUser) ||
-        (UserRole ?? "").Trim().Equals("admin", StringComparison.OrdinalIgnoreCase) ||
-        IsSystemAdmin;
+        IsSystemAdmin ||
+        (_currentUser == null && (UserRole ?? "").Trim().Equals("admin", StringComparison.OrdinalIgnoreCase));
 
     public bool IsOfficeClerk => EmployeeRoleHelper.IsOfficeClerk(_currentUser, UserService) ||
-        (UserRole ?? "").Trim().Equals("office clerk", StringComparison.OrdinalIgnoreCase) ||
-        (UserRole ?? "").Trim().Equals("officeclerk", StringComparison.OrdinalIgnoreCase) ||
-        (UserRole ?? "").Trim().Equals("clerk", StringComparison.OrdinalIgnoreCase);
+        (_currentUser == null && ((UserRole ?? "").Trim().Equals("office clerk", StringComparison.OrdinalIgnoreCase) ||
+                                  (UserRole ?? "").Trim().Equals("officeclerk", StringComparison.OrdinalIgnoreCase) ||
+                                  (UserRole ?? "").Trim().Equals("clerk", StringComparison.OrdinalIgnoreCase)));
 
     public bool IsPhotographerOrCreative => EmployeeRoleHelper.IsPhotographerOrCreative(_currentUser, UserService);
 
@@ -169,12 +169,14 @@
     private RenderFragment RenderNav()
     {
         var role = (UserRole ?? "").Trim().ToLowerInvariant();
-        if (role == "customer" || role == "client")
+        if (role == "customer" || role == "client" || (_currentUser != null && _currentUser.IsInRole("Customer")))
             return RenderCustomerNav();
 
-        // If the user has an employee or clerk identity, show the Employee nav
-        if (role == "employee" || role == "staff" || role == "office clerk" || role == "officeclerk" || role == "clerk" ||
-            (!IsAdmin && !IsSystemAdmin && _currentUser?.Identity?.IsAuthenticated == true))
+        // If the user has an employee or clerk identity, show the dedicated Employee nav
+        if (IsOfficeClerk ||
+            IsPhotographerOrCreative ||
+            (!IsAdmin && !IsSystemAdmin && _currentUser?.Identity?.IsAuthenticated == true) ||
+            role == "employee" || role == "staff" || role == "office clerk" || role == "officeclerk" || role == "clerk")
         {
             return RenderEmployeeNav();
         }
@@ -438,7 +440,7 @@
     private RenderFragment RenderEmployeeNav()
     {
         bool isClerk = IsOfficeClerk;
-        bool isFullAccess = isClerk || IsAdmin;
+        bool isFullAccess = isClerk;
 
         return @<text>
         @* ── MANAGEMENT ─────────────────────────────────────────────────── *@
@@ -471,7 +473,7 @@
                         Timesheet
                     </NavLink>
                 </li>
-                @if (isFullAccess)
+                @if (isClerk)
                 {
                     <li>
                         <NavLink href="/staff/negotiations" class="aev-sidebar__link" ActiveClass="aev-sidebar__link--active">

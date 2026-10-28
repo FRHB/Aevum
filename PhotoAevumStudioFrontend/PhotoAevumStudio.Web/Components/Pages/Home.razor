@@ -5,6 +5,7 @@
 @using PhotoAevumStudio.Web.Services
 @inject IUserService UserService
 @inject IServicesApiClient ServicesApi
+@inject IPortfolioService PortfolioService
 @inject NavigationManager NavManager
 
 <PageTitle>Photo Aevum Studio | Book Your Session</PageTitle>
@@ -23,9 +24,9 @@
         </a>
 
         @* Desktop nav links *@
-        <nav class="hidden md:flex items-center gap-16 text-sm font-medium text-gray-600">
+        <nav class="hidden md:flex items-center gap-8 text-xs font-semibold tracking-wider text-gray-600">
             <a href="#home" class="hover:text-gray-950 transition-colors">HOME</a>
-            <a href="#services" @onclick="ShowFeaturedServicesAsync" class="hover:text-gray-950 transition-colors">SERVICES</a>
+            <a href="/services" class="hover:text-gray-950 transition-colors">SERVICES</a>
             <a href="#portfolio" @onclick="TogglePortfolio" @onclick:preventDefault class="hover:text-gray-950 transition-colors">PORTFOLIO</a>
             <a href="#faq" class="hover:text-gray-950 transition-colors">FAQ</a>
             <a href="#contact" class="hover:text-gray-950 transition-colors">CONTACT</a>
@@ -121,69 +122,7 @@
             </div>
         </div>
 
-        @if (_featuredMode)
-        {
-            @* Featured pool: services the admin has starred (Main, Package, Add-On) *@
-            <div class="flex flex-wrap items-center justify-between gap-3 mb-10">
-                <div class="flex flex-wrap gap-2" role="tablist" aria-label="Featured service type">
-                    @foreach (var kind in FeaturedKinds)
-                    {
-                        var k = kind;
-                        <button type="button"
-                                role="tab"
-                                aria-selected="@(_featuredKindFilter == k ? "true" : "false")"
-                                @onclick="() => _featuredKindFilter = k"
-                                class="px-4 py-2 text-xs font-medium uppercase tracking-wider border transition-colors @(_featuredKindFilter == k ? "bg-gray-900 text-white border-gray-900" : "bg-white text-gray-600 border-gray-300 hover:border-gray-900")">
-                            @k <span class="opacity-60">(@FeaturedCount(k))</span>
-                        </button>
-                    }
-                </div>
-                <button type="button" @onclick="ShowAllServices"
-                        class="text-xs font-bold text-gray-900 uppercase tracking-wider hover:underline">
-                    Browse all services &rarr;
-                </button>
-            </div>
-
-            @if (_featuredLoading)
-            {
-                <div class="p-12 text-center bg-white border border-gray-200">
-                    <p class="text-gray-500 text-base">Loading featured services...</p>
-                </div>
-            }
-            else if (!VisibleFeatured.Any())
-            {
-                <div class="p-12 text-center bg-white border border-gray-200">
-                    <p class="text-gray-900 font-semibold mb-1">No featured services yet</p>
-                    <p class="text-gray-500 text-sm">
-                        @(_featuredPool.Count == 0
-                            ? "Check back soon — our highlighted offerings will appear here."
-                            : "Nothing featured in this type. Try another tab.")
-                    </p>
-                </div>
-            }
-            else
-            {
-                <div class="grid sm:grid-cols-2 lg:grid-cols-3 gap-6">
-                    @foreach (var card in VisibleFeatured)
-                    {
-                        <article class="bg-white border border-gray-200 p-6 flex flex-col hover:shadow-xl transition-shadow duration-300">
-                            <div class="flex items-center justify-between mb-4">
-                                <span class="text-[10px] font-bold uppercase tracking-widest text-gray-500">@card.Kind</span>
-                                <span class="bg-gray-900 text-white text-[10px] font-bold uppercase tracking-wider px-2 py-0.5">★ Featured</span>
-                            </div>
-                            <h3 class="text-2xl font-bold text-gray-900 tracking-tight mb-1">@card.Title</h3>
-                            <p class="text-lg font-light text-gray-500 mb-4">@card.PriceText</p>
-                            <p class="text-gray-500 font-light text-sm leading-relaxed mb-4 line-clamp-3">@card.Description</p>
-                            <p class="text-xs text-gray-400 uppercase tracking-wider font-medium mt-auto mb-3">@card.Meta</p>
-                            <a href="/schedule" class="text-xs font-bold text-gray-900 uppercase tracking-wider hover:underline">
-                                Schedule This &rarr;
-                            </a>
-                        </article>
-                    }
-                </div>
-            }
-        }
-        else if (!DatabaseServices.Any())
+        @if (!DatabaseServices.Any())
         {
             <div class="p-12 text-center bg-white border border-gray-200 rounded-lg">
                 <p class="text-gray-500 text-base">Loading live services from the database...</p>
@@ -191,8 +130,8 @@
         }
         else
         {
-            @* 3D Carousel Spotlight Container *@
-            <div class="relative w-full h-[40rem] flex justify-center items-center mt-10">
+            @* 3D Carousel Spotlight Container with Extended Span Space *@
+            <div class="relative w-full h-[42rem] flex justify-center items-center mt-6 overflow-hidden">
 
                 @* Prev Button *@
                 <button type="button"
@@ -224,7 +163,7 @@
                         : GetServiceFallbackImage(svc.Code, index);
 
                     <div @onclick="() => SetActive(index)"
-                         class="absolute transition-all duration-700 ease-[cubic-bezier(0.25,1,0.5,1)] cursor-pointer w-[19rem] sm:w-[22rem] md:w-[26rem] bg-white rounded-2xl border border-gray-100 p-5 @GetCardClass(index)">
+                         class="absolute transition-all duration-700 ease-[cubic-bezier(0.25,1,0.5,1)] cursor-pointer w-[18rem] sm:w-[21rem] md:w-[24rem] bg-white rounded-2xl border border-gray-200/80 p-5 @GetCardClass(index)">
                         @if (index == 0 || svc.IsFeatured)
                         {
                             <div class="absolute -top-3 right-6 bg-gray-900 text-white text-[11px] font-bold uppercase tracking-wider px-3.5 py-1 rounded-full shadow-md z-10 flex items-center gap-1.5 border border-white/20">
@@ -344,172 +283,244 @@
     </div>
 </section>
 
-@* ── Portfolio slide-over sidebar ─────────────────────────────────────────── *@
-<div @onclick="ClosePortfolio"
-     aria-hidden="true"
-     class="fixed inset-0 z-[60] bg-black/40 backdrop-blur-sm transition-opacity duration-300 @(_portfolioOpen ? "opacity-100" : "opacity-0 pointer-events-none")"></div>
+@* ── Floating Pop-Up Portfolio Showcase Screen ──────────────────────────── *@
+@if (_portfolioOpen)
+{
+    <div class="fixed inset-0 z-[70] bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 sm:p-6 md:p-8 animate-in fade-in duration-200"
+         @onclick="ClosePortfolio">
 
-<aside role="dialog"
-       aria-modal="true"
-       aria-label="Portfolio categories"
-       aria-hidden="@(!_portfolioOpen ? "true" : "false")"
-       inert="@(!_portfolioOpen)"
-       class="fixed inset-y-0 left-0 z-[70] w-full max-w-sm bg-white shadow-2xl flex flex-col transform transition-transform duration-300 ease-out @(_portfolioOpen ? "translate-x-0" : "-translate-x-full")">
+        <div role="dialog"
+             aria-modal="true"
+             aria-label="Studio Featured Portfolios"
+             class="bg-white rounded-3xl shadow-2xl border border-gray-100 w-full max-w-5xl max-h-[88vh] flex flex-col overflow-hidden animate-in zoom-in-95 duration-200 relative"
+             @onclick:stopPropagation="true">
 
-    <div class="flex items-center justify-between h-20 px-6 border-b border-gray-100">
-        <h2 class="text-sm font-bold uppercase tracking-widest text-gray-900">Portfolio</h2>
-        <button @onclick="ClosePortfolio"
-                type="button"
-                aria-label="Close portfolio menu"
-                class="w-10 h-10 flex items-center justify-center text-gray-500 hover:text-gray-950 hover:bg-gray-100 transition-colors">
-            ✕
-        </button>
-    </div>
+            @* Modal Header *@
+            <div class="flex items-center justify-between px-6 sm:px-8 py-5 border-b border-gray-100 bg-white">
+                <div class="flex items-center gap-3">
+                    <span class="text-[11px] font-bold uppercase tracking-widest text-amber-600 bg-amber-50 px-2.5 py-1 rounded-full border border-amber-200">
+                        ★ Featured Showcase
+                    </span>
+                    <h2 class="text-lg sm:text-xl font-black text-gray-900 tracking-tight">Studio Portfolio</h2>
+                </div>
+                <button @onclick="ClosePortfolio"
+                        type="button"
+                        aria-label="Close portfolio modal"
+                        class="w-10 h-10 flex items-center justify-center text-gray-400 hover:text-gray-900 hover:bg-gray-100 rounded-full transition-colors text-base font-bold cursor-pointer">
+                    ✕
+                </button>
+            </div>
 
-    <nav class="flex-1 overflow-y-auto px-6 py-8" aria-label="Portfolio categories">
-        @if (_activePortfolioCategory is { } active)
-        {
-            @* ── Category detail: services mapped to the chosen category ── *@
-            <button type="button" @onclick="BackToPortfolioList"
-                    class="text-xs font-bold text-gray-500 hover:text-gray-950 uppercase tracking-widest mb-6 transition-colors">
-                &larr; Back to categories
-            </button>
-
-            <p class="text-xs text-gray-400 uppercase tracking-widest mb-1">@active.ParentSection</p>
-            <h3 class="text-2xl font-bold tracking-tight text-gray-900 mb-2">@active.Name</h3>
-            @if (!string.IsNullOrWhiteSpace(active.Description))
+            @if (_selectedPortfolio != null)
             {
-                <p class="text-sm text-gray-500 font-light leading-relaxed mb-6">@active.Description</p>
-            }
-
-            @if (!_activeMain.Any() && !_activePackages.Any() && !_activeAddOns.Any())
-            {
-                <p class="text-sm text-gray-500 py-6 border-t border-gray-100">No services are linked to this category yet.</p>
-            }
-
-            @if (_activeMain.Any())
-            {
-                <h4 class="text-xs font-bold uppercase tracking-widest text-gray-900 mt-8 mb-3">Main Services</h4>
-                <ul class="divide-y divide-gray-100 border-y border-gray-100">
-                    @foreach (var m in _activeMain)
-                    {
-                        <li class="py-4">
-                            <div class="flex items-baseline justify-between gap-4">
-                                <span class="font-semibold text-gray-900">@m.Title</span>
-                                <span class="text-sm text-gray-500 whitespace-nowrap">@(m.BasePrice > 0 ? $"₱{m.BasePrice:N0}" : "Custom Quote")</span>
-                            </div>
-                            <p class="text-xs text-gray-400 uppercase tracking-wider mt-1">@m.Duration</p>
-                        </li>
-                    }
-                </ul>
-            }
-
-            @if (_activePackages.Any())
-            {
-                <h4 class="text-xs font-bold uppercase tracking-widest text-gray-900 mt-8 mb-3">Package Services</h4>
-                <ul class="divide-y divide-gray-100 border-y border-gray-100">
-                    @foreach (var pk in _activePackages)
-                    {
-                        <li class="py-4">
-                            <div class="flex items-baseline justify-between gap-4">
-                                <span class="font-semibold text-gray-900">@pk.Title</span>
-                                <span class="text-sm text-gray-500 whitespace-nowrap">@pk.Price</span>
-                            </div>
-                            @if (!string.IsNullOrWhiteSpace(pk.SavingsNote))
-                            {
-                                <p class="text-xs text-gray-400 mt-1">@pk.SavingsNote</p>
-                            }
-                        </li>
-                    }
-                </ul>
-            }
-
-            @if (_activeAddOns.Any())
-            {
-                <h4 class="text-xs font-bold uppercase tracking-widest text-gray-900 mt-8 mb-3">Additional Services</h4>
-                <ul class="divide-y divide-gray-100 border-y border-gray-100">
-                    @foreach (var ad in _activeAddOns)
-                    {
-                        <li class="py-4">
-                            <div class="flex items-baseline justify-between gap-4">
-                                <span class="font-semibold text-gray-900">@ad.Title</span>
-                                <span class="text-sm text-gray-500 whitespace-nowrap">@ad.PriceText</span>
-                            </div>
-                            @if (!string.IsNullOrWhiteSpace(ad.TypeCategory))
-                            {
-                                <p class="text-xs text-gray-400 uppercase tracking-wider mt-1">@ad.TypeCategory</p>
-                            }
-                        </li>
-                    }
-                </ul>
-            }
-
-            <a href="/schedule"
-               class="mt-8 inline-flex w-full items-center justify-center bg-gray-900 hover:bg-black text-white px-6 py-3 text-xs font-medium uppercase tracking-wider transition-colors">
-                Book This Category
-            </a>
-        }
-        else
-        {
-            @* ── Accordion: Photography / Videography ── *@
-            <p class="text-xs text-gray-400 uppercase tracking-widest mb-4">Browse by category</p>
-            <ul class="divide-y divide-gray-100 border-y border-gray-100">
-                @foreach (var section in PortfolioSections.All)
-                {
-                    var sectionName = section;
-                    var isOpen = _expandedSection == sectionName;
-                    var sectionCategories = PortfolioCategoriesFor(sectionName);
-                    var panelId = $"portfolio-section-{sectionName.ToLowerInvariant()}";
-
-                    <li>
-                        <button @onclick="() => ToggleSection(sectionName)"
-                                type="button"
-                                aria-expanded="@(isOpen ? "true" : "false")"
-                                aria-controls="@panelId"
-                                class="w-full flex items-center justify-between py-5 text-left text-2xl font-bold tracking-tight text-gray-900 hover:pl-2 transition-all duration-300">
-                            <span>@sectionName</span>
-                            <span class="flex items-center gap-3">
-                                <span class="text-xs font-medium text-gray-400">@sectionCategories.Count</span>
-                                <span aria-hidden="true" class="text-base transition-transform duration-300 @(isOpen ? "rotate-180" : "")">▾</span>
-                            </span>
+                @* ── Album Photos View (Drill-down inside floating popup) ── *@
+                <div class="px-6 sm:px-8 py-4 border-b border-gray-100 bg-gray-50/70 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                    <div>
+                        <button type="button" @onclick="BackToPortfolioList"
+                                class="inline-flex items-center gap-1.5 text-xs font-bold text-gray-600 hover:text-black uppercase tracking-wider mb-1.5 transition-colors">
+                            <span>&larr;</span> <span>Back to Featured Albums</span>
                         </button>
-
-                        @if (isOpen)
+                        <h3 class="text-xl font-black text-gray-900 tracking-tight">@_selectedPortfolio.PortfolioName</h3>
+                        @if (!string.IsNullOrWhiteSpace(_selectedPortfolio.PortfolioDescription))
                         {
-                            <div id="@panelId" class="pb-4">
-                                @if (_portfolioLoading)
-                                {
-                                    <p class="text-sm text-gray-400 py-3 pl-2">Loading categories...</p>
-                                }
-                                else if (sectionCategories.Count == 0)
-                                {
-                                    <p class="text-sm text-gray-400 py-3 pl-2">No categories published yet.</p>
-                                }
-                                else
-                                {
-                                    <ul class="space-y-1">
-                                        @foreach (var cat in sectionCategories)
-                                        {
-                                            var c = cat;
-                                            <li>
-                                                <button type="button"
-                                                        @onclick="() => OpenPortfolioCategory(c)"
-                                                        class="w-full flex items-center justify-between py-3 pl-2 pr-1 text-left text-base font-medium text-gray-700 hover:text-gray-950 hover:pl-4 transition-all duration-300">
-                                                    <span>@c.Name</span>
-                                                    <span aria-hidden="true">&rarr;</span>
-                                                </button>
-                                            </li>
-                                        }
-                                    </ul>
-                                }
-                            </div>
+                            <p class="text-xs text-gray-500 font-light mt-0.5 max-w-xl">@_selectedPortfolio.PortfolioDescription</p>
                         }
-                    </li>
+                    </div>
+                    <div class="flex items-center gap-2">
+                        <span class="text-xs font-semibold text-gray-500 bg-white border border-gray-200 px-3 py-1 rounded-full">
+                            📷 @_selectedPortfolio.Images.Count photos
+                        </span>
+                    </div>
+                </div>
+
+                <div class="flex-1 overflow-y-auto p-6 sm:p-8">
+                    @if (_selectedPortfolio.Images.Count == 0)
+                    {
+                        <div class="py-20 text-center text-gray-400">
+                            <p class="text-3xl mb-2">🖼️</p>
+                            <p class="text-xs font-medium">No photos uploaded to this album yet.</p>
+                        </div>
+                    }
+                    else
+                    {
+                        <div class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-4">
+                            @for (int idx = 0; idx < _selectedPortfolio.Images.Count; idx++)
+                            {
+                                var photoIdx = idx;
+                                var img = _selectedPortfolio.Images[photoIdx];
+                                <div class="group relative aspect-square bg-gray-100 rounded-xl overflow-hidden border border-gray-200 cursor-pointer shadow-xs hover:shadow-lg transition-all"
+                                     @onclick="() => OpenLightbox(photoIdx)">
+                                    <img src="@img.Url"
+                                         alt="@_selectedPortfolio.PortfolioName"
+                                         class="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
+                                         onerror="this.src='images/AevumLogo.jpg';" />
+                                    <div class="absolute inset-0 bg-black/0 group-hover:bg-black/30 transition-colors flex items-center justify-center">
+                                        <span class="text-white opacity-0 group-hover:opacity-100 text-xs font-bold bg-black/60 px-3 py-1.5 rounded-full backdrop-blur-xs transition-opacity">
+                                            🔍 Expand
+                                        </span>
+                                    </div>
+                                </div>
+                            }
+                        </div>
+                    }
+                </div>
+            }
+            else
+            {
+                @* ── Featured Albums Grid View (Inside floating popup) ── *@
+                @if (_featuredCategories.Count > 1)
+                {
+                    <div class="px-6 sm:px-8 py-3 border-b border-gray-100 flex items-center gap-2 overflow-x-auto bg-gray-50/50">
+                        <button type="button"
+                                @onclick='() => _selectedCategoryFilter = "All"'
+                                class="px-3.5 py-1 rounded-full text-xs font-semibold whitespace-nowrap transition-colors @(_selectedCategoryFilter == "All" ? "bg-gray-900 text-white" : "bg-white text-gray-600 border border-gray-200 hover:border-gray-400")">
+                            All (@_featuredPortfolios.Count)
+                        </button>
+                        @foreach (var cat in _featuredCategories)
+                        {
+                            var catName = cat;
+                            var cnt = _featuredPortfolios.Count(p => p.CategoryName.Equals(catName, StringComparison.OrdinalIgnoreCase) || p.CategoryID.Equals(catName, StringComparison.OrdinalIgnoreCase));
+                            <button type="button"
+                                    @onclick="() => _selectedCategoryFilter = catName"
+                                    class="px-3.5 py-1 rounded-full text-xs font-semibold whitespace-nowrap transition-colors @(_selectedCategoryFilter == catName ? "bg-gray-900 text-white" : "bg-white text-gray-600 border border-gray-200 hover:border-gray-400")">
+                                @catName (@cnt)
+                            </button>
+                        }
+                    </div>
                 }
-            </ul>
-        }
-    </nav>
-</aside>
+
+                <div class="flex-1 overflow-y-auto p-6 sm:p-8">
+                    @if (_portfolioLoading)
+                    {
+                        <div class="py-24 text-center text-gray-400 text-xs">
+                            <span class="inline-block w-6 h-6 border-2 border-gray-300 border-t-gray-900 rounded-full animate-spin mb-2"></span>
+                            <p>Loading featured portfolios...</p>
+                        </div>
+                    }
+                    else if (!VisibleFeaturedPortfolios.Any())
+                    {
+                        <div class="py-24 text-center text-gray-400">
+                            <p class="text-3xl mb-2">🎨</p>
+                            <h3 class="text-sm font-bold text-gray-800">No Featured Portfolios</h3>
+                            <p class="text-xs text-gray-500 mt-1">Curated studio showcases will appear here once featured.</p>
+                        </div>
+                    }
+                    else
+                    {
+                        <div class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-5">
+                            @foreach (var port in VisibleFeaturedPortfolios)
+                            {
+                                var p = port;
+                                <article class="bg-white border border-gray-200 rounded-2xl overflow-hidden hover:shadow-xl transition-all duration-300 group cursor-pointer flex flex-col"
+                                         @onclick="() => OpenPortfolioAlbum(p)">
+                                    <div class="relative h-44 bg-gray-950 overflow-hidden">
+                                        <img src="@p.HighlightImageUrl"
+                                             alt="@p.PortfolioName"
+                                             class="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
+                                             onerror="this.src='images/AevumLogo.jpg';" />
+                                        <div class="absolute inset-0 bg-gradient-to-t from-black/80 via-black/20 to-transparent"></div>
+                                        
+                                        <div class="absolute top-2.5 left-2.5 flex items-center gap-1.5">
+                                            <span class="bg-amber-400 text-slate-950 text-[9px] font-black uppercase tracking-wider px-2 py-0.5 rounded-full shadow-md">
+                                                ★ Featured
+                                            </span>
+                                        </div>
+                                        
+                                        <div class="absolute top-2.5 right-2.5">
+                                            <span class="px-2 py-0.5 rounded-full text-[10px] font-semibold bg-black/60 backdrop-blur-xs text-white">
+                                                📷 @p.Images.Count
+                                            </span>
+                                        </div>
+
+                                        <div class="absolute bottom-2.5 left-3 right-3 text-white">
+                                            <span class="text-[9px] uppercase font-bold tracking-wider text-amber-400 block mb-0.5">@p.CategoryName</span>
+                                            <h3 class="text-base font-bold tracking-tight text-white group-hover:text-amber-200 transition-colors line-clamp-1">
+                                                @p.PortfolioName
+                                            </h3>
+                                        </div>
+                                    </div>
+
+                                    <div class="p-3.5 flex items-center justify-between mt-auto">
+                                        <p class="text-xs text-gray-500 line-clamp-1 pr-2">
+                                            @(!string.IsNullOrWhiteSpace(p.PortfolioDescription) ? p.PortfolioDescription : "Studio album showcase.")
+                                        </p>
+                                        <span class="inline-flex items-center gap-1 text-xs font-bold text-gray-900 group-hover:translate-x-1 transition-transform whitespace-nowrap">
+                                            <span>View</span> <span>&rarr;</span>
+                                        </span>
+                                    </div>
+                                </article>
+                            }
+                        </div>
+                    }
+                </div>
+            }
+
+        </div>
+    </div>
+}
+
+@* ── Lightbox Modal for Fullscreen Photo Viewing ───────────────────────── *@
+@if (_lightboxOpen && _selectedPortfolio != null && _lightboxIndex >= 0 && _lightboxIndex < _selectedPortfolio.Images.Count)
+{
+    var currentImg = _selectedPortfolio.Images[_lightboxIndex];
+    <div class="fixed inset-0 z-[100] bg-black/95 backdrop-blur-md flex flex-col justify-between p-4 sm:p-8 animate-in fade-in duration-200"
+         @onclick="CloseLightbox">
+        
+        <!-- Lightbox Header -->
+        <div class="flex items-center justify-between text-white z-10" @onclick:stopPropagation="true">
+            <div>
+                <span class="text-xs uppercase tracking-wider text-amber-400 font-bold block">@_selectedPortfolio.CategoryName</span>
+                <h3 class="text-base sm:text-lg font-bold text-white">@_selectedPortfolio.PortfolioName</h3>
+                <p class="text-xs text-gray-400">Photo @(_lightboxIndex + 1) of @_selectedPortfolio.Images.Count</p>
+            </div>
+            <button type="button"
+                    @onclick="CloseLightbox"
+                    class="w-10 h-10 rounded-full bg-white/10 hover:bg-white/20 text-white flex items-center justify-center transition-colors text-lg cursor-pointer">
+                ✕
+            </button>
+        </div>
+
+        <!-- Image with Next/Prev Controls -->
+        <div class="relative flex-1 flex items-center justify-center my-4 overflow-hidden" @onclick:stopPropagation="true">
+            @if (_selectedPortfolio.Images.Count > 1)
+            {
+                <button type="button"
+                        @onclick="PrevLightboxPhoto"
+                        class="absolute left-2 sm:left-4 z-20 w-12 h-12 rounded-full bg-black/60 hover:bg-black/90 text-white border border-white/20 flex items-center justify-center text-xl transition-all cursor-pointer">
+                    ‹
+                </button>
+            }
+
+            <img src="@currentImg.Url"
+                 alt="@_selectedPortfolio.PortfolioName"
+                 class="max-h-[75vh] max-w-[90vw] object-contain rounded-lg shadow-2xl transition-all duration-300"
+                 onerror="this.src='images/AevumLogo.jpg';" />
+
+            @if (_selectedPortfolio.Images.Count > 1)
+            {
+                <button type="button"
+                        @onclick="NextLightboxPhoto"
+                        class="absolute right-2 sm:right-4 z-20 w-12 h-12 rounded-full bg-black/60 hover:bg-black/90 text-white border border-white/20 flex items-center justify-center text-xl transition-all cursor-pointer">
+                    ›
+                </button>
+            }
+        </div>
+
+        <!-- Lightbox Footer / Thumbnails -->
+        <div class="flex justify-center gap-2 overflow-x-auto py-2 z-10" @onclick:stopPropagation="true">
+            @for (int i = 0; i < _selectedPortfolio.Images.Count; i++)
+            {
+                var thumbIdx = i;
+                var thumb = _selectedPortfolio.Images[thumbIdx];
+                <button type="button"
+                        @onclick="() => _lightboxIndex = thumbIdx"
+                        class="w-12 h-12 rounded-md overflow-hidden border-2 transition-all flex-shrink-0 cursor-pointer @(_lightboxIndex == thumbIdx ? "border-amber-400 scale-105" : "border-transparent opacity-50 hover:opacity-100")">
+                    <img src="@thumb.Url" alt="Thumbnail" class="w-full h-full object-cover" onerror="this.src='images/AevumLogo.jpg';" />
+                </button>
+            }
+        </div>
+    </div>
+}
 
 @code {
     private List<MainServiceItem> DatabaseServices = new();
@@ -564,12 +575,29 @@
 
     private string GetCardClass(int cardIndex)
     {
-        if (cardIndex == activeIndex)
-            return "z-30 scale-100 opacity-100 translate-x-0 shadow-2xl ring-1 ring-black/5";
-        else if (cardIndex < activeIndex)
-            return "z-20 scale-75 md:scale-85 opacity-40 hover:opacity-75 -translate-x-32 md:-translate-x-72 shadow-lg";
+        if (CarouselItems.Count == 0) return "hidden";
+
+        int count = CarouselItems.Count;
+        int diff = (cardIndex - activeIndex) % count;
+        if (diff > count / 2) diff -= count;
+        if (diff < -count / 2) diff += count;
+
+        if (diff == 0)
+        {
+            return "z-30 scale-100 opacity-100 translate-x-0 shadow-2xl ring-1 ring-black/5 pointer-events-auto";
+        }
+        else if (diff == -1)
+        {
+            return "z-20 scale-85 opacity-70 hover:opacity-100 -translate-x-[22rem] sm:-translate-x-[26rem] md:-translate-x-[31rem] shadow-xl pointer-events-auto";
+        }
+        else if (diff == 1)
+        {
+            return "z-20 scale-85 opacity-70 hover:opacity-100 translate-x-[22rem] sm:translate-x-[26rem] md:translate-x-[31rem] shadow-xl pointer-events-auto";
+        }
         else
-            return "z-20 scale-75 md:scale-85 opacity-40 hover:opacity-75 translate-x-32 md:translate-x-72 shadow-lg";
+        {
+            return "z-10 scale-70 opacity-0 pointer-events-none translate-x-0";
+        }
     }
 
     private static string GetServiceFallbackImage(string code, int index) => (index % 3) switch
@@ -583,109 +611,60 @@
     private void OpenModal() => _modalOpen = true;
     private void CloseModal() => _modalOpen = false;
 
-    // ── Featured services pool (Services nav click) ─────────────────────
-    private bool _featuredMode = false;
-    private bool _featuredLoading = false;
-    private string _featuredKindFilter = "All";
-    private List<FeaturedServiceCard> _featuredPool = new();
-    private static readonly string[] FeaturedKinds = { "All", "Main Service", "Package", "Add-On" };
 
-    private IEnumerable<FeaturedServiceCard> VisibleFeatured =>
-        _featuredKindFilter == "All" ? _featuredPool : _featuredPool.Where(c => c.Kind == _featuredKindFilter);
 
-    private int FeaturedCount(string kind) =>
-        kind == "All" ? _featuredPool.Count : _featuredPool.Count(c => c.Kind == kind);
-
-    private async Task ShowFeaturedServicesAsync()
-    {
-        _featuredMode = true;
-        _featuredKindFilter = "All";
-        _featuredLoading = true;
-        try
-        {
-            _featuredPool = await BuildFeaturedPoolAsync();
-        }
-        catch
-        {
-            _featuredPool = new List<FeaturedServiceCard>();
-        }
-        finally
-        {
-            _featuredLoading = false;
-        }
-    }
-
-    private void ShowAllServices() => _featuredMode = false;
-
-    private async Task<List<FeaturedServiceCard>> BuildFeaturedPoolAsync()
-    {
-        var mainCodes = await ServicesApi.GetFeaturedCodesAsync(FeaturedEntityTypes.Main);
-        var packageCodes = await ServicesApi.GetFeaturedCodesAsync(FeaturedEntityTypes.Package);
-        var addOnCodes = await ServicesApi.GetFeaturedCodesAsync(FeaturedEntityTypes.AddOn);
-
-        var pool = new List<FeaturedServiceCard>();
-
-        pool.AddRange(UserService.GetMainServices()
-            .Where(s => s.IsActive && mainCodes.Contains(s.Code))
-            .Select(s => new FeaturedServiceCard(
-                s.Code, "Main Service", s.Title,
-                s.BasePrice > 0 ? $"₱{s.BasePrice:N0}" : "Custom Quote",
-                !string.IsNullOrWhiteSpace(s.Description) ? s.Description! : "Professional photography session executed in our premium studio bay.",
-                $"{s.Duration} • {s.Category}")));
-
-        pool.AddRange(UserService.GetPackageServices()
-            .Where(p => p.IsActive && packageCodes.Contains(p.Code))
-            .Select(p => new FeaturedServiceCard(
-                p.Code, "Package", p.Title, p.Price,
-                !string.IsNullOrWhiteSpace(p.Description) ? p.Description! : "A curated bundle of studio services at a package rate.",
-                !string.IsNullOrWhiteSpace(p.SavingsNote) ? p.SavingsNote! : p.BundleCategory)));
-
-        pool.AddRange(UserService.GetAdditionalServices()
-            .Where(a => a.IsActive && addOnCodes.Contains(a.Code))
-            .Select(a => new FeaturedServiceCard(
-                a.Code, "Add-On", a.Title, a.PriceText,
-                !string.IsNullOrWhiteSpace(a.Description) ? a.Description! : "Enhance your session with this optional extra.",
-                a.TypeCategory)));
-
-        return pool;
-    }
-
-    // ── Portfolio sidebar (accordions + category drill-down) ────────────
+    // ── Portfolio sidebar (Featured Albums & Photos Only) ────────────
     private bool _portfolioOpen = false;
     private bool _portfolioLoading = false;
-    private string? _expandedSection;
-    private List<PortfolioCategoryDto> _portfolioCategories = new();
-    private PortfolioCategoryDto? _activePortfolioCategory;
-    private List<MainServiceItem> _activeMain = new();
-    private List<PackageServiceItem> _activePackages = new();
-    private List<AddOnServiceItem> _activeAddOns = new();
+    private List<PortfolioFolderModel> _featuredPortfolios = new();
+    private List<string> _featuredCategories = new();
+    private string _selectedCategoryFilter = "All";
+    private PortfolioFolderModel? _selectedPortfolio;
+
+    // Lightbox Modal state
+    private bool _lightboxOpen = false;
+    private int _lightboxIndex = 0;
+
+    private IEnumerable<PortfolioFolderModel> VisibleFeaturedPortfolios =>
+        _selectedCategoryFilter == "All"
+            ? _featuredPortfolios
+            : _featuredPortfolios.Where(p =>
+                string.Equals(p.CategoryName, _selectedCategoryFilter, StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(p.CategoryID, _selectedCategoryFilter, StringComparison.OrdinalIgnoreCase));
 
     private async Task TogglePortfolio()
     {
         _portfolioOpen = !_portfolioOpen;
         if (_portfolioOpen)
         {
-            await LoadPortfolioCategoriesAsync();
+            await LoadFeaturedPortfoliosAsync();
         }
     }
 
     private void ClosePortfolio()
     {
         _portfolioOpen = false;
-        _activePortfolioCategory = null;
+        _selectedPortfolio = null;
+        _lightboxOpen = false;
     }
 
-    private async Task LoadPortfolioCategoriesAsync()
+    private async Task LoadFeaturedPortfoliosAsync()
     {
         _portfolioLoading = true;
         try
         {
-            var all = await ServicesApi.GetPortfolioCategoriesAsync();
-            _portfolioCategories = all.Where(c => c.IsActive).OrderBy(c => c.Name).ToList();
+            _featuredPortfolios = await PortfolioService.GetPortfoliosAsync(featuredOnly: true);
+            _featuredCategories = _featuredPortfolios
+                .Select(p => p.CategoryName)
+                .Where(c => !string.IsNullOrWhiteSpace(c))
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .OrderBy(c => c)
+                .ToList();
         }
         catch
         {
-            _portfolioCategories = new List<PortfolioCategoryDto>();
+            _featuredPortfolios = new();
+            _featuredCategories = new();
         }
         finally
         {
@@ -693,41 +672,40 @@
         }
     }
 
-    private List<PortfolioCategoryDto> PortfolioCategoriesFor(string section) =>
-        _portfolioCategories
-            .Where(c => c.ParentSection.Equals(section, StringComparison.OrdinalIgnoreCase))
-            .ToList();
-
-    private void ToggleSection(string section) =>
-        _expandedSection = _expandedSection == section ? null : section;
-
-    private void BackToPortfolioList() => _activePortfolioCategory = null;
-
-    private void OpenPortfolioCategory(PortfolioCategoryDto category)
+    private void OpenPortfolioAlbum(PortfolioFolderModel portfolio)
     {
-        _activePortfolioCategory = category;
+        _selectedPortfolio = portfolio;
+    }
 
-        try
+    private void BackToPortfolioList()
+    {
+        _selectedPortfolio = null;
+    }
+
+    private void OpenLightbox(int index)
+    {
+        _lightboxIndex = index;
+        _lightboxOpen = true;
+    }
+
+    private void CloseLightbox()
+    {
+        _lightboxOpen = false;
+    }
+
+    private void NextLightboxPhoto()
+    {
+        if (_selectedPortfolio?.Images.Count > 0)
         {
-            _activeMain = UserService.GetMainServices()
-                .Where(s => s.IsActive && BelongsTo(category, s.Title, s.Category)).ToList();
-            _activePackages = UserService.GetPackageServices()
-                .Where(p => p.IsActive && BelongsTo(category, p.Title, p.BundleCategory)).ToList();
-            _activeAddOns = UserService.GetAdditionalServices()
-                .Where(a => a.IsActive && BelongsTo(category, a.Title, a.TypeCategory)).ToList();
-        }
-        catch
-        {
-            _activeMain = new(); _activePackages = new(); _activeAddOns = new();
+            _lightboxIndex = (_lightboxIndex + 1) % _selectedPortfolio.Images.Count;
         }
     }
 
-    /// <summary>
-    /// A service belongs to a category when the admin listed it by name under "Associated Services",
-    /// or when the service's own category text matches the category name.
-    /// </summary>
-    private static bool BelongsTo(PortfolioCategoryDto category, string title, string? categoryText) =>
-        category.ServiceNames.Contains(title, StringComparer.OrdinalIgnoreCase)
-        || (!string.IsNullOrWhiteSpace(categoryText)
-            && string.Equals(categoryText.Trim(), category.Name, StringComparison.OrdinalIgnoreCase));
+    private void PrevLightboxPhoto()
+    {
+        if (_selectedPortfolio?.Images.Count > 0)
+        {
+            _lightboxIndex = (_lightboxIndex - 1 + _selectedPortfolio.Images.Count) % _selectedPortfolio.Images.Count;
+        }
+    }
 }
