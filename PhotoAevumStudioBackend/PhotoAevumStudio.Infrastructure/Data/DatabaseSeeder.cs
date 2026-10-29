@@ -228,6 +228,10 @@ public static class DatabaseSeeder
                         ALTER TABLE dbo.Services ADD ServiceImage varbinary(max) NULL;
                     IF COL_LENGTH(N'dbo.Services', N'ServiceImageMimeType') IS NULL
                         ALTER TABLE dbo.Services ADD ServiceImageMimeType nvarchar(100) NULL CONSTRAINT DF_Services_MimeType DEFAULT 'image/jpeg';
+                    IF COL_LENGTH(N'dbo.Services', N'ImageFileName') IS NULL
+                        ALTER TABLE dbo.Services ADD ImageFileName nvarchar(500) NULL;
+                    IF COL_LENGTH(N'dbo.Services', N'ImageUrl') IS NULL
+                        ALTER TABLE dbo.Services ADD ImageUrl nvarchar(500) NULL;
                     ALTER TABLE dbo.Services ALTER COLUMN ServicesDescription nvarchar(1000) NOT NULL;
                     IF COL_LENGTH(N'dbo.Services', N'RateType') IS NULL
                         ALTER TABLE dbo.Services ADD RateType nvarchar(50) NOT NULL CONSTRAINT DF_Services_RateType DEFAULT 'Per Hour';
@@ -292,6 +296,10 @@ public static class DatabaseSeeder
                         ALTER TABLE dbo.AdditionalServices ADD AdditionalServiceImage varbinary(max) NULL;
                     IF COL_LENGTH(N'dbo.AdditionalServices', N'AdditionalServiceImageMimeType') IS NULL
                         ALTER TABLE dbo.AdditionalServices ADD AdditionalServiceImageMimeType nvarchar(100) NULL CONSTRAINT DF_AdditionalServices_MimeType DEFAULT 'image/jpeg';
+                    IF COL_LENGTH(N'dbo.AdditionalServices', N'ImageFileName') IS NULL
+                        ALTER TABLE dbo.AdditionalServices ADD ImageFileName nvarchar(500) NULL;
+                    IF COL_LENGTH(N'dbo.AdditionalServices', N'ImageUrl') IS NULL
+                        ALTER TABLE dbo.AdditionalServices ADD ImageUrl nvarchar(500) NULL;
                     ALTER TABLE dbo.AdditionalServices ALTER COLUMN AdditionalServicesDescription nvarchar(1000) NULL;
                 END;
 
@@ -301,6 +309,10 @@ public static class DatabaseSeeder
                         ALTER TABLE dbo.ComboPackage ADD ComboPackageImage varbinary(max) NULL;
                     IF COL_LENGTH(N'dbo.ComboPackage', N'ComboPackageImageMimeType') IS NULL
                         ALTER TABLE dbo.ComboPackage ADD ComboPackageImageMimeType nvarchar(100) NULL CONSTRAINT DF_ComboPackage_MimeType DEFAULT 'image/jpeg';
+                    IF COL_LENGTH(N'dbo.ComboPackage', N'ImageFileName') IS NULL
+                        ALTER TABLE dbo.ComboPackage ADD ImageFileName nvarchar(500) NULL;
+                    IF COL_LENGTH(N'dbo.ComboPackage', N'ImageUrl') IS NULL
+                        ALTER TABLE dbo.ComboPackage ADD ImageUrl nvarchar(500) NULL;
                     IF COL_LENGTH(N'dbo.ComboPackage', N'ComboPackagePrice') IS NULL
                         ALTER TABLE dbo.ComboPackage ADD ComboPackagePrice decimal(18,2) NOT NULL CONSTRAINT DF_ComboPackage_Price DEFAULT 0.00;
                     ALTER TABLE dbo.ComboPackage ALTER COLUMN ComboPackageDescription nvarchar(1000) NOT NULL;

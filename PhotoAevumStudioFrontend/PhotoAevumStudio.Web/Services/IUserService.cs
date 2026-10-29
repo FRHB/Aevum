@@ -143,18 +143,21 @@ public interface IUserService
     void UpdateServiceImage(string code, byte[] imageBytes, string mimeType, string? requestingAdminId = null);
 
     MainServiceItem AddMainService(MainServiceModel model);
+    bool UpdateMainService(MainServiceItem item, string? requestingAdminId = null);
 
     IReadOnlyList<PackageServiceItem> GetPackageServices();
     IReadOnlyList<PackageServiceItem> GetPackageServicesSummary();
     (byte[]? Image, string? MimeType) GetComboPackageImage(string code);
     void UpdateComboPackageImage(string code, byte[] imageBytes, string mimeType, string? requestingAdminId = null);
     PackageServiceItem AddPackageService(PackageServiceModel model);
+    bool UpdatePackageService(PackageServiceItem item, string? requestingAdminId = null);
 
     IReadOnlyList<AddOnServiceItem> GetAdditionalServices();
     IReadOnlyList<AddOnServiceItem> GetAdditionalServicesSummary();
     (byte[]? Image, string? MimeType) GetAdditionalServiceImage(string code);
     void UpdateAdditionalServiceImage(string code, byte[] imageBytes, string mimeType, string? requestingAdminId = null);
     AddOnServiceItem AddAdditionalService(AddOnServiceModel model);
+    bool UpdateAdditionalService(AddOnServiceItem item, string? requestingAdminId = null);
 
     // ── Combo Package Wizard (4-Step Workflow) ─────────────────────────────
     Task<string> GetNextComboPackageIdAsync(CancellationToken ct = default);

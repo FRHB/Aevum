@@ -138,6 +138,10 @@
                         <th scope="col" class="py-3.5 px-6">Description</th>
                         <th scope="col" class="py-3.5 px-6">Featured</th>
                         <th scope="col" class="py-3.5 px-6">Status</th>
+                        @if (!EffectiveReadOnly)
+                        {
+                            <th scope="col" class="py-3.5 px-6 text-right">Actions</th>
+                        }
                     </tr>
                 </thead>
                 <tbody class="divide-y divide-gray-100 text-sm">
@@ -187,6 +191,19 @@
                                         @addon.Status
                                     </span>
                                 </td>
+                                @if (!EffectiveReadOnly)
+                                {
+                                    <td class="py-4 px-6 text-right">
+                                        <button type="button"
+                                                @onclick="() => OpenEditModal(addon)"
+                                                class="inline-flex items-center gap-1.5 px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-800 text-xs font-semibold rounded-lg transition-colors cursor-pointer shadow-xs">
+                                            <svg class="w-3.5 h-3.5 text-slate-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
+                                            </svg>
+                                            Edit
+                                        </button>
+                                    </td>
+                                }
                             </tr>
                         }
                     }
@@ -214,6 +231,7 @@
 @if (!EffectiveReadOnly)
 {
     <AddAddOnModal @bind-IsOpen="isCreateModalOpen" OnAddOnCreated="HandleAddOnCreated" />
+    <EditAddOnModal @bind-IsOpen="isEditModalOpen" AddOn="selectedEditAddOn" OnAddOnUpdated="HandleAddOnUpdated" />
 }
 
 @code {
@@ -224,6 +242,8 @@
     public bool EffectiveReadOnly => IsReadOnly || _isOfficeClerk || (!EmployeeRoleHelper.IsAdmin(_currentUser) && !EmployeeRoleHelper.IsSystemAdmin(_currentUser));
 
     private bool isCreateModalOpen = false;
+    private bool isEditModalOpen = false;
+    private AddOnServiceItem? selectedEditAddOn;
     private string? notificationMessage;
     private string searchQuery = string.Empty;
     private List<AddOnServiceItem> addOns = new();
@@ -240,6 +260,18 @@
     }
 
     private void OpenCreateModal() => isCreateModalOpen = true;
+
+    private void OpenEditModal(AddOnServiceItem addon)
+    {
+        selectedEditAddOn = addon;
+        isEditModalOpen = true;
+    }
+
+    private void HandleAddOnUpdated(AddOnServiceItem updated)
+    {
+        LoadFromDatabase();
+        notificationMessage = $"Add-On \"{updated.Title}\" ({updated.Code}) updated successfully.";
+    }
 
     private void HandleAddOnCreated(AddOnServiceItem newItem)
     {

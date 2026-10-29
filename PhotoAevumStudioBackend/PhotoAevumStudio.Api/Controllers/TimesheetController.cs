@@ -1,3 +1,4 @@
+using System.Data;
 using System.Security.Claims;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
@@ -43,6 +44,48 @@ public class TimesheetController : ControllerBase
         }
     }
 
+    private sealed record EmployeeInfo(string Id, string Name, string DaysOff);
+
+    private async Task<List<EmployeeInfo>> GetEmployeesListAsync(CancellationToken ct)
+    {
+        var list = new List<EmployeeInfo>();
+        try
+        {
+            var conn = _db.Database.GetDbConnection();
+            if (conn.State != ConnectionState.Open)
+                await conn.OpenAsync(ct);
+
+            await using var cmd = conn.CreateCommand();
+            cmd.CommandText = @"
+                SELECT 
+                    EmployeeID,
+                    LTRIM(RTRIM(CONCAT(ISNULL(EmployeeFirstName, ''), ' ', ISNULL(EmployeeLastName, '')))) AS FullName,
+                    ISNULL(DaysOff, 'Sunday') AS DaysOff
+                FROM dbo.Employees
+                WHERE EmployeeStatus = 'Active' OR Status = 'Active' OR EmployeeStatus IS NULL
+                ORDER BY EmployeeID ASC;
+            ";
+            await using var reader = await cmd.ExecuteReaderAsync(ct);
+            while (await reader.ReadAsync(ct))
+            {
+                var empId = reader.GetString(0);
+                var name = reader.IsDBNull(1) || string.IsNullOrWhiteSpace(reader.GetString(1)) ? empId : reader.GetString(1);
+                var daysOff = reader.IsDBNull(2) ? "Sunday" : reader.GetString(2);
+                list.Add(new EmployeeInfo(empId, name, daysOff));
+            }
+        }
+        catch
+        {
+            var emps = await _db.Employees.AsNoTracking().ToListAsync(ct);
+            foreach (var e in emps)
+            {
+                var id = e.IdentityUserId ?? e.Id.ToString();
+                list.Add(new EmployeeInfo(id, id, e.DaysOff ?? "Sunday"));
+            }
+        }
+        return list;
+    }
+
     [HttpGet("status")]
     public async Task<IActionResult> GetStatus([FromQuery] string? employeeId, CancellationToken ct)
     {
@@ -66,9 +109,8 @@ public class TimesheetController : ControllerBase
             .FirstOrDefaultAsync(ct);
 
         // Check day off
-        var emp = await _db.Employees
-            .Include(e => e.IdentityUser)
-            .FirstOrDefaultAsync(e => e.IdentityUser.StudioId == targetId || e.IdentityUserId == targetId, ct);
+        var employees = await GetEmployeesListAsync(ct);
+        var emp = employees.FirstOrDefault(e => e.Id.Equals(targetId, StringComparison.OrdinalIgnoreCase));
 
         var dayName = phtNow.DayOfWeek.ToString();
         bool isDayOff = emp != null && (emp.DaysOff ?? "Sunday").Contains(dayName, StringComparison.OrdinalIgnoreCase);
@@ -131,9 +173,8 @@ public class TimesheetController : ControllerBase
         }
 
         // 3. Check day off
-        var emp = await _db.Employees
-            .Include(e => e.IdentityUser)
-            .FirstOrDefaultAsync(e => e.IdentityUser.StudioId == targetId || e.IdentityUserId == targetId, ct);
+        var employees = await GetEmployeesListAsync(ct);
+        var emp = employees.FirstOrDefault(e => e.Id.Equals(targetId, StringComparison.OrdinalIgnoreCase));
 
         var dayName = phtNow.DayOfWeek.ToString();
         bool isDayOff = emp != null && (emp.DaysOff ?? "Sunday").Contains(dayName, StringComparison.OrdinalIgnoreCase);
@@ -141,8 +182,8 @@ public class TimesheetController : ControllerBase
         var employeeName = dto.EmployeeName;
         if (string.IsNullOrWhiteSpace(employeeName))
         {
-            employeeName = emp?.IdentityUser != null
-                ? $"{emp.IdentityUser.FirstName} {emp.IdentityUser.LastName}".Trim()
+            employeeName = emp != null && !string.IsNullOrWhiteSpace(emp.Name)
+                ? emp.Name
                 : (User.FindFirstValue("full_name") ?? User.FindFirstValue(ClaimTypes.Name) ?? targetId);
         }
 
@@ -234,27 +275,24 @@ public class TimesheetController : ControllerBase
             .Where(l => l.Status == LeaveStatuses.Approved && today >= l.StartDate && today <= l.EndDate)
             .ToListAsync(ct);
 
-        var employees = await _db.Employees
-            .Include(e => e.IdentityUser)
-            .ToListAsync(ct);
+        var employees = await GetEmployeesListAsync(ct);
 
         var list = new List<object>();
 
         foreach (var emp in employees)
         {
-            var empId = emp.IdentityUser?.StudioId ?? emp.IdentityUserId;
             var punch = timesheets
-                .Where(t => t.EmployeeStudioId == empId)
+                .Where(t => t.EmployeeStudioId == emp.Id)
                 .OrderByDescending(t => t.ClockIn)
                 .FirstOrDefault();
 
-            var leave = activeLeaves.FirstOrDefault(l => l.EmployeeStudioId == empId);
+            var leave = activeLeaves.FirstOrDefault(l => l.EmployeeStudioId == emp.Id);
             bool isDayOff = (emp.DaysOff ?? "Sunday").Contains(dayName, StringComparison.OrdinalIgnoreCase);
 
             list.Add(new
             {
-                EmployeeStudioId = empId,
-                EmployeeName = emp.IdentityUser != null ? $"{emp.IdentityUser.FirstName} {emp.IdentityUser.LastName}".Trim() : empId,
+                EmployeeStudioId = emp.Id,
+                EmployeeName = emp.Name,
                 DaysOff = emp.DaysOff ?? "Sunday",
                 IsClockedIn = punch != null && punch.ClockOut == null,
                 ClockIn = punch?.ClockIn,
@@ -272,6 +310,22 @@ public class TimesheetController : ControllerBase
     [HttpGet("my-history")]
     public async Task<IActionResult> GetMyHistory([FromQuery] string? employeeId, CancellationToken ct)
     {
+        var isManager = User.IsInRole("Admin") 
+                     || User.IsInRole("SystemAdmin") 
+                     || User.IsInRole("Office Clerk")
+                     || User.IsInRole("OfficeClerk")
+                     || User.HasClaim(c => c.Type == ClaimTypes.Role && (c.Value == "Admin" || c.Value == "SystemAdmin" || c.Value.Contains("Clerk")));
+
+        if (string.IsNullOrWhiteSpace(employeeId) && isManager)
+        {
+            var allHistory = await _db.EmployeeTimesheets
+                .OrderByDescending(t => t.ClockIn)
+                .Take(100)
+                .ToListAsync(ct);
+
+            return Ok(allHistory);
+        }
+
         var targetId = ResolveTargetId(employeeId);
         var history = await _db.EmployeeTimesheets
             .Where(t => t.EmployeeStudioId == targetId)

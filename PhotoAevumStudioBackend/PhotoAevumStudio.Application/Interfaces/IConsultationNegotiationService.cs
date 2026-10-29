@@ -10,7 +10,9 @@ public interface IConsultationNegotiationService
     Task<EventAppointmentDto?> GetAppointmentByIdAsync(string appointmentId, CancellationToken cancellationToken = default);
     Task<IReadOnlyList<EventAppointmentDto>> GetAppointmentsAsync(string? customerId = null, string? status = null, CancellationToken cancellationToken = default);
     Task<EventAppointmentDto> VerifyDownpaymentAsync(string appointmentId, string? invoiceId = null, CancellationToken cancellationToken = default);
+    Task<EventAppointmentDto> VerifyDownpaymentAsync(string appointmentId, string? invoiceId, string? paymentChannel, CancellationToken cancellationToken = default);
     Task<bool> HandlePaymentExpiredAsync(string appointmentId, string? invoiceId = null, CancellationToken cancellationToken = default);
     Task<bool> RequestExtensionAsync(string appointmentId, CancellationToken cancellationToken = default);
     Task<EventAppointmentDto> CompleteEventSettlementAsync(CompleteEventRequest request, CancellationToken cancellationToken = default);
+    Task<bool> UpdateAppointmentRosterAsync(string appointmentId, UpdateAppointmentRosterRequest request, CancellationToken cancellationToken = default);
 }

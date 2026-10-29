@@ -6,23 +6,105 @@
 @using PhotoAevumStudio.Web.Services
 @implements IDisposable
 @inject IBookScheduleClient Api
+@inject IConsultationClient ConsultationApi
 @inject BookingEvents Events
 @rendermode InteractiveServer
 @attribute [Authorize(Roles = "Customer")]
 
-<PageTitle>My Bookings</PageTitle>
+<PageTitle>My Bookings - Photo Aevum Studio</PageTitle>
 
 <div class="max-w-4xl mx-auto py-10 px-6">
     <div class="flex justify-between items-center mb-8">
-        <h1 class="text-3xl font-bold">My Bookings</h1>
-        <a href="/my" class="text-teal-600 hover:underline">Back to Portal</a>
+        <div>
+            <h1 class="text-3xl font-bold text-slate-900">My Bookings</h1>
+            <p class="text-xs text-slate-500 mt-1">Manage your photoshoot sessions, reservation fees, and event schedules.</p>
+        </div>
+        <a href="/my" class="text-teal-600 hover:underline font-semibold text-sm">Back to Portal &rarr;</a>
     </div>
+
+    @* Prominent Awaiting 15% Deposit Notification Cards *@
+    @if (_awaitingAppointments.Any())
+    {
+        <div class="mb-8 space-y-4">
+            @foreach (var appt in _awaitingAppointments)
+            {
+                <div class="bg-amber-50/90 border border-amber-200 rounded-2xl p-6 shadow-sm">
+                    <div class="flex flex-col md:flex-row md:items-center justify-between gap-4">
+                        <div class="space-y-1.5">
+                            <div class="flex items-center gap-2">
+                                <span class="px-2.5 py-0.5 rounded-full text-xs font-bold @(_isExpired ? "bg-red-200 text-red-900" : "bg-amber-200 text-amber-900")">
+                                    @(_isExpired ? "⚠️ Reservation Hold Expired" : "⏳ 30-Min Reservation Hold Active")
+                                </span>
+                                <span class="font-mono text-xs font-bold @(_isExpired ? "text-red-700" : "text-amber-800")">
+                                    #@appt.EventAppointmentId
+                                </span>
+                            </div>
+                            <h2 class="text-lg font-black text-slate-900">
+                                15% Reservation Deposit Required for @appt.EventName
+                            </h2>
+                            <p class="text-xs text-slate-600">
+                                Settle your 15% reservation fee within 30 minutes to lock your reserved crew and studio equipment.
+                            </p>
+                            <div class="flex flex-wrap items-center gap-3 text-xs font-semibold text-slate-700 pt-1">
+                                <span>Total Package: <strong>₱@appt.TotalAmount.ToString("N2")</strong></span>
+                                <span class="text-slate-300">•</span>
+                                <span class="text-emerald-700 font-bold">15% Deposit: <strong>₱@appt.DownpaymentAmount.ToString("N2")</strong></span>
+                                <span class="text-slate-300">•</span>
+                                <span>Remaining Balance (85%): <strong>₱@appt.FinalBalanceAmount.ToString("N2")</strong> <span class="text-[10px] text-slate-500 font-normal">(due on event date)</span></span>
+                            </div>
+                        </div>
+
+                        <!-- Hold Countdown & Action Buttons -->
+                        <div class="flex flex-col sm:flex-row items-center gap-3 shrink-0">
+                            <div class="text-center px-4 py-2 rounded-xl bg-white border @(_isExpired ? "border-red-200 text-red-700" : "border-amber-200 text-amber-800") shadow-xs w-full sm:w-auto">
+                                <div class="text-[10px] uppercase font-bold tracking-wider text-slate-400">Hold Timer</div>
+                                <div class="font-mono text-xl font-black">@_countdownDisplay</div>
+                            </div>
+
+                            @if (!_isExpired)
+                            {
+                                <div class="flex flex-col gap-2 w-full sm:w-auto">
+                                    <a href="@GetCheckoutUrl(appt)" target="_blank" rel="noopener noreferrer"
+                                       class="px-4 py-2.5 bg-emerald-700 hover:bg-emerald-800 text-white rounded-lg text-xs font-bold shadow-sm transition-all text-center">
+                                        💳 Pay 15% Deposit (Xendit) &rarr;
+                                    </a>
+                                    <div class="flex gap-2">
+                                        <button type="button" @onclick="() => SimulatePaymentSuccessAsync(appt.EventAppointmentId)"
+                                                disabled="@_isActionBusy"
+                                                class="flex-1 px-3 py-1.5 bg-amber-600 hover:bg-amber-700 disabled:opacity-50 text-white rounded-lg text-[11px] font-bold shadow-xs transition-all text-center">
+                                            ⚡ Simulate Webhook
+                                        </button>
+                                        <button type="button" @onclick="() => VerifyPaymentAsync(appt.EventAppointmentId)"
+                                                disabled="@_isActionBusy"
+                                                class="px-3 py-1.5 bg-white hover:bg-slate-50 border border-slate-300 text-slate-700 rounded-lg text-[11px] font-semibold transition-all">
+                                            🔄 Refresh
+                                        </button>
+                                    </div>
+                                </div>
+                            }
+                            else
+                            {
+                                <button type="button" @onclick="() => RequestExtensionAsync(appt.EventAppointmentId)"
+                                        disabled="@_isActionBusy"
+                                        class="px-4 py-2.5 bg-amber-600 hover:bg-amber-700 disabled:opacity-50 text-white rounded-lg text-xs font-bold shadow-sm transition-all text-center">
+                                    Request 30-Min Extension
+                                </button>
+                            }
+                        </div>
+                    </div>
+                </div>
+            }
+        </div>
+    }
 
     @if (_loading)
     {
-        <p class="text-sm text-gray-500">Loading your bookings…</p>
+        <div class="py-12 text-center">
+            <div class="inline-block animate-spin rounded-full h-8 w-8 border-4 border-teal-600 border-t-transparent mb-2"></div>
+            <p class="text-sm text-gray-500">Loading your bookings…</p>
+        </div>
     }
-    else if (!Bookings.Any())
+    else if (!Bookings.Any() && !_awaitingAppointments.Any())
     {
         <div class="bg-white border border-gray-200 rounded-xl p-12 text-center shadow-sm">
             <h2 class="text-lg font-semibold text-gray-800 mb-1">No Bookings Found</h2>
@@ -30,7 +112,7 @@
             <a href="/my/book" class="inline-block bg-teal-600 text-white px-5 py-2.5 rounded-lg text-sm font-semibold hover:bg-teal-700">Book a Session</a>
         </div>
     }
-    else
+    else if (Bookings.Any())
     {
         <div class="space-y-4">
             @foreach (var booking in Bookings)
@@ -76,11 +158,15 @@
 
 @code {
     private List<MyBooking> Bookings = new();
+    private List<EventAppointmentDto> _awaitingAppointments = new();
     private bool _loading = true;
+    private bool _isActionBusy = false;
+    private bool _isExpired = false;
+    private string _countdownDisplay = "30:00";
+    private System.Threading.Timer? _countdownTimer;
 
     protected override void OnInitialized() => Events.Changed += OnBookingsChanged;
 
-    // The API call needs the auth token, which is only available after the first render.
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
         if (!firstRender) return;
@@ -90,12 +176,130 @@
 
     private async Task LoadBookingsAsync()
     {
+        _loading = true;
+
         var result = await Api.GetMyBookingsAsync();
         if (result.IsSuccess) Bookings = result.Value!.OrderByDescending(b => b.Start).ToList();
+
+        try
+        {
+            var apptRes = await ConsultationApi.GetCustomerAppointmentsAsync(status: "Awaiting_Downpayment");
+            if (apptRes.IsSuccess && apptRes.Value != null)
+            {
+                _awaitingAppointments = apptRes.Value.ToList();
+                StartHoldCountdown();
+            }
+            else
+            {
+                _awaitingAppointments.Clear();
+                _countdownTimer?.Dispose();
+            }
+        }
+        catch { }
+
         _loading = false;
+    }
+
+    private void StartHoldCountdown()
+    {
+        _countdownTimer?.Dispose();
+        var first = _awaitingAppointments.FirstOrDefault();
+        if (first?.HoldExpiresAt == null) return;
+
+        UpdateCountdown();
+        _countdownTimer = new System.Threading.Timer(_ =>
+        {
+            InvokeAsync(() =>
+            {
+                UpdateCountdown();
+                StateHasChanged();
+            });
+        }, null, 1000, 1000);
+    }
+
+    private void UpdateCountdown()
+    {
+        var first = _awaitingAppointments.FirstOrDefault();
+        if (first?.HoldExpiresAt == null) return;
+        var diff = first.HoldExpiresAt.Value - DateTime.UtcNow;
+        if (diff <= TimeSpan.Zero)
+        {
+            _isExpired = true;
+            _countdownDisplay = "00:00";
+            _countdownTimer?.Dispose();
+        }
+        else
+        {
+            _isExpired = false;
+            _countdownDisplay = $"{(int)diff.TotalMinutes:D2}:{diff.Seconds:D2}";
+        }
+    }
+
+    private string GetCheckoutUrl(EventAppointmentDto appt)
+    {
+        if (string.IsNullOrWhiteSpace(appt.XenditInvoiceUrl))
+            return $"/checkout/simulate/{appt.EventAppointmentId}";
+        if (appt.XenditInvoiceUrl.Contains("mock", StringComparison.OrdinalIgnoreCase) ||
+            appt.XenditInvoiceUrl.Contains("inv_mock_", StringComparison.OrdinalIgnoreCase))
+        {
+            return $"/checkout/simulate/{appt.EventAppointmentId}";
+        }
+        return appt.XenditInvoiceUrl;
+    }
+
+    private async Task SimulatePaymentSuccessAsync(string appointmentId)
+    {
+        if (_isActionBusy) return;
+        _isActionBusy = true;
+        try
+        {
+            var res = await ConsultationApi.SimulateWebhookPaymentAsync(appointmentId, "GCASH");
+            if (res.IsSuccess)
+            {
+                await LoadBookingsAsync();
+            }
+        }
+        finally
+        {
+            _isActionBusy = false;
+        }
+    }
+
+    private async Task VerifyPaymentAsync(string appointmentId)
+    {
+        if (_isActionBusy) return;
+        _isActionBusy = true;
+        try
+        {
+            await ConsultationApi.VerifyDownpaymentAsync(appointmentId);
+            await LoadBookingsAsync();
+        }
+        finally
+        {
+            _isActionBusy = false;
+        }
+    }
+
+    private async Task RequestExtensionAsync(string appointmentId)
+    {
+        if (_isActionBusy) return;
+        _isActionBusy = true;
+        try
+        {
+            var res = await ConsultationApi.RequestExtensionAsync(appointmentId);
+            if (res.IsSuccess && res.Value) await LoadBookingsAsync();
+        }
+        finally
+        {
+            _isActionBusy = false;
+        }
     }
 
     private void OnBookingsChanged() => _ = InvokeAsync(async () => { await LoadBookingsAsync(); StateHasChanged(); });
 
-    public void Dispose() => Events.Changed -= OnBookingsChanged;
+    public void Dispose()
+    {
+        Events.Changed -= OnBookingsChanged;
+        _countdownTimer?.Dispose();
+    }
 }

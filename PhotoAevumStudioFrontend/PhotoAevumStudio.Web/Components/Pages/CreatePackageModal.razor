@@ -348,8 +348,8 @@
                     <div class="space-y-4 animate-in fade-in duration-150">
                         <div class="bg-gray-50/60 p-3.5 rounded-xl border border-gray-100 flex items-center justify-between">
                             <div>
-                                <h3 class="text-xs font-bold uppercase tracking-wider text-gray-700">Choose an Image</h3>
-                                <p class="text-xs text-gray-500">Upload a marketing or hero image for this combo package (multipart/form-data upload).</p>
+                                <h3 class="text-xs font-bold uppercase tracking-wider text-gray-700">Choose an Image <span class="text-rose-500">*</span></h3>
+                                <p class="text-xs text-gray-500">Upload a marketing or hero image for this combo package (Required to proceed).</p>
                             </div>
                             <span class="text-xs font-semibold px-2 py-0.5 bg-gray-200/70 text-gray-700 rounded-md">Page 3 of 4</span>
                         </div>
@@ -567,7 +567,8 @@
                     {
                         <button type="button"
                                 @onclick="NextStep"
-                                class="inline-flex items-center gap-1.5 px-6 py-2.5 bg-gray-900 hover:bg-black text-white text-xs font-semibold rounded-lg shadow-sm hover:shadow transition-all cursor-pointer">
+                                disabled="@(currentStep == 3 && (formModel.ImageBytes == null || formModel.ImageBytes.Length == 0))"
+                                class="inline-flex items-center gap-1.5 px-6 py-2.5 bg-gray-900 hover:bg-black text-white text-xs font-semibold rounded-lg shadow-sm hover:shadow transition-all disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer">
                             <span>Next Step</span>
                             <span>&rarr;</span>
                         </button>
@@ -713,6 +714,7 @@
 
         if (currentStep == 3)
         {
+            if (!ValidateStep3()) return;
             await PrepareOverviewStepAsync();
             currentStep = 4;
             return;
@@ -784,6 +786,17 @@
         if (formModel.SelectedServiceIds.Count == 0)
         {
             serviceSelectionError = "Please select at least one service to include in this combo package.";
+            return false;
+        }
+        return true;
+    }
+
+    private bool ValidateStep3()
+    {
+        fileError = null;
+        if (formModel.ImageBytes == null || formModel.ImageBytes.Length == 0)
+        {
+            fileError = "A package showcase image is required to proceed.";
             return false;
         }
         return true;
@@ -889,7 +902,7 @@
         formModel.ImageMimeType = null;
         formModel.ImageFileSize = 0;
         formModel.ImagePreviewBase64 = null;
-        fileError = null;
+        fileError = "A package showcase image is required to proceed.";
     }
 
     private async Task PrepareOverviewStepAsync()
@@ -918,6 +931,27 @@
 
     private async Task HandleSaveAsync()
     {
+        if (!ValidateStep1())
+        {
+            currentStep = 1;
+            errorMessage = "Please complete all required fields in Step 1.";
+            return;
+        }
+
+        if (!ValidateStep2())
+        {
+            currentStep = 2;
+            errorMessage = "Please select at least one service in Step 2.";
+            return;
+        }
+
+        if (!ValidateStep3())
+        {
+            currentStep = 3;
+            errorMessage = "A package showcase image is required before saving.";
+            return;
+        }
+
         isSaving = true;
         errorMessage = null;
 

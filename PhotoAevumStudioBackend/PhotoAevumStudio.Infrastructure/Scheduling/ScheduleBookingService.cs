@@ -33,11 +33,51 @@ public sealed class ScheduleBookingService(
     private readonly SchedulingOptions _options = options.Value;
     private readonly TimeZoneInfo _studioZone = TimeZoneInfo.FindSystemTimeZoneById(options.Value.TimeZoneId);
 
-    public async Task<IReadOnlyList<ScheduleServiceDto>> GetServicesAsync(CancellationToken cancellationToken = default) =>
-        await db.CatalogServices.AsNoTracking()
+    public async Task<IReadOnlyList<ScheduleServiceDto>> GetServicesAsync(CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            var list = new List<ScheduleServiceDto>();
+            var conn = db.Database.GetDbConnection();
+            if (conn.State != ConnectionState.Open)
+                await conn.OpenAsync(cancellationToken);
+
+            await using var cmd = conn.CreateCommand();
+            cmd.CommandText = @"
+                SELECT ServicesID AS Id, ServiceName AS Name, ISNULL(ServicesDescription, '') AS [Desc], CAST(ServicePrice AS decimal(18,2)) AS Price
+                FROM dbo.Services
+                UNION ALL
+                SELECT ComboPackageID AS Id, ComboPackageName AS Name, ISNULL(ComboPackageDescription, '') AS [Desc], CAST(ComboPackagePrice AS decimal(18,2)) AS Price
+                FROM dbo.ComboPackage
+                UNION ALL
+                SELECT AdditionalServicesID AS Id, AdditionalServiceName AS Name, ISNULL(AdditionalServicesDescription, '') AS [Desc], CAST(ServicePrice AS decimal(18,2)) AS Price
+                FROM dbo.AdditionalServices
+                ORDER BY Name ASC;
+            ";
+
+            await using var reader = await cmd.ExecuteReaderAsync(cancellationToken);
+            while (await reader.ReadAsync(cancellationToken))
+            {
+                var id = reader.GetString(0);
+                var name = reader.GetString(1);
+                var desc = reader.IsDBNull(2) ? string.Empty : reader.GetString(2);
+                var price = reader.IsDBNull(3) ? 0m : Convert.ToDecimal(reader.GetValue(3));
+                list.Add(new ScheduleServiceDto(id, name, desc, price));
+            }
+
+            if (list.Count > 0)
+                return list;
+        }
+        catch (Exception ex)
+        {
+            logger.LogWarning(ex, "Failed to query unified service catalog via ADO.NET; falling back to CatalogServices.");
+        }
+
+        return await db.CatalogServices.AsNoTracking()
             .OrderBy(s => s.ServiceName)
             .Select(s => new ScheduleServiceDto(s.ServicesId, s.ServiceName, s.ServicesDescription, s.ServicePrice))
             .ToListAsync(cancellationToken);
+    }
 
     public async Task<MonthAvailabilityDto> GetMonthAvailabilityAsync(int year, int month, CancellationToken cancellationToken = default)
     {
@@ -206,13 +246,9 @@ public sealed class ScheduleBookingService(
 
                 await UpsertOverviewAsync(request.Date, total, ct);
 
-                // Insert into EventAppointment & EventEmployee so the studio calendar reflects the booking
+                // Insert into BookingNegotiation for the Office Clerk (only 1 consultation entry, no duplicate event or senior photographer)
                 var conn = db.Database.GetDbConnection();
                 if (conn.State != ConnectionState.Open) await conn.OpenAsync(ct);
-
-                var evtId = $"EVT-{entity.AppointmentId:D4}";
-                var evtName = services.Count > 0 ? $"{services[0].Name} - {customer.FullName}" : $"Photo Session - {customer.FullName}";
-                var evtDesc = location ?? "Studio Session";
 
                 await using (var evtCmd = conn.CreateCommand())
                 {
@@ -224,24 +260,6 @@ public sealed class ScheduleBookingService(
                             BEGIN
                                 INSERT INTO dbo.Customer (CustomerID, CustomerFirstName, CustomerLastName, CustomerEmail, CustomerStatus)
                                 VALUES (@CustId, @CustName, '', @CustEmail, 'Active');
-                            END
-                        END
-
-                        IF OBJECT_ID(N'dbo.EventAppointment', N'U') IS NOT NULL
-                        BEGIN
-                            IF NOT EXISTS (SELECT 1 FROM dbo.EventAppointment WHERE EventAppointmentID = @EvtId)
-                            BEGIN
-                                INSERT INTO dbo.EventAppointment (EventAppointmentID, EventName, EventDescription, CustomerID, EventDate, EventTime, EventStatus, CreatedAt)
-                                VALUES (@EvtId, @EvtName, @EvtDesc, @CustId, @EvtDate, @EvtTime, 'Confirmed', SYSUTCDATETIME());
-                            END
-                        END
-
-                        IF OBJECT_ID(N'dbo.EventEmployee', N'U') IS NOT NULL
-                        BEGIN
-                            IF NOT EXISTS (SELECT 1 FROM dbo.EventEmployee WHERE EventAppointmentID = @EvtId AND EmployeeID = @EmpId)
-                            BEGIN
-                                INSERT INTO dbo.EventEmployee (EventAppointmentID, EmployeeID)
-                                VALUES (@EvtId, @EmpId);
                             END
                         END
 
@@ -270,19 +288,16 @@ public sealed class ScheduleBookingService(
                                     SET @ClerkId = @EmpId;
 
                                 INSERT INTO dbo.BookingNegotiation (NegotiationID, EventAppointmentID, CustomerID, EmployeeID, ConsultationDate, ConsultationTime, MeetingLink, InquiryNotes, NegotiationStatus, CreatedAt)
-                                VALUES (@NegId, @EvtId, @CustId, @ClerkId, @EvtDate, @EvtTime, @MeetingLink, @InquiryNotes, 'Pending_Call', SYSUTCDATETIME());
+                                VALUES (@NegId, NULL, @CustId, @ClerkId, @EvtDate, @EvtTime, @MeetingLink, @InquiryNotes, 'Pending_Call', SYSUTCDATETIME());
                             END
                         END
 
                         IF OBJECT_ID(N'dbo.HistoryLog', N'U') IS NOT NULL
                         BEGIN
                             INSERT INTO dbo.HistoryLog (ActionType, EntityName, EntityID, ActionDetails, ChangedByCustomerID, ChangedByType, LoggedAt)
-                            VALUES ('CREATE', 'EventAppointment', @EvtId, @LogMsg, @CustId, 'Customer', SYSUTCDATETIME());
+                            VALUES ('CREATE', 'BookingNegotiation', @NegId, @LogMsg, @CustId, 'Customer', SYSUTCDATETIME());
                         END";
 
-                    var pEvtId = evtCmd.CreateParameter(); pEvtId.ParameterName = "@EvtId"; pEvtId.Value = evtId; evtCmd.Parameters.Add(pEvtId);
-                    var pEvtName = evtCmd.CreateParameter(); pEvtName.ParameterName = "@EvtName"; pEvtName.Value = evtName; evtCmd.Parameters.Add(pEvtName);
-                    var pEvtDesc = evtCmd.CreateParameter(); pEvtDesc.ParameterName = "@EvtDesc"; pEvtDesc.Value = evtDesc; evtCmd.Parameters.Add(pEvtDesc);
                     var pCustId = evtCmd.CreateParameter(); pCustId.ParameterName = "@CustId"; pCustId.Value = customer.UserId; evtCmd.Parameters.Add(pCustId);
                     var pCustName = evtCmd.CreateParameter(); pCustName.ParameterName = "@CustName"; pCustName.Value = customer.FullName; evtCmd.Parameters.Add(pCustName);
                     var pCustEmail = evtCmd.CreateParameter(); pCustEmail.ParameterName = "@CustEmail"; pCustEmail.Value = customer.Email; evtCmd.Parameters.Add(pCustEmail);
@@ -292,7 +307,7 @@ public sealed class ScheduleBookingService(
                     var pNegId = evtCmd.CreateParameter(); pNegId.ParameterName = "@NegId"; pNegId.Value = $"NEG-{entity.AppointmentId:D4}"; evtCmd.Parameters.Add(pNegId);
                     var pMeetingLink = evtCmd.CreateParameter(); pMeetingLink.ParameterName = "@MeetingLink"; pMeetingLink.Value = meetingLink ?? (object)DBNull.Value; evtCmd.Parameters.Add(pMeetingLink);
                     var pInquiryNotes = evtCmd.CreateParameter(); pInquiryNotes.ParameterName = "@InquiryNotes"; pInquiryNotes.Value = location ?? "Consultation Booking"; evtCmd.Parameters.Add(pInquiryNotes);
-                    var pLogMsg = evtCmd.CreateParameter(); pLogMsg.ParameterName = "@LogMsg"; pLogMsg.Value = $"New session booked by {customer.FullName} ({customer.Email}). Assigned staff {assignedEmployeeId}. Total: {total:C2}"; evtCmd.Parameters.Add(pLogMsg);
+                    var pLogMsg = evtCmd.CreateParameter(); pLogMsg.ParameterName = "@LogMsg"; pLogMsg.Value = $"New consultation booked by {customer.FullName} ({customer.Email}). Total: {total:C2}"; evtCmd.Parameters.Add(pLogMsg);
 
                     await evtCmd.ExecuteNonQueryAsync(ct);
                 }

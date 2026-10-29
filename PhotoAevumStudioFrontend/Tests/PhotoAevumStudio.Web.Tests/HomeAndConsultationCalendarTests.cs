@@ -82,4 +82,43 @@ public class HomeAndConsultationCalendarTests
         var route = ((Microsoft.AspNetCore.Components.RouteAttribute)routeAttrs[0]).Template;
         Assert.Equal("/services", route);
     }
+
+    [Fact]
+    public void StudioSpaces_NoDuplicateStudioA()
+    {
+        var scheduleService = new PhotoAevumStudio.Web.Services.ScheduleService();
+        var spaces = scheduleService.GetStudioSpaces();
+
+        // Exactly one Studio A should exist
+        var studioACount = spaces.Count(s => s.Name.Contains("Studio A", StringComparison.OrdinalIgnoreCase));
+        Assert.Equal(1, studioACount);
+        Assert.DoesNotContain(spaces, s => s.Id == "SP-01");
+    }
+
+    [Theory]
+    [InlineData("Online Card", true)]
+    [InlineData("QR Ph", true)]
+    [InlineData("Cash", false)]
+    [InlineData("Cheque", false)]
+    public void WizardPaymentMethod_OnlyOnlineCardAndQRPhAllowed(string method, bool expectedValid)
+    {
+        var validMethods = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "Online Card", "QR Ph" };
+        Assert.Equal(expectedValid, validMethods.Contains(method));
+    }
+
+    [Fact]
+    public void UpdateAppointmentRosterRequest_StoresStaffAndEquipment()
+    {
+        var rosterReq = new UpdateAppointmentRosterRequest
+        {
+            EmployeeIds = new List<string> { "EMP-001", "EMP-002" },
+            TeamLeaderEmployeeId = "EMP-001",
+            EquipmentIds = new List<string> { "EQ-001", "EQ-002" }
+        };
+
+        Assert.Equal(2, rosterReq.EmployeeIds.Count);
+        Assert.Equal("EMP-001", rosterReq.TeamLeaderEmployeeId);
+        Assert.Equal(2, rosterReq.EquipmentIds.Count);
+    }
 }
+

@@ -818,6 +818,8 @@ CREATE OR ALTER PROCEDURE dbo.sp_CreateService
     @ServiceImageMimeType  nvarchar(100)  = 'image/jpeg',
     @RateType              nvarchar(50)   = 'Per Hour',
     @RateTypeID            nvarchar(30)   = NULL,
+    @ImageFileName         nvarchar(500)  = NULL,
+    @ImageUrl              nvarchar(500)  = NULL,
     @CreatedByAdminID      nvarchar(30)   = NULL,
     @CreatedServiceID      nvarchar(30)   = NULL OUTPUT
 AS
@@ -843,10 +845,10 @@ BEGIN
         DECLARE @EffectiveRateType nvarchar(50) = ISNULL(@RateType, 'Per Hour');
 
         INSERT INTO dbo.Services (
-            ServicesID, ServiceName, ServicesDescription, ServicePrice, RateType, ServiceImage, ServiceImageMimeType
+            ServicesID, ServiceName, ServicesDescription, ServicePrice, RateType, ServiceImage, ServiceImageMimeType, ImageFileName, ImageUrl
         )
         VALUES (
-            @CreatedServiceID, @ServiceName, @ServicesDescription, @ServicePrice, @EffectiveRateType, @ServiceImage, @ServiceImageMimeType
+            @CreatedServiceID, @ServiceName, @ServicesDescription, @ServicePrice, @EffectiveRateType, @ServiceImage, @ServiceImageMimeType, @ImageFileName, @ImageUrl
         );
 
         -- Add default primary ServiceRate record
@@ -893,7 +895,7 @@ BEGIN
                 @ActionType = 'INSERT',
                 @EntityName = 'Services',
                 @EntityID = @CreatedServiceID,
-                @ActionDetails = 'New main service created with multi-rate pricing configuration.',
+                @ActionDetails = 'New main service created with multi-rate pricing and Cloudflare R2 media configuration.',
                 @ChangedByType = 'Admin',
                 @ActorID = @CreatedByAdminID;
         END
@@ -901,9 +903,10 @@ BEGIN
         COMMIT TRANSACTION;
 
         SELECT 
-            s.ServicesID, s.ServiceName, s.ServicesDescription, s.ServicePrice, s.RateType,
+            s.ServicesID, s.ServiceName, s.ServicesDescription, s.ServicePrice,
             @ServiceCategoryID AS ServiceCategoryID, c.ServiceCategoryName, 
-            CAST(CASE WHEN s.ServiceImage IS NOT NULL THEN 1 ELSE 0 END AS bit) AS HasImage
+            CAST(CASE WHEN s.ServiceImage IS NOT NULL OR s.ImageFileName IS NOT NULL OR s.ImageUrl IS NOT NULL THEN 1 ELSE 0 END AS bit) AS HasImage,
+            s.RateType, s.ImageFileName, s.ImageUrl
         FROM dbo.Services s
         LEFT JOIN dbo.ServiceCategory c ON c.ServiceCategoryID = @ServiceCategoryID
         WHERE s.ServicesID = @CreatedServiceID;
@@ -1043,8 +1046,10 @@ BEGIN
     SET NOCOUNT ON;
     SELECT 
         ServicesID, ServiceName, ServicesDescription, ServicePrice,
+        CAST(CASE WHEN ServiceImage IS NOT NULL OR ImageFileName IS NOT NULL OR ImageUrl IS NOT NULL THEN 1 ELSE 0 END AS bit) AS HasImage,
         ISNULL(RateType, 'Per Hour') AS RateType,
-        CAST(CASE WHEN ServiceImage IS NOT NULL THEN 1 ELSE 0 END AS bit) AS HasImage
+        ImageFileName,
+        ImageUrl
     FROM dbo.Services
     ORDER BY ServicesID;
 END;
@@ -1057,10 +1062,12 @@ BEGIN
     SET NOCOUNT ON;
     SELECT 
         ServicesID, ServiceName, ServicesDescription, ServicePrice,
-        ISNULL(RateType, 'Per Hour') AS RateType,
         ServiceImage,
         ISNULL(ServiceImageMimeType, 'image/jpeg') AS ServiceImageMimeType,
-        CAST(CASE WHEN ServiceImage IS NOT NULL THEN 1 ELSE 0 END AS bit) AS HasImage
+        CAST(CASE WHEN ServiceImage IS NOT NULL OR ImageFileName IS NOT NULL OR ImageUrl IS NOT NULL THEN 1 ELSE 0 END AS bit) AS HasImage,
+        ISNULL(RateType, 'Per Hour') AS RateType,
+        ImageFileName,
+        ImageUrl
     FROM dbo.Services
     WHERE ServicesID = @ServicesID;
 END;
@@ -1068,15 +1075,19 @@ GO
 
 CREATE OR ALTER PROCEDURE dbo.sp_UpdateServiceImage
     @ServicesID           nvarchar(30),
-    @ServiceImage         varbinary(max),
-    @ServiceImageMimeType nvarchar(100) = 'image/jpeg',
-    @UpdatedByAdminID     nvarchar(30)  = NULL
+    @ServiceImage         varbinary(max) = NULL,
+    @ServiceImageMimeType nvarchar(100)  = 'image/jpeg',
+    @ImageFileName        nvarchar(500)  = NULL,
+    @ImageUrl             nvarchar(500)  = NULL,
+    @UpdatedByAdminID     nvarchar(30)   = NULL
 AS
 BEGIN
     SET NOCOUNT ON;
     UPDATE dbo.Services
-    SET ServiceImage = @ServiceImage,
-        ServiceImageMimeType = @ServiceImageMimeType
+    SET ServiceImage = COALESCE(@ServiceImage, ServiceImage),
+        ServiceImageMimeType = COALESCE(@ServiceImageMimeType, ServiceImageMimeType),
+        ImageFileName = COALESCE(@ImageFileName, ImageFileName),
+        ImageUrl = COALESCE(@ImageUrl, ImageUrl)
     WHERE ServicesID = @ServicesID;
 
     IF @UpdatedByAdminID IS NOT NULL
@@ -1084,7 +1095,7 @@ BEGIN
         DECLARE @ActorType nvarchar(20) = CASE WHEN @UpdatedByAdminID LIKE 'SADM-%' THEN 'SystemAdmin' ELSE 'Admin' END;
         EXEC dbo.sp_AddHistoryLog 
             @ActionType = 'IMAGE_UPLOAD', @EntityName = 'Services', @EntityID = @ServicesID, 
-            @ActionDetails = 'Service image attached/updated via Image Wizard.', @ChangedByType = @ActorType, @ActorID = @UpdatedByAdminID;
+            @ActionDetails = 'Service image attached/updated via Cloudflare R2 Image Wizard.', @ChangedByType = @ActorType, @ActorID = @UpdatedByAdminID;
     END
 END;
 GO
@@ -1116,6 +1127,8 @@ CREATE OR ALTER PROCEDURE dbo.sp_CreateAdditionalService
     @CategoryName nvarchar(100) = NULL,
     @AdditionalServiceImage varbinary(max) = NULL,
     @AdditionalServiceImageMimeType nvarchar(100) = 'image/jpeg',
+    @ImageFileName nvarchar(500) = NULL,
+    @ImageUrl nvarchar(500) = NULL,
     @CreatedByAdminID nvarchar(30) = NULL,
     @GeneratedID nvarchar(30) = NULL OUTPUT
 AS
@@ -1135,10 +1148,10 @@ BEGIN
     END
 
     INSERT INTO dbo.AdditionalServices (
-        AdditionalServicesID, AdditionalServiceName, AdditionalServicesDescription, ServicePrice, CategoryName, AdditionalServiceImage, AdditionalServiceImageMimeType, CreatedAt
+        AdditionalServicesID, AdditionalServiceName, AdditionalServicesDescription, ServicePrice, CategoryName, AdditionalServiceImage, AdditionalServiceImageMimeType, ImageFileName, ImageUrl, CreatedAt
     )
     VALUES (
-        @NewID, @AdditionalServiceName, @AdditionalServicesDescription, @ServicePrice, @CategoryName, @AdditionalServiceImage, @AdditionalServiceImageMimeType, SYSUTCDATETIME()
+        @NewID, @AdditionalServiceName, @AdditionalServicesDescription, @ServicePrice, @CategoryName, @AdditionalServiceImage, @AdditionalServiceImageMimeType, @ImageFileName, @ImageUrl, SYSUTCDATETIME()
     );
 
     IF @CreatedByAdminID IS NOT NULL
@@ -1148,7 +1161,7 @@ BEGIN
         BEGIN
             EXEC dbo.sp_AddHistoryLog 
                 @ActionType = 'INSERT', @EntityName = 'AdditionalServices', @EntityID = @NewID, 
-                @ActionDetails = 'Created new Additional Service with atomic ADD-#### ID generation and media upload.', @ChangedByType = @ActorType, @ActorID = @CreatedByAdminID;
+                @ActionDetails = 'Created new Additional Service with atomic ADD-#### ID generation and Cloudflare R2 media upload.', @ChangedByType = @ActorType, @ActorID = @CreatedByAdminID;
         END
     END
 
@@ -1165,7 +1178,9 @@ BEGIN
     SELECT 
         AdditionalServicesID, AdditionalServiceName, AdditionalServicesDescription,
         ISNULL(ServicePrice, 0.00) AS ServicePrice, ISNULL(CategoryName, 'Add-On') AS CategoryName,
-        CAST(CASE WHEN AdditionalServiceImage IS NOT NULL THEN 1 ELSE 0 END AS bit) AS HasImage
+        CAST(CASE WHEN AdditionalServiceImage IS NOT NULL OR ImageFileName IS NOT NULL OR ImageUrl IS NOT NULL THEN 1 ELSE 0 END AS bit) AS HasImage,
+        ImageFileName,
+        ImageUrl
     FROM dbo.AdditionalServices
     ORDER BY AdditionalServicesID;
 END;
@@ -1180,7 +1195,9 @@ BEGIN
         AdditionalServicesID, AdditionalServiceName, AdditionalServicesDescription,
         ISNULL(ServicePrice, 0.00) AS ServicePrice, ISNULL(CategoryName, 'Add-On') AS CategoryName,
         AdditionalServiceImage, ISNULL(AdditionalServiceImageMimeType, 'image/jpeg') AS AdditionalServiceImageMimeType,
-        CAST(CASE WHEN AdditionalServiceImage IS NOT NULL THEN 1 ELSE 0 END AS bit) AS HasImage
+        CAST(CASE WHEN AdditionalServiceImage IS NOT NULL OR ImageFileName IS NOT NULL OR ImageUrl IS NOT NULL THEN 1 ELSE 0 END AS bit) AS HasImage,
+        ImageFileName,
+        ImageUrl
     FROM dbo.AdditionalServices
     WHERE AdditionalServicesID = @AdditionalServicesID;
 END;
@@ -1188,15 +1205,19 @@ GO
 
 CREATE OR ALTER PROCEDURE dbo.sp_UpdateAdditionalServiceImage
     @AdditionalServicesID           nvarchar(30),
-    @AdditionalServiceImage         varbinary(max),
-    @AdditionalServiceImageMimeType nvarchar(100) = 'image/jpeg',
-    @UpdatedByAdminID               nvarchar(30)  = NULL
+    @AdditionalServiceImage         varbinary(max) = NULL,
+    @AdditionalServiceImageMimeType nvarchar(100)  = 'image/jpeg',
+    @ImageFileName                  nvarchar(500)  = NULL,
+    @ImageUrl                       nvarchar(500)  = NULL,
+    @UpdatedByAdminID               nvarchar(30)   = NULL
 AS
 BEGIN
     SET NOCOUNT ON;
     UPDATE dbo.AdditionalServices
-    SET AdditionalServiceImage = @AdditionalServiceImage,
-        AdditionalServiceImageMimeType = @AdditionalServiceImageMimeType
+    SET AdditionalServiceImage = COALESCE(@AdditionalServiceImage, AdditionalServiceImage),
+        AdditionalServiceImageMimeType = COALESCE(@AdditionalServiceImageMimeType, AdditionalServiceImageMimeType),
+        ImageFileName = COALESCE(@ImageFileName, ImageFileName),
+        ImageUrl = COALESCE(@ImageUrl, ImageUrl)
     WHERE AdditionalServicesID = @AdditionalServicesID;
 
     IF @UpdatedByAdminID IS NOT NULL
@@ -1204,7 +1225,7 @@ BEGIN
         DECLARE @ActorType nvarchar(20) = CASE WHEN @UpdatedByAdminID LIKE 'SADM-%' THEN 'SystemAdmin' ELSE 'Admin' END;
         EXEC dbo.sp_AddHistoryLog 
             @ActionType = 'IMAGE_UPLOAD', @EntityName = 'AdditionalServices', @EntityID = @AdditionalServicesID, 
-            @ActionDetails = 'Additional service image attached/updated via Image Wizard.', @ChangedByType = @ActorType, @ActorID = @UpdatedByAdminID;
+            @ActionDetails = 'Additional service image attached/updated via Cloudflare R2 Image Wizard.', @ChangedByType = @ActorType, @ActorID = @UpdatedByAdminID;
     END
 END;
 GO
@@ -1256,13 +1277,13 @@ BEGIN
     SELECT 
         s.ServicesID AS ServiceId, s.ServiceName AS ServiceName, s.ServicesDescription AS ServiceDescription,
         CAST(s.ServicePrice AS decimal(18,2)) AS Price, N'Main' AS ServiceType,
-        CAST(CASE WHEN s.ServiceImage IS NOT NULL THEN 1 ELSE 0 END AS bit) AS HasImage
+        CAST(CASE WHEN s.ServiceImage IS NOT NULL OR s.ImageFileName IS NOT NULL OR s.ImageUrl IS NOT NULL THEN 1 ELSE 0 END AS bit) AS HasImage
     FROM dbo.Services s
     UNION ALL
     SELECT 
         a.AdditionalServicesID AS ServiceId, a.AdditionalServiceName AS ServiceName, a.AdditionalServicesDescription AS ServiceDescription,
         CAST(ISNULL(a.ServicePrice, 0.00) AS decimal(18,2)) AS Price, N'Additional' AS ServiceType,
-        CAST(CASE WHEN a.AdditionalServiceImage IS NOT NULL THEN 1 ELSE 0 END AS bit) AS HasImage
+        CAST(CASE WHEN a.AdditionalServiceImage IS NOT NULL OR a.ImageFileName IS NOT NULL OR a.ImageUrl IS NOT NULL THEN 1 ELSE 0 END AS bit) AS HasImage
     FROM dbo.AdditionalServices a
     ORDER BY ServiceType DESC, ServiceName ASC;
 END;
@@ -1291,11 +1312,13 @@ CREATE OR ALTER PROCEDURE dbo.sp_CreateComboPackageWithServices
     @ComboPackageDescription   nvarchar(max),
     @ComboPackagePrice         decimal(18,2),
     @ServiceCategoryID         nvarchar(30),
-    @ComboPackageImage         varbinary(max),
-    @ComboPackageImageMimeType nvarchar(100) = 'image/jpeg',
+    @ComboPackageImage         varbinary(max) = NULL,
+    @ComboPackageImageMimeType nvarchar(100)  = 'image/jpeg',
+    @ImageFileName             nvarchar(500)  = NULL,
+    @ImageUrl                  nvarchar(500)  = NULL,
     @SelectedServiceIDsJson    nvarchar(max),
-    @CreatedByAdminID          nvarchar(30)  = NULL,
-    @GeneratedPackageID        nvarchar(30)  OUTPUT
+    @CreatedByAdminID          nvarchar(30)   = NULL,
+    @GeneratedPackageID        nvarchar(30)   OUTPUT
 AS
 BEGIN
     SET NOCOUNT ON;
@@ -1339,10 +1362,10 @@ BEGIN
         END;
 
         INSERT INTO dbo.ComboPackage (
-            ComboPackageID, ComboPackageName, ComboPackageDescription, ComboPackagePrice, ComboPackageImage, ComboPackageImageMimeType
+            ComboPackageID, ComboPackageName, ComboPackageDescription, ComboPackagePrice, ComboPackageImage, ComboPackageImageMimeType, ImageFileName, ImageUrl
         )
         VALUES (
-            @GeneratedPackageID, @ComboPackageName, @ComboPackageDescription, @ComboPackagePrice, @ComboPackageImage, ISNULL(@ComboPackageImageMimeType, 'image/jpeg')
+            @GeneratedPackageID, @ComboPackageName, @ComboPackageDescription, @ComboPackagePrice, @ComboPackageImage, ISNULL(@ComboPackageImageMimeType, 'image/jpeg'), @ImageFileName, @ImageUrl
         );
 
         IF @ServiceCategoryID IS NOT NULL AND LEN(TRIM(@ServiceCategoryID)) > 0
@@ -1405,7 +1428,9 @@ BEGIN
     SELECT 
         ComboPackageID, ComboPackageName, ComboPackageDescription,
         ISNULL(ComboPackagePrice, 0.00) AS ComboPackagePrice,
-        CAST(CASE WHEN ComboPackageImage IS NOT NULL THEN 1 ELSE 0 END AS bit) AS HasImage
+        CAST(CASE WHEN ComboPackageImage IS NOT NULL OR ImageFileName IS NOT NULL OR ImageUrl IS NOT NULL THEN 1 ELSE 0 END AS bit) AS HasImage,
+        ImageFileName,
+        ImageUrl
     FROM dbo.ComboPackage
     ORDER BY ComboPackageID;
 END;
@@ -1421,7 +1446,9 @@ BEGIN
         ISNULL(ComboPackagePrice, 0.00) AS ComboPackagePrice,
         ComboPackageImage,
         ISNULL(ComboPackageImageMimeType, 'image/jpeg') AS ComboPackageImageMimeType,
-        CAST(CASE WHEN ComboPackageImage IS NOT NULL THEN 1 ELSE 0 END AS bit) AS HasImage
+        CAST(CASE WHEN ComboPackageImage IS NOT NULL OR ImageFileName IS NOT NULL OR ImageUrl IS NOT NULL THEN 1 ELSE 0 END AS bit) AS HasImage,
+        ImageFileName,
+        ImageUrl
     FROM dbo.ComboPackage
     WHERE ComboPackageID = @ComboPackageID;
 END;
@@ -1429,15 +1456,19 @@ GO
 
 CREATE OR ALTER PROCEDURE dbo.sp_UpdateComboPackageImage
     @ComboPackageID           nvarchar(30),
-    @ComboPackageImage         varbinary(max),
+    @ComboPackageImage        varbinary(max) = NULL,
     @ComboPackageImageMimeType nvarchar(100) = 'image/jpeg',
-    @UpdatedByAdminID         nvarchar(30)  = NULL
+    @ImageFileName            nvarchar(500)  = NULL,
+    @ImageUrl                 nvarchar(500)  = NULL,
+    @UpdatedByAdminID         nvarchar(30)   = NULL
 AS
 BEGIN
     SET NOCOUNT ON;
     UPDATE dbo.ComboPackage
-    SET ComboPackageImage = @ComboPackageImage,
-        ComboPackageImageMimeType = @ComboPackageImageMimeType
+    SET ComboPackageImage = COALESCE(@ComboPackageImage, ComboPackageImage),
+        ComboPackageImageMimeType = COALESCE(@ComboPackageImageMimeType, ComboPackageImageMimeType),
+        ImageFileName = COALESCE(@ImageFileName, ImageFileName),
+        ImageUrl = COALESCE(@ImageUrl, ImageUrl)
     WHERE ComboPackageID = @ComboPackageID;
 
     IF @UpdatedByAdminID IS NOT NULL
@@ -1445,7 +1476,7 @@ BEGIN
         DECLARE @ActorType nvarchar(20) = CASE WHEN @UpdatedByAdminID LIKE 'SADM-%' THEN 'SystemAdmin' ELSE 'Admin' END;
         EXEC dbo.sp_AddHistoryLog 
             @ActionType = 'IMAGE_UPLOAD', @EntityName = 'ComboPackage', @EntityID = @ComboPackageID, 
-            @ActionDetails = 'Combo package image attached/updated via Image Wizard.', @ChangedByType = @ActorType, @ActorID = @UpdatedByAdminID;
+            @ActionDetails = 'Combo package image attached/updated via Cloudflare R2 Image Wizard.', @ChangedByType = @ActorType, @ActorID = @UpdatedByAdminID;
     END
 END;
 GO
@@ -1778,7 +1809,7 @@ GO
    ===================================================================== */
 
 CREATE OR ALTER PROCEDURE dbo.sp_GetNextPortfolioID
-    @NextPortfolioID nvarchar(30) = NULL OUTPUT
+    @NextPortfolioID nvarchar(50) = NULL OUTPUT
 AS
 BEGIN
     SET NOCOUNT ON;

@@ -245,8 +245,10 @@
                 {
                     <div class="space-y-4 animate-in fade-in duration-150">
                         <div class="bg-gray-50/50 p-4 rounded-xl border border-gray-100">
-                            <h3 class="text-xs font-bold uppercase tracking-wider text-gray-600 mb-1">Presentation Showcase Image</h3>
-                            <p class="text-xs text-gray-400">Upload a high-resolution marketing image for catalog cards, booking workflows, and client galleries.</p>
+                            <h3 class="text-xs font-bold uppercase tracking-wider text-gray-600 mb-1">
+                                Presentation Showcase Image <span class="text-rose-500">*</span>
+                            </h3>
+                            <p class="text-xs text-gray-400">Upload a high-resolution marketing image for catalog cards, booking workflows, and client galleries. (Required to proceed)</p>
                         </div>
 
                         @* Choose an Image File Input *@
@@ -434,7 +436,8 @@
                         {
                             <button type="button" 
                                     @onclick="NextStep"
-                                    class="inline-flex items-center gap-1.5 px-6 py-2.5 bg-gray-900 hover:bg-black text-white text-xs font-semibold rounded-lg shadow-sm hover:shadow transition-all cursor-pointer">
+                                    disabled="@(currentStep == 2 && (model.ImageBytes == null || model.ImageBytes.Length == 0))"
+                                    class="inline-flex items-center gap-1.5 px-6 py-2.5 bg-gray-900 hover:bg-black text-white text-xs font-semibold rounded-lg shadow-sm hover:shadow transition-all disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer">
                                 <span>Next Step</span>
                                 <span>&rarr;</span>
                             </button>
@@ -558,8 +561,12 @@
 
         if (currentStep == 2)
         {
+            if (!ValidateStep2())
+                return;
+
             currentStep = 3;
             await PrepareOverviewStepAsync();
+            return;
         }
     }
 
@@ -618,6 +625,24 @@
         return isValid;
     }
 
+    private bool ValidateStep2()
+    {
+        fileError = null;
+        if (model.ImageBytes == null || model.ImageBytes.Length == 0)
+        {
+            fileError = "A presentation showcase image is required to proceed.";
+            return false;
+        }
+
+        if (model.ImageSize > 5 * 1024 * 1024)
+        {
+            fileError = "Image file size exceeds the 5MB limit.";
+            return false;
+        }
+
+        return true;
+    }
+
     private async Task HandleFileSelected(InputFileChangeEventArgs e)
     {
         fileError = null;
@@ -655,7 +680,7 @@
         model.ImageMimeType = null;
         model.ImagePreviewUrl = null;
         model.ImageSize = 0;
-        fileError = null;
+        fileError = "A presentation showcase image is required to proceed.";
     }
 
     private async Task PrepareOverviewStepAsync()
@@ -684,6 +709,20 @@
 
     private async Task HandleSaveAsync()
     {
+        if (!ValidateStep1())
+        {
+            currentStep = 1;
+            errorMessage = "Please complete all required fields in Step 1.";
+            return;
+        }
+
+        if (!ValidateStep2())
+        {
+            currentStep = 2;
+            errorMessage = "A presentation showcase image is required before saving.";
+            return;
+        }
+
         isSaving = true;
         errorMessage = null;
 

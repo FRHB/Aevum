@@ -1,0 +1,465 @@
+@page "/checkout/simulate/{AppointmentId}"
+@page "/checkout/mock/{AppointmentId}"
+@page "/checkout/{AppointmentId}"
+@layout MainLayout
+@using PhotoAevumStudio.Web.Models
+@using PhotoAevumStudio.Web.Services
+@inject IConsultationClient ConsultationApi
+@inject NavigationManager Nav
+@implements IDisposable
+@rendermode InteractiveServer
+
+<PageTitle>Payment Checkout - Photo Aevum Studio</PageTitle>
+
+<div class="min-h-screen bg-slate-50 py-10 px-4 sm:px-6 lg:px-8">
+    <div class="max-w-3xl mx-auto">
+        <!-- Top Branding & Breadcrumb -->
+        <div class="flex items-center justify-between mb-8 pb-4 border-b border-slate-200">
+            <div class="flex items-center gap-3">
+                <img src="images/AevumLogo.jpg" alt="Photo Aevum Studio" class="h-10 w-10 rounded-full shadow-sm" />
+                <div>
+                    <h1 class="text-lg font-bold text-slate-900 tracking-tight">Photo Aevum Studio</h1>
+                    <p class="text-xs text-slate-500 font-medium">Official Payment Portal • Powered by Xendit Sandbox</p>
+                </div>
+            </div>
+            <div class="flex items-center gap-1.5 text-xs font-semibold text-emerald-700 bg-emerald-50 px-3 py-1.5 rounded-full border border-emerald-200">
+                <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" />
+                </svg>
+                <span>256-Bit SSL Encrypted</span>
+            </div>
+        </div>
+
+        @if (_loading)
+        {
+            <div class="bg-white rounded-2xl p-12 border border-slate-200 shadow-sm text-center">
+                <div class="inline-block animate-spin rounded-full h-8 w-8 border-4 border-teal-600 border-t-transparent mb-4"></div>
+                <h2 class="text-base font-bold text-slate-800">Retrieving Checkout Session…</h2>
+                <p class="text-xs text-slate-500 mt-1">Connecting to Photo Aevum Studio payment gateway for #@AppointmentId</p>
+            </div>
+        }
+        else if (!string.IsNullOrWhiteSpace(_errorMessage))
+        {
+            <div class="bg-white rounded-2xl p-8 border border-red-200 shadow-sm">
+                <div class="flex items-center gap-3 text-red-600 mb-3">
+                    <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                    </svg>
+                    <h2 class="text-lg font-bold">Checkout Unavailable</h2>
+                </div>
+                <p class="text-sm text-slate-600 mb-6">@_errorMessage</p>
+                <div class="flex gap-3">
+                    <button type="button" @onclick="LoadAppointmentAsync" class="px-4 py-2 bg-slate-900 text-white rounded-lg text-xs font-bold hover:bg-slate-800">
+                        Try Again
+                    </button>
+                    <a href="/my" class="px-4 py-2 bg-slate-100 text-slate-700 rounded-lg text-xs font-bold hover:bg-slate-200">
+                        Go to Customer Dashboard
+                    </a>
+                </div>
+            </div>
+        }
+        else if (_paymentSuccess)
+        {
+            <!-- Payment Success State -->
+            <div class="bg-white rounded-2xl p-8 sm:p-10 border border-emerald-200 shadow-sm text-center">
+                <div class="w-16 h-16 bg-emerald-100 text-emerald-600 rounded-full flex items-center justify-center mx-auto mb-5 shadow-inner">
+                    <svg class="w-9 h-9" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M5 13l4 4L19 7" />
+                    </svg>
+                </div>
+                <span class="inline-block px-3 py-1 bg-emerald-100 text-emerald-800 font-bold text-xs rounded-full uppercase tracking-wider mb-2">
+                    Payment Verified &amp; Confirmed
+                </span>
+                <h2 class="text-2xl font-black text-slate-900 mb-2">15% Reservation Deposit Received!</h2>
+                <p class="text-sm text-slate-600 max-w-lg mx-auto mb-6">
+                    Thank you! We have verified your reservation payment of
+                    <strong class="text-emerald-700">₱@(_appointment?.DownpaymentAmount.ToString("N2"))</strong> for
+                    <strong>@(_appointment?.EventName)</strong>.
+                </p>
+
+                <div class="bg-slate-50 border border-slate-200 rounded-xl p-5 text-left max-w-md mx-auto mb-8 space-y-2 text-xs">
+                    <div class="flex justify-between py-1 border-b border-slate-200">
+                        <span class="text-slate-500">Appointment ID:</span>
+                        <span class="font-mono font-bold text-slate-800">#@AppointmentId</span>
+                    </div>
+                    <div class="flex justify-between py-1 border-b border-slate-200">
+                        <span class="text-slate-500">Date &amp; Time:</span>
+                        <span class="font-bold text-slate-800">@_appointment?.EventDate.ToString("MMMM dd, yyyy") at @_appointment?.EventTime.ToString("h:mm tt")</span>
+                    </div>
+                    <div class="flex justify-between py-1 border-b border-slate-200">
+                        <span class="text-slate-500">Deposit Paid (15%):</span>
+                        <span class="font-bold text-emerald-700">₱@(_appointment?.DownpaymentAmount.ToString("N2"))</span>
+                    </div>
+                    <div class="flex justify-between py-1 border-b border-slate-200">
+                        <span class="text-slate-500">Remaining Balance (85%):</span>
+                        <span class="font-bold text-slate-800">₱@(_appointment?.FinalBalanceAmount.ToString("N2"))</span>
+                    </div>
+                    <div class="flex justify-between py-1">
+                        <span class="text-slate-500">Balance Due Date:</span>
+                        <span class="font-medium text-slate-700">Upon photoshoot completion</span>
+                    </div>
+                </div>
+
+                <div class="p-4 bg-teal-50 border border-teal-200 rounded-xl max-w-md mx-auto mb-8 text-xs text-teal-800 text-left flex items-start gap-3">
+                    <svg class="w-5 h-5 text-teal-600 shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
+                    </svg>
+                    <div>
+                        <strong>Confirmation Email Sent</strong>
+                        <p class="text-teal-700 mt-0.5">A receipt and updated event booking confirmation have been sent to <strong>@_appointment?.CustomerEmail</strong>.</p>
+                    </div>
+                </div>
+
+                <div class="flex flex-col sm:flex-row items-center justify-center gap-3">
+                    <a href="/my/bookings" class="w-full sm:w-auto px-6 py-3 bg-teal-700 hover:bg-teal-800 text-white rounded-xl text-xs font-bold transition-all shadow-sm">
+                        View My Bookings &rarr;
+                    </a>
+                    <a href="/my" class="w-full sm:w-auto px-6 py-3 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-bold transition-all">
+                        Customer Portal Dashboard
+                    </a>
+                </div>
+            </div>
+        }
+        else if (_appointment != null)
+        {
+            <div class="grid grid-cols-1 lg:grid-cols-12 gap-8">
+                <!-- Left Column: Checkout Controls & Payment Method -->
+                <div class="lg:col-span-7 space-y-6">
+                    <!-- Hold Countdown Alert -->
+                    <div class="p-4 rounded-xl border @(_isExpired ? "bg-red-50 border-red-200 text-red-900" : "bg-amber-50 border-amber-200 text-amber-900") flex items-center justify-between">
+                        <div class="flex items-center gap-3">
+                            <span class="text-xl">@(_isExpired ? "⚠️" : "⏳")</span>
+                            <div>
+                                <h3 class="text-xs font-bold uppercase tracking-wider">
+                                    @(_isExpired ? "Reservation Hold Expired" : "Temporary 30-Minute Hold")
+                                </h3>
+                                <p class="text-[11px] @(_isExpired ? "text-red-700" : "text-amber-800")">
+                                    @(_isExpired
+                                        ? "Your hold time has elapsed. Please request an extension from the studio."
+                                        : "Complete payment before the timer expires to secure your assigned creative crew.")
+                                </p>
+                            </div>
+                        </div>
+                        <div class="text-right pl-3 shrink-0">
+                            <div class="text-[10px] uppercase font-bold text-slate-500">Hold Timer</div>
+                            <div class="font-mono text-base font-black @(_isExpired ? "text-red-700" : "text-amber-900")">
+                                @_countdownDisplay
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Payment Method Selector -->
+                    <div class="bg-white rounded-2xl p-6 border border-slate-200 shadow-sm">
+                        <h2 class="text-sm font-bold text-slate-900 mb-1">Select Payment Channel</h2>
+                        <p class="text-xs text-slate-500 mb-4">Choose your preferred Philippine payment method via Xendit.</p>
+
+                        <div class="grid grid-cols-3 gap-3 mb-6">
+                            <button type="button" @onclick='() => SelectMethod("QRPH", "QR Ph / GCash / Maya")'
+                                    class="p-3 rounded-xl border text-left transition-all @(_selectedMethod == "QRPH" ? "border-teal-600 bg-teal-50/50 ring-2 ring-teal-600/20" : "border-slate-200 hover:border-slate-300 bg-white")">
+                                <div class="text-lg mb-1">📱</div>
+                                <div class="font-bold text-xs text-slate-900">QR Ph</div>
+                                <div class="text-[10px] text-slate-500">GCash • Maya</div>
+                            </button>
+
+                            <button type="button" @onclick='() => SelectMethod("CARD", "Credit / Debit Card")'
+                                    class="p-3 rounded-xl border text-left transition-all @(_selectedMethod == "CARD" ? "border-teal-600 bg-teal-50/50 ring-2 ring-teal-600/20" : "border-slate-200 hover:border-slate-300 bg-white")">
+                                <div class="text-lg mb-1">💳</div>
+                                <div class="font-bold text-xs text-slate-900">Online Card</div>
+                                <div class="text-[10px] text-slate-500">Visa • Mastercard</div>
+                            </button>
+
+                            <button type="button" @onclick='() => SelectMethod("DIRECT_DEBIT", "Online Banking")'
+                                    class="p-3 rounded-xl border text-left transition-all @(_selectedMethod == "DIRECT_DEBIT" ? "border-teal-600 bg-teal-50/50 ring-2 ring-teal-600/20" : "border-slate-200 hover:border-slate-300 bg-white")">
+                                <div class="text-lg mb-1">🏦</div>
+                                <div class="font-bold text-xs text-slate-900">Direct Debit</div>
+                                <div class="text-[10px] text-slate-500">BDO • BPI • UnionBank</div>
+                            </button>
+                        </div>
+
+                        <!-- Channel Details Details -->
+                        @if (_selectedMethod == "QRPH")
+                        {
+                            <div class="p-4 bg-slate-50 rounded-xl border border-slate-200 text-center space-y-3">
+                                <div class="inline-block p-3 bg-white rounded-lg border border-slate-200 shadow-xs">
+                                    <!-- Dynamic QR Ph Mockup SVG -->
+                                    <svg class="w-36 h-36 mx-auto text-slate-800" viewBox="0 0 100 100" fill="currentColor">
+                                        <rect x="10" y="10" width="24" height="24" rx="3" fill="#0d9488" />
+                                        <rect x="14" y="14" width="16" height="16" fill="white" />
+                                        <rect x="18" y="18" width="8" height="8" fill="#0d9488" />
+                                        <rect x="66" y="10" width="24" height="24" rx="3" fill="#0d9488" />
+                                        <rect x="70" y="14" width="16" height="16" fill="white" />
+                                        <rect x="74" y="18" width="8" height="8" fill="#0d9488" />
+                                        <rect x="10" y="66" width="24" height="24" rx="3" fill="#0d9488" />
+                                        <rect x="14" y="70" width="16" height="16" fill="white" />
+                                        <rect x="18" y="74" width="8" height="8" fill="#0d9488" />
+                                        <rect x="42" y="15" width="6" height="6" />
+                                        <rect x="52" y="20" width="6" height="6" />
+                                        <rect x="40" y="42" width="20" height="20" rx="2" fill="#0f766e" />
+                                        <circle cx="50" cy="52" r="4" fill="white" />
+                                        <rect x="20" y="46" width="6" height="6" />
+                                        <rect x="72" y="46" width="8" height="8" />
+                                        <rect x="44" y="72" width="8" height="8" />
+                                        <rect x="66" y="70" width="10" height="6" />
+                                        <rect x="78" y="80" width="8" height="8" />
+                                    </svg>
+                                </div>
+                                <div>
+                                    <span class="text-xs font-bold text-slate-800 block">Scan with GCash, Maya, or any QR Ph App</span>
+                                    <span class="text-[11px] text-slate-500">Amount to pay: <strong class="text-teal-700">₱@_appointment.DownpaymentAmount.ToString("N2")</strong></span>
+                                </div>
+                            </div>
+                        }
+                        else if (_selectedMethod == "CARD")
+                        {
+                            <div class="space-y-3 p-4 bg-slate-50 rounded-xl border border-slate-200 text-xs">
+                                <div>
+                                    <label class="block font-bold text-slate-700 mb-1">Card Number (Simulated)</label>
+                                    <input type="text" readonly value="4532 •••• •••• 8821" class="w-full bg-white border border-slate-300 rounded-lg px-3 py-2 font-mono text-slate-800" />
+                                </div>
+                                <div class="grid grid-cols-2 gap-3">
+                                    <div>
+                                        <label class="block font-bold text-slate-700 mb-1">Cardholder Name</label>
+                                        <input type="text" readonly value="@_appointment.CustomerName" class="w-full bg-white border border-slate-300 rounded-lg px-3 py-2 text-slate-800" />
+                                    </div>
+                                    <div>
+                                        <label class="block font-bold text-slate-700 mb-1">Expiry / CVV</label>
+                                        <input type="text" readonly value="12/28 • 882" class="w-full bg-white border border-slate-300 rounded-lg px-3 py-2 font-mono text-slate-800" />
+                                    </div>
+                                </div>
+                            </div>
+                        }
+                        else
+                        {
+                            <div class="p-4 bg-slate-50 rounded-xl border border-slate-200 text-xs space-y-2">
+                                <label class="block font-bold text-slate-700">Select Bank for Direct Debit</label>
+                                <select class="w-full bg-white border border-slate-300 rounded-lg px-3 py-2 text-slate-800">
+                                    <option>BDO Unibank - Online Banking</option>
+                                    <option>BPI Express Online</option>
+                                    <option>UnionBank of the Philippines</option>
+                                    <option>RCBC Online Banking</option>
+                                </select>
+                                <p class="text-[11px] text-slate-500">You will be securely redirected to authenticate with your bank.</p>
+                            </div>
+                        }
+
+                        <!-- Simulate Webhook CTA Button -->
+                        <div class="mt-6">
+                            <button type="button" @onclick="SimulatePaymentCallbackAsync" disabled="@(_isProcessing || _isExpired)"
+                                    class="w-full py-3.5 px-4 bg-emerald-700 hover:bg-emerald-800 disabled:opacity-50 disabled:cursor-not-allowed text-white rounded-xl text-sm font-black shadow-md transition-all flex items-center justify-center gap-2">
+                                @if (_isProcessing)
+                                {
+                                    <div class="animate-spin rounded-full h-4 w-4 border-2 border-white border-t-transparent"></div>
+                                    <span>Verifying Xendit Webhook…</span>
+                                }
+                                else
+                                {
+                                    <span>⚡ Pay 15% Deposit (₱@_appointment.DownpaymentAmount.ToString("N2"))</span>
+                                }
+                            </button>
+                            <p class="text-[11px] text-slate-500 text-center mt-2">
+                                Clicking simulates the instant Xendit payment verification webhook, settles the 15% deposit, updates the calendar, and emails your confirmation.
+                            </p>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Right Column: Event Order Summary & Breakdown -->
+                <div class="lg:col-span-5 space-y-4">
+                    <div class="bg-white rounded-2xl p-6 border border-slate-200 shadow-sm space-y-4">
+                        <div class="flex items-center justify-between pb-3 border-b border-slate-100">
+                            <span class="text-xs font-bold uppercase tracking-wider text-slate-400">Booking Summary</span>
+                            <span class="font-mono text-xs font-bold text-slate-700">#@_appointment.EventAppointmentId</span>
+                        </div>
+
+                        <div>
+                            <h2 class="text-lg font-black text-slate-900 leading-tight">@_appointment.EventName</h2>
+                            <p class="text-xs text-slate-500 mt-1">Client: <strong>@_appointment.CustomerName</strong> (@_appointment.CustomerEmail)</p>
+                        </div>
+
+                        <div class="bg-slate-50 rounded-xl p-3.5 border border-slate-100 space-y-1.5 text-xs">
+                            <div class="flex items-center gap-2 text-slate-700">
+                                <span>📅</span>
+                                <span>@_appointment.EventDate.ToString("dddd, MMMM dd, yyyy")</span>
+                            </div>
+                            <div class="flex items-center gap-2 text-slate-700">
+                                <span>⏰</span>
+                                <span>@_appointment.EventTime.ToString("h:mm tt")</span>
+                            </div>
+                            @if (!string.IsNullOrWhiteSpace(_appointment.EventDescription))
+                            {
+                                <div class="text-[11px] text-slate-500 pt-1 border-t border-slate-200">
+                                    @_appointment.EventDescription
+                                </div>
+                            }
+                        </div>
+
+                        <!-- 15% / 85% Deposit Financial Breakdown -->
+                        <div class="space-y-2.5 pt-2 text-xs">
+                            <div class="flex justify-between text-slate-600">
+                                <span>Total Package Value:</span>
+                                <span class="font-bold text-slate-800">₱@_appointment.TotalAmount.ToString("N2")</span>
+                            </div>
+
+                            <div class="flex justify-between items-center p-3 bg-emerald-50 rounded-xl border border-emerald-200">
+                                <div>
+                                    <div class="font-bold text-emerald-900">15% Reservation Deposit Due Now</div>
+                                    <div class="text-[10px] text-emerald-700">Locks date, crew &amp; equipment</div>
+                                </div>
+                                <div class="text-right">
+                                    <div class="font-mono text-lg font-black text-emerald-700">
+                                        ₱@_appointment.DownpaymentAmount.ToString("N2")
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div class="flex justify-between text-slate-600 pt-1">
+                                <span>Remaining Balance (85%):</span>
+                                <span class="font-bold text-slate-800">₱@_appointment.FinalBalanceAmount.ToString("N2")</span>
+                            </div>
+                            <div class="text-[11px] text-slate-400 italic">
+                                * The 85% balance is due on the day of your event upon shoot wrap-up.
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        }
+    </div>
+</div>
+
+@code {
+    [Parameter]
+    public string AppointmentId { get; set; } = string.Empty;
+
+    private EventAppointmentDto? _appointment;
+    private bool _loading = true;
+    private bool _isProcessing = false;
+    private bool _paymentSuccess = false;
+    private bool _isExpired = false;
+    private string? _errorMessage;
+    private string _selectedMethod = "QRPH";
+    private string _selectedMethodName = "QR Ph / GCash / Maya";
+    private string _countdownDisplay = "30:00";
+    private System.Threading.Timer? _timer;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadAppointmentAsync();
+    }
+
+    private async Task LoadAppointmentAsync()
+    {
+        _loading = true;
+        _errorMessage = null;
+
+        try
+        {
+            var res = await ConsultationApi.GetAppointmentByIdAsync(AppointmentId);
+            if (res.IsSuccess && res.Value != null)
+            {
+                _appointment = res.Value;
+                if (string.Equals(_appointment.DownpaymentStatus, "Paid", StringComparison.OrdinalIgnoreCase) ||
+                    string.Equals(_appointment.EventStatus, "Confirmed", StringComparison.OrdinalIgnoreCase))
+                {
+                    _paymentSuccess = true;
+                }
+                else
+                {
+                    StartCountdown();
+                }
+            }
+            else
+            {
+                _errorMessage = res.Error?.Message ?? $"Event appointment #{AppointmentId} could not be located.";
+            }
+        }
+        catch (Exception ex)
+        {
+            _errorMessage = $"An error occurred loading appointment: {ex.Message}";
+        }
+        finally
+        {
+            _loading = false;
+        }
+    }
+
+    private void SelectMethod(string method, string name)
+    {
+        _selectedMethod = method;
+        _selectedMethodName = name;
+    }
+
+    private void StartCountdown()
+    {
+        _timer?.Dispose();
+
+        if (_appointment?.HoldExpiresAt == null)
+        {
+            _countdownDisplay = "30:00";
+            return;
+        }
+
+        UpdateCountdown();
+        _timer = new System.Threading.Timer(_ =>
+        {
+            InvokeAsync(() =>
+            {
+                UpdateCountdown();
+                StateHasChanged();
+            });
+        }, null, 1000, 1000);
+    }
+
+    private void UpdateCountdown()
+    {
+        if (_appointment?.HoldExpiresAt == null) return;
+
+        var diff = _appointment.HoldExpiresAt.Value - DateTime.UtcNow;
+        if (diff <= TimeSpan.Zero)
+        {
+            _isExpired = true;
+            _countdownDisplay = "00:00";
+            _timer?.Dispose();
+        }
+        else
+        {
+            _isExpired = false;
+            _countdownDisplay = $"{(int)diff.TotalMinutes:D2}:{diff.Seconds:D2}";
+        }
+    }
+
+    private async Task SimulatePaymentCallbackAsync()
+    {
+        if (_isProcessing || _appointment == null) return;
+        _isProcessing = true;
+        _errorMessage = null;
+
+        try
+        {
+            var res = await ConsultationApi.SimulateWebhookPaymentAsync(_appointment.EventAppointmentId, _selectedMethod);
+            if (res.IsSuccess)
+            {
+                _appointment = res.Value ?? _appointment;
+                _paymentSuccess = true;
+                _timer?.Dispose();
+            }
+            else
+            {
+                _errorMessage = res.Error?.Message ?? "Payment verification simulation failed.";
+            }
+        }
+        catch (Exception ex)
+        {
+            _errorMessage = $"Simulation error: {ex.Message}";
+        }
+        finally
+        {
+            _isProcessing = false;
+        }
+    }
+
+    public void Dispose()
+    {
+        _timer?.Dispose();
+    }
+}

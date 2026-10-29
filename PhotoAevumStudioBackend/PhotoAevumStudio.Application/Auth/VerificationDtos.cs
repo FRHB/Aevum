@@ -10,7 +10,8 @@ public record CustomerRegisterRequest(
     string? MiddleName,
     string Email,
     string Password,
-    string VerificationCode);
+    string VerificationCode,
+    string? PhoneNumber = null);
 
 public record ResetPasswordRequest(
     string Email,

@@ -168,4 +168,24 @@ public class ServiceWizardTests
         Assert.Equal("image/png", dto.ImageMimeType);
         Assert.Equal("cap.png", dto.ImageFileName);
     }
+
+    // ══════════════════════════════════════════════════════════════════════════
+    // 5. Navigation & Public Page Access Tests
+    // ══════════════════════════════════════════════════════════════════════════
+
+    [Fact]
+    public void ServicesPage_HasAllowAnonymousAttribute_ToPreventAuthRedirection()
+    {
+        var pageType = typeof(PhotoAevumStudio.Web.Components.Pages.Services);
+        var attr = pageType.GetCustomAttributes(typeof(Microsoft.AspNetCore.Authorization.AllowAnonymousAttribute), inherit: false);
+        Assert.NotEmpty(attr);
+    }
+
+    [Fact]
+    public void HomePage_HasAllowAnonymousAttribute_ToPreventAuthRedirection()
+    {
+        var pageType = typeof(PhotoAevumStudio.Web.Components.Pages.Home);
+        var attr = pageType.GetCustomAttributes(typeof(Microsoft.AspNetCore.Authorization.AllowAnonymousAttribute), inherit: false);
+        Assert.NotEmpty(attr);
+    }
 }

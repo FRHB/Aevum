@@ -1,0 +1,182 @@
+@using PhotoAevumStudio.Web.Models
+@using PhotoAevumStudio.Web.Services
+@inject IUserService UserService
+
+@if (IsOpen && AddOn != null)
+{
+    <div class="fixed inset-0 z-50 bg-black/50 backdrop-blur-xs flex items-center justify-center p-4 sm:p-6 overflow-y-auto"
+         role="dialog" aria-modal="true" aria-labelledby="edit-addon-title">
+
+        <div class="relative w-full max-w-xl bg-white rounded-2xl shadow-2xl border border-gray-100 overflow-hidden flex flex-col max-h-[92vh]">
+            <div class="px-6 py-5 border-b border-gray-100 flex items-center justify-between bg-white">
+                <div>
+                    <h2 id="edit-addon-title" class="text-xl font-bold text-gray-900">Edit Additional Service</h2>
+                    <p class="text-xs text-gray-500">Update add-on service configuration for <span class="font-mono font-bold text-gray-700">@AddOn.Code</span></p>
+                </div>
+                <button type="button" @onclick="HandleClose" disabled="@isSaving"
+                        class="text-gray-400 hover:text-gray-600 rounded-lg p-1.5 hover:bg-gray-100">
+                    &times;
+                </button>
+            </div>
+
+            <div class="p-6 overflow-y-auto flex-1 space-y-4">
+                <div>
+                    <label class="block text-sm font-semibold text-gray-800 mb-1.5">
+                        Add-On Name <span class="text-red-500">*</span>
+                    </label>
+                    <input type="text"
+                           @bind="_editTitle"
+                           placeholder="Enter add-on name"
+                           class="w-full px-3.5 py-2.5 text-sm bg-white border border-gray-300 rounded-lg text-gray-900 focus:outline-none focus:ring-2 focus:ring-gray-900" />
+                </div>
+
+                <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <div>
+                        <label class="block text-sm font-semibold text-gray-800 mb-1.5">
+                            Type / Category
+                        </label>
+                        <select @bind="_editCategory"
+                                class="w-full px-3.5 py-2.5 text-sm bg-white border border-gray-300 rounded-lg text-gray-900 focus:outline-none focus:ring-2 focus:ring-gray-900">
+                            <option value="Photo Enhancement">Photo Enhancement</option>
+                            <option value="Studio Extras">Studio Extras</option>
+                            <option value="Print Deliverables">Print Deliverables</option>
+                            <option value="Equipment Rental">Equipment Rental</option>
+                            <option value="Wardrobe & Styling">Wardrobe &amp; Styling</option>
+                        </select>
+                    </div>
+
+                    <div>
+                        <label class="block text-sm font-semibold text-gray-800 mb-1.5">
+                            Price (₱) <span class="text-red-500">*</span>
+                        </label>
+                        <input type="number" step="0.01" min="0"
+                               @bind="_editPrice"
+                               class="w-full px-3.5 py-2.5 text-sm bg-white border border-gray-300 rounded-lg text-gray-900 focus:outline-none focus:ring-2 focus:ring-gray-900" />
+                    </div>
+                </div>
+
+                <div>
+                    <label class="block text-sm font-semibold text-gray-800 mb-1.5">
+                        Status
+                    </label>
+                    <select @bind="_editStatus"
+                            class="w-full px-3.5 py-2.5 text-sm bg-white border border-gray-300 rounded-lg text-gray-900 focus:outline-none focus:ring-2 focus:ring-gray-900">
+                        <option value="Active">Active</option>
+                        <option value="Inactive">Inactive</option>
+                    </select>
+                </div>
+
+                <div>
+                    <label class="block text-sm font-semibold text-gray-800 mb-1.5">
+                        Description
+                    </label>
+                    <textarea rows="3"
+                              @bind="_editDescription"
+                              placeholder="Enter add-on description"
+                              class="w-full px-3.5 py-2.5 text-sm bg-white border border-gray-300 rounded-lg text-gray-900 resize-none focus:outline-none focus:ring-2 focus:ring-gray-900"></textarea>
+                </div>
+
+                @if (!string.IsNullOrWhiteSpace(errorMessage))
+                {
+                    <div class="p-3 bg-red-50 border border-red-200 rounded-lg text-xs text-red-700 font-medium" role="alert">
+                        @errorMessage
+                    </div>
+                }
+            </div>
+
+            <div class="px-6 py-4 bg-gray-50 border-t border-gray-100 flex items-center justify-between">
+                <button type="button" @onclick="HandleClose" disabled="@isSaving"
+                        class="px-4 py-2.5 bg-white border border-gray-300 hover:bg-gray-100 text-gray-700 text-xs font-semibold rounded-lg">
+                    Cancel
+                </button>
+                <button type="button" @onclick="HandleSaveAsync" disabled="@isSaving"
+                        class="px-6 py-2.5 bg-gray-900 hover:bg-black text-white text-xs font-semibold rounded-lg disabled:opacity-60 transition-colors">
+                    @(isSaving ? "Updating..." : "Save Changes")
+                </button>
+            </div>
+        </div>
+    </div>
+}
+
+@code {
+    [Parameter] public bool IsOpen { get; set; }
+    [Parameter] public EventCallback<bool> IsOpenChanged { get; set; }
+    [Parameter] public AddOnServiceItem? AddOn { get; set; }
+    [Parameter] public EventCallback<AddOnServiceItem> OnAddOnUpdated { get; set; }
+
+    private string _editTitle = string.Empty;
+    private string _editCategory = "Photo Enhancement";
+    private decimal _editPrice;
+    private string _editStatus = "Active";
+    private string? _editDescription;
+
+    private bool isSaving;
+    private string? errorMessage;
+
+    protected override void OnParametersSet()
+    {
+        if (AddOn != null)
+        {
+            _editTitle = AddOn.Title;
+            _editCategory = string.IsNullOrWhiteSpace(AddOn.TypeCategory) ? "Photo Enhancement" : AddOn.TypeCategory;
+            var digits = new string((AddOn.PriceText ?? "").Where(c => char.IsDigit(c) || c == '.').ToArray());
+            decimal.TryParse(digits, out _editPrice);
+            _editStatus = string.IsNullOrWhiteSpace(AddOn.Status) ? "Active" : AddOn.Status;
+            _editDescription = AddOn.Description;
+            errorMessage = null;
+        }
+    }
+
+    private async Task HandleClose()
+    {
+        IsOpen = false;
+        await IsOpenChanged.InvokeAsync(false);
+    }
+
+    private async Task HandleSaveAsync()
+    {
+        if (AddOn == null) return;
+        if (string.IsNullOrWhiteSpace(_editTitle))
+        {
+            errorMessage = "Add-On name is required.";
+            return;
+        }
+
+        if (_editPrice < 0)
+        {
+            errorMessage = "Price cannot be negative.";
+            return;
+        }
+
+        isSaving = true;
+        errorMessage = null;
+
+        try
+        {
+            AddOn.Title = _editTitle.Trim();
+            AddOn.TypeCategory = _editCategory.Trim();
+            AddOn.PriceText = $"₱{_editPrice:N2}";
+            AddOn.Status = _editStatus;
+            AddOn.Description = _editDescription?.Trim();
+
+            var success = UserService.UpdateAdditionalService(AddOn);
+            if (success)
+            {
+                await OnAddOnUpdated.InvokeAsync(AddOn);
+                await HandleClose();
+            }
+            else
+            {
+                errorMessage = "Failed to update additional service record.";
+            }
+        }
+        catch (Exception ex)
+        {
+            errorMessage = ex.Message;
+        }
+        finally
+        {
+            isSaving = false;
+        }
+    }
+}

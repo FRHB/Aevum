@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Data;
 using System.Globalization;
+using System.IO;
 using System.Linq;
 using System.Net;
 using System.Net.Http;
@@ -11,6 +12,10 @@ using System.Text.Json;
 using System.Text.RegularExpressions;
 using System.Threading;
 using System.Threading.Tasks;
+using Amazon.Runtime;
+using Amazon.S3;
+using Amazon.S3.Model;
+using Microsoft.AspNetCore.Hosting;
 using Microsoft.Data.SqlClient;
 using Microsoft.Extensions.Configuration;
 using PhotoAevumStudio.Web.Models;
@@ -30,11 +35,120 @@ public sealed class UserService : IUserService
 	private readonly string _connectionString;
 
 	private readonly IHttpClientFactory? _httpClientFactory;
+	private readonly IWebHostEnvironment? _env;
+	private readonly AmazonS3Client? _r2Client;
+	private readonly string _servicesBucket;
+	private readonly string _r2PublicBaseUrl;
+	private readonly bool _r2Configured;
 
-	public UserService(IConfiguration? configuration = null, IHttpClientFactory? httpClientFactory = null)
+	public UserService(IConfiguration? configuration = null, IHttpClientFactory? httpClientFactory = null, IWebHostEnvironment? env = null)
 	{
 		_connectionString = configuration?.GetConnectionString("DefaultConnection") ?? "Data Source=localhost\\SQLEXPRESS;Initial Catalog=PhotoAevumStudio;Integrated Security=True;Persist Security Info=False;Pooling=False;MultipleActiveResultSets=False;Encrypt=True;TrustServerCertificate=True;Application Name=\"SQL Server Management Studio\";Command Timeout=0";
 		_httpClientFactory = httpClientFactory;
+		_env = env;
+
+		var accessKey = configuration?["CloudflareR2:AccessKey"] ?? "PLACEHOLDER";
+		var secretKey = configuration?["CloudflareR2:SecretKey"] ?? "PLACEHOLDER";
+		var accountId = configuration?["CloudflareR2:AccountId"];
+		var serviceUrl = configuration?["CloudflareR2:ServiceUrl"];
+		if (string.IsNullOrWhiteSpace(serviceUrl))
+		{
+			serviceUrl = !string.IsNullOrWhiteSpace(accountId)
+				? $"https://{accountId}.r2.cloudflarestorage.com"
+				: "https://f6757b400d51c23671cedb8b0efc4b32.r2.cloudflarestorage.com";
+		}
+
+		_servicesBucket = configuration?["CloudflareR2:Buckets:Services"] ?? "services";
+		_r2PublicBaseUrl = configuration?["CloudflareR2:PublicUrl"] ?? serviceUrl.TrimEnd('/');
+		_r2Configured = !string.IsNullOrWhiteSpace(accessKey)
+			&& !string.IsNullOrWhiteSpace(secretKey)
+			&& accessKey != "PLACEHOLDER"
+			&& secretKey != "PLACEHOLDER";
+
+		try
+		{
+			var credentials = new BasicAWSCredentials(accessKey, secretKey);
+			var s3Config = new AmazonS3Config
+			{
+				ServiceURL = serviceUrl,
+				AuthenticationRegion = "auto",
+				ForcePathStyle = true
+			};
+			_r2Client = new AmazonS3Client(credentials, s3Config);
+		}
+		catch
+		{
+		}
+	}
+
+	private async Task<(string? ImageFileName, string? ImageUrl)> UploadServiceAssetToR2Async(
+		byte[]? imageBytes,
+		string? originalFileName,
+		string? contentType,
+		string subFolder,
+		CancellationToken ct = default)
+	{
+		if (imageBytes == null || imageBytes.Length == 0)
+			return (null, null);
+
+		var ext = Path.GetExtension(originalFileName ?? string.Empty);
+		if (string.IsNullOrWhiteSpace(ext))
+		{
+			ext = contentType?.ToLowerInvariant() switch
+			{
+				"image/png" => ".png",
+				"image/webp" => ".webp",
+				_ => ".jpg"
+			};
+		}
+
+		var uniqueName = $"{Guid.NewGuid():N}{ext}";
+		var key = $"{subFolder.Trim('/')}/{uniqueName}";
+		string? resolvedUrl = null;
+
+		if (_r2Configured && _r2Client != null)
+		{
+			try
+			{
+				using var ms = new MemoryStream(imageBytes);
+				var putReq = new PutObjectRequest
+				{
+					BucketName = _servicesBucket,
+					Key = key,
+					InputStream = ms,
+					ContentType = string.IsNullOrWhiteSpace(contentType) ? "image/jpeg" : contentType,
+					DisablePayloadSigning = true
+				};
+				await _r2Client.PutObjectAsync(putReq, ct);
+
+				var presignedReq = new GetPreSignedUrlRequest
+				{
+					BucketName = _servicesBucket,
+					Key = key,
+					Expires = DateTime.UtcNow.AddDays(7)
+				};
+				resolvedUrl = _r2Client.GetPreSignedURL(presignedReq);
+			}
+			catch
+			{
+			}
+		}
+
+		try
+		{
+			var webRoot = _env?.WebRootPath ?? Path.Combine(Directory.GetCurrentDirectory(), "wwwroot");
+			var dir = Path.Combine(webRoot, "uploads", subFolder.Replace('/', Path.DirectorySeparatorChar));
+			Directory.CreateDirectory(dir);
+			var localPath = Path.Combine(dir, uniqueName);
+			await File.WriteAllBytesAsync(localPath, imageBytes, ct);
+			resolvedUrl ??= $"/uploads/{key}";
+		}
+		catch
+		{
+			resolvedUrl ??= $"{_r2PublicBaseUrl}/{_servicesBucket}/{key}";
+		}
+
+		return (key, resolvedUrl);
 	}
 
 	private SqlConnection CreateConnection()
@@ -909,12 +1023,44 @@ public sealed class UserService : IUserService
 	public void UpdateServiceImage(string code, byte[] imageBytes, string mimeType, string? requestingAdminId = null)
 	{
 		ArgumentNullException.ThrowIfNull(imageBytes, "imageBytes");
+		var (imageFileName, imageUrl) = UploadServiceAssetToR2Async(imageBytes, null, mimeType, "services/main").GetAwaiter().GetResult();
+
 		using SqlConnection sqlConnection = CreateConnection();
 		sqlConnection.Open();
-		using SqlCommand sqlCommand = new SqlCommand("\n            IF OBJECT_ID(N'dbo.sp_UpdateServiceImage', N'P') IS NOT NULL\n            BEGIN\n                EXEC dbo.sp_UpdateServiceImage @ServicesID = @Id, @ServiceImage = @Img, @ServiceImageMimeType = @Mime, @UpdatedBy = @By;\n            END\n            ELSE IF OBJECT_ID(N'dbo.Services', N'U') IS NOT NULL\n            BEGIN\n                UPDATE dbo.Services\n                SET ServiceImage = @Img,\n                    ServiceImageMimeType = @Mime\n                WHERE UPPER(ServicesID) = UPPER(@Id);\n            END", sqlConnection);
+		using SqlCommand sqlCommand = new SqlCommand(@"
+            IF OBJECT_ID(N'dbo.Services', N'U') IS NOT NULL
+            BEGIN
+                IF COL_LENGTH(N'dbo.Services', N'ImageFileName') IS NULL
+                    ALTER TABLE dbo.Services ADD ImageFileName nvarchar(500) NULL;
+                IF COL_LENGTH(N'dbo.Services', N'ImageUrl') IS NULL
+                    ALTER TABLE dbo.Services ADD ImageUrl nvarchar(500) NULL;
+            END;
+            IF OBJECT_ID(N'dbo.sp_UpdateServiceImage', N'P') IS NOT NULL AND EXISTS (
+                SELECT 1 FROM sys.parameters WHERE object_id = OBJECT_ID(N'dbo.sp_UpdateServiceImage') AND name = '@ImageFileName'
+            )
+            BEGIN
+                EXEC dbo.sp_UpdateServiceImage
+                    @ServicesID = @Id,
+                    @ServiceImage = @Img,
+                    @ServiceImageMimeType = @Mime,
+                    @ImageFileName = @ImgFileName,
+                    @ImageUrl = @ImgUrl,
+                    @UpdatedBy = @By;
+            END
+            ELSE IF OBJECT_ID(N'dbo.Services', N'U') IS NOT NULL
+            BEGIN
+                UPDATE dbo.Services
+                SET ServiceImage = @Img,
+                    ServiceImageMimeType = @Mime,
+                    ImageFileName = COALESCE(@ImgFileName, ImageFileName),
+                    ImageUrl = COALESCE(@ImgUrl, ImageUrl)
+                WHERE UPPER(ServicesID) = UPPER(@Id);
+            END", sqlConnection);
 		sqlCommand.Parameters.AddWithValue("@Id", code.Trim());
 		sqlCommand.Parameters.AddWithValue("@Img", imageBytes);
 		sqlCommand.Parameters.AddWithValue("@Mime", string.IsNullOrWhiteSpace(mimeType) ? "image/jpeg" : mimeType);
+		sqlCommand.Parameters.AddWithValue("@ImgFileName", (object?)imageFileName ?? DBNull.Value);
+		sqlCommand.Parameters.AddWithValue("@ImgUrl", (object?)imageUrl ?? DBNull.Value);
 		sqlCommand.Parameters.AddWithValue("@By", requestingAdminId ?? "Admin");
 		sqlCommand.ExecuteNonQuery();
 	}
@@ -963,6 +1109,54 @@ public sealed class UserService : IUserService
 			Description = model.Description,
 			Status = model.Status
 		};
+	}
+
+	public bool UpdateMainService(MainServiceItem item, string? requestingAdminId = null)
+	{
+		ArgumentNullException.ThrowIfNull(item, nameof(item));
+		using SqlConnection conn = CreateConnection();
+		conn.Open();
+
+		using SqlCommand cmd = new SqlCommand(@"
+            IF OBJECT_ID(N'dbo.Services', N'U') IS NOT NULL
+            BEGIN
+                UPDATE dbo.Services
+                SET ServiceName = @Name,
+                    ServicesDescription = @Desc,
+                    ServicePrice = @Price,
+                    RateType = @RateType
+                WHERE UPPER(ServicesID) = UPPER(@Id);
+
+                IF @CatName IS NOT NULL AND LEN(@CatName) > 0
+                BEGIN
+                    DECLARE @CatId NVARCHAR(50) = NULL;
+                    SELECT TOP 1 @CatId = ServiceCategoryID FROM dbo.ServiceCategory WHERE ServiceCategoryName = @CatName OR ServiceCategoryID = @CatName;
+                    IF @CatId IS NOT NULL
+                    BEGIN
+                        IF EXISTS (SELECT 1 FROM dbo.ServiceCategoryJoins WHERE UPPER(ServicesID) = UPPER(@Id))
+                        BEGIN
+                            UPDATE dbo.ServiceCategoryJoins SET ServiceCategoryID = @CatId WHERE UPPER(ServicesID) = UPPER(@Id);
+                        END
+                        ELSE
+                        BEGIN
+                            DECLARE @JoinID NVARCHAR(30) = 'SCJ-' + SUBSTRING(CONVERT(NVARCHAR(36), NEWID()), 1, 8);
+                            INSERT INTO dbo.ServiceCategoryJoins (ServiceCategoryJoinID, ServiceCategoryID, ServicesID)
+                            VALUES (@JoinID, @CatId, @Id);
+                        END
+                    END
+                END
+            END", conn);
+
+		cmd.Parameters.AddWithValue("@Id", item.Code.Trim());
+		cmd.Parameters.AddWithValue("@Name", item.Title.Trim());
+		cmd.Parameters.AddWithValue("@Desc", string.IsNullOrWhiteSpace(item.Description) ? item.Category : item.Description.Trim());
+		cmd.Parameters.AddWithValue("@Price", item.BasePrice);
+		cmd.Parameters.AddWithValue("@RateType", string.IsNullOrWhiteSpace(item.RateType) ? "per hour" : item.RateType.Trim());
+		cmd.Parameters.AddWithValue("@CatName", (object?)item.Category?.Trim() ?? DBNull.Value);
+		int rows = cmd.ExecuteNonQuery();
+
+		LogActivity("UPDATE", "Services", item.Code, $"Updated main service '{item.Title}'", requestingAdminId);
+		return rows > 0;
 	}
 
 	public IReadOnlyList<PackageServiceItem> GetPackageServices()
@@ -1034,12 +1228,44 @@ public sealed class UserService : IUserService
 	public void UpdateComboPackageImage(string code, byte[] imageBytes, string mimeType, string? requestingAdminId = null)
 	{
 		ArgumentNullException.ThrowIfNull(imageBytes, "imageBytes");
+		var (imageFileName, imageUrl) = UploadServiceAssetToR2Async(imageBytes, null, mimeType, "services/packages").GetAwaiter().GetResult();
+
 		using SqlConnection sqlConnection = CreateConnection();
 		sqlConnection.Open();
-		using SqlCommand sqlCommand = new SqlCommand("\n            IF OBJECT_ID(N'dbo.sp_UpdateComboPackageImage', N'P') IS NOT NULL\n            BEGIN\n                EXEC dbo.sp_UpdateComboPackageImage @ComboPackageID = @Id, @ComboPackageImage = @Img, @ComboPackageImageMimeType = @Mime, @UpdatedBy = @By;\n            END\n            ELSE IF OBJECT_ID(N'dbo.ComboPackage', N'U') IS NOT NULL\n            BEGIN\n                UPDATE dbo.ComboPackage\n                SET ComboPackageImage = @Img,\n                    ComboPackageImageMimeType = @Mime\n                WHERE UPPER(ComboPackageID) = UPPER(@Id);\n            END", sqlConnection);
+		using SqlCommand sqlCommand = new SqlCommand(@"
+            IF OBJECT_ID(N'dbo.ComboPackage', N'U') IS NOT NULL
+            BEGIN
+                IF COL_LENGTH(N'dbo.ComboPackage', N'ImageFileName') IS NULL
+                    ALTER TABLE dbo.ComboPackage ADD ImageFileName nvarchar(500) NULL;
+                IF COL_LENGTH(N'dbo.ComboPackage', N'ImageUrl') IS NULL
+                    ALTER TABLE dbo.ComboPackage ADD ImageUrl nvarchar(500) NULL;
+            END;
+            IF OBJECT_ID(N'dbo.sp_UpdateComboPackageImage', N'P') IS NOT NULL AND EXISTS (
+                SELECT 1 FROM sys.parameters WHERE object_id = OBJECT_ID(N'dbo.sp_UpdateComboPackageImage') AND name = '@ImageFileName'
+            )
+            BEGIN
+                EXEC dbo.sp_UpdateComboPackageImage
+                    @ComboPackageID = @Id,
+                    @ComboPackageImage = @Img,
+                    @ComboPackageImageMimeType = @Mime,
+                    @ImageFileName = @ImgFileName,
+                    @ImageUrl = @ImgUrl,
+                    @UpdatedBy = @By;
+            END
+            ELSE IF OBJECT_ID(N'dbo.ComboPackage', N'U') IS NOT NULL
+            BEGIN
+                UPDATE dbo.ComboPackage
+                SET ComboPackageImage = @Img,
+                    ComboPackageImageMimeType = @Mime,
+                    ImageFileName = COALESCE(@ImgFileName, ImageFileName),
+                    ImageUrl = COALESCE(@ImgUrl, ImageUrl)
+                WHERE UPPER(ComboPackageID) = UPPER(@Id);
+            END", sqlConnection);
 		sqlCommand.Parameters.AddWithValue("@Id", code.Trim());
 		sqlCommand.Parameters.AddWithValue("@Img", imageBytes);
 		sqlCommand.Parameters.AddWithValue("@Mime", string.IsNullOrWhiteSpace(mimeType) ? "image/jpeg" : mimeType);
+		sqlCommand.Parameters.AddWithValue("@ImgFileName", (object?)imageFileName ?? DBNull.Value);
+		sqlCommand.Parameters.AddWithValue("@ImgUrl", (object?)imageUrl ?? DBNull.Value);
 		sqlCommand.Parameters.AddWithValue("@By", requestingAdminId ?? "Admin");
 		sqlCommand.ExecuteNonQuery();
 	}
@@ -1067,6 +1293,38 @@ public sealed class UserService : IUserService
 			Description = model.Description,
 			Status = model.Status
 		};
+	}
+
+	public bool UpdatePackageService(PackageServiceItem item, string? requestingAdminId = null)
+	{
+		ArgumentNullException.ThrowIfNull(item, nameof(item));
+		using SqlConnection conn = CreateConnection();
+		conn.Open();
+
+		decimal price = 0;
+		if (!string.IsNullOrWhiteSpace(item.Price))
+		{
+			var digits = new string(item.Price.Where(c => char.IsDigit(c) || c == '.').ToArray());
+			decimal.TryParse(digits, out price);
+		}
+
+		using SqlCommand cmd = new SqlCommand(@"
+            IF OBJECT_ID(N'dbo.ComboPackage', N'U') IS NOT NULL
+            BEGIN
+                UPDATE dbo.ComboPackage
+                SET ComboPackageName = @Name,
+                    ComboPackageDescription = @Desc,
+                    ComboPackagePrice = @Price
+                WHERE UPPER(ComboPackageID) = UPPER(@Id);
+            END", conn);
+		cmd.Parameters.AddWithValue("@Id", item.Code.Trim());
+		cmd.Parameters.AddWithValue("@Name", item.Title.Trim());
+		cmd.Parameters.AddWithValue("@Desc", string.IsNullOrWhiteSpace(item.Description) ? item.BundleCategory : item.Description.Trim());
+		cmd.Parameters.AddWithValue("@Price", price);
+		int rows = cmd.ExecuteNonQuery();
+
+		LogActivity("UPDATE", "ComboPackage", item.Code, $"Updated package service '{item.Title}'", requestingAdminId);
+		return rows > 0;
 	}
 
 	public async Task<string> GetNextComboPackageIdAsync(CancellationToken ct = default(CancellationToken))
@@ -1298,6 +1556,9 @@ public sealed class UserService : IUserService
 	public async Task<PackageServiceItem> CreateComboPackageViaApiAsync(PackageWizardFormModel formModel, CancellationToken ct = default(CancellationToken))
 	{
 		ArgumentNullException.ThrowIfNull(formModel, "formModel");
+		var (imageFileName, imageUrl) = await UploadServiceAssetToR2Async(
+			formModel.ImageBytes, formModel.ImageFileName, formModel.ImageMimeType, "services/packages", ct);
+
 		if (_httpClientFactory != null)
 		{
 			try
@@ -1360,7 +1621,20 @@ public sealed class UserService : IUserService
 		await using (SqlConnection conn = CreateConnection())
 		{
 			await conn.OpenAsync(ct);
-			await using (SqlCommand prepCmd = new SqlCommand("\n            IF OBJECT_ID(N'dbo.ComboPackage', N'U') IS NOT NULL\n            BEGIN\n                IF COL_LENGTH(N'dbo.ComboPackage', N'ComboPackagePrice') IS NULL\n                    ALTER TABLE dbo.ComboPackage ADD ComboPackagePrice decimal(18,2) NOT NULL CONSTRAINT DF_ComboPackage_Price DEFAULT 0.00;\n            END;\n            IF OBJECT_ID(N'dbo.ComboPackageJoin', N'U') IS NOT NULL\n            BEGIN\n                ALTER TABLE dbo.ComboPackageJoin ALTER COLUMN ServicesID nvarchar(30) NULL;\n            END;", conn))
+			await using (SqlCommand prepCmd = new SqlCommand(@"
+            IF OBJECT_ID(N'dbo.ComboPackage', N'U') IS NOT NULL
+            BEGIN
+                IF COL_LENGTH(N'dbo.ComboPackage', N'ComboPackagePrice') IS NULL
+                    ALTER TABLE dbo.ComboPackage ADD ComboPackagePrice decimal(18,2) NOT NULL CONSTRAINT DF_ComboPackage_Price DEFAULT 0.00;
+                IF COL_LENGTH(N'dbo.ComboPackage', N'ImageFileName') IS NULL
+                    ALTER TABLE dbo.ComboPackage ADD ImageFileName nvarchar(500) NULL;
+                IF COL_LENGTH(N'dbo.ComboPackage', N'ImageUrl') IS NULL
+                    ALTER TABLE dbo.ComboPackage ADD ImageUrl nvarchar(500) NULL;
+            END;
+            IF OBJECT_ID(N'dbo.ComboPackageJoin', N'U') IS NOT NULL
+            BEGIN
+                ALTER TABLE dbo.ComboPackageJoin ALTER COLUMN ServicesID nvarchar(30) NULL;
+            END;", conn))
 			{
 				await prepCmd.ExecuteNonQueryAsync(ct);
 			}
@@ -1373,7 +1647,11 @@ public sealed class UserService : IUserService
 					{
 						await lockCmd.ExecuteScalarAsync(ct);
 					}
-					await using (SqlCommand cmd = new SqlCommand("\n                INSERT INTO dbo.ComboPackage (\n                    ComboPackageID, ComboPackageName, ComboPackageDescription, ComboPackagePrice, ComboPackageImage, ComboPackageImageMimeType\n                )\n                VALUES (@Id, @Name, @Desc, @Price, @Img, @Mime);", conn, trans))
+					await using (SqlCommand cmd = new SqlCommand(@"
+                INSERT INTO dbo.ComboPackage (
+                    ComboPackageID, ComboPackageName, ComboPackageDescription, ComboPackagePrice, ComboPackageImage, ComboPackageImageMimeType, ImageFileName, ImageUrl
+                )
+                VALUES (@Id, @Name, @Desc, @Price, @Img, @Mime, @ImgFileName, @ImgUrl);", conn, trans))
 					{
 						cmd.Parameters.AddWithValue("@Id", packageCode);
 						cmd.Parameters.AddWithValue("@Name", formModel.Name.Trim());
@@ -1381,6 +1659,8 @@ public sealed class UserService : IUserService
 						cmd.Parameters.AddWithValue("@Price", formModel.Price);
 						cmd.Parameters.Add("@Img", SqlDbType.VarBinary, -1).Value = ((object)formModel.ImageBytes) ?? ((object)DBNull.Value);
 						cmd.Parameters.AddWithValue("@Mime", string.IsNullOrWhiteSpace(formModel.ImageMimeType) ? "image/jpeg" : formModel.ImageMimeType.Trim());
+						cmd.Parameters.AddWithValue("@ImgFileName", (object?)imageFileName ?? DBNull.Value);
+						cmd.Parameters.AddWithValue("@ImgUrl", (object?)imageUrl ?? DBNull.Value);
 						await cmd.ExecuteNonQueryAsync(ct);
 					}
 					if (!string.IsNullOrWhiteSpace(formModel.CategoryId))
@@ -1495,12 +1775,44 @@ public sealed class UserService : IUserService
 	public void UpdateAdditionalServiceImage(string code, byte[] imageBytes, string mimeType, string? requestingAdminId = null)
 	{
 		ArgumentNullException.ThrowIfNull(imageBytes, "imageBytes");
+		var (imageFileName, imageUrl) = UploadServiceAssetToR2Async(imageBytes, null, mimeType, "services/addons").GetAwaiter().GetResult();
+
 		using SqlConnection sqlConnection = CreateConnection();
 		sqlConnection.Open();
-		using SqlCommand sqlCommand = new SqlCommand("\n            IF OBJECT_ID(N'dbo.sp_UpdateAdditionalServiceImage', N'P') IS NOT NULL\n            BEGIN\n                EXEC dbo.sp_UpdateAdditionalServiceImage @AdditionalServicesID = @Id, @AdditionalServiceImage = @Img, @AdditionalServiceImageMimeType = @Mime, @UpdatedBy = @By;\n            END\n            ELSE IF OBJECT_ID(N'dbo.AdditionalServices', N'U') IS NOT NULL\n            BEGIN\n                UPDATE dbo.AdditionalServices\n                SET AdditionalServiceImage = @Img,\n                    AdditionalServiceImageMimeType = @Mime\n                WHERE UPPER(AdditionalServicesID) = UPPER(@Id);\n            END", sqlConnection);
+		using SqlCommand sqlCommand = new SqlCommand(@"
+            IF OBJECT_ID(N'dbo.AdditionalServices', N'U') IS NOT NULL
+            BEGIN
+                IF COL_LENGTH(N'dbo.AdditionalServices', N'ImageFileName') IS NULL
+                    ALTER TABLE dbo.AdditionalServices ADD ImageFileName nvarchar(500) NULL;
+                IF COL_LENGTH(N'dbo.AdditionalServices', N'ImageUrl') IS NULL
+                    ALTER TABLE dbo.AdditionalServices ADD ImageUrl nvarchar(500) NULL;
+            END;
+            IF OBJECT_ID(N'dbo.sp_UpdateAdditionalServiceImage', N'P') IS NOT NULL AND EXISTS (
+                SELECT 1 FROM sys.parameters WHERE object_id = OBJECT_ID(N'dbo.sp_UpdateAdditionalServiceImage') AND name = '@ImageFileName'
+            )
+            BEGIN
+                EXEC dbo.sp_UpdateAdditionalServiceImage
+                    @AdditionalServicesID = @Id,
+                    @AdditionalServiceImage = @Img,
+                    @AdditionalServiceImageMimeType = @Mime,
+                    @ImageFileName = @ImgFileName,
+                    @ImageUrl = @ImgUrl,
+                    @UpdatedBy = @By;
+            END
+            ELSE IF OBJECT_ID(N'dbo.AdditionalServices', N'U') IS NOT NULL
+            BEGIN
+                UPDATE dbo.AdditionalServices
+                SET AdditionalServiceImage = @Img,
+                    AdditionalServiceImageMimeType = @Mime,
+                    ImageFileName = COALESCE(@ImgFileName, ImageFileName),
+                    ImageUrl = COALESCE(@ImgUrl, ImageUrl)
+                WHERE UPPER(AdditionalServicesID) = UPPER(@Id);
+            END", sqlConnection);
 		sqlCommand.Parameters.AddWithValue("@Id", code.Trim());
 		sqlCommand.Parameters.AddWithValue("@Img", imageBytes);
 		sqlCommand.Parameters.AddWithValue("@Mime", string.IsNullOrWhiteSpace(mimeType) ? "image/jpeg" : mimeType);
+		sqlCommand.Parameters.AddWithValue("@ImgFileName", (object?)imageFileName ?? DBNull.Value);
+		sqlCommand.Parameters.AddWithValue("@ImgUrl", (object?)imageUrl ?? DBNull.Value);
 		sqlCommand.Parameters.AddWithValue("@By", requestingAdminId ?? "Admin");
 		sqlCommand.ExecuteNonQuery();
 	}
@@ -1528,6 +1840,40 @@ public sealed class UserService : IUserService
 			Description = model.Description,
 			Status = model.Status
 		};
+	}
+
+	public bool UpdateAdditionalService(AddOnServiceItem item, string? requestingAdminId = null)
+	{
+		ArgumentNullException.ThrowIfNull(item, nameof(item));
+		using SqlConnection conn = CreateConnection();
+		conn.Open();
+
+		decimal price = 0;
+		if (!string.IsNullOrWhiteSpace(item.PriceText))
+		{
+			var digits = new string(item.PriceText.Where(c => char.IsDigit(c) || c == '.').ToArray());
+			decimal.TryParse(digits, out price);
+		}
+
+		using SqlCommand cmd = new SqlCommand(@"
+            IF OBJECT_ID(N'dbo.AdditionalServices', N'U') IS NOT NULL
+            BEGIN
+                UPDATE dbo.AdditionalServices
+                SET AdditionalServiceName = @Name,
+                    AdditionalServicesDescription = @Desc,
+                    ServicePrice = @Price,
+                    CategoryName = @CatName
+                WHERE UPPER(AdditionalServicesID) = UPPER(@Id);
+            END", conn);
+		cmd.Parameters.AddWithValue("@Id", item.Code.Trim());
+		cmd.Parameters.AddWithValue("@Name", item.Title.Trim());
+		cmd.Parameters.AddWithValue("@Desc", string.IsNullOrWhiteSpace(item.Description) ? item.TypeCategory : item.Description.Trim());
+		cmd.Parameters.AddWithValue("@Price", price);
+		cmd.Parameters.AddWithValue("@CatName", string.IsNullOrWhiteSpace(item.TypeCategory) ? "Add-On" : item.TypeCategory.Trim());
+		int rows = cmd.ExecuteNonQuery();
+
+		LogActivity("UPDATE", "AdditionalServices", item.Code, $"Updated additional service '{item.Title}'", requestingAdminId);
+		return rows > 0;
 	}
 
 	public List<EquipmentRowDto> GetEquipmentRows()

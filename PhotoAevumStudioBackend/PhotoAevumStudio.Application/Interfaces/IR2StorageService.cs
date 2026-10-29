@@ -4,6 +4,9 @@ namespace PhotoAevumStudio.Application.Interfaces;
 
 public interface IR2StorageService
 {
-    Task<List<string>> UploadImagesAsync(List<IFormFile> files, string folderPrefix);
-    string GetPresignedUrl(string fileName);
+    string PortfolioBucket { get; }
+    string ServicesBucket { get; }
+    Task<List<string>> UploadImagesAsync(List<IFormFile> files, string folderPrefix, string? bucketName = null);
+    Task<string> UploadServiceImageAsync(byte[] imageBytes, string? originalFileName, string? contentType, string folderPrefix = "services", CancellationToken cancellationToken = default);
+    string GetPresignedUrl(string fileName, string? bucketName = null);
 }

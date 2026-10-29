@@ -35,4 +35,6 @@
 	<ItemGroup>
 		<PackageReference Update="System.Security.Cryptography.Pkcs" Version="10.0.14" />
 	</ItemGroup>
+
+	<ProjectExtensions><VisualStudio><UserProperties appsettings_1json__JsonSchema="..\..\..\Users\Fernest Rumon H. Bac\AppData\Local\Microsoft\VisualStudio\18.0_345db16e\OpenFolder\CMakePresets_schema.json" /></VisualStudio></ProjectExtensions>
 </Project>

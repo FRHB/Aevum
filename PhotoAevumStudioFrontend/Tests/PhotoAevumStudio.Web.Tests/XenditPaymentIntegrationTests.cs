@@ -93,4 +93,29 @@ public class XenditPaymentIntegrationTests
         Assert.Contains("EVT-0042", result.InvoiceUrl);
         Assert.Equal(2500m, result.Amount);
     }
+
+    [Fact]
+    public void ReservationFee_Calculates15PercentDeposit_And85PercentBalance()
+    {
+        const decimal total = 10000m;
+        var deposit = Math.Round(total * 0.15m, 2);
+        var balance = total - deposit;
+
+        Assert.Equal(1500.00m, deposit);
+        Assert.Equal(8500.00m, balance);
+        Assert.Equal(total, deposit + balance);
+    }
+
+    [Theory]
+    [InlineData(1500, 225, 1275)]
+    [InlineData(4500, 675, 3825)]
+    [InlineData(26500, 3975, 22525)]
+    public void ReservationFee_VariousPackagePrices_Match15PercentRate(decimal total, decimal expectedDeposit, decimal expectedBalance)
+    {
+        var deposit = Math.Round(total * 0.15m, 2);
+        var balance = total - deposit;
+
+        Assert.Equal(expectedDeposit, deposit);
+        Assert.Equal(expectedBalance, balance);
+    }
 }

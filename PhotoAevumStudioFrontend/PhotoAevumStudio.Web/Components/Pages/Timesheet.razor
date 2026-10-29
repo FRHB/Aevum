@@ -135,14 +135,14 @@
     {
         <div class="flex items-center gap-2 border-b border-slate-200 pb-2">
             <button type="button"
-                    @onclick='() => currentTab = "my"'
-                    class="px-4 py-2 text-xs font-bold rounded-lg transition-all @(currentTab == "my" ? "bg-slate-900 text-white" : "text-slate-600 hover:bg-slate-100")">
-                My Timesheet History
-            </button>
-            <button type="button"
                     @onclick='() => currentTab = "roster"'
                     class="px-4 py-2 text-xs font-bold rounded-lg transition-all @(currentTab == "roster" ? "bg-slate-900 text-white" : "text-slate-600 hover:bg-slate-100")">
                 Today's Staff Attendance Roster (@todayAttendance.Count)
+            </button>
+            <button type="button"
+                    @onclick='() => currentTab = "my"'
+                    class="px-4 py-2 text-xs font-bold rounded-lg transition-all @(currentTab == "my" ? "bg-slate-900 text-white" : "text-slate-600 hover:bg-slate-100")">
+                All Timesheet Records (@myHistory.Count)
             </button>
         </div>
     }
@@ -153,8 +153,8 @@
         <section class="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
             <div class="px-6 py-4 bg-slate-50/50 border-b border-slate-200 flex items-center justify-between">
                 <div>
-                    <h3 class="text-sm font-bold text-slate-900">Recent Timesheet Activity</h3>
-                    <p class="text-xs text-slate-500">Your recent punch-in and punch-out records.</p>
+                    <h3 class="text-sm font-bold text-slate-900">@(isClerk || isAdmin ? "Timesheet Activity & History" : "Recent Timesheet Activity")</h3>
+                    <p class="text-xs text-slate-500">@(isClerk || isAdmin ? "All studio punch-in and punch-out records." : "Your recent punch-in and punch-out records.")</p>
                 </div>
                 <button type="button" @onclick="RefreshTimesheets" class="text-xs text-slate-600 hover:text-black font-semibold">
                     🔄 Refresh
@@ -175,6 +175,10 @@
                     <table class="w-full text-left text-xs border-collapse">
                         <thead>
                             <tr class="bg-slate-50/80 border-b border-slate-200 text-[11px] font-semibold uppercase tracking-wider text-slate-500">
+                                @if (isClerk || isAdmin)
+                                {
+                                    <th class="py-3 px-6">Employee</th>
+                                }
                                 <th class="py-3 px-6">Work Date</th>
                                 <th class="py-3 px-6">Clock In</th>
                                 <th class="py-3 px-6">Clock Out</th>
@@ -187,6 +191,13 @@
                             @foreach (var h in myHistory)
                             {
                                 <tr class="hover:bg-slate-50/60 transition-colors">
+                                    @if (isClerk || isAdmin)
+                                    {
+                                        <td class="py-3 px-6">
+                                            <div class="font-bold text-slate-900">@h.EmployeeName</div>
+                                            <div class="text-[11px] font-mono text-slate-400">@h.EmployeeStudioId</div>
+                                        </td>
+                                    }
                                     <td class="py-3 px-6 font-mono font-bold text-slate-800">
                                         @h.WorkDate.ToString("ddd, MMM dd, yyyy")
                                     </td>
@@ -240,74 +251,85 @@
                 </button>
             </div>
 
-            <div class="overflow-x-auto">
-                <table class="w-full text-left text-xs border-collapse">
-                    <thead>
-                        <tr class="bg-slate-50/80 border-b border-slate-200 text-[11px] font-semibold uppercase tracking-wider text-slate-500">
-                            <th class="py-3 px-6">Employee</th>
-                            <th class="py-3 px-6">Status</th>
-                            <th class="py-3 px-6">Clock In</th>
-                            <th class="py-3 px-6">Clock Out</th>
-                            <th class="py-3 px-6">Total Hours</th>
-                            <th class="py-3 px-6 text-right">Actions</th>
-                        </tr>
-                    </thead>
-                    <tbody class="divide-y divide-slate-100">
-                        @foreach (var row in todayAttendance)
-                        {
-                            <tr class="hover:bg-slate-50/60 transition-colors">
-                                <td class="py-3 px-6">
-                                    <div class="font-bold text-slate-900">@row.EmployeeName</div>
-                                    <div class="text-[11px] font-mono text-slate-400">@row.EmployeeStudioId</div>
-                                </td>
-                                <td class="py-3 px-6">
-                                    @if (row.IsClockedIn)
-                                    {
-                                        <span class="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-800">
-                                            <span class="w-1.5 h-1.5 rounded-full bg-emerald-500"></span>
-                                            On Duty
-                                        </span>
-                                    }
-                                    else if (row.IsOnLeaveToday)
-                                    {
-                                        <span class="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-amber-100 text-amber-900">
-                                            On Leave (@row.ActiveLeaveType)
-                                        </span>
-                                    }
-                                    else if (row.IsDayOffToday)
-                                    {
-                                        <span class="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[10px] font-semibold bg-blue-50 text-blue-800">
-                                            Day Off
-                                        </span>
-                                    }
-                                    else
-                                    {
-                                        <span class="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[10px] font-semibold bg-slate-100 text-slate-600">
-                                            Off Duty
-                                        </span>
-                                    }
-                                </td>
-                                <td class="py-3 px-6 font-mono text-slate-700">
-                                    @(row.ClockIn.HasValue ? row.ClockIn.Value.ToString("hh:mm tt") : "—")
-                                </td>
-                                <td class="py-3 px-6 font-mono text-slate-700">
-                                    @(row.ClockOut.HasValue ? row.ClockOut.Value.ToString("hh:mm tt") : (row.IsClockedIn ? "Active" : "—"))
-                                </td>
-                                <td class="py-3 px-6 font-mono font-bold text-slate-900">
-                                    @(row.TotalHours > 0 ? $"{row.TotalHours:0.0#} hrs" : "0.0 hrs")
-                                </td>
-                                <td class="py-3 px-6 text-right">
-                                    <button type="button"
-                                            @onclick="() => OpenAdjustModal(row)"
-                                            class="px-2.5 py-1 bg-slate-100 hover:bg-slate-200 text-slate-800 rounded font-semibold text-[11px] transition-colors">
-                                        Adjust Punch
-                                    </button>
-                                </td>
+            @if (loadingHistory)
+            {
+                <div class="py-12 text-center text-xs text-slate-400">Loading today's attendance roster…</div>
+            }
+            else if (!todayAttendance.Any())
+            {
+                <div class="py-12 text-center text-xs text-slate-500 italic">No staff attendance records found for today.</div>
+            }
+            else
+            {
+                <div class="overflow-x-auto">
+                    <table class="w-full text-left text-xs border-collapse">
+                        <thead>
+                            <tr class="bg-slate-50/80 border-b border-slate-200 text-[11px] font-semibold uppercase tracking-wider text-slate-500">
+                                <th class="py-3 px-6">Employee</th>
+                                <th class="py-3 px-6">Status</th>
+                                <th class="py-3 px-6">Clock In</th>
+                                <th class="py-3 px-6">Clock Out</th>
+                                <th class="py-3 px-6">Total Hours</th>
+                                <th class="py-3 px-6 text-right">Actions</th>
                             </tr>
-                        }
-                    </tbody>
-                </table>
-            </div>
+                        </thead>
+                        <tbody class="divide-y divide-slate-100">
+                            @foreach (var row in todayAttendance)
+                            {
+                                <tr class="hover:bg-slate-50/60 transition-colors">
+                                    <td class="py-3 px-6">
+                                        <div class="font-bold text-slate-900">@row.EmployeeName</div>
+                                        <div class="text-[11px] font-mono text-slate-400">@row.EmployeeStudioId</div>
+                                    </td>
+                                    <td class="py-3 px-6">
+                                        @if (row.IsClockedIn)
+                                        {
+                                            <span class="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-800">
+                                                <span class="w-1.5 h-1.5 rounded-full bg-emerald-500"></span>
+                                                On Duty
+                                            </span>
+                                        }
+                                        else if (row.IsOnLeaveToday)
+                                        {
+                                            <span class="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-amber-100 text-amber-900">
+                                                On Leave (@row.ActiveLeaveType)
+                                            </span>
+                                        }
+                                        else if (row.IsDayOffToday)
+                                        {
+                                            <span class="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[10px] font-semibold bg-blue-50 text-blue-800">
+                                                Day Off
+                                            </span>
+                                        }
+                                        else
+                                        {
+                                            <span class="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[10px] font-semibold bg-slate-100 text-slate-600">
+                                                Off Duty
+                                            </span>
+                                        }
+                                    </td>
+                                    <td class="py-3 px-6 font-mono text-slate-700">
+                                        @(row.ClockIn.HasValue ? row.ClockIn.Value.ToString("hh:mm tt") : "—")
+                                    </td>
+                                    <td class="py-3 px-6 font-mono text-slate-700">
+                                        @(row.ClockOut.HasValue ? row.ClockOut.Value.ToString("hh:mm tt") : (row.IsClockedIn ? "Active" : "—"))
+                                    </td>
+                                    <td class="py-3 px-6 font-mono font-bold text-slate-900">
+                                        @(row.TotalHours > 0 ? $"{row.TotalHours:0.0#} hrs" : "0.0 hrs")
+                                    </td>
+                                    <td class="py-3 px-6 text-right">
+                                        <button type="button"
+                                                @onclick="() => OpenAdjustModal(row)"
+                                                class="px-2.5 py-1 bg-slate-100 hover:bg-slate-200 text-slate-800 rounded font-semibold text-[11px] transition-colors">
+                                            Adjust Punch
+                                        </button>
+                                    </td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                </div>
+            }
         </section>
     }
 </div>
@@ -407,7 +429,8 @@
         try
         {
             clockStatus = await Employees.GetClockStatusAsync(employeeId);
-            var history = await Employees.GetTimesheetHistoryAsync(employeeId);
+            var historyTarget = (isClerk || isAdmin) ? null : employeeId;
+            var history = await Employees.GetTimesheetHistoryAsync(historyTarget);
             myHistory = history.ToList();
 
             if (isClerk || isAdmin)

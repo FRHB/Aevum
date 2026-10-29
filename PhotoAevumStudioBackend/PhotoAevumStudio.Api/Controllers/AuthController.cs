@@ -124,7 +124,7 @@ public class AuthController : ControllerBase
         }
 
         var (success, message, customerId) = await _sqlAuthService.RegisterCustomerAsync(
-            request.FirstName, request.LastName, request.MiddleName, request.Email, null, request.Password);
+            request.FirstName, request.LastName, request.MiddleName, request.Email, request.PhoneNumber, request.Password);
 
         if (!success)
             return BadRequest(new ProblemDetails { Title = "Registration failed", Detail = message, Status = 400 });

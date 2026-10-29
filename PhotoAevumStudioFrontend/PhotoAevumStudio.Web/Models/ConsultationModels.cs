@@ -57,6 +57,13 @@ public class CreateEventAppointmentFromNegotiationRequest
     public List<string> EquipmentIds { get; set; } = new();
 }
 
+public class UpdateAppointmentRosterRequest
+{
+    public List<string> EmployeeIds { get; set; } = new();
+    public string TeamLeaderEmployeeId { get; set; } = string.Empty;
+    public List<string> EquipmentIds { get; set; } = new();
+}
+
 public class EventAppointmentDto
 {
     public string EventAppointmentId { get; set; } = string.Empty;

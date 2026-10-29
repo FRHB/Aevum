@@ -34,16 +34,6 @@ public class ScheduleService : IScheduleService
         },
         new()
         {
-            Id = "SP-01",
-            Name = "Studio A (Main Hall)",
-            Dimensions = "1,200 sq.ft",
-            MaxCapacity = 25,
-            IconType = "studio",
-            BadgeColor = "bg-blue-100 text-blue-800 border-blue-200",
-            Description = "Cyclorama wall with high grid lighting."
-        },
-        new()
-        {
             Id = "SP-02",
             Name = "Studio B (Portrait & Editorial)",
             Dimensions = "650 sq.ft",
@@ -325,6 +315,17 @@ public class ScheduleService : IScheduleService
                 LEFT JOIN dbo.Customer c ON c.CustomerID = ea.CustomerID
                 LEFT JOIN dbo.EventEmployee ee ON ee.EventAppointmentID = ea.EventAppointmentID
                 LEFT JOIN dbo.Employees emp ON emp.EmployeeID = ee.EmployeeID
+                WHERE ea.EventAppointmentID NOT IN (
+                    SELECT EventAppointmentID 
+                    FROM dbo.BookingNegotiation 
+                    WHERE EventAppointmentID IS NOT NULL 
+                      AND NegotiationStatus IN ('Pending_Call', 'Rescheduled', 'Deal_Lost', 'Cancelled')
+                )
+                AND ea.EventAppointmentID NOT IN (
+                    SELECT 'EVT-' + RIGHT(NegotiationID, 4)
+                    FROM dbo.BookingNegotiation
+                    WHERE NegotiationStatus IN ('Pending_Call', 'Rescheduled', 'Deal_Lost', 'Cancelled')
+                )
 
                 UNION ALL
 
@@ -345,6 +346,7 @@ public class ScheduleService : IScheduleService
                 FROM dbo.BookingNegotiation bn
                 LEFT JOIN dbo.Customer c ON c.CustomerID = bn.CustomerID
                 LEFT JOIN dbo.Employees emp ON emp.EmployeeID = bn.EmployeeID
+                WHERE bn.NegotiationStatus IN ('Pending_Call', 'Rescheduled')
                 ORDER BY EventDate DESC, EventTime DESC;";
 
             using var cmd = new SqlCommand(sql, conn);

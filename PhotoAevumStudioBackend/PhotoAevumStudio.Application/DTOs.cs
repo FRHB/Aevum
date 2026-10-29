@@ -11,7 +11,9 @@ public record ServiceSummaryDto(
     string Description,
     decimal Price,
     bool HasImage,
-    string RateType = "per hour");
+    string RateType = "per hour",
+    string? ImageFileName = null,
+    string? ImageUrl = null);
 
 public record ServiceDetailDto(
     string Id,
@@ -21,7 +23,9 @@ public record ServiceDetailDto(
     byte[]? Image,
     string? MimeType,
     bool HasImage,
-    string RateType = "per hour");
+    string RateType = "per hour",
+    string? ImageFileName = null,
+    string? ImageUrl = null);
 
 // Rate Types & Multi-rate Pricing
 public record RateTypeDto(
@@ -81,7 +85,8 @@ public record CreateServiceDto(
     byte[]? ImageBytes,
     string? ImageMimeType,
     string? ImageFileName = null,
-    string RateType = "per hour");
+    string RateType = "per hour",
+    string? ImageUrl = null);
 
 public record ServiceCreatedResponseDto(
     string Id,
@@ -90,7 +95,9 @@ public record ServiceCreatedResponseDto(
     decimal Price,
     string CategoryId,
     string? CategoryName,
-    bool HasImage);
+    bool HasImage,
+    string? ImageFileName = null,
+    string? ImageUrl = null);
 
 // Auto-generated ID Response
 public record GeneratedIdResponseDto(string NextId);
@@ -103,7 +110,9 @@ public record CreateAdditionalServiceDto(
     string ServiceCategory,
     decimal ServicePrice,
     byte[]? ImageBytes,
-    string? ImageMimeType);
+    string? ImageMimeType,
+    string? ImageFileName = null,
+    string? ImageUrl = null);
 
 public record AdditionalServiceResponseDto(
     string Id,
@@ -113,7 +122,8 @@ public record AdditionalServiceResponseDto(
     decimal Price,
     bool HasImage,
     string? ImageUrl,
-    DateTime CreatedAt);
+    DateTime CreatedAt,
+    string? ImageFileName = null);
 
 // History Log
 public record HistoryLogDto(
@@ -155,7 +165,9 @@ public record ComboPackageCreatedResponseDto(
     int BundledServicesCount,
     IReadOnlyList<string> BundledServiceNames,
     bool HasImage,
-    DateTime CreatedAt);
+    DateTime CreatedAt,
+    string? ImageFileName = null,
+    string? ImageUrl = null);
 
 public record PackageNextIdDto(string PackageId);
 

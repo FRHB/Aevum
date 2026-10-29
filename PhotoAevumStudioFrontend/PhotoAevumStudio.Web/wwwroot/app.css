@@ -1319,6 +1319,31 @@ details > summary {
 .apm-link:hover { color: var(--muted); }
 .apm-link--center { display: block; text-align: center; width: 100%; margin-top: .5rem; }
 .apm-link:disabled { opacity: .5; cursor: not-allowed; }
+.apm-link--inline { display: inline; text-decoration: underline; color: var(--ink); font-weight: 600; }
+.apm-link--inline:hover { color: #000; }
+.apm-legal-group {
+    margin: 1rem 0 1.25rem 0;
+    display: flex;
+    flex-direction: column;
+    gap: .5rem;
+}
+.apm-checkbox-label {
+    display: flex;
+    align-items: flex-start;
+    gap: .5rem;
+    font-size: .8rem;
+    color: var(--ink);
+    cursor: pointer;
+    line-height: 1.35;
+}
+.apm-checkbox {
+    margin-top: .15rem;
+    cursor: pointer;
+    accent-color: var(--ink);
+    width: .95rem;
+    height: .95rem;
+    flex-shrink: 0;
+}
 
 /* ── Row helpers ───────────────────────────────────────────────────────── */
 .apm-row-between {

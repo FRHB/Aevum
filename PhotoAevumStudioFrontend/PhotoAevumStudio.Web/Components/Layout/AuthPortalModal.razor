@@ -199,10 +199,10 @@
                 }
             </ol>
 
-            @* ── Step 1: Name ────────────────────────────────────── *@
+            @* ── Step 1: Name, Contact & Legal ───────────────────── *@
             @if (_signUpStep == 1)
             {
-                <EditForm Model="_suName" OnValidSubmit="() => _signUpStep = 2">
+                <EditForm Model="_suName" OnValidSubmit="HandleStep1Submit">
                     <DataAnnotationsValidator />
 
                     <div class="apm-field">
@@ -228,7 +228,39 @@
                                    placeholder="e.g. Reyes" autocomplete="additional-name" />
                     </div>
 
-                    <button type="submit" class="apm-btn apm-btn--primary">Continue</button>
+                    <div class="apm-field">
+                        <label for="su-phone">
+                            Cellphone No.
+                            <span class="apm-optional">(optional)</span>
+                        </label>
+                        <InputText id="su-phone" class="apm-input" @bind-Value="_suName.PhoneNumber"
+                                   placeholder="e.g. 09123456789 or +63 912 345 6789" autocomplete="tel" />
+                        <ValidationMessage For="() => _suName.PhoneNumber" class="apm-validation" />
+                    </div>
+
+                    <div class="apm-legal-group">
+                        <label class="apm-checkbox-label">
+                            <InputCheckbox @bind-Value="_suName.AgreeToTerms" class="apm-checkbox" />
+                            <span>I agree to the <a href="/terms" target="_blank" rel="noopener noreferrer" class="apm-link apm-link--inline">Terms &amp; Conditions</a> <span class="apm-required">*</span></span>
+                        </label>
+                        <ValidationMessage For="() => _suName.AgreeToTerms" class="apm-validation" />
+                        @if (!string.IsNullOrEmpty(_step1TermsError))
+                        {
+                            <div class="apm-validation">@_step1TermsError</div>
+                        }
+
+                        <label class="apm-checkbox-label">
+                            <InputCheckbox @bind-Value="_suName.AgreeToPrivacy" class="apm-checkbox" />
+                            <span>I agree to the <a href="/privacy" target="_blank" rel="noopener noreferrer" class="apm-link apm-link--inline">Privacy Policy</a> <span class="apm-required">*</span></span>
+                        </label>
+                        <ValidationMessage For="() => _suName.AgreeToPrivacy" class="apm-validation" />
+                        @if (!string.IsNullOrEmpty(_step1PrivacyError))
+                        {
+                            <div class="apm-validation">@_step1PrivacyError</div>
+                        }
+                    </div>
+
+                    <button type="submit" class="apm-btn apm-btn--primary" disabled="@(!_suName.AgreeToTerms || !_suName.AgreeToPrivacy)">Continue</button>
                 </EditForm>
             }
 
@@ -386,6 +418,8 @@
     private string           _suEmailError  = string.Empty;
     private string           _suVerifyError = string.Empty;
     private string           _suSignUpError = string.Empty;
+    private string           _step1TermsError   = string.Empty;
+    private string           _step1PrivacyError = string.Empty;
 
     // Simulated verification code (replace with real API call)
     private string _expectedCode = string.Empty;
@@ -405,6 +439,26 @@
         ResetSignUpForms();
         _signUpStep = 1;
         _view = ModalView.SignUp;
+    }
+
+    private void HandleStep1Submit()
+    {
+        _step1TermsError = string.Empty;
+        _step1PrivacyError = string.Empty;
+
+        if (!_suName.AgreeToTerms)
+        {
+            _step1TermsError = "You must agree to the Terms & Conditions to proceed.";
+        }
+        if (!_suName.AgreeToPrivacy)
+        {
+            _step1PrivacyError = "You must agree to the Privacy Policy to proceed.";
+        }
+
+        if (_suName.AgreeToTerms && _suName.AgreeToPrivacy)
+        {
+            _signUpStep = 2;
+        }
     }
 
     private void SignUpBack()
@@ -551,6 +605,13 @@
         _isBusy        = true;
         StateHasChanged();
 
+        if (!_suName.AgreeToTerms || !_suName.AgreeToPrivacy)
+        {
+            _suSignUpError = "You must agree to both the Terms & Conditions and Privacy Policy to create an account.";
+            _isBusy = false;
+            return;
+        }
+
         if (_suPassword.Password != _suPassword.ConfirmPassword)
         {
             _suSignUpError = "Passwords do not match.";
@@ -563,6 +624,7 @@
             FirstName = _suName.FirstName.Trim(),
             LastName = _suName.LastName.Trim(),
             MiddleName = string.IsNullOrWhiteSpace(_suName.MiddleName) ? null : _suName.MiddleName.Trim(),
+            PhoneNumber = string.IsNullOrWhiteSpace(_suName.PhoneNumber) ? null : _suName.PhoneNumber.Trim(),
             Email = _suEmail.Email.Trim().ToLowerInvariant(),
             Password = _suPassword.Password,
             VerificationCode = _suVerify.Code.Trim()
@@ -601,6 +663,8 @@
         _suEmailError  = string.Empty;
         _suVerifyError = string.Empty;
         _suSignUpError = string.Empty;
+        _step1TermsError = string.Empty;
+        _step1PrivacyError = string.Empty;
         _expectedCode  = string.Empty;
         _showSignUpPw  = false;
     }
@@ -636,6 +700,15 @@
 
         [StringLength(50, ErrorMessage = "Maximum 50 characters.")]
         public string? MiddleName { get; set; }
+
+        [StringLength(30, ErrorMessage = "Maximum 30 characters.")]
+        public string? PhoneNumber { get; set; }
+
+        [Range(typeof(bool), "true", "true", ErrorMessage = "You must agree to the Terms & Conditions to proceed.")]
+        public bool AgreeToTerms { get; set; }
+
+        [Range(typeof(bool), "true", "true", ErrorMessage = "You must agree to the Privacy Policy to proceed.")]
+        public bool AgreeToPrivacy { get; set; }
     }
 
     private sealed class SignUpEmailForm

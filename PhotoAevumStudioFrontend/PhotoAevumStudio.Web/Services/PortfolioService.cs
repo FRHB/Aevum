@@ -5,6 +5,9 @@ using System.IO;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
+using Amazon.Runtime;
+using Amazon.S3;
+using Amazon.S3.Model;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.Data.SqlClient;
 using Microsoft.Extensions.Configuration;
@@ -18,6 +21,10 @@ public class PortfolioService : IPortfolioService
     private readonly string _connectionString;
     private readonly IWebHostEnvironment _env;
     private readonly ILogger<PortfolioService>? _logger;
+    private readonly AmazonS3Client? _r2Client;
+    private readonly string _r2BucketName;
+    private readonly string _r2PublicBaseUrl;
+    private readonly bool _r2Configured;
 
     public PortfolioService(IConfiguration? configuration, IWebHostEnvironment env, ILogger<PortfolioService>? logger = null)
     {
@@ -25,6 +32,96 @@ public class PortfolioService : IPortfolioService
         _logger = logger;
         _connectionString = configuration?.GetConnectionString("DefaultConnection")
             ?? "Data Source=localhost\\SQLEXPRESS;Initial Catalog=PhotoAevumStudio;Integrated Security=True;Persist Security Info=False;Pooling=False;MultipleActiveResultSets=False;Encrypt=True;TrustServerCertificate=True;Application Name=\"SQL Server Management Studio\";Command Timeout=0";
+
+        var accessKey = configuration?["CloudflareR2:AccessKey"] ?? "PLACEHOLDER";
+        var secretKey = configuration?["CloudflareR2:SecretKey"] ?? "PLACEHOLDER";
+        var accountId = configuration?["CloudflareR2:AccountId"];
+        var serviceUrl = configuration?["CloudflareR2:ServiceUrl"];
+        if (string.IsNullOrWhiteSpace(serviceUrl))
+        {
+            serviceUrl = !string.IsNullOrWhiteSpace(accountId)
+                ? $"https://{accountId}.r2.cloudflarestorage.com"
+                : "https://f6757b400d51c23671cedb8b0efc4b32.r2.cloudflarestorage.com";
+        }
+
+        _r2BucketName = configuration?["CloudflareR2:Buckets:Portfolio"]
+                        ?? configuration?["CloudflareR2:BucketName"]
+                        ?? "portfolio";
+        _r2PublicBaseUrl = configuration?["CloudflareR2:PublicUrl"] ?? "https://pub-photoaevum.r2.dev";
+
+        _r2Configured = !string.IsNullOrWhiteSpace(accessKey) 
+                        && !string.IsNullOrWhiteSpace(secretKey) 
+                        && accessKey != "PLACEHOLDER" 
+                        && secretKey != "PLACEHOLDER";
+
+        try
+        {
+            var credentials = new BasicAWSCredentials(accessKey, secretKey);
+            var s3Config = new AmazonS3Config
+            {
+                ServiceURL = serviceUrl,
+                AuthenticationRegion = "auto",
+                ForcePathStyle = true
+            };
+            _r2Client = new AmazonS3Client(credentials, s3Config);
+        }
+        catch (Exception ex)
+        {
+            _logger?.LogWarning(ex, "Failed to initialize AmazonS3Client for Cloudflare R2.");
+        }
+    }
+
+    private async Task<string> UploadToR2Async(string uniqueFileName, byte[] data, string contentType, CancellationToken ct)
+    {
+        var key = $"portfolio/{uniqueFileName}";
+        if (_r2Configured && _r2Client != null)
+        {
+            try
+            {
+                using var ms = new MemoryStream(data);
+                var putReq = new PutObjectRequest
+                {
+                    BucketName = _r2BucketName,
+                    Key = key,
+                    InputStream = ms,
+                    ContentType = string.IsNullOrWhiteSpace(contentType) ? "image/jpeg" : contentType,
+                    DisablePayloadSigning = true
+                };
+                await _r2Client.PutObjectAsync(putReq, ct);
+                return $"{_r2PublicBaseUrl.TrimEnd('/')}/{key}";
+            }
+            catch (Exception ex)
+            {
+                _logger?.LogError(ex, "Cloudflare R2 upload error for {Key}", key);
+            }
+        }
+        return $"{_r2PublicBaseUrl.TrimEnd('/')}/{key}";
+    }
+
+    private async Task DeleteFromR2Async(string fileName, CancellationToken ct)
+    {
+        if (!_r2Configured || _r2Client == null || string.IsNullOrWhiteSpace(fileName)) return;
+        try
+        {
+            var key = fileName;
+            if (key.StartsWith("http://", StringComparison.OrdinalIgnoreCase) || key.StartsWith("https://", StringComparison.OrdinalIgnoreCase))
+            {
+                var uri = new Uri(key);
+                key = uri.AbsolutePath.TrimStart('/');
+            }
+            if (!key.StartsWith("portfolio/")) key = $"portfolio/{key}";
+
+            var delReq = new DeleteObjectRequest
+            {
+                BucketName = _r2BucketName,
+                Key = key
+            };
+            await _r2Client.DeleteObjectAsync(delReq, ct);
+        }
+        catch (Exception ex)
+        {
+            _logger?.LogWarning(ex, "Failed to delete R2 object {FileName}", fileName);
+        }
     }
 
     private SqlConnection CreateConnection() => new SqlConnection(_connectionString);
@@ -306,18 +403,11 @@ public class PortfolioService : IPortfolioService
 
         var savedImageFileNames = new List<string>();
 
-        // Ensure upload directory exists
+        // Ensure local uploads directory exists
         var uploadRoot = Path.Combine(_env.WebRootPath ?? Path.Combine(Directory.GetCurrentDirectory(), "wwwroot"), "uploads", "portfolio");
-        try
-        {
-            Directory.CreateDirectory(uploadRoot);
-        }
-        catch (Exception ex)
-        {
-            _logger?.LogError(ex, "Failed to load portfolio categories.");
-        }
+        try { Directory.CreateDirectory(uploadRoot); } catch { }
 
-        // Save image files
+        // Upload image files to Cloudflare R2 and persist locally as reliable fallback
         foreach (var img in images)
         {
             if (img.Data == null || img.Data.Length == 0) continue;
@@ -325,17 +415,19 @@ public class PortfolioService : IPortfolioService
             var ext = Path.GetExtension(img.FileName);
             if (string.IsNullOrEmpty(ext)) ext = ".jpg";
             var uniqueFileName = $"{Guid.NewGuid():N}{ext}";
-            var filePath = Path.Combine(uploadRoot, uniqueFileName);
 
             try
             {
-                await File.WriteAllBytesAsync(filePath, img.Data, ct);
-                savedImageFileNames.Add(uniqueFileName);
+                var localFilePath = Path.Combine(uploadRoot, uniqueFileName);
+                await File.WriteAllBytesAsync(localFilePath, img.Data, ct);
             }
-            catch
+            catch (Exception ex)
             {
-                savedImageFileNames.Add($"data:{img.ContentType};base64,{Convert.ToBase64String(img.Data)}");
+                _logger?.LogWarning(ex, "Failed to persist image locally to {UploadRoot}", uploadRoot);
             }
+
+            await UploadToR2Async(uniqueFileName, img.Data, img.ContentType, ct);
+            savedImageFileNames.Add(uniqueFileName);
         }
 
         var highlightFileName = savedImageFileNames.FirstOrDefault();
@@ -458,11 +550,11 @@ public class PortfolioService : IPortfolioService
                 await cmd.ExecuteNonQueryAsync(ct);
             }
 
-            // Upload and insert any new images
+            // Upload and insert any new images directly to Cloudflare R2 and local storage
             if (newImages != null && newImages.Count > 0)
             {
                 var uploadRoot = Path.Combine(_env.WebRootPath ?? Path.Combine(Directory.GetCurrentDirectory(), "wwwroot"), "uploads", "portfolio");
-                Directory.CreateDirectory(uploadRoot);
+                try { Directory.CreateDirectory(uploadRoot); } catch { }
 
                 foreach (var img in newImages)
                 {
@@ -471,9 +563,18 @@ public class PortfolioService : IPortfolioService
                     var ext = Path.GetExtension(img.FileName);
                     if (string.IsNullOrEmpty(ext)) ext = ".jpg";
                     var uniqueFileName = $"{Guid.NewGuid():N}{ext}";
-                    var filePath = Path.Combine(uploadRoot, uniqueFileName);
 
-                    await File.WriteAllBytesAsync(filePath, img.Data, ct);
+                    try
+                    {
+                        var localFilePath = Path.Combine(uploadRoot, uniqueFileName);
+                        await File.WriteAllBytesAsync(localFilePath, img.Data, ct);
+                    }
+                    catch (Exception ex)
+                    {
+                        _logger?.LogWarning(ex, "Failed to persist new image locally to {UploadRoot}", uploadRoot);
+                    }
+
+                    await UploadToR2Async(uniqueFileName, img.Data, img.ContentType, ct);
 
                     const string imgSql = @"
                         INSERT INTO dbo.PortfolioImages (PortfolioId, FileName, UploadedAt)
@@ -572,18 +673,10 @@ public class PortfolioService : IPortfolioService
                 await cmd.ExecuteNonQueryAsync(ct);
             }
 
-            // Remove files from disk
-            var uploadRoot = Path.Combine(_env.WebRootPath ?? Path.Combine(Directory.GetCurrentDirectory(), "wwwroot"), "uploads", "portfolio");
+            // Remove files from Cloudflare R2
             foreach (var fn in imagesToDelete)
             {
-                try
-                {
-                    var p = Path.Combine(uploadRoot, fn);
-                    if (File.Exists(p)) File.Delete(p);
-                }
-                catch
-                {
-                }
+                await DeleteFromR2Async(fn, ct);
             }
 
             await LogHistorySafeAsync(conn, "DELETE", "Portfolio", portfolioId.Trim(), $"Deleted portfolio {portfolioId.Trim()}", ct);
@@ -640,6 +733,45 @@ public class PortfolioService : IPortfolioService
             return fileName;
         }
 
-        return $"/uploads/portfolio/{fileName}";
+        var clean = fileName.TrimStart('/');
+        if (clean.StartsWith("uploads/portfolio/"))
+            clean = clean.Substring("uploads/portfolio/".Length);
+        if (clean.StartsWith("portfolio/"))
+            clean = clean.Substring("portfolio/".Length);
+
+        // Hybrid check:
+        // 1. If Cloudflare R2 is configured with a valid public domain, serve from R2
+        if (_r2Configured && !string.IsNullOrWhiteSpace(_r2PublicBaseUrl) && !_r2PublicBaseUrl.Contains("pub-photoaevum.r2.dev", StringComparison.OrdinalIgnoreCase))
+        {
+            return $"{_r2PublicBaseUrl.TrimEnd('/')}/portfolio/{clean}";
+        }
+
+        // 2. Fallback to local uploads folder
+        var webRoot = _env?.WebRootPath ?? Path.Combine(Directory.GetCurrentDirectory(), "wwwroot");
+        var localDiskPath = Path.Combine(webRoot, "uploads", "portfolio", clean);
+        if (File.Exists(localDiskPath))
+        {
+            return $"/uploads/portfolio/{clean}";
+        }
+
+        // 3. Fallback to R2 client presigned URL if client is available
+        if (_r2Configured && _r2Client != null)
+        {
+            try
+            {
+                var presigned = _r2Client.GetPreSignedURL(new Amazon.S3.Model.GetPreSignedUrlRequest
+                {
+                    BucketName = _r2BucketName,
+                    Key = $"portfolio/{clean}",
+                    Expires = DateTime.UtcNow.AddHours(2)
+                });
+                if (!string.IsNullOrWhiteSpace(presigned)) return presigned;
+            }
+            catch
+            {
+            }
+        }
+
+        return $"/uploads/portfolio/{clean}";
     }
 }

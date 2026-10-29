@@ -11,10 +11,30 @@ namespace PhotoAevumStudio.Infrastructure.Services;
 public class StudioManagementService : IStudioManagementService
 {
     private readonly ApplicationDbContext _db;
+    private readonly IR2StorageService? _r2Service;
 
-    public StudioManagementService(ApplicationDbContext db)
+    public StudioManagementService(ApplicationDbContext db, IR2StorageService? r2Service = null)
     {
         _db = db;
+        _r2Service = r2Service;
+    }
+
+    private async Task<(string? FileName, string? ImageUrl)> UploadServiceAssetToR2Async(
+        byte[]? imageBytes,
+        string? fileName,
+        string? mimeType,
+        string folderPrefix,
+        CancellationToken ct)
+    {
+        if (imageBytes == null || imageBytes.Length == 0 || _r2Service == null)
+            return (null, null);
+
+        var r2FileKey = await _r2Service.UploadServiceImageAsync(imageBytes, fileName, mimeType, folderPrefix, ct);
+        if (string.IsNullOrWhiteSpace(r2FileKey))
+            return (null, null);
+
+        var r2Url = _r2Service.GetPresignedUrl(r2FileKey, _r2Service.ServicesBucket);
+        return (r2FileKey, r2Url);
     }
 
     private string GetConnectionString() =>
@@ -208,13 +228,32 @@ public class StudioManagementService : IStudioManagementService
     {
         try
         {
-            await using var chkCmd = new SqlCommand("SELECT COL_LENGTH(N'dbo.Services', N'RateType');", conn);
-            var chkVal = await chkCmd.ExecuteScalarAsync(ct);
-            if (chkVal == null || chkVal == DBNull.Value)
-            {
-                await using var altCmd = new SqlCommand("ALTER TABLE dbo.Services ADD RateType nvarchar(50) NOT NULL CONSTRAINT DF_Services_RateType DEFAULT 'Per Hour';", conn);
-                await altCmd.ExecuteNonQueryAsync(ct);
-            }
+            const string alignSql = @"
+                IF OBJECT_ID(N'dbo.Services', N'U') IS NOT NULL
+                BEGIN
+                    IF COL_LENGTH(N'dbo.Services', N'RateType') IS NULL
+                        ALTER TABLE dbo.Services ADD RateType nvarchar(50) NOT NULL CONSTRAINT DF_Services_RateType DEFAULT 'Per Hour';
+                    IF COL_LENGTH(N'dbo.Services', N'ImageFileName') IS NULL
+                        ALTER TABLE dbo.Services ADD ImageFileName nvarchar(500) NULL;
+                    IF COL_LENGTH(N'dbo.Services', N'ImageUrl') IS NULL
+                        ALTER TABLE dbo.Services ADD ImageUrl nvarchar(500) NULL;
+                END;
+                IF OBJECT_ID(N'dbo.AdditionalServices', N'U') IS NOT NULL
+                BEGIN
+                    IF COL_LENGTH(N'dbo.AdditionalServices', N'ImageFileName') IS NULL
+                        ALTER TABLE dbo.AdditionalServices ADD ImageFileName nvarchar(500) NULL;
+                    IF COL_LENGTH(N'dbo.AdditionalServices', N'ImageUrl') IS NULL
+                        ALTER TABLE dbo.AdditionalServices ADD ImageUrl nvarchar(500) NULL;
+                END;
+                IF OBJECT_ID(N'dbo.ComboPackage', N'U') IS NOT NULL
+                BEGIN
+                    IF COL_LENGTH(N'dbo.ComboPackage', N'ImageFileName') IS NULL
+                        ALTER TABLE dbo.ComboPackage ADD ImageFileName nvarchar(500) NULL;
+                    IF COL_LENGTH(N'dbo.ComboPackage', N'ImageUrl') IS NULL
+                        ALTER TABLE dbo.ComboPackage ADD ImageUrl nvarchar(500) NULL;
+                END;";
+            await using var alignCmd = new SqlCommand(alignSql, conn);
+            await alignCmd.ExecuteNonQueryAsync(ct);
         }
         catch { /* Best-effort schema alignment */ }
     }
@@ -223,7 +262,6 @@ public class StudioManagementService : IStudioManagementService
     {
         await using var conn = new SqlConnection(GetConnectionString());
         await conn.OpenAsync(cancellationToken);
-        await EnsureServicesRateTypeSchemaAsync(conn, cancellationToken);
         await EnsureServicesRateTypeSchemaAsync(conn, cancellationToken);
 
         var list = new List<ServiceSummaryDto>();
@@ -238,13 +276,22 @@ public class StudioManagementService : IStudioManagementService
             while (await reader.ReadAsync(cancellationToken))
             {
                 var rateType = reader.FieldCount > 5 && !reader.IsDBNull(5) ? reader.GetString(5) : "per hour";
+                var imgFile = reader.FieldCount > 6 && !reader.IsDBNull(6) ? reader.GetString(6) : null;
+                var imgUrl = reader.FieldCount > 7 && !reader.IsDBNull(7) ? reader.GetString(7) : null;
+                if (string.IsNullOrWhiteSpace(imgUrl) && !string.IsNullOrWhiteSpace(imgFile) && _r2Service != null)
+                {
+                    imgUrl = _r2Service.GetPresignedUrl(imgFile, _r2Service.ServicesBucket);
+                }
+
                 list.Add(new ServiceSummaryDto(
                     Id: reader.GetString(0),
                     Name: reader.GetString(1),
                     Description: reader.IsDBNull(2) ? string.Empty : reader.GetString(2),
                     Price: reader.IsDBNull(3) ? 0m : reader.GetDecimal(3),
-                    HasImage: !reader.IsDBNull(4) && reader.GetBoolean(4),
-                    RateType: rateType
+                    HasImage: (!reader.IsDBNull(4) && reader.GetBoolean(4)) || !string.IsNullOrWhiteSpace(imgFile) || !string.IsNullOrWhiteSpace(imgUrl),
+                    RateType: rateType,
+                    ImageFileName: imgFile,
+                    ImageUrl: imgUrl
                 ));
             }
         }
@@ -263,21 +310,30 @@ public class StudioManagementService : IStudioManagementService
             var rateTypeCol = hasRateType ? "ISNULL(RateType, 'per hour')" : "'per hour'";
             var fallbackSql = $@"
                 SELECT ServicesID, ServiceName, ServicesDescription, ServicePrice,
-                       CAST(CASE WHEN ServiceImage IS NOT NULL THEN 1 ELSE 0 END AS bit),
-                       {rateTypeCol}
+                       CAST(CASE WHEN ServiceImage IS NOT NULL OR ImageFileName IS NOT NULL OR ImageUrl IS NOT NULL THEN 1 ELSE 0 END AS bit),
+                       {rateTypeCol}, ImageFileName, ImageUrl
                 FROM dbo.Services ORDER BY ServicesID;";
             await using var fbCmd = new SqlCommand(fallbackSql, conn);
             await using var reader = await fbCmd.ExecuteReaderAsync(cancellationToken);
             while (await reader.ReadAsync(cancellationToken))
             {
                 var rateType = reader.FieldCount > 5 && !reader.IsDBNull(5) ? reader.GetString(5) : "per hour";
+                var imgFile = reader.FieldCount > 6 && !reader.IsDBNull(6) ? reader.GetString(6) : null;
+                var imgUrl = reader.FieldCount > 7 && !reader.IsDBNull(7) ? reader.GetString(7) : null;
+                if (string.IsNullOrWhiteSpace(imgUrl) && !string.IsNullOrWhiteSpace(imgFile) && _r2Service != null)
+                {
+                    imgUrl = _r2Service.GetPresignedUrl(imgFile, _r2Service.ServicesBucket);
+                }
+
                 list.Add(new ServiceSummaryDto(
                     Id: reader.GetString(0),
                     Name: reader.GetString(1),
                     Description: reader.IsDBNull(2) ? string.Empty : reader.GetString(2),
                     Price: reader.IsDBNull(3) ? 0m : reader.GetDecimal(3),
                     HasImage: !reader.IsDBNull(4) && reader.GetBoolean(4),
-                    RateType: rateType
+                    RateType: rateType,
+                    ImageFileName: imgFile,
+                    ImageUrl: imgUrl
                 ));
             }
         }
@@ -289,7 +345,6 @@ public class StudioManagementService : IStudioManagementService
     {
         await using var conn = new SqlConnection(GetConnectionString());
         await conn.OpenAsync(cancellationToken);
-        await EnsureServicesRateTypeSchemaAsync(conn, cancellationToken);
         await EnsureServicesRateTypeSchemaAsync(conn, cancellationToken);
 
         try
@@ -311,8 +366,14 @@ public class StudioManagementService : IStudioManagementService
                 var mime = reader.IsDBNull(5) ? "image/jpeg" : reader.GetString(5);
                 var hasImage = !reader.IsDBNull(6) && reader.GetBoolean(6);
                 var rateType = reader.FieldCount > 7 && !reader.IsDBNull(7) ? reader.GetString(7) : "per hour";
+                var imgFile = reader.FieldCount > 8 && !reader.IsDBNull(8) ? reader.GetString(8) : null;
+                var imgUrl = reader.FieldCount > 9 && !reader.IsDBNull(9) ? reader.GetString(9) : null;
+                if (string.IsNullOrWhiteSpace(imgUrl) && !string.IsNullOrWhiteSpace(imgFile) && _r2Service != null)
+                {
+                    imgUrl = _r2Service.GetPresignedUrl(imgFile, _r2Service.ServicesBucket);
+                }
 
-                return new ServiceDetailDto(id, name, desc, price, imageBytes, mime, hasImage, rateType);
+                return new ServiceDetailDto(id, name, desc, price, imageBytes, mime, hasImage || !string.IsNullOrWhiteSpace(imgFile), rateType, imgFile, imgUrl);
             }
         }
         catch (SqlException)
@@ -329,8 +390,8 @@ public class StudioManagementService : IStudioManagementService
             var rateTypeCol = hasRateType ? "ISNULL(RateType, 'per hour')" : "'per hour'";
             var fallbackSql = $@"
                 SELECT ServicesID, ServiceName, ServicesDescription, ServicePrice, ServiceImage, ServiceImageMimeType,
-                       CAST(CASE WHEN ServiceImage IS NOT NULL THEN 1 ELSE 0 END AS bit),
-                       {rateTypeCol}
+                       CAST(CASE WHEN ServiceImage IS NOT NULL OR ImageFileName IS NOT NULL OR ImageUrl IS NOT NULL THEN 1 ELSE 0 END AS bit),
+                       {rateTypeCol}, ImageFileName, ImageUrl
                 FROM dbo.Services WHERE ServicesID = @ServicesID;";
             await using var fbCmd = new SqlCommand(fallbackSql, conn);
             fbCmd.Parameters.AddWithValue("@ServicesID", serviceId.Trim());
@@ -345,8 +406,14 @@ public class StudioManagementService : IStudioManagementService
                 var mime = reader.IsDBNull(5) ? "image/jpeg" : reader.GetString(5);
                 var hasImage = !reader.IsDBNull(6) && reader.GetBoolean(6);
                 var rateType = reader.FieldCount > 7 && !reader.IsDBNull(7) ? reader.GetString(7) : "per hour";
+                var imgFile = reader.FieldCount > 8 && !reader.IsDBNull(8) ? reader.GetString(8) : null;
+                var imgUrl = reader.FieldCount > 9 && !reader.IsDBNull(9) ? reader.GetString(9) : null;
+                if (string.IsNullOrWhiteSpace(imgUrl) && !string.IsNullOrWhiteSpace(imgFile) && _r2Service != null)
+                {
+                    imgUrl = _r2Service.GetPresignedUrl(imgFile, _r2Service.ServicesBucket);
+                }
 
-                return new ServiceDetailDto(id, name, desc, price, imageBytes, mime, hasImage, rateType);
+                return new ServiceDetailDto(id, name, desc, price, imageBytes, mime, hasImage || !string.IsNullOrWhiteSpace(imgFile), rateType, imgFile, imgUrl);
             }
         }
 
@@ -359,6 +426,8 @@ public class StudioManagementService : IStudioManagementService
         await conn.OpenAsync(cancellationToken);
         await EnsureServicesRateTypeSchemaAsync(conn, cancellationToken);
 
+        var (r2FileName, r2Url) = await UploadServiceAssetToR2Async(imageBytes, $"{serviceId.Trim()}.jpg", mimeType, "services/main", cancellationToken);
+
         await using var cmd = new SqlCommand("dbo.sp_UpdateServiceImage", conn)
         {
             CommandType = CommandType.StoredProcedure
@@ -366,6 +435,8 @@ public class StudioManagementService : IStudioManagementService
         cmd.Parameters.AddWithValue("@ServicesID", serviceId.Trim());
         cmd.Parameters.Add("@ServiceImage", SqlDbType.VarBinary, -1).Value = imageBytes;
         cmd.Parameters.AddWithValue("@ServiceImageMimeType", string.IsNullOrWhiteSpace(mimeType) ? "image/jpeg" : mimeType);
+        cmd.Parameters.AddWithValue("@ImageFileName", (object?)r2FileName ?? DBNull.Value);
+        cmd.Parameters.AddWithValue("@ImageUrl", (object?)r2Url ?? DBNull.Value);
         cmd.Parameters.AddWithValue("@UpdatedByAdminID", (object?)requestingAdminId ?? DBNull.Value);
 
         await cmd.ExecuteNonQueryAsync(cancellationToken);
@@ -393,12 +464,21 @@ public class StudioManagementService : IStudioManagementService
             {
                 var price = reader.FieldCount > 3 && !reader.IsDBNull(3) ? reader.GetDecimal(3) : 0m;
                 var hasImg = reader.FieldCount > 5 ? (!reader.IsDBNull(5) && reader.GetBoolean(5)) : (!reader.IsDBNull(3) && reader.GetBoolean(3));
+                var imgFile = reader.FieldCount > 6 && !reader.IsDBNull(6) ? reader.GetString(6) : null;
+                var imgUrl = reader.FieldCount > 7 && !reader.IsDBNull(7) ? reader.GetString(7) : null;
+                if (string.IsNullOrWhiteSpace(imgUrl) && !string.IsNullOrWhiteSpace(imgFile) && _r2Service != null)
+                {
+                    imgUrl = _r2Service.GetPresignedUrl(imgFile, _r2Service.ServicesBucket);
+                }
+
                 list.Add(new ServiceSummaryDto(
                     Id: reader.GetString(0),
                     Name: reader.GetString(1),
                     Description: reader.IsDBNull(2) ? string.Empty : reader.GetString(2),
                     Price: price,
-                    HasImage: hasImg
+                    HasImage: hasImg || !string.IsNullOrWhiteSpace(imgFile),
+                    ImageFileName: imgFile,
+                    ImageUrl: imgUrl
                 ));
             }
         }
@@ -407,18 +487,28 @@ public class StudioManagementService : IStudioManagementService
             const string fallbackSql = @"
                 SELECT AdditionalServicesID, AdditionalServiceName, AdditionalServicesDescription,
                        ISNULL(ServicePrice, 0.00),
-                       CAST(CASE WHEN AdditionalServiceImage IS NOT NULL THEN 1 ELSE 0 END AS bit)
+                       CAST(CASE WHEN AdditionalServiceImage IS NOT NULL OR ImageFileName IS NOT NULL OR ImageUrl IS NOT NULL THEN 1 ELSE 0 END AS bit),
+                       ImageFileName, ImageUrl
                 FROM dbo.AdditionalServices ORDER BY AdditionalServicesID;";
             await using var fbCmd = new SqlCommand(fallbackSql, conn);
             await using var reader = await fbCmd.ExecuteReaderAsync(cancellationToken);
             while (await reader.ReadAsync(cancellationToken))
             {
+                var imgFile = reader.FieldCount > 5 && !reader.IsDBNull(5) ? reader.GetString(5) : null;
+                var imgUrl = reader.FieldCount > 6 && !reader.IsDBNull(6) ? reader.GetString(6) : null;
+                if (string.IsNullOrWhiteSpace(imgUrl) && !string.IsNullOrWhiteSpace(imgFile) && _r2Service != null)
+                {
+                    imgUrl = _r2Service.GetPresignedUrl(imgFile, _r2Service.ServicesBucket);
+                }
+
                 list.Add(new ServiceSummaryDto(
                     Id: reader.GetString(0),
                     Name: reader.GetString(1),
                     Description: reader.IsDBNull(2) ? string.Empty : reader.GetString(2),
                     Price: reader.IsDBNull(3) ? 0m : reader.GetDecimal(3),
-                    HasImage: !reader.IsDBNull(4) && reader.GetBoolean(4)
+                    HasImage: !reader.IsDBNull(4) && reader.GetBoolean(4),
+                    ImageFileName: imgFile,
+                    ImageUrl: imgUrl
                 ));
             }
         }
@@ -446,6 +536,12 @@ public class StudioManagementService : IStudioManagementService
             var imgIdx = hasCategoryCol ? 5 : 3;
             var mimeIdx = hasCategoryCol ? 6 : 4;
             var hasImgIdx = hasCategoryCol ? 7 : 5;
+            var imgFile = reader.FieldCount > 8 && !reader.IsDBNull(8) ? reader.GetString(8) : null;
+            var imgUrl = reader.FieldCount > 9 && !reader.IsDBNull(9) ? reader.GetString(9) : null;
+            if (string.IsNullOrWhiteSpace(imgUrl) && !string.IsNullOrWhiteSpace(imgFile) && _r2Service != null)
+            {
+                imgUrl = _r2Service.GetPresignedUrl(imgFile, _r2Service.ServicesBucket);
+            }
 
             return new ServiceDetailDto(
                 Id: reader.GetString(0),
@@ -454,7 +550,9 @@ public class StudioManagementService : IStudioManagementService
                 Price: price,
                 Image: reader.IsDBNull(imgIdx) ? null : (byte[])reader[imgIdx],
                 MimeType: reader.IsDBNull(mimeIdx) ? "image/jpeg" : reader.GetString(mimeIdx),
-                HasImage: !reader.IsDBNull(hasImgIdx) && reader.GetBoolean(hasImgIdx)
+                HasImage: (!reader.IsDBNull(hasImgIdx) && reader.GetBoolean(hasImgIdx)) || !string.IsNullOrWhiteSpace(imgFile),
+                ImageFileName: imgFile,
+                ImageUrl: imgUrl
             );
         }
 
@@ -467,6 +565,8 @@ public class StudioManagementService : IStudioManagementService
         await conn.OpenAsync(cancellationToken);
         await EnsureServicesRateTypeSchemaAsync(conn, cancellationToken);
 
+        var (r2FileName, r2Url) = await UploadServiceAssetToR2Async(imageBytes, $"{addOnId.Trim()}.jpg", mimeType, "services/addons", cancellationToken);
+
         await using var cmd = new SqlCommand("dbo.sp_UpdateAdditionalServiceImage", conn)
         {
             CommandType = CommandType.StoredProcedure
@@ -474,6 +574,8 @@ public class StudioManagementService : IStudioManagementService
         cmd.Parameters.AddWithValue("@AdditionalServicesID", addOnId.Trim());
         cmd.Parameters.Add("@AdditionalServiceImage", SqlDbType.VarBinary, -1).Value = imageBytes;
         cmd.Parameters.AddWithValue("@AdditionalServiceImageMimeType", string.IsNullOrWhiteSpace(mimeType) ? "image/jpeg" : mimeType);
+        cmd.Parameters.AddWithValue("@ImageFileName", (object?)r2FileName ?? DBNull.Value);
+        cmd.Parameters.AddWithValue("@ImageUrl", (object?)r2Url ?? DBNull.Value);
         cmd.Parameters.AddWithValue("@UpdatedByAdminID", (object?)requestingAdminId ?? DBNull.Value);
 
         await cmd.ExecuteNonQueryAsync(cancellationToken);
@@ -502,13 +604,21 @@ public class StudioManagementService : IStudioManagementService
                 var hasPriceCol = reader.FieldCount >= 5;
                 var price = hasPriceCol && !reader.IsDBNull(3) ? reader.GetDecimal(3) : 0m;
                 var hasImgIdx = hasPriceCol ? 4 : 3;
+                var imgFile = reader.FieldCount > 5 && !reader.IsDBNull(5) ? reader.GetString(5) : null;
+                var imgUrl = reader.FieldCount > 6 && !reader.IsDBNull(6) ? reader.GetString(6) : null;
+                if (string.IsNullOrWhiteSpace(imgUrl) && !string.IsNullOrWhiteSpace(imgFile) && _r2Service != null)
+                {
+                    imgUrl = _r2Service.GetPresignedUrl(imgFile, _r2Service.ServicesBucket);
+                }
 
                 list.Add(new ServiceSummaryDto(
                     Id: reader.GetString(0),
                     Name: reader.GetString(1),
                     Description: reader.IsDBNull(2) ? string.Empty : reader.GetString(2),
                     Price: price,
-                    HasImage: !reader.IsDBNull(hasImgIdx) && reader.GetBoolean(hasImgIdx)
+                    HasImage: (!reader.IsDBNull(hasImgIdx) && reader.GetBoolean(hasImgIdx)) || !string.IsNullOrWhiteSpace(imgFile),
+                    ImageFileName: imgFile,
+                    ImageUrl: imgUrl
                 ));
             }
         }
@@ -517,18 +627,28 @@ public class StudioManagementService : IStudioManagementService
             const string fallbackSql = @"
                 SELECT ComboPackageID, ComboPackageName, ComboPackageDescription,
                        ISNULL(ComboPackagePrice, 0.00) AS ComboPackagePrice,
-                       CAST(CASE WHEN ComboPackageImage IS NOT NULL THEN 1 ELSE 0 END AS bit)
+                       CAST(CASE WHEN ComboPackageImage IS NOT NULL OR ImageFileName IS NOT NULL OR ImageUrl IS NOT NULL THEN 1 ELSE 0 END AS bit),
+                       ImageFileName, ImageUrl
                 FROM dbo.ComboPackage ORDER BY ComboPackageID;";
             await using var fbCmd = new SqlCommand(fallbackSql, conn);
             await using var reader = await fbCmd.ExecuteReaderAsync(cancellationToken);
             while (await reader.ReadAsync(cancellationToken))
             {
+                var imgFile = reader.FieldCount > 5 && !reader.IsDBNull(5) ? reader.GetString(5) : null;
+                var imgUrl = reader.FieldCount > 6 && !reader.IsDBNull(6) ? reader.GetString(6) : null;
+                if (string.IsNullOrWhiteSpace(imgUrl) && !string.IsNullOrWhiteSpace(imgFile) && _r2Service != null)
+                {
+                    imgUrl = _r2Service.GetPresignedUrl(imgFile, _r2Service.ServicesBucket);
+                }
+
                 list.Add(new ServiceSummaryDto(
                     Id: reader.GetString(0),
                     Name: reader.GetString(1),
                     Description: reader.IsDBNull(2) ? string.Empty : reader.GetString(2),
                     Price: reader.IsDBNull(3) ? 0m : reader.GetDecimal(3),
-                    HasImage: !reader.IsDBNull(4) && reader.GetBoolean(4)
+                    HasImage: !reader.IsDBNull(4) && reader.GetBoolean(4),
+                    ImageFileName: imgFile,
+                    ImageUrl: imgUrl
                 ));
             }
         }
@@ -556,6 +676,12 @@ public class StudioManagementService : IStudioManagementService
             var imgIdx = hasPriceCol ? 4 : 3;
             var mimeIdx = hasPriceCol ? 5 : 4;
             var hasImgIdx = hasPriceCol ? 6 : 5;
+            var imgFile = reader.FieldCount > 7 && !reader.IsDBNull(7) ? reader.GetString(7) : null;
+            var imgUrl = reader.FieldCount > 8 && !reader.IsDBNull(8) ? reader.GetString(8) : null;
+            if (string.IsNullOrWhiteSpace(imgUrl) && !string.IsNullOrWhiteSpace(imgFile) && _r2Service != null)
+            {
+                imgUrl = _r2Service.GetPresignedUrl(imgFile, _r2Service.ServicesBucket);
+            }
 
             return new ServiceDetailDto(
                 Id: reader.GetString(0),
@@ -564,7 +690,9 @@ public class StudioManagementService : IStudioManagementService
                 Price: price,
                 Image: reader.IsDBNull(imgIdx) ? null : (byte[])reader[imgIdx],
                 MimeType: reader.IsDBNull(mimeIdx) ? "image/jpeg" : reader.GetString(mimeIdx),
-                HasImage: !reader.IsDBNull(hasImgIdx) && reader.GetBoolean(hasImgIdx)
+                HasImage: (!reader.IsDBNull(hasImgIdx) && reader.GetBoolean(hasImgIdx)) || !string.IsNullOrWhiteSpace(imgFile),
+                ImageFileName: imgFile,
+                ImageUrl: imgUrl
             );
         }
 
@@ -577,6 +705,8 @@ public class StudioManagementService : IStudioManagementService
         await conn.OpenAsync(cancellationToken);
         await EnsureServicesRateTypeSchemaAsync(conn, cancellationToken);
 
+        var (r2FileName, r2Url) = await UploadServiceAssetToR2Async(imageBytes, $"{packageId.Trim()}.jpg", mimeType, "services/packages", cancellationToken);
+
         await using var cmd = new SqlCommand("dbo.sp_UpdateComboPackageImage", conn)
         {
             CommandType = CommandType.StoredProcedure
@@ -584,6 +714,8 @@ public class StudioManagementService : IStudioManagementService
         cmd.Parameters.AddWithValue("@ComboPackageID", packageId.Trim());
         cmd.Parameters.Add("@ComboPackageImage", SqlDbType.VarBinary, -1).Value = imageBytes;
         cmd.Parameters.AddWithValue("@ComboPackageImageMimeType", string.IsNullOrWhiteSpace(mimeType) ? "image/jpeg" : mimeType);
+        cmd.Parameters.AddWithValue("@ImageFileName", (object?)r2FileName ?? DBNull.Value);
+        cmd.Parameters.AddWithValue("@ImageUrl", (object?)r2Url ?? DBNull.Value);
         cmd.Parameters.AddWithValue("@UpdatedByAdminID", (object?)requestingAdminId ?? DBNull.Value);
 
         await cmd.ExecuteNonQueryAsync(cancellationToken);
@@ -865,6 +997,16 @@ public class StudioManagementService : IStudioManagementService
         if (string.IsNullOrWhiteSpace(dto.Name))
             throw new ArgumentException("Service name is required.", nameof(dto));
 
+        var (r2FileName, r2Url) = await UploadServiceAssetToR2Async(
+            dto.ImageBytes,
+            dto.ImageFileName,
+            dto.ImageMimeType,
+            "services/main",
+            cancellationToken);
+
+        var effectiveFileName = r2FileName ?? dto.ImageFileName;
+        var effectiveUrl = r2Url ?? dto.ImageUrl;
+
         await using var conn = new SqlConnection(GetConnectionString());
         await conn.OpenAsync(cancellationToken);
         await EnsureServicesRateTypeSchemaAsync(conn, cancellationToken);
@@ -881,6 +1023,8 @@ public class StudioManagementService : IStudioManagementService
             cmd.Parameters.AddWithValue("@ServiceCategoryID", (object?)dto.CategoryId ?? DBNull.Value);
             cmd.Parameters.AddWithValue("@ServiceImage", (object?)dto.ImageBytes ?? DBNull.Value);
             cmd.Parameters.AddWithValue("@ServiceImageMimeType", (object?)dto.ImageMimeType ?? "image/jpeg");
+            cmd.Parameters.AddWithValue("@ImageFileName", (object?)effectiveFileName ?? DBNull.Value);
+            cmd.Parameters.AddWithValue("@ImageUrl", (object?)effectiveUrl ?? DBNull.Value);
             cmd.Parameters.AddWithValue("@CreatedByAdminID", (object?)requestingAdminId ?? DBNull.Value);
             cmd.Parameters.AddWithValue("@RateType", (object?)dto.RateType ?? "per hour");
 
@@ -901,7 +1045,7 @@ public class StudioManagementService : IStudioManagementService
                 var catName = reader.IsDBNull(5) ? null : reader.GetString(5);
                 var hasImg = !reader.IsDBNull(6) && reader.GetBoolean(6);
 
-                return new ServiceCreatedResponseDto(id, name, desc, price, catId ?? string.Empty, catName, hasImg);
+                return new ServiceCreatedResponseDto(id, name, desc, price, catId ?? string.Empty, catName, hasImg, effectiveFileName, effectiveUrl);
             }
         }
         catch (SqlException)
@@ -924,10 +1068,10 @@ public class StudioManagementService : IStudioManagementService
 
             const string insertSql = @"
                 INSERT INTO dbo.Services (
-                    ServicesID, ServiceName, ServicesDescription, ServicePrice, ServiceImage, ServiceImageMimeType, RateType
+                    ServicesID, ServiceName, ServicesDescription, ServicePrice, ServiceImage, ServiceImageMimeType, RateType, ImageFileName, ImageUrl
                 )
                 VALUES (
-                    @Id, @Name, @Desc, @Price, @Img, @Mime, @RateType
+                    @Id, @Name, @Desc, @Price, @Img, @Mime, @RateType, @ImgFile, @ImgUrl
                 );";
 
             await using var insertCmd = new SqlCommand(insertSql, conn, trans);
@@ -938,6 +1082,8 @@ public class StudioManagementService : IStudioManagementService
             insertCmd.Parameters.AddWithValue("@Img", (object?)dto.ImageBytes ?? DBNull.Value);
             insertCmd.Parameters.AddWithValue("@Mime", (object?)dto.ImageMimeType ?? "image/jpeg");
             insertCmd.Parameters.AddWithValue("@RateType", (object?)dto.RateType ?? "per hour");
+            insertCmd.Parameters.AddWithValue("@ImgFile", (object?)effectiveFileName ?? DBNull.Value);
+            insertCmd.Parameters.AddWithValue("@ImgUrl", (object?)effectiveUrl ?? DBNull.Value);
             await insertCmd.ExecuteNonQueryAsync(cancellationToken);
 
             string? resolvedCategoryName = null;
@@ -971,7 +1117,9 @@ public class StudioManagementService : IStudioManagementService
                 Price: dto.Price,
                 CategoryId: dto.CategoryId ?? string.Empty,
                 CategoryName: resolvedCategoryName,
-                HasImage: dto.ImageBytes != null && dto.ImageBytes.Length > 0);
+                HasImage: (dto.ImageBytes != null && dto.ImageBytes.Length > 0) || !string.IsNullOrWhiteSpace(effectiveFileName),
+                ImageFileName: effectiveFileName,
+                ImageUrl: effectiveUrl);
         }
         catch
         {
@@ -1511,6 +1659,9 @@ public class StudioManagementService : IStudioManagementService
         if (string.IsNullOrWhiteSpace(dto.ServiceName))
             throw new ArgumentException("Service Name is required.", nameof(dto));
 
+        var (imageFileName, imageUrl) = await UploadServiceAssetToR2Async(
+            dto.ImageBytes, dto.ImageFileName, dto.ImageMimeType, "services/addons", cancellationToken);
+
         await using var conn = new SqlConnection(GetConnectionString());
         await conn.OpenAsync(cancellationToken);
         await EnsureServicesRateTypeSchemaAsync(conn, cancellationToken);
@@ -1527,6 +1678,8 @@ public class StudioManagementService : IStudioManagementService
             cmd.Parameters.AddWithValue("@CategoryName", (object?)dto.ServiceCategory?.Trim() ?? DBNull.Value);
             cmd.Parameters.Add("@AdditionalServiceImage", SqlDbType.VarBinary, -1).Value = (object?)dto.ImageBytes ?? DBNull.Value;
             cmd.Parameters.AddWithValue("@AdditionalServiceImageMimeType", string.IsNullOrWhiteSpace(dto.ImageMimeType) ? "image/jpeg" : dto.ImageMimeType.Trim());
+            cmd.Parameters.AddWithValue("@ImageFileName", (object?)imageFileName ?? DBNull.Value);
+            cmd.Parameters.AddWithValue("@ImageUrl", (object?)imageUrl ?? DBNull.Value);
             cmd.Parameters.AddWithValue("@CreatedByAdminID", (object?)requestingAdminId ?? DBNull.Value);
 
             var outId = new SqlParameter("@GeneratedID", SqlDbType.NVarChar, 30)
@@ -1549,9 +1702,10 @@ public class StudioManagementService : IStudioManagementService
                 Description: dto.ServiceDescription?.Trim() ?? string.Empty,
                 Category: dto.ServiceCategory?.Trim() ?? "Add-On",
                 Price: dto.ServicePrice,
-                HasImage: dto.ImageBytes != null && dto.ImageBytes.Length > 0,
-                ImageUrl: $"/api/management/additional-services/{createdId}/image",
-                CreatedAt: DateTime.UtcNow
+                HasImage: (dto.ImageBytes != null && dto.ImageBytes.Length > 0) || !string.IsNullOrWhiteSpace(imageUrl),
+                ImageUrl: imageUrl ?? $"/api/management/additional-services/{createdId}/image",
+                CreatedAt: DateTime.UtcNow,
+                ImageFileName: imageFileName
             );
         }
         catch (SqlException)
@@ -1578,9 +1732,10 @@ public class StudioManagementService : IStudioManagementService
             const string insertSql = @"
                 INSERT INTO dbo.AdditionalServices (
                     AdditionalServicesID, AdditionalServiceName, AdditionalServicesDescription,
-                    ServicePrice, CategoryName, AdditionalServiceImage, AdditionalServiceImageMimeType, CreatedAt
+                    ServicePrice, CategoryName, AdditionalServiceImage, AdditionalServiceImageMimeType,
+                    ImageFileName, ImageUrl, CreatedAt
                 )
-                VALUES (@Id, @Name, @Desc, @Price, @Cat, @Img, @Mime, SYSUTCDATETIME());";
+                VALUES (@Id, @Name, @Desc, @Price, @Cat, @Img, @Mime, @ImgFileName, @ImgUrl, SYSUTCDATETIME());";
 
             await using var insertCmd = new SqlCommand(insertSql, conn, trans);
             insertCmd.Parameters.AddWithValue("@Id", nextId);
@@ -1590,6 +1745,8 @@ public class StudioManagementService : IStudioManagementService
             insertCmd.Parameters.AddWithValue("@Cat", (object?)dto.ServiceCategory?.Trim() ?? DBNull.Value);
             insertCmd.Parameters.Add("@Img", SqlDbType.VarBinary, -1).Value = (object?)dto.ImageBytes ?? DBNull.Value;
             insertCmd.Parameters.AddWithValue("@Mime", string.IsNullOrWhiteSpace(dto.ImageMimeType) ? "image/jpeg" : dto.ImageMimeType.Trim());
+            insertCmd.Parameters.AddWithValue("@ImgFileName", (object?)imageFileName ?? DBNull.Value);
+            insertCmd.Parameters.AddWithValue("@ImgUrl", (object?)imageUrl ?? DBNull.Value);
             await insertCmd.ExecuteNonQueryAsync(cancellationToken);
 
             await trans.CommitAsync(cancellationToken);
@@ -1600,9 +1757,10 @@ public class StudioManagementService : IStudioManagementService
                 Description: dto.ServiceDescription?.Trim() ?? string.Empty,
                 Category: dto.ServiceCategory?.Trim() ?? "Add-On",
                 Price: dto.ServicePrice,
-                HasImage: dto.ImageBytes != null && dto.ImageBytes.Length > 0,
-                ImageUrl: $"/api/management/additional-services/{nextId}/image",
-                CreatedAt: DateTime.UtcNow
+                HasImage: (dto.ImageBytes != null && dto.ImageBytes.Length > 0) || !string.IsNullOrWhiteSpace(imageUrl),
+                ImageUrl: imageUrl ?? $"/api/management/additional-services/{nextId}/image",
+                CreatedAt: DateTime.UtcNow,
+                ImageFileName: imageFileName
             );
         }
         catch
@@ -1711,14 +1869,14 @@ public class StudioManagementService : IStudioManagementService
             IF OBJECT_ID(N'dbo.Services', N'U') IS NOT NULL
             BEGIN
                 SELECT ServicesID, ServiceName, ServicesDescription, ServicePrice, 'Main' AS ServiceType,
-                       CAST(CASE WHEN ServiceImage IS NOT NULL THEN 1 ELSE 0 END AS bit) AS HasImage
+                       CAST(CASE WHEN ServiceImage IS NOT NULL OR ImageUrl IS NOT NULL THEN 1 ELSE 0 END AS bit) AS HasImage
                 FROM dbo.Services
             END
             UNION ALL
             IF OBJECT_ID(N'dbo.AdditionalServices', N'U') IS NOT NULL
             BEGIN
                 SELECT AdditionalServicesID, AdditionalServiceName, AdditionalServicesDescription, ISNULL(ServicePrice, 0.00) AS ServicePrice, 'Additional' AS ServiceType,
-                       CAST(CASE WHEN AdditionalServiceImage IS NOT NULL THEN 1 ELSE 0 END AS bit) AS HasImage
+                       CAST(CASE WHEN AdditionalServiceImage IS NOT NULL OR ImageUrl IS NOT NULL THEN 1 ELSE 0 END AS bit) AS HasImage
                 FROM dbo.AdditionalServices
             END
             ORDER BY ServiceType DESC, ServiceName ASC;";
@@ -1754,6 +1912,9 @@ public class StudioManagementService : IStudioManagementService
         string? requestingAdminId = null,
         CancellationToken cancellationToken = default)
     {
+        var (imageFileName, imageUrl) = await UploadServiceAssetToR2Async(
+            imageBytes, null, imageMimeType, "services/packages", cancellationToken);
+
         await using var conn = new SqlConnection(GetConnectionString());
         await conn.OpenAsync(cancellationToken);
         await EnsureServicesRateTypeSchemaAsync(conn, cancellationToken);
@@ -1774,6 +1935,8 @@ public class StudioManagementService : IStudioManagementService
             cmd.Parameters.AddWithValue("@ServiceCategoryID", string.IsNullOrWhiteSpace(model.CategoryId) ? (object)DBNull.Value : model.CategoryId.Trim());
             cmd.Parameters.Add("@ComboPackageImage", SqlDbType.VarBinary, -1).Value = (object?)imageBytes ?? DBNull.Value;
             cmd.Parameters.AddWithValue("@ComboPackageImageMimeType", string.IsNullOrWhiteSpace(imageMimeType) ? "image/jpeg" : imageMimeType.Trim());
+            cmd.Parameters.AddWithValue("@ImageFileName", (object?)imageFileName ?? DBNull.Value);
+            cmd.Parameters.AddWithValue("@ImageUrl", (object?)imageUrl ?? DBNull.Value);
             cmd.Parameters.AddWithValue("@SelectedServiceIDsJson", selectedIdsJson);
             cmd.Parameters.AddWithValue("@CreatedByAdminID", (object?)requestingAdminId ?? DBNull.Value);
 
@@ -1837,9 +2000,9 @@ public class StudioManagementService : IStudioManagementService
                     END;
 
                     INSERT INTO dbo.ComboPackage (
-                        ComboPackageID, ComboPackageName, ComboPackageDescription, ComboPackagePrice, ComboPackageImage, ComboPackageImageMimeType
+                        ComboPackageID, ComboPackageName, ComboPackageDescription, ComboPackagePrice, ComboPackageImage, ComboPackageImageMimeType, ImageFileName, ImageUrl
                     )
-                    VALUES (@Id, @Name, @Desc, @Price, @Img, @Mime);";
+                    VALUES (@Id, @Name, @Desc, @Price, @Img, @Mime, @ImgFileName, @ImgUrl);";
 
                 await using (var pkgCmd = new SqlCommand(insertPkgSql, conn, trans))
                 {
@@ -1849,6 +2012,8 @@ public class StudioManagementService : IStudioManagementService
                     pkgCmd.Parameters.AddWithValue("@Price", model.Price);
                     pkgCmd.Parameters.Add("@Img", SqlDbType.VarBinary, -1).Value = (object?)imageBytes ?? DBNull.Value;
                     pkgCmd.Parameters.AddWithValue("@Mime", string.IsNullOrWhiteSpace(imageMimeType) ? "image/jpeg" : imageMimeType.Trim());
+                    pkgCmd.Parameters.AddWithValue("@ImgFileName", (object?)imageFileName ?? DBNull.Value);
+                    pkgCmd.Parameters.AddWithValue("@ImgUrl", (object?)imageUrl ?? DBNull.Value);
                     await pkgCmd.ExecuteNonQueryAsync(cancellationToken);
                 }
 
@@ -1943,8 +2108,10 @@ public class StudioManagementService : IStudioManagementService
             CategoryName: categoryName,
             BundledServicesCount: model.SelectedServiceIds?.Count ?? 0,
             BundledServiceNames: model.SelectedServiceIds ?? Array.Empty<string>(),
-            HasImage: imageBytes != null && imageBytes.Length > 0,
-            CreatedAt: DateTime.UtcNow
+            HasImage: (imageBytes != null && imageBytes.Length > 0) || !string.IsNullOrWhiteSpace(imageUrl),
+            CreatedAt: DateTime.UtcNow,
+            ImageFileName: imageFileName,
+            ImageUrl: imageUrl ?? $"/api/management/packages/{generatedId}/image"
         );
     }
 

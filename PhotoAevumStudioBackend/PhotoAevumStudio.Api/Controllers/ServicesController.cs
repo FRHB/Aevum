@@ -118,6 +118,7 @@ public class ServicesController : ControllerBase
             CategoryId: request.CategoryId.Trim(),
             ImageBytes: imageBytes,
             ImageMimeType: mimeType,
+            ImageFileName: request.Image?.FileName,
             RateType: string.IsNullOrWhiteSpace(request.RateType) ? "per hour" : request.RateType.Trim()
         );
 

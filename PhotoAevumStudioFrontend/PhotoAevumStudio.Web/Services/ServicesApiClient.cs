@@ -1,8 +1,13 @@
 using System.Data;
 using System.Globalization;
+using System.IO;
 using System.Net.Http.Headers;
 using System.Net.Http.Json;
 using System.Text.Json;
+using Amazon.Runtime;
+using Amazon.S3;
+using Amazon.S3.Model;
+using Microsoft.AspNetCore.Hosting;
 using Microsoft.Data.SqlClient;
 using PhotoAevumStudio.Web.Models;
 
@@ -14,18 +19,131 @@ public class ServicesApiClient : IServicesApiClient
     private readonly ITokenStore _tokenStore;
     private readonly string _connectionString;
     private readonly ILogger<ServicesApiClient> _logger;
+    private readonly IWebHostEnvironment? _env;
+    private readonly AmazonS3Client? _r2Client;
+    private readonly string _servicesBucket;
+    private readonly string _r2PublicBaseUrl;
+    private readonly bool _r2Configured;
 
     public ServicesApiClient(
         IHttpClientFactory httpClientFactory,
         ITokenStore tokenStore,
         IConfiguration configuration,
-        ILogger<ServicesApiClient> logger)
+        ILogger<ServicesApiClient> logger,
+        IWebHostEnvironment? env = null)
     {
         _http = httpClientFactory.CreateClient("AevumApi.Authorized");
         _tokenStore = tokenStore;
         _logger = logger;
+        _env = env;
         _connectionString = configuration.GetConnectionString("DefaultConnection")
             ?? throw new InvalidOperationException("Connection string 'DefaultConnection' is missing.");
+
+        var accessKey = configuration["CloudflareR2:AccessKey"] ?? "PLACEHOLDER";
+        var secretKey = configuration["CloudflareR2:SecretKey"] ?? "PLACEHOLDER";
+        var accountId = configuration["CloudflareR2:AccountId"];
+        var serviceUrl = configuration["CloudflareR2:ServiceUrl"];
+        if (string.IsNullOrWhiteSpace(serviceUrl))
+        {
+            serviceUrl = !string.IsNullOrWhiteSpace(accountId)
+                ? $"https://{accountId}.r2.cloudflarestorage.com"
+                : "https://f6757b400d51c23671cedb8b0efc4b32.r2.cloudflarestorage.com";
+        }
+
+        _servicesBucket = configuration["CloudflareR2:Buckets:Services"] ?? "services";
+        _r2PublicBaseUrl = configuration["CloudflareR2:PublicUrl"] ?? serviceUrl.TrimEnd('/');
+        _r2Configured = !string.IsNullOrWhiteSpace(accessKey)
+                        && !string.IsNullOrWhiteSpace(secretKey)
+                        && accessKey != "PLACEHOLDER"
+                        && secretKey != "PLACEHOLDER";
+
+        try
+        {
+            var credentials = new BasicAWSCredentials(accessKey, secretKey);
+            var s3Config = new AmazonS3Config
+            {
+                ServiceURL = serviceUrl,
+                AuthenticationRegion = "auto",
+                ForcePathStyle = true
+            };
+            _r2Client = new AmazonS3Client(credentials, s3Config);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Failed to initialize AmazonS3Client for Services R2 bucket.");
+        }
+    }
+
+    private async Task<(string? ImageFileName, string? ImageUrl)> UploadServiceImageToR2Async(
+        byte[]? imageBytes,
+        string? originalFileName,
+        string? contentType,
+        string subFolder,
+        CancellationToken ct)
+    {
+        if (imageBytes == null || imageBytes.Length == 0)
+            return (null, null);
+
+        var ext = Path.GetExtension(originalFileName ?? string.Empty);
+        if (string.IsNullOrWhiteSpace(ext))
+        {
+            ext = contentType?.ToLowerInvariant() switch
+            {
+                "image/png" => ".png",
+                "image/webp" => ".webp",
+                _ => ".jpg"
+            };
+        }
+
+        var uniqueName = $"{Guid.NewGuid():N}{ext}";
+        var key = $"{subFolder.Trim('/')}/{uniqueName}";
+        string? resolvedUrl = null;
+
+        if (_r2Configured && _r2Client != null)
+        {
+            try
+            {
+                using var ms = new MemoryStream(imageBytes);
+                var putReq = new PutObjectRequest
+                {
+                    BucketName = _servicesBucket,
+                    Key = key,
+                    InputStream = ms,
+                    ContentType = string.IsNullOrWhiteSpace(contentType) ? "image/jpeg" : contentType,
+                    DisablePayloadSigning = true
+                };
+                await _r2Client.PutObjectAsync(putReq, ct);
+
+                var presignedReq = new GetPreSignedUrlRequest
+                {
+                    BucketName = _servicesBucket,
+                    Key = key,
+                    Expires = DateTime.UtcNow.AddDays(7)
+                };
+                resolvedUrl = _r2Client.GetPreSignedURL(presignedReq);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Cloudflare R2 upload to bucket '{Bucket}' failed for {Key}; using local fallback.", _servicesBucket, key);
+            }
+        }
+
+        try
+        {
+            var webRoot = _env?.WebRootPath ?? Path.Combine(Directory.GetCurrentDirectory(), "wwwroot");
+            var dir = Path.Combine(webRoot, "uploads", subFolder.Replace('/', Path.DirectorySeparatorChar));
+            Directory.CreateDirectory(dir);
+            var localPath = Path.Combine(dir, uniqueName);
+            await File.WriteAllBytesAsync(localPath, imageBytes, ct);
+            resolvedUrl ??= $"/uploads/{key}";
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Failed to write local fallback copy for {Key}.", key);
+            resolvedUrl ??= $"{_r2PublicBaseUrl}/{_servicesBucket}/{key}";
+        }
+
+        return (key, resolvedUrl);
     }
 
     public async Task<string> GetNextServiceIdAsync(CancellationToken cancellationToken = default)
@@ -167,6 +285,9 @@ public class ServicesApiClient : IServicesApiClient
 
         await _tokenStore.GetTokenAsync(cancellationToken);
 
+        var (imageFileName, imageUrl) = await UploadServiceImageToR2Async(
+            model.ImageBytes, model.ImageFileName, model.ImageMimeType, "services/main", cancellationToken);
+
         try
         {
             using var formData = new MultipartFormDataContent();
@@ -212,6 +333,16 @@ public class ServicesApiClient : IServicesApiClient
 
             try
             {
+                const string ensureColsSql = @"
+                    IF COL_LENGTH(N'dbo.Services', N'ImageFileName') IS NULL
+                        ALTER TABLE dbo.Services ADD ImageFileName nvarchar(500) NULL;
+                    IF COL_LENGTH(N'dbo.Services', N'ImageUrl') IS NULL
+                        ALTER TABLE dbo.Services ADD ImageUrl nvarchar(500) NULL;";
+                await using (var colCmd = new SqlCommand(ensureColsSql, conn, trans))
+                {
+                    await colCmd.ExecuteNonQueryAsync(cancellationToken);
+                }
+
                 // Generate atomic next ID
                 const string nextSql = @"
                     SELECT 'SRV-' + RIGHT('0000' + CAST(
@@ -225,10 +356,10 @@ public class ServicesApiClient : IServicesApiClient
 
                 const string insertSql = @"
                     INSERT INTO dbo.Services (
-                        ServicesID, ServiceName, ServicesDescription, ServicePrice, ServiceImage, ServiceImageMimeType
+                        ServicesID, ServiceName, ServicesDescription, ServicePrice, ServiceImage, ServiceImageMimeType, ImageFileName, ImageUrl
                     )
                     VALUES (
-                        @Id, @Name, @Desc, @Price, @Img, @Mime
+                        @Id, @Name, @Desc, @Price, @Img, @Mime, @ImgFileName, @ImgUrl
                     );";
 
                 await using var insertCmd = new SqlCommand(insertSql, conn, trans);
@@ -238,6 +369,8 @@ public class ServicesApiClient : IServicesApiClient
                 insertCmd.Parameters.AddWithValue("@Price", model.Price);
                 insertCmd.Parameters.AddWithValue("@Img", (object?)model.ImageBytes ?? DBNull.Value);
                 insertCmd.Parameters.AddWithValue("@Mime", (object?)model.ImageMimeType ?? "image/jpeg");
+                insertCmd.Parameters.AddWithValue("@ImgFileName", (object?)imageFileName ?? DBNull.Value);
+                insertCmd.Parameters.AddWithValue("@ImgUrl", (object?)imageUrl ?? DBNull.Value);
                 await insertCmd.ExecuteNonQueryAsync(cancellationToken);
 
                 // Category Join
@@ -467,6 +600,9 @@ public class ServicesApiClient : IServicesApiClient
         ArgumentNullException.ThrowIfNull(model);
         await _tokenStore.GetTokenAsync(cancellationToken);
 
+        var (imageFileName, imageUrl) = await UploadServiceImageToR2Async(
+            model.ImageBytes, model.ImageFileName, model.ImageMimeType, "services/addons", cancellationToken);
+
         // Try API endpoint first
         try
         {
@@ -509,8 +645,20 @@ public class ServicesApiClient : IServicesApiClient
             await using var conn = new SqlConnection(_connectionString);
             await conn.OpenAsync(cancellationToken);
 
+            const string ensureColsSql = @"
+                IF COL_LENGTH(N'dbo.AdditionalServices', N'ImageFileName') IS NULL
+                    ALTER TABLE dbo.AdditionalServices ADD ImageFileName nvarchar(500) NULL;
+                IF COL_LENGTH(N'dbo.AdditionalServices', N'ImageUrl') IS NULL
+                    ALTER TABLE dbo.AdditionalServices ADD ImageUrl nvarchar(500) NULL;";
+            await using (var colCmd = new SqlCommand(ensureColsSql, conn))
+            {
+                await colCmd.ExecuteNonQueryAsync(cancellationToken);
+            }
+
             const string procSql = @"
-                IF OBJECT_ID(N'dbo.sp_CreateAdditionalService', N'P') IS NOT NULL
+                IF OBJECT_ID(N'dbo.sp_CreateAdditionalService', N'P') IS NOT NULL AND EXISTS (
+                    SELECT 1 FROM sys.parameters WHERE object_id = OBJECT_ID(N'dbo.sp_CreateAdditionalService') AND name = '@ImageFileName'
+                )
                 BEGIN
                     DECLARE @OutID NVARCHAR(30);
                     EXEC dbo.sp_CreateAdditionalService
@@ -520,6 +668,8 @@ public class ServicesApiClient : IServicesApiClient
                         @CategoryName = @Category,
                         @AdditionalServiceImage = @Img,
                         @AdditionalServiceImageMimeType = @Mime,
+                        @ImageFileName = @ImgFileName,
+                        @ImageUrl = @ImgUrl,
                         @CreatedByAdminID = @AdminId,
                         @GeneratedID = @OutID OUTPUT;
                     SELECT @OutID;
@@ -536,9 +686,10 @@ public class ServicesApiClient : IServicesApiClient
                     DECLARE @NewID NVARCHAR(30) = 'ADD-' + RIGHT('0000' + CAST(@NextVal AS VARCHAR(10)), 4);
 
                     INSERT INTO dbo.AdditionalServices (
-                        AdditionalServicesID, AdditionalServiceName, AdditionalServicesDescription, ServicePrice, CategoryName, AdditionalServiceImage, AdditionalServiceImageMimeType
+                        AdditionalServicesID, AdditionalServiceName, AdditionalServicesDescription, ServicePrice, CategoryName,
+                        AdditionalServiceImage, AdditionalServiceImageMimeType, ImageFileName, ImageUrl
                     )
-                    VALUES (@NewID, @Name, @Desc, @Price, @Category, @Img, @Mime);
+                    VALUES (@NewID, @Name, @Desc, @Price, @Category, @Img, @Mime, @ImgFileName, @ImgUrl);
 
                     SELECT @NewID;
                 END";
@@ -550,6 +701,8 @@ public class ServicesApiClient : IServicesApiClient
             cmd.Parameters.AddWithValue("@Category", model.ServiceCategory.Trim());
             cmd.Parameters.Add("@Img", SqlDbType.VarBinary, -1).Value = (object?)model.ImageBytes ?? DBNull.Value;
             cmd.Parameters.AddWithValue("@Mime", (object?)model.ImageMimeType ?? "image/jpeg");
+            cmd.Parameters.AddWithValue("@ImgFileName", (object?)imageFileName ?? DBNull.Value);
+            cmd.Parameters.AddWithValue("@ImgUrl", (object?)imageUrl ?? DBNull.Value);
             cmd.Parameters.AddWithValue("@AdminId", "Admin");
 
             var resultId = (await cmd.ExecuteScalarAsync(cancellationToken))?.ToString() ?? model.GeneratedId;

@@ -16,7 +16,7 @@ CREATE SEQUENCE dbo.Seq_ComboPackageID AS INT START WITH 1 INCREMENT BY 1;
 CREATE SEQUENCE dbo.Seq_ServicesID AS INT START WITH 1 INCREMENT BY 1;
 CREATE SEQUENCE dbo.Seq_ServiceCategoryID AS INT START WITH 1 INCREMENT BY 1;
 CREATE SEQUENCE dbo.Seq_ServiceRateID AS INT START WITH 1 INCREMENT BY 1;
-CREATE SEQUENCE dbo.Seq_RateTypeID AS INT START WITH 1 INCREMENT BY 1;
+CREATE SEQUENCE dbo.Seq_RateTypeID AS INT START WITH 5 INCREMENT BY 1;
 CREATE SEQUENCE dbo.Seq_NegotiationID AS INT START WITH 1 INCREMENT BY 1;
 CREATE SEQUENCE dbo.Seq_EventAppointmentID AS INT START WITH 1 INCREMENT BY 1;
 CREATE SEQUENCE dbo.Seq_PaymentTransactionID AS INT START WITH 1 INCREMENT BY 1;
@@ -125,7 +125,9 @@ CREATE TABLE dbo.ComboPackage (
     ComboPackageDescription nvarchar(1000) NOT NULL,
     ComboPackagePrice decimal(18,2) NOT NULL CONSTRAINT DF_ComboPackage_Price DEFAULT 0.00,
     ComboPackageImage varbinary(max) NULL,
-    ComboPackageImageMimeType nvarchar(100) NULL CONSTRAINT DF_ComboPackage_MimeType DEFAULT 'image/jpeg'
+    ComboPackageImageMimeType nvarchar(100) NULL CONSTRAINT DF_ComboPackage_MimeType DEFAULT 'image/jpeg',
+    ImageFileName nvarchar(500) NULL,
+    ImageUrl nvarchar(500) NULL
 );
 
 CREATE TABLE dbo.AdditionalServices (
@@ -136,6 +138,8 @@ CREATE TABLE dbo.AdditionalServices (
     CategoryName nvarchar(100) NULL,
     AdditionalServiceImage varbinary(max) NULL,
     AdditionalServiceImageMimeType nvarchar(100) NULL CONSTRAINT DF_AdditionalServices_MimeType DEFAULT 'image/jpeg',
+    ImageFileName nvarchar(500) NULL,
+    ImageUrl nvarchar(500) NULL,
     CreatedAt datetime2 NOT NULL CONSTRAINT DF_AdditionalServices_CreatedAt DEFAULT SYSUTCDATETIME()
 );
 
@@ -147,6 +151,18 @@ CREATE TABLE dbo.RateType (
     CreatedAt datetime2 NOT NULL CONSTRAINT DF_RateType_CreatedAt DEFAULT SYSUTCDATETIME()
 );
 
+IF OBJECT_ID(N'dbo.RateType', N'U') IS NOT NULL
+BEGIN
+    IF NOT EXISTS (SELECT 1 FROM dbo.RateType WHERE RateTypeID = 'RT-0001' OR RateTypeCode = 'per-hour')
+        INSERT INTO dbo.RateType (RateTypeID, RateTypeName, RateTypeCode, RateDescription) VALUES ('RT-0001', 'Per Hour', 'per-hour', 'Billed on an hourly rate');
+    IF NOT EXISTS (SELECT 1 FROM dbo.RateType WHERE RateTypeID = 'RT-0002' OR RateTypeCode = 'per-picture')
+        INSERT INTO dbo.RateType (RateTypeID, RateTypeName, RateTypeCode, RateDescription) VALUES ('RT-0002', 'Per Picture', 'per-picture', 'Billed per edited picture delivered');
+    IF NOT EXISTS (SELECT 1 FROM dbo.RateType WHERE RateTypeID = 'RT-0003' OR RateTypeCode = 'per-single-shot')
+        INSERT INTO dbo.RateType (RateTypeID, RateTypeName, RateTypeCode, RateDescription) VALUES ('RT-0003', 'Per Single Shot', 'per-single-shot', 'Billed for an individual studio shot');
+    IF NOT EXISTS (SELECT 1 FROM dbo.RateType WHERE RateTypeID = 'RT-0004' OR RateTypeCode = 'multi-shot')
+        INSERT INTO dbo.RateType (RateTypeID, RateTypeName, RateTypeCode, RateDescription) VALUES ('RT-0004', 'Multi-Shot', 'multi-shot', 'Billed for a multi-shot sequence or burst bundle');
+END;
+
 CREATE TABLE dbo.Services (
     ServicesID nvarchar(30) NOT NULL PRIMARY KEY,
     ServiceName nvarchar(255) NOT NULL,
@@ -155,6 +171,8 @@ CREATE TABLE dbo.Services (
     RateType nvarchar(50) NOT NULL CONSTRAINT DF_Services_RateType DEFAULT 'Per Hour',
     ServiceImage varbinary(max) NULL,
     ServiceImageMimeType nvarchar(100) NULL CONSTRAINT DF_Services_MimeType DEFAULT 'image/jpeg',
+    ImageFileName nvarchar(500) NULL,
+    ImageUrl nvarchar(500) NULL,
     CreatedAt datetime2 NOT NULL CONSTRAINT DF_Services_CreatedAt DEFAULT SYSUTCDATETIME()
 );
 
@@ -209,8 +227,8 @@ CREATE UNIQUE INDEX UX_Equipment_SerialNo ON dbo.Equipment(SerialNo) WHERE Seria
 
 CREATE TABLE dbo.EventAppointment (
     EventAppointmentID nvarchar(30) NOT NULL PRIMARY KEY,
-    EventName nvarchar(255) NOT NULL,
-    EventDescription nvarchar(255) NOT NULL,
+    EventName nvarchar(255) NOT NULL CONSTRAINT DF_EventAppointment_Name DEFAULT 'Photoshoot Event',
+    EventDescription nvarchar(255) NULL,
     CustomerID nvarchar(30) NOT NULL,
     EventDate date NOT NULL,
     EventTime time NOT NULL,
@@ -234,8 +252,8 @@ CREATE TABLE dbo.BookingNegotiation (
     EventAppointmentID nvarchar(30) NULL,
     CustomerID nvarchar(30) NOT NULL,
     EmployeeID nvarchar(30) NOT NULL, 
-    ConsultationDate date NOT NULL,
-    ConsultationTime time NOT NULL,
+    ConsultationDate date NULL,
+    ConsultationTime time NULL,
     MeetingLink nvarchar(500) NULL,
     InquiryNotes nvarchar(1000) NULL,
     NegotiationStatus nvarchar(50) NOT NULL CONSTRAINT DF_BookingNegotiation_Status DEFAULT 'Pending_Call',
@@ -335,13 +353,18 @@ CREATE TABLE dbo.EventOvertimeCharges (
 CREATE TABLE dbo.PaymentTransactions (
     PaymentTransactionID nvarchar(50) NOT NULL PRIMARY KEY,
     EventAppointmentID nvarchar(30) NOT NULL,
-    PaymentType nvarchar(50) NOT NULL, -- 'Downpayment_25', 'Final_Balance', 'Overtime'
-    PaymentMethod nvarchar(50) NOT NULL, -- 'Xendit_GCash', 'Xendit_Maya', 'Xendit_Card', 'Cash'
-    Amount decimal(18,2) NOT NULL,
+    PaymentType nvarchar(50) NOT NULL CONSTRAINT DF_PaymentTransactions_Type DEFAULT 'Downpayment_25', -- 'Downpayment_25', 'Final_Balance', 'Overtime'
+    PaymentMethod nvarchar(50) NOT NULL CONSTRAINT DF_PaymentTransactions_Method DEFAULT 'Xendit_Card', -- 'Xendit_GCash', 'Xendit_Maya', 'Xendit_Card', 'Cash'
+    Amount decimal(18,2) NOT NULL CONSTRAINT DF_PaymentTransactions_Amount DEFAULT 0.00,
     XenditPaymentId nvarchar(100) NULL,
     XenditInvoiceId nvarchar(100) NULL,
     XenditPaymentChannel nvarchar(100) NULL,
     Status nvarchar(30) NOT NULL CONSTRAINT DF_PaymentTransactions_Status DEFAULT 'Pending', -- 'Pending', 'Paid', 'Failed', 'Expired'
+    ExternalReference nvarchar(100) NULL,
+    CustomerPaymentStatus nvarchar(40) NULL,
+    EmployeeRemittanceStatus nvarchar(40) NULL,
+    AdminApproverID nvarchar(100) NULL,
+    ApprovalTimestamp datetime2 NULL,
     ReceivedByEmployeeID nvarchar(30) NULL, -- For cash collected by Team Leader
     PaidAt datetime2 NULL,
     CreatedAt datetime2 NOT NULL CONSTRAINT DF_PaymentTransactions_CreatedAt DEFAULT SYSUTCDATETIME()

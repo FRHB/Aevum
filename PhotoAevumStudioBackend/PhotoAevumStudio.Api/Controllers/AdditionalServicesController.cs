@@ -230,7 +230,8 @@ public class AdditionalServicesController : ControllerBase
                 ServiceCategory: request.ServiceCategory.Trim(),
                 ServicePrice: request.ServicePrice,
                 ImageBytes: imageBytes,
-                ImageMimeType: mimeType ?? "image/jpeg"
+                ImageMimeType: mimeType ?? "image/jpeg",
+                ImageFileName: request.ImageFile?.FileName
             );
 
             var result = await _service.CreateAdditionalServiceAsync(dto, requestingAdminId, ct);

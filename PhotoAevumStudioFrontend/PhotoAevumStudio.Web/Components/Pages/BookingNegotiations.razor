@@ -1,1068 +1,5718 @@
+@implements IDisposable
+
+
+
 @page "/admin/negotiations"
+
+
+
 @page "/staff/negotiations"
+
+
+
 @layout SidebarLayout
+
+
+
 @using Microsoft.AspNetCore.Components.Authorization
+
+
+
 @using PhotoAevumStudio.Web.Models
+
+
+
 @using PhotoAevumStudio.Web.Services
+
+
+
 @attribute [Authorize(Roles = "Admin,Employee,Office Clerk")]
+
+
+
 @rendermode InteractiveServer
+
+
+
 @inject IConsultationClient ConsultationApi
+
+
+
 @inject IEmployeeService EmployeeService
+
+
+
 @inject IEquipmentService EquipmentService
+
+
+
 @inject IUserService UserService
+
+
+
 @inject IBookScheduleClient ScheduleApi
+
+
+
 @inject AuthenticationStateProvider AuthStateProvider
+
+
+
 @inject NavigationManager Nav
+
+
+
+
+
+
 
 <PageTitle>Booking Negotiations &amp; Consultations | Photo Aevum Studio</PageTitle>
 
+
+
+
+
+
+
 <div class="px-6 py-6 max-w-7xl mx-auto space-y-6">
 
+
+
+
+
+
+
     @* ── Top Header ───────────────────────────────────────────────────────── *@
+
+
+
     <div class="flex flex-col md:flex-row md:items-center md:justify-between gap-4 pb-4 border-b border-slate-200">
+
+
+
         <div>
+
+
+
             <div class="flex items-center gap-2">
+
+
+
                 <span class="px-2.5 py-0.5 rounded-full text-xs font-bold bg-teal-100 text-teal-800">
+
+
+
                     Office Clerk Desk
+
+
+
                 </span>
+
+
+
                 <span class="text-xs text-slate-400 font-mono">Round-Robin Allocation Active</span>
+
+
+
             </div>
+
+
+
             <h1 class="text-2xl font-black text-slate-900 tracking-tight mt-1">Booking Negotiations &amp; Inquiries</h1>
+
+
+
             <p class="text-xs text-slate-500 mt-0.5">
+
+
+
                 Manage incoming customer schedule consultations, conduct online video calls, negotiate service packages, and book formal event appointments.
+
+
+
             </p>
+
+
+
         </div>
+
+
+
+
+
+
 
         <div class="flex items-center gap-2">
+
+
+
             <button type="button" 
+
+
+
                     @onclick="LoadNegotiationsAsync" 
+
+
+
                     disabled="@_loading"
+
+
+
                     class="inline-flex items-center gap-1.5 px-3.5 py-2 bg-white hover:bg-slate-50 border border-slate-300 rounded-lg text-xs font-semibold text-slate-700 shadow-xs transition-all">
+
+
+
                 <span class="@(_loading ? "animate-spin" : "")">🔄</span>
+
+
+
                 <span>Refresh Inbox</span>
+
+
+
             </button>
+
+
+
             <button type="button"
+
+
+
                     @onclick="OpenSimulateInquiryModal"
+
+
+
                     class="inline-flex items-center gap-1.5 px-4 py-2 bg-slate-900 hover:bg-black text-white rounded-lg text-xs font-bold shadow-xs transition-all">
+
+
+
                 <span>➕</span>
+
+
+
                 <span>Simulate Client Inquiry</span>
+
+
+
             </button>
+
+
+
         </div>
+
+
+
     </div>
+
+
+
+
+
+
 
     @* ── KPI Summary Cards ────────────────────────────────────────────────── *@
+
+
+
     <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
+
+
+
         <div class="bg-white rounded-xl border border-slate-200 p-4 shadow-xs">
+
+
+
             <div class="text-[11px] font-bold uppercase tracking-wider text-slate-400">Total Consultations</div>
+
+
+
             <div class="text-2xl font-black text-slate-900 mt-1">@_negotiations.Count</div>
+
+
+
             <div class="text-[11px] text-slate-500 mt-0.5">Inquiry sessions logged</div>
+
+
+
         </div>
+
+
+
         <div class="bg-white rounded-xl border border-amber-200 bg-amber-50/30 p-4 shadow-xs">
+
+
+
             <div class="text-[11px] font-bold uppercase tracking-wider text-amber-700">Pending Video Calls</div>
+
+
+
             <div class="text-2xl font-black text-amber-800 mt-1">@_negotiations.Count(n => n.NegotiationStatus == "Pending_Call")</div>
+
+
+
             <div class="text-[11px] text-amber-600 mt-0.5">Awaiting clerk negotiation</div>
+
+
+
         </div>
+
+
+
         <div class="bg-white rounded-xl border border-emerald-200 bg-emerald-50/30 p-4 shadow-xs">
+
+
+
             <div class="text-[11px] font-bold uppercase tracking-wider text-emerald-700">Deals Won</div>
+
+
+
             <div class="text-2xl font-black text-emerald-800 mt-1">@_negotiations.Count(n => n.NegotiationStatus == "Deal_Won")</div>
+
+
+
             <div class="text-[11px] text-emerald-600 mt-0.5">Converted to event shoots</div>
+
+
+
         </div>
+
+
+
         <div class="bg-white rounded-xl border border-indigo-200 bg-indigo-50/30 p-4 shadow-xs">
+
+
+
             <div class="text-[11px] font-bold uppercase tracking-wider text-indigo-700">Active Shoot Events</div>
+
+
+
             <div class="text-2xl font-black text-indigo-800 mt-1">@_negotiations.Count(n => !string.IsNullOrWhiteSpace(n.EventAppointmentId))</div>
+
+
+
             <div class="text-[11px] text-indigo-600 mt-0.5">Staff &amp; gear reserved</div>
+
+
+
         </div>
+
+
+
     </div>
+
+
+
+
+
+
 
     @* ── Filters & Search ─────────────────────────────────────────────────── *@
+
+
+
     <div class="bg-white rounded-xl border border-slate-200 p-3.5 shadow-xs flex flex-col sm:flex-row items-center justify-between gap-3">
+
+
+
         <div class="flex flex-wrap items-center gap-1.5 w-full sm:w-auto">
+
+
+
             @foreach (var filter in new[] { "All", "Pending_Call", "Deal_Won", "Deal_Lost", "Rescheduled" })
+
+
+
             {
+
+
+
                 var label = filter == "All" ? "All Inquiries" : filter.Replace("_", " ");
+
+
+
                 var isSelected = _selectedStatusFilter == filter;
+
+
+
                 <button type="button"
+
+
+
                         @onclick="() => SetFilter(filter)"
+
+
+
                         class="px-3 py-1.5 rounded-lg text-xs font-bold transition-all @(isSelected ? "bg-slate-900 text-white shadow-xs" : "bg-slate-100 text-slate-600 hover:bg-slate-200")">
+
+
+
                     @label
+
+
+
                 </button>
+
+
+
             }
+
+
+
         </div>
+
+
+
+
+
+
 
         <div class="w-full sm:w-64">
+
+
+
             <input type="text"
+
+
+
                    @bind="_searchTerm"
+
+
+
                    @bind:event="oninput"
+
+
+
                    placeholder="Search client, ID, notes…"
+
+
+
                    class="w-full px-3 py-1.5 bg-slate-50 border border-slate-200 rounded-lg text-xs focus:outline-none focus:ring-1 focus:ring-slate-900" />
+
+
+
         </div>
+
+
+
     </div>
 
+
+
+
+
+
+
     @* ── Negotiations Table ───────────────────────────────────────────────── *@
+
+
+
     <div class="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
+
+
+
         <div class="overflow-x-auto">
+
+
+
             <table class="w-full text-left text-xs border-collapse">
+
+
+
                 <thead class="bg-slate-50 border-b border-slate-200 text-slate-600 font-bold uppercase text-[10px] tracking-wider">
+
+
+
                     <tr>
+
+
+
                         <th class="px-4 py-3">Inquiry ID</th>
+
+
+
                         <th class="px-4 py-3">Client Contact</th>
+
+
+
                         <th class="px-4 py-3">Consultation Schedule</th>
+
+
+
                         <th class="px-4 py-3">Assigned Office Clerk</th>
+
+
+
                         <th class="px-4 py-3">Status</th>
+
+
+
                         <th class="px-4 py-3">Meeting Link</th>
+
+
+
                         <th class="px-4 py-3 text-right">Action</th>
+
+
+
                     </tr>
+
+
+
                 </thead>
+
+
+
                 <tbody class="divide-y divide-slate-100">
+
+
+
                     @if (_loading)
+
+
+
                     {
+
+
+
                         <tr>
+
+
+
                             <td colspan="7" class="px-4 py-12 text-center text-slate-400 italic">
+
+
+
                                 Loading consultations inbox…
+
+
+
                             </td>
+
+
+
                         </tr>
+
+
+
                     }
+
+
+
                     else if (!FilteredNegotiations.Any())
+
+
+
                     {
+
+
+
                         <tr>
+
+
+
                             <td colspan="7" class="px-4 py-12 text-center text-slate-500">
+
+
+
                                 <div class="text-2xl mb-1">📋</div>
+
+
+
                                 <div class="font-bold">No consultations found</div>
+
+
+
                                 <p class="text-slate-400 mt-0.5">No inquiries match the active filter criteria.</p>
+
+
+
                             </td>
+
+
+
                         </tr>
+
+
+
                     }
+
+
+
                     else
+
+
+
                     {
+
+
+
                         @foreach (var neg in FilteredNegotiations)
+
+
+
                         {
+
+
+
                             <tr class="hover:bg-slate-50/80 transition-colors @(_selectedNegotiation?.NegotiationId == neg.NegotiationId ? "bg-teal-50/50" : "")">
+
+
+
                                 <td class="px-4 py-3 font-mono font-bold text-slate-900">
+
+
+
                                     @neg.NegotiationId
+
+
+
                                     @if (!string.IsNullOrWhiteSpace(neg.EventAppointmentId))
+
+
+
                                     {
+
+
+
                                         <div class="text-[10px] font-mono text-teal-700">↳ @neg.EventAppointmentId</div>
+
+
+
                                     }
+
+
+
                                 </td>
+
+
+
                                 <td class="px-4 py-3">
+
+
+
                                     <div class="font-bold text-slate-900">@neg.CustomerName</div>
+
+
+
                                     <div class="text-[11px] text-slate-500">@neg.CustomerEmail</div>
+
+
+
                                     @if (!string.IsNullOrWhiteSpace(neg.CustomerPhone))
+
+
+
                                     {
+
+
+
                                         <div class="text-[10px] text-slate-400">@neg.CustomerPhone</div>
+
+
+
                                     }
+
+
+
                                 </td>
+
+
+
                                 <td class="px-4 py-3">
+
+
+
                                     <div class="font-medium text-slate-900">@neg.ConsultationDate.ToString("MMM dd, yyyy")</div>
+
+
+
                                     <div class="text-[11px] text-slate-500">@neg.ConsultationTime.ToString("h:mm tt")</div>
+
+
+
                                 </td>
+
+
+
                                 <td class="px-4 py-3">
+
+
+
                                     <div class="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[11px] font-semibold bg-slate-100 text-slate-800">
+
+
+
                                         <span>👤</span>
+
+
+
                                         <span>@neg.EmployeeName</span>
+
+
+
                                     </div>
+
+
+
                                 </td>
+
+
+
                                 <td class="px-4 py-3">
+
+
+
                                     <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-[11px] font-bold @GetStatusBadgeClass(neg.NegotiationStatus)">
+
+
+
                                         @neg.NegotiationStatus.Replace("_", " ")
+
+
+
                                     </span>
+
+
+
                                 </td>
+
+
+
                                 <td class="px-4 py-3">
+
+
+
                                     @if (!string.IsNullOrWhiteSpace(neg.MeetingLink))
+
+
+
                                     {
+
+
+
                                         <a href="@neg.MeetingLink" target="_blank" rel="noopener noreferrer" 
+
+
+
                                            class="inline-flex items-center gap-1 px-2.5 py-1 rounded bg-teal-50 hover:bg-teal-100 text-teal-800 font-semibold text-[11px] border border-teal-200 transition-colors">
+
+
+
                                             <span>🎥</span>
+
+
+
                                             <span>Google Meet</span>
+
+
+
                                         </a>
+
+
+
                                     }
+
+
+
                                     else
+
+
+
                                     {
+
+
+
                                         <span class="text-slate-400 italic">No link</span>
+
+
+
                                     }
+
+
+
                                 </td>
+
+
+
                                 <td class="px-4 py-3 text-right">
+
+
+
                                     <button type="button"
+
+
+
                                             @onclick="() => OpenFloatingPanel(neg)"
+
+
+
                                             class="px-3 py-1.5 bg-slate-900 hover:bg-black text-white rounded-lg text-xs font-semibold shadow-xs transition-colors">
+
+
+
                                         Open Details →
+
+
+
                                     </button>
+
+
+
                                 </td>
+
+
+
                             </tr>
+
+
+
                         }
+
+
+
                     }
+
+
+
                 </tbody>
+
+
+
             </table>
+
+
+
         </div>
+
+
+
     </div>
+
+
+
+
+
+
 
 </div>
 
+
+
+
+
+
+
 @* ── Floating Drawer / Panel ─────────────────────────────────────────────── *@
+
+
+
 @if (_isPanelOpen && _selectedNegotiation != null)
+
+
+
 {
+
+
+
     <div class="fixed inset-0 z-50 flex justify-end bg-black/40 backdrop-blur-xs transition-opacity animate-in fade-in duration-200"
+
+
+
          @onclick="CloseFloatingPanel">
+
+
+
         <div class="w-full max-w-xl h-full bg-white shadow-2xl flex flex-col justify-between overflow-y-auto"
+
+
+
              @onclick:stopPropagation="true">
+
+
+
             
+
+
+
             @* Panel Header *@
+
+
+
             <div class="px-6 py-4 border-b border-slate-200 flex items-center justify-between bg-slate-50/50">
+
+
+
                 <div>
+
+
+
                     <div class="flex items-center gap-2">
+
+
+
                         <span class="font-mono text-xs font-extrabold text-slate-500">@_selectedNegotiation.NegotiationId</span>
+
+
+
                         <span class="px-2.5 py-0.5 rounded-full text-[11px] font-bold @GetStatusBadgeClass(_selectedNegotiation.NegotiationStatus)">
+
+
+
                             @_selectedNegotiation.NegotiationStatus.Replace("_", " ")
+
+
+
                         </span>
+
+
+
                     </div>
+
+
+
                     <h2 class="text-lg font-black text-slate-900 mt-1">@_selectedNegotiation.CustomerName</h2>
+
+
+
                 </div>
+
+
+
                 <button type="button" @onclick="CloseFloatingPanel" class="p-2 text-slate-400 hover:text-slate-700 rounded-lg">
+
+
+
                     ✕
+
+
+
                 </button>
+
+
+
             </div>
+
+
+
+
+
+
 
             @* Panel Body Content *@
+
+
+
             <div class="p-6 space-y-5 flex-1">
+
+
+
                 @* Client Information Box *@
+
+
+
                 <div class="bg-slate-50 rounded-xl border border-slate-200 p-4 space-y-2">
+
+
+
                     <h3 class="text-xs font-bold uppercase tracking-wider text-slate-500">Client Inquirer Details</h3>
+
+
+
                     <div class="grid grid-cols-2 gap-2 text-xs">
+
+
+
                         <div>
+
+
+
                             <span class="text-slate-400 block text-[10px]">Email</span>
+
+
+
                             <span class="font-semibold text-slate-900">@_selectedNegotiation.CustomerEmail</span>
+
+
+
                         </div>
+
+
+
                         <div>
+
+
+
                             <span class="text-slate-400 block text-[10px]">Phone</span>
+
+
+
                             <span class="font-semibold text-slate-900">@(string.IsNullOrWhiteSpace(_selectedNegotiation.CustomerPhone) ? "—" : _selectedNegotiation.CustomerPhone)</span>
+
+
+
                         </div>
+
+
+
                         <div>
+
+
+
                             <span class="text-slate-400 block text-[10px]">Consultation Date</span>
+
+
+
                             <span class="font-semibold text-slate-900">@_selectedNegotiation.ConsultationDate.ToString("MMMM dd, yyyy")</span>
+
+
+
                         </div>
+
+
+
                         <div>
+
+
+
                             <span class="text-slate-400 block text-[10px]">Consultation Time</span>
+
+
+
                             <span class="font-semibold text-slate-900">@_selectedNegotiation.ConsultationTime.ToString("h:mm tt")</span>
+
+
+
                         </div>
+
+
+
                     </div>
+
+
+
                 </div>
+
+
+
+
+
+
 
                 @* Inquiry Notes Box *@
+
+
+
                 <div class="bg-white rounded-xl border border-slate-200 p-4 space-y-1.5">
+
+
+
                     <h3 class="text-xs font-bold uppercase tracking-wider text-slate-500">Client Inquiry &amp; Desired Services</h3>
+
+
+
                     <p class="text-xs text-slate-700 leading-relaxed whitespace-pre-line">
+
+
+
                         @(string.IsNullOrWhiteSpace(_selectedNegotiation.InquiryNotes) ? "No special inquiry notes specified by client." : _selectedNegotiation.InquiryNotes)
+
+
+
                     </p>
+
+
+
                 </div>
+
+
+
+
+
+
 
                 @* Teleconference Card *@
+
+
+
                 <div class="bg-teal-50/50 rounded-xl border border-teal-200 p-4 space-y-2.5">
+
+
+
                     <div class="flex items-center justify-between">
+
+
+
                         <h3 class="text-xs font-bold uppercase tracking-wider text-teal-800">Online Teleconference Link</h3>
+
+
+
                         <span class="px-2 py-0.5 rounded text-[10px] font-bold bg-teal-100 text-teal-800">Google Meet</span>
+
+
+
                     </div>
+
+
+
                     <div class="text-xs font-mono text-slate-600 bg-white p-2 rounded border border-teal-200 break-all select-all">
+
+
+
                         @_selectedNegotiation.MeetingLink
+
+
+
                     </div>
+
+
+
                     <a href="@_selectedNegotiation.MeetingLink" target="_blank" rel="noopener noreferrer"
+
+
+
                        class="inline-flex items-center justify-center gap-2 w-full py-2.5 bg-teal-700 hover:bg-teal-800 text-white rounded-lg text-xs font-bold shadow-xs transition-colors">
+
+
+
                         <span>🎥</span>
+
+
+
                         <span>Join Online Video Consultation</span>
+
+
+
                     </a>
+
+
+
                 </div>
+
+
+
+
+
+
 
                 @* If Appointment is already booked for this deal *@
+
+
+
                 @if (_selectedNegotiation.Appointment != null)
+
+
+
                 {
+
+
+
                     <div class="bg-indigo-50/50 rounded-xl border border-indigo-200 p-4 space-y-2">
+
+
+
                         <div class="flex items-center justify-between">
+
+
+
                             <h3 class="text-xs font-bold uppercase tracking-wider text-indigo-800">Executed Event Appointment</h3>
+
+
+
                             <span class="px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-indigo-100 text-indigo-800">
+
+
+
                                 @_selectedNegotiation.Appointment.EventStatus
+
+
+
                             </span>
+
+
+
                         </div>
+
+
+
                         <div class="text-xs font-bold text-slate-900">#@_selectedNegotiation.Appointment.EventAppointmentId - @_selectedNegotiation.Appointment.EventName</div>
+
+
+
                         <div class="grid grid-cols-2 gap-2 text-xs text-slate-600 mt-2">
+
+
+
                             <div>Total: <strong>₱@_selectedNegotiation.Appointment.TotalAmount.ToString("N2")</strong></div>
-                            <div>25% Deposit: <strong>₱@_selectedNegotiation.Appointment.DownpaymentAmount.ToString("N2")</strong> (@_selectedNegotiation.Appointment.DownpaymentStatus)</div>
+
+
+
+                            <div>15% Deposit: <strong>₱@_selectedNegotiation.Appointment.DownpaymentAmount.ToString("N2")</strong> (@_selectedNegotiation.Appointment.DownpaymentStatus)</div>
+
+
+
                         </div>
+
+
+
                         @if (_selectedNegotiation.Appointment.HoldExpiresAt != null && _selectedNegotiation.Appointment.DownpaymentStatus == "Pending")
+
+
+
                         {
+
+
+
                             <div class="text-[11px] font-semibold text-amber-700 mt-1">
+
+
+
                                 ⏳ Reservation Hold: @_selectedNegotiation.Appointment.HoldExpiresAt.Value.ToLocalTime().ToString("hh:mm tt")
+
+
+
                             </div>
+
+
+
                         }
+
+
+
                     </div>
+
+
+
                 }
+
+
+
             </div>
+
+
+
+
+
+
 
             @* Panel Bottom Action Footer (The 3 Deal Buttons) *@
+
+
+
             <div class="p-6 border-t border-slate-200 bg-slate-50/80 space-y-2">
+
+
+
                 <div class="text-[11px] font-bold uppercase tracking-wider text-slate-400 mb-1">Consultation Outcome</div>
+
+
+
                 
+
+
+
                 @if (_selectedNegotiation.NegotiationStatus == "Pending_Call" || _selectedNegotiation.NegotiationStatus == "Rescheduled")
+
+
+
                 {
+
+
+
                     <div class="grid grid-cols-3 gap-2">
+
+
+
                         <button type="button"
+
+
+
                                 @onclick='() => MarkDealOutcomeAsync(_selectedNegotiation.NegotiationId, "Deal_Lost")'
+
+
+
                                 class="py-2.5 px-3 bg-red-100 hover:bg-red-200 text-red-700 text-xs font-bold rounded-lg transition-colors text-center">
+
+
+
                             Failed with Deal
+
+
+
                         </button>
+
+
+
                         <button type="button"
+
+
+
                                 @onclick="OpenRescheduleModal"
+
+
+
                                 class="py-2.5 px-3 bg-amber-100 hover:bg-amber-200 text-amber-800 text-xs font-bold rounded-lg transition-colors text-center">
+
+
+
                             Reschedule
+
+
+
                         </button>
+
+
+
                         <button type="button"
+
+
+
                                 @onclick="OpenEventWizard"
+
+
+
                                 class="py-2.5 px-3 bg-emerald-700 hover:bg-emerald-800 text-white text-xs font-bold rounded-lg shadow-sm transition-colors text-center">
+
+
+
                             Success with Deal
+
+
+
                         </button>
+
+
+
                     </div>
+
+
+
                 }
+
+
+
                 else
+
+
+
                 {
+
+
+
                     <div class="text-xs text-slate-600 font-medium">
+
+
+
                         Consultation outcome finalized as <strong>@_selectedNegotiation.NegotiationStatus.Replace("_", " ")</strong>.
+
+
+
                     </div>
+
+
+
                 }
+
+
+
             </div>
+
+
+
+
+
+
 
         </div>
+
+
+
     </div>
+
+
+
 }
 
-@* ── 4-STEP EVENT APPOINTMENT SETUP WIZARD MODAL ─────────────────────────── *@
+
+
+
+
+
+
+@* ── 5-STEP EVENT APPOINTMENT SETUP WIZARD MODAL ─────────────────────────── *@
+
+
+
 @if (_isWizardOpen && _selectedNegotiation != null)
+
+
+
 {
+
+
+
     <div class="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-xs p-4 animate-in fade-in duration-200">
+
+
+
         <div class="bg-white rounded-2xl shadow-2xl border border-slate-200 w-full max-w-3xl max-h-[90vh] flex flex-col overflow-hidden">
+
+
+
             
+
+
+
             @* Wizard Header *@
+
+
+
             <div class="px-6 py-4 border-b border-slate-200 flex items-center justify-between bg-slate-50">
+
+
+
                 <div>
-                    <span class="text-[11px] font-bold text-teal-700 uppercase tracking-wider">Office Clerk Booking Wizard</span>
+
+
+
+                    <span class="text-[11px] font-bold text-teal-700 uppercase tracking-wider">Office Clerk Booking Wizard (5 Steps)</span>
+
+
+
                     <h2 class="text-lg font-black text-slate-900">Setup Event Appointment for @_selectedNegotiation.CustomerName</h2>
+
+
+
                 </div>
+
+
+
                 <button type="button" @onclick="CloseEventWizard" class="text-slate-400 hover:text-slate-700 p-2">✕</button>
+
+
+
             </div>
+
+
+
+
+
+
 
             @* Stepper Progress *@
-            <div class="px-6 py-3 bg-slate-100/70 border-b border-slate-200 flex items-center justify-between text-xs font-bold">
-                <div class="flex items-center gap-2 @(_wizardStep == 1 ? "text-slate-900" : (_wizardStep > 1 ? "text-teal-700" : "text-slate-400"))">
-                    <span class="w-6 h-6 rounded-full flex items-center justify-center @(_wizardStep == 1 ? "bg-slate-900 text-white" : (_wizardStep > 1 ? "bg-teal-700 text-white" : "bg-slate-300 text-slate-600"))">1</span>
-                    <span>Date, Time &amp; Venue</span>
-                </div>
-                <span class="text-slate-300">&rarr;</span>
-                <div class="flex items-center gap-2 @(_wizardStep == 2 ? "text-slate-900" : (_wizardStep > 2 ? "text-teal-700" : "text-slate-400"))">
-                    <span class="w-6 h-6 rounded-full flex items-center justify-center @(_wizardStep == 2 ? "bg-slate-900 text-white" : (_wizardStep > 2 ? "bg-teal-700 text-white" : "bg-slate-300 text-slate-600"))">2</span>
+
+
+
+            <div class="px-6 py-3 bg-slate-100/70 border-b border-slate-200 flex items-center justify-between text-xs font-bold overflow-x-auto">
+
+
+
+                <div class="flex items-center gap-1.5 shrink-0 @(_wizardStep == 1 ? "text-slate-900 font-black" : (_wizardStep > 1 ? "text-teal-700" : "text-slate-400"))">
+
+
+
+                    <span class="w-6 h-6 rounded-full flex items-center justify-center text-[11px] @(_wizardStep == 1 ? "bg-slate-900 text-white" : (_wizardStep > 1 ? "bg-teal-700 text-white" : "bg-slate-300 text-slate-600"))">1</span>
+
+
+
                     <span>Services</span>
+
+
+
                 </div>
-                <span class="text-slate-300">&rarr;</span>
-                <div class="flex items-center gap-2 @(_wizardStep == 3 ? "text-slate-900" : (_wizardStep > 3 ? "text-teal-700" : "text-slate-400"))">
-                    <span class="w-6 h-6 rounded-full flex items-center justify-center @(_wizardStep == 3 ? "bg-slate-900 text-white" : (_wizardStep > 3 ? "bg-teal-700 text-white" : "bg-slate-300 text-slate-600"))">3</span>
-                    <span>Staff &amp; Team Leader</span>
+
+
+
+                <span class="text-slate-300 shrink-0 mx-1">&rarr;</span>
+
+
+
+                <div class="flex items-center gap-1.5 shrink-0 @(_wizardStep == 2 ? "text-slate-900 font-black" : (_wizardStep > 2 ? "text-teal-700" : "text-slate-400"))">
+
+
+
+                    <span class="w-6 h-6 rounded-full flex items-center justify-center text-[11px] @(_wizardStep == 2 ? "bg-slate-900 text-white" : (_wizardStep > 2 ? "bg-teal-700 text-white" : "bg-slate-300 text-slate-600"))">2</span>
+
+
+
+                    <span>Payment &amp; Email</span>
+
+
+
                 </div>
-                <span class="text-slate-300">&rarr;</span>
-                <div class="flex items-center gap-2 @(_wizardStep == 4 ? "text-slate-900" : "text-slate-400")">
-                    <span class="w-6 h-6 rounded-full flex items-center justify-center @(_wizardStep == 4 ? "bg-slate-900 text-white" : "bg-slate-300 text-slate-600")">4</span>
+
+
+
+                <span class="text-slate-300 shrink-0 mx-1">&rarr;</span>
+
+
+
+                <div class="flex items-center gap-1.5 shrink-0 @(_wizardStep == 3 ? "text-slate-900 font-black" : (_wizardStep > 3 ? "text-teal-700" : "text-slate-400"))">
+
+
+
+                    <span class="w-6 h-6 rounded-full flex items-center justify-center text-[11px] @(_wizardStep == 3 ? "bg-slate-900 text-white" : (_wizardStep > 3 ? "bg-teal-700 text-white" : "bg-slate-300 text-slate-600"))">3</span>
+
+
+
+                    <span>Staff &amp; Leader</span>
+
+
+
+                </div>
+
+
+
+                <span class="text-slate-300 shrink-0 mx-1">&rarr;</span>
+
+
+
+                <div class="flex items-center gap-1.5 shrink-0 @(_wizardStep == 4 ? "text-slate-900 font-black" : (_wizardStep > 4 ? "text-teal-700" : "text-slate-400"))">
+
+
+
+                    <span class="w-6 h-6 rounded-full flex items-center justify-center text-[11px] @(_wizardStep == 4 ? "bg-slate-900 text-white" : (_wizardStep > 4 ? "bg-teal-700 text-white" : "bg-slate-300 text-slate-600"))">4</span>
+
+
+
                     <span>Equipment</span>
+
+
+
                 </div>
+
+
+
+                <span class="text-slate-300 shrink-0 mx-1">&rarr;</span>
+
+
+
+                <div class="flex items-center gap-1.5 shrink-0 @(_wizardStep == 5 ? "text-slate-900 font-black" : "text-slate-400")">
+
+
+
+                    <span class="w-6 h-6 rounded-full flex items-center justify-center text-[11px] @(_wizardStep == 5 ? "bg-slate-900 text-white" : "bg-slate-300 text-slate-600")">5</span>
+
+
+
+                    <span>Await Payment</span>
+
+
+
+                </div>
+
+
+
             </div>
+
+
+
+
+
+
 
             @* Wizard Step Body *@
+
+
+
             <div class="p-6 overflow-y-auto flex-1 space-y-4">
+
+
+
                 
+
+
+
                 @if (!string.IsNullOrWhiteSpace(_wizardError))
+
+
+
                 {
+
+
+
                     <div class="p-3 rounded-lg bg-red-50 border border-red-200 text-red-700 text-xs font-semibold">
+
+
+
                         @_wizardError
+
+
+
                     </div>
+
+
+
                 }
 
-                @* STEP 1: Date, Time & Venue *@
+
+
+
+
+
+
+                @* STEP 1: Services Selection & Shoot Details *@
+
+
+
                 @if (_wizardStep == 1)
+
+
+
                 {
-                    <div class="space-y-4">
-                        <div>
-                            <label class="block text-xs font-bold text-slate-700 mb-1">Event Photoshoot Name *</label>
-                            <input type="text" @bind="_wizardEventName" placeholder="e.g. Wedding Editorial &amp; Studio Reception"
-                                   class="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-xs font-medium focus:outline-none focus:ring-1 focus:ring-slate-900" />
-                        </div>
 
-                        <div class="grid grid-cols-2 gap-4">
-                            <div>
-                                <label class="block text-xs font-bold text-slate-700 mb-1">Event Date *</label>
-                                <input type="date" @bind="_wizardEventDate"
-                                       class="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-xs font-medium focus:outline-none focus:ring-1 focus:ring-slate-900" />
-                            </div>
-                            <div>
-                                <label class="block text-xs font-bold text-slate-700 mb-1">Event Start Time *</label>
-                                <input type="time" @bind="_wizardEventTime"
-                                       class="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-xs font-medium focus:outline-none focus:ring-1 focus:ring-slate-900" />
-                            </div>
-                        </div>
+
+
+                    <div class="space-y-4">
+
+
 
                         <div>
-                            <label class="block text-xs font-bold text-slate-700 mb-1">Venue Place / Location Address *</label>
-                            <input type="text" @bind="_wizardEventLocation" placeholder="e.g. Studio Main Stage or Hotel Ballroom Manila"
-                                   class="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-xs font-medium focus:outline-none focus:ring-1 focus:ring-slate-900" />
-                        </div>
 
-                        <div>
-                            <label class="block text-xs font-bold text-slate-700 mb-1">Special Client Requirements &amp; Notes</label>
-                            <textarea @bind="_wizardEventDescription" rows="3" placeholder="Notes agreed upon during teleconference..."
-                                      class="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-xs font-medium focus:outline-none focus:ring-1 focus:ring-slate-900"></textarea>
-                        </div>
-                    </div>
-                }
-                else if (_wizardStep == 2)
-                {
-                    @* STEP 2: Choose Services *@
-                    <div class="space-y-4">
-                        <div class="flex items-center justify-between pb-2 border-b border-slate-100">
-                            <span class="text-xs font-bold text-slate-700">Select studio packages &amp; creative services:</span>
-                            <span class="text-xs font-bold text-teal-700">@_selectedServiceIds.Count selected</span>
-                        </div>
 
-                        <div class="grid grid-cols-1 md:grid-cols-2 gap-3 max-h-72 overflow-y-auto pr-1">
-                            @foreach (var svc in _availableServices)
-                            {
-                                var isChecked = _selectedServiceIds.Contains(svc.ServicesId);
-                                <label class="flex items-start gap-3 p-3 rounded-xl border cursor-pointer transition-all @(isChecked ? "border-slate-900 bg-slate-50 shadow-xs" : "border-slate-200 hover:border-slate-300")">
-                                    <input type="checkbox"
-                                           checked="@isChecked"
-                                           @onchange="e => ToggleWizardService(svc.ServicesId, (bool)(e.Value ?? false))"
-                                           class="mt-1 rounded text-slate-900 focus:ring-0" />
-                                    <div class="flex-1">
-                                        <div class="flex items-center justify-between">
-                                            <span class="text-xs font-bold text-slate-900">@svc.Name</span>
-                                            <span class="text-xs font-mono font-bold text-slate-900">₱@svc.Price.ToString("N2")</span>
-                                        </div>
-                                        <p class="text-[11px] text-slate-500 line-clamp-2 mt-0.5">@svc.Description</p>
-                                    </div>
-                                </label>
-                            }
-                        </div>
 
-                        @* Live Price Calculation Box *@
-                        <div class="bg-slate-900 text-white rounded-xl p-4 shadow-sm flex items-center justify-between">
-                            <div>
-                                <span class="text-[10px] uppercase tracking-wider text-slate-400 font-bold">Total Estimated Package</span>
-                                <div class="text-xl font-black font-mono">₱@CalculateWizardTotal().ToString("N2")</div>
+                            <div class="flex items-center justify-between pb-2 border-b border-slate-100">
+
+
+
+                                <span class="text-xs font-bold text-slate-700">Select studio packages &amp; creative services (multiple selections allowed):</span>
+
+
+
+                                <span class="text-xs font-bold text-teal-700">@_selectedServiceIds.Count selected</span>
+
+
+
                             </div>
-                            <div class="text-right">
-                                <span class="text-[10px] uppercase tracking-wider text-emerald-400 font-bold">25% Required Downpayment</span>
-                                <div class="text-xl font-black font-mono text-emerald-400">₱@CalculateWizardDownpayment().ToString("N2")</div>
-                                <span class="text-[10px] text-slate-400">Remaining 75% due on event finish</span>
-                            </div>
-                        </div>
-                    </div>
-                } else if (_wizardStep == 3) {
-                    @* STEP 3: Staff Assignment & Team Leader Selection *@
-                    <div class="space-y-4">
-                        <div class="flex items-center justify-between pb-2 border-b border-slate-100">
-                            <div>
-                                <span class="text-xs font-bold text-slate-700">Assign Creative Crew</span>
-                                <p class="text-[11px] text-slate-500 mt-0.5">Pre-set minimum staff needed: <strong>@Math.Max(1, _selectedServiceIds.Count)</strong> crew member(s). Select exactly one <strong>Team Leader</strong>.</p>
-                            </div>
-                        </div>
 
-                        <div class="space-y-2 max-h-72 overflow-y-auto pr-1">
-                            @foreach (var emp in _availableEmployees)
-                            {
-                                var isAssigned = _selectedEmployeeIds.Contains(emp.EmployeeId);
-                                var isTeamLead = _teamLeaderId == emp.EmployeeId;
 
-                                <div class="flex items-center justify-between p-3 rounded-xl border transition-all @(isAssigned ? "border-slate-800 bg-slate-50" : "border-slate-200")">
-                                    <label class="flex items-center gap-3 cursor-pointer flex-1">
+
+
+
+
+
+                            <div class="grid grid-cols-1 md:grid-cols-2 gap-3 max-h-52 overflow-y-auto pr-1 mt-2">
+
+
+
+                                @foreach (var svc in _availableServices)
+
+
+
+                                {
+
+
+
+                                    var isChecked = _selectedServiceIds.Contains(svc.ServicesId);
+
+
+
+                                    <label class="flex items-start gap-3 p-3 rounded-xl border cursor-pointer transition-all @(isChecked ? "border-slate-900 bg-slate-50 shadow-xs" : "border-slate-200 hover:border-slate-300")">
+
+
+
                                         <input type="checkbox"
-                                               checked="@isAssigned"
-                                               @onchange="e => ToggleWizardEmployee(emp.EmployeeId, (bool)(e.Value ?? false))"
-                                               class="rounded text-slate-900" />
-                                        <div>
-                                            <div class="text-xs font-bold text-slate-900">@emp.FullName</div>
-                                            <div class="text-[11px] text-slate-500 font-medium">@string.Join(", ", emp.Specializations) &bull; <span class="font-mono text-[10px]">@emp.EmployeeId</span></div>
+
+
+
+                                               checked="@isChecked"
+
+
+
+                                               @onchange="e => ToggleWizardService(svc.ServicesId, (bool)(e.Value ?? false))"
+
+
+
+                                               class="mt-1 rounded text-slate-900 focus:ring-0" />
+
+
+
+                                        <div class="flex-1">
+
+
+
+                                            <div class="flex items-center justify-between">
+
+
+
+                                                <span class="text-xs font-bold text-slate-900">@svc.Name</span>
+
+
+
+                                                <span class="text-xs font-mono font-bold text-slate-900">₱@svc.Price.ToString("N2")</span>
+
+
+
+                                            </div>
+
+
+
+                                            <p class="text-[11px] text-slate-500 line-clamp-2 mt-0.5">@svc.Description</p>
+
+
+
                                         </div>
+
+
+
                                     </label>
 
-                                    @if (isAssigned)
-                                    {
-                                        <label class="flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold cursor-pointer transition-all @(isTeamLead ? "bg-amber-400 text-slate-950 shadow-xs" : "bg-slate-200 text-slate-700 hover:bg-slate-300")">
-                                            <input type="radio"
-                                                   name="teamLeaderRadio"
-                                                   checked="@isTeamLead"
-                                                   @onchange="() => _teamLeaderId = emp.EmployeeId"
-                                                   class="text-slate-950 focus:ring-0" />
-                                            <span>Team Leader</span>
-                                        </label>
-                                    }
-                                </div>
-                            }
-                        </div>
-                    </div>
-                } else if (_wizardStep == 4) {
-                    @* STEP 4: Equipment Allocation *@
-                    <div class="space-y-4">
-                        <div class="flex items-center justify-between pb-2 border-b border-slate-100">
-                            <div>
-                                <span class="text-xs font-bold text-slate-700">Equipment Allocation</span>
-                                <p class="text-[11px] text-slate-500 mt-0.5">Auto-suggested gear tailored to the requested services. Modify if required.</p>
+
+
+                                }
+
+
+
                             </div>
-                            <span class="text-xs font-bold text-teal-700">@_selectedEquipmentIds.Count items reserved</span>
+
+
+
                         </div>
 
-                        <div class="grid grid-cols-1 sm:grid-cols-2 gap-2 max-h-72 overflow-y-auto pr-1">
-                            @foreach (var eq in _availableEquipment)
-                            {
-                                var isChecked = _selectedEquipmentIds.Contains(eq.EquipmentID);
-                                <label class="flex items-center gap-2.5 p-2.5 rounded-lg border cursor-pointer transition-all text-xs @(isChecked ? "border-slate-800 bg-slate-50 font-bold" : "border-slate-200 text-slate-600 hover:border-slate-300")">
-                                    <input type="checkbox"
-                                           checked="@isChecked"
-                                           @onchange="e => ToggleWizardEquipment(eq.EquipmentID, (bool)(e.Value ?? false))"
-                                           class="rounded text-slate-900" />
-                                    <div class="truncate">
-                                        <span class="font-mono text-[10px] text-slate-400 block">@eq.EquipmentID</span>
-                                        <span class="truncate block">@eq.EquipmentName</span>
-                                    </div>
-                                </label>
-                            }
+
+
+
+
+
+
+                        <div class="pt-2 border-t border-slate-100">
+
+
+
+                            <span class="text-xs font-bold text-slate-700 block mb-2">Shoot Details (Auto-populated from consultation inquiry):</span>
+
+
+
+                            <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+
+
+
+                                <div class="sm:col-span-2">
+
+
+
+                                    <label class="block text-[11px] font-bold text-slate-600 mb-1">Event Photoshoot Name *</label>
+
+
+
+                                    <input type="text" @bind="_wizardEventName" placeholder="e.g. Graduation &amp; Editorial Session"
+
+
+
+                                           class="w-full px-3 py-1.5 bg-slate-50 border border-slate-200 rounded-lg text-xs font-medium focus:outline-none focus:ring-1 focus:ring-slate-900" />
+
+
+
+                                </div>
+
+
+
+                                <div>
+
+
+
+                                    <label class="block text-[11px] font-bold text-slate-600 mb-1">Shoot Date *</label>
+
+
+
+                                    <input type="date" @bind="_wizardEventDate"
+
+
+
+                                           class="w-full px-3 py-1.5 bg-slate-50 border border-slate-200 rounded-lg text-xs font-medium focus:outline-none focus:ring-1 focus:ring-slate-900" />
+
+
+
+                                </div>
+
+
+
+                                <div>
+
+
+
+                                    <label class="block text-[11px] font-bold text-slate-600 mb-1">Shoot Time *</label>
+
+
+
+                                    <input type="time" @bind="_wizardEventTime"
+
+
+
+                                           class="w-full px-3 py-1.5 bg-slate-50 border border-slate-200 rounded-lg text-xs font-medium focus:outline-none focus:ring-1 focus:ring-slate-900" />
+
+
+
+                                </div>
+
+
+
+                                <div class="sm:col-span-2">
+
+
+
+                                    <label class="block text-[11px] font-bold text-slate-600 mb-1">Venue Location / Studio Stage *</label>
+
+
+
+                                    <input type="text" @bind="_wizardEventLocation" placeholder="e.g. Studio A (Main Hall)"
+
+
+
+                                           class="w-full px-3 py-1.5 bg-slate-50 border border-slate-200 rounded-lg text-xs font-medium focus:outline-none focus:ring-1 focus:ring-slate-900" />
+
+
+
+                                </div>
+
+
+
+                                <div class="sm:col-span-2">
+
+
+
+                                    <label class="block text-[11px] font-bold text-slate-600 mb-1">Notes &amp; Client Preferences</label>
+
+
+
+                                    <textarea @bind="_wizardEventDescription" rows="2" placeholder="Agreed during consultation..."
+
+
+
+                                              class="w-full px-3 py-1.5 bg-slate-50 border border-slate-200 rounded-lg text-xs font-medium focus:outline-none focus:ring-1 focus:ring-slate-900"></textarea>
+
+
+
+                                </div>
+
+
+
+                            </div>
+
+
+
                         </div>
+
+
+
+
+
+
+
+                        @* Live Price Calculation Box *@
+
+
+
+                        <div class="bg-slate-900 text-white rounded-xl p-4 shadow-sm flex items-center justify-between">
+
+
+
+                            <div>
+
+
+
+                                <span class="text-[10px] uppercase tracking-wider text-slate-400 font-bold">Total Estimated Package</span>
+
+
+
+                                <div class="text-xl font-black font-mono">₱@CalculateWizardTotal().ToString("N2")</div>
+
+
+
+                            </div>
+
+
+
+                            <div class="text-right">
+
+
+
+                                <span class="text-[10px] uppercase tracking-wider text-emerald-400 font-bold">15% Required Reservation Fee</span>
+
+
+
+                                <div class="text-xl font-black font-mono text-emerald-400">₱@CalculateWizardDownpayment().ToString("N2")</div>
+
+
+
+                                <span class="text-[10px] text-slate-400">Remaining 85% due on shoot completion</span>
+
+
+
+                            </div>
+
+
+
+                        </div>
+
+
+
                     </div>
+
+
+
                 }
 
+
+
+                else if (_wizardStep == 2)
+
+
+
+                {
+
+
+
+                    @* STEP 2: Total Payment & Payment Method Selection *@
+
+
+
+                    <div class="space-y-4">
+
+
+
+                        <div class="bg-slate-50 border border-slate-200 rounded-xl p-4 space-y-3">
+
+
+
+                            <h4 class="text-xs font-bold text-slate-700 uppercase tracking-wider">Payment Breakdown</h4>
+
+
+
+                            <div class="space-y-2 text-xs">
+
+
+
+                                <div class="flex justify-between py-1 border-b border-slate-200">
+
+
+
+                                    <span class="text-slate-600">Total Services Value:</span>
+
+
+
+                                    <span class="font-bold font-mono text-slate-900">₱@CalculateWizardTotal().ToString("N2")</span>
+
+
+
+                                </div>
+
+
+
+                                <div class="flex justify-between py-1 border-b border-slate-200 text-emerald-700 font-bold">
+
+
+
+                                    <span>Required Reservation Deposit (15%):</span>
+
+
+
+                                    <span class="font-mono text-sm">₱@CalculateWizardDownpayment().ToString("N2")</span>
+
+
+
+                                </div>
+
+
+
+                                <div class="flex justify-between py-1 text-slate-500">
+
+
+
+                                    <span>Balance Due Upon Completion (85%):</span>
+
+
+
+                                    <span class="font-mono">₱@((CalculateWizardTotal() - CalculateWizardDownpayment()).ToString("N2"))</span>
+
+
+
+                                </div>
+
+
+
+                            </div>
+
+
+
+                        </div>
+
+
+
+
+
+
+
+                        <div class="space-y-2">
+
+
+
+                            <label class="block text-xs font-bold text-slate-900">Customer Payment Method for Reservation Fee *</label>
+
+
+
+                            <p class="text-[11px] text-slate-500 mb-2">Select the payment channel requested by the client. Only online card or QR Ph e-wallet are accepted for instant automated reservation confirmation.</p>
+
+
+
+
+
+
+
+                            <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+
+
+
+                                <label class="flex items-start gap-3 p-3.5 rounded-xl border cursor-pointer transition-all @(_wizardPaymentMethod == "Online Card" ? "border-slate-900 bg-slate-50 ring-2 ring-slate-900 shadow-xs" : "border-slate-200 hover:border-slate-300")">
+
+
+
+                                    <input type="radio"
+
+
+
+                                           name="paymentMethodRadio"
+
+
+
+                                           value="Online Card"
+
+
+
+                                           checked="@(_wizardPaymentMethod == "Online Card")"
+
+
+
+                                           @onchange='() => _wizardPaymentMethod = "Online Card"'
+
+
+
+                                           class="mt-0.5 text-slate-900 focus:ring-0" />
+
+
+
+                                    <div>
+
+
+
+                                        <div class="text-xs font-black text-slate-900 flex items-center gap-1.5">
+
+
+
+                                            <span>💳 Online Card</span>
+
+
+
+                                        </div>
+
+
+
+                                        <div class="text-[11px] text-slate-500 mt-0.5">Visa, Mastercard, JCB</div>
+
+
+
+                                        <div class="text-[10px] text-slate-400 mt-1">Instant checkout link with 3D Secure</div>
+
+
+
+                                    </div>
+
+
+
+                                </label>
+
+
+
+
+
+
+
+                                <label class="flex items-start gap-3 p-3.5 rounded-xl border cursor-pointer transition-all @(_wizardPaymentMethod == "QR Ph" ? "border-slate-900 bg-slate-50 ring-2 ring-slate-900 shadow-xs" : "border-slate-200 hover:border-slate-300")">
+
+
+
+                                    <input type="radio"
+
+
+
+                                           name="paymentMethodRadio"
+
+
+
+                                           value="QR Ph"
+
+
+
+                                           checked="@(_wizardPaymentMethod == "QR Ph")"
+
+
+
+                                           @onchange='() => _wizardPaymentMethod = "QR Ph"'
+
+
+
+                                           class="mt-0.5 text-slate-900 focus:ring-0" />
+
+
+
+                                    <div>
+
+
+
+                                        <div class="text-xs font-black text-slate-900 flex items-center gap-1.5">
+
+
+
+                                            <span>📱 QR Ph / E-Wallet</span>
+
+
+
+                                        </div>
+
+
+
+                                        <div class="text-[11px] text-slate-500 mt-0.5">GCash, Maya, ShopeePay</div>
+
+
+
+                                        <div class="text-[10px] text-slate-400 mt-1">Direct scan-to-pay via Bangko Sentral QR Ph</div>
+
+
+
+                                    </div>
+
+
+
+                                </label>
+
+
+
+                            </div>
+
+
+
+                        </div>
+
+
+
+
+
+
+
+                        <div class="p-3.5 bg-blue-50 border border-blue-200 rounded-xl flex items-start gap-3 text-blue-900">
+
+
+
+                            <span class="text-base">📧</span>
+
+
+
+                            <div class="text-xs leading-relaxed">
+
+
+
+                                <strong>Notification Dispatch:</strong> Clicking <em>Proceed &amp; Send Payment Email</em> will initialize the appointment, generate the official Xendit deposit invoice, and email the customer directly with a secure payment link and a <strong>30-minute hold countdown</strong>.
+
+
+
+                            </div>
+
+
+
+                        </div>
+
+
+
+                    </div>
+
+
+
+                }
+
+
+
+                else if (_wizardStep == 3)
+
+
+
+                {
+
+
+
+                    @* STEP 3: Staff Assignment & Team Leader Selection *@
+
+
+
+                    <div class="space-y-4">
+
+
+
+                        <div class="flex items-center justify-between pb-2 border-b border-slate-100">
+
+
+
+                            <div>
+
+
+
+                                <span class="text-xs font-bold text-slate-700">Assign Creative Crew</span>
+
+
+
+                                <p class="text-[11px] text-slate-500 mt-0.5">Pre-set minimum staff needed: <strong>@Math.Max(1, _selectedServiceIds.Count)</strong> crew member(s). Select exactly one <strong>Team Leader</strong>.</p>
+
+
+
+                            </div>
+
+
+
+                        </div>
+
+
+
+
+
+
+
+                        <div class="space-y-2 max-h-72 overflow-y-auto pr-1">
+
+
+
+                            @foreach (var emp in _availableEmployees)
+
+
+
+                            {
+
+
+
+                                var isAssigned = _selectedEmployeeIds.Contains(emp.EmployeeId);
+
+
+
+                                var isTeamLead = _teamLeaderId == emp.EmployeeId;
+
+
+
+
+
+
+
+                                <div class="flex items-center justify-between p-3 rounded-xl border transition-all @(isAssigned ? "border-slate-800 bg-slate-50" : "border-slate-200")">
+
+
+
+                                    <label class="flex items-center gap-3 cursor-pointer flex-1">
+
+
+
+                                        <input type="checkbox"
+
+
+
+                                               checked="@isAssigned"
+
+
+
+                                               @onchange="e => ToggleWizardEmployee(emp.EmployeeId, (bool)(e.Value ?? false))"
+
+
+
+                                               class="rounded text-slate-900" />
+
+
+
+                                        <div>
+
+
+
+                                            <div class="text-xs font-bold text-slate-900">@emp.FullName</div>
+
+
+
+                                            <div class="text-[11px] text-slate-500 font-medium">@string.Join(", ", emp.Specializations) &bull; <span class="font-mono text-[10px]">@emp.EmployeeId</span></div>
+
+
+
+                                        </div>
+
+
+
+                                    </label>
+
+
+
+
+
+
+
+                                    @if (isAssigned)
+
+
+
+                                    {
+
+
+
+                                        <label class="flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold cursor-pointer transition-all @(isTeamLead ? "bg-amber-400 text-slate-950 shadow-xs" : "bg-slate-200 text-slate-700 hover:bg-slate-300")">
+
+
+
+                                            <input type="radio"
+
+
+
+                                                   name="teamLeaderRadio"
+
+
+
+                                                   checked="@isTeamLead"
+
+
+
+                                                   @onchange="() => _teamLeaderId = emp.EmployeeId"
+
+
+
+                                                   class="text-slate-950 focus:ring-0" />
+
+
+
+                                            <span>Team Leader</span>
+
+
+
+                                        </label>
+
+
+
+                                    }
+
+
+
+                                </div>
+
+
+
+                            }
+
+
+
+                        </div>
+
+
+
+                    </div>
+
+
+
+                }
+
+
+
+                else if (_wizardStep == 4)
+
+
+
+                {
+
+
+
+                    @* STEP 4: Equipment Allocation *@
+
+
+
+                    <div class="space-y-4">
+
+
+
+                        <div class="flex items-center justify-between pb-2 border-b border-slate-100">
+
+
+
+                            <div>
+
+
+
+                                <span class="text-xs font-bold text-slate-700">Equipment Allocation</span>
+
+
+
+                                <p class="text-[11px] text-slate-500 mt-0.5">Auto-suggested gear tailored to the requested services. Modify if required.</p>
+
+
+
+                            </div>
+
+
+
+                            <span class="text-xs font-bold text-teal-700">@_selectedEquipmentIds.Count items reserved</span>
+
+
+
+                        </div>
+
+
+
+
+
+
+
+                        <div class="grid grid-cols-1 sm:grid-cols-2 gap-2 max-h-72 overflow-y-auto pr-1">
+
+
+
+                            @foreach (var eq in _availableEquipment)
+
+
+
+                            {
+
+
+
+                                var isChecked = _selectedEquipmentIds.Contains(eq.EquipmentID);
+
+
+
+                                <label class="flex items-center gap-2.5 p-2.5 rounded-lg border cursor-pointer transition-all text-xs @(isChecked ? "border-slate-800 bg-slate-50 font-bold" : "border-slate-200 text-slate-600 hover:border-slate-300")">
+
+
+
+                                    <input type="checkbox"
+
+
+
+                                           checked="@isChecked"
+
+
+
+                                           @onchange="e => ToggleWizardEquipment(eq.EquipmentID, (bool)(e.Value ?? false))"
+
+
+
+                                           class="rounded text-slate-900" />
+
+
+
+                                    <div class="truncate">
+
+
+
+                                        <span class="font-mono text-[10px] text-slate-400 block">@eq.EquipmentID</span>
+
+
+
+                                        <span class="truncate block">@eq.EquipmentName</span>
+
+
+
+                                    </div>
+
+
+
+                                </label>
+
+
+
+                            }
+
+
+
+                        </div>
+
+
+
+                    </div>
+
+
+
+                }
+
+
+
+                else if (_wizardStep == 5)
+
+
+
+                {
+
+
+
+                    @* STEP 5: Awaiting Payment & Confirmation *@
+
+
+
+                    <div class="space-y-4">
+
+
+
+                        @if (_wizardPaymentStatus == "Paid" || _wizardPaymentStatus == "Confirmed")
+
+
+
+                        {
+
+
+
+                            <div class="p-4 bg-emerald-50 border border-emerald-200 rounded-xl text-emerald-900 flex items-start gap-3">
+
+
+
+                                <span class="text-2xl">🎉</span>
+
+
+
+                                <div>
+
+
+
+                                    <h4 class="text-xs font-black uppercase tracking-wider text-emerald-800">Reservation Fee Settled!</h4>
+
+
+
+                                    <p class="text-xs mt-1">The customer has successfully settled the 15% reservation deposit of <strong>₱@CalculateWizardDownpayment().ToString("N2")</strong>. You may now finalize and confirm the event booking.</p>
+
+
+
+                                </div>
+
+
+
+                            </div>
+
+
+
+                        }
+
+
+
+                        else
+
+
+
+                        {
+
+
+
+                            <div class="p-4 bg-amber-50 border border-amber-200 rounded-xl text-amber-900 flex items-start gap-3">
+
+
+
+                                <span class="text-2xl">⏳</span>
+
+
+
+                                <div>
+
+
+
+                                    <h4 class="text-xs font-black uppercase tracking-wider text-amber-800">Awaiting Reservation Fee Payment</h4>
+
+
+
+                                    <p class="text-xs mt-1">Customer must pay the reservation fee of <strong>₱@CalculateWizardDownpayment().ToString("N2")</strong> before this event appointment can be confirmed.</p>
+
+
+
+                                </div>
+
+
+
+                            </div>
+
+
+
+                        }
+
+
+
+
+
+
+
+                        @* Timer Card *@
+
+
+
+                        <div class="bg-slate-900 text-white p-5 rounded-2xl flex items-center justify-between shadow-sm">
+
+
+
+                            <div>
+
+
+
+                                <span class="text-[10px] uppercase tracking-wider text-slate-400 font-bold">30-Minute Reservation Hold</span>
+
+
+
+                                <div class="text-2xl font-black font-mono mt-1 @(IsHoldExpired() ? "text-red-400" : "text-emerald-400")">
+
+
+
+                                    @GetRemainingHoldText()
+
+
+
+                                </div>
+
+
+
+                                <div class="text-[11px] text-slate-400 mt-1">
+
+
+
+                                    Hold expires at @_wizardHoldExpiresAt.ToLocalTime().ToString("h:mm tt")
+
+
+
+                                </div>
+
+
+
+                            </div>
+
+
+
+
+
+
+
+                            <div class="text-right space-y-2">
+
+
+
+                                <button type="button"
+
+
+
+                                        @onclick="VerifyWizardPaymentAsync"
+
+
+
+                                        disabled="@_isVerifyingPayment"
+
+
+
+                                        class="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-bold transition-all shadow-xs block w-full">
+
+
+
+                                    @(_isVerifyingPayment ? "Checking..." : "🔄 Check Payment Status")
+
+
+
+                                </button>
+
+
+
+
+
+
+
+                                <button type="button"
+
+
+
+                                        @onclick="AskAnotherPaymentAsync"
+
+
+
+                                        disabled="@_isRequestingExtension"
+
+
+
+                                        class="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-white border border-slate-700 rounded-lg text-xs font-bold transition-all shadow-xs block w-full">
+
+
+
+                                    @(_isRequestingExtension ? "Sending..." : "📩 Ask Another Payment")
+
+
+
+                                </button>
+
+
+
+                            </div>
+
+
+
+                        </div>
+
+
+
+
+
+
+
+                        @* Checkout URL Link *@
+
+
+
+                        @if (!string.IsNullOrWhiteSpace(_wizardInvoiceUrl))
+
+
+
+                        {
+
+
+
+                            <div class="bg-slate-50 border border-slate-200 rounded-xl p-3.5 flex items-center justify-between text-xs">
+
+
+
+                                <div class="truncate mr-3">
+
+
+
+                                    <span class="text-[11px] text-slate-500 font-bold block">Customer Payment URL</span>
+
+
+
+                                    <a href="@(GetWizardCheckoutUrl())" target="_blank" class="text-teal-700 hover:underline font-mono text-[11px] truncate block">
+
+
+
+                                        @_wizardInvoiceUrl
+
+
+
+                                    </a>
+
+
+
+                                </div>
+
+
+
+                                <div class="flex items-center gap-2 shrink-0">
+
+
+
+                                    <a href="@(GetWizardCheckoutUrl())" target="_blank" class="px-3 py-1.5 bg-slate-200 hover:bg-slate-300 rounded-lg text-slate-800 font-bold text-xs">
+
+
+
+                                        Open ↗
+
+
+
+                                    </a>
+
+
+
+                                </div>
+
+
+
+                            </div>
+
+
+
+                        }
+
+
+
+
+
+
+
+                        <div class="text-[11px] text-slate-500 leading-normal bg-slate-100 p-3 rounded-lg">
+
+
+
+                            <strong>Note for Office Clerk:</strong> If the customer does not complete payment within 30 minutes, click <strong>Ask Another Payment</strong> to extend the hold timer by another 30 minutes and re-send the payment request email to the client.
+
+
+
+                        </div>
+
+
+
+                    </div>
+
+
+
+                }
+
+
+
+
+
+
+
             </div>
+
+
+
+
+
+
 
             @* Wizard Footer Navigation *@
+
+
+
             <div class="px-6 py-4 border-t border-slate-200 bg-slate-50 flex items-center justify-between">
-                <div>
-                    @if (_wizardStep > 1)
-                    {
-                        <button type="button" @onclick="PrevWizardStep" class="px-4 py-2 border border-slate-300 rounded-lg text-xs font-semibold text-slate-700 hover:bg-slate-100">
-                            &larr; Back
-                        </button>
-                    }
-                </div>
+
+
 
                 <div>
-                    @if (_wizardStep < 4)
+
+
+
+                    @if (_wizardStep > 1 && _wizardStep < 5)
+
+
+
                     {
-                        <button type="button" @onclick="NextWizardStep" class="px-5 py-2 bg-slate-900 hover:bg-black text-white rounded-lg text-xs font-bold shadow-xs transition-colors">
-                            Continue &rarr;
+
+
+
+                        <button type="button" @onclick="PrevWizardStep" class="px-4 py-2 border border-slate-300 rounded-lg text-xs font-semibold text-slate-700 hover:bg-slate-100">
+
+
+
+                            &larr; Back
+
+
+
                         </button>
+
+
+
                     }
-                    else
-                    {
-                        <button type="button"
-                                @onclick="SaveAndExecuteEventAppointmentAsync"
-                                disabled="@_submittingWizard"
-                                class="inline-flex items-center gap-2 px-6 py-2.5 bg-emerald-700 hover:bg-emerald-800 text-white rounded-lg text-xs font-bold shadow-sm transition-all">
-                            <span>@(_submittingWizard ? "Creating Appointment..." : "Confirm & Send 25% Deposit Link")</span>
-                            <span>&rarr;</span>
-                        </button>
-                    }
+
+
+
                 </div>
+
+
+
+
+
+
+
+                <div>
+
+
+
+                    @if (_wizardStep == 1)
+
+
+
+                    {
+
+
+
+                        <button type="button" @onclick="NextWizardStep" class="px-5 py-2 bg-slate-900 hover:bg-black text-white rounded-lg text-xs font-bold shadow-xs transition-colors">
+
+
+
+                            Continue to Payment &rarr;
+
+
+
+                        </button>
+
+
+
+                    }
+
+
+
+                    else if (_wizardStep == 2)
+
+
+
+                    {
+
+
+
+                        <button type="button"
+
+
+
+                                @onclick="Step2ProceedAndSendEmailAsync"
+
+
+
+                                disabled="@_submittingWizard"
+
+
+
+                                class="inline-flex items-center gap-2 px-6 py-2.5 bg-emerald-700 hover:bg-emerald-800 text-white rounded-lg text-xs font-bold shadow-sm transition-all">
+
+
+
+                            <span>@(_submittingWizard ? "Dispatching Email..." : "Proceed & Send Payment Email")</span>
+
+
+
+                            <span>&rarr;</span>
+
+
+
+                        </button>
+
+
+
+                    }
+
+
+
+                    else if (_wizardStep == 3)
+
+
+
+                    {
+
+
+
+                        <button type="button" @onclick="NextWizardStep" class="px-5 py-2 bg-slate-900 hover:bg-black text-white rounded-lg text-xs font-bold shadow-xs transition-colors">
+
+
+
+                            Continue to Equipment &rarr;
+
+
+
+                        </button>
+
+
+
+                    }
+
+
+
+                    else if (_wizardStep == 4)
+
+
+
+                    {
+
+
+
+                        <button type="button"
+
+
+
+                                @onclick="Step4ProceedToPaymentStatusAsync"
+
+
+
+                                disabled="@_submittingWizard"
+
+
+
+                                class="inline-flex items-center gap-2 px-6 py-2.5 bg-slate-900 hover:bg-black text-white rounded-lg text-xs font-bold shadow-sm transition-all">
+
+
+
+                            <span>@(_submittingWizard ? "Saving Roster..." : "Proceed to Payment Status")</span>
+
+
+
+                            <span>&rarr;</span>
+
+
+
+                        </button>
+
+
+
+                    }
+
+
+
+                    else if (_wizardStep == 5)
+
+
+
+                    {
+
+
+
+                        <button type="button"
+
+
+
+                                @onclick="FinalizeBookingAsync"
+
+
+
+                                disabled="@(_wizardPaymentStatus != "Paid" && _wizardPaymentStatus != "Confirmed")"
+
+
+
+                                class="inline-flex items-center gap-2 px-6 py-2.5 @(_wizardPaymentStatus == "Paid" || _wizardPaymentStatus == "Confirmed" ? "bg-emerald-700 hover:bg-emerald-800 cursor-pointer" : "bg-slate-300 cursor-not-allowed") text-white rounded-lg text-xs font-bold shadow-sm transition-all">
+
+
+
+                            <span>Confirm &amp; Finalize Booking</span>
+
+
+
+                            <span>✓</span>
+
+
+
+                        </button>
+
+
+
+                    }
+
+
+
+                </div>
+
+
+
             </div>
 
+
+
+
+
+
+
         </div>
+
+
+
     </div>
+
+
+
 }
+
+
+
+
+
+
 
 @* ── Consultation Reschedule Modal ────────────────────────────────────────── *@
+
+
+
 @if (_isRescheduleModalOpen && _selectedNegotiation != null)
+
+
+
 {
+
+
+
     <div class="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-xs p-4 animate-in fade-in duration-200">
+
+
+
         <div class="bg-white rounded-2xl shadow-xl border border-slate-200 w-full max-w-md p-6 space-y-4">
+
+
+
             <div class="flex items-center justify-between border-b border-slate-100 pb-3">
+
+
+
                 <div>
+
+
+
                     <h3 class="text-sm font-black text-slate-900">Reschedule Consultation</h3>
+
+
+
                     <p class="text-xs text-slate-500 mt-0.5">@_selectedNegotiation.CustomerName &bull; <span class="font-mono text-[11px]">#@_selectedNegotiation.NegotiationId</span></p>
+
+
+
                 </div>
+
+
+
                 <button type="button" @onclick="() => _isRescheduleModalOpen = false" class="text-slate-400 hover:text-slate-700">✕</button>
+
+
+
             </div>
+
+
+
+
+
+
 
             <div class="p-3 bg-blue-50 border border-blue-200 rounded-xl text-xs text-blue-800 space-y-1">
+
+
+
                 <p><strong>Current Schedule:</strong> @_selectedNegotiation.ConsultationDate.ToString("ddd, MMM d, yyyy") at @_selectedNegotiation.ConsultationTime.ToString("h:mm tt")</p>
+
+
+
                 <p class="text-[11px] text-blue-600">Selecting a new date/time will update the Events Calendar and notify the client.</p>
+
+
+
             </div>
+
+
+
+
+
+
 
             @if (!string.IsNullOrEmpty(_rescheduleError))
+
+
+
             {
+
+
+
                 <div class="p-2.5 bg-red-50 border border-red-200 rounded-lg text-xs text-red-700">
+
+
+
                     @_rescheduleError
+
+
+
                 </div>
+
+
+
             }
 
+
+
+
+
+
+
             <div class="space-y-3 text-xs">
+
+
+
                 <div>
+
+
+
                     <label class="block font-bold text-slate-700 mb-1">New Consultation Date *</label>
+
+
+
                     <input type="date" @bind="_rescheduleDate" min="@DateTime.Today.ToString("yyyy-MM-dd")"
+
+
+
                            class="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg font-medium" />
+
+
+
                 </div>
+
+
+
                 <div>
+
+
+
                     <label class="block font-bold text-slate-700 mb-1">New Consultation Time *</label>
+
+
+
                     <input type="time" @bind="_rescheduleTime"
+
+
+
                            class="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg font-medium" />
+
+
+
                 </div>
+
+
+
                 <div>
+
+
+
                     <label class="block font-bold text-slate-700 mb-1">Reschedule Reason &amp; Client Notes</label>
+
+
+
                     <textarea @bind="_rescheduleNotes" rows="2"
+
+
+
                               class="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg"
+
+
+
                               placeholder="Client requested weekend morning slot instead..."></textarea>
+
+
+
                 </div>
+
+
+
             </div>
 
+
+
+
+
+
+
             <div class="flex justify-end gap-2 pt-2 border-t border-slate-100">
+
+
+
                 <button type="button" @onclick="() => _isRescheduleModalOpen = false" class="px-3 py-1.5 border border-slate-300 rounded-lg text-xs font-semibold text-slate-700">Cancel</button>
+
+
+
                 <button type="button" @onclick="ConfirmRescheduleAsync" disabled="@_submittingReschedule"
+
+
+
                         class="px-4 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-xs font-bold transition-colors">
+
+
+
                     @(_submittingReschedule ? "Updating Calendar..." : "Confirm & Update Calendar")
+
+
+
                 </button>
+
+
+
             </div>
+
+
+
         </div>
+
+
+
     </div>
+
+
+
 }
+
+
+
+
+
+
 
 @* ── Client Simulation Modal ─────────────────────────────────────────────── *@
+
+
+
 @if (_isSimulateModalOpen)
+
+
+
 {
+
+
+
     <div class="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-xs p-4 animate-in fade-in duration-200">
+
+
+
         <div class="bg-white rounded-2xl shadow-xl border border-slate-200 w-full max-w-md p-6 space-y-4">
+
+
+
             <div class="flex items-center justify-between border-b border-slate-100 pb-3">
+
+
+
                 <h3 class="text-sm font-black text-slate-900">Simulate Incoming Client Inquiry</h3>
+
+
+
                 <button type="button" @onclick="() => _isSimulateModalOpen = false" class="text-slate-400 hover:text-slate-700">✕</button>
+
+
+
             </div>
+
+
+
+
+
+
 
             <div class="space-y-3 text-xs">
+
+
+
                 <div>
+
+
+
                     <label class="block font-bold text-slate-700 mb-1">Customer Full Name</label>
+
+
+
                     <input type="text" @bind="_simCustomerName" class="w-full px-3 py-2 bg-slate-50 border rounded-lg" placeholder="Maria Santos" />
+
+
+
                 </div>
+
+
+
                 <div>
+
+
+
                     <label class="block font-bold text-slate-700 mb-1">Customer Email</label>
+
+
+
                     <input type="email" @bind="_simCustomerEmail" class="w-full px-3 py-2 bg-slate-50 border rounded-lg" placeholder="maria@gmail.com" />
+
+
+
                 </div>
+
+
+
                 <div>
+
+
+
                     <label class="block font-bold text-slate-700 mb-1">Customer Phone</label>
+
+
+
                     <input type="text" @bind="_simCustomerPhone" class="w-full px-3 py-2 bg-slate-50 border rounded-lg" placeholder="+63 917 123 4567" />
+
+
+
                 </div>
+
+
+
                 <div>
+
+
+
                     <label class="block font-bold text-slate-700 mb-1">Inquiry Details</label>
+
+
+
                     <textarea @bind="_simInquiryNotes" rows="2" class="w-full px-3 py-2 bg-slate-50 border rounded-lg" placeholder="Inquiring about Wedding & Portrait packages for next month."></textarea>
+
+
+
                 </div>
+
+
+
             </div>
+
+
+
+
+
+
 
             <div class="flex justify-end gap-2 pt-2 border-t border-slate-100">
+
+
+
                 <button type="button" @onclick="() => _isSimulateModalOpen = false" class="px-3 py-1.5 border rounded-lg text-xs font-semibold">Cancel</button>
+
+
+
                 <button type="button" @onclick="SubmitSimulatedInquiryAsync" class="px-4 py-1.5 bg-slate-900 text-white rounded-lg text-xs font-bold">Submit Inquiry</button>
+
+
+
             </div>
+
+
+
         </div>
+
+
+
     </div>
+
+
+
 }
 
+
+
+
+
+
+
 @code {
+
+
+
     private List<ConsultationNegotiationDto> _negotiations = new();
+
+
+
     private bool _loading = true;
+
+
+
     private string _selectedStatusFilter = "All";
+
+
+
     private string _searchTerm = string.Empty;
 
+
+
+
+
+
+
     // Floating Panel State
+
+
+
     private bool _isPanelOpen = false;
+
+
+
     private ConsultationNegotiationDto? _selectedNegotiation;
 
+
+
+
+
+
+
     // Wizard State
+
+
+
     private bool _isWizardOpen = false;
+
+
+
     private int _wizardStep = 1;
+
+
+
     private bool _submittingWizard = false;
+
+
+
     private string? _wizardError;
 
+
+
+
+
+
+
     // Wizard Form Fields
+
+
+
     private string _wizardEventName = string.Empty;
+
+
+
     private string _wizardEventDescription = string.Empty;
+
+
+
     private DateTime _wizardEventDate = DateTime.Today.AddDays(7);
+
+
+
     private DateTime _wizardEventTime = DateTime.Today.AddHours(14);
+
+
+
     private string _wizardEventLocation = string.Empty;
+
+
+
     private HashSet<string> _selectedServiceIds = new();
+
+
+
     private HashSet<string> _selectedEmployeeIds = new();
+
+
+
     private string _teamLeaderId = string.Empty;
+
+
+
     private HashSet<string> _selectedEquipmentIds = new();
 
+
+
+
+
+
+
     // Catalog Data
+
+
+
     private List<ScheduleServiceOption> _availableServices = new();
+
+
+
     private List<EmployeeViewModel> _availableEmployees = new();
+
+
+
     private List<EquipmentItemModel> _availableEquipment = new();
 
+
+
+
+
+
+
     // Simulation Modal
+
+
+
     private bool _isSimulateModalOpen = false;
+
+
+
     private string _simCustomerName = "Isabella Cruz";
+
+
+
     private string _simCustomerEmail = "isabella.cruz@example.com";
+
+
+
     private string _simCustomerPhone = "0917-888-9999";
+
+
+
     private string _simInquiryNotes = "Hello, inquiring about outdoor fashion photoshoot & studio editorial rates.";
 
+
+
+
+
+
+
     protected override async Task OnInitializedAsync()
+
+
+
     {
+
+
+
         if (AuthStateProvider != null)
+
+
+
         {
+
+
+
             var authState = await AuthStateProvider.GetAuthenticationStateAsync();
+
+
+
             var user = authState.User;
+
+
+
             bool isAdmin = EmployeeRoleHelper.IsAdmin(user) || EmployeeRoleHelper.IsSystemAdmin(user);
+
+
+
             bool isClerk = EmployeeRoleHelper.IsOfficeClerk(user, UserService);
 
+
+
+
+
+
+
             if (!isAdmin && !isClerk)
+
+
+
             {
+
+
+
                 // Access restricted to verified Office Clerks and Admins
+
+
+
                 Nav.NavigateTo("/staff");
+
+
+
                 return;
+
+
+
             }
+
+
+
         }
+
+
+
+
+
+
 
         await LoadNegotiationsAsync();
+
+
+
         await LoadCatalogDataAsync();
+
+
+
     }
+
+
+
+
+
+
 
     private async Task LoadNegotiationsAsync()
+
+
+
     {
+
+
+
         _loading = true;
+
+
+
         try
+
+
+
         {
+
+
+
             var res = await ConsultationApi.GetNegotiationsAsync();
+
+
+
             if (res.IsSuccess && res.Value != null)
+
+
+
             {
+
+
+
                 _negotiations = res.Value.ToList();
+
+
+
             }
+
+
+
         }
+
+
+
         finally
+
+
+
         {
+
+
+
             _loading = false;
+
+
+
         }
+
+
+
     }
+
+
+
+
+
+
 
     private async Task LoadCatalogDataAsync()
+
+
+
     {
+
+
+
         try
+
+
+
         {
+
+
+
             var svcRes = await ScheduleApi.GetServicesAsync();
+
+
+
             if (svcRes.IsSuccess && svcRes.Value != null)
+
+
+
             {
+
+
+
                 _availableServices = svcRes.Value.ToList();
+
+
+
             }
 
+
+
+
+
+
+
             var emps = await EmployeeService.GetEmployeesAsync();
+
+
+
             _availableEmployees = emps.Where(e => e.Status == "Active").ToList();
 
+
+
+
+
+
+
             var eqs = await EquipmentService.GetEquipmentsAsync();
+
+
+
             _availableEquipment = eqs.ToList();
+
+
+
         }
+
+
+
         catch { }
+
+
+
     }
 
+
+
+
+
+
+
     private IEnumerable<ConsultationNegotiationDto> FilteredNegotiations =>
+
+
+
         _negotiations.Where(n =>
+
+
+
             (_selectedStatusFilter == "All" || n.NegotiationStatus == _selectedStatusFilter) &&
+
+
+
             (string.IsNullOrWhiteSpace(_searchTerm) ||
+
+
+
              n.NegotiationId.Contains(_searchTerm, StringComparison.OrdinalIgnoreCase) ||
+
+
+
              n.CustomerName.Contains(_searchTerm, StringComparison.OrdinalIgnoreCase) ||
+
+
+
              n.CustomerEmail.Contains(_searchTerm, StringComparison.OrdinalIgnoreCase) ||
+
+
+
              n.InquiryNotes.Contains(_searchTerm, StringComparison.OrdinalIgnoreCase)));
+
+
+
+
+
+
 
     private void SetFilter(string filter) => _selectedStatusFilter = filter;
 
+
+
+
+
+
+
     private void OpenFloatingPanel(ConsultationNegotiationDto neg)
+
+
+
     {
+
+
+
         _selectedNegotiation = neg;
+
+
+
         _isPanelOpen = true;
+
+
+
     }
+
+
+
+
+
+
 
     private void CloseFloatingPanel()
+
+
+
     {
+
+
+
         _isPanelOpen = false;
+
+
+
     }
+
+
+
+
+
+
 
     private async Task MarkDealOutcomeAsync(string negotiationId, string outcome)
+
+
+
     {
+
+
+
         var res = await ConsultationApi.UpdateNegotiationOutcomeAsync(negotiationId, new UpdateNegotiationOutcomeRequest
+
+
+
         {
+
+
+
             NegotiationStatus = outcome,
+
+
+
             Notes = $"Marked as {outcome} by office clerk on {DateTime.Now:g}."
+
+
+
         });
 
+
+
+
+
+
+
         if (res.IsSuccess)
+
+
+
         {
+
+
+
             await LoadNegotiationsAsync();
+
+
+
             if (_selectedNegotiation?.NegotiationId == negotiationId)
+
+
+
             {
+
+
+
                 _selectedNegotiation.NegotiationStatus = outcome;
+
+
+
             }
+
+
+
         }
+
+
+
     }
+
+
+
+
+
+
 
     private bool _isRescheduleModalOpen = false;
+
+
+
     private DateTime _rescheduleDate = DateTime.Today.AddDays(1);
+
+
+
     private DateTime _rescheduleTime = DateTime.Today.AddHours(10);
+
+
+
     private string _rescheduleNotes = string.Empty;
+
+
+
     private string? _rescheduleError;
+
+
+
     private bool _submittingReschedule = false;
 
+
+
+
+
+
+
     private void OpenRescheduleModal()
+
+
+
     {
+
+
+
         if (_selectedNegotiation == null) return;
+
+
+
         _rescheduleDate = _selectedNegotiation.ConsultationDate.ToDateTime(TimeOnly.MinValue);
+
+
+
         if (_rescheduleDate < DateTime.Today) _rescheduleDate = DateTime.Today.AddDays(1);
+
+
+
         _rescheduleTime = DateTime.Today.Add(_selectedNegotiation.ConsultationTime.ToTimeSpan());
+
+
+
         _rescheduleNotes = string.Empty;
+
+
+
         _rescheduleError = null;
+
+
+
         _isRescheduleModalOpen = true;
+
+
+
     }
+
+
+
+
+
+
 
     private async Task ConfirmRescheduleAsync()
+
+
+
     {
+
+
+
         if (_selectedNegotiation == null) return;
+
+
+
         _submittingReschedule = true;
+
+
+
         _rescheduleError = null;
+
+
+
         try
+
+
+
         {
+
+
+
             var res = await ConsultationApi.UpdateNegotiationOutcomeAsync(_selectedNegotiation.NegotiationId, new UpdateNegotiationOutcomeRequest
+
+
+
             {
+
+
+
                 NegotiationStatus = "Rescheduled",
+
+
+
                 Notes = string.IsNullOrWhiteSpace(_rescheduleNotes) ? "Consultation rescheduled by office clerk." : _rescheduleNotes,
+
+
+
                 NewConsultationDate = DateOnly.FromDateTime(_rescheduleDate),
+
+
+
                 NewConsultationTime = TimeOnly.FromDateTime(_rescheduleTime)
+
+
+
             });
 
+
+
+
+
+
+
             if (res.IsSuccess)
+
+
+
             {
+
+
+
                 _isRescheduleModalOpen = false;
+
+
+
                 await LoadNegotiationsAsync();
+
+
+
                 _selectedNegotiation = _negotiations.FirstOrDefault(n => n.NegotiationId == _selectedNegotiation.NegotiationId);
+
+
+
                 await DisplayToast("Consultation rescheduled and notification email dispatched to client.");
+
+
+
             }
+
+
+
             else
+
+
+
             {
+
+
+
                 _rescheduleError = res.Error?.Message ?? "Failed to reschedule consultation.";
+
+
+
             }
+
+
+
         }
+
+
+
         catch (Exception ex)
+
+
+
         {
+
+
+
             _rescheduleError = ex.Message;
+
+
+
         }
+
+
+
         finally
+
+
+
         {
+
+
+
             _submittingReschedule = false;
+
+
+
         }
+
+
+
     }
 
-    // ── Wizard Management ──────────────────────────────────────────────────
-    private void OpenEventWizard()
+
+
+
+
+
+
+    // ── Wizard Management (5-Step Deal Flow) ────────────────────────────────
+
+
+
+    private string _wizardPaymentMethod = "Online Card";
+
+
+
+    private string? _wizardCreatedAppointmentId;
+
+
+
+    private string? _wizardInvoiceUrl;
+
+
+
+    private DateTime _wizardHoldExpiresAt = DateTime.UtcNow.AddMinutes(30);
+
+
+
+    private string _wizardPaymentStatus = "Pending";
+
+
+
+    private bool _isVerifyingPayment = false;
+
+
+
+    private bool _isRequestingExtension = false;
+
+
+
+    private System.Threading.Timer? _countdownTimer;
+
+
+
+
+
+
+
+    private void StartCountdownTimer()
+
+
+
     {
+
+
+
+        _countdownTimer?.Dispose();
+
+
+
+        _countdownTimer = new System.Threading.Timer(async _ =>
+
+
+
+        {
+
+
+
+            if (_isWizardOpen && _wizardStep == 5)
+
+
+
+            {
+
+
+
+                await InvokeAsync(StateHasChanged);
+
+
+
+            }
+
+
+
+        }, null, 1000, 1000);
+
+
+
+    }
+
+
+
+
+
+
+
+    private string GetRemainingHoldText()
+
+
+
+    {
+
+
+
+        var diff = _wizardHoldExpiresAt - DateTime.UtcNow;
+
+
+
+        if (diff <= TimeSpan.Zero)
+
+
+
+            return "00:00 (Hold expired - please request another payment)";
+
+
+
+        return $"{Math.Floor(diff.TotalMinutes):00}:{diff.Seconds:00} remaining";
+
+
+
+    }
+
+
+
+
+
+
+
+    private bool IsHoldExpired() => (_wizardHoldExpiresAt - DateTime.UtcNow) <= TimeSpan.Zero;
+
+
+
+
+
+
+
+    private void OpenEventWizard()
+
+
+
+    {
+
+
+
         if (_selectedNegotiation == null) return;
+
+
+
         _wizardStep = 1;
+
+
+
         _wizardError = null;
+
+
+
         _wizardEventName = $"{_selectedNegotiation.CustomerName} - Photoshoot Event";
+
+
+
         _wizardEventDescription = _selectedNegotiation.InquiryNotes;
+
+
+
         _wizardEventDate = DateTime.Today.AddDays(7);
+
+
+
         _wizardEventTime = DateTime.Today.AddHours(14);
-        _wizardEventLocation = "Studio Main Hall";
+
+
+
+        _wizardEventLocation = "Studio A (Main Hall)";
+
+
+
+        _wizardPaymentMethod = "Online Card";
+
+
+
+        _wizardCreatedAppointmentId = null;
+
+
+
+        _wizardInvoiceUrl = null;
+
+
+
+        _wizardHoldExpiresAt = DateTime.UtcNow.AddMinutes(30);
+
+
+
+        _wizardPaymentStatus = "Pending";
+
+
+
         _selectedServiceIds.Clear();
+
+
+
         _selectedEmployeeIds.Clear();
+
+
+
         _teamLeaderId = string.Empty;
+
+
+
         _selectedEquipmentIds.Clear();
 
-        // Pre-select first 1-2 services
+
+
+
+
+
+
+        // Pre-select first service
+
+
+
         if (_availableServices.Count > 0)
+
+
+
         {
+
+
+
             _selectedServiceIds.Add(_availableServices[0].ServicesId);
+
+
+
         }
 
-        // Auto pre-select clerk or active photographer
+
+
+
+
+
+
+        // Auto pre-select active creative crew
+
+
+
         if (_availableEmployees.Count > 0)
+
+
+
         {
+
+
+
             _selectedEmployeeIds.Add(_availableEmployees[0].EmployeeId);
+
+
+
             _teamLeaderId = _availableEmployees[0].EmployeeId;
+
+
+
         }
+
+
+
+
+
+
 
         // Auto pre-select essential equipment
+
+
+
         foreach (var eq in _availableEquipment.Take(3))
+
+
+
         {
+
+
+
             _selectedEquipmentIds.Add(eq.EquipmentID);
+
+
+
         }
+
+
+
+
+
+
+
+        StartCountdownTimer();
+
+
 
         _isWizardOpen = true;
+
+
+
     }
+
+
+
+
+
+
 
     private void CloseEventWizard()
+
+
+
     {
+
+
+
         _isWizardOpen = false;
+
+
+
+        _countdownTimer?.Dispose();
+
+
+
     }
+
+
+
+
+
+
 
     private void NextWizardStep()
+
+
+
     {
+
+
+
         _wizardError = null;
+
+
+
         if (_wizardStep == 1)
+
+
+
         {
-            if (string.IsNullOrWhiteSpace(_wizardEventName)) { _wizardError = "Please enter an event photoshoot name."; return; }
-            if (string.IsNullOrWhiteSpace(_wizardEventLocation)) { _wizardError = "Please specify the venue or location."; return; }
-            _wizardStep = 2;
-        }
-        else if (_wizardStep == 2)
-        {
+
+
+
             if (_selectedServiceIds.Count == 0) { _wizardError = "Please select at least one service package."; return; }
-            _wizardStep = 3;
+
+
+
+            if (string.IsNullOrWhiteSpace(_wizardEventName)) { _wizardError = "Please enter an event photoshoot name."; return; }
+
+
+
+            if (string.IsNullOrWhiteSpace(_wizardEventLocation)) { _wizardError = "Please specify the venue or location."; return; }
+
+
+
+            _wizardStep = 2;
+
+
+
         }
+
+
+
         else if (_wizardStep == 3)
+
+
+
         {
+
+
+
             if (_selectedEmployeeIds.Count == 0) { _wizardError = "Please assign at least one staff member."; return; }
+
+
+
             if (string.IsNullOrWhiteSpace(_teamLeaderId) || !_selectedEmployeeIds.Contains(_teamLeaderId))
+
+
+
             {
+
+
+
                 _wizardError = "Please explicitly designate a Team Leader from the assigned crew.";
+
+
+
                 return;
+
+
+
             }
+
+
+
             _wizardStep = 4;
+
+
+
         }
+
+
+
     }
+
+
+
+
+
+
 
     private void PrevWizardStep()
+
+
+
     {
-        if (_wizardStep > 1) _wizardStep--;
+
+
+
+        if (_wizardStep > 1 && _wizardStep < 5) _wizardStep--;
+
+
+
     }
 
-    private void ToggleWizardService(string serviceId, bool isChecked)
-    {
-        if (isChecked) _selectedServiceIds.Add(serviceId);
-        else _selectedServiceIds.Remove(serviceId);
-    }
 
-    private void ToggleWizardEmployee(string employeeId, bool isChecked)
-    {
-        if (isChecked)
-        {
-            _selectedEmployeeIds.Add(employeeId);
-            if (string.IsNullOrWhiteSpace(_teamLeaderId)) _teamLeaderId = employeeId;
-        }
-        else
-        {
-            _selectedEmployeeIds.Remove(employeeId);
-            if (_teamLeaderId == employeeId) _teamLeaderId = _selectedEmployeeIds.FirstOrDefault() ?? string.Empty;
-        }
-    }
 
-    private void ToggleWizardEquipment(string equipmentId, bool isChecked)
-    {
-        if (isChecked) _selectedEquipmentIds.Add(equipmentId);
-        else _selectedEquipmentIds.Remove(equipmentId);
-    }
 
-    private decimal CalculateWizardTotal()
-    {
-        return _availableServices
-            .Where(s => _selectedServiceIds.Contains(s.ServicesId))
-            .Sum(s => s.Price);
-    }
 
-    private decimal CalculateWizardDownpayment() => Math.Round(CalculateWizardTotal() * 0.25m, 2);
 
-    private async Task SaveAndExecuteEventAppointmentAsync()
+
+    private async Task Step2ProceedAndSendEmailAsync()
+
+
+
     {
+
+
+
         if (_selectedNegotiation == null) return;
-        _submittingWizard = true;
+
+
+
         _wizardError = null;
 
-        try
+
+
+
+
+
+
+        if (string.IsNullOrWhiteSpace(_wizardPaymentMethod))
+
+
+
         {
+
+
+
+            _wizardError = "Please select a payment method (Online Card or QR Ph).";
+
+
+
+            return;
+
+
+
+        }
+
+
+
+
+
+
+
+        _submittingWizard = true;
+
+
+
+        try
+
+
+
+        {
+
+
+
             var req = new CreateEventAppointmentFromNegotiationRequest
+
+
+
             {
+
+
+
                 NegotiationId = _selectedNegotiation.NegotiationId,
+
+
+
                 CustomerId = _selectedNegotiation.CustomerId,
+
+
+
                 EventName = _wizardEventName,
+
+
+
                 EventDescription = _wizardEventDescription,
+
+
+
                 EventDate = DateOnly.FromDateTime(_wizardEventDate),
+
+
+
                 EventTime = TimeOnly.FromDateTime(_wizardEventTime),
+
+
+
                 EventLocation = _wizardEventLocation,
+
+
+
                 ServiceIds = _selectedServiceIds.ToList(),
+
+
+
                 EmployeeIds = _selectedEmployeeIds.ToList(),
+
+
+
                 TeamLeaderEmployeeId = _teamLeaderId,
+
+
+
                 EquipmentIds = _selectedEquipmentIds.ToList()
+
+
+
             };
 
+
+
+
+
+
+
             var res = await ConsultationApi.CreateEventAppointmentAsync(_selectedNegotiation.NegotiationId, req);
+
+
+
             if (res.IsSuccess && res.Value != null)
+
+
+
             {
-                _isWizardOpen = false;
-                await LoadNegotiationsAsync();
-                _selectedNegotiation = _negotiations.FirstOrDefault(n => n.NegotiationId == _selectedNegotiation.NegotiationId);
+
+
+
+                _wizardCreatedAppointmentId = res.Value.EventAppointmentId;
+
+
+
+                _wizardInvoiceUrl = res.Value.XenditInvoiceUrl;
+
+
+
+                _wizardHoldExpiresAt = res.Value.HoldExpiresAt ?? DateTime.UtcNow.AddMinutes(30);
+
+
+
+                _wizardPaymentStatus = res.Value.DownpaymentStatus;
+
+
+
+                await DisplayToast("Reservation invoice generated & payment email dispatched to customer.");
+
+
+
+                _wizardStep = 3;
+
+
+
             }
+
+
+
             else
+
+
+
             {
-                _wizardError = res.Error?.Message ?? "Failed to create appointment.";
+
+
+
+                _wizardError = res.Error?.Message ?? "Failed to create appointment & send payment email.";
+
+
+
             }
+
+
+
         }
+
+
+
         catch (Exception ex)
+
+
+
         {
+
+
+
             _wizardError = ex.Message;
+
+
+
         }
+
+
+
         finally
+
+
+
         {
+
+
+
             _submittingWizard = false;
+
+
+
         }
+
+
+
     }
+
+
+
+
+
+
+
+    private async Task Step4ProceedToPaymentStatusAsync()
+
+
+
+    {
+
+
+
+        _wizardError = null;
+
+
+
+        _submittingWizard = true;
+
+
+
+
+
+
+
+        try
+
+
+
+        {
+
+
+
+            if (!string.IsNullOrWhiteSpace(_wizardCreatedAppointmentId))
+
+
+
+            {
+
+
+
+                var rosterReq = new UpdateAppointmentRosterRequest
+
+
+
+                {
+
+
+
+                    EmployeeIds = _selectedEmployeeIds.ToList(),
+
+
+
+                    TeamLeaderEmployeeId = _teamLeaderId,
+
+
+
+                    EquipmentIds = _selectedEquipmentIds.ToList()
+
+
+
+                };
+
+
+
+
+
+
+
+                await ConsultationApi.UpdateAppointmentRosterAsync(_wizardCreatedAppointmentId, rosterReq);
+
+
+
+
+
+
+
+                // Check live payment status
+
+
+
+                var verifyRes = await ConsultationApi.VerifyDownpaymentAsync(_wizardCreatedAppointmentId);
+
+
+
+                if (verifyRes.IsSuccess && verifyRes.Value != null)
+
+
+
+                {
+
+
+
+                    _wizardPaymentStatus = verifyRes.Value.DownpaymentStatus;
+
+
+
+                }
+
+
+
+            }
+
+
+
+
+
+
+
+            _wizardStep = 5;
+
+
+
+        }
+
+
+
+        catch (Exception ex)
+
+
+
+        {
+
+
+
+            _wizardError = ex.Message;
+
+
+
+        }
+
+
+
+        finally
+
+
+
+        {
+
+
+
+            _submittingWizard = false;
+
+
+
+        }
+
+
+
+    }
+
+
+
+
+
+
+
+    private bool _isSimulatingWebhook = false;
+
+
+
+    private string GetWizardCheckoutUrl()
+    {
+        if (string.IsNullOrWhiteSpace(_wizardInvoiceUrl))
+            return !string.IsNullOrWhiteSpace(_wizardCreatedAppointmentId) ? $"/checkout/simulate/{_wizardCreatedAppointmentId}" : "#";
+        if (_wizardInvoiceUrl.Contains("mock", StringComparison.OrdinalIgnoreCase) ||
+            _wizardInvoiceUrl.Contains("inv_mock_", StringComparison.OrdinalIgnoreCase))
+        {
+            return !string.IsNullOrWhiteSpace(_wizardCreatedAppointmentId) ? $"/checkout/simulate/{_wizardCreatedAppointmentId}" : _wizardInvoiceUrl;
+        }
+        return _wizardInvoiceUrl;
+    }
+
+    private async Task SimulateWebhookPaymentAsync()
+
+    {
+
+        if (string.IsNullOrWhiteSpace(_wizardCreatedAppointmentId)) return;
+
+        _isSimulatingWebhook = true;
+
+        try
+
+        {
+
+            var res = await ConsultationApi.SimulateWebhookPaymentAsync(_wizardCreatedAppointmentId, _wizardPaymentMethod);
+
+            if (res.IsSuccess && res.Value != null)
+
+            {
+
+                _wizardPaymentStatus = res.Value.DownpaymentStatus;
+
+                await DisplayToast("✓ Simulated Xendit Webhook received! Reservation deposit verified & email sent to customer.");
+
+            }
+
+            else
+
+            {
+
+                await DisplayToast(res.Error?.Message ?? "Could not simulate webhook payment.");
+
+            }
+
+        }
+
+        catch (Exception ex)
+
+        {
+
+            await DisplayToast($"Error: {ex.Message}");
+
+        }
+
+        finally
+
+        {
+
+            _isSimulatingWebhook = false;
+
+        }
+
+    }
+
+
+
+    private async Task VerifyWizardPaymentAsync()
+
+
+
+    {
+
+
+
+        if (string.IsNullOrWhiteSpace(_wizardCreatedAppointmentId)) return;
+
+
+
+        _isVerifyingPayment = true;
+
+
+
+        try
+
+
+
+        {
+
+
+
+            var res = await ConsultationApi.VerifyDownpaymentAsync(_wizardCreatedAppointmentId);
+
+
+
+            if (res.IsSuccess && res.Value != null)
+
+
+
+            {
+
+
+
+                _wizardPaymentStatus = res.Value.DownpaymentStatus;
+
+
+
+                if (_wizardPaymentStatus == "Paid" || _wizardPaymentStatus == "Confirmed")
+
+
+
+                {
+
+
+
+                    await DisplayToast("Payment verified! Reservation fee is marked as PAID.");
+
+
+
+                }
+
+
+
+                else
+
+
+
+                {
+
+
+
+                    await DisplayToast("Payment is still pending. Client has not yet settled the fee.");
+
+
+
+                }
+
+
+
+            }
+
+
+
+            else
+
+
+
+            {
+
+
+
+                await DisplayToast("Could not verify payment status at this time.");
+
+
+
+            }
+
+
+
+        }
+
+
+
+        catch (Exception ex)
+
+
+
+        {
+
+
+
+            await DisplayToast($"Error verifying payment: {ex.Message}");
+
+
+
+        }
+
+
+
+        finally
+
+
+
+        {
+
+
+
+            _isVerifyingPayment = false;
+
+
+
+        }
+
+
+
+    }
+
+
+
+
+
+
+
+    private async Task AskAnotherPaymentAsync()
+
+
+
+    {
+
+
+
+        if (string.IsNullOrWhiteSpace(_wizardCreatedAppointmentId)) return;
+
+
+
+        _isRequestingExtension = true;
+
+
+
+        try
+
+
+
+        {
+
+
+
+            var res = await ConsultationApi.RequestExtensionAsync(_wizardCreatedAppointmentId);
+
+
+
+            if (res.IsSuccess)
+
+
+
+            {
+
+
+
+                _wizardHoldExpiresAt = DateTime.UtcNow.AddMinutes(30);
+
+
+
+                await DisplayToast("Hold extended by 30 minutes and payment notification re-sent to client.");
+
+
+
+            }
+
+
+
+            else
+
+
+
+            {
+
+
+
+                await DisplayToast(res.Error?.Message ?? "Failed to re-send payment request.");
+
+
+
+            }
+
+
+
+        }
+
+
+
+        catch (Exception ex)
+
+
+
+        {
+
+
+
+            await DisplayToast($"Error: {ex.Message}");
+
+
+
+        }
+
+
+
+        finally
+
+
+
+        {
+
+
+
+            _isRequestingExtension = false;
+
+
+
+        }
+
+
+
+    }
+
+
+
+
+
+
+
+    private async Task FinalizeBookingAsync()
+
+
+
+    {
+
+
+
+        if (_wizardPaymentStatus != "Paid" && _wizardPaymentStatus != "Confirmed")
+
+
+
+        {
+
+
+
+            _wizardError = "The event appointment cannot be confirmed until the reservation fee is paid.";
+
+
+
+            return;
+
+
+
+        }
+
+
+
+
+
+
+
+        _isWizardOpen = false;
+
+
+
+        _countdownTimer?.Dispose();
+
+
+
+        await LoadNegotiationsAsync();
+
+
+
+        if (_selectedNegotiation != null)
+
+
+
+        {
+
+
+
+            _selectedNegotiation = _negotiations.FirstOrDefault(n => n.NegotiationId == _selectedNegotiation.NegotiationId);
+
+
+
+        }
+
+
+
+        await DisplayToast("Event photoshoot confirmed and booked successfully!");
+
+
+
+    }
+
+
+
+
+
+
+
+    public void Dispose()
+
+
+
+    {
+
+
+
+        _countdownTimer?.Dispose();
+
+
+
+    }
+
+
+
+
+
+
+
+    private void ToggleWizardService(string serviceId, bool isChecked)
+
+
+
+    {
+
+
+
+        if (isChecked) _selectedServiceIds.Add(serviceId);
+
+
+
+        else _selectedServiceIds.Remove(serviceId);
+
+
+
+    }
+
+
+
+
+
+
+
+    private void ToggleWizardEmployee(string employeeId, bool isChecked)
+
+
+
+    {
+
+
+
+        if (isChecked)
+
+
+
+        {
+
+
+
+            _selectedEmployeeIds.Add(employeeId);
+
+
+
+            if (string.IsNullOrWhiteSpace(_teamLeaderId)) _teamLeaderId = employeeId;
+
+
+
+        }
+
+
+
+        else
+
+
+
+        {
+
+
+
+            _selectedEmployeeIds.Remove(employeeId);
+
+
+
+            if (_teamLeaderId == employeeId) _teamLeaderId = _selectedEmployeeIds.FirstOrDefault() ?? string.Empty;
+
+
+
+        }
+
+
+
+    }
+
+
+
+
+
+
+
+    private void ToggleWizardEquipment(string equipmentId, bool isChecked)
+
+
+
+    {
+
+
+
+        if (isChecked) _selectedEquipmentIds.Add(equipmentId);
+
+
+
+        else _selectedEquipmentIds.Remove(equipmentId);
+
+
+
+    }
+
+
+
+
+
+
+
+    private decimal CalculateWizardTotal()
+
+
+
+    {
+
+
+
+        return _availableServices
+
+
+
+            .Where(s => _selectedServiceIds.Contains(s.ServicesId))
+
+
+
+            .Sum(s => s.Price);
+
+
+
+    }
+
+
+
+
+
+
+
+    private decimal CalculateWizardDownpayment() => Math.Round(CalculateWizardTotal() * 0.15m, 2);
+
+
+
+
+
+
 
     // ── Simulated Client Inquiry ───────────────────────────────────────────
+
+
+
     private void OpenSimulateInquiryModal()
+
+
+
     {
+
+
+
         _isSimulateModalOpen = true;
+
+
+
     }
+
+
+
+
+
+
 
     private async Task SubmitSimulatedInquiryAsync()
+
+
+
     {
+
+
+
         _isSimulateModalOpen = false;
+
+
+
         var req = new CreateConsultationRequest
+
+
+
         {
+
+
+
             CustomerId = "CUST-" + Random.Shared.Next(100, 999),
+
+
+
             CustomerName = _simCustomerName,
+
+
+
             CustomerEmail = _simCustomerEmail,
+
+
+
             CustomerPhone = _simCustomerPhone,
+
+
+
             ConsultationDate = DateOnly.FromDateTime(DateTime.Today.AddDays(2)),
+
+
+
             ConsultationTime = new TimeOnly(14, 0),
+
+
+
             InquiryNotes = _simInquiryNotes,
+
+
+
             Platform = "GoogleMeet"
+
+
+
         };
 
+
+
+
+
+
+
         var res = await ConsultationApi.ScheduleConsultationAsync(req);
+
+
+
         if (res.IsSuccess)
+
+
+
         {
+
+
+
             await LoadNegotiationsAsync();
+
+
+
             if (res.Value != null)
+
+
+
             {
+
+
+
                 OpenFloatingPanel(res.Value);
+
+
+
             }
+
+
+
         }
+
+
+
     }
+
+
+
+
+
+
 
     private static string GetStatusBadgeClass(string status) => status switch
+
+
+
     {
+
+
+
         "Pending_Call" => "bg-amber-100 text-amber-800",
+
+
+
         "Deal_Won" => "bg-emerald-100 text-emerald-800",
+
+
+
         "Deal_Lost" => "bg-red-100 text-red-800",
+
+
+
         "Rescheduled" => "bg-blue-100 text-blue-800",
+
+
+
         _ => "bg-slate-100 text-slate-800"
+
+
+
     };
+
+
+
     private bool showToast = false;
+
+
+
     private string toastMessage = string.Empty;
 
+
+
+
+
+
+
     private async Task DisplayToast(string message)
+
+
+
     {
+
+
+
         toastMessage = message;
+
+
+
         showToast = true;
+
+
+
         StateHasChanged();
+
+
+
         await Task.Delay(3500);
+
+
+
         showToast = false;
+
+
+
         StateHasChanged();
+
+
+
     }
 
+
+
+
+
+
+
 }
 
+
+
+
+
+
+
 @if (showToast)
+
+
+
 {
+
+
+
     <div class="fixed bottom-6 right-6 z-50 bg-slate-900 text-white px-4 py-3 rounded-xl shadow-xl border border-slate-700 text-xs font-semibold flex items-center gap-2 animate-in fade-in slide-in-from-bottom-2 duration-200">
+
+
+
         <span class="text-emerald-400 font-bold text-sm">✓</span> @toastMessage
+
+
+
     </div>
+
+
+
 }
+
+
+

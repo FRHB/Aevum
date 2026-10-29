@@ -1,4 +1,5 @@
 @page "/services"
+@attribute [AllowAnonymous]
 @rendermode InteractiveServer
 @using PhotoAevumStudio.Web.Models
 @using PhotoAevumStudio.Web.Services
@@ -20,7 +21,8 @@
         @* Header Actions *@
         <div class="flex items-center gap-3">
             <a href="/"
-               class="inline-flex items-center gap-2 border border-slate-300 text-slate-700 hover:border-slate-900 hover:text-slate-900 px-4 py-2 rounded-none font-medium text-xs uppercase tracking-wider transition-colors bg-white">
+               @onclick="NavigateHome"
+               class="inline-flex items-center gap-2 border border-slate-300 text-slate-700 hover:border-slate-900 hover:text-slate-900 px-4 py-2 rounded-none font-medium text-xs uppercase tracking-wider transition-colors bg-white cursor-pointer">
                 <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                     <line x1="19" y1="12" x2="5" y2="12"></line>
                     <polyline points="12 19 5 12 12 5"></polyline>
@@ -224,5 +226,10 @@
                 a.TypeCategory)));
 
         return list;
+    }
+
+    private void NavigateHome()
+    {
+        NavigationManager.NavigateTo("/", forceLoad: true);
     }
 }

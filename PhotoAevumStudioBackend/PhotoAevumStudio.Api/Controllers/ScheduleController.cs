@@ -10,19 +10,22 @@ namespace PhotoAevumStudio.Api.Controllers;
 /// <summary>Endpoints backing the 5-step "Book Schedule" wizard.</summary>
 [ApiController]
 [Route("api/schedule")]
-[Authorize(Roles = AppRoles.Customer)]
+[Authorize(Roles = $"{AppRoles.Customer},{AppRoles.Admin},{AppRoles.SystemAdmin},{AppRoles.OfficeClerk},{AppRoles.Employee}")]
 public sealed class ScheduleController(IScheduleBookingService schedule, ILogger<ScheduleController> logger) : ControllerBase
 {
     [HttpGet("services")]
+    [AllowAnonymous]
     public async Task<ActionResult<IReadOnlyList<ScheduleServiceDto>>> GetServices(CancellationToken ct) =>
         Ok(await schedule.GetServicesAsync(ct));
 
     [HttpGet("availability")]
+    [AllowAnonymous]
     public Task<IActionResult> GetAvailability([FromQuery] int year, [FromQuery] int month, CancellationToken ct) =>
         Handle(async () => Ok(await schedule.GetMonthAvailabilityAsync(year, month, ct)));
 
     /// <summary>Open slots for one date, limited to the studio windows (9-11 AM, 1-5 PM).</summary>
     [HttpGet("availability/day")]
+    [AllowAnonymous]
     public Task<IActionResult> GetDayAvailability([FromQuery] DateOnly date, CancellationToken ct) =>
         Handle(async () => Ok(await schedule.GetDayAvailabilityAsync(date, ct)));
 

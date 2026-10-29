@@ -1,0 +1,181 @@
+@using PhotoAevumStudio.Web.Models
+@using PhotoAevumStudio.Web.Services
+@inject IUserService UserService
+
+@if (IsOpen && Package != null)
+{
+    <div class="fixed inset-0 z-50 bg-black/50 backdrop-blur-xs flex items-center justify-center p-4 sm:p-6 overflow-y-auto"
+         role="dialog" aria-modal="true" aria-labelledby="edit-package-title">
+
+        <div class="relative w-full max-w-xl bg-white rounded-2xl shadow-2xl border border-gray-100 overflow-hidden flex flex-col max-h-[92vh]">
+            <div class="px-6 py-5 border-b border-gray-100 flex items-center justify-between bg-white">
+                <div>
+                    <h2 id="edit-package-title" class="text-xl font-bold text-gray-900">Edit Package Service</h2>
+                    <p class="text-xs text-gray-500">Update bundled package tier for <span class="font-mono font-bold text-gray-700">@Package.Code</span></p>
+                </div>
+                <button type="button" @onclick="HandleClose" disabled="@isSaving"
+                        class="text-gray-400 hover:text-gray-600 rounded-lg p-1.5 hover:bg-gray-100">
+                    &times;
+                </button>
+            </div>
+
+            <div class="p-6 overflow-y-auto flex-1 space-y-4">
+                <div>
+                    <label class="block text-sm font-semibold text-gray-800 mb-1.5">
+                        Package Name <span class="text-red-500">*</span>
+                    </label>
+                    <input type="text"
+                           @bind="_editTitle"
+                           placeholder="Enter package name"
+                           class="w-full px-3.5 py-2.5 text-sm bg-white border border-gray-300 rounded-lg text-gray-900 focus:outline-none focus:ring-2 focus:ring-gray-900" />
+                </div>
+
+                <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <div>
+                        <label class="block text-sm font-semibold text-gray-800 mb-1.5">
+                            Target Category
+                        </label>
+                        <select @bind="_editCategory"
+                                class="w-full px-3.5 py-2.5 text-sm bg-white border border-gray-300 rounded-lg text-gray-900 focus:outline-none focus:ring-2 focus:ring-gray-900">
+                            <option value="Portrait Bundles">Portrait Bundles</option>
+                            <option value="Commercial Campaigns">Commercial Campaigns</option>
+                            <option value="Event Coverage">Event Coverage</option>
+                            <option value="Studio Sessions">Studio Sessions</option>
+                        </select>
+                    </div>
+
+                    <div>
+                        <label class="block text-sm font-semibold text-gray-800 mb-1.5">
+                            Package Price (₱) <span class="text-red-500">*</span>
+                        </label>
+                        <input type="number" step="0.01" min="0"
+                               @bind="_editPrice"
+                               class="w-full px-3.5 py-2.5 text-sm bg-white border border-gray-300 rounded-lg text-gray-900 focus:outline-none focus:ring-2 focus:ring-gray-900" />
+                    </div>
+                </div>
+
+                <div>
+                    <label class="block text-sm font-semibold text-gray-800 mb-1.5">
+                        Status
+                    </label>
+                    <select @bind="_editStatus"
+                            class="w-full px-3.5 py-2.5 text-sm bg-white border border-gray-300 rounded-lg text-gray-900 focus:outline-none focus:ring-2 focus:ring-gray-900">
+                        <option value="Active">Active</option>
+                        <option value="Inactive">Inactive</option>
+                    </select>
+                </div>
+
+                <div>
+                    <label class="block text-sm font-semibold text-gray-800 mb-1.5">
+                        Description
+                    </label>
+                    <textarea rows="3"
+                              @bind="_editDescription"
+                              placeholder="Enter package description and inclusions"
+                              class="w-full px-3.5 py-2.5 text-sm bg-white border border-gray-300 rounded-lg text-gray-900 resize-none focus:outline-none focus:ring-2 focus:ring-gray-900"></textarea>
+                </div>
+
+                @if (!string.IsNullOrWhiteSpace(errorMessage))
+                {
+                    <div class="p-3 bg-red-50 border border-red-200 rounded-lg text-xs text-red-700 font-medium" role="alert">
+                        @errorMessage
+                    </div>
+                }
+            </div>
+
+            <div class="px-6 py-4 bg-gray-50 border-t border-gray-100 flex items-center justify-between">
+                <button type="button" @onclick="HandleClose" disabled="@isSaving"
+                        class="px-4 py-2.5 bg-white border border-gray-300 hover:bg-gray-100 text-gray-700 text-xs font-semibold rounded-lg">
+                    Cancel
+                </button>
+                <button type="button" @onclick="HandleSaveAsync" disabled="@isSaving"
+                        class="px-6 py-2.5 bg-gray-900 hover:bg-black text-white text-xs font-semibold rounded-lg disabled:opacity-60 transition-colors">
+                    @(isSaving ? "Updating..." : "Save Changes")
+                </button>
+            </div>
+        </div>
+    </div>
+}
+
+@code {
+    [Parameter] public bool IsOpen { get; set; }
+    [Parameter] public EventCallback<bool> IsOpenChanged { get; set; }
+    [Parameter] public PackageServiceItem? Package { get; set; }
+    [Parameter] public EventCallback<PackageServiceItem> OnPackageUpdated { get; set; }
+
+    private string _editTitle = string.Empty;
+    private string _editCategory = "Portrait Bundles";
+    private decimal _editPrice;
+    private string _editStatus = "Active";
+    private string? _editDescription;
+
+    private bool isSaving;
+    private string? errorMessage;
+
+    protected override void OnParametersSet()
+    {
+        if (Package != null)
+        {
+            _editTitle = Package.Title;
+            _editCategory = string.IsNullOrWhiteSpace(Package.BundleCategory) ? "Portrait Bundles" : Package.BundleCategory;
+            var digits = new string((Package.Price ?? "").Where(c => char.IsDigit(c) || c == '.').ToArray());
+            decimal.TryParse(digits, out _editPrice);
+            _editStatus = string.IsNullOrWhiteSpace(Package.Status) ? "Active" : Package.Status;
+            _editDescription = Package.Description;
+            errorMessage = null;
+        }
+    }
+
+    private async Task HandleClose()
+    {
+        IsOpen = false;
+        await IsOpenChanged.InvokeAsync(false);
+    }
+
+    private async Task HandleSaveAsync()
+    {
+        if (Package == null) return;
+        if (string.IsNullOrWhiteSpace(_editTitle))
+        {
+            errorMessage = "Package name is required.";
+            return;
+        }
+
+        if (_editPrice < 0)
+        {
+            errorMessage = "Price cannot be negative.";
+            return;
+        }
+
+        isSaving = true;
+        errorMessage = null;
+
+        try
+        {
+            Package.Title = _editTitle.Trim();
+            Package.BundleCategory = _editCategory.Trim();
+            Package.Price = $"₱{_editPrice:N0}";
+            Package.Status = _editStatus;
+            Package.Description = _editDescription?.Trim();
+
+            var success = UserService.UpdatePackageService(Package);
+            if (success)
+            {
+                await OnPackageUpdated.InvokeAsync(Package);
+                await HandleClose();
+            }
+            else
+            {
+                errorMessage = "Failed to update package record.";
+            }
+        }
+        catch (Exception ex)
+        {
+            errorMessage = ex.Message;
+        }
+        finally
+        {
+            isSaving = false;
+        }
+    }
+}
