@@ -1,5 +1,6 @@
 using Microsoft.AspNetCore.Identity.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Metadata;
 using PhotoAevumStudio.Application.Entities;
 
 namespace PhotoAevumStudio.Infrastructure.Data;
@@ -144,6 +145,11 @@ public class ApplicationDbContext : IdentityDbContext<ApplicationUser>
             e.Property(s => s.Description).HasMaxLength(1000);
             e.Property(s => s.ColorTag).HasMaxLength(50).IsRequired().HasDefaultValue("Blue");
             e.Property(s => s.CreatedAt).HasDefaultValueSql("SYSUTCDATETIME()");
+            e.Property(s => s.ChangedBy)
+             .ValueGeneratedOnAddOrUpdate()
+             .Metadata.SetAfterSaveBehavior(PropertySaveBehavior.Ignore);
+            e.Property(s => s.ChangedBy)
+             .Metadata.SetBeforeSaveBehavior(PropertySaveBehavior.Ignore);
         });
 
         // ── EventCategory / ServiceCategory ──────────────────────────────────

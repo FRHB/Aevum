@@ -419,65 +419,63 @@
     @if (_isCreateModalOpen)
     {
         <div class="drawer-backdrop" @onclick="CloseCreateModal">
-            <div class="compact-modal" @onclick:stopPropagation="true">
-                <div class="modal-header">
-                    <h3 class="font-bold text-base">Schedule New Event</h3>
-                    <button type="button" @onclick="CloseCreateModal" class="drawer-close-btn">✕</button>
+            <div class="compact-modal" role="dialog" aria-modal="true" aria-labelledby="create-event-title" @onclick:stopPropagation="true">
+                <h3 id="create-event-title" class="modal-title">Schedule New Event</h3>
+
+                @if (!string.IsNullOrEmpty(_modalErrorMessage))
+                {
+                    <div class="modal-error" role="alert">@_modalErrorMessage</div>
+                }
+
+                <div class="modal-form-grid">
+                    <div class="modal-field modal-field-full">
+                        <label for="ev-client" class="modal-label">Client / Production Name</label>
+                        <input id="ev-client" type="text" @bind="_newEvent.ClientName" @bind:event="oninput" class="modal-input" placeholder="e.g. Acme Corp Shoot" />
+                    </div>
+
+                    <div class="modal-field">
+                        <label for="ev-space" class="modal-label">Studio Space</label>
+                        <select id="ev-space" @bind="_newEvent.StudioSpaceId" class="modal-input">
+                            @foreach (var s in StudioSpaces)
+                            {
+                                <option value="@s.Id">@s.Name</option>
+                            }
+                        </select>
+                    </div>
+                    <div class="modal-field">
+                        <label for="ev-service" class="modal-label">Service Type</label>
+                        <select id="ev-service" @bind="_newEvent.ServiceType" class="modal-input">
+                            <option value="Express Headshot">Express Headshot</option>
+                            <option value="Full Studio Session">Full Studio Session</option>
+                            <option value="Commercial Campaign">Commercial Campaign</option>
+                            <option value="Bridal Prep">Bridal Prep</option>
+                        </select>
+                    </div>
+
+                    <div class="modal-field">
+                        <label for="ev-date" class="modal-label">Date</label>
+                        <input id="ev-date" type="date" @bind="_newEventDate" class="modal-input" />
+                    </div>
+                    <div class="modal-field">
+                        <label for="ev-start" class="modal-label">Start Time</label>
+                        <input id="ev-start" type="time" @bind="_newStartTime" class="modal-input" />
+                    </div>
+
+                    <div class="modal-field">
+                        <label for="ev-end" class="modal-label">End Time</label>
+                        <input id="ev-end" type="time" @bind="_newEndTime" class="modal-input" />
+                    </div>
+                    <div class="modal-field" aria-hidden="true"></div>
+
+                    <div class="modal-field modal-field-full">
+                        <label for="ev-notes" class="modal-label">Notes / Details</label>
+                        <input id="ev-notes" type="text" @bind="_newEvent.Notes" @bind:event="oninput" class="modal-input" placeholder="Reason or assignment notes..." />
+                    </div>
                 </div>
 
-                <div class="modal-body">
-                    @if (!string.IsNullOrEmpty(_modalErrorMessage))
-                    {
-                        <div class="p-2 mb-3 bg-rose-50 text-rose-800 text-xs rounded border border-rose-200">
-                            @_modalErrorMessage
-                        </div>
-                    }
-
-                    <div class="form-group mb-2">
-                        <label class="form-label text-xs">Client / Production Name</label>
-                        <input type="text" @bind="_newEvent.ClientName" class="form-control text-xs" placeholder="e.g. Acme Corp Shoot" />
-                    </div>
-
-                    <div class="grid grid-cols-2 gap-2 mb-2">
-                        <div>
-                            <label class="form-label text-xs">Studio Space</label>
-                            <select @bind="_newEvent.StudioSpaceId" class="form-control text-xs">
-                                @foreach (var s in StudioSpaces)
-                                {
-                                    <option value="@s.Id">@s.Name</option>
-                                }
-                            </select>
-                        </div>
-                        <div>
-                            <label class="form-label text-xs">Service Type</label>
-                            <select @bind="_newEvent.ServiceType" class="form-control text-xs">
-                                <option value="Express Headshot">Express Headshot</option>
-                                <option value="Full Studio Session">Full Studio Session</option>
-                                <option value="Commercial Campaign">Commercial Campaign</option>
-                                <option value="Bridal Prep">Bridal Prep</option>
-                            </select>
-                        </div>
-                    </div>
-
-                    <div class="grid grid-cols-3 gap-2 mb-2">
-                        <div>
-                            <label class="form-label text-xs">Date</label>
-                            <input type="date" @bind="_newEventDate" class="form-control text-xs" />
-                        </div>
-                        <div>
-                            <label class="form-label text-xs">Start</label>
-                            <input type="time" @bind="_newStartTime" class="form-control text-xs" />
-                        </div>
-                        <div>
-                            <label class="form-label text-xs">End</label>
-                            <input type="time" @bind="_newEndTime" class="form-control text-xs" />
-                        </div>
-                    </div>
-
-                    <div class="modal-footer pt-3 mt-3 border-t flex justify-end gap-2">
-                        <button type="button" @onclick="CloseCreateModal" class="btn btn-sm btn-outline-secondary">Cancel</button>
-                        <button type="button" @onclick="SaveNewEvent" class="btn btn-sm btn-dark">Save Event</button>
-                    </div>
+                <div class="modal-footer">
+                    <button type="button" @onclick="CloseCreateModal" class="modal-btn modal-btn-cancel">Cancel</button>
+                    <button type="button" @onclick="SaveNewEvent" class="modal-btn modal-btn-primary">Save Event</button>
                 </div>
             </div>
         </div>
