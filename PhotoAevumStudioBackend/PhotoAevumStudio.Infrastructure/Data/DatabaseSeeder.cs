@@ -496,6 +496,14 @@ public static class DatabaseSeeder
                         ALTER TABLE dbo.PaymentTransactions ADD ReceivedByEmployeeID nvarchar(30) NULL;
                     IF COL_LENGTH(N'dbo.PaymentTransactions', N'PaidAt') IS NULL
                         ALTER TABLE dbo.PaymentTransactions ADD PaidAt datetime2 NULL;
+                    IF COL_LENGTH(N'dbo.PaymentTransactions', N'CustomerPaymentStatus') IS NULL
+                        ALTER TABLE dbo.PaymentTransactions ADD CustomerPaymentStatus nvarchar(40) NULL;
+                    IF COL_LENGTH(N'dbo.PaymentTransactions', N'EmployeeRemittanceStatus') IS NULL
+                        ALTER TABLE dbo.PaymentTransactions ADD EmployeeRemittanceStatus nvarchar(40) NULL;
+                    IF COL_LENGTH(N'dbo.PaymentTransactions', N'AdminApproverID') IS NULL
+                        ALTER TABLE dbo.PaymentTransactions ADD AdminApproverID nvarchar(50) NULL;
+                    IF COL_LENGTH(N'dbo.PaymentTransactions', N'ApprovalTimestamp') IS NULL
+                        ALTER TABLE dbo.PaymentTransactions ADD ApprovalTimestamp datetime2 NULL;
                     IF COL_LENGTH(N'dbo.PaymentTransactions', N'CreatedAt') IS NULL
                         ALTER TABLE dbo.PaymentTransactions ADD CreatedAt datetime2 NOT NULL CONSTRAINT DF_PaymentTransactions_CreatedAt DEFAULT SYSUTCDATETIME();
                 END
@@ -511,6 +519,10 @@ public static class DatabaseSeeder
                         XenditInvoiceId nvarchar(100) NULL,
                         XenditPaymentChannel nvarchar(100) NULL,
                         Status nvarchar(30) NOT NULL CONSTRAINT DF_PaymentTransactions_Status DEFAULT 'Pending',
+                        CustomerPaymentStatus nvarchar(40) NULL,
+                        EmployeeRemittanceStatus nvarchar(40) NULL,
+                        AdminApproverID nvarchar(50) NULL,
+                        ApprovalTimestamp datetime2 NULL,
                         ExternalReference nvarchar(100) NULL,
                         ReceivedByEmployeeID nvarchar(30) NULL,
                         PaidAt datetime2 NULL,

@@ -11,9 +11,27 @@ namespace PhotoAevumStudio.Web.Services;
 public class ScheduleService : IScheduleService
 {
     private readonly string _connectionString;
+    private readonly bool _useInMemory;
+
+    private readonly List<StudioSpaceResource> _inMemorySpaces = new();
+    private readonly List<EventBookingModel> _inMemoryBookings = new();
+    private readonly List<StaffMemberResource> _inMemoryStaff = new();
+    private readonly List<StaffShiftModel> _inMemoryShifts = new();
+    private readonly List<EquipmentItemResource> _inMemoryEquipment = new();
+    private readonly List<EquipmentReservationModel> _inMemoryReservations = new();
 
     private readonly List<StudioSpaceResource> _defaultStudioSpaces = new()
     {
+        new()
+        {
+            Id = "studio-a",
+            Name = "Studio A (Main Hall)",
+            Dimensions = "1,200 sq.ft",
+            MaxCapacity = 25,
+            IconType = "studio",
+            BadgeColor = "bg-blue-100 text-blue-800 border-blue-200",
+            Description = "Cyclorama wall with high grid lighting."
+        },
         new()
         {
             Id = "SP-01",
@@ -58,20 +76,229 @@ public class ScheduleService : IScheduleService
 
     public ScheduleService(IConfiguration? configuration = null)
     {
+        _useInMemory = configuration is null;
         _connectionString = configuration?.GetConnectionString("DefaultConnection")
             ?? "Data Source=localhost\\SQLEXPRESS;Initial Catalog=PhotoAevumStudio;Integrated Security=True;Persist Security Info=False;Pooling=False;MultipleActiveResultSets=False;Encrypt=True;TrustServerCertificate=True;Application Name=\"SQL Server Management Studio\";Command Timeout=0";
+
+        if (_useInMemory)
+        {
+            SeedInMemoryData();
+        }
     }
 
     private SqlConnection CreateConnection() => new SqlConnection(_connectionString);
+
+    private void SeedInMemoryData()
+    {
+        var today = DateTime.Today;
+        int diff = (7 + (today.DayOfWeek - DayOfWeek.Monday)) % 7;
+        var monday = today.AddDays(-1 * diff);
+
+        _inMemorySpaces.AddRange(_defaultStudioSpaces);
+
+        _inMemoryBookings.AddRange(new[]
+        {
+            new EventBookingModel
+            {
+                Id = "evt-101",
+                StudioSpaceId = "studio-a",
+                StudioSpaceName = "Studio A (Main Hall)",
+                ClientName = "Vogue Scandinavia",
+                ClientEmail = "production@voguescan.com",
+                ClientPhone = "+1 (555) 234-5678",
+                ServiceType = "Commercial Campaign",
+                Date = monday,
+                StartTime = new TimeSpan(9, 0, 0),
+                EndTime = new TimeSpan(13, 0, 0),
+                Status = "Confirmed",
+                AssignedPhotographer = "Elena Rostova",
+                EstimatedPrice = 1200.00m,
+                Notes = "Autumn fashion editorial."
+            },
+            new EventBookingModel
+            {
+                Id = "evt-105",
+                StudioSpaceId = "studio-a",
+                StudioSpaceName = "Studio A (Main Hall)",
+                ClientName = "Horizon Luxury Apparel",
+                ClientEmail = "shoot@horizonapparel.com",
+                ClientPhone = "+1 (555) 678-9012",
+                ServiceType = "Commercial Campaign",
+                Date = monday.AddDays(2),
+                StartTime = new TimeSpan(10, 0, 0),
+                EndTime = new TimeSpan(14, 0, 0),
+                Status = "Confirmed",
+                AssignedPhotographer = "Elena Rostova",
+                EstimatedPrice = 1400.00m,
+                Notes = "Winter outerwear collection lookbook."
+            },
+            new EventBookingModel
+            {
+                Id = "evt-106",
+                StudioSpaceId = "studio-a",
+                StudioSpaceName = "Studio A (Main Hall)",
+                ClientName = "Sterling Capital Partners",
+                ClientEmail = "partners@sterlingcap.com",
+                ClientPhone = "+1 (555) 789-0123",
+                ServiceType = "Express Headshot",
+                Date = monday.AddDays(2),
+                StartTime = new TimeSpan(12, 30, 0),
+                EndTime = new TimeSpan(16, 0, 0),
+                Status = "Pending",
+                AssignedPhotographer = "Clara Oswald",
+                EstimatedPrice = 850.00m,
+                Notes = "Board of Directors corporate portrait session."
+            }
+        });
+
+        _inMemoryStaff.AddRange(new[]
+        {
+            new StaffMemberResource
+            {
+                Id = "staff-01",
+                FullName = "Elena Rostova",
+                StaffCode = "PA-001",
+                Role = "Senior Photographer",
+                AvatarInitials = "ER",
+                AvatarColor = "bg-rose-100 text-rose-700",
+                TargetHoursPerWeek = 40,
+                Status = "Active",
+                Email = "elena.rostova@photoaevum.com",
+                Phone = "+1 (555) 101-0001"
+            },
+            new StaffMemberResource
+            {
+                Id = "staff-02",
+                FullName = "Marcus Vance",
+                StaffCode = "PA-002",
+                Role = "Lead Videographer",
+                AvatarInitials = "MV",
+                AvatarColor = "bg-blue-100 text-blue-700",
+                TargetHoursPerWeek = 40,
+                Status = "Active",
+                Email = "marcus.vance@photoaevum.com",
+                Phone = "+1 (555) 101-0002"
+            }
+        });
+
+        _inMemoryShifts.AddRange(new[]
+        {
+            new StaffShiftModel
+            {
+                Id = "shift-open-01",
+                StaffId = null,
+                StaffName = "Open Shift",
+                Role = "Grip & Audio Rigging",
+                Date = monday.AddDays(1),
+                StartTime = new TimeSpan(10, 0, 0),
+                EndTime = new TimeSpan(16, 0, 0),
+                Location = "Studio C",
+                ShiftType = "Full Day",
+                Notes = "Second boom operator needed."
+            },
+            new StaffShiftModel
+            {
+                Id = "shift-103",
+                StaffId = "staff-01",
+                StaffName = "Elena Rostova",
+                Role = "Senior Photographer",
+                Date = monday.AddDays(3),
+                StartTime = new TimeSpan(9, 0, 0),
+                EndTime = new TimeSpan(14, 0, 0),
+                Location = "Studio A",
+                ShiftType = "Full Day",
+                Notes = "Horizon campaign session."
+            },
+            new StaffShiftModel
+            {
+                Id = "shift-104",
+                StaffId = "staff-01",
+                StaffName = "Elena Rostova",
+                Role = "Senior Photographer",
+                Date = monday.AddDays(3),
+                StartTime = new TimeSpan(12, 30, 0),
+                EndTime = new TimeSpan(17, 30, 0),
+                Location = "Outdoor Shoot",
+                ShiftType = "Half Day",
+                Notes = "Assigned to outdoor sunset bridal preview."
+            }
+        });
+
+        _inMemoryEquipment.AddRange(new[]
+        {
+            new EquipmentItemResource
+            {
+                Id = "eq-01",
+                Name = "Canon EOS R5 Mark II (#1)",
+                SerialNumber = "SN-CAN-88214",
+                Category = "Camera Bodies",
+                Status = "Ready",
+                StorageBay = "Locker A-01",
+                BadgeColor = "bg-blue-50 text-blue-700 border-blue-200"
+            },
+            new EquipmentItemResource
+            {
+                Id = "eq-03",
+                Name = "Godox AD600 Pro Strobe Kit A",
+                SerialNumber = "SN-GDX-10229",
+                Category = "Strobe Lighting",
+                Status = "Ready",
+                StorageBay = "Lighting Bay Shelf 2",
+                BadgeColor = "bg-amber-50 text-amber-700 border-amber-200"
+            }
+        });
+
+        _inMemoryReservations.AddRange(new[]
+        {
+            new EquipmentReservationModel
+            {
+                Id = "res-401",
+                EquipmentId = "eq-03",
+                EquipmentName = "Godox AD600 Pro Strobe Kit A",
+                Category = "Strobe Lighting",
+                Date = monday.AddDays(3),
+                StartTime = new TimeSpan(9, 0, 0),
+                EndTime = new TimeSpan(14, 0, 0),
+                ProjectOrClient = "Nordic Roast Product Shoot",
+                TechnicianInCharge = "Alex Rivera",
+                Location = "Studio B",
+                MaintenanceStatus = "Ready"
+            },
+            new EquipmentReservationModel
+            {
+                Id = "res-402",
+                EquipmentId = "eq-03",
+                EquipmentName = "Godox AD600 Pro Strobe Kit A",
+                Category = "Strobe Lighting",
+                Date = monday.AddDays(3),
+                StartTime = new TimeSpan(12, 0, 0),
+                EndTime = new TimeSpan(17, 0, 0),
+                ProjectOrClient = "Commercial Lookbook",
+                TechnicianInCharge = "Clara Oswald",
+                Location = "Studio A",
+                MaintenanceStatus = "Ready"
+            }
+        });
+
+        RecalculateEventConflicts(_inMemoryBookings);
+        RecalculateShiftConflicts(_inMemoryShifts);
+        RecalculateEquipmentConflicts(_inMemoryReservations);
+    }
 
     // ─────────────────────────────────────────────────────────────────────────
     // 1. STUDIO SPACES & EVENTS
     // ─────────────────────────────────────────────────────────────────────────
 
-    public List<StudioSpaceResource> GetStudioSpaces() => _defaultStudioSpaces;
+    public List<StudioSpaceResource> GetStudioSpaces() => _useInMemory ? _inMemorySpaces : _defaultStudioSpaces;
 
     public List<EventBookingModel> GetEventBookings()
     {
+        if (_useInMemory)
+        {
+            RecalculateEventConflicts(_inMemoryBookings);
+            return _inMemoryBookings;
+        }
+
         var bookings = new List<EventBookingModel>();
 
         try
@@ -184,6 +411,16 @@ public class ScheduleService : IScheduleService
         if (string.IsNullOrWhiteSpace(booking.Id))
             booking.Id = "EVT-" + DateTime.UtcNow.ToString("yyyyMMdd") + "-" + Guid.NewGuid().ToString("N")[..4].ToUpperInvariant();
 
+        if (_useInMemory)
+        {
+            var space = _inMemorySpaces.FirstOrDefault(s => s.Id == booking.StudioSpaceId);
+            if (space != null)
+                booking.StudioSpaceName = space.Name;
+            _inMemoryBookings.Add(booking);
+            RecalculateEventConflicts(_inMemoryBookings);
+            return;
+        }
+
         try
         {
             using var conn = CreateConnection();
@@ -202,7 +439,7 @@ public class ScheduleService : IScheduleService
             {
                 cmd.Parameters.AddWithValue("@Id", booking.Id.Trim());
                 cmd.Parameters.AddWithValue("@Name", string.IsNullOrWhiteSpace(booking.ServiceType) ? "Studio Event" : booking.ServiceType.Trim());
-                cmd.Parameters.AddWithValue("@Desc", ((object)booking.Notes?.Trim()) ?? DBNull.Value);
+                cmd.Parameters.AddWithValue("@Desc", ((object?)booking.Notes?.Trim()) ?? DBNull.Value);
                 cmd.Parameters.AddWithValue("@CustId", "CUST-0001");
                 cmd.Parameters.AddWithValue("@Date", booking.Date.Date);
                 cmd.Parameters.AddWithValue("@Time", booking.StartTime);
@@ -239,8 +476,8 @@ public class ScheduleService : IScheduleService
             const string logSql = @"
                 IF OBJECT_ID(N'dbo.HistoryLog', N'U') IS NOT NULL
                 BEGIN
-                    INSERT INTO dbo.HistoryLog (ActionType, EntityName, EntityID, ChangedBy, ActionDetails, LoggedAt)
-                    VALUES ('Create', 'EventAppointment', @Id, 'Staff', @Details, SYSUTCDATETIME());
+                    INSERT INTO dbo.HistoryLog (ActionType, EntityName, EntityID, ChangedBy, ChangedByType, ActionDetails, LoggedAt)
+                    VALUES ('Create', 'EventAppointment', @Id, 'Staff', 'Staff', @Details, SYSUTCDATETIME());
                 END";
 
             using var logCmd = new SqlCommand(logSql, conn);
@@ -256,6 +493,17 @@ public class ScheduleService : IScheduleService
     public void UpdateEventBooking(EventBookingModel booking)
     {
         if (string.IsNullOrWhiteSpace(booking.Id)) return;
+
+        if (_useInMemory)
+        {
+            var idx = _inMemoryBookings.FindIndex(b => b.Id == booking.Id);
+            if (idx >= 0)
+            {
+                _inMemoryBookings[idx] = booking;
+                RecalculateEventConflicts(_inMemoryBookings);
+            }
+            return;
+        }
 
         try
         {
@@ -275,7 +523,7 @@ public class ScheduleService : IScheduleService
             {
                 cmd.Parameters.AddWithValue("@Id", booking.Id.Trim());
                 cmd.Parameters.AddWithValue("@Name", string.IsNullOrWhiteSpace(booking.ServiceType) ? "Studio Event" : booking.ServiceType.Trim());
-                cmd.Parameters.AddWithValue("@Desc", ((object)booking.Notes?.Trim()) ?? DBNull.Value);
+                cmd.Parameters.AddWithValue("@Desc", ((object?)booking.Notes?.Trim()) ?? DBNull.Value);
                 cmd.Parameters.AddWithValue("@Date", booking.Date.Date);
                 cmd.Parameters.AddWithValue("@Time", booking.StartTime);
                 cmd.Parameters.AddWithValue("@Status", string.IsNullOrWhiteSpace(booking.Status) ? "Confirmed" : booking.Status.Trim());
@@ -310,8 +558,8 @@ public class ScheduleService : IScheduleService
             const string logSql = @"
                 IF OBJECT_ID(N'dbo.HistoryLog', N'U') IS NOT NULL
                 BEGIN
-                    INSERT INTO dbo.HistoryLog (ActionType, EntityName, EntityID, ChangedBy, ActionDetails, LoggedAt)
-                    VALUES ('Update', 'EventAppointment', @Id, 'Staff', @Details, SYSUTCDATETIME());
+                    INSERT INTO dbo.HistoryLog (ActionType, EntityName, EntityID, ChangedBy, ChangedByType, ActionDetails, LoggedAt)
+                    VALUES ('Update', 'EventAppointment', @Id, 'Staff', 'Staff', @Details, SYSUTCDATETIME());
                 END";
 
             using var logCmd = new SqlCommand(logSql, conn);
@@ -327,6 +575,13 @@ public class ScheduleService : IScheduleService
     public void DeleteEventBooking(string id)
     {
         if (string.IsNullOrWhiteSpace(id)) return;
+
+        if (_useInMemory)
+        {
+            _inMemoryBookings.RemoveAll(b => b.Id == id);
+            RecalculateEventConflicts(_inMemoryBookings);
+            return;
+        }
 
         try
         {
@@ -347,8 +602,8 @@ public class ScheduleService : IScheduleService
             const string logSql = @"
                 IF OBJECT_ID(N'dbo.HistoryLog', N'U') IS NOT NULL
                 BEGIN
-                    INSERT INTO dbo.HistoryLog (ActionType, EntityName, EntityID, ChangedBy, ActionDetails, LoggedAt)
-                    VALUES ('Delete', 'EventAppointment', @Id, 'Staff', @Details, SYSUTCDATETIME());
+                    INSERT INTO dbo.HistoryLog (ActionType, EntityName, EntityID, ChangedBy, ChangedByType, ActionDetails, LoggedAt)
+                    VALUES ('Delete', 'EventAppointment', @Id, 'Staff', 'Staff', @Details, SYSUTCDATETIME());
                 END";
 
             using var logCmd = new SqlCommand(logSql, conn);
@@ -400,6 +655,11 @@ public class ScheduleService : IScheduleService
 
     public List<StaffMemberResource> GetStaffMembers()
     {
+        if (_useInMemory)
+        {
+            return _inMemoryStaff;
+        }
+
         var staff = new List<StaffMemberResource>();
 
         try
@@ -460,6 +720,12 @@ public class ScheduleService : IScheduleService
 
     public List<StaffShiftModel> GetStaffShifts()
     {
+        if (_useInMemory)
+        {
+            RecalculateShiftConflicts(_inMemoryShifts);
+            return _inMemoryShifts;
+        }
+
         var shifts = new List<StaffShiftModel>();
 
         try
@@ -518,22 +784,54 @@ public class ScheduleService : IScheduleService
         {
         }
 
+        shifts.AddRange(_inMemoryShifts);
         RecalculateShiftConflicts(shifts);
         return shifts;
     }
 
     public void AddStaffShift(StaffShiftModel shift)
     {
-        // Staff shifts in the studio derive directly from event assignments
+        if (string.IsNullOrWhiteSpace(shift.Id))
+            shift.Id = Guid.NewGuid().ToString("N")[..8];
+
+        if (!string.IsNullOrEmpty(shift.StaffId))
+        {
+            var staff = _inMemoryStaff.FirstOrDefault(s => s.Id == shift.StaffId);
+            if (staff != null)
+            {
+                shift.StaffName = staff.FullName;
+                shift.Role = staff.Role;
+            }
+        }
+        else if (string.IsNullOrEmpty(shift.StaffName))
+        {
+            shift.StaffName = "Open Shift";
+        }
+
+        _inMemoryShifts.Add(shift);
+        RecalculateShiftConflicts(_inMemoryShifts);
     }
 
     public void UpdateStaffShift(StaffShiftModel shift)
     {
+        var idx = _inMemoryShifts.FindIndex(s => s.Id == shift.Id);
+        if (idx >= 0)
+        {
+            _inMemoryShifts[idx] = shift;
+            RecalculateShiftConflicts(_inMemoryShifts);
+        }
     }
 
     public void DeleteStaffShift(string id)
     {
         if (string.IsNullOrWhiteSpace(id)) return;
+
+        if (_inMemoryShifts.RemoveAll(s => s.Id == id) > 0)
+        {
+            RecalculateShiftConflicts(_inMemoryShifts);
+            if (_useInMemory) return;
+        }
+
         var parts = id.Split('-');
         if (parts.Length >= 2)
         {
@@ -594,6 +892,11 @@ public class ScheduleService : IScheduleService
 
     public List<EquipmentItemResource> GetEquipmentResources()
     {
+        if (_useInMemory)
+        {
+            return _inMemoryEquipment;
+        }
+
         var list = new List<EquipmentItemResource>();
 
         try
@@ -637,6 +940,12 @@ public class ScheduleService : IScheduleService
 
     public List<EquipmentReservationModel> GetEquipmentReservations()
     {
+        if (_useInMemory)
+        {
+            RecalculateEquipmentConflicts(_inMemoryReservations);
+            return _inMemoryReservations;
+        }
+
         var reservations = new List<EquipmentReservationModel>();
 
         try
@@ -708,6 +1017,22 @@ public class ScheduleService : IScheduleService
     {
         if (string.IsNullOrWhiteSpace(reservation.EquipmentId)) return;
 
+        if (_useInMemory)
+        {
+            if (string.IsNullOrWhiteSpace(reservation.Id))
+                reservation.Id = Guid.NewGuid().ToString("N")[..8];
+
+            var eq = _inMemoryEquipment.FirstOrDefault(e => e.Id == reservation.EquipmentId);
+            if (eq != null)
+            {
+                reservation.EquipmentName = eq.Name;
+                reservation.Category = eq.Category;
+            }
+            _inMemoryReservations.Add(reservation);
+            RecalculateEquipmentConflicts(_inMemoryReservations);
+            return;
+        }
+
         try
         {
             using var conn = CreateConnection();
@@ -727,7 +1052,7 @@ public class ScheduleService : IScheduleService
                 using var createCmd = new SqlCommand(createEventSql, conn);
                 createCmd.Parameters.AddWithValue("@Id", apptId);
                 createCmd.Parameters.AddWithValue("@Name", string.IsNullOrWhiteSpace(reservation.ProjectOrClient) ? "Equipment Reservation" : reservation.ProjectOrClient.Trim());
-                createCmd.Parameters.AddWithValue("@Desc", ((object)reservation.Notes?.Trim()) ?? DBNull.Value);
+                createCmd.Parameters.AddWithValue("@Desc", ((object?)reservation.Notes?.Trim()) ?? DBNull.Value);
                 createCmd.Parameters.AddWithValue("@Date", reservation.Date.Date);
                 createCmd.Parameters.AddWithValue("@Time", reservation.StartTime);
                 createCmd.ExecuteNonQuery();
@@ -749,8 +1074,8 @@ public class ScheduleService : IScheduleService
             const string logSql = @"
                 IF OBJECT_ID(N'dbo.HistoryLog', N'U') IS NOT NULL
                 BEGIN
-                    INSERT INTO dbo.HistoryLog (ActionType, EntityName, EntityID, ChangedBy, ActionDetails, LoggedAt)
-                    VALUES ('Create', 'EventEquipment', @EqId, 'Staff', @Details, SYSUTCDATETIME());
+                    INSERT INTO dbo.HistoryLog (ActionType, EntityName, EntityID, ChangedBy, ChangedByType, ActionDetails, LoggedAt)
+                    VALUES ('Create', 'EventEquipment', @EqId, 'Staff', 'Staff', @Details, SYSUTCDATETIME());
                 END";
 
             using var logCmd = new SqlCommand(logSql, conn);
@@ -765,11 +1090,28 @@ public class ScheduleService : IScheduleService
 
     public void UpdateEquipmentReservation(EquipmentReservationModel reservation)
     {
+        if (_useInMemory)
+        {
+            var idx = _inMemoryReservations.FindIndex(r => r.Id == reservation.Id);
+            if (idx >= 0)
+            {
+                _inMemoryReservations[idx] = reservation;
+                RecalculateEquipmentConflicts(_inMemoryReservations);
+            }
+        }
     }
 
     public void DeleteEquipmentReservation(string id)
     {
         if (string.IsNullOrWhiteSpace(id)) return;
+
+        if (_useInMemory)
+        {
+            _inMemoryReservations.RemoveAll(r => r.Id == id);
+            RecalculateEquipmentConflicts(_inMemoryReservations);
+            return;
+        }
+
         var parts = id.Split('-');
         if (parts.Length >= 2)
         {
@@ -788,8 +1130,8 @@ public class ScheduleService : IScheduleService
                 const string logSql = @"
                     IF OBJECT_ID(N'dbo.HistoryLog', N'U') IS NOT NULL
                     BEGIN
-                        INSERT INTO dbo.HistoryLog (ActionType, EntityName, EntityID, ChangedBy, ActionDetails, LoggedAt)
-                        VALUES ('Delete', 'EventEquipment', @EqId, 'Staff', @Details, SYSUTCDATETIME());
+                        INSERT INTO dbo.HistoryLog (ActionType, EntityName, EntityID, ChangedBy, ChangedByType, ActionDetails, LoggedAt)
+                        VALUES ('Delete', 'EventEquipment', @EqId, 'Staff', 'Staff', @Details, SYSUTCDATETIME());
                     END";
 
                 using var logCmd = new SqlCommand(logSql, conn);

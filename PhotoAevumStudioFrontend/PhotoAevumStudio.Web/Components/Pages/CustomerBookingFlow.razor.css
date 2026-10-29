@@ -318,8 +318,8 @@
 
 .slots-grid {
     display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(90px, 1fr));
-    gap: 0.5rem;
+    grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+    gap: 0.75rem;
 }
 
 .slot-btn {
@@ -853,7 +853,7 @@
     display: flex;
     flex-direction: row;
     align-items: center;
-    justify-content: space-between;
+    justify-content: center;
     padding: 0.75rem 1rem;
     border: 1.5px solid #e5e7eb;
     background: #ffffff;
@@ -863,7 +863,8 @@
     color: #1f2937;
     cursor: pointer;
     transition: all 0.15s ease;
-    text-align: left;
+    text-align: center;
+    white-space: nowrap;
     width: 100%;
 }
 
@@ -887,6 +888,10 @@
     cursor: not-allowed !important;
     opacity: 0.55;
     pointer-events: none;
+}
+
+.slot-btn.is-booked .slot-time {
+    text-decoration: line-through;
 }
 
 .slot-time {

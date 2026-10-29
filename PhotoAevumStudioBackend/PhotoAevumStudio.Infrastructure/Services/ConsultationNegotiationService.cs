@@ -741,7 +741,7 @@ public class ConsultationNegotiationService : IConsultationNegotiationService
 
         // Transactions
         const string txSql = @"
-            SELECT TransactionID, EventAppointmentID, PaymentType, PaymentMethod, Amount, Status, ExternalReference, ReceivedByEmployeeID, CreatedAt
+            SELECT PaymentTransactionID, EventAppointmentID, PaymentType, PaymentMethod, Amount, Status, ExternalReference, ReceivedByEmployeeID, CreatedAt
             FROM dbo.PaymentTransactions
             WHERE EventAppointmentID = @EvtId
             ORDER BY CreatedAt DESC;";
@@ -820,7 +820,7 @@ public class ConsultationNegotiationService : IConsultationNegotiationService
         {
             await using var conn = await OpenConnectionAsync(cancellationToken);
 
-            var txnId = await GetNextIdAsync(conn, "dbo.PaymentTransactions", "TransactionID", "TXN-", cancellationToken);
+            var txnId = await GetNextIdAsync(conn, "dbo.PaymentTransactions", "PaymentTransactionID", "TXN-", cancellationToken);
 
             await using var tx = conn.BeginTransaction();
             try
@@ -832,7 +832,7 @@ public class ConsultationNegotiationService : IConsultationNegotiationService
                     WHERE EventAppointmentID = @EvtId;
 
                     INSERT INTO dbo.PaymentTransactions (
-                        TransactionID, EventAppointmentID, PaymentType,
+                        PaymentTransactionID, EventAppointmentID, PaymentType,
                         PaymentMethod, Amount, Status, ExternalReference,
                         XenditInvoiceId, XenditPaymentId, XenditPaymentChannel, CreatedAt
                     )
@@ -1260,7 +1260,7 @@ public class ConsultationNegotiationService : IConsultationNegotiationService
 
         await using var conn = await OpenConnectionAsync(cancellationToken);
 
-        var txnId = await GetNextIdAsync(conn, "dbo.PaymentTransactions", "TransactionID", "TXN-", cancellationToken);
+        var txnId = await GetNextIdAsync(conn, "dbo.PaymentTransactions", "PaymentTransactionID", "TXN-", cancellationToken);
         var finalBalance = appt.FinalBalanceAmount + request.SurchargeAmount;
 
         await using var tx = conn.BeginTransaction();
@@ -1294,7 +1294,7 @@ public class ConsultationNegotiationService : IConsultationNegotiationService
                 WHERE EventAppointmentID = @EvtId;
 
                 INSERT INTO dbo.PaymentTransactions (
-                    TransactionID, EventAppointmentID, PaymentType,
+                    PaymentTransactionID, EventAppointmentID, PaymentType,
                     PaymentMethod, Amount, Status, ReceivedByEmployeeID, CreatedAt
                 )
                 VALUES (

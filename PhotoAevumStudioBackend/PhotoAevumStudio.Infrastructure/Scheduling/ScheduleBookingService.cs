@@ -218,6 +218,15 @@ public sealed class ScheduleBookingService(
                 {
                     evtCmd.Transaction = tx.GetDbTransaction();
                     evtCmd.CommandText = @"
+                        IF OBJECT_ID(N'dbo.Customer', N'U') IS NOT NULL
+                        BEGIN
+                            IF NOT EXISTS (SELECT 1 FROM dbo.Customer WHERE CustomerID = @CustId)
+                            BEGIN
+                                INSERT INTO dbo.Customer (CustomerID, CustomerFirstName, CustomerLastName, CustomerEmail, CustomerStatus)
+                                VALUES (@CustId, @CustName, '', @CustEmail, 'Active');
+                            END
+                        END
+
                         IF OBJECT_ID(N'dbo.EventAppointment', N'U') IS NOT NULL
                         BEGIN
                             IF NOT EXISTS (SELECT 1 FROM dbo.EventAppointment WHERE EventAppointmentID = @EvtId)
@@ -243,22 +252,22 @@ public sealed class ScheduleBookingService(
                                 DECLARE @ClerkId nvarchar(30);
                                 SELECT TOP 1 @ClerkId = e.EmployeeID
                                 FROM dbo.Employees e
-                                JOIN dbo.EmployeeJointSpecialization ejs ON e.EmployeeID = ejs.EmployeeID
-                                JOIN dbo.EmployeeSpecialization es ON ejs.SpecializationID = es.SpecializationID
+                                LEFT JOIN dbo.EmployeeJointSpecialization ejs ON e.EmployeeID = ejs.EmployeeID
+                                LEFT JOIN dbo.EmployeeSpecialization es ON ejs.SpecializationID = es.SpecializationID
                                 LEFT JOIN (
                                     SELECT EmployeeID, MAX(CreatedAt) AS LastAssignedAt
                                     FROM dbo.BookingNegotiation
                                     GROUP BY EmployeeID
                                 ) bn ON e.EmployeeID = bn.EmployeeID
                                 WHERE (e.EmployeeStatus = 'Active' OR e.Status = 'Active')
-                                  AND UPPER(LTRIM(RTRIM(COALESCE(NULLIF(es.SpecializationName, ''), es.Specialization)))) = 'OFFICE CLERK'
+                                  AND (
+                                      UPPER(LTRIM(RTRIM(COALESCE(NULLIF(es.SpecializationName, ''), es.Specialization)))) = 'OFFICE CLERK'
+                                      OR e.Specializations LIKE '%Office Clerk%'
+                                  )
                                 ORDER BY COALESCE(bn.LastAssignedAt, '1900-01-01') ASC, e.EmployeeID ASC;
 
                                 IF @ClerkId IS NULL
-                                BEGIN
-                                    RAISERROR('No active employee with the Office Clerk specialization is available to process consultations & deals.', 16, 1);
-                                    RETURN;
-                                END
+                                    SET @ClerkId = @EmpId;
 
                                 INSERT INTO dbo.BookingNegotiation (NegotiationID, EventAppointmentID, CustomerID, EmployeeID, ConsultationDate, ConsultationTime, MeetingLink, InquiryNotes, NegotiationStatus, CreatedAt)
                                 VALUES (@NegId, @EvtId, @CustId, @ClerkId, @EvtDate, @EvtTime, @MeetingLink, @InquiryNotes, 'Pending_Call', SYSUTCDATETIME());
@@ -275,6 +284,8 @@ public sealed class ScheduleBookingService(
                     var pEvtName = evtCmd.CreateParameter(); pEvtName.ParameterName = "@EvtName"; pEvtName.Value = evtName; evtCmd.Parameters.Add(pEvtName);
                     var pEvtDesc = evtCmd.CreateParameter(); pEvtDesc.ParameterName = "@EvtDesc"; pEvtDesc.Value = evtDesc; evtCmd.Parameters.Add(pEvtDesc);
                     var pCustId = evtCmd.CreateParameter(); pCustId.ParameterName = "@CustId"; pCustId.Value = customer.UserId; evtCmd.Parameters.Add(pCustId);
+                    var pCustName = evtCmd.CreateParameter(); pCustName.ParameterName = "@CustName"; pCustName.Value = customer.FullName; evtCmd.Parameters.Add(pCustName);
+                    var pCustEmail = evtCmd.CreateParameter(); pCustEmail.ParameterName = "@CustEmail"; pCustEmail.Value = customer.Email; evtCmd.Parameters.Add(pCustEmail);
                     var pEvtDate = evtCmd.CreateParameter(); pEvtDate.ParameterName = "@EvtDate"; pEvtDate.Value = request.Date.ToDateTime(TimeOnly.MinValue); evtCmd.Parameters.Add(pEvtDate);
                     var pEvtTime = evtCmd.CreateParameter(); pEvtTime.ParameterName = "@EvtTime"; pEvtTime.Value = slot.Start.ToTimeSpan(); evtCmd.Parameters.Add(pEvtTime);
                     var pEmpId = evtCmd.CreateParameter(); pEmpId.ParameterName = "@EmpId"; pEmpId.Value = assignedEmployeeId; evtCmd.Parameters.Add(pEmpId);

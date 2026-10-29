@@ -272,7 +272,6 @@
                                                 var slot = s;
                                                 var slotTimeSpan = slot.Start.ToTimeSpan();
                                                 var isChosen = bookingModel.SelectedTimeSlot == slotTimeSpan;
-                                                var status = isChosen ? "Selected" : (slot.IsAvailable ? "Available" : "Booked");
 
                                                 <button type="button"
                                                         disabled="@(!slot.IsAvailable)"
@@ -280,9 +279,6 @@
                                                         class="slot-btn @(isChosen ? "is-selected" : "") @(!slot.IsAvailable ? "is-booked" : "")"
                                                         aria-pressed="@isChosen">
                                                     <span class="slot-time">@slot.Start.ToString("h:mm tt") – @slot.End.ToString("h:mm tt")</span>
-                                                    <span class="slot-status-badge @(isChosen ? "badge-selected" : slot.IsAvailable ? "badge-available" : "badge-booked")">
-                                                        @status
-                                                    </span>
                                                 </button>
                                             }
                                         </div>
@@ -297,7 +293,6 @@
                                                 var slot = s;
                                                 var slotTimeSpan = slot.Start.ToTimeSpan();
                                                 var isChosen = bookingModel.SelectedTimeSlot == slotTimeSpan;
-                                                var status = isChosen ? "Selected" : (slot.IsAvailable ? "Available" : "Booked");
 
                                                 <button type="button"
                                                         disabled="@(!slot.IsAvailable)"
@@ -305,9 +300,6 @@
                                                         class="slot-btn @(isChosen ? "is-selected" : "") @(!slot.IsAvailable ? "is-booked" : "")"
                                                         aria-pressed="@isChosen">
                                                     <span class="slot-time">@slot.Start.ToString("h:mm tt") – @slot.End.ToString("h:mm tt")</span>
-                                                    <span class="slot-status-badge @(isChosen ? "badge-selected" : slot.IsAvailable ? "badge-available" : "badge-booked")">
-                                                        @status
-                                                    </span>
                                                 </button>
                                             }
                                         </div>
@@ -322,7 +314,7 @@
                         <button type="button"
                                 id="btnNextToEventDetails"
                                 class="btn btn-dark btn-lg"
-                                disabled="@(!CanProceedToStep3())"
+                                disabled="@(!CanProceedToStep3() || _busy)"
                                 @onclick="NextAsync">
                             Next: Event Details →
                         </button>
@@ -581,12 +573,16 @@
         if (isPolicyAccepted)
         {
             policyAcceptedAt = DateTime.UtcNow;
+            Wizard.HasAcceptedDataPolicy = true;
+            Wizard.DataPolicyAcceptedAt = policyAcceptedAt;
             _policyValidationError = null;
             _error = null;
         }
         else
         {
             policyAcceptedAt = null;
+            Wizard.HasAcceptedDataPolicy = false;
+            Wizard.DataPolicyAcceptedAt = null;
         }
     }
 
@@ -615,9 +611,9 @@
         }
         _loadingServices = false;
 
+        SyncModelFromWizard();
         if (Wizard.Step == 2)
         {
-            SyncModelFromWizard();
             await LoadMonthAsync();
             if (Wizard.Date is { } d)
             {
@@ -646,6 +642,9 @@
         {
             bookingModel.SelectedTimeSlot = null;
         }
+
+        isPolicyAccepted = Wizard.HasAcceptedDataPolicy;
+        policyAcceptedAt = Wizard.DataPolicyAcceptedAt;
     }
 
     // ── Step 1 ──────────────────────────────────────────────────────
@@ -718,7 +717,10 @@
     {
         _error = null;
         bookingModel.SelectedDate = date.ToDateTime(TimeOnly.MinValue);
-        bookingModel.SelectedTimeSlot = null;
+        if (Wizard.Date != date)
+        {
+            bookingModel.SelectedTimeSlot = null;
+        }
         Wizard.SelectDate(date);
 
         await LoadDaySlotsAsync(date);
@@ -794,8 +796,7 @@
     {
         return bookingModel.SelectedDate.HasValue &&
                bookingModel.SelectedTimeSlot.HasValue &&
-               !_loadingSlots &&
-               !_busy;
+               !_loadingSlots;
     }
 
     // Only open slots inside the studio windows, for the selected date.
@@ -854,8 +855,20 @@
             return;
         }
 
-        await LoadMonthAsync();
-        if (!SlotsFor(date).Any(s => s.Start == start))
+        bool slotAvailable;
+        var dayRes = await Api.GetDayAvailabilityAsync(date);
+        if (dayRes.IsSuccess && dayRes.Value is not null)
+        {
+            _selectedDaySlots = dayRes.Value.Slots.ToList();
+            slotAvailable = _selectedDaySlots.Any(s => s.Start == start && s.IsAvailable && SessionWindows.IsInWindow(s.Start, s.End));
+        }
+        else
+        {
+            slotAvailable = _selectedDaySlots.Any(s => s.Start == start && s.IsAvailable && SessionWindows.IsInWindow(s.Start, s.End))
+                || SlotsFor(date).Any(s => s.Start == start);
+        }
+
+        if (!slotAvailable)
         {
             Wizard.ClearSlot();
             bookingModel.SelectedTimeSlot = null;

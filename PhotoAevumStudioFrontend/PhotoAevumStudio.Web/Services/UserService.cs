@@ -1731,7 +1731,16 @@ public sealed class UserService : IUserService
 				END
 				ELSE IF OBJECT_ID(N'dbo.PaymentTransactions', N'U') IS NOT NULL
 				BEGIN
-					SELECT CAST(ABS(CHECKSUM(TransactionID)) % 100000 AS int) AS Id,
+					IF COL_LENGTH(N'dbo.PaymentTransactions', N'CustomerPaymentStatus') IS NULL
+						ALTER TABLE dbo.PaymentTransactions ADD CustomerPaymentStatus nvarchar(40) NULL;
+					IF COL_LENGTH(N'dbo.PaymentTransactions', N'EmployeeRemittanceStatus') IS NULL
+						ALTER TABLE dbo.PaymentTransactions ADD EmployeeRemittanceStatus nvarchar(40) NULL;
+					IF COL_LENGTH(N'dbo.PaymentTransactions', N'AdminApproverID') IS NULL
+						ALTER TABLE dbo.PaymentTransactions ADD AdminApproverID nvarchar(50) NULL;
+					IF COL_LENGTH(N'dbo.PaymentTransactions', N'ApprovalTimestamp') IS NULL
+						ALTER TABLE dbo.PaymentTransactions ADD ApprovalTimestamp datetime2 NULL;
+
+					SELECT CAST(ABS(CHECKSUM(PaymentTransactionID)) % 100000 AS int) AS Id,
 					       NULL AS BookingId,
 					       EventAppointmentID,
 					       Amount AS TotalAmount,
@@ -1809,18 +1818,25 @@ public sealed class UserService : IUserService
 
 				IF OBJECT_ID(N'dbo.PaymentTransactions', N'U') IS NOT NULL
 				BEGIN
+					IF COL_LENGTH(N'dbo.PaymentTransactions', N'EmployeeRemittanceStatus') IS NULL
+						ALTER TABLE dbo.PaymentTransactions ADD EmployeeRemittanceStatus nvarchar(40) NULL;
+					IF COL_LENGTH(N'dbo.PaymentTransactions', N'AdminApproverID') IS NULL
+						ALTER TABLE dbo.PaymentTransactions ADD AdminApproverID nvarchar(50) NULL;
+					IF COL_LENGTH(N'dbo.PaymentTransactions', N'ApprovalTimestamp') IS NULL
+						ALTER TABLE dbo.PaymentTransactions ADD ApprovalTimestamp datetime2 NULL;
+
 					UPDATE dbo.PaymentTransactions
 					SET EmployeeRemittanceStatus = 'Cleared',
 					    AdminApproverID = @AdminId,
 					    ApprovalTimestamp = SYSUTCDATETIME()
-					WHERE CAST(ABS(CHECKSUM(TransactionID)) % 100000 AS int) = @PaymentId
+					WHERE CAST(ABS(CHECKSUM(PaymentTransactionID)) % 100000 AS int) = @PaymentId
 					   OR PaymentTransactionID = CAST(@PaymentId AS nvarchar(50));
 				END;
 
 				IF OBJECT_ID(N'dbo.HistoryLog', N'U') IS NOT NULL
 				BEGIN
-					INSERT INTO dbo.HistoryLog (ActionType, EntityName, EntityID, ChangedBy, ActionDetails, LoggedAt)
-					VALUES ('APPROVAL', 'Payment', CAST(@PaymentId AS nvarchar(30)), @AdminId, 'Admin approved cash remittance. Employee status cleared.', SYSUTCDATETIME());
+					INSERT INTO dbo.HistoryLog (ActionType, EntityName, EntityID, ChangedBy, ChangedByType, ActionDetails, LoggedAt)
+					VALUES ('APPROVAL', 'Payment', CAST(@PaymentId AS nvarchar(30)), @AdminId, 'Admin', 'Admin approved cash remittance. Employee status cleared.', SYSUTCDATETIME());
 				END;
 
 				IF OBJECT_ID(N'dbo.AuditLogs', N'U') IS NOT NULL

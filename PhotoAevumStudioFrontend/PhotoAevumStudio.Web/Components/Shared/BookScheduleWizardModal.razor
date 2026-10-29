@@ -248,21 +248,16 @@
                                             {
                                                 var slotTimeSpan = slot.Start.ToTimeSpan();
                                                 var isChosen = bookingModel.SelectedTimeSlot == slotTimeSpan;
-                                                var status = isChosen ? "Selected" : (slot.IsAvailable ? "Available" : "Booked");
 
                                                 <button type="button"
                                                         disabled="@(!slot.IsAvailable)"
                                                         @onclick="() => SelectTimeSlot(slot)"
                                                         aria-pressed="@isChosen"
-                                                        class="px-3 py-2 rounded-xl border text-xs font-semibold transition text-left flex items-center justify-between
+                                                        class="px-3 py-2.5 rounded-xl border text-xs font-semibold transition text-center flex items-center justify-center
                                                                @(isChosen ? "bg-black text-white border-black"
                                                                  : slot.IsAvailable ? "bg-white text-gray-900 border-gray-200 hover:border-black"
                                                                  : "bg-gray-100 text-gray-400 border-gray-100 line-through cursor-not-allowed opacity-60")">
                                                     <div>@slot.Start.ToString("h:mm tt") – @slot.End.ToString("h:mm tt")</div>
-                                                    <span class="text-[10px] font-normal px-1.5 py-0.5 rounded
-                                                                 @(isChosen ? "bg-gray-800 text-white" : slot.IsAvailable ? "bg-emerald-50 text-emerald-700" : "bg-gray-200 text-gray-600")">
-                                                        @status
-                                                    </span>
                                                 </button>
                                             }
                                         </div>
@@ -279,21 +274,16 @@
                                             {
                                                 var slotTimeSpan = slot.Start.ToTimeSpan();
                                                 var isChosen = bookingModel.SelectedTimeSlot == slotTimeSpan;
-                                                var status = isChosen ? "Selected" : (slot.IsAvailable ? "Available" : "Booked");
 
                                                 <button type="button"
                                                         disabled="@(!slot.IsAvailable)"
                                                         @onclick="() => SelectTimeSlot(slot)"
                                                         aria-pressed="@isChosen"
-                                                        class="px-3 py-2 rounded-xl border text-xs font-semibold transition text-left flex items-center justify-between
+                                                        class="px-3 py-2.5 rounded-xl border text-xs font-semibold transition text-center flex items-center justify-center
                                                                @(isChosen ? "bg-black text-white border-black"
                                                                  : slot.IsAvailable ? "bg-white text-gray-900 border-gray-200 hover:border-black"
                                                                  : "bg-gray-100 text-gray-400 border-gray-100 line-through cursor-not-allowed opacity-60")">
                                                     <div>@slot.Start.ToString("h:mm tt") – @slot.End.ToString("h:mm tt")</div>
-                                                    <span class="text-[10px] font-normal px-1.5 py-0.5 rounded
-                                                                 @(isChosen ? "bg-gray-800 text-white" : slot.IsAvailable ? "bg-emerald-50 text-emerald-700" : "bg-gray-200 text-gray-600")">
-                                                        @status
-                                                    </span>
                                                 </button>
                                             }
                                         </div>
@@ -556,12 +546,16 @@
         if (isPolicyAccepted)
         {
             policyAcceptedAt = DateTime.UtcNow;
+            State.HasAcceptedDataPolicy = true;
+            State.DataPolicyAcceptedAt = policyAcceptedAt;
             _policyValidationError = null;
             _errorBanner = null;
         }
         else
         {
             policyAcceptedAt = null;
+            State.HasAcceptedDataPolicy = false;
+            State.DataPolicyAcceptedAt = null;
         }
     }
 
@@ -599,6 +593,9 @@
         {
             bookingModel.SelectedTimeSlot = null;
         }
+
+        isPolicyAccepted = State.HasAcceptedDataPolicy;
+        policyAcceptedAt = State.DataPolicyAcceptedAt;
     }
 
     private async Task EnsureLoadedForCurrentStepAsync()
@@ -701,7 +698,10 @@
     {
         _errorBanner = null;
         bookingModel.SelectedDate = date.ToDateTime(TimeOnly.MinValue);
-        bookingModel.SelectedTimeSlot = null;
+        if (State.Date != date)
+        {
+            bookingModel.SelectedTimeSlot = null;
+        }
         State.SelectDate(date);
 
         await LoadDaySlotsAsync(date);
@@ -777,8 +777,7 @@
     {
         return bookingModel.SelectedDate.HasValue &&
                bookingModel.SelectedTimeSlot.HasValue &&
-               !_loadingSlots &&
-               !_submitting;
+               !_loadingSlots;
     }
 
     private async Task ChangeMonthAsync(int delta)
