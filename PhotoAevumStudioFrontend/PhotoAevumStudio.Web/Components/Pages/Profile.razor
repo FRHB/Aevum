@@ -17,8 +17,8 @@
 @if (isLoading)
 {
     <div class="profile-page-wrapper">
-        <div class="id-card-container" style="padding: 3rem; text-align: center;">
-            <p style="color: #9ca3af;">Loading profile data...</p>
+        <div class="id-card-container loading-card">
+            <p class="muted-text">Loading profile data...</p>
         </div>
     </div>
 }
@@ -49,7 +49,6 @@ else
                 <!-- Bulleted Attributes List -->
                 <ul class="attributes-list">
                     <li class="attribute-item">
-                        <div class="bullet-point"></div>
                         <div class="attr-content">
                             <span class="attr-label">Email Address</span>
                             <span class="attr-value">@CurrentUser.Email</span>
@@ -57,7 +56,6 @@ else
                     </li>
 
                     <li class="attribute-item">
-                        <div class="bullet-point"></div>
                         <div class="attr-content">
                             <span class="attr-label">Role Assignment</span>
                             <span class="attr-value">@CurrentUser.Role</span>
@@ -65,7 +63,6 @@ else
                     </li>
 
                     <li class="attribute-item">
-                        <div class="bullet-point"></div>
                         <div class="attr-content">
                             <span class="attr-label">Member Since</span>
                             <span class="attr-value">@(string.IsNullOrWhiteSpace(CurrentUser.MemberSince) ? "March 2024" : CurrentUser.MemberSince)</span>
@@ -73,7 +70,6 @@ else
                     </li>
 
                     <li class="attribute-item">
-                        <div class="bullet-point"></div>
                         <div class="attr-content">
                             <span class="attr-label">Account Status</span>
                             <span class="attr-value status-indicator">
@@ -86,8 +82,8 @@ else
                 <!-- Interactive Actions Section with Logo Buttons -->
                 <div class="actions-section">
                     <div>
-                        <div class="section-title" style="margin-bottom: 0.25rem;">Quick Management Actions</div>
-                        <p style="font-size: 0.8rem; color: #9ca3af;">Click an icon below to trigger popup management controls.</p>
+                        <div class="section-title section-title--tight">Quick Management Actions</div>
+                        <p class="actions-subtitle">Click an icon below to trigger popup management controls.</p>
                     </div>
 
                     <!-- Logo Buttons -->
@@ -125,7 +121,7 @@ else
             <button type="button" class="close-btn" id="closePermsModal" @onclick="ClosePermissionsModal">&times;</button>
         </div>
 
-        <p style="font-size: 0.85rem; color: #9ca3af; margin-bottom: 1.25rem;">
+        <p class="modal-description">
             Authorize or revoke active studio modules for this administrator account.
         </p>
 
@@ -161,13 +157,13 @@ else
             <button type="button" class="close-btn" id="closePassModal" @onclick="ClosePasswordModal">&times;</button>
         </div>
 
-        <p style="font-size: 0.85rem; color: #9ca3af; margin-bottom: 1.25rem;">
+        <p class="modal-description">
             Enter your current password to set a new one.
         </p>
 
         @if (!string.IsNullOrWhiteSpace(passwordErrorMessage))
         {
-            <div style="background: rgba(239, 68, 68, 0.12); border: 1px solid #ef4444; color: #ef4444; padding: 0.75rem 1rem; border-radius: 8px; font-size: 0.85rem; margin-bottom: 1.25rem;">
+            <div class="form-error">
                 <i class="fa-solid fa-circle-exclamation"></i> @passwordErrorMessage
             </div>
         }
