@@ -110,6 +110,9 @@ public sealed class UserService : IUserService
 		{
 			try
 			{
+				using var cts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+				cts.CancelAfter(TimeSpan.FromSeconds(5));
+
 				using var ms = new MemoryStream(imageBytes);
 				var putReq = new PutObjectRequest
 				{
@@ -119,7 +122,7 @@ public sealed class UserService : IUserService
 					ContentType = string.IsNullOrWhiteSpace(contentType) ? "image/jpeg" : contentType,
 					DisablePayloadSigning = true
 				};
-				await _r2Client.PutObjectAsync(putReq, ct);
+				await _r2Client.PutObjectAsync(putReq, cts.Token);
 
 				var presignedReq = new GetPreSignedUrlRequest
 				{
@@ -134,20 +137,7 @@ public sealed class UserService : IUserService
 			}
 		}
 
-		try
-		{
-			var webRoot = _env?.WebRootPath ?? Path.Combine(Directory.GetCurrentDirectory(), "wwwroot");
-			var dir = Path.Combine(webRoot, "uploads", subFolder.Replace('/', Path.DirectorySeparatorChar));
-			Directory.CreateDirectory(dir);
-			var localPath = Path.Combine(dir, uniqueName);
-			await File.WriteAllBytesAsync(localPath, imageBytes, ct);
-			resolvedUrl ??= $"/uploads/{key}";
-		}
-		catch
-		{
-			resolvedUrl ??= $"{_r2PublicBaseUrl}/{_servicesBucket}/{key}";
-		}
-
+		resolvedUrl ??= $"{_r2PublicBaseUrl}/{_servicesBucket}/{key}";
 		return (key, resolvedUrl);
 	}
 
@@ -526,7 +516,16 @@ public sealed class UserService : IUserService
 		}
 		using SqlConnection sqlConnection = CreateConnection();
 		sqlConnection.Open();
-		using SqlCommand sqlCommand = new SqlCommand("\n            DELETE FROM dbo.EmployeeJointSpecialization WHERE UPPER(EmployeeID) = @Id;\n            DELETE FROM dbo.Employees WHERE UPPER(EmployeeID) = @Id;", sqlConnection);
+		using SqlCommand sqlCommand = new SqlCommand(@"
+            IF OBJECT_ID(N'dbo.spDeleteEmployee', N'P') IS NOT NULL
+                EXEC dbo.spDeleteEmployee @EmployeeID = @Id;
+            ELSE IF OBJECT_ID(N'dbo.sp_DeleteEmployee', N'P') IS NOT NULL
+                EXEC dbo.sp_DeleteEmployee @EmployeeID = @Id;
+            ELSE
+            BEGIN
+                DELETE FROM dbo.EmployeeJointSpecialization WHERE UPPER(EmployeeID) = @Id;
+                DELETE FROM dbo.Employees WHERE UPPER(EmployeeID) = @Id;
+            END", sqlConnection);
 		sqlCommand.Parameters.AddWithValue("@Id", id.Trim().ToUpperInvariant());
 		return sqlCommand.ExecuteNonQuery() > 0;
 	}
@@ -790,7 +789,8 @@ public sealed class UserService : IUserService
                     ISNULL(s.ServicePrice, 0) AS ServicePrice,
                     ISNULL(sc.ServiceCategoryName, 'Portrait Photography') AS ServiceCategoryName,
                     s.ServiceImage,
-                    s.ServiceImageMimeType
+                    s.ServiceImageMimeType,
+                    ISNULL(s.RateType, 'per hour') AS RateType
                 FROM dbo.Services s
                 LEFT JOIN (
                     SELECT ServicesID, MIN(ServiceCategoryID) AS ServiceCategoryID
@@ -821,6 +821,8 @@ public sealed class UserService : IUserService
 				}
 			}
 
+			string rateType = sqlDataReader.IsDBNull(7) ? "per hour" : sqlDataReader.GetString(7);
+
 			list.Add(new MainServiceItem
 			{
 				Code = code,
@@ -832,7 +834,8 @@ public sealed class UserService : IUserService
 				BasePrice = price,
 				Description = description,
 				ImageBase64 = imageBase64,
-				Status = "Active"
+				Status = "Active",
+				RateType = rateType
 			});
 		}
 		return list;
@@ -855,7 +858,16 @@ public sealed class UserService : IUserService
                     sc.ServiceCategoryID,
                     sc.ServiceCategoryName,
                     sc.ServiceCategoryDescription,
-                    COALESCE(s.ServiceName, ads.AdditionalServiceName, cp.ComboPackageName) AS LinkedServiceName
+                    COALESCE(s.ServiceName, ads.AdditionalServiceName, cp.ComboPackageName) AS LinkedServiceName,
+                    CASE 
+                        WHEN scj.ComboPackageID IS NOT NULL THEN 'Packages'
+                        WHEN scj.AdditionalServicesID IS NOT NULL THEN 'Add-Ons'
+                        WHEN scj.ServicesID IS NOT NULL THEN 'Main Services'
+                        WHEN sc.ServiceCategoryName LIKE '%Package%' THEN 'Packages'
+                        WHEN sc.ServiceCategoryName LIKE '%Add-on%' OR sc.ServiceCategoryName LIKE '%Addon%' THEN 'Add-Ons'
+                        WHEN sc.ServiceCategoryName LIKE '%Specialty%' THEN 'Specialty'
+                        ELSE 'Main Services'
+                    END AS InferredCategoryType
                 FROM dbo.ServiceCategory sc
                 LEFT JOIN dbo.ServiceCategoryJoins scj ON sc.ServiceCategoryID = scj.ServiceCategoryID
                 LEFT JOIN dbo.Services s ON scj.ServicesID = s.ServicesID
@@ -873,6 +885,7 @@ public sealed class UserService : IUserService
 			string name = reader.GetString(1);
 			string? desc = reader.IsDBNull(2) ? null : reader.GetString(2);
 			string? linkedService = reader.IsDBNull(3) ? null : reader.GetString(3);
+			string inferredType = reader.IsDBNull(4) ? "Main Services" : reader.GetString(4);
 
 			if (!dict.TryGetValue(catId, out var item))
 			{
@@ -882,7 +895,7 @@ public sealed class UserService : IUserService
 					Code = catId,
 					Name = name,
 					Description = desc,
-					Type = "Main Services",
+					Type = inferredType,
 					Status = "Active",
 					IsFeatured = false,
 					AssociatedServices = new List<string>(),
@@ -890,6 +903,10 @@ public sealed class UserService : IUserService
 				};
 				dict[catId] = item;
 				list.Add(item);
+			}
+			else if (item.Type == "Main Services" && inferredType != "Main Services")
+			{
+				item.Type = inferredType;
 			}
 
 			if (!string.IsNullOrWhiteSpace(linkedService) && !item.AssociatedServices.Contains(linkedService))
@@ -955,15 +972,22 @@ public sealed class UserService : IUserService
                     IF @SvcId IS NULL AND @AddId IS NULL
                         SELECT TOP 1 @PkgId = ComboPackageID FROM dbo.ComboPackage WHERE ComboPackageName = @SvcName OR ComboPackageID = @SvcName;
 
-                    IF NOT EXISTS (
-                        SELECT 1 FROM dbo.ServiceCategoryJoins 
-                        WHERE ServiceCategoryID = @CatId 
-                          AND (ServicesID = @SvcId OR AdditionalServicesID = @AddId OR ComboPackageID = @PkgId)
-                    )
+                    IF (@SvcId IS NOT NULL OR @AddId IS NOT NULL OR @PkgId IS NOT NULL)
                     BEGIN
-                        DECLARE @JoinID NVARCHAR(30) = 'SCJ-' + SUBSTRING(CONVERT(NVARCHAR(36), NEWID()), 1, 8);
-                        INSERT INTO dbo.ServiceCategoryJoins (ServiceCategoryJoinID, ServiceCategoryID, ServicesID, AdditionalServicesID, ComboPackageID)
-                        VALUES (@JoinID, @CatId, @SvcId, @AddId, @PkgId);
+                        IF NOT EXISTS (
+                            SELECT 1 FROM dbo.ServiceCategoryJoins 
+                            WHERE ServiceCategoryID = @CatId 
+                              AND (
+                                (@SvcId IS NOT NULL AND ServicesID = @SvcId) OR 
+                                (@AddId IS NOT NULL AND AdditionalServicesID = @AddId) OR 
+                                (@PkgId IS NOT NULL AND ComboPackageID = @PkgId)
+                              )
+                        )
+                        BEGIN
+                            DECLARE @JoinID NVARCHAR(30) = 'SCJ-' + SUBSTRING(CONVERT(NVARCHAR(36), NEWID()), 1, 8);
+                            INSERT INTO dbo.ServiceCategoryJoins (ServiceCategoryJoinID, ServiceCategoryID, ServicesID, AdditionalServicesID, ComboPackageID)
+                            VALUES (@JoinID, @CatId, @SvcId, @AddId, @PkgId);
+                        END
                     END", sqlConnection);
 				joinCmd.Parameters.AddWithValue("@CatId", categoryId);
 				joinCmd.Parameters.AddWithValue("@SvcName", svcName.Trim());
@@ -1022,12 +1046,17 @@ public sealed class UserService : IUserService
 
 	public void UpdateServiceImage(string code, byte[] imageBytes, string mimeType, string? requestingAdminId = null)
 	{
-		ArgumentNullException.ThrowIfNull(imageBytes, "imageBytes");
-		var (imageFileName, imageUrl) = UploadServiceAssetToR2Async(imageBytes, null, mimeType, "services/main").GetAwaiter().GetResult();
+		UpdateServiceImageAsync(code, imageBytes, mimeType, requestingAdminId).GetAwaiter().GetResult();
+	}
 
-		using SqlConnection sqlConnection = CreateConnection();
-		sqlConnection.Open();
-		using SqlCommand sqlCommand = new SqlCommand(@"
+	public async Task UpdateServiceImageAsync(string code, byte[] imageBytes, string mimeType, string? requestingAdminId = null, CancellationToken ct = default)
+	{
+		ArgumentNullException.ThrowIfNull(imageBytes, "imageBytes");
+		var (imageFileName, imageUrl) = await UploadServiceAssetToR2Async(imageBytes, null, mimeType, "services/main", ct);
+
+		await using SqlConnection sqlConnection = CreateConnection();
+		await sqlConnection.OpenAsync(ct);
+		await using SqlCommand sqlCommand = new SqlCommand(@"
             IF OBJECT_ID(N'dbo.Services', N'U') IS NOT NULL
             BEGIN
                 IF COL_LENGTH(N'dbo.Services', N'ImageFileName') IS NULL
@@ -1062,7 +1091,7 @@ public sealed class UserService : IUserService
 		sqlCommand.Parameters.AddWithValue("@ImgFileName", (object?)imageFileName ?? DBNull.Value);
 		sqlCommand.Parameters.AddWithValue("@ImgUrl", (object?)imageUrl ?? DBNull.Value);
 		sqlCommand.Parameters.AddWithValue("@By", requestingAdminId ?? "Admin");
-		sqlCommand.ExecuteNonQuery();
+		await sqlCommand.ExecuteNonQueryAsync(ct);
 	}
 
 	public MainServiceItem AddMainService(MainServiceModel model)
@@ -1126,6 +1155,31 @@ public sealed class UserService : IUserService
                     ServicePrice = @Price,
                     RateType = @RateType
                 WHERE UPPER(ServicesID) = UPPER(@Id);
+
+                IF OBJECT_ID(N'dbo.ServiceRate', N'U') IS NOT NULL
+                BEGIN
+                    DECLARE @RateTypeID NVARCHAR(30) = NULL;
+                    SELECT TOP 1 @RateTypeID = RateTypeID FROM dbo.RateType WHERE LOWER(RateTypeName) = LOWER(@RateType);
+                    IF @RateTypeID IS NULL
+                    BEGIN
+                        SET @RateTypeID = 'RT-0001';
+                    END
+
+                    IF EXISTS (SELECT 1 FROM dbo.ServiceRate WHERE UPPER(ServicesID) = UPPER(@Id))
+                    BEGIN
+                        UPDATE dbo.ServiceRate
+                        SET RateTypeID = @RateTypeID,
+                            RateTypeName = @RateType,
+                            Price = @Price
+                        WHERE UPPER(ServicesID) = UPPER(@Id);
+                    END
+                    ELSE
+                    BEGIN
+                        DECLARE @NewRateId NVARCHAR(30) = 'SRT-' + SUBSTRING(CONVERT(NVARCHAR(36), NEWID()), 1, 8);
+                        INSERT INTO dbo.ServiceRate (ServiceRateID, ServicesID, RateTypeID, RateTypeName, Price, UnitsIncluded, IsDefault)
+                        VALUES (@NewRateId, @Id, @RateTypeID, @RateType, @Price, 1, 1);
+                    END
+                END
 
                 IF @CatName IS NOT NULL AND LEN(@CatName) > 0
                 BEGIN
@@ -1227,12 +1281,17 @@ public sealed class UserService : IUserService
 
 	public void UpdateComboPackageImage(string code, byte[] imageBytes, string mimeType, string? requestingAdminId = null)
 	{
-		ArgumentNullException.ThrowIfNull(imageBytes, "imageBytes");
-		var (imageFileName, imageUrl) = UploadServiceAssetToR2Async(imageBytes, null, mimeType, "services/packages").GetAwaiter().GetResult();
+		UpdateComboPackageImageAsync(code, imageBytes, mimeType, requestingAdminId).GetAwaiter().GetResult();
+	}
 
-		using SqlConnection sqlConnection = CreateConnection();
-		sqlConnection.Open();
-		using SqlCommand sqlCommand = new SqlCommand(@"
+	public async Task UpdateComboPackageImageAsync(string code, byte[] imageBytes, string mimeType, string? requestingAdminId = null, CancellationToken ct = default)
+	{
+		ArgumentNullException.ThrowIfNull(imageBytes, "imageBytes");
+		var (imageFileName, imageUrl) = await UploadServiceAssetToR2Async(imageBytes, null, mimeType, "services/packages", ct);
+
+		await using SqlConnection sqlConnection = CreateConnection();
+		await sqlConnection.OpenAsync(ct);
+		await using SqlCommand sqlCommand = new SqlCommand(@"
             IF OBJECT_ID(N'dbo.ComboPackage', N'U') IS NOT NULL
             BEGIN
                 IF COL_LENGTH(N'dbo.ComboPackage', N'ImageFileName') IS NULL
@@ -1267,7 +1326,7 @@ public sealed class UserService : IUserService
 		sqlCommand.Parameters.AddWithValue("@ImgFileName", (object?)imageFileName ?? DBNull.Value);
 		sqlCommand.Parameters.AddWithValue("@ImgUrl", (object?)imageUrl ?? DBNull.Value);
 		sqlCommand.Parameters.AddWithValue("@By", requestingAdminId ?? "Admin");
-		sqlCommand.ExecuteNonQuery();
+		await sqlCommand.ExecuteNonQueryAsync(ct);
 	}
 
 	public PackageServiceItem AddPackageService(PackageServiceModel model)
@@ -1445,36 +1504,6 @@ public sealed class UserService : IUserService
 		}
 		catch
 		{
-		}
-		if (list.Count == 0)
-		{
-			list.AddRange(new CategoryLookupModel[4]
-			{
-				new CategoryLookupModel
-				{
-					Id = "CAT-PORT",
-					Name = "Portrait Photography",
-					Description = "Studio headshots, family portraits, and graduation"
-				},
-				new CategoryLookupModel
-				{
-					Id = "CAT-WEDD",
-					Name = "Wedding & Reception",
-					Description = "Pre-nuptial, ceremony, and all-day wedding coverage"
-				},
-				new CategoryLookupModel
-				{
-					Id = "CAT-COMM",
-					Name = "Commercial & Editorial",
-					Description = "Corporate branding, product showcases, and fashion"
-				},
-				new CategoryLookupModel
-				{
-					Id = "CAT-EVNT",
-					Name = "Event Photography",
-					Description = "Birthdays, corporate events, and live celebrations"
-				}
-			});
 		}
 		return list;
 	}
@@ -1705,6 +1734,168 @@ public sealed class UserService : IUserService
 		return result;
 	}
 
+	public async Task<IReadOnlyList<string>> GetBundledServiceIdsForPackageAsync(string packageId, CancellationToken ct = default)
+	{
+		var list = new List<string>();
+		if (string.IsNullOrWhiteSpace(packageId)) return list;
+		try
+		{
+			await using var conn = CreateConnection();
+			await conn.OpenAsync(ct);
+			const string sql = @"
+				SELECT COALESCE(ServicesID, AdditionalServicesID)
+				FROM dbo.ComboPackageJoin
+				WHERE UPPER(ComboPackageID) = UPPER(@PkgId) AND (ServicesID IS NOT NULL OR AdditionalServicesID IS NOT NULL);";
+			await using var cmd = new SqlCommand(sql, conn);
+			cmd.Parameters.AddWithValue("@PkgId", packageId.Trim());
+			await using var reader = await cmd.ExecuteReaderAsync(ct);
+			while (await reader.ReadAsync(ct))
+			{
+				if (!reader.IsDBNull(0))
+				{
+					list.Add(reader.GetString(0));
+				}
+			}
+		}
+		catch
+		{
+			// Best effort
+		}
+		return list;
+	}
+
+	public async Task<PackageServiceItem> UpdateComboPackageViaApiAsync(PackageWizardFormModel formModel, CancellationToken ct = default)
+	{
+		ArgumentNullException.ThrowIfNull(formModel);
+		string packageCode = formModel.GeneratedPackageId;
+		if (string.IsNullOrWhiteSpace(packageCode))
+			throw new InvalidOperationException("Package ID cannot be empty on update.");
+
+		string? imageFileName = null;
+		string? imageUrl = null;
+		if (formModel.ImageBytes != null && formModel.ImageBytes.Length > 0)
+		{
+			var uploadResult = await UploadServiceAssetToR2Async(
+				formModel.ImageBytes,
+				formModel.ImageFileName,
+				formModel.ImageMimeType ?? "image/jpeg",
+				"packages/images",
+				ct);
+			imageFileName = uploadResult.ImageFileName;
+			imageUrl = uploadResult.ImageUrl;
+		}
+
+		await using var conn = CreateConnection();
+		await conn.OpenAsync(ct);
+
+		await using var trans = (SqlTransaction)(await conn.BeginTransactionAsync(ct));
+		try
+		{
+			const string updateSql = @"
+				UPDATE dbo.ComboPackage
+				SET ComboPackageName = @Name,
+					ComboPackageDescription = @Desc,
+					ComboPackagePrice = @Price,
+					ComboPackageImage = CASE WHEN @Img IS NOT NULL THEN @Img ELSE ComboPackageImage END,
+					ComboPackageImageMimeType = CASE WHEN @Img IS NOT NULL THEN @Mime ELSE ComboPackageImageMimeType END,
+					ImageFileName = CASE WHEN @ImgFileName IS NOT NULL THEN @ImgFileName ELSE ImageFileName END,
+					ImageUrl = CASE WHEN @ImgUrl IS NOT NULL THEN @ImgUrl ELSE ImageUrl END
+				WHERE UPPER(ComboPackageID) = UPPER(@Id);";
+
+			await using (var cmd = new SqlCommand(updateSql, conn, trans))
+			{
+				cmd.Parameters.AddWithValue("@Id", packageCode.Trim());
+				cmd.Parameters.AddWithValue("@Name", formModel.Name.Trim());
+				cmd.Parameters.AddWithValue("@Desc", formModel.Description?.Trim() ?? string.Empty);
+				cmd.Parameters.AddWithValue("@Price", formModel.Price);
+				cmd.Parameters.Add("@Img", SqlDbType.VarBinary, -1).Value = (object?)formModel.ImageBytes ?? DBNull.Value;
+				cmd.Parameters.AddWithValue("@Mime", string.IsNullOrWhiteSpace(formModel.ImageMimeType) ? "image/jpeg" : formModel.ImageMimeType.Trim());
+				cmd.Parameters.AddWithValue("@ImgFileName", (object?)imageFileName ?? DBNull.Value);
+				cmd.Parameters.AddWithValue("@ImgUrl", (object?)imageUrl ?? DBNull.Value);
+				await cmd.ExecuteNonQueryAsync(ct);
+			}
+
+			// Synchronize Category in dbo.ServiceCategoryJoins
+			if (!string.IsNullOrWhiteSpace(formModel.CategoryId))
+			{
+				const string catSql = @"
+					DELETE FROM dbo.ServiceCategoryJoins WHERE UPPER(ComboPackageID) = UPPER(@PkgId);
+					DECLARE @CatId NVARCHAR(50) = NULL;
+					SELECT TOP 1 @CatId = ServiceCategoryID FROM dbo.ServiceCategory WHERE ServiceCategoryID = @InputCatId OR ServiceCategoryName = @InputCatId;
+					IF @CatId IS NULL
+					BEGIN
+						SET @CatId = @InputCatId;
+						INSERT INTO dbo.ServiceCategory (ServiceCategoryID, ServiceCategoryName, ServiceCategoryDescription)
+						VALUES (@CatId, @CatId, @CatId);
+					END
+					INSERT INTO dbo.ServiceCategoryJoins (ServiceCategoryJoinID, ServiceCategoryID, ServicesID, AdditionalServicesID, ComboPackageID)
+					VALUES ('SCJ-' + SUBSTRING(REPLACE(CAST(NEWID() AS nvarchar(36)), '-', ''), 1, 10), @CatId, NULL, NULL, @PkgId);";
+
+				await using var catCmd = new SqlCommand(catSql, conn, trans);
+				catCmd.Parameters.AddWithValue("@InputCatId", formModel.CategoryId.Trim());
+				catCmd.Parameters.AddWithValue("@PkgId", packageCode.Trim());
+				await catCmd.ExecuteNonQueryAsync(ct);
+			}
+
+			// Clear and recreate bundled services in dbo.ComboPackageJoin
+			const string clearJoinsSql = "DELETE FROM dbo.ComboPackageJoin WHERE UPPER(ComboPackageID) = UPPER(@PkgId);";
+			await using (var clearCmd = new SqlCommand(clearJoinsSql, conn, trans))
+			{
+				clearCmd.Parameters.AddWithValue("@PkgId", packageCode.Trim());
+				await clearCmd.ExecuteNonQueryAsync(ct);
+			}
+
+			if (formModel.SelectedServiceIds != null && formModel.SelectedServiceIds.Count > 0)
+			{
+				foreach (string svcId in formModel.SelectedServiceIds)
+				{
+					if (!string.IsNullOrWhiteSpace(svcId))
+					{
+						const string joinSql = @"
+							DECLARE @JID nvarchar(30) = 'CPJ-' + SUBSTRING(REPLACE(CAST(NEWID() AS nvarchar(36)), '-', ''), 1, 10);
+							IF EXISTS (SELECT 1 FROM dbo.Services WHERE UPPER(ServicesID) = UPPER(@SvcId))
+							BEGIN
+								INSERT INTO dbo.ComboPackageJoin (ComboPackageJoinID, ComboPackageID, ServicesID, AdditionalServicesID)
+								VALUES (@JID, @PkgId, @SvcId, NULL);
+							END
+							ELSE IF EXISTS (SELECT 1 FROM dbo.AdditionalServices WHERE UPPER(AdditionalServicesID) = UPPER(@SvcId))
+							BEGIN
+								INSERT INTO dbo.ComboPackageJoin (ComboPackageJoinID, ComboPackageID, ServicesID, AdditionalServicesID)
+								VALUES (@JID, @PkgId, NULL, @SvcId);
+							END
+							ELSE
+							BEGIN
+								INSERT INTO dbo.ComboPackageJoin (ComboPackageJoinID, ComboPackageID, ServicesID, AdditionalServicesID)
+								VALUES (@JID, @PkgId, @SvcId, NULL);
+							END;";
+
+						await using var joinCmd = new SqlCommand(joinSql, conn, trans);
+						joinCmd.Parameters.AddWithValue("@PkgId", packageCode.Trim());
+						joinCmd.Parameters.AddWithValue("@SvcId", svcId.Trim());
+						await joinCmd.ExecuteNonQueryAsync(ct);
+					}
+				}
+			}
+
+			await trans.CommitAsync(ct);
+		}
+		catch
+		{
+			await trans.RollbackAsync(ct);
+			throw;
+		}
+
+		return new PackageServiceItem
+		{
+			Code = packageCode,
+			Title = formModel.Name.Trim(),
+			BundleCategory = formModel.CategoryName,
+			Description = formModel.Description,
+			Price = $"₱{formModel.Price:N0}",
+			Status = "Active"
+		};
+	}
+
 	public IReadOnlyList<AddOnServiceItem> GetAdditionalServices()
 	{
 		List<AddOnServiceItem> list = new List<AddOnServiceItem>();
@@ -1774,12 +1965,17 @@ public sealed class UserService : IUserService
 
 	public void UpdateAdditionalServiceImage(string code, byte[] imageBytes, string mimeType, string? requestingAdminId = null)
 	{
-		ArgumentNullException.ThrowIfNull(imageBytes, "imageBytes");
-		var (imageFileName, imageUrl) = UploadServiceAssetToR2Async(imageBytes, null, mimeType, "services/addons").GetAwaiter().GetResult();
+		UpdateAdditionalServiceImageAsync(code, imageBytes, mimeType, requestingAdminId).GetAwaiter().GetResult();
+	}
 
-		using SqlConnection sqlConnection = CreateConnection();
-		sqlConnection.Open();
-		using SqlCommand sqlCommand = new SqlCommand(@"
+	public async Task UpdateAdditionalServiceImageAsync(string code, byte[] imageBytes, string mimeType, string? requestingAdminId = null, CancellationToken ct = default)
+	{
+		ArgumentNullException.ThrowIfNull(imageBytes, "imageBytes");
+		var (imageFileName, imageUrl) = await UploadServiceAssetToR2Async(imageBytes, null, mimeType, "services/addons", ct);
+
+		await using SqlConnection sqlConnection = CreateConnection();
+		await sqlConnection.OpenAsync(ct);
+		await using SqlCommand sqlCommand = new SqlCommand(@"
             IF OBJECT_ID(N'dbo.AdditionalServices', N'U') IS NOT NULL
             BEGIN
                 IF COL_LENGTH(N'dbo.AdditionalServices', N'ImageFileName') IS NULL
@@ -1814,7 +2010,7 @@ public sealed class UserService : IUserService
 		sqlCommand.Parameters.AddWithValue("@ImgFileName", (object?)imageFileName ?? DBNull.Value);
 		sqlCommand.Parameters.AddWithValue("@ImgUrl", (object?)imageUrl ?? DBNull.Value);
 		sqlCommand.Parameters.AddWithValue("@By", requestingAdminId ?? "Admin");
-		sqlCommand.ExecuteNonQuery();
+		await sqlCommand.ExecuteNonQueryAsync(ct);
 	}
 
 	public AddOnServiceItem AddAdditionalService(AddOnServiceModel model)

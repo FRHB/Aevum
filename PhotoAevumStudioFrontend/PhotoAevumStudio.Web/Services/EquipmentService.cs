@@ -188,6 +188,108 @@ public sealed class EquipmentService : IEquipmentService
         }
     }
 
+    public Task<(bool Success, string? Error)> UpdateEquipmentAsync(
+        string id,
+        string name,
+        string? description,
+        string typeId,
+        string? serialNo,
+        string? imagePath,
+        CancellationToken ct = default)
+    {
+        lock (_lock)
+        {
+            if (string.IsNullOrWhiteSpace(id))
+                return Task.FromResult((false, (string?)"Equipment ID is required."));
+            if (string.IsNullOrWhiteSpace(name))
+                return Task.FromResult((false, (string?)"Equipment name cannot be empty."));
+
+            var eq = _equipments.FirstOrDefault(e => e.EquipmentID.Equals(id.Trim(), StringComparison.OrdinalIgnoreCase));
+            if (eq == null)
+                return Task.FromResult((false, (string?)$"Equipment '{id}' not found."));
+
+            var type = _types.FirstOrDefault(t => t.EquipmentTypeID.Equals(typeId, StringComparison.OrdinalIgnoreCase) || t.EquipmentTypeName.Equals(typeId, StringComparison.OrdinalIgnoreCase));
+            if (type != null)
+            {
+                eq.EquipmentTypeID = type.EquipmentTypeID;
+                eq.EquipmentTypeName = type.EquipmentTypeName;
+            }
+
+            eq.EquipmentName = name.Trim();
+            eq.EquipmentDescription = description?.Trim();
+            if (!string.IsNullOrWhiteSpace(serialNo))
+            {
+                eq.SerialNo = serialNo.Trim();
+            }
+            if (!string.IsNullOrWhiteSpace(imagePath))
+            {
+                eq.ImagePath = imagePath;
+            }
+
+            _maintenanceLogs.Insert(0, new MaintenanceLogModel
+            {
+                HistoryLogID = _nextHistoryLogId++,
+                ActionType = "UPDATE",
+                EntityName = "Equipment",
+                EntityID = eq.EquipmentID,
+                EquipmentName = eq.EquipmentName,
+                SerialNo = eq.SerialNo,
+                EquipmentStatus = eq.EquipmentStatus,
+                ActionDetails = $"Equipment details updated via wizard for ID {eq.EquipmentID}.",
+                ChangedByType = "Admin",
+                ChangedByAdminID = "ADM-001",
+                LoggedAt = DateTime.UtcNow
+            });
+
+            NotifyStateChanged();
+            return Task.FromResult((true, (string?)null));
+        }
+    }
+
+    public Task<(bool Success, string? Error)> UpdateEquipmentTypeAsync(
+        string id,
+        string name,
+        string colorTag = "Blue",
+        CancellationToken ct = default)
+    {
+        lock (_lock)
+        {
+            if (string.IsNullOrWhiteSpace(id))
+                return Task.FromResult((false, (string?)"Equipment Type ID is required."));
+            if (string.IsNullOrWhiteSpace(name))
+                return Task.FromResult((false, (string?)"Equipment Type name cannot be empty."));
+
+            var type = _types.FirstOrDefault(t => t.EquipmentTypeID.Equals(id.Trim(), StringComparison.OrdinalIgnoreCase));
+            if (type == null)
+                return Task.FromResult((false, (string?)$"Equipment Type '{id}' not found."));
+
+            type.EquipmentTypeName = name.Trim();
+            type.ColorTag = string.IsNullOrWhiteSpace(colorTag) ? "Blue" : colorTag.Trim();
+
+            foreach (var eq in _equipments.Where(e => e.EquipmentTypeID.Equals(id.Trim(), StringComparison.OrdinalIgnoreCase)))
+            {
+                eq.EquipmentTypeName = type.EquipmentTypeName;
+            }
+
+            _maintenanceLogs.Insert(0, new MaintenanceLogModel
+            {
+                HistoryLogID = _nextHistoryLogId++,
+                ActionType = "UPDATE",
+                EntityName = "EquipmentType",
+                EntityID = type.EquipmentTypeID,
+                EquipmentName = type.EquipmentTypeName,
+                EquipmentStatus = type.Status,
+                ActionDetails = $"Equipment Type '{type.EquipmentTypeName}' updated in catalog.",
+                ChangedByType = "Admin",
+                ChangedByAdminID = "ADM-001",
+                LoggedAt = DateTime.UtcNow
+            });
+
+            NotifyStateChanged();
+            return Task.FromResult((true, (string?)null));
+        }
+    }
+
     /// <summary>
     /// Executes the logic of dbo.sp_AddEquipment:
     /// Inserts into dbo.Equipment (EquipmentID, EquipmentName, EquipmentTypeID, EquipmentStatus, SerialNo)

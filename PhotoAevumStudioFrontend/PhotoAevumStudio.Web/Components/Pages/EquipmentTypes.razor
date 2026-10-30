@@ -516,7 +516,16 @@
 
                                     <div class="inline-flex items-center gap-2">
 
-                                        <NavLink href="@($"/admin/equipments")"
+                                        @if (!_isReadOnly)
+                                        {
+                                            <button type="button"
+                                                    @onclick="() => OpenEditModal(type)"
+                                                    class="px-2.5 py-1.5 text-xs font-bold text-slate-700 hover:text-slate-950 bg-slate-100 hover:bg-slate-200 border border-slate-300 rounded-md transition-colors">
+                                                Edit
+                                            </button>
+                                        }
+
+                                        <NavLink href="@($"/admin/equipments")" 
 
                                                  class="px-2.5 py-1.5 text-xs font-bold text-slate-700 hover:text-slate-950 bg-slate-100 hover:bg-slate-200 rounded-md transition-colors">
 
@@ -554,6 +563,8 @@
 
 <AddEquipmentTypeWizard @bind-IsOpen="isAddModalOpen" OnEquipmentTypeSaved="HandleTypeSaved" />
 
+<AddEquipmentTypeWizard @bind-IsOpen="isEditWizardOpen" IsEditMode="true" EditType="selectedTypeForEdit" OnEquipmentTypeSaved="HandleTypeUpdated" />
+
 
 
 @code {
@@ -573,6 +584,8 @@
     private bool isSubmitting = false;
 
     private bool isAddModalOpen = false;
+    private bool isEditWizardOpen = false;
+    private EquipmentTypeModel? selectedTypeForEdit;
 
 
 
@@ -614,17 +627,18 @@
 
 
     private async Task LoadDataAsync()
-
     {
-
         isLoading = true;
-
-        equipmentTypes = (await EquipmentService.GetEquipmentTypesAsync()).ToList();
-
-        equipmentList = (await EquipmentService.GetEquipmentsAsync()).ToList();
-
-        isLoading = false;
-
+        try
+        {
+            equipmentTypes = (await EquipmentService.GetEquipmentTypesAsync()).ToList();
+            equipmentList = (await EquipmentService.GetEquipmentsAsync()).ToList();
+        }
+        finally
+        {
+            isLoading = false;
+            await InvokeAsync(StateHasChanged);
+        }
     }
 
 
@@ -740,15 +754,26 @@
 
 
     private async Task HandleTypeSaved(string newTypeName)
-
     {
-
         notificationMessage = $"Equipment Type '{newTypeName}' was registered successfully in dbo.EquipmentType.";
-
-        selectedPillFilter = newTypeName;
-
+        selectedPillFilter = "ALL";
+        searchQuery = string.Empty;
         await LoadDataAsync();
+        await InvokeAsync(StateHasChanged);
+    }
 
+    private void OpenEditModal(EquipmentTypeModel type)
+    {
+        selectedTypeForEdit = type;
+        isEditWizardOpen = true;
+    }
+
+    private async Task HandleTypeUpdated(string typeName)
+    {
+        notificationMessage = $"Equipment Type '{typeName}' was updated successfully in dbo.EquipmentType.";
+        selectedTypeForEdit = null;
+        await LoadDataAsync();
+        await InvokeAsync(StateHasChanged);
     }
 
 

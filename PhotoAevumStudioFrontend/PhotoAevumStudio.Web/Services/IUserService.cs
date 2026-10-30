@@ -141,6 +141,7 @@ public interface IUserService
     IReadOnlyList<MainServiceItem> GetMainServicesSummary();
     (byte[]? Image, string? MimeType) GetServiceImage(string code);
     void UpdateServiceImage(string code, byte[] imageBytes, string mimeType, string? requestingAdminId = null);
+    Task UpdateServiceImageAsync(string code, byte[] imageBytes, string mimeType, string? requestingAdminId = null, CancellationToken ct = default);
 
     MainServiceItem AddMainService(MainServiceModel model);
     bool UpdateMainService(MainServiceItem item, string? requestingAdminId = null);
@@ -149,6 +150,7 @@ public interface IUserService
     IReadOnlyList<PackageServiceItem> GetPackageServicesSummary();
     (byte[]? Image, string? MimeType) GetComboPackageImage(string code);
     void UpdateComboPackageImage(string code, byte[] imageBytes, string mimeType, string? requestingAdminId = null);
+    Task UpdateComboPackageImageAsync(string code, byte[] imageBytes, string mimeType, string? requestingAdminId = null, CancellationToken ct = default);
     PackageServiceItem AddPackageService(PackageServiceModel model);
     bool UpdatePackageService(PackageServiceItem item, string? requestingAdminId = null);
 
@@ -156,6 +158,7 @@ public interface IUserService
     IReadOnlyList<AddOnServiceItem> GetAdditionalServicesSummary();
     (byte[]? Image, string? MimeType) GetAdditionalServiceImage(string code);
     void UpdateAdditionalServiceImage(string code, byte[] imageBytes, string mimeType, string? requestingAdminId = null);
+    Task UpdateAdditionalServiceImageAsync(string code, byte[] imageBytes, string mimeType, string? requestingAdminId = null, CancellationToken ct = default);
     AddOnServiceItem AddAdditionalService(AddOnServiceModel model);
     bool UpdateAdditionalService(AddOnServiceItem item, string? requestingAdminId = null);
 
@@ -164,6 +167,8 @@ public interface IUserService
     Task<IReadOnlyList<CategoryLookupModel>> GetServiceCategoriesLookupAsync(CancellationToken ct = default);
     Task<IReadOnlyList<BundleServiceOption>> GetAvailableServicesForBundlingAsync(CancellationToken ct = default);
     Task<PackageServiceItem> CreateComboPackageViaApiAsync(PackageWizardFormModel formModel, CancellationToken ct = default);
+    Task<PackageServiceItem> UpdateComboPackageViaApiAsync(PackageWizardFormModel formModel, CancellationToken ct = default);
+    Task<IReadOnlyList<string>> GetBundledServiceIdsForPackageAsync(string packageId, CancellationToken ct = default);
 
     // ── Equipment ───────────────────────────────────────────────────────────
     List<EquipmentRowDto> GetEquipmentRows();

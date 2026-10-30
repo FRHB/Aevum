@@ -1,4 +1,4 @@
-﻿<Project Sdk="Microsoft.NET.Sdk.Web">
+<Project Sdk="Microsoft.NET.Sdk.Web">
 	<PropertyGroup>
 		<TargetFramework>net10.0</TargetFramework>
 		<Nullable>enable</Nullable>
@@ -8,6 +8,7 @@
 
 	<ItemGroup>
 		<PackageReference Include="AWSSDK.S3" Version="4.0.104.6" />
+		<PackageReference Include="BouncyCastle.Cryptography" Version="2.5.1" />
 		<PackageReference Include="FluentValidation.AspNetCore" Version="11.3.1" />
 		<PackageReference Include="Infisical.IConfigurationProvider" Version="0.0.2" />
 		<PackageReference Include="Microsoft.AspNetCore.Authentication.JwtBearer" Version="10.0.14" />
@@ -35,6 +36,4 @@
 	<ItemGroup>
 		<PackageReference Update="System.Security.Cryptography.Pkcs" Version="10.0.14" />
 	</ItemGroup>
-
-	<ProjectExtensions><VisualStudio><UserProperties appsettings_1json__JsonSchema="..\..\..\Users\Fernest Rumon H. Bac\AppData\Local\Microsoft\VisualStudio\18.0_345db16e\OpenFolder\CMakePresets_schema.json" /></VisualStudio></ProjectExtensions>
 </Project>

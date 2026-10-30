@@ -428,4 +428,59 @@ public class FormsAndSecurityTests
         isValid = System.ComponentModel.DataAnnotations.Validator.TryValidateObject(model, context, validationResults, true);
         Assert.True(isValid);
     }
+
+    // ══════════════════════════════════════════════════════════════════════════
+    // Snapshot Hard Delete Schema & Stored Procedure Tests
+    // ══════════════════════════════════════════════════════════════════════════
+
+    [Fact]
+    public void SnapshotHardDelete_PhotoAevumStudioSql_HasAssignedEmployeeNameAndOnDeleteSetNull()
+    {
+        var sqlPath = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "..", "..", "..", "PhotoAevumStudioBackend", "database", "PhotoAevumStudio.sql"));
+        if (!File.Exists(sqlPath)) sqlPath = @"C:\Aevum\PhotoAevumStudioBackend\database\PhotoAevumStudio.sql";
+        Assert.True(File.Exists(sqlPath), $"Expected file at {sqlPath}");
+
+        var content = File.ReadAllText(sqlPath);
+
+        // 1. Column AssignedEmployeeName NVARCHAR(100) NULL in appointment and negotiation tables
+        Assert.Contains("AssignedEmployeeName nvarchar(100) NULL", content, StringComparison.OrdinalIgnoreCase);
+
+        // 2. ON DELETE SET NULL on Employee foreign key constraints
+        Assert.Contains("FOREIGN KEY (EmployeeID) REFERENCES dbo.Employees(EmployeeID) ON DELETE SET NULL", content, StringComparison.OrdinalIgnoreCase);
+
+        // 3. ALTER statements used to preserve tables without DROP TABLE
+        Assert.Contains("ALTER TABLE dbo.BookingNegotiation ALTER COLUMN EmployeeID", content, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("ALTER TABLE dbo.EventAppointment ADD AssignedEmployeeName NVARCHAR(100) NULL", content, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public void SnapshotHardDelete_StoredProcedures_DefinesSnapshotCreationAndDirectDelete()
+    {
+        var spPath = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "..", "..", "..", "PhotoAevumStudioBackend", "database", "PhotoAevumStudioStoredProcedures.sql"));
+        if (!File.Exists(spPath)) spPath = @"C:\Aevum\PhotoAevumStudioBackend\database\PhotoAevumStudioStoredProcedures.sql";
+        Assert.True(File.Exists(spPath), $"Expected file at {spPath}");
+
+        var content = File.ReadAllText(spPath);
+
+        // 1. spDeleteEmployee exists and executes DELETE directly without manual reassignment logic
+        Assert.Contains("CREATE OR ALTER PROCEDURE dbo.spDeleteEmployee", content, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("DELETE FROM dbo.Employees WHERE EmployeeID = @EmployeeID", content, StringComparison.OrdinalIgnoreCase);
+
+        // 2. Creation procedure queries Employees table for First and Last name and inserts AssignedEmployeeName
+        Assert.Contains("CREATE OR ALTER PROCEDURE dbo.spCreateAppointment", content, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("SELECT TOP 1 @AssignedEmployeeName = LTRIM(RTRIM(ISNULL(EmployeeFirstName, '') + ' ' + ISNULL(EmployeeLastName, '')))", content);
+        Assert.Contains("AssignedEmployeeName", content, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public void SnapshotHardDelete_IdempotentSql_MirrorsMasterSchema()
+    {
+        var idempPath = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "..", "..", "..", "PhotoAevumStudioBackend", "database", "PhotoAevumStudioIdempotent.sql"));
+        if (!File.Exists(idempPath)) idempPath = @"C:\Aevum\PhotoAevumStudioBackend\database\PhotoAevumStudioIdempotent.sql";
+        Assert.True(File.Exists(idempPath), $"Expected file at {idempPath}");
+
+        var content = File.ReadAllText(idempPath);
+        Assert.Contains("AssignedEmployeeName nvarchar(100) NULL", content, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("ON DELETE SET NULL", content, StringComparison.OrdinalIgnoreCase);
+    }
 }

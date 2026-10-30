@@ -23,12 +23,23 @@ public sealed class AuthHttpHandler : DelegatingHandler
     {
         if (request.Headers.Authorization is null)
         {
-            var token = ProtectedSessionTokenStore.GetAmbientToken()
-                        ?? await _tokenStore.GetTokenAsync(cancellationToken);
-
-            if (!string.IsNullOrWhiteSpace(token))
+            try
             {
-                request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
+                var token = ProtectedSessionTokenStore.GetAmbientToken()
+                            ?? await _tokenStore.GetTokenAsync(cancellationToken);
+
+                if (!string.IsNullOrWhiteSpace(token))
+                {
+                    request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
+                }
+            }
+            catch (OperationCanceledException)
+            {
+                // Silently bypass token injection if cancellation was requested
+            }
+            catch
+            {
+                // Proceed without token if lookup fails
             }
         }
 

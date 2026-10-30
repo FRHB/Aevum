@@ -103,6 +103,9 @@ public class ServicesApiClient : IServicesApiClient
         {
             try
             {
+                using var cts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+                cts.CancelAfter(TimeSpan.FromSeconds(5));
+
                 using var ms = new MemoryStream(imageBytes);
                 var putReq = new PutObjectRequest
                 {
@@ -112,7 +115,7 @@ public class ServicesApiClient : IServicesApiClient
                     ContentType = string.IsNullOrWhiteSpace(contentType) ? "image/jpeg" : contentType,
                     DisablePayloadSigning = true
                 };
-                await _r2Client.PutObjectAsync(putReq, ct);
+                await _r2Client.PutObjectAsync(putReq, cts.Token);
 
                 var presignedReq = new GetPreSignedUrlRequest
                 {
@@ -124,25 +127,11 @@ public class ServicesApiClient : IServicesApiClient
             }
             catch (Exception ex)
             {
-                _logger.LogWarning(ex, "Cloudflare R2 upload to bucket '{Bucket}' failed for {Key}; using local fallback.", _servicesBucket, key);
+                _logger.LogWarning(ex, "Cloudflare R2 upload to bucket '{Bucket}' failed for {Key}.", _servicesBucket, key);
             }
         }
 
-        try
-        {
-            var webRoot = _env?.WebRootPath ?? Path.Combine(Directory.GetCurrentDirectory(), "wwwroot");
-            var dir = Path.Combine(webRoot, "uploads", subFolder.Replace('/', Path.DirectorySeparatorChar));
-            Directory.CreateDirectory(dir);
-            var localPath = Path.Combine(dir, uniqueName);
-            await File.WriteAllBytesAsync(localPath, imageBytes, ct);
-            resolvedUrl ??= $"/uploads/{key}";
-        }
-        catch (Exception ex)
-        {
-            _logger.LogWarning(ex, "Failed to write local fallback copy for {Key}.", key);
-            resolvedUrl ??= $"{_r2PublicBaseUrl}/{_servicesBucket}/{key}";
-        }
-
+        resolvedUrl ??= $"{_r2PublicBaseUrl}/{_servicesBucket}/{key}";
         return (key, resolvedUrl);
     }
 
@@ -264,18 +253,6 @@ public class ServicesApiClient : IServicesApiClient
             _logger.LogError(ex, "Direct query for categories failed.");
         }
 
-        // Default baseline fallback if database has no categories yet
-        if (list.Count == 0)
-        {
-            list.AddRange(new[]
-            {
-                new CategoryLookupItem { Id = "CAT-0001", Name = "Portrait Photography", Description = "Individual and family studio portraits." },
-                new CategoryLookupItem { Id = "CAT-0002", Name = "Commercial & Branding", Description = "High-impact visual branding and product catalog." },
-                new CategoryLookupItem { Id = "CAT-0003", Name = "Event & Wedding", Description = "Comprehensive wedding and milestone event coverage." },
-                new CategoryLookupItem { Id = "CAT-0004", Name = "Product Photography", Description = "Studio product lighting and e-commerce setups." }
-            });
-        }
-
         return list;
     }
 
@@ -356,10 +333,10 @@ public class ServicesApiClient : IServicesApiClient
 
                 const string insertSql = @"
                     INSERT INTO dbo.Services (
-                        ServicesID, ServiceName, ServicesDescription, ServicePrice, ServiceImage, ServiceImageMimeType, ImageFileName, ImageUrl
+                        ServicesID, ServiceName, ServicesDescription, ServicePrice, RateType, ServiceImage, ServiceImageMimeType, ImageFileName, ImageUrl
                     )
                     VALUES (
-                        @Id, @Name, @Desc, @Price, @Img, @Mime, @ImgFileName, @ImgUrl
+                        @Id, @Name, @Desc, @Price, @RateType, @Img, @Mime, @ImgFileName, @ImgUrl
                     );";
 
                 await using var insertCmd = new SqlCommand(insertSql, conn, trans);
@@ -367,7 +344,8 @@ public class ServicesApiClient : IServicesApiClient
                 insertCmd.Parameters.AddWithValue("@Name", model.Name.Trim());
                 insertCmd.Parameters.AddWithValue("@Desc", model.Description.Trim());
                 insertCmd.Parameters.AddWithValue("@Price", model.Price);
-                insertCmd.Parameters.AddWithValue("@Img", (object?)model.ImageBytes ?? DBNull.Value);
+                insertCmd.Parameters.AddWithValue("@RateType", string.IsNullOrWhiteSpace(model.RateType) ? "Per Hour" : model.RateType.Trim());
+                insertCmd.Parameters.Add("@Img", SqlDbType.VarBinary, -1).Value = (object?)model.ImageBytes ?? DBNull.Value;
                 insertCmd.Parameters.AddWithValue("@Mime", (object?)model.ImageMimeType ?? "image/jpeg");
                 insertCmd.Parameters.AddWithValue("@ImgFileName", (object?)imageFileName ?? DBNull.Value);
                 insertCmd.Parameters.AddWithValue("@ImgUrl", (object?)imageUrl ?? DBNull.Value);
@@ -486,6 +464,35 @@ public class ServicesApiClient : IServicesApiClient
         }
     }
 
+    public async Task<(bool Success, string? ErrorMessage)> UpdateCategoryAsync(string id, string name, string description, CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(id);
+        ArgumentNullException.ThrowIfNull(name);
+
+        try
+        {
+            await using var conn = new SqlConnection(_connectionString);
+            await conn.OpenAsync(cancellationToken);
+            const string sql = @"
+                UPDATE dbo.ServiceCategory
+                SET ServiceCategoryName = @Name,
+                    ServiceCategoryDescription = @Desc
+                WHERE UPPER(ServiceCategoryID) = UPPER(@Id) OR UPPER(ServiceCategoryName) = UPPER(@Id);";
+
+            await using var cmd = new SqlCommand(sql, conn);
+            cmd.Parameters.AddWithValue("@Id", id.Trim());
+            cmd.Parameters.AddWithValue("@Name", name.Trim());
+            cmd.Parameters.AddWithValue("@Desc", description?.Trim() ?? string.Empty);
+            int rows = await cmd.ExecuteNonQueryAsync(cancellationToken);
+            return (rows > 0, rows > 0 ? null : "Category not found in database.");
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to update category {Id}", id);
+            return (false, ex.Message);
+        }
+    }
+
     public async Task<string> GetNextAdditionalServiceIdAsync(CancellationToken cancellationToken = default)
     {
         try
@@ -573,24 +580,14 @@ public class ServicesApiClient : IServicesApiClient
                 }
             }
 
-            if (categories.Count > 0) return categories;
+            return categories;
         }
         catch (Exception ex)
         {
             _logger.LogError(ex, "Failed to get categories from database fallback.");
         }
 
-        return new[]
-        {
-            "Portrait Photography",
-            "Event & Gala Coverage",
-            "Commercial & Branding",
-            "Wedding & Nuptials",
-            "Aerial & Drone Operations",
-            "Post-Processing & Retouching",
-            "Custom Framing & Prints",
-            "Equipment & Studio Props"
-        };
+        return Array.Empty<string>();
     }
 
     public async Task<(bool Success, string? ErrorMessage, string? CreatedId)> CreateAdditionalServiceAsync(
@@ -859,9 +856,9 @@ public class ServicesApiClient : IServicesApiClient
                         Code = reader.GetString(0),
                         Name = reader.GetString(1),
                         Description = reader.IsDBNull(2) ? null : reader.GetString(2),
-                        ParentSection = reader.GetString(3),
-                        ColorTag = reader.GetString(4),
-                        IsActive = reader.GetBoolean(5),
+                        ParentSection = reader.IsDBNull(3) ? "Photography" : reader.GetString(3),
+                        ColorTag = reader.IsDBNull(4) ? "Blue" : reader.GetString(4),
+                        IsActive = reader.IsDBNull(5) ? true : reader.GetBoolean(5),
                         ShowInPortfolio = true
                     };
                     map[dto.Code] = dto;

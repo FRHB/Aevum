@@ -231,7 +231,7 @@
 @if (!EffectiveReadOnly)
 {
     <AddAddOnModal @bind-IsOpen="isCreateModalOpen" OnAddOnCreated="HandleAddOnCreated" />
-    <EditAddOnModal @bind-IsOpen="isEditModalOpen" AddOn="selectedEditAddOn" OnAddOnUpdated="HandleAddOnUpdated" />
+    <AddAddOnModal @bind-IsOpen="isEditModalOpen" IsEditMode="true" EditItem="selectedEditAddOn" OnAddOnCreated="HandleAddOnUpdated" />
 }
 
 @code {
@@ -271,12 +271,15 @@
     {
         LoadFromDatabase();
         notificationMessage = $"Add-On \"{updated.Title}\" ({updated.Code}) updated successfully.";
+        StateHasChanged();
     }
 
     private void HandleAddOnCreated(AddOnServiceItem newItem)
     {
+        searchQuery = string.Empty;
         LoadFromDatabase();
         notificationMessage = $"Add-On \"{newItem.Title}\" ({newItem.Code}) has been saved to the database.";
+        StateHasChanged();
     }
 
     private IEnumerable<AddOnServiceItem> FilteredAddOns

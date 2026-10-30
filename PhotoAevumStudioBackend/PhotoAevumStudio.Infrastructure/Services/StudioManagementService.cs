@@ -251,6 +251,15 @@ public class StudioManagementService : IStudioManagementService
                         ALTER TABLE dbo.ComboPackage ADD ImageFileName nvarchar(500) NULL;
                     IF COL_LENGTH(N'dbo.ComboPackage', N'ImageUrl') IS NULL
                         ALTER TABLE dbo.ComboPackage ADD ImageUrl nvarchar(500) NULL;
+                END;
+                IF OBJECT_ID(N'dbo.PortfolioImages', N'U') IS NOT NULL
+                BEGIN
+                    IF COL_LENGTH(N'dbo.PortfolioImages', N'ImageUrl') IS NULL
+                        ALTER TABLE dbo.PortfolioImages ADD ImageUrl nvarchar(500) NULL;
+                    IF COL_LENGTH(N'dbo.PortfolioImages', N'ContentType') IS NULL
+                        ALTER TABLE dbo.PortfolioImages ADD ContentType nvarchar(100) NULL CONSTRAINT DF_PortfolioImages_ContentType DEFAULT 'image/jpeg';
+                    IF COL_LENGTH(N'dbo.PortfolioImages', N'ImageData') IS NULL
+                        ALTER TABLE dbo.PortfolioImages ADD ImageData varbinary(max) NULL;
                 END;";
             await using var alignCmd = new SqlCommand(alignSql, conn);
             await alignCmd.ExecuteNonQueryAsync(ct);
@@ -1461,14 +1470,15 @@ public class StudioManagementService : IStudioManagementService
         var srvId = (await nextCmd.ExecuteScalarAsync(ct))?.ToString() ?? "SRV-0001";
 
         const string insertSql = @"
-            INSERT INTO dbo.Services (ServicesID, ServiceName, ServicesDescription, ServicePrice, ServiceImageMimeType, CreatedAt)
-            VALUES (@Id, @Name, @Desc, @Price, @Mime, SYSUTCDATETIME());";
+            INSERT INTO dbo.Services (ServicesID, ServiceName, ServicesDescription, ServicePrice, RateType, ServiceImageMimeType, CreatedAt)
+            VALUES (@Id, @Name, @Desc, @Price, @RateType, @Mime, SYSUTCDATETIME());";
 
         await using var insertCmd = new SqlCommand(insertSql, conn);
         insertCmd.Parameters.AddWithValue("@Id", srvId);
         insertCmd.Parameters.AddWithValue("@Name", $"{categoryName} - Standard Session");
         insertCmd.Parameters.AddWithValue("@Desc", $"Default baseline session service for {categoryName}.");
         insertCmd.Parameters.AddWithValue("@Price", 150.00m);
+        insertCmd.Parameters.AddWithValue("@RateType", "Per Hour");
         insertCmd.Parameters.AddWithValue("@Mime", "image/jpeg");
         await insertCmd.ExecuteNonQueryAsync(ct);
 

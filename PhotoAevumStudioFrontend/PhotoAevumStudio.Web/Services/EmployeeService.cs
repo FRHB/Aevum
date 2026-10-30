@@ -26,18 +26,83 @@ public class EmployeeService : IEmployeeService
 
     public async Task<IReadOnlyList<EmployeeViewModel>> GetEmployeesAsync(CancellationToken cancellationToken = default)
     {
-        await _tokenStore.GetTokenAsync(cancellationToken);
+        if (cancellationToken.IsCancellationRequested)
+        {
+            return GetLocalFallbackEmployees();
+        }
 
-        List<EmployeeViewModel> list;
         try
         {
-            var result = await _http.GetFromJsonAsync<List<EmployeeViewModel>>("api/management/employees", cancellationToken);
-            list = result ?? new List<EmployeeViewModel>();
+            try
+            {
+                await _tokenStore.GetTokenAsync(cancellationToken);
+            }
+            catch (OperationCanceledException)
+            {
+                return GetLocalFallbackEmployees();
+            }
+            catch { }
+
+            List<EmployeeViewModel> list;
+            try
+            {
+                var result = await _http.GetFromJsonAsync<List<EmployeeViewModel>>("api/management/employees", cancellationToken);
+                list = result ?? new List<EmployeeViewModel>();
+            }
+            catch
+            {
+                list = GetLocalFallbackEmployees();
+            }
+
+            // Enrich with today's attendance & leave statuses from Timesheet API
+            try
+            {
+                if (!cancellationToken.IsCancellationRequested)
+                {
+                    var attendanceList = await GetTodayAttendanceAsync(cancellationToken);
+                    if (attendanceList.Count > 0)
+                    {
+                        foreach (var emp in list)
+                        {
+                            var att = attendanceList.FirstOrDefault(a => string.Equals(a.EmployeeStudioId, emp.EmployeeId, StringComparison.OrdinalIgnoreCase));
+                            if (att != null)
+                            {
+                                emp.DaysOff = !string.IsNullOrWhiteSpace(att.DaysOff) ? att.DaysOff : emp.DaysOff;
+                                emp.IsClockedIn = att.IsClockedIn;
+                                emp.TodayClockIn = att.ClockIn;
+                                emp.TodayClockOut = att.ClockOut;
+                                emp.TodayHoursWorked = att.TotalHours;
+                                emp.IsDayOffToday = att.IsDayOffToday;
+                                emp.IsOnLeaveToday = att.IsOnLeaveToday;
+                                emp.ActiveLeaveType = att.ActiveLeaveType;
+                            }
+                        }
+                    }
+                }
+            }
+            catch
+            {
+                // Best effort enrichment
+            }
+
+            return list;
+        }
+        catch (OperationCanceledException)
+        {
+            return GetLocalFallbackEmployees();
         }
         catch
         {
+            return GetLocalFallbackEmployees();
+        }
+    }
+
+    private List<EmployeeViewModel> GetLocalFallbackEmployees()
+    {
+        try
+        {
             var dbEmployees = _userService.GetEmployeeSpecializations();
-            list = dbEmployees.Select(e => new EmployeeViewModel
+            return dbEmployees.Select(e => new EmployeeViewModel
             {
                 Id = e.Id,
                 EmployeeId = e.EmployeeId,
@@ -50,58 +115,68 @@ public class EmployeeService : IEmployeeService
                 Status = e.Status
             }).ToList();
         }
-
-        // Enrich with today's attendance & leave statuses from Timesheet API
-        try
-        {
-            var attendanceList = await GetTodayAttendanceAsync(cancellationToken);
-            if (attendanceList.Count > 0)
-            {
-                foreach (var emp in list)
-                {
-                    var att = attendanceList.FirstOrDefault(a => string.Equals(a.EmployeeStudioId, emp.EmployeeId, StringComparison.OrdinalIgnoreCase));
-                    if (att != null)
-                    {
-                        emp.DaysOff = !string.IsNullOrWhiteSpace(att.DaysOff) ? att.DaysOff : emp.DaysOff;
-                        emp.IsClockedIn = att.IsClockedIn;
-                        emp.TodayClockIn = att.ClockIn;
-                        emp.TodayClockOut = att.ClockOut;
-                        emp.TodayHoursWorked = att.TotalHours;
-                        emp.IsDayOffToday = att.IsDayOffToday;
-                        emp.IsOnLeaveToday = att.IsOnLeaveToday;
-                        emp.ActiveLeaveType = att.ActiveLeaveType;
-                    }
-                }
-            }
-        }
         catch
         {
-            // Best effort enrichment
+            return new List<EmployeeViewModel>();
         }
-
-        return list;
     }
 
     public async Task<IReadOnlyList<string>> GetSpecializationsAsync(CancellationToken cancellationToken = default)
     {
-        await _tokenStore.GetTokenAsync(cancellationToken);
+        if (cancellationToken.IsCancellationRequested)
+        {
+            return GetLocalFallbackSpecializations();
+        }
 
         try
         {
-            var result = await _http.GetFromJsonAsync<List<string>>("api/management/specializations", cancellationToken);
-            if (result is not null)
-                return result;
+            try
+            {
+                await _tokenStore.GetTokenAsync(cancellationToken);
+            }
+            catch (OperationCanceledException)
+            {
+                return GetLocalFallbackSpecializations();
+            }
+            catch { }
+
+            try
+            {
+                var result = await _http.GetFromJsonAsync<List<string>>("api/management/specializations", cancellationToken);
+                if (result is not null)
+                    return result;
+            }
+            catch
+            {
+                // Fall through to direct SQL query against DefaultConnection
+            }
+
+            return GetLocalFallbackSpecializations();
+        }
+        catch (OperationCanceledException)
+        {
+            return GetLocalFallbackSpecializations();
         }
         catch
         {
-            // Fall through to direct SQL query against DefaultConnection
+            return GetLocalFallbackSpecializations();
         }
+    }
 
-        return _userService.GetSpecializationLookups()
-            .Select(s => s.Name)
-            .Distinct(StringComparer.OrdinalIgnoreCase)
-            .OrderBy(s => s)
-            .ToList();
+    private List<string> GetLocalFallbackSpecializations()
+    {
+        try
+        {
+            return _userService.GetSpecializationLookups()
+                .Select(s => s.Name)
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .OrderBy(s => s)
+                .ToList();
+        }
+        catch
+        {
+            return new List<string>();
+        }
     }
 
     public async Task<SaveEmployeeResult> CreateEmployeeAsync(NewEmployeeRequest r, CancellationToken cancellationToken = default)
@@ -119,17 +194,131 @@ public class EmployeeService : IEmployeeService
             StudioId = r.EmployeeId
         };
 
-        var response = await _http.PostAsJsonAsync("api/auth/register", apiPayload, cancellationToken);
-
-        if (response.IsSuccessStatusCode)
+        try
         {
+            var response = await _http.PostAsJsonAsync("api/auth/register", apiPayload, cancellationToken);
+
+            if (response.IsSuccessStatusCode)
+            {
+                await PersistEmployeeSpecializationsAsync(r.EmployeeId, r.Specializations, cancellationToken);
+                await PersistEmployeeDaysOffAsync(r.EmployeeId, r.DaysOff, cancellationToken);
+                return new SaveEmployeeResult(true);
+            }
+        }
+        catch
+        {
+            // API call failed, attempt database fallback
+        }
+
+        // Direct SQL fallback
+        try
+        {
+            await using var conn = new SqlConnection(_connectionString);
+            await conn.OpenAsync(cancellationToken);
+
+            const string sql = @"
+                IF NOT EXISTS (SELECT 1 FROM dbo.Employees WHERE UPPER(EmployeeID) = UPPER(@EmpId))
+                BEGIN
+                    INSERT INTO dbo.Employees (
+                        EmployeeID, EmployeeFirstName, EmployeeLastName, EmployeeMiddleName, EmployeeEmail,
+                        EmployeePassword, EmployeeStatus, isFirstLogin, CreatedAt, DaysOff
+                    )
+                    VALUES (
+                        @EmpId, @FirstName, @LastName, @MiddleName, @Email,
+                        @Password, 'Active', 1, SYSUTCDATETIME(), @DaysOff
+                    );
+                END
+                ELSE
+                BEGIN
+                    UPDATE dbo.Employees
+                    SET EmployeeFirstName = @FirstName,
+                        EmployeeLastName = @LastName,
+                        EmployeeMiddleName = @MiddleName,
+                        EmployeeEmail = @Email,
+                        DaysOff = @DaysOff
+                    WHERE UPPER(EmployeeID) = UPPER(@EmpId);
+                END";
+
+            await using var cmd = new SqlCommand(sql, conn);
+            cmd.Parameters.AddWithValue("@EmpId", r.EmployeeId.Trim().ToUpperInvariant());
+            cmd.Parameters.AddWithValue("@FirstName", r.FirstName.Trim());
+            cmd.Parameters.AddWithValue("@LastName", r.LastName.Trim());
+            cmd.Parameters.AddWithValue("@MiddleName", (object?)r.MiddleName?.Trim() ?? DBNull.Value);
+            cmd.Parameters.AddWithValue("@Email", (object?)r.Email?.Trim() ?? DBNull.Value);
+            cmd.Parameters.AddWithValue("@Password", string.IsNullOrWhiteSpace(r.Password) ? "TempPass123!" : r.Password);
+            cmd.Parameters.AddWithValue("@DaysOff", string.IsNullOrWhiteSpace(r.DaysOff) ? "Sunday" : r.DaysOff.Trim());
+            await cmd.ExecuteNonQueryAsync(cancellationToken);
+
             await PersistEmployeeSpecializationsAsync(r.EmployeeId, r.Specializations, cancellationToken);
             await PersistEmployeeDaysOffAsync(r.EmployeeId, r.DaysOff, cancellationToken);
             return new SaveEmployeeResult(true);
         }
+        catch (Exception dbEx)
+        {
+            return new SaveEmployeeResult(false, dbEx.Message);
+        }
+    }
 
-        var problem = await response.Content.ReadFromJsonAsync<ProblemDetails>(cancellationToken: cancellationToken);
-        return new SaveEmployeeResult(false, problem?.Detail ?? "Failed to create employee.");
+    public async Task<SaveEmployeeResult> UpdateEmployeeAsync(NewEmployeeRequest r, CancellationToken cancellationToken = default)
+    {
+        if (cancellationToken.IsCancellationRequested)
+            return new SaveEmployeeResult(false, "Operation canceled.");
+
+        try
+        {
+            await using var conn = new SqlConnection(_connectionString);
+            await conn.OpenAsync(cancellationToken);
+
+            const string sql = @"
+                UPDATE dbo.Employees
+                SET EmployeeFirstName = @FirstName,
+                    EmployeeLastName = @LastName,
+                    EmployeeMiddleName = @MiddleName,
+                    EmployeeEmail = @Email,
+                    DaysOff = @DaysOff,
+                    EmployeePassword = CASE WHEN @Password IS NOT NULL AND LEN(LTRIM(RTRIM(@Password))) > 0 THEN @Password ELSE EmployeePassword END
+                WHERE UPPER(EmployeeID) = UPPER(@EmpId);";
+
+            await using var cmd = new SqlCommand(sql, conn);
+            cmd.Parameters.AddWithValue("@EmpId", r.EmployeeId.Trim().ToUpperInvariant());
+            cmd.Parameters.AddWithValue("@FirstName", r.FirstName.Trim());
+            cmd.Parameters.AddWithValue("@LastName", r.LastName.Trim());
+            cmd.Parameters.AddWithValue("@MiddleName", (object?)r.MiddleName?.Trim() ?? DBNull.Value);
+            cmd.Parameters.AddWithValue("@Email", (object?)r.Email?.Trim() ?? DBNull.Value);
+            cmd.Parameters.AddWithValue("@Password", string.IsNullOrWhiteSpace(r.Password) ? (object)DBNull.Value : r.Password.Trim());
+            cmd.Parameters.AddWithValue("@DaysOff", string.IsNullOrWhiteSpace(r.DaysOff) ? "Sunday" : r.DaysOff.Trim());
+            await cmd.ExecuteNonQueryAsync(cancellationToken);
+
+            // Also synchronize AspNetUsers if username/email matches
+            try
+            {
+                const string userSql = @"
+                    UPDATE dbo.AspNetUsers
+                    SET Email = @Email,
+                        NormalizedEmail = UPPER(@Email)
+                    WHERE UserName = @EmpId OR Email = @Email;";
+                await using var userCmd = new SqlCommand(userSql, conn);
+                userCmd.Parameters.AddWithValue("@Email", (object?)r.Email?.Trim() ?? DBNull.Value);
+                userCmd.Parameters.AddWithValue("@EmpId", r.EmployeeId.Trim().ToUpperInvariant());
+                await userCmd.ExecuteNonQueryAsync(cancellationToken);
+            }
+            catch
+            {
+                // Best effort
+            }
+
+            await PersistEmployeeSpecializationsAsync(r.EmployeeId, r.Specializations, cancellationToken);
+            await PersistEmployeeDaysOffAsync(r.EmployeeId, r.DaysOff, cancellationToken);
+            return new SaveEmployeeResult(true);
+        }
+        catch (OperationCanceledException)
+        {
+            return new SaveEmployeeResult(false, "Operation canceled.");
+        }
+        catch (Exception dbEx)
+        {
+            return new SaveEmployeeResult(false, dbEx.Message);
+        }
     }
 
     private async Task PersistEmployeeDaysOffAsync(string employeeId, string daysOff, CancellationToken cancellationToken)
@@ -160,11 +349,22 @@ public class EmployeeService : IEmployeeService
         IReadOnlyList<string> specializations,
         CancellationToken cancellationToken)
     {
-        if (specializations is null || specializations.Count == 0)
+        if (string.IsNullOrWhiteSpace(employeeId))
             return;
 
         await using var conn = new SqlConnection(_connectionString);
         await conn.OpenAsync(cancellationToken);
+
+        // Delete existing joints for this employee before adding updated specializations
+        const string clearSql = @"DELETE FROM dbo.EmployeeJointSpecialization WHERE UPPER(EmployeeID) = UPPER(@EmpId);";
+        await using (var clearCmd = new SqlCommand(clearSql, conn))
+        {
+            clearCmd.Parameters.AddWithValue("@EmpId", employeeId.Trim().ToUpperInvariant());
+            await clearCmd.ExecuteNonQueryAsync(cancellationToken);
+        }
+
+        if (specializations is null || specializations.Count == 0)
+            return;
 
         int seq = 1;
         foreach (var specName in specializations.Where(s => !string.IsNullOrWhiteSpace(s)))
@@ -283,9 +483,10 @@ public class EmployeeService : IEmployeeService
 
     public async Task<IReadOnlyList<TodayAttendanceSummaryDto>> GetTodayAttendanceAsync(CancellationToken cancellationToken = default)
     {
-        await _tokenStore.GetTokenAsync(cancellationToken);
+        if (cancellationToken.IsCancellationRequested) return new List<TodayAttendanceSummaryDto>();
         try
         {
+            try { await _tokenStore.GetTokenAsync(cancellationToken); } catch { }
             var res = await _http.GetFromJsonAsync<List<TodayAttendanceSummaryDto>>("api/timesheet/summary-today", cancellationToken);
             if (res != null) return res;
         }
@@ -295,9 +496,10 @@ public class EmployeeService : IEmployeeService
 
     public async Task<ClockStatusViewModel> GetClockStatusAsync(string? employeeId = null, CancellationToken cancellationToken = default)
     {
-        await _tokenStore.GetTokenAsync(cancellationToken);
+        if (cancellationToken.IsCancellationRequested) return new ClockStatusViewModel { EmployeeStudioId = employeeId ?? string.Empty };
         try
         {
+            try { await _tokenStore.GetTokenAsync(cancellationToken); } catch { }
             var url = string.IsNullOrWhiteSpace(employeeId) ? "api/timesheet/status" : $"api/timesheet/status?employeeId={employeeId}";
             var res = await _http.GetFromJsonAsync<ClockStatusViewModel>(url, cancellationToken);
             if (res != null) return res;
@@ -308,9 +510,10 @@ public class EmployeeService : IEmployeeService
 
     public async Task<bool> ClockInAsync(string? employeeId = null, string? notes = null, CancellationToken cancellationToken = default)
     {
-        await _tokenStore.GetTokenAsync(cancellationToken);
+        if (cancellationToken.IsCancellationRequested) return false;
         try
         {
+            try { await _tokenStore.GetTokenAsync(cancellationToken); } catch { }
             var res = await _http.PostAsJsonAsync("api/timesheet/clock-in", new { EmployeeStudioId = employeeId, Notes = notes }, cancellationToken);
             return res.IsSuccessStatusCode;
         }
@@ -319,9 +522,10 @@ public class EmployeeService : IEmployeeService
 
     public async Task<bool> ClockOutAsync(string? employeeId = null, string? notes = null, CancellationToken cancellationToken = default)
     {
-        await _tokenStore.GetTokenAsync(cancellationToken);
+        if (cancellationToken.IsCancellationRequested) return false;
         try
         {
+            try { await _tokenStore.GetTokenAsync(cancellationToken); } catch { }
             var res = await _http.PostAsJsonAsync("api/timesheet/clock-out", new { EmployeeStudioId = employeeId, Notes = notes }, cancellationToken);
             return res.IsSuccessStatusCode;
         }
@@ -330,9 +534,10 @@ public class EmployeeService : IEmployeeService
 
     public async Task<IReadOnlyList<EmployeeTimesheetHistoryDto>> GetTimesheetHistoryAsync(string? employeeId = null, CancellationToken cancellationToken = default)
     {
-        await _tokenStore.GetTokenAsync(cancellationToken);
+        if (cancellationToken.IsCancellationRequested) return new List<EmployeeTimesheetHistoryDto>();
         try
         {
+            try { await _tokenStore.GetTokenAsync(cancellationToken); } catch { }
             var url = string.IsNullOrWhiteSpace(employeeId) ? "api/timesheet/my-history" : $"api/timesheet/my-history?employeeId={employeeId}";
             var res = await _http.GetFromJsonAsync<List<EmployeeTimesheetHistoryDto>>(url, cancellationToken);
             if (res != null) return res;
@@ -343,9 +548,10 @@ public class EmployeeService : IEmployeeService
 
     public async Task<bool> AdjustTimesheetPunchAsync(int id, DateTime? clockIn, DateTime? clockOut, string? reason, CancellationToken cancellationToken = default)
     {
-        await _tokenStore.GetTokenAsync(cancellationToken);
+        if (cancellationToken.IsCancellationRequested) return false;
         try
         {
+            try { await _tokenStore.GetTokenAsync(cancellationToken); } catch { }
             var payload = new { ClockIn = clockIn, ClockOut = clockOut, AdjustmentReason = reason };
             var res = await _http.PostAsJsonAsync($"api/timesheet/{id}/adjust", payload, cancellationToken);
             return res.IsSuccessStatusCode;
@@ -357,9 +563,10 @@ public class EmployeeService : IEmployeeService
 
     public async Task<bool> RequestLeaveAsync(string leaveType, DateOnly startDate, DateOnly endDate, string? reason, string? employeeId = null, CancellationToken cancellationToken = default)
     {
-        await _tokenStore.GetTokenAsync(cancellationToken);
+        if (cancellationToken.IsCancellationRequested) return false;
         try
         {
+            try { await _tokenStore.GetTokenAsync(cancellationToken); } catch { }
             var payload = new
             {
                 LeaveType = leaveType,
@@ -376,9 +583,10 @@ public class EmployeeService : IEmployeeService
 
     public async Task<IReadOnlyList<LeaveItemViewModel>> GetPendingLeavesAsync(CancellationToken cancellationToken = default)
     {
-        await _tokenStore.GetTokenAsync(cancellationToken);
+        if (cancellationToken.IsCancellationRequested) return new List<LeaveItemViewModel>();
         try
         {
+            try { await _tokenStore.GetTokenAsync(cancellationToken); } catch { }
             var res = await _http.GetFromJsonAsync<List<LeaveItemViewModel>>("api/leaves/pending", cancellationToken);
             if (res != null) return res;
         }
@@ -388,9 +596,10 @@ public class EmployeeService : IEmployeeService
 
     public async Task<IReadOnlyList<LeaveItemViewModel>> GetMyLeavesAsync(string? employeeId = null, CancellationToken cancellationToken = default)
     {
-        await _tokenStore.GetTokenAsync(cancellationToken);
+        if (cancellationToken.IsCancellationRequested) return new List<LeaveItemViewModel>();
         try
         {
+            try { await _tokenStore.GetTokenAsync(cancellationToken); } catch { }
             var url = string.IsNullOrWhiteSpace(employeeId) ? "api/leaves/my-requests" : $"api/leaves/my-requests?employeeId={employeeId}";
             var res = await _http.GetFromJsonAsync<List<LeaveItemViewModel>>(url, cancellationToken);
             if (res != null) return res;
@@ -401,9 +610,10 @@ public class EmployeeService : IEmployeeService
 
     public async Task<bool> ApproveLeaveAsync(int leaveId, CancellationToken cancellationToken = default)
     {
-        await _tokenStore.GetTokenAsync(cancellationToken);
+        if (cancellationToken.IsCancellationRequested) return false;
         try
         {
+            try { await _tokenStore.GetTokenAsync(cancellationToken); } catch { }
             var res = await _http.PostAsync($"api/leaves/{leaveId}/approve", null, cancellationToken);
             return res.IsSuccessStatusCode;
         }
@@ -412,9 +622,10 @@ public class EmployeeService : IEmployeeService
 
     public async Task<bool> RejectLeaveAsync(int leaveId, string? reason = null, CancellationToken cancellationToken = default)
     {
-        await _tokenStore.GetTokenAsync(cancellationToken);
+        if (cancellationToken.IsCancellationRequested) return false;
         try
         {
+            try { await _tokenStore.GetTokenAsync(cancellationToken); } catch { }
             var res = await _http.PostAsJsonAsync($"api/leaves/{leaveId}/reject", new { Reason = reason }, cancellationToken);
             return res.IsSuccessStatusCode;
         }

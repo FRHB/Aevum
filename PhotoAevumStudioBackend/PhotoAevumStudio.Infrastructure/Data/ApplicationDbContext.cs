@@ -38,6 +38,7 @@ public class ApplicationDbContext : IdentityDbContext<ApplicationUser>
     public DbSet<PortfolioCategoryEntity> PortfolioCategories => Set<PortfolioCategoryEntity>();
     public DbSet<PortfolioEntity> Portfolios => Set<PortfolioEntity>();
     public DbSet<PortfolioImage> PortfolioImages => Set<PortfolioImage>();
+    public DbSet<ArchiveIndex> ArchiveIndices => Set<ArchiveIndex>();
 
     protected override void OnModelCreating(ModelBuilder builder)
     {
@@ -145,11 +146,6 @@ public class ApplicationDbContext : IdentityDbContext<ApplicationUser>
             e.Property(s => s.Description).HasMaxLength(1000);
             e.Property(s => s.ColorTag).HasMaxLength(50).IsRequired().HasDefaultValue("Blue");
             e.Property(s => s.CreatedAt).HasDefaultValueSql("SYSUTCDATETIME()");
-            e.Property(s => s.ChangedBy)
-             .ValueGeneratedOnAddOrUpdate()
-             .Metadata.SetAfterSaveBehavior(PropertySaveBehavior.Ignore);
-            e.Property(s => s.ChangedBy)
-             .Metadata.SetBeforeSaveBehavior(PropertySaveBehavior.Ignore);
         });
 
         // ── EventCategory / ServiceCategory ──────────────────────────────────
@@ -221,6 +217,19 @@ public class ApplicationDbContext : IdentityDbContext<ApplicationUser>
              .WithMany(b => b.Payments)
              .HasForeignKey(p => p.BookingId)
              .OnDelete(DeleteBehavior.SetNull);
+        });
+
+        // ── ArchiveIndex ──────────────────────────────────────────────────────
+        builder.Entity<ArchiveIndex>(e =>
+        {
+            e.ToTable("ArchiveIndex", "dbo");
+            e.HasKey(a => a.ArchiveId);
+            e.Property(a => a.EntityName).HasMaxLength(128).IsRequired();
+            e.Property(a => a.BucketName).HasMaxLength(100).IsRequired().HasDefaultValue("archive");
+            e.Property(a => a.R2Key).HasMaxLength(500).IsRequired();
+            e.Property(a => a.FileUri).HasMaxLength(1000).IsRequired();
+            e.Property(a => a.RecordCount).HasDefaultValue(0);
+            e.Property(a => a.ArchivedAt).HasDefaultValueSql("SYSUTCDATETIME()");
         });
     }
 }

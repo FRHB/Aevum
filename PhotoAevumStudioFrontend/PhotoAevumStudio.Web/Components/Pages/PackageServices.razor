@@ -231,7 +231,7 @@
 @if (!EffectiveReadOnly)
 {
     <CreatePackageModal @bind-IsOpen="isCreateModalOpen" OnPackageCreated="HandlePackageCreated" />
-    <EditPackageModal @bind-IsOpen="isEditModalOpen" Package="selectedEditPackage" OnPackageUpdated="HandlePackageUpdated" />
+    <CreatePackageModal @bind-IsOpen="isEditModalOpen" IsEditMode="true" EditItem="selectedEditPackage" OnPackageCreated="HandlePackageUpdated" />
 }
 
 @code {
@@ -271,12 +271,15 @@
     {
         LoadFromDatabase();
         notificationMessage = $"Package \"{updated.Title}\" ({updated.Code}) updated successfully.";
+        StateHasChanged();
     }
 
     private void HandlePackageCreated(PackageServiceItem newItem)
     {
+        searchQuery = string.Empty;
         LoadFromDatabase();
         notificationMessage = $"Package \"{newItem.Title}\" ({newItem.Code}) has been saved to the database.";
+        StateHasChanged();
     }
 
     private IEnumerable<PackageServiceItem> FilteredPackages

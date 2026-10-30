@@ -40,7 +40,7 @@
         </button>
         @foreach (var cat in _categories)
         {
-            var count = _featuredPortfolios.Count(p => p.CategoryID.Equals(cat.CategoryID, StringComparison.OrdinalIgnoreCase));
+            var count = _featuredPortfolios.Count(p => string.Equals(p.CategoryID, cat.CategoryID, StringComparison.OrdinalIgnoreCase));
             if (count > 0)
             {
                 <button type="button"
@@ -92,7 +92,7 @@
 
                         <div class="absolute top-3 right-3">
                             <span class="px-2.5 py-1 rounded-full text-[11px] font-semibold bg-black/60 backdrop-blur-sm text-white">
-                                📷 @port.Images.Count
+                                📷 @(port.Images?.Count ?? 0)
                             </span>
                         </div>
 
@@ -109,10 +109,10 @@
                         </p>
 
                         <!-- Thumbnail Strip -->
-                        @if (port.Images.Count > 1)
+                        @if ((port.Images?.Count ?? 0) > 1)
                         {
                             <div class="flex items-center gap-2 overflow-x-auto py-1">
-                                @foreach (var thumb in port.Images.Take(5))
+                                @foreach (var thumb in (port.Images ?? new()).Take(5))
                                 {
                                     <div class="w-12 h-12 rounded-lg overflow-hidden border border-gray-200 shrink-0">
                                         <img src="@thumb.Url" alt="Thumb" class="w-full h-full object-cover hover:opacity-80" />
@@ -142,14 +142,14 @@
             <div class="px-6 py-4 border-b border-gray-100 flex items-center justify-between">
                 <div>
                     <h3 class="font-bold text-base text-gray-900">@_activeGallery.PortfolioName</h3>
-                    <p class="text-xs text-gray-500">@_activeGallery.CategoryName &bull; @_activeGallery.Images.Count photo(s)</p>
+                    <p class="text-xs text-gray-500">@_activeGallery.CategoryName &bull; @(_activeGallery.Images?.Count ?? 0) photo(s)</p>
                 </div>
                 <button type="button" @onclick="() => _activeGallery = null" class="text-gray-400 hover:text-gray-700 text-lg">✕</button>
             </div>
 
             <div class="p-6 overflow-y-auto flex-1">
                 <div class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-4">
-                    @foreach (var img in _activeGallery.Images)
+                    @foreach (var img in (_activeGallery.Images ?? new()))
                     {
                         <div class="rounded-xl overflow-hidden border border-gray-200 aspect-square bg-gray-100 shadow-sm group">
                             <img src="@img.Url" alt="Photo" class="w-full h-full object-cover group-hover:scale-105 transition-transform duration-200" />
@@ -169,7 +169,7 @@
     private PortfolioFolderModel? _activeGallery;
 
     private List<PortfolioFolderModel> FilteredPortfolios => _featuredPortfolios
-        .Where(p => _selectedCategory == "All" || p.CategoryID.Equals(_selectedCategory, StringComparison.OrdinalIgnoreCase))
+        .Where(p => _selectedCategory == "All" || string.Equals(p.CategoryID, _selectedCategory, StringComparison.OrdinalIgnoreCase))
         .ToList();
 
     protected override async Task OnInitializedAsync()

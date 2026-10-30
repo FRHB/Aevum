@@ -71,6 +71,14 @@ public class PortfolioImage
     [MaxLength(500)]
     public string FileName { get; set; } = string.Empty;
 
+    [MaxLength(500)]
+    public string? ImageUrl { get; set; }
+
+    [MaxLength(100)]
+    public string? ContentType { get; set; } = "image/jpeg";
+
+    public byte[]? ImageData { get; set; }
+
     public DateTime UploadedAt { get; set; } = DateTime.UtcNow;
 
     [ForeignKey(nameof(PortfolioId))]

@@ -2,6 +2,7 @@
 @using PhotoAevumStudio.Web.Models
 @using PhotoAevumStudio.Web.Services
 @inject IServicesApiClient ServicesApi
+@inject IUserService UserService
 @inject ILogger<MainServiceWizardModal> Logger
 
 @if (IsOpen)
@@ -20,8 +21,12 @@
                         </svg>
                     </div>
                     <div>
-                        <h2 id="main-service-modal-title" class="text-lg sm:text-xl font-bold text-gray-900">Add New Main Service</h2>
-                        <p class="text-xs text-gray-500">Configure master service offering, media assets, and catalog metadata</p>
+                        <h2 id="main-service-modal-title" class="text-lg sm:text-xl font-bold text-gray-900">
+                            @(IsEditMode ? "Edit Main Service" : "Add New Main Service")
+                        </h2>
+                        <p class="text-xs text-gray-500">
+                            @(IsEditMode ? "Update master service offering, media assets, and catalog metadata" : "Configure master service offering, media assets, and catalog metadata")
+                        </p>
                     </div>
                 </div>
                 <button type="button" 
@@ -129,6 +134,21 @@
                             <h3 class="text-xs font-bold uppercase tracking-wider text-gray-600 mb-1">Service Specifications</h3>
                             <p class="text-xs text-gray-400">Fill in the primary catalog attributes for this main photography service.</p>
                         </div>
+
+                        @if (IsEditMode)
+                        {
+                            <div>
+                                <label for="srv-id-locked" class="block text-xs font-semibold uppercase tracking-wider text-gray-700 mb-1.5">
+                                    Service ID <span class="text-gray-400 font-normal lowercase">(system assigned - locked)</span>
+                                </label>
+                                <input id="srv-id-locked"
+                                       type="text"
+                                       value="@model.GeneratedId"
+                                       class="w-full px-3.5 py-2.5 text-sm bg-gray-100 border border-gray-300 rounded-lg text-gray-700 font-mono font-bold cursor-not-allowed shadow-xs"
+                                       readonly
+                                       disabled />
+                            </div>
+                        }
 
                         @* Field: Service Name *@
                         <div>
@@ -252,7 +272,7 @@
                         </div>
 
                         @* Choose an Image File Input *@
-                        @if (model.ImageBytes == null)
+                        @if (model.ImageBytes == null && string.IsNullOrEmpty(model.ImagePreviewUrl))
                         {
                             <div class="relative border-2 border-dashed border-gray-300 hover:border-gray-500 rounded-2xl p-8 text-center bg-gray-50/40 hover:bg-gray-50 transition-all cursor-pointer group">
                                 <InputFile OnChange="HandleFileSelected"
@@ -297,8 +317,8 @@
                                 </div>
 
                                 <div class="flex items-center justify-between text-xs text-gray-500 pt-1 border-t border-gray-200/60">
-                                    <span class="font-medium truncate max-w-[220px]">@model.ImageFileName</span>
-                                    <span class="font-mono text-gray-400">@FormatFileSize(model.ImageSize) &bull; @model.ImageMimeType</span>
+                                    <span class="font-medium truncate max-w-[220px]">@(string.IsNullOrEmpty(model.ImageFileName) ? "Uploaded Image" : model.ImageFileName)</span>
+                                    <span class="font-mono text-gray-400">@(model.ImageSize > 0 ? FormatFileSize(model.ImageSize) : "Existing Asset") &bull; @(model.ImageMimeType ?? "image")</span>
                                 </div>
                             </div>
                         }
@@ -435,8 +455,8 @@
                         @if (currentStep < 3)
                         {
                             <button type="button" 
-                                    @onclick="NextStep"
-                                    disabled="@(currentStep == 2 && (model.ImageBytes == null || model.ImageBytes.Length == 0))"
+                                    @onclick="NextStep" 
+                                    disabled="@(currentStep == 2 && (model.ImageBytes == null || model.ImageBytes.Length == 0) && string.IsNullOrEmpty(model.ImagePreviewUrl))"
                                     class="inline-flex items-center gap-1.5 px-6 py-2.5 bg-gray-900 hover:bg-black text-white text-xs font-semibold rounded-lg shadow-sm hover:shadow transition-all disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer">
                                 <span>Next Step</span>
                                 <span>&rarr;</span>
@@ -477,6 +497,8 @@
     [Parameter] public bool IsOpen { get; set; }
     [Parameter] public EventCallback<bool> IsOpenChanged { get; set; }
     [Parameter] public EventCallback<string> OnServiceSaved { get; set; }
+    [Parameter] public bool IsEditMode { get; set; }
+    [Parameter] public MainServiceItem? EditItem { get; set; }
 
     private int currentStep = 1;
     private bool isSaving = false;
@@ -494,12 +516,42 @@
 
     private MainServiceWizardModel model = new();
     private List<CategoryLookupItem> categories = new();
+    private bool wasOpen = false;
 
     protected override async Task OnParametersSetAsync()
     {
-        if (IsOpen && categories.Count == 0)
+        if (IsOpen && !wasOpen)
         {
-            await LoadCategoriesAsync();
+            wasOpen = true;
+            await ResetWizardAsync();
+
+            if (IsEditMode && EditItem != null)
+            {
+                model.GeneratedId = EditItem.Code;
+                model.Name = EditItem.Title;
+                model.Description = EditItem.Description ?? "";
+                model.Price = EditItem.BasePrice;
+                model.RateType = string.IsNullOrWhiteSpace(EditItem.RateType) ? "per hour" : EditItem.RateType;
+
+                await LoadCategoriesAsync();
+                var match = categories.FirstOrDefault(c => c.Name.Equals(EditItem.Category, StringComparison.OrdinalIgnoreCase) || c.Id.Equals(EditItem.Category, StringComparison.OrdinalIgnoreCase));
+                model.CategoryId = match?.Id ?? (categories.Count > 0 ? categories[0].Id : "");
+                model.CategoryName = match?.Name ?? EditItem.Category;
+
+                if (!string.IsNullOrEmpty(EditItem.ImageBase64))
+                {
+                    model.ImagePreviewUrl = EditItem.ImageBase64;
+                    model.ImageFileName = "Current Presentation Image";
+                }
+            }
+            else
+            {
+                await LoadCategoriesAsync();
+            }
+        }
+        else if (!IsOpen)
+        {
+            wasOpen = false;
         }
     }
 
@@ -628,7 +680,7 @@
     private bool ValidateStep2()
     {
         fileError = null;
-        if (model.ImageBytes == null || model.ImageBytes.Length == 0)
+        if ((model.ImageBytes == null || model.ImageBytes.Length == 0) && string.IsNullOrEmpty(model.ImagePreviewUrl))
         {
             fileError = "A presentation showcase image is required to proceed.";
             return false;
@@ -728,6 +780,50 @@
 
         try
         {
+            if (IsEditMode && EditItem != null)
+            {
+                var updatedItem = new MainServiceItem
+                {
+                    Code = model.GeneratedId,
+                    Title = model.Name.Trim(),
+                    Description = model.Description.Trim(),
+                    BasePrice = model.Price,
+                    Category = model.CategoryName,
+                    RateType = string.IsNullOrWhiteSpace(model.RateType) ? "per hour" : model.RateType.Trim(),
+                    Status = EditItem.Status
+                };
+
+                var updatedOk = UserService.UpdateMainService(updatedItem);
+                if (!updatedOk)
+                {
+                    errorMessage = "Failed to update main service record.";
+                    return;
+                }
+
+                if (model.ImageBytes != null && model.ImageBytes.Length > 0)
+                {
+                    try
+                    {
+                        await UserService.UpdateServiceImageAsync(model.GeneratedId, model.ImageBytes, model.ImageMimeType ?? "image/jpeg");
+                    }
+                    catch (Exception imgEx)
+                    {
+                        Logger.LogWarning(imgEx, "Could not update service image.");
+                    }
+                }
+
+                var finalId = model.GeneratedId;
+                isSaveSuccess = true;
+                successMessage = $"Main Service '{model.Name}' ({finalId}) has been successfully updated in the database.";
+                StateHasChanged();
+
+                await Task.Delay(500);
+
+                await OnServiceSaved.InvokeAsync(finalId);
+                await HandleClose();
+                return;
+            }
+
             var (success, error, createdId) = await ServicesApi.CreateServiceAsync(model);
             if (!success)
             {
@@ -735,14 +831,14 @@
                 return;
             }
 
-            var finalId = createdId ?? model.GeneratedId;
+            var createdFinalId = createdId ?? model.GeneratedId;
             isSaveSuccess = true;
-            successMessage = $"Main Service '{model.Name}' ({finalId}) has been successfully saved to the database.";
+            successMessage = $"Main Service '{model.Name}' ({createdFinalId}) has been successfully saved to the database.";
             StateHasChanged();
 
             await Task.Delay(500);
 
-            await OnServiceSaved.InvokeAsync(finalId);
+            await OnServiceSaved.InvokeAsync(createdFinalId);
             await HandleClose();
         }
         catch (Exception ex)

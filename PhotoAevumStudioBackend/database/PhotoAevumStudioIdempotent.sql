@@ -345,6 +345,8 @@ BEGIN
         EventName nvarchar(255) NOT NULL CONSTRAINT DF_EventAppointment_Name DEFAULT 'Photoshoot Event',
         EventDescription nvarchar(255) NULL,
         CustomerID nvarchar(30) NOT NULL,
+        EmployeeID nvarchar(30) NULL,
+        AssignedEmployeeName nvarchar(100) NULL,
         EventDate date NOT NULL,
         EventTime time NOT NULL,
         EventStatus nvarchar(30) NOT NULL CONSTRAINT DF_EventAppointment_Status DEFAULT 'Pending',
@@ -363,13 +365,21 @@ BEGIN
     );
 END;
 
+-- Idempotent column additions for EventAppointment
+IF OBJECT_ID(N'dbo.EventAppointment', N'U') IS NOT NULL
+BEGIN
+    IF COL_LENGTH(N'dbo.EventAppointment', N'AssignedEmployeeName') IS NULL
+        ALTER TABLE dbo.EventAppointment ADD AssignedEmployeeName NVARCHAR(100) NULL;
+END;
+
 IF OBJECT_ID(N'dbo.BookingNegotiation', N'U') IS NULL
 BEGIN
     CREATE TABLE dbo.BookingNegotiation (
         NegotiationID nvarchar(30) NOT NULL PRIMARY KEY,
         EventAppointmentID nvarchar(30) NULL,
         CustomerID nvarchar(30) NOT NULL,
-        EmployeeID nvarchar(30) NOT NULL, 
+        EmployeeID nvarchar(30) NULL, 
+        AssignedEmployeeName nvarchar(100) NULL,
         ConsultationDate date NULL,
         ConsultationTime time NULL,
         MeetingLink nvarchar(500) NULL,
@@ -379,15 +389,30 @@ BEGIN
     );
 END;
 
+-- Idempotent column additions for BookingNegotiation
+IF OBJECT_ID(N'dbo.BookingNegotiation', N'U') IS NOT NULL
+BEGIN
+    IF COL_LENGTH(N'dbo.BookingNegotiation', N'AssignedEmployeeName') IS NULL
+        ALTER TABLE dbo.BookingNegotiation ADD AssignedEmployeeName NVARCHAR(100) NULL;
+END;
+
 IF OBJECT_ID(N'dbo.EventEmployee', N'U') IS NULL
 BEGIN
     CREATE TABLE dbo.EventEmployee (
         EventEmployeeID int IDENTITY(1,1) NOT NULL PRIMARY KEY,
         EventAppointmentID nvarchar(30) NOT NULL,
-        EmployeeID nvarchar(30) NOT NULL,
+        EmployeeID nvarchar(30) NULL,
+        AssignedEmployeeName nvarchar(100) NULL,
         IsTeamLeader bit NOT NULL CONSTRAINT DF_EventEmployee_IsTeamLeader DEFAULT 0,
         CONSTRAINT UQ_EventEmployee_Assign UNIQUE (EventAppointmentID, EmployeeID)
     );
+END;
+
+-- Idempotent column additions for EventEmployee
+IF OBJECT_ID(N'dbo.EventEmployee', N'U') IS NOT NULL
+BEGIN
+    IF COL_LENGTH(N'dbo.EventEmployee', N'AssignedEmployeeName') IS NULL
+        ALTER TABLE dbo.EventEmployee ADD AssignedEmployeeName NVARCHAR(100) NULL;
 END;
 
 IF OBJECT_ID(N'dbo.EventEquipment', N'U') IS NULL
@@ -470,6 +495,21 @@ BEGIN
          OR (ChangedByType = 'System'   AND ChangedByCustomerID IS NULL AND ChangedByEmployeeID IS NULL AND ChangedByAdminID IS NULL))
     );
 END;
+
+IF OBJECT_ID(N'dbo.ArchiveIndex', N'U') IS NULL
+BEGIN
+    CREATE TABLE dbo.ArchiveIndex (
+        ArchiveId     int           IDENTITY(1,1) NOT NULL CONSTRAINT PK_ArchiveIndex PRIMARY KEY,
+        EntityName    nvarchar(128) NOT NULL,
+        BucketName    nvarchar(100) NOT NULL CONSTRAINT DF_ArchiveIndex_Bucket DEFAULT 'archive',
+        R2Key         nvarchar(500) NOT NULL,
+        FileUri       nvarchar(1000) NOT NULL,
+        RecordCount   int           NOT NULL CONSTRAINT DF_ArchiveIndex_RecordCount DEFAULT 0,
+        DateRangeFrom datetime2     NULL,
+        DateRangeTo   datetime2     NULL,
+        ArchivedAt    datetime2     NOT NULL CONSTRAINT DF_ArchiveIndex_ArchivedAt DEFAULT SYSUTCDATETIME()
+    );
+END;
 GO
 
 /* =====================================================================
@@ -486,9 +526,17 @@ BEGIN
         SurchargeAmount decimal(18,2) NOT NULL CONSTRAINT DF_EventOvertime_Surcharge DEFAULT 0.00,
         TotalOvertimeFee AS (ExtraHours * HourlyRate + SurchargeAmount) PERSISTED,
         ReasonNotes nvarchar(500) NULL,
-        LoggedByEmployeeID nvarchar(30) NOT NULL,
+        LoggedByEmployeeID nvarchar(30) NULL,
+        AssignedEmployeeName nvarchar(100) NULL,
         CreatedAt datetime2 NOT NULL CONSTRAINT DF_EventOvertime_CreatedAt DEFAULT SYSUTCDATETIME()
     );
+END;
+
+-- Idempotent column additions for EventOvertimeCharges
+IF OBJECT_ID(N'dbo.EventOvertimeCharges', N'U') IS NOT NULL
+BEGIN
+    IF COL_LENGTH(N'dbo.EventOvertimeCharges', N'AssignedEmployeeName') IS NULL
+        ALTER TABLE dbo.EventOvertimeCharges ADD AssignedEmployeeName NVARCHAR(100) NULL;
 END;
 
 IF OBJECT_ID(N'dbo.PaymentTransactions', N'U') IS NULL
@@ -509,9 +557,17 @@ BEGIN
         AdminApproverID nvarchar(100) NULL,
         ApprovalTimestamp datetime2 NULL,
         ReceivedByEmployeeID nvarchar(30) NULL, -- For cash collected by Team Leader
+        AssignedEmployeeName nvarchar(100) NULL,
         PaidAt datetime2 NULL,
         CreatedAt datetime2 NOT NULL CONSTRAINT DF_PaymentTransactions_CreatedAt DEFAULT SYSUTCDATETIME()
     );
+END;
+
+-- Idempotent column additions for PaymentTransactions
+IF OBJECT_ID(N'dbo.PaymentTransactions', N'U') IS NOT NULL
+BEGIN
+    IF COL_LENGTH(N'dbo.PaymentTransactions', N'AssignedEmployeeName') IS NULL
+        ALTER TABLE dbo.PaymentTransactions ADD AssignedEmployeeName NVARCHAR(100) NULL;
 END;
 GO
 
@@ -560,131 +616,218 @@ BEGIN
     CREATE TABLE dbo.PortfolioImages (
         Id int IDENTITY(1,1) NOT NULL PRIMARY KEY,
         PortfolioId nvarchar(50) NOT NULL,
-        FileName nvarchar(255) NOT NULL,
+        FileName nvarchar(500) NOT NULL,
+        ImageUrl nvarchar(500) NULL,
+        ContentType nvarchar(100) NULL CONSTRAINT DF_PortfolioImages_ContentType DEFAULT 'image/jpeg',
+        ImageData varbinary(max) NULL,
         UploadedAt datetime2 NOT NULL CONSTRAINT DF_PortfolioImages_UploadedAt DEFAULT SYSUTCDATETIME()
     );
+END;
+
+IF OBJECT_ID(N'dbo.PortfolioImages', N'U') IS NOT NULL
+BEGIN
+    IF COL_LENGTH(N'dbo.PortfolioImages', N'ImageUrl') IS NULL
+        ALTER TABLE dbo.PortfolioImages ADD ImageUrl nvarchar(500) NULL;
+    IF COL_LENGTH(N'dbo.PortfolioImages', N'ContentType') IS NULL
+        ALTER TABLE dbo.PortfolioImages ADD ContentType nvarchar(100) NULL CONSTRAINT DF_PortfolioImages_ContentType DEFAULT 'image/jpeg';
+    IF COL_LENGTH(N'dbo.PortfolioImages', N'ImageData') IS NULL
+        ALTER TABLE dbo.PortfolioImages ADD ImageData varbinary(max) NULL;
 END;
 GO
 
 /* =====================================================================
-   8. FOREIGN KEY RELATIONSHIPS (Safe Idempotent Existence Checks)
+   8. FOREIGN KEY RELATIONSHIPS (Safe Idempotent Drop-and-Recreate)
    ===================================================================== */
-IF OBJECT_ID(N'dbo.FK_Equipment_EquipmentType', N'F') IS NULL
-    ALTER TABLE dbo.Equipment ADD CONSTRAINT FK_Equipment_EquipmentType FOREIGN KEY (EquipmentTypeID) REFERENCES dbo.EquipmentType(EquipmentTypeID);
 
-IF OBJECT_ID(N'dbo.FK_BookingNegotiation_Employee', N'F') IS NULL
-    ALTER TABLE dbo.BookingNegotiation ADD CONSTRAINT FK_BookingNegotiation_Employee FOREIGN KEY (EmployeeID) REFERENCES dbo.Employees(EmployeeID);
+-- 8.1 Equipment Constraints
+IF OBJECT_ID(N'dbo.FK_Equipment_EquipmentType', N'F') IS NOT NULL
+    ALTER TABLE dbo.Equipment DROP CONSTRAINT FK_Equipment_EquipmentType;
+ALTER TABLE dbo.Equipment ADD CONSTRAINT FK_Equipment_EquipmentType FOREIGN KEY (EquipmentTypeID) REFERENCES dbo.EquipmentType(EquipmentTypeID);
 
-IF OBJECT_ID(N'dbo.FK_BookingNegotiation_Customer', N'F') IS NULL
-    ALTER TABLE dbo.BookingNegotiation ADD CONSTRAINT FK_BookingNegotiation_Customer FOREIGN KEY (CustomerID) REFERENCES dbo.Customer(CustomerID);
+-- 8.2 BookingNegotiation Constraints
+IF COL_LENGTH(N'dbo.BookingNegotiation', N'EmployeeID') IS NOT NULL
+    ALTER TABLE dbo.BookingNegotiation ALTER COLUMN EmployeeID NVARCHAR(30) NULL;
 
-IF OBJECT_ID(N'dbo.FK_BookingNegotiation_EventAppointment', N'F') IS NULL
-    ALTER TABLE dbo.BookingNegotiation ADD CONSTRAINT FK_BookingNegotiation_EventAppointment FOREIGN KEY (EventAppointmentID) REFERENCES dbo.EventAppointment(EventAppointmentID) ON DELETE SET NULL;
+IF OBJECT_ID(N'dbo.FK_BookingNegotiation_Employee', N'F') IS NOT NULL
+    ALTER TABLE dbo.BookingNegotiation DROP CONSTRAINT FK_BookingNegotiation_Employee;
+ALTER TABLE dbo.BookingNegotiation ADD CONSTRAINT FK_BookingNegotiation_Employee FOREIGN KEY (EmployeeID) REFERENCES dbo.Employees(EmployeeID) ON DELETE SET NULL;
 
-IF OBJECT_ID(N'dbo.FK_EventEmployee_Employee', N'F') IS NULL
-    ALTER TABLE dbo.EventEmployee ADD CONSTRAINT FK_EventEmployee_Employee FOREIGN KEY (EmployeeID) REFERENCES dbo.Employees(EmployeeID);
+IF OBJECT_ID(N'dbo.FK_BookingNegotiation_Customer', N'F') IS NOT NULL
+    ALTER TABLE dbo.BookingNegotiation DROP CONSTRAINT FK_BookingNegotiation_Customer;
+ALTER TABLE dbo.BookingNegotiation ADD CONSTRAINT FK_BookingNegotiation_Customer FOREIGN KEY (CustomerID) REFERENCES dbo.Customer(CustomerID);
 
-IF OBJECT_ID(N'dbo.FK_EventEquipment_Equipment', N'F') IS NULL
-    ALTER TABLE dbo.EventEquipment ADD CONSTRAINT FK_EventEquipment_Equipment FOREIGN KEY (EquipmentID) REFERENCES dbo.Equipment(EquipmentID);
+IF OBJECT_ID(N'dbo.FK_BookingNegotiation_EventAppointment', N'F') IS NOT NULL
+    ALTER TABLE dbo.BookingNegotiation DROP CONSTRAINT FK_BookingNegotiation_EventAppointment;
+ALTER TABLE dbo.BookingNegotiation ADD CONSTRAINT FK_BookingNegotiation_EventAppointment FOREIGN KEY (EventAppointmentID) REFERENCES dbo.EventAppointment(EventAppointmentID) ON DELETE SET NULL;
 
-IF OBJECT_ID(N'dbo.FK_EventAppointment_Customer', N'F') IS NULL
-    ALTER TABLE dbo.EventAppointment ADD CONSTRAINT FK_EventAppointment_Customer FOREIGN KEY (CustomerID) REFERENCES dbo.Customer(CustomerID);
+-- 8.3 EventEmployee Constraints
+IF COL_LENGTH(N'dbo.EventEmployee', N'EmployeeID') IS NOT NULL
+    ALTER TABLE dbo.EventEmployee ALTER COLUMN EmployeeID NVARCHAR(30) NULL;
 
-IF OBJECT_ID(N'dbo.FK_EventLineItem_AdditionalServices', N'F') IS NULL
-    ALTER TABLE dbo.EventLineItem ADD CONSTRAINT FK_EventLineItem_AdditionalServices FOREIGN KEY (AdditionalServicesID) REFERENCES dbo.AdditionalServices(AdditionalServicesID);
+IF OBJECT_ID(N'dbo.FK_EventEmployee_Employee', N'F') IS NOT NULL
+    ALTER TABLE dbo.EventEmployee DROP CONSTRAINT FK_EventEmployee_Employee;
+ALTER TABLE dbo.EventEmployee ADD CONSTRAINT FK_EventEmployee_Employee FOREIGN KEY (EmployeeID) REFERENCES dbo.Employees(EmployeeID) ON DELETE SET NULL;
 
-IF OBJECT_ID(N'dbo.FK_EventLineItem_Services', N'F') IS NULL
-    ALTER TABLE dbo.EventLineItem ADD CONSTRAINT FK_EventLineItem_Services FOREIGN KEY (ServicesID) REFERENCES dbo.Services(ServicesID);
+IF OBJECT_ID(N'dbo.FK_EventEmployee_EventAppointment', N'F') IS NOT NULL
+    ALTER TABLE dbo.EventEmployee DROP CONSTRAINT FK_EventEmployee_EventAppointment;
+ALTER TABLE dbo.EventEmployee ADD CONSTRAINT FK_EventEmployee_EventAppointment FOREIGN KEY (EventAppointmentID) REFERENCES dbo.EventAppointment(EventAppointmentID) ON DELETE CASCADE;
 
-IF OBJECT_ID(N'dbo.FK_EmpJointSpec_Employee', N'F') IS NULL
-    ALTER TABLE dbo.EmployeeJointSpecialization ADD CONSTRAINT FK_EmpJointSpec_Employee FOREIGN KEY (EmployeeID) REFERENCES dbo.Employees(EmployeeID) ON DELETE CASCADE;
+-- 8.4 EventAppointment Constraints
+IF COL_LENGTH(N'dbo.EventAppointment', N'EmployeeID') IS NOT NULL
+    ALTER TABLE dbo.EventAppointment ALTER COLUMN EmployeeID NVARCHAR(30) NULL;
 
-IF OBJECT_ID(N'dbo.FK_EmpJointSpec_Specialization', N'F') IS NULL
-    ALTER TABLE dbo.EmployeeJointSpecialization ADD CONSTRAINT FK_EmpJointSpec_Specialization FOREIGN KEY (SpecializationID) REFERENCES dbo.EmployeeSpecialization(SpecializationID) ON DELETE CASCADE;
+IF OBJECT_ID(N'dbo.FK_EventAppointment_Customer', N'F') IS NOT NULL
+    ALTER TABLE dbo.EventAppointment DROP CONSTRAINT FK_EventAppointment_Customer;
+ALTER TABLE dbo.EventAppointment ADD CONSTRAINT FK_EventAppointment_Customer FOREIGN KEY (CustomerID) REFERENCES dbo.Customer(CustomerID);
 
-IF OBJECT_ID(N'dbo.FK_ComboPackageJoin_Services', N'F') IS NULL
-    ALTER TABLE dbo.ComboPackageJoin ADD CONSTRAINT FK_ComboPackageJoin_Services FOREIGN KEY (ServicesID) REFERENCES dbo.Services(ServicesID);
+IF OBJECT_ID(N'dbo.FK_EventAppointment_Employee', N'F') IS NOT NULL
+    ALTER TABLE dbo.EventAppointment DROP CONSTRAINT FK_EventAppointment_Employee;
+ALTER TABLE dbo.EventAppointment ADD CONSTRAINT FK_EventAppointment_Employee FOREIGN KEY (EmployeeID) REFERENCES dbo.Employees(EmployeeID) ON DELETE SET NULL;
 
-IF OBJECT_ID(N'dbo.FK_ComboPackageJoin_AdditionalServices', N'F') IS NULL
-    ALTER TABLE dbo.ComboPackageJoin ADD CONSTRAINT FK_ComboPackageJoin_AdditionalServices FOREIGN KEY (AdditionalServicesID) REFERENCES dbo.AdditionalServices(AdditionalServicesID);
+-- 8.5 EventEquipment Constraints
+IF OBJECT_ID(N'dbo.FK_EventEquipment_Equipment', N'F') IS NOT NULL
+    ALTER TABLE dbo.EventEquipment DROP CONSTRAINT FK_EventEquipment_Equipment;
+ALTER TABLE dbo.EventEquipment ADD CONSTRAINT FK_EventEquipment_Equipment FOREIGN KEY (EquipmentID) REFERENCES dbo.Equipment(EquipmentID);
 
-IF OBJECT_ID(N'dbo.FK_ComboPackageJoin_ComboPackage', N'F') IS NULL
-    ALTER TABLE dbo.ComboPackageJoin ADD CONSTRAINT FK_ComboPackageJoin_ComboPackage FOREIGN KEY (ComboPackageID) REFERENCES dbo.ComboPackage(ComboPackageID) ON DELETE CASCADE;
+IF OBJECT_ID(N'dbo.FK_EventEquipment_EventAppointment', N'F') IS NOT NULL
+    ALTER TABLE dbo.EventEquipment DROP CONSTRAINT FK_EventEquipment_EventAppointment;
+ALTER TABLE dbo.EventEquipment ADD CONSTRAINT FK_EventEquipment_EventAppointment FOREIGN KEY (EventAppointmentID) REFERENCES dbo.EventAppointment(EventAppointmentID) ON DELETE CASCADE;
 
-IF OBJECT_ID(N'dbo.FK_EventLineItem_EventAppointment', N'F') IS NULL
-    ALTER TABLE dbo.EventLineItem ADD CONSTRAINT FK_EventLineItem_EventAppointment FOREIGN KEY (EventAppointmentID) REFERENCES dbo.EventAppointment(EventAppointmentID) ON DELETE CASCADE;
+-- 8.6 EventLineItem Constraints
+IF OBJECT_ID(N'dbo.FK_EventLineItem_AdditionalServices', N'F') IS NOT NULL
+    ALTER TABLE dbo.EventLineItem DROP CONSTRAINT FK_EventLineItem_AdditionalServices;
+ALTER TABLE dbo.EventLineItem ADD CONSTRAINT FK_EventLineItem_AdditionalServices FOREIGN KEY (AdditionalServicesID) REFERENCES dbo.AdditionalServices(AdditionalServicesID);
 
-IF OBJECT_ID(N'dbo.FK_EventLineItem_ComboPackage', N'F') IS NULL
-    ALTER TABLE dbo.EventLineItem ADD CONSTRAINT FK_EventLineItem_ComboPackage FOREIGN KEY (ComboPackageID) REFERENCES dbo.ComboPackage(ComboPackageID);
+IF OBJECT_ID(N'dbo.FK_EventLineItem_Services', N'F') IS NOT NULL
+    ALTER TABLE dbo.EventLineItem DROP CONSTRAINT FK_EventLineItem_Services;
+ALTER TABLE dbo.EventLineItem ADD CONSTRAINT FK_EventLineItem_Services FOREIGN KEY (ServicesID) REFERENCES dbo.Services(ServicesID);
 
-IF OBJECT_ID(N'dbo.FK_EventEmployee_EventAppointment', N'F') IS NULL
-    ALTER TABLE dbo.EventEmployee ADD CONSTRAINT FK_EventEmployee_EventAppointment FOREIGN KEY (EventAppointmentID) REFERENCES dbo.EventAppointment(EventAppointmentID) ON DELETE CASCADE;
+IF OBJECT_ID(N'dbo.FK_EventLineItem_EventAppointment', N'F') IS NOT NULL
+    ALTER TABLE dbo.EventLineItem DROP CONSTRAINT FK_EventLineItem_EventAppointment;
+ALTER TABLE dbo.EventLineItem ADD CONSTRAINT FK_EventLineItem_EventAppointment FOREIGN KEY (EventAppointmentID) REFERENCES dbo.EventAppointment(EventAppointmentID) ON DELETE CASCADE;
 
-IF OBJECT_ID(N'dbo.FK_EventEquipment_EventAppointment', N'F') IS NULL
-    ALTER TABLE dbo.EventEquipment ADD CONSTRAINT FK_EventEquipment_EventAppointment FOREIGN KEY (EventAppointmentID) REFERENCES dbo.EventAppointment(EventAppointmentID) ON DELETE CASCADE;
+IF OBJECT_ID(N'dbo.FK_EventLineItem_ComboPackage', N'F') IS NOT NULL
+    ALTER TABLE dbo.EventLineItem DROP CONSTRAINT FK_EventLineItem_ComboPackage;
+ALTER TABLE dbo.EventLineItem ADD CONSTRAINT FK_EventLineItem_ComboPackage FOREIGN KEY (ComboPackageID) REFERENCES dbo.ComboPackage(ComboPackageID);
 
-IF OBJECT_ID(N'dbo.FK_ServiceCategoryJoins_ServiceCategory', N'F') IS NULL
-    ALTER TABLE dbo.ServiceCategoryJoins ADD CONSTRAINT FK_ServiceCategoryJoins_ServiceCategory FOREIGN KEY (ServiceCategoryID) REFERENCES dbo.ServiceCategory(ServiceCategoryID) ON DELETE CASCADE;
+-- 8.7 Employee Specialization Constraints
+IF OBJECT_ID(N'dbo.FK_EmpJointSpec_Employee', N'F') IS NOT NULL
+    ALTER TABLE dbo.EmployeeJointSpecialization DROP CONSTRAINT FK_EmpJointSpec_Employee;
+ALTER TABLE dbo.EmployeeJointSpecialization ADD CONSTRAINT FK_EmpJointSpec_Employee FOREIGN KEY (EmployeeID) REFERENCES dbo.Employees(EmployeeID) ON DELETE CASCADE;
 
-IF OBJECT_ID(N'dbo.FK_ServiceCategoryJoins_Services', N'F') IS NULL
-    ALTER TABLE dbo.ServiceCategoryJoins ADD CONSTRAINT FK_ServiceCategoryJoins_Services FOREIGN KEY (ServicesID) REFERENCES dbo.Services(ServicesID) ON DELETE CASCADE;
+IF OBJECT_ID(N'dbo.FK_EmpJointSpec_Specialization', N'F') IS NOT NULL
+    ALTER TABLE dbo.EmployeeJointSpecialization DROP CONSTRAINT FK_EmpJointSpec_Specialization;
+ALTER TABLE dbo.EmployeeJointSpecialization ADD CONSTRAINT FK_EmpJointSpec_Specialization FOREIGN KEY (SpecializationID) REFERENCES dbo.EmployeeSpecialization(SpecializationID) ON DELETE CASCADE;
 
-IF OBJECT_ID(N'dbo.FK_ServiceCategoryJoins_AdditionalServices', N'F') IS NULL
-    ALTER TABLE dbo.ServiceCategoryJoins ADD CONSTRAINT FK_ServiceCategoryJoins_AdditionalServices FOREIGN KEY (AdditionalServicesID) REFERENCES dbo.AdditionalServices(AdditionalServicesID) ON DELETE CASCADE;
+-- 8.8 ComboPackageJoin Constraints
+IF OBJECT_ID(N'dbo.FK_ComboPackageJoin_Services', N'F') IS NOT NULL
+    ALTER TABLE dbo.ComboPackageJoin DROP CONSTRAINT FK_ComboPackageJoin_Services;
+ALTER TABLE dbo.ComboPackageJoin ADD CONSTRAINT FK_ComboPackageJoin_Services FOREIGN KEY (ServicesID) REFERENCES dbo.Services(ServicesID);
 
-IF OBJECT_ID(N'dbo.FK_ServiceCategoryJoins_ComboPackage', N'F') IS NULL
-    ALTER TABLE dbo.ServiceCategoryJoins ADD CONSTRAINT FK_ServiceCategoryJoins_ComboPackage FOREIGN KEY (ComboPackageID) REFERENCES dbo.ComboPackage(ComboPackageID) ON DELETE CASCADE;
+IF OBJECT_ID(N'dbo.FK_ComboPackageJoin_AdditionalServices', N'F') IS NOT NULL
+    ALTER TABLE dbo.ComboPackageJoin DROP CONSTRAINT FK_ComboPackageJoin_AdditionalServices;
+ALTER TABLE dbo.ComboPackageJoin ADD CONSTRAINT FK_ComboPackageJoin_AdditionalServices FOREIGN KEY (AdditionalServicesID) REFERENCES dbo.AdditionalServices(AdditionalServicesID);
 
-IF OBJECT_ID(N'dbo.FK_HistoryLog_EventAppointment', N'F') IS NULL
-    ALTER TABLE dbo.HistoryLog ADD CONSTRAINT FK_HistoryLog_EventAppointment FOREIGN KEY (EventAppointmentID) REFERENCES dbo.EventAppointment(EventAppointmentID) ON DELETE SET NULL;
+IF OBJECT_ID(N'dbo.FK_ComboPackageJoin_ComboPackage', N'F') IS NOT NULL
+    ALTER TABLE dbo.ComboPackageJoin DROP CONSTRAINT FK_ComboPackageJoin_ComboPackage;
+ALTER TABLE dbo.ComboPackageJoin ADD CONSTRAINT FK_ComboPackageJoin_ComboPackage FOREIGN KEY (ComboPackageID) REFERENCES dbo.ComboPackage(ComboPackageID) ON DELETE CASCADE;
 
-IF OBJECT_ID(N'dbo.FK_HistoryLog_BookingNegotiation', N'F') IS NULL
-    ALTER TABLE dbo.HistoryLog ADD CONSTRAINT FK_HistoryLog_BookingNegotiation FOREIGN KEY (NegotiationID) REFERENCES dbo.BookingNegotiation(NegotiationID) ON DELETE SET NULL;
+-- 8.9 ServiceCategoryJoins Constraints
+IF OBJECT_ID(N'dbo.FK_ServiceCategoryJoins_ServiceCategory', N'F') IS NOT NULL
+    ALTER TABLE dbo.ServiceCategoryJoins DROP CONSTRAINT FK_ServiceCategoryJoins_ServiceCategory;
+ALTER TABLE dbo.ServiceCategoryJoins ADD CONSTRAINT FK_ServiceCategoryJoins_ServiceCategory FOREIGN KEY (ServiceCategoryID) REFERENCES dbo.ServiceCategory(ServiceCategoryID) ON DELETE CASCADE;
 
-IF OBJECT_ID(N'dbo.FK_HistoryLog_Customer', N'F') IS NULL
-    ALTER TABLE dbo.HistoryLog ADD CONSTRAINT FK_HistoryLog_Customer FOREIGN KEY (CustomerID) REFERENCES dbo.Customer(CustomerID);
+IF OBJECT_ID(N'dbo.FK_ServiceCategoryJoins_Services', N'F') IS NOT NULL
+    ALTER TABLE dbo.ServiceCategoryJoins DROP CONSTRAINT FK_ServiceCategoryJoins_Services;
+ALTER TABLE dbo.ServiceCategoryJoins ADD CONSTRAINT FK_ServiceCategoryJoins_Services FOREIGN KEY (ServicesID) REFERENCES dbo.Services(ServicesID) ON DELETE CASCADE;
 
-IF OBJECT_ID(N'dbo.FK_HistoryLog_Employee', N'F') IS NULL
-    ALTER TABLE dbo.HistoryLog ADD CONSTRAINT FK_HistoryLog_Employee FOREIGN KEY (EmployeeID) REFERENCES dbo.Employees(EmployeeID);
+IF OBJECT_ID(N'dbo.FK_ServiceCategoryJoins_AdditionalServices', N'F') IS NOT NULL
+    ALTER TABLE dbo.ServiceCategoryJoins DROP CONSTRAINT FK_ServiceCategoryJoins_AdditionalServices;
+ALTER TABLE dbo.ServiceCategoryJoins ADD CONSTRAINT FK_ServiceCategoryJoins_AdditionalServices FOREIGN KEY (AdditionalServicesID) REFERENCES dbo.AdditionalServices(AdditionalServicesID) ON DELETE CASCADE;
 
-IF OBJECT_ID(N'dbo.FK_HistoryLog_ChangedByCustomer', N'F') IS NULL
-    ALTER TABLE dbo.HistoryLog ADD CONSTRAINT FK_HistoryLog_ChangedByCustomer FOREIGN KEY (ChangedByCustomerID) REFERENCES dbo.Customer(CustomerID) ON DELETE SET NULL;
+IF OBJECT_ID(N'dbo.FK_ServiceCategoryJoins_ComboPackage', N'F') IS NOT NULL
+    ALTER TABLE dbo.ServiceCategoryJoins DROP CONSTRAINT FK_ServiceCategoryJoins_ComboPackage;
+ALTER TABLE dbo.ServiceCategoryJoins ADD CONSTRAINT FK_ServiceCategoryJoins_ComboPackage FOREIGN KEY (ComboPackageID) REFERENCES dbo.ComboPackage(ComboPackageID) ON DELETE CASCADE;
 
-IF OBJECT_ID(N'dbo.FK_HistoryLog_ChangedByEmployee', N'F') IS NULL
-    ALTER TABLE dbo.HistoryLog ADD CONSTRAINT FK_HistoryLog_ChangedByEmployee FOREIGN KEY (ChangedByEmployeeID) REFERENCES dbo.Employees(EmployeeID) ON DELETE SET NULL;
+-- 8.10 ServiceRate Constraints
+IF OBJECT_ID(N'dbo.FK_ServiceRate_Services', N'F') IS NOT NULL
+    ALTER TABLE dbo.ServiceRate DROP CONSTRAINT FK_ServiceRate_Services;
+ALTER TABLE dbo.ServiceRate ADD CONSTRAINT FK_ServiceRate_Services FOREIGN KEY (ServicesID) REFERENCES dbo.Services(ServicesID) ON DELETE CASCADE;
 
-IF OBJECT_ID(N'dbo.FK_HistoryLog_ChangedByAdmin', N'F') IS NULL
-    ALTER TABLE dbo.HistoryLog ADD CONSTRAINT FK_HistoryLog_ChangedByAdmin FOREIGN KEY (ChangedByAdminID) REFERENCES dbo.Admin(AdminID) ON DELETE SET NULL;
+IF OBJECT_ID(N'dbo.FK_ServiceRate_RateType', N'F') IS NOT NULL
+    ALTER TABLE dbo.ServiceRate DROP CONSTRAINT FK_ServiceRate_RateType;
+ALTER TABLE dbo.ServiceRate ADD CONSTRAINT FK_ServiceRate_RateType FOREIGN KEY (RateTypeID) REFERENCES dbo.RateType(RateTypeID);
 
-IF OBJECT_ID(N'dbo.FK_ServiceRate_Services', N'F') IS NULL
-    ALTER TABLE dbo.ServiceRate ADD CONSTRAINT FK_ServiceRate_Services FOREIGN KEY (ServicesID) REFERENCES dbo.Services(ServicesID) ON DELETE CASCADE;
+-- 8.11 EmployeeTimesheets Constraints
+IF OBJECT_ID(N'dbo.FK_EmployeeTimesheets_Employees', N'F') IS NOT NULL
+    ALTER TABLE dbo.EmployeeTimesheets DROP CONSTRAINT FK_EmployeeTimesheets_Employees;
+ALTER TABLE dbo.EmployeeTimesheets ADD CONSTRAINT FK_EmployeeTimesheets_Employees FOREIGN KEY (EmployeeStudioId) REFERENCES dbo.Employees(EmployeeID) ON DELETE CASCADE;
 
-IF OBJECT_ID(N'dbo.FK_ServiceRate_RateType', N'F') IS NULL
-    ALTER TABLE dbo.ServiceRate ADD CONSTRAINT FK_ServiceRate_RateType FOREIGN KEY (RateTypeID) REFERENCES dbo.RateType(RateTypeID);
+-- 8.12 Portfolio Constraints
+IF OBJECT_ID(N'dbo.FK_PortfolioCategoryService_Category', N'F') IS NOT NULL
+    ALTER TABLE dbo.PortfolioCategoryService DROP CONSTRAINT FK_PortfolioCategoryService_Category;
+ALTER TABLE dbo.PortfolioCategoryService ADD CONSTRAINT FK_PortfolioCategoryService_Category FOREIGN KEY (CategoryID) REFERENCES dbo.PortfolioCategory(CategoryID) ON DELETE CASCADE;
 
-IF OBJECT_ID(N'dbo.FK_EmployeeTimesheets_Employees', N'F') IS NULL
-    ALTER TABLE dbo.EmployeeTimesheets ADD CONSTRAINT FK_EmployeeTimesheets_Employees FOREIGN KEY (EmployeeStudioId) REFERENCES dbo.Employees(EmployeeID) ON DELETE CASCADE;
+IF OBJECT_ID(N'dbo.FK_Portfolios_PortfolioCategory', N'F') IS NOT NULL
+    ALTER TABLE dbo.Portfolios DROP CONSTRAINT FK_Portfolios_PortfolioCategory;
+ALTER TABLE dbo.Portfolios ADD CONSTRAINT FK_Portfolios_PortfolioCategory FOREIGN KEY (CategoryID) REFERENCES dbo.PortfolioCategory(CategoryID);
 
-IF OBJECT_ID(N'dbo.FK_PortfolioCategoryService_Category', N'F') IS NULL
-    ALTER TABLE dbo.PortfolioCategoryService ADD CONSTRAINT FK_PortfolioCategoryService_Category FOREIGN KEY (CategoryID) REFERENCES dbo.PortfolioCategory(CategoryID) ON DELETE CASCADE;
+IF OBJECT_ID(N'dbo.FK_PortfolioImages_Portfolios', N'F') IS NOT NULL
+    ALTER TABLE dbo.PortfolioImages DROP CONSTRAINT FK_PortfolioImages_Portfolios;
+ALTER TABLE dbo.PortfolioImages ADD CONSTRAINT FK_PortfolioImages_Portfolios FOREIGN KEY (PortfolioId) REFERENCES dbo.Portfolios(PortfolioId) ON DELETE CASCADE;
 
-IF OBJECT_ID(N'dbo.FK_Portfolios_PortfolioCategory', N'F') IS NULL
-    ALTER TABLE dbo.Portfolios ADD CONSTRAINT FK_Portfolios_PortfolioCategory FOREIGN KEY (CategoryID) REFERENCES dbo.PortfolioCategory(CategoryID);
+-- 8.13 EventOvertimeCharges Constraints
+IF COL_LENGTH(N'dbo.EventOvertimeCharges', N'LoggedByEmployeeID') IS NOT NULL
+    ALTER TABLE dbo.EventOvertimeCharges ALTER COLUMN LoggedByEmployeeID NVARCHAR(30) NULL;
 
-IF OBJECT_ID(N'dbo.FK_PortfolioImages_Portfolios', N'F') IS NULL
-    ALTER TABLE dbo.PortfolioImages ADD CONSTRAINT FK_PortfolioImages_Portfolios FOREIGN KEY (PortfolioId) REFERENCES dbo.Portfolios(PortfolioId) ON DELETE CASCADE;
+IF OBJECT_ID(N'dbo.FK_EventOvertime_EventAppointment', N'F') IS NOT NULL
+    ALTER TABLE dbo.EventOvertimeCharges DROP CONSTRAINT FK_EventOvertime_EventAppointment;
+ALTER TABLE dbo.EventOvertimeCharges ADD CONSTRAINT FK_EventOvertime_EventAppointment FOREIGN KEY (EventAppointmentID) REFERENCES dbo.EventAppointment(EventAppointmentID) ON DELETE CASCADE;
 
-IF OBJECT_ID(N'dbo.FK_EventOvertime_EventAppointment', N'F') IS NULL
-    ALTER TABLE dbo.EventOvertimeCharges ADD CONSTRAINT FK_EventOvertime_EventAppointment FOREIGN KEY (EventAppointmentID) REFERENCES dbo.EventAppointment(EventAppointmentID) ON DELETE CASCADE;
+IF OBJECT_ID(N'dbo.FK_EventOvertime_Employee', N'F') IS NOT NULL
+    ALTER TABLE dbo.EventOvertimeCharges DROP CONSTRAINT FK_EventOvertime_Employee;
+ALTER TABLE dbo.EventOvertimeCharges ADD CONSTRAINT FK_EventOvertime_Employee FOREIGN KEY (LoggedByEmployeeID) REFERENCES dbo.Employees(EmployeeID) ON DELETE SET NULL;
 
-IF OBJECT_ID(N'dbo.FK_EventOvertime_Employee', N'F') IS NULL
-    ALTER TABLE dbo.EventOvertimeCharges ADD CONSTRAINT FK_EventOvertime_Employee FOREIGN KEY (LoggedByEmployeeID) REFERENCES dbo.Employees(EmployeeID);
+-- 8.14 PaymentTransactions Constraints
+IF COL_LENGTH(N'dbo.PaymentTransactions', N'ReceivedByEmployeeID') IS NOT NULL
+    ALTER TABLE dbo.PaymentTransactions ALTER COLUMN ReceivedByEmployeeID NVARCHAR(30) NULL;
 
-IF OBJECT_ID(N'dbo.FK_PaymentTransactions_EventAppointment', N'F') IS NULL
-    ALTER TABLE dbo.PaymentTransactions ADD CONSTRAINT FK_PaymentTransactions_EventAppointment FOREIGN KEY (EventAppointmentID) REFERENCES dbo.EventAppointment(EventAppointmentID) ON DELETE CASCADE;
+IF OBJECT_ID(N'dbo.FK_PaymentTransactions_EventAppointment', N'F') IS NOT NULL
+    ALTER TABLE dbo.PaymentTransactions DROP CONSTRAINT FK_PaymentTransactions_EventAppointment;
+ALTER TABLE dbo.PaymentTransactions ADD CONSTRAINT FK_PaymentTransactions_EventAppointment FOREIGN KEY (EventAppointmentID) REFERENCES dbo.EventAppointment(EventAppointmentID) ON DELETE CASCADE;
 
-IF OBJECT_ID(N'dbo.FK_PaymentTransactions_Employee', N'F') IS NULL
-    ALTER TABLE dbo.PaymentTransactions ADD CONSTRAINT FK_PaymentTransactions_Employee FOREIGN KEY (ReceivedByEmployeeID) REFERENCES dbo.Employees(EmployeeID);
+IF OBJECT_ID(N'dbo.FK_PaymentTransactions_Employee', N'F') IS NOT NULL
+    ALTER TABLE dbo.PaymentTransactions DROP CONSTRAINT FK_PaymentTransactions_Employee;
+ALTER TABLE dbo.PaymentTransactions ADD CONSTRAINT FK_PaymentTransactions_Employee FOREIGN KEY (ReceivedByEmployeeID) REFERENCES dbo.Employees(EmployeeID) ON DELETE SET NULL;
+
+-- 8.15 HistoryLog Audit Constraints (STRICTLY ON DELETE NO ACTION to prevent cyclical paths)
+IF OBJECT_ID(N'dbo.FK_HistoryLog_EventAppointment', N'F') IS NOT NULL
+    ALTER TABLE dbo.HistoryLog DROP CONSTRAINT FK_HistoryLog_EventAppointment;
+ALTER TABLE dbo.HistoryLog ADD CONSTRAINT FK_HistoryLog_EventAppointment FOREIGN KEY (EventAppointmentID) REFERENCES dbo.EventAppointment(EventAppointmentID) ON DELETE NO ACTION;
+
+IF OBJECT_ID(N'dbo.FK_HistoryLog_BookingNegotiation', N'F') IS NOT NULL
+    ALTER TABLE dbo.HistoryLog DROP CONSTRAINT FK_HistoryLog_BookingNegotiation;
+ALTER TABLE dbo.HistoryLog ADD CONSTRAINT FK_HistoryLog_BookingNegotiation FOREIGN KEY (NegotiationID) REFERENCES dbo.BookingNegotiation(NegotiationID) ON DELETE NO ACTION;
+
+IF OBJECT_ID(N'dbo.FK_HistoryLog_Customer', N'F') IS NOT NULL
+    ALTER TABLE dbo.HistoryLog DROP CONSTRAINT FK_HistoryLog_Customer;
+ALTER TABLE dbo.HistoryLog ADD CONSTRAINT FK_HistoryLog_Customer FOREIGN KEY (CustomerID) REFERENCES dbo.Customer(CustomerID) ON DELETE NO ACTION;
+
+IF OBJECT_ID(N'dbo.FK_HistoryLog_Employee', N'F') IS NOT NULL
+    ALTER TABLE dbo.HistoryLog DROP CONSTRAINT FK_HistoryLog_Employee;
+ALTER TABLE dbo.HistoryLog ADD CONSTRAINT FK_HistoryLog_Employee FOREIGN KEY (EmployeeID) REFERENCES dbo.Employees(EmployeeID) ON DELETE NO ACTION;
+
+IF OBJECT_ID(N'dbo.FK_HistoryLog_ChangedByCustomer', N'F') IS NOT NULL
+    ALTER TABLE dbo.HistoryLog DROP CONSTRAINT FK_HistoryLog_ChangedByCustomer;
+ALTER TABLE dbo.HistoryLog ADD CONSTRAINT FK_HistoryLog_ChangedByCustomer FOREIGN KEY (ChangedByCustomerID) REFERENCES dbo.Customer(CustomerID) ON DELETE NO ACTION;
+
+IF OBJECT_ID(N'dbo.FK_HistoryLog_ChangedByEmployee', N'F') IS NOT NULL
+    ALTER TABLE dbo.HistoryLog DROP CONSTRAINT FK_HistoryLog_ChangedByEmployee;
+ALTER TABLE dbo.HistoryLog ADD CONSTRAINT FK_HistoryLog_ChangedByEmployee FOREIGN KEY (ChangedByEmployeeID) REFERENCES dbo.Employees(EmployeeID) ON DELETE NO ACTION;
+
+IF OBJECT_ID(N'dbo.FK_HistoryLog_ChangedByAdmin', N'F') IS NOT NULL
+    ALTER TABLE dbo.HistoryLog DROP CONSTRAINT FK_HistoryLog_ChangedByAdmin;
+ALTER TABLE dbo.HistoryLog ADD CONSTRAINT FK_HistoryLog_ChangedByAdmin FOREIGN KEY (ChangedByAdminID) REFERENCES dbo.Admin(AdminID) ON DELETE NO ACTION;
 GO
 
 /* =====================================================================
@@ -749,4 +892,7 @@ IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = N'IX_BookingNegotiation_Cu
 
 IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = N'IX_BookingNegotiation_Employee' AND object_id = OBJECT_ID(N'dbo.BookingNegotiation'))
     CREATE INDEX IX_BookingNegotiation_Employee ON dbo.BookingNegotiation (EmployeeID, ConsultationDate DESC);
+
+IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = N'IX_ArchiveIndex_Entity_ArchivedAt' AND object_id = OBJECT_ID(N'dbo.ArchiveIndex'))
+    CREATE INDEX IX_ArchiveIndex_Entity_ArchivedAt ON dbo.ArchiveIndex (EntityName, ArchivedAt DESC);
 GO

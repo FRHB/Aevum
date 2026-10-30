@@ -237,7 +237,7 @@
 @if (!EffectiveReadOnly)
 {
     <MainServiceWizardModal @bind-IsOpen="isCreateModalOpen" OnServiceSaved="HandleServiceSaved" />
-    <EditMainServiceModal @bind-IsOpen="isEditModalOpen" Service="selectedEditService" OnServiceUpdated="HandleServiceUpdated" />
+    <MainServiceWizardModal @bind-IsOpen="isEditModalOpen" IsEditMode="true" EditItem="selectedEditService" OnServiceSaved="HandleServiceSaved" />
 }
 
 @code {
@@ -279,18 +279,23 @@
     {
         LoadFromDatabase();
         notificationMessage = $"Service \"{updated.Title}\" ({updated.Code}) updated successfully.";
+        StateHasChanged();
     }
 
     private void HandleServiceSaved(string serviceId)
     {
+        searchQuery = string.Empty;
         LoadFromDatabase();
         notificationMessage = $"Service with custom ID '{serviceId}' has been saved to the database.";
+        StateHasChanged();
     }
 
     private void HandleServiceCreated(MainServiceItem newItem)
     {
+        searchQuery = string.Empty;
         LoadFromDatabase();
         notificationMessage = $"Service \"{newItem.Title}\" ({newItem.Code}) has been saved to the database.";
+        StateHasChanged();
     }
 
     private IEnumerable<MainServiceItem> FilteredServices

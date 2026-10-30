@@ -239,5 +239,8 @@ public class EventCategoryCreationTests
         public Task<ServiceDetailDto?> GetComboPackageDetailWithImageAsync(string packageId, CancellationToken cancellationToken = default) => Task.FromResult<ServiceDetailDto?>(null);
         public Task<bool> UpdateComboPackageImageAsync(string packageId, byte[] imageBytes, string mimeType, string? requestingAdminId, CancellationToken cancellationToken = default) => Task.FromResult(true);
         public Task<IReadOnlyList<HistoryLogDto>> GetHistoryLogsAsync(string requestingUserId, int topCount = 100, CancellationToken cancellationToken = default) => Task.FromResult<IReadOnlyList<HistoryLogDto>>(new List<HistoryLogDto>());
+        public Task<IReadOnlyList<RateTypeDto>> GetRateTypesAsync(CancellationToken cancellationToken = default) => Task.FromResult<IReadOnlyList<RateTypeDto>>(new List<RateTypeDto>());
+        public Task<IReadOnlyList<ServiceRateDto>> GetServiceRatesAsync(string serviceId, CancellationToken cancellationToken = default) => Task.FromResult<IReadOnlyList<ServiceRateDto>>(new List<ServiceRateDto>());
+        public Task<bool> AddOrUpdateServiceRateAsync(string serviceId, string rateTypeId, decimal rateAmount, CancellationToken cancellationToken = default) => Task.FromResult(true);
     }
 }

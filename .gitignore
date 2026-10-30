@@ -502,6 +502,7 @@ appsettings.json
 appsettings.*.json
 
 .agyrules
+.cursorrules
 litellm_config.yaml
 Employee.
 Project-State.md

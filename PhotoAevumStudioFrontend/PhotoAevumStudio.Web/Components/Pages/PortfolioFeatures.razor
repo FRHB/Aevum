@@ -40,7 +40,7 @@
         </button>
         @foreach (var cat in _categories)
         {
-            var count = _featuredPortfolios.Count(p => p.CategoryID.Equals(cat.CategoryID, StringComparison.OrdinalIgnoreCase));
+            var count = _featuredPortfolios.Count(p => string.Equals(p.CategoryID, cat.CategoryID, StringComparison.OrdinalIgnoreCase));
             if (count > 0)
             {
                 <button type="button"
@@ -93,7 +93,7 @@
 
                         <div class="absolute top-3 right-3">
                             <span class="px-2.5 py-1 rounded-full text-[11px] font-semibold bg-black/60 backdrop-blur-sm text-white">
-                                📷 @port.Images.Count
+                                📷 @(port.Images?.Count ?? 0)
                             </span>
                         </div>
 
@@ -110,7 +110,7 @@
                         </p>
 
                         <!-- Thumbnail Strip -->
-                        @if (port.Images.Count > 1)
+                        @if ((port.Images?.Count ?? 0) > 1)
                         {
                             <div class="flex items-center gap-2 overflow-x-auto py-1">
                                 @foreach (var thumb in port.Images.Take(5))
@@ -145,7 +145,7 @@
             <div class="px-6 py-4 border-b border-slate-100 flex items-center justify-between">
                 <div>
                     <h3 class="font-bold text-base text-slate-900">@_activeGallery.PortfolioName</h3>
-                    <p class="text-xs text-slate-500">@_activeGallery.CategoryName &bull; @_activeGallery.Images.Count photo(s)</p>
+                    <p class="text-xs text-slate-500">@_activeGallery.CategoryName &bull; @(_activeGallery.Images?.Count ?? 0) photo(s)</p>
                 </div>
                 <button type="button" @onclick="() => _activeGallery = null" class="text-slate-400 hover:text-slate-700 text-lg">✕</button>
             </div>
@@ -172,7 +172,7 @@
     private PortfolioFolderModel? _activeGallery;
 
     private List<PortfolioFolderModel> FilteredPortfolios => _featuredPortfolios
-        .Where(p => _selectedCategory == "All" || p.CategoryID.Equals(_selectedCategory, StringComparison.OrdinalIgnoreCase))
+        .Where(p => _selectedCategory == "All" || string.Equals(p.CategoryID, _selectedCategory, StringComparison.OrdinalIgnoreCase))
         .ToList();
 
     protected override async Task OnInitializedAsync()

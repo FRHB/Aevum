@@ -24,9 +24,9 @@
                     </div>
                     <div>
                         <h2 id="equipment-type-modal-title" class="text-lg font-bold text-slate-900 leading-snug">
-                            Add Equipment Type
+                            @(IsEditMode ? "Edit Equipment Type" : "Add Equipment Type")
                         </h2>
-                        <p class="text-xs text-slate-500">Configure master categories for equipment inventory</p>
+                        <p class="text-xs text-slate-500">@(IsEditMode ? "Update master category details for equipment inventory" : "Configure master categories for equipment inventory")</p>
                     </div>
                 </div>
 
@@ -95,6 +95,19 @@
                                     Provide the display name for this equipment category (e.g. Cinema Cameras, Prime Lenses, Wireless Audio).
                                 </p>
                             </div>
+
+                            @if (IsEditMode && !string.IsNullOrWhiteSpace(formModel.EquipmentTypeId))
+                            {
+                                <div class="p-3 bg-slate-50 border border-slate-200 rounded-xl flex items-center justify-between">
+                                    <div>
+                                        <span class="text-[10px] font-bold uppercase tracking-wider text-slate-500">Equipment Type ID (System-Assigned)</span>
+                                        <p class="font-mono text-sm font-bold text-slate-900">@formModel.EquipmentTypeId</p>
+                                    </div>
+                                    <span class="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-bold bg-amber-50 text-amber-700 border border-amber-200">
+                                        Strictly Read-Only
+                                    </span>
+                                </div>
+                            }
 
                             <div>
                                 <label for="eq-type-name" class="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1.5">
@@ -279,7 +292,7 @@
                                 <svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7" />
                                 </svg>
-                                <span>Save Equipment Type</span>
+                                <span>@(IsEditMode ? "Save Changes" : "Save Equipment Type")</span>
                             }
                         </button>
                     }
@@ -293,6 +306,8 @@
     [Parameter] public bool IsOpen { get; set; }
     [Parameter] public EventCallback<bool> IsOpenChanged { get; set; }
     [Parameter] public EventCallback<string> OnEquipmentTypeSaved { get; set; }
+    [Parameter] public bool IsEditMode { get; set; }
+    [Parameter] public EquipmentTypeModel? EditType { get; set; }
 
     private int currentStep = 1;
     private bool isGeneratingId = false;
@@ -315,6 +330,13 @@
         {
             wasOpen = true;
             ResetWizard();
+            if (IsEditMode && EditType != null)
+            {
+                formModel.EquipmentTypeId = EditType.EquipmentTypeID;
+                formModel.EquipmentTypeName = EditType.EquipmentTypeName;
+                formModel.ColorTag = EditType.ColorTag ?? "Blue";
+                editContext = new EditContext(formModel);
+            }
         }
         else if (!IsOpen)
         {
@@ -348,6 +370,12 @@
 
         if (!editContext.Validate())
         {
+            return;
+        }
+
+        if (IsEditMode && !string.IsNullOrWhiteSpace(formModel.EquipmentTypeId))
+        {
+            currentStep = 2;
             return;
         }
 
@@ -396,20 +424,41 @@
 
         try
         {
-            var (success, error) = await EquipmentService.AddEquipmentTypeAsync(
-                formModel.EquipmentTypeId,
-                formModel.EquipmentTypeName,
-                formModel.ColorTag);
-
-            if (success)
+            if (IsEditMode)
             {
-                var createdName = formModel.EquipmentTypeName;
-                await CloseModalAsync();
-                await OnEquipmentTypeSaved.InvokeAsync(createdName);
+                var (success, error) = await EquipmentService.UpdateEquipmentTypeAsync(
+                    formModel.EquipmentTypeId,
+                    formModel.EquipmentTypeName,
+                    formModel.ColorTag);
+
+                if (success)
+                {
+                    var savedName = formModel.EquipmentTypeName;
+                    await CloseModalAsync();
+                    await OnEquipmentTypeSaved.InvokeAsync(savedName);
+                }
+                else
+                {
+                    errorMessage = error ?? "Failed to update equipment type.";
+                }
             }
             else
             {
-                errorMessage = error ?? "Failed to save equipment type.";
+                var (success, error) = await EquipmentService.AddEquipmentTypeAsync(
+                    formModel.EquipmentTypeId,
+                    formModel.EquipmentTypeName,
+                    formModel.ColorTag);
+
+                if (success)
+                {
+                    var createdName = formModel.EquipmentTypeName;
+                    await CloseModalAsync();
+                    await OnEquipmentTypeSaved.InvokeAsync(createdName);
+                }
+                else
+                {
+                    errorMessage = error ?? "Failed to save equipment type.";
+                }
             }
         }
         catch (Exception ex)

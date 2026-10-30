@@ -22,6 +22,11 @@ public sealed class ProtectedSessionTokenStore : ITokenStore
 
     public async Task<string?> GetTokenAsync(CancellationToken cancellationToken = default)
     {
+        if (cancellationToken.IsCancellationRequested)
+        {
+            return _cachedToken ?? AmbientToken.Value;
+        }
+
         if (!string.IsNullOrWhiteSpace(_cachedToken))
         {
             AmbientToken.Value = _cachedToken;
@@ -36,6 +41,11 @@ public sealed class ProtectedSessionTokenStore : ITokenStore
 
         try
         {
+            if (cancellationToken.IsCancellationRequested)
+            {
+                return _cachedToken ?? AmbientToken.Value;
+            }
+
             var result = await _sessionStorage.GetAsync<string>(TokenKey);
             if (result.Success && !string.IsNullOrWhiteSpace(result.Value))
             {
@@ -70,6 +80,8 @@ public sealed class ProtectedSessionTokenStore : ITokenStore
         _cachedToken = token;
         AmbientToken.Value = token;
 
+        if (cancellationToken.IsCancellationRequested) return;
+
         try
         {
             await _sessionStorage.SetAsync(TokenKey, token);
@@ -85,12 +97,17 @@ public sealed class ProtectedSessionTokenStore : ITokenStore
         catch (OperationCanceledException)
         {
         }
+        catch (Exception)
+        {
+        }
     }
 
     public async Task ClearAsync(CancellationToken cancellationToken = default)
     {
         _cachedToken = null;
         AmbientToken.Value = null;
+
+        if (cancellationToken.IsCancellationRequested) return;
 
         try
         {
@@ -104,6 +121,9 @@ public sealed class ProtectedSessionTokenStore : ITokenStore
         {
         }
         catch (OperationCanceledException)
+        {
+        }
+        catch (Exception)
         {
         }
     }

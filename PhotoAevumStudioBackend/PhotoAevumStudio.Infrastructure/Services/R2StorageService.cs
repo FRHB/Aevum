@@ -1,6 +1,8 @@
+using System.Net;
 using Amazon.Runtime;
 using Amazon.S3;
 using Amazon.S3.Model;
+using Amazon.S3.Util;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
@@ -13,9 +15,11 @@ public class R2StorageService : IR2StorageService
     private readonly AmazonS3Client? _s3Client;
     private readonly ILogger<R2StorageService> _logger;
     private readonly bool _isConfigured;
+    private readonly string _publicBaseUrl;
 
     public string PortfolioBucket { get; }
     public string ServicesBucket { get; }
+    public string ArchiveBucket { get; }
 
     public R2StorageService(IConfiguration configuration, ILogger<R2StorageService> logger)
     {
@@ -38,11 +42,15 @@ public class R2StorageService : IR2StorageService
                 : "https://f6757b400d51c23671cedb8b0efc4b32.r2.cloudflarestorage.com";
         }
 
+        _publicBaseUrl = (configuration["CloudflareR2:PublicUrl"] ?? serviceUrl).TrimEnd('/');
+
         PortfolioBucket = configuration["CloudflareR2:Buckets:Portfolio"]
                           ?? configuration["CloudflareR2:BucketName"]
                           ?? "portfolio";
         ServicesBucket = configuration["CloudflareR2:Buckets:Services"]
                          ?? "services";
+        ArchiveBucket = configuration["CloudflareR2:Buckets:Archive"]
+                        ?? "archive";
 
         _isConfigured = !string.IsNullOrWhiteSpace(accessKey) 
                         && !string.IsNullOrWhiteSpace(secretKey) 
@@ -62,6 +70,122 @@ public class R2StorageService : IR2StorageService
         catch (Exception ex)
         {
             _logger.LogWarning(ex, "Failed to initialize AmazonS3Client for Cloudflare R2.");
+        }
+    }
+
+    public async Task CreateBucketIfNotExistsAsync(string bucketName)
+    {
+        if (string.IsNullOrWhiteSpace(bucketName))
+            throw new ArgumentException("Bucket name cannot be null or empty.", nameof(bucketName));
+
+        if (_s3Client == null)
+            throw new InvalidOperationException("AmazonS3Client is not initialized.");
+
+        var normalizedBucket = bucketName.Trim();
+
+        try
+        {
+            var exists = await AmazonS3Util.DoesS3BucketExistV2Async(_s3Client, normalizedBucket);
+            if (!exists)
+            {
+                var putBucketRequest = new PutBucketRequest
+                {
+                    BucketName = normalizedBucket
+                };
+                await _s3Client.PutBucketAsync(putBucketRequest);
+                _logger.LogInformation("Provisioned Cloudflare R2 bucket '{BucketName}'.", normalizedBucket);
+            }
+        }
+        catch (AmazonS3Exception ex) when (
+            string.Equals(ex.ErrorCode, "BucketAlreadyOwnedByYou", StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(ex.ErrorCode, "BucketAlreadyExists", StringComparison.OrdinalIgnoreCase))
+        {
+            _logger.LogDebug("Cloudflare R2 bucket '{BucketName}' already exists.", normalizedBucket);
+        }
+    }
+
+    public async Task<string> UploadFileAsync(string bucketName, string objectKey, Stream fileStream, string contentType)
+    {
+        if (string.IsNullOrWhiteSpace(bucketName))
+            throw new ArgumentException("Bucket name cannot be null or empty.", nameof(bucketName));
+        if (string.IsNullOrWhiteSpace(objectKey))
+            throw new ArgumentException("Object key cannot be null or empty.", nameof(objectKey));
+        if (fileStream == null)
+            throw new ArgumentNullException(nameof(fileStream));
+
+        if (_s3Client == null)
+            throw new InvalidOperationException("AmazonS3Client is not initialized.");
+
+        var targetBucket = bucketName.Trim();
+        var normalizedKey = objectKey.Trim().TrimStart('/');
+        var resolvedContentType = string.IsNullOrWhiteSpace(contentType) ? "application/octet-stream" : contentType;
+
+        if (fileStream.CanSeek && fileStream.Position > 0)
+        {
+            fileStream.Position = 0;
+        }
+
+        var putRequest = new PutObjectRequest
+        {
+            BucketName = targetBucket,
+            Key = normalizedKey,
+            InputStream = fileStream,
+            ContentType = resolvedContentType,
+            DisablePayloadSigning = true
+        };
+
+        var response = await _s3Client.PutObjectAsync(putRequest);
+        if (response.HttpStatusCode == HttpStatusCode.OK)
+        {
+            return $"r2://{targetBucket}/{normalizedKey}";
+        }
+
+        _logger.LogWarning("Upload to Cloudflare R2 bucket '{Bucket}' for key '{Key}' returned unexpected HTTP status {StatusCode}.",
+            targetBucket, normalizedKey, response.HttpStatusCode);
+        return string.Empty;
+    }
+
+    public async Task<Stream> DownloadFileAsync(string bucketName, string objectKey)
+    {
+        if (string.IsNullOrWhiteSpace(bucketName))
+            throw new ArgumentException("Bucket name cannot be null or empty.", nameof(bucketName));
+        if (string.IsNullOrWhiteSpace(objectKey))
+            throw new ArgumentException("Object key cannot be null or empty.", nameof(objectKey));
+
+        if (_s3Client == null)
+            throw new InvalidOperationException("AmazonS3Client is not initialized.");
+
+        var getRequest = new GetObjectRequest
+        {
+            BucketName = bucketName.Trim(),
+            Key = objectKey.Trim().TrimStart('/')
+        };
+
+        var response = await _s3Client.GetObjectAsync(getRequest);
+        return response.ResponseStream;
+    }
+
+    public async Task<bool> DeleteFileAsync(string bucketName, string objectKey)
+    {
+        if (string.IsNullOrWhiteSpace(bucketName) || string.IsNullOrWhiteSpace(objectKey) || _s3Client == null)
+            return false;
+
+        try
+        {
+            var deleteRequest = new DeleteObjectRequest
+            {
+                BucketName = bucketName.Trim(),
+                Key = objectKey.Trim().TrimStart('/')
+            };
+
+            var response = await _s3Client.DeleteObjectAsync(deleteRequest);
+            return response.HttpStatusCode == HttpStatusCode.NoContent
+                   || response.HttpStatusCode == HttpStatusCode.OK;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Failed to delete object '{Key}' from Cloudflare R2 bucket '{Bucket}'.", objectKey, bucketName);
+            return false;
         }
     }
 
@@ -89,6 +213,7 @@ public class R2StorageService : IR2StorageService
             {
                 try
                 {
+                    using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(5));
                     using var stream = file.OpenReadStream();
                     var putRequest = new PutObjectRequest
                     {
@@ -99,33 +224,15 @@ public class R2StorageService : IR2StorageService
                         DisablePayloadSigning = true
                     };
 
-                    await _s3Client.PutObjectAsync(putRequest);
-                    savedFileNames.Add(fileName);
-                    continue;
+                    await _s3Client.PutObjectAsync(putRequest, cts.Token);
                 }
                 catch (Exception ex)
                 {
-                    _logger.LogError(ex, "Failed uploading file {FileName} to Cloudflare R2 bucket {Bucket}. Falling back to local storage.", fileName, targetBucket);
+                    _logger.LogError(ex, "Failed uploading file {FileName} to Cloudflare R2 bucket {Bucket}.", fileName, targetBucket);
                 }
             }
 
-            // Fallback for placeholder credentials: save locally in wwwroot/uploads
-            try
-            {
-                var localUploadDir = Path.Combine(Directory.GetCurrentDirectory(), "wwwroot", "uploads", prefix);
-                Directory.CreateDirectory(localUploadDir);
-                var localFilePath = Path.Combine(localUploadDir, Path.GetFileName(fileName));
-                using (var localStream = new FileStream(localFilePath, FileMode.Create))
-                {
-                    await file.CopyToAsync(localStream);
-                }
-                savedFileNames.Add(fileName);
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, "Failed fallback saving of image {FileName}", fileName);
-                savedFileNames.Add(fileName);
-            }
+            savedFileNames.Add(fileName);
         }
 
         return savedFileNames;
@@ -136,12 +243,14 @@ public class R2StorageService : IR2StorageService
         string? originalFileName,
         string? contentType,
         string folderPrefix = "services",
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default,
+        string? bucketName = null)
     {
         if (imageBytes == null || imageBytes.Length == 0)
             return string.Empty;
 
         var prefix = string.IsNullOrWhiteSpace(folderPrefix) ? "services" : folderPrefix.Trim().Trim('/');
+        var targetBucket = !string.IsNullOrWhiteSpace(bucketName) ? bucketName.Trim() : ServicesBucket;
         var ext = !string.IsNullOrWhiteSpace(originalFileName) ? Path.GetExtension(originalFileName) : null;
         if (string.IsNullOrWhiteSpace(ext))
         {
@@ -161,35 +270,25 @@ public class R2StorageService : IR2StorageService
         {
             try
             {
+                using var cts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+                cts.CancelAfter(TimeSpan.FromSeconds(5));
+
                 using var ms = new MemoryStream(imageBytes);
                 var putRequest = new PutObjectRequest
                 {
-                    BucketName = ServicesBucket,
+                    BucketName = targetBucket,
                     Key = fileName,
                     InputStream = ms,
                     ContentType = resolvedMime,
                     DisablePayloadSigning = true
                 };
 
-                await _s3Client.PutObjectAsync(putRequest, cancellationToken);
+                await _s3Client.PutObjectAsync(putRequest, cts.Token);
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Failed uploading service image {FileName} to Cloudflare R2 bucket {Bucket}. Saving to local fallback.", fileName, ServicesBucket);
+                _logger.LogError(ex, "Failed uploading service image {FileName} to Cloudflare R2 bucket {Bucket}.", fileName, targetBucket);
             }
-        }
-
-        // Persist local fallback copy under wwwroot/uploads/{prefix}
-        try
-        {
-            var localUploadDir = Path.Combine(Directory.GetCurrentDirectory(), "wwwroot", "uploads", prefix.Replace('/', Path.DirectorySeparatorChar));
-            Directory.CreateDirectory(localUploadDir);
-            var localFilePath = Path.Combine(localUploadDir, Path.GetFileName(fileName));
-            await File.WriteAllBytesAsync(localFilePath, imageBytes, cancellationToken);
-        }
-        catch (Exception ex)
-        {
-            _logger.LogWarning(ex, "Failed to persist local fallback copy for service image {FileName}", fileName);
         }
 
         return fileName;
@@ -200,9 +299,10 @@ public class R2StorageService : IR2StorageService
         if (string.IsNullOrWhiteSpace(fileName))
             return string.Empty;
 
+        var cleanKey = fileName.TrimStart('/');
         var targetBucket = !string.IsNullOrWhiteSpace(bucketName)
             ? bucketName.Trim()
-            : (fileName.StartsWith("services", StringComparison.OrdinalIgnoreCase) ? ServicesBucket : PortfolioBucket);
+            : (cleanKey.StartsWith("services", StringComparison.OrdinalIgnoreCase) ? ServicesBucket : PortfolioBucket);
 
         if (_isConfigured && _s3Client != null)
         {
@@ -211,18 +311,19 @@ public class R2StorageService : IR2StorageService
                 var request = new GetPreSignedUrlRequest
                 {
                     BucketName = targetBucket,
-                    Key = fileName,
+                    Key = cleanKey,
                     Expires = DateTime.UtcNow.AddHours(1)
                 };
-                return _s3Client.GetPreSignedURL(request);
+                var presigned = _s3Client.GetPreSignedURL(request);
+                if (!string.IsNullOrWhiteSpace(presigned))
+                    return presigned;
             }
             catch (Exception ex)
             {
-                _logger.LogWarning(ex, "Failed to generate presigned URL for {FileName} in bucket {Bucket}", fileName, targetBucket);
+                _logger.LogWarning(ex, "Failed to generate presigned URL for {FileName} in bucket {Bucket}", cleanKey, targetBucket);
             }
         }
 
-        // Return fallback path for local wwwroot or relative URL
-        return $"/uploads/{fileName.TrimStart('/')}";
+        return $"{_publicBaseUrl}/{targetBucket}/{cleanKey}";
     }
 }

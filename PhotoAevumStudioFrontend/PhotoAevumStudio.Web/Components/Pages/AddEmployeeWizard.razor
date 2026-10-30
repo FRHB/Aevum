@@ -13,8 +13,12 @@
             <!-- Header -->
             <div class="px-6 py-5 border-b border-slate-100 flex items-center justify-between bg-slate-50/50">
                 <div>
-                    <h2 id="wizard-title" class="text-xl font-bold text-slate-900 tracking-tight">Add Studio Employee</h2>
-                    <p class="text-xs text-slate-500 mt-0.5">Photo Aevum Studio &bull; Staff Onboarding</p>
+                    <h2 id="wizard-title" class="text-xl font-bold text-slate-900 tracking-tight">
+                        @(IsEditMode ? "Edit Studio Employee" : "Add Studio Employee")
+                    </h2>
+                    <p class="text-xs text-slate-500 mt-0.5">
+                        @(IsEditMode ? "Photo Aevum Studio • Staff Modification" : "Photo Aevum Studio • Staff Onboarding")
+                    </p>
                 </div>
                 <button type="button" 
                         class="text-slate-400 hover:text-slate-700 p-1.5 rounded-lg hover:bg-slate-100 transition-colors"
@@ -252,16 +256,26 @@
 
                                 <div>
                                     <label for="emp-pw" class="block text-xs font-semibold uppercase tracking-wider text-slate-700 mb-1.5">
-                                        Starting Password <span class="text-rose-500">*</span>
+                                        @(IsEditMode ? "Password" : "Starting Password") 
+                                        @if (IsEditMode)
+                                        {
+                                            <span class="text-slate-400 font-normal lowercase">(leave blank to keep current)</span>
+                                        }
+                                        else
+                                        {
+                                            <span class="text-rose-500">*</span>
+                                        }
                                     </label>
                                     <div class="relative">
                                         <InputText id="emp-pw" @bind-Value="model.Password" class="@PasswordInputClass"
-                                                   type="@(showPassword ? "text" : "password")" placeholder="••••••••" autocomplete="new-password" />
+                                                   type="@(showPassword ? "text" : "password")" placeholder="@(IsEditMode ? "•••••••• (unchanged)" : "••••••••")" autocomplete="new-password" />
                                         <button type="button" class="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-slate-500 hover:text-slate-900 font-medium underline"
                                                 @onclick="() => showPassword = !showPassword">@(showPassword ? "Hide" : "Show")</button>
                                     </div>
                                     <ValidationMessage For="() => model.Password" class="text-xs text-rose-600 mt-1" />
-                                    <p class="text-[11px] text-slate-400 mt-1">At least 8 characters with at least one letter and one number.</p>
+                                    <p class="text-[11px] text-slate-400 mt-1">
+                                        @(IsEditMode ? "Leave empty to retain existing password, or enter at least 8 characters with letters & numbers." : "At least 8 characters with at least one letter and one number.")
+                                    </p>
                                 </div>
                             </div>
 
@@ -281,8 +295,12 @@
                                 ✓
                             </div>
                             <div>
-                                <h3 class="text-xl font-bold text-slate-900">Staff Account Created Successfully!</h3>
-                                <p class="text-xs text-slate-500 mt-1">The new employee has been onboarded and successfully recorded in the studio database.</p>
+                                <h3 class="text-xl font-bold text-slate-900">
+                                    @(IsEditMode ? "Staff Account Updated Successfully!" : "Staff Account Created Successfully!")
+                                </h3>
+                                <p class="text-xs text-slate-500 mt-1">
+                                    @(IsEditMode ? "The employee record has been updated in the studio database." : "The new employee has been onboarded and successfully recorded in the studio database.")
+                                </p>
                             </div>
 
                             <div class="bg-slate-50 border border-slate-200 rounded-xl p-4 w-full text-left text-xs divide-y divide-slate-200">
@@ -314,17 +332,20 @@
                             </div>
 
                             <!-- Email Sent Banner -->
-                            <div class="p-3.5 bg-emerald-50 border border-emerald-200 rounded-xl text-xs text-emerald-800 text-left w-full flex items-start gap-3 shadow-xs" role="status">
-                                <svg class="w-5 h-5 text-emerald-600 shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
-                                </svg>
-                                <div>
-                                    <p class="font-bold text-emerald-900">Email Notification Dispatched</p>
-                                    <p class="text-[11px] text-emerald-700 mt-0.5">
-                                        An automated onboarding email has been sent to <strong>@model.Email</strong> containing their generated Employee ID (<strong>@model.EmployeeId</strong>) and temporary login credentials.
-                                    </p>
+                            @if (!IsEditMode)
+                            {
+                                <div class="p-3.5 bg-emerald-50 border border-emerald-200 rounded-xl text-xs text-emerald-800 text-left w-full flex items-start gap-3 shadow-xs" role="status">
+                                    <svg class="w-5 h-5 text-emerald-600 shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
+                                    </svg>
+                                    <div>
+                                        <p class="font-bold text-emerald-900">Email Notification Dispatched</p>
+                                        <p class="text-[11px] text-emerald-700 mt-0.5">
+                                            An automated onboarding email has been sent to <strong>@model.Email</strong> containing their generated Employee ID (<strong>@model.EmployeeId</strong>) and temporary login credentials.
+                                        </p>
+                                    </div>
                                 </div>
-                            </div>
+                            }
                         </div>
                     }
                 </EditForm>
@@ -396,6 +417,8 @@
     [Parameter] public EventCallback<bool> IsOpenChanged { get; set; }
     [Parameter] public EventCallback OnSaved { get; set; }
     [Parameter] public EventCallback OnCancel { get; set; }
+    [Parameter] public bool IsEditMode { get; set; }
+    [Parameter] public EmployeeViewModel? EditEmployee { get; set; }
 
     private const string InputClass =
         "w-full rounded-lg border border-slate-300 bg-white px-3.5 py-2.5 text-sm text-slate-900 placeholder-slate-400 " +
@@ -444,6 +467,17 @@
         if (IsOpen && !_previousIsOpen)
         {
             ResetForm();
+            if (IsEditMode && EditEmployee != null)
+            {
+                model.FirstName = EditEmployee.FirstName;
+                model.LastName = EditEmployee.LastName;
+                model.MiddleName = EditEmployee.MiddleName;
+                model.Email = EditEmployee.Email;
+                model.EmployeeId = EditEmployee.EmployeeId;
+                model.Specializations = new List<string>(EditEmployee.Specializations);
+                model.SelectedDaysOff = new List<string>(EditEmployee.SelectedDaysOff.Count > 0 ? EditEmployee.SelectedDaysOff : new List<string> { "Sunday" });
+                model.Password = string.Empty;
+            }
             await LoadSpecializationsAsync();
         }
         _previousIsOpen = IsOpen;
@@ -607,7 +641,7 @@
             }
         }
 
-        if (string.IsNullOrWhiteSpace(model.Password))
+        if (!IsEditMode && string.IsNullOrWhiteSpace(model.Password))
         {
             model.Password = EmployeeCredentialGenerator.GenerateInitialPassword(12);
         }
@@ -623,11 +657,15 @@
         _messageStore.Clear();
         bool isValid = true;
 
-        var step3Properties = new[]
+        var step3Properties = new List<dynamic>
         {
-            new { Name = nameof(model.EmployeeId), Value = (object)model.EmployeeId },
-            new { Name = nameof(model.Password), Value = (object)model.Password }
+            new { Name = nameof(model.EmployeeId), Value = (object)model.EmployeeId }
         };
+
+        if (!IsEditMode || !string.IsNullOrWhiteSpace(model.Password))
+        {
+            step3Properties.Add(new { Name = nameof(model.Password), Value = (object)model.Password });
+        }
 
         foreach (var prop in step3Properties)
         {
@@ -662,14 +700,16 @@
                 model.MiddleName?.Trim(),
                 model.Email.Trim(),
                 model.Specializations.ToList(),
-                model.Password,
+                string.IsNullOrWhiteSpace(model.Password) ? string.Empty : model.Password.Trim(),
                 model.DaysOffString);
 
-            var result = await Employees.CreateEmployeeAsync(request, _cts?.Token ?? CancellationToken.None);
+            var result = IsEditMode
+                ? await Employees.UpdateEmployeeAsync(request, _cts?.Token ?? CancellationToken.None)
+                : await Employees.CreateEmployeeAsync(request, _cts?.Token ?? CancellationToken.None);
 
             if (!result.Success)
             {
-                saveError = result.Error ?? "Failed to create employee.";
+                saveError = result.Error ?? (IsEditMode ? "Failed to update employee." : "Failed to create employee.");
                 return;
             }
 

@@ -457,26 +457,31 @@
         IsSaving = true;
         ErrorMessage = null;
         SuccessMessage = null;
-        StateHasChanged();
+        await InvokeAsync(StateHasChanged);
 
         try
         {
-            await Task.Yield();
+            var savedBytes = PendingUploadBytes;
+            var savedMime = CurrentMimeType ?? "image/jpeg";
+            var targetCode = SelectedCode;
+
             if (ActiveTab == CatalogType.MainService)
             {
-                UserService.UpdateServiceImage(SelectedCode, PendingUploadBytes, CurrentMimeType ?? "image/jpeg", CurrentAdminId);
+                await UserService.UpdateServiceImageAsync(targetCode, savedBytes, savedMime, CurrentAdminId);
             }
             else if (ActiveTab == CatalogType.ComboPackage)
             {
-                UserService.UpdateComboPackageImage(SelectedCode, PendingUploadBytes, CurrentMimeType ?? "image/jpeg", CurrentAdminId);
+                await UserService.UpdateComboPackageImageAsync(targetCode, savedBytes, savedMime, CurrentAdminId);
             }
             else
             {
-                UserService.UpdateAdditionalServiceImage(SelectedCode, PendingUploadBytes, CurrentMimeType ?? "image/jpeg", CurrentAdminId);
+                await UserService.UpdateAdditionalServiceImageAsync(targetCode, savedBytes, savedMime, CurrentAdminId);
             }
 
-            SuccessMessage = $"Presentation image successfully attached to {SelectedCode} ({SelectedTitle})!";
+            SuccessMessage = $"Presentation image successfully attached to {targetCode} ({SelectedTitle})!";
+            PreviewImageBase64 = $"data:{savedMime};base64,{Convert.ToBase64String(savedBytes)}";
             PendingUploadBytes = null;
+            LoadCatalogData();
         }
         catch (Exception ex)
         {
@@ -485,6 +490,7 @@
         finally
         {
             IsSaving = false;
+            await InvokeAsync(StateHasChanged);
         }
     }
 }

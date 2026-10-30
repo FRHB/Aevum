@@ -57,17 +57,34 @@ public class UploadController : ControllerBase
         }
 
         var folderPrefix = string.IsNullOrWhiteSpace(portfolioId) ? "portfolio" : $"portfolio/{portfolioId}";
-        var savedFileNames = await _r2Service.UploadImagesAsync(files, folderPrefix);
+        var savedFileNames = await _r2Service.UploadImagesAsync(files, folderPrefix, _r2Service.PortfolioBucket);
 
         var savedImages = new List<PortfolioImage>();
         var effectivePortfolioId = portfolioId ?? "TEMP";
 
-        foreach (var fileName in savedFileNames)
+        for (var i = 0; i < savedFileNames.Count; i++)
         {
+            var fileName = savedFileNames[i];
+            var file = i < files.Count ? files[i] : null;
+            byte[]? imageBytes = null;
+            string contentType = file?.ContentType ?? "image/jpeg";
+
+            if (file != null && file.Length > 0)
+            {
+                using var ms = new MemoryStream();
+                await file.CopyToAsync(ms, cancellationToken);
+                imageBytes = ms.ToArray();
+            }
+
+            var r2Url = _r2Service.GetPresignedUrl(fileName, _r2Service.PortfolioBucket);
+
             var img = new PortfolioImage
             {
                 PortfolioId = effectivePortfolioId,
                 FileName = fileName,
+                ImageUrl = r2Url,
+                ContentType = contentType,
+                ImageData = imageBytes,
                 UploadedAt = DateTime.UtcNow
             };
             _db.PortfolioImages.Add(img);
@@ -81,7 +98,7 @@ public class UploadController : ControllerBase
             img.Id,
             img.PortfolioId,
             img.FileName,
-            Url = _r2Service.GetPresignedUrl(img.FileName)
+            Url = !string.IsNullOrWhiteSpace(img.ImageUrl) ? img.ImageUrl : _r2Service.GetPresignedUrl(img.FileName, _r2Service.PortfolioBucket)
         });
 
         return Ok(result);
@@ -95,7 +112,20 @@ public class UploadController : ControllerBase
         if (image == null)
             return NotFound(new ProblemDetails { Title = "Image not found", Detail = $"No image found with ID {id}.", Status = 404 });
 
-        var url = _r2Service.GetPresignedUrl(image.FileName);
+        var url = !string.IsNullOrWhiteSpace(image.ImageUrl)
+            ? image.ImageUrl
+            : _r2Service.GetPresignedUrl(image.FileName, _r2Service.PortfolioBucket);
         return Ok(new { ImageId = image.Id, FileName = image.FileName, Url = url });
+    }
+
+    [HttpGet("{id:int}/image")]
+    [AllowAnonymous]
+    public async Task<IActionResult> GetPortfolioImageBinary(int id, CancellationToken cancellationToken)
+    {
+        var image = await _db.PortfolioImages.AsNoTracking().FirstOrDefaultAsync(i => i.Id == id, cancellationToken);
+        if (image?.ImageData == null || image.ImageData.Length == 0)
+            return NotFound(new ProblemDetails { Title = "Image binary not found", Detail = $"No binary image data found in SQL Server for ID {id}.", Status = 404 });
+
+        return File(image.ImageData, string.IsNullOrWhiteSpace(image.ContentType) ? "image/jpeg" : image.ContentType);
     }
 }

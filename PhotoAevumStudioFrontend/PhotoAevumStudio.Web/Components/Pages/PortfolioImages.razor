@@ -71,7 +71,7 @@
             <div class="w-10 h-10 rounded-lg bg-emerald-50 flex items-center justify-center text-emerald-600 text-lg font-bold">📸</div>
             <div>
                 <p class="text-xs text-slate-500 font-medium">Total Images</p>
-                <p class="text-xl font-bold text-slate-900">@_portfolios.Sum(p => p.Images.Count)</p>
+                <p class="text-xl font-bold text-slate-900">@_portfolios.Sum(p => p.Images?.Count ?? 0)</p>
             </div>
         </div>
     </div>
@@ -86,7 +86,7 @@
             </button>
             @foreach (var cat in _categories)
             {
-                var count = _portfolios.Count(p => p.CategoryID.Equals(cat.CategoryID, StringComparison.OrdinalIgnoreCase));
+                var count = _portfolios.Count(p => string.Equals(p.CategoryID, cat.CategoryID, StringComparison.OrdinalIgnoreCase));
                 <button type="button"
                         @onclick="() => _selectedCategory = cat.CategoryID"
                         class="px-3 py-1.5 text-xs font-semibold rounded-lg transition-colors @(_selectedCategory == cat.CategoryID ? "bg-slate-900 text-white" : "bg-slate-100 text-slate-700 hover:bg-slate-200")">
@@ -197,6 +197,12 @@
                                 @if (!_isReadOnly)
                                 {
                                     <button type="button"
+                                            @onclick="() => OpenEditWizard(port)"
+                                            class="p-1.5 rounded-lg text-slate-500 hover:text-slate-900 hover:bg-slate-100 transition-colors"
+                                            title="Edit portfolio in wizard">
+                                        ✏️
+                                    </button>
+                                    <button type="button"
                                             @onclick="() => HandleDeletePortfolio(port)"
                                             class="p-1.5 rounded-lg text-rose-500 hover:text-rose-700 hover:bg-rose-50 transition-colors"
                                             title="Delete portfolio folder">
@@ -227,7 +233,7 @@
                     </span>
                     <div>
                         <h3 class="font-bold text-base text-slate-900 leading-tight">
-                            @(_isEditing ? "Edit Portfolio Details" : _activeDetailPortfolio.PortfolioName)
+                            @_activeDetailPortfolio.PortfolioName
                         </h3>
                         <p class="text-xs text-slate-500">
                             @_activeDetailPortfolio.CategoryName &bull; @_activeDetailPortfolio.Images.Count photo(s) &bull; Added @_activeDetailPortfolio.CreatedAt.ToString("MMM d, yyyy")
@@ -235,10 +241,10 @@
                     </div>
                 </div>
                 <div class="flex items-center gap-2">
-                    @if (!_isReadOnly && !_isEditing)
+                    @if (!_isReadOnly)
                     {
                         <button type="button"
-                                @onclick="StartEditing"
+                                @onclick="() => { var p = _activeDetailPortfolio; CloseDetailsPanel(); OpenEditWizard(p); }"
                                 class="px-3.5 py-1.5 text-xs font-semibold bg-slate-900 hover:bg-black text-white rounded-lg shadow-sm transition-all flex items-center gap-1.5">
                             <span>✏️ Edit Album</span>
                         </button>
@@ -249,113 +255,28 @@
 
             <!-- Drawer Body -->
             <div class="p-6 overflow-y-auto flex-1 space-y-6">
-                @if (!string.IsNullOrEmpty(_editError))
-                {
-                    <div class="p-3 bg-rose-50 border border-rose-200 text-rose-700 rounded-lg text-xs font-medium">@_editError</div>
-                }
-
-                @if (_isEditing)
-                {
-                    <!-- EDIT FORM -->
-                    <div class="space-y-4 text-xs bg-slate-50/60 p-4 rounded-xl border border-slate-200">
-                        <div>
-                            <label class="block font-semibold uppercase tracking-wider text-slate-700 mb-1">Portfolio Title <span class="text-rose-500">*</span></label>
-                            <input type="text" @bind="_editName" class="w-full px-3 py-2 border border-slate-300 rounded-lg text-xs focus:ring-1 focus:ring-slate-900 focus:outline-none" />
-                        </div>
-
-                        <div>
-                            <label class="block font-semibold uppercase tracking-wider text-slate-700 mb-1">Category <span class="text-rose-500">*</span></label>
-                            <select @bind="_editCategoryId" class="w-full px-3 py-2 border border-slate-300 rounded-lg text-xs bg-white focus:ring-1 focus:ring-slate-900 focus:outline-none">
-                                @foreach (var c in _categories)
-                                {
-                                    <option value="@c.CategoryID">@c.CategoryName (@c.CategoryID)</option>
-                                }
-                            </select>
-                        </div>
-
-                        <div>
-                            <label class="block font-semibold uppercase tracking-wider text-slate-700 mb-1">Description</label>
-                            <textarea @bind="_editDesc" rows="3" class="w-full px-3 py-2 border border-slate-300 rounded-lg text-xs focus:ring-1 focus:ring-slate-900 focus:outline-none resize-none"></textarea>
-                        </div>
-
-                        <!-- Add More Pictures Section -->
-                        <div class="pt-2">
-                            <label class="block font-semibold uppercase tracking-wider text-slate-700 mb-1.5">Add More Photos to this Album</label>
-                            <div class="border-2 border-dashed border-slate-300 rounded-xl p-4 text-center hover:border-slate-500 transition-colors bg-white">
-                                <InputFile OnChange="HandleAppendFileSelection" multiple accept="image/*" class="hidden" id="append-file-input" />
-                                <label for="append-file-input" class="cursor-pointer block">
-                                    <span class="text-xs font-bold text-slate-900 hover:underline">Click to browse more photos</span>
-                                    <p class="text-[11px] text-slate-500 mt-0.5">Select additional image files to append</p>
-                                </label>
-                            </div>
-
-                            @if (_appendImages.Count > 0)
-                            {
-                                <div class="mt-3">
-                                    <p class="font-bold text-slate-800 mb-2">New Photos Queued (@_appendImages.Count):</p>
-                                    <div class="grid grid-cols-4 sm:grid-cols-6 gap-2">
-                                        @for (int i = 0; i < _appendImages.Count; i++)
-                                        {
-                                            var idx = i;
-                                            var item = _appendImages[i];
-                                            <div class="relative rounded-lg overflow-hidden border border-slate-200 aspect-square bg-slate-100">
-                                                <img src="@item.PreviewUrl" alt="New upload" class="w-full h-full object-cover" />
-                                                <button type="button"
-                                                        @onclick="() => _appendImages.RemoveAt(idx)"
-                                                        class="absolute top-1 right-1 w-4 h-4 rounded-full bg-black/75 text-white flex items-center justify-center text-[10px]">
-                                                    ✕
-                                                </button>
-                                            </div>
-                                        }
-                                    </div>
-                                </div>
-                            }
-                        </div>
-
-                        <!-- Edit Action Buttons -->
-                        <div class="pt-3 border-t border-slate-200 flex items-center justify-end gap-2">
-                            <button type="button" @onclick="() => _isEditing = false" class="px-4 py-2 border border-slate-300 rounded-lg text-xs font-semibold text-slate-700 hover:bg-slate-100">
-                                Cancel
-                            </button>
-                            <button type="button" @onclick="HandleSaveEdit" disabled="@_isSaving" class="px-5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-semibold uppercase tracking-wider shadow-sm flex items-center gap-1.5 disabled:opacity-50">
-                                @if (_isSaving)
-                                {
-                                    <span class="w-3 h-3 border-2 border-white/30 border-t-white rounded-full animate-spin"></span>
-                                    <span>Saving...</span>
-                                }
-                                else
-                                {
-                                    <span>Save Changes</span>
-                                }
-                            </button>
-                        </div>
+                <!-- METADATA OVERVIEW -->
+                <div class="bg-slate-50 p-4 rounded-xl border border-slate-200 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 text-xs">
+                    <div class="space-y-1">
+                        <span class="font-bold text-slate-900 block text-sm">@_activeDetailPortfolio.PortfolioName</span>
+                        <p class="text-slate-600">
+                            @(string.IsNullOrWhiteSpace(_activeDetailPortfolio.PortfolioDescription) ? "No description provided." : _activeDetailPortfolio.PortfolioDescription)
+                        </p>
                     </div>
-                }
-                else
-                {
-                    <!-- METADATA OVERVIEW -->
-                    <div class="bg-slate-50 p-4 rounded-xl border border-slate-200 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 text-xs">
-                        <div class="space-y-1">
-                            <span class="font-bold text-slate-900 block text-sm">@_activeDetailPortfolio.PortfolioName</span>
-                            <p class="text-slate-600">
-                                @(string.IsNullOrWhiteSpace(_activeDetailPortfolio.PortfolioDescription) ? "No description provided." : _activeDetailPortfolio.PortfolioDescription)
-                            </p>
-                        </div>
-                        <div class="flex items-center gap-3 shrink-0">
-                            <label class="relative inline-flex items-center cursor-pointer select-none">
-                                <input type="checkbox"
-                                       checked="@_activeDetailPortfolio.IsFeatured"
-                                       @onchange="() => HandleToggleFeature(_activeDetailPortfolio)"
-                                       class="sr-only peer"
-                                       disabled="@_isReadOnly" />
-                                <div class="w-9 h-5 bg-slate-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-amber-500"></div>
-                                <span class="ml-2 text-xs font-semibold @(_activeDetailPortfolio.IsFeatured ? "text-amber-700 font-bold" : "text-slate-500")">
-                                    @(_activeDetailPortfolio.IsFeatured ? "Featured" : "Regular")
-                                </span>
-                            </label>
-                        </div>
+                    <div class="flex items-center gap-3 shrink-0">
+                        <label class="relative inline-flex items-center cursor-pointer select-none">
+                            <input type="checkbox"
+                                   checked="@_activeDetailPortfolio.IsFeatured"
+                                   @onchange="() => HandleToggleFeature(_activeDetailPortfolio)"
+                                   class="sr-only peer"
+                                   disabled="@_isReadOnly" />
+                            <div class="w-9 h-5 bg-slate-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-amber-500"></div>
+                            <span class="ml-2 text-xs font-semibold @(_activeDetailPortfolio.IsFeatured ? "text-amber-700 font-bold" : "text-slate-500")">
+                                @(_activeDetailPortfolio.IsFeatured ? "Featured" : "Regular")
+                            </span>
+                        </label>
                     </div>
-                }
+                </div>
 
                 <!-- PHOTO GALLERY GRID -->
                 <div>
@@ -406,7 +327,7 @@
             <!-- Wizard Header -->
             <div class="px-6 py-4 border-b border-slate-100 flex items-center justify-between bg-slate-50/50">
                 <div>
-                    <h2 class="text-base font-bold text-slate-900">Add New Portfolio Folder</h2>
+                    <h2 class="text-base font-bold text-slate-900">@(_isEditingPortfolio ? "Edit Portfolio Folder" : "Add New Portfolio Folder")</h2>
                     <p class="text-xs text-slate-500">Step @_wizardStep of 3 &bull; @_wizardStepTitles[_wizardStep - 1]</p>
                 </div>
                 <button type="button" @onclick="() => _isWizardOpen = false" class="text-slate-400 hover:text-slate-700 text-lg">✕</button>
@@ -443,6 +364,19 @@
                 @if (_wizardStep == 1)
                 {
                     <div class="space-y-4 text-xs">
+                        @if (_isEditingPortfolio && !string.IsNullOrWhiteSpace(_editingPortfolioId))
+                        {
+                            <div class="p-3 bg-slate-50 border border-slate-200 rounded-xl flex items-center justify-between">
+                                <div>
+                                    <span class="text-[10px] font-bold uppercase tracking-wider text-slate-500">Portfolio ID (System-Assigned)</span>
+                                    <p class="font-mono text-sm font-bold text-slate-900">@_editingPortfolioId</p>
+                                </div>
+                                <span class="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-bold bg-amber-50 text-amber-700 border border-amber-200">
+                                    Strictly Read-Only
+                                </span>
+                            </div>
+                        }
+
                         <div>
                             <label class="block font-semibold uppercase tracking-wider text-slate-700 mb-1.5">Portfolio Name <span class="text-rose-500">*</span></label>
                             <input type="text" @bind="_newPortfolioName" placeholder="e.g. Celestial Golden Hour Editorial" class="w-full px-3.5 py-2.5 border border-slate-300 rounded-lg text-xs focus:ring-1 focus:ring-slate-900 focus:outline-none" />
@@ -477,8 +411,33 @@
                 @if (_wizardStep == 2)
                 {
                     <div class="space-y-4 text-xs">
+                        @if (_isEditingPortfolio && _existingImages.Count > 0)
+                        {
+                            <div>
+                                <div class="flex items-center justify-between mb-2">
+                                    <span class="font-bold text-slate-900">Current Album Photos (@_existingImages.Count)</span>
+                                    <span class="text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded bg-slate-100 text-slate-600 border border-slate-200">Existing Media</span>
+                                </div>
+                                <div class="grid grid-cols-3 sm:grid-cols-4 gap-3 max-h-48 overflow-y-auto p-1 mb-3 border border-slate-200 rounded-xl bg-slate-50/50">
+                                    @for (int i = 0; i < _existingImages.Count; i++)
+                                    {
+                                        var img = _existingImages[i];
+                                        <div class="relative group rounded-lg overflow-hidden border border-slate-200 bg-slate-100 aspect-square">
+                                            <img src="@img.Url" alt="Existing photo" class="w-full h-full object-cover" />
+                                            @if (i == 0)
+                                            {
+                                                <span class="absolute bottom-1 left-1 bg-black/70 text-white text-[9px] font-bold px-1.5 py-0.5 rounded">
+                                                    Highlight
+                                                </span>
+                                            }
+                                        </div>
+                                    }
+                                </div>
+                            </div>
+                        }
+
                         <div>
-                            <label class="block font-semibold uppercase tracking-wider text-slate-700 mb-1.5">Upload Images <span class="text-rose-500">*</span></label>
+                            <label class="block font-semibold uppercase tracking-wider text-slate-700 mb-1.5">@(_isEditingPortfolio ? "Upload Additional Images" : "Upload Images *")</label>
                             <div class="border-2 border-dashed border-slate-300 rounded-xl p-6 text-center hover:border-slate-500 transition-colors bg-slate-50/50">
                                 <InputFile OnChange="HandleFileSelection" multiple accept="image/*" class="hidden" id="multi-file-input" />
                                 <label for="multi-file-input" class="cursor-pointer block">
@@ -529,7 +488,14 @@
                 {
                     <div class="space-y-4 text-xs">
                         <div class="bg-slate-50 border border-slate-200 rounded-xl p-4 divide-y divide-slate-200">
-                            <div class="flex justify-between items-center pb-2.5">
+                            @if (_isEditingPortfolio && !string.IsNullOrWhiteSpace(_editingPortfolioId))
+                            {
+                                <div class="flex justify-between items-center pb-2.5">
+                                    <span class="font-semibold text-slate-500 uppercase tracking-wider text-[11px]">Portfolio ID</span>
+                                    <span class="font-mono font-bold text-slate-900 bg-white px-2 py-0.5 rounded border border-slate-200 text-xs">@_editingPortfolioId (Read-Only)</span>
+                                </div>
+                            }
+                            <div class="flex justify-between items-center py-2.5">
                                 <span class="font-semibold text-slate-500 uppercase tracking-wider text-[11px]">Portfolio Title</span>
                                 <span class="font-bold text-slate-900 text-sm">@_newPortfolioName</span>
                             </div>
@@ -544,8 +510,8 @@
                                 </span>
                             </div>
                             <div class="flex justify-between items-center pt-2.5">
-                                <span class="font-semibold text-slate-500 uppercase tracking-wider text-[11px]">Total Photos Selected</span>
-                                <span class="font-bold text-slate-900">@_selectedImages.Count file(s)</span>
+                                <span class="font-semibold text-slate-500 uppercase tracking-wider text-[11px]">Total Album Photos</span>
+                                <span class="font-bold text-slate-900">@(_isEditingPortfolio ? $"{_existingImages.Count + _selectedImages.Count} photo(s) ({_existingImages.Count} existing, {_selectedImages.Count} new)" : $"{_selectedImages.Count} file(s)")</span>
                             </div>
                         </div>
 
@@ -555,6 +521,12 @@
                             {
                                 <div class="rounded-xl overflow-hidden border border-slate-200 h-44 bg-slate-100">
                                     <img src="@_selectedImages[0].PreviewUrl" alt="Cover preview" class="w-full h-full object-cover" />
+                                </div>
+                            }
+                            else if (_existingImages.Count > 0)
+                            {
+                                <div class="rounded-xl overflow-hidden border border-slate-200 h-44 bg-slate-100">
+                                    <img src="@_existingImages[0].Url" alt="Cover preview" class="w-full h-full object-cover" />
                                 </div>
                             }
                         </div>
@@ -596,7 +568,7 @@
                             }
                             else
                             {
-                                <span>Save Portfolio</span>
+                                <span>@(_isEditingPortfolio ? "Save Changes" : "Save Portfolio")</span>
                             }
                         </button>
                     }
@@ -618,19 +590,16 @@
     private string _searchQuery = string.Empty;
     private string? _notification;
 
-    // Floating details / edit drawer
+    // Floating details drawer
     private PortfolioFolderModel? _activeDetailPortfolio;
-    private bool _isEditing;
-    private string _editName = string.Empty;
-    private string _editCategoryId = string.Empty;
-    private string _editDesc = string.Empty;
-    private string? _editError;
-    private record AppendItem(string FileName, string ContentType, byte[] Data, string PreviewUrl);
-    private List<AppendItem> _appendImages = new();
     private string? _lightboxImageUrl;
 
     // Wizard state
     private bool _isWizardOpen;
+    private bool _isEditingPortfolio;
+    private string _editingPortfolioId = string.Empty;
+    private bool _editingOriginalFeatured;
+    private List<PortfolioImageModel> _existingImages = new();
     private int _wizardStep = 1;
     private static readonly string[] _wizardStepTitles = { "Details", "Choose Images", "Overview & Save" };
     private string? _wizardError;
@@ -645,9 +614,9 @@
     private List<UploadItem> _selectedImages = new();
 
     private List<PortfolioFolderModel> FilteredPortfolios => _portfolios
-        .Where(p => (_selectedCategory == "All" || p.CategoryID.Equals(_selectedCategory, StringComparison.OrdinalIgnoreCase)) &&
+        .Where(p => (_selectedCategory == "All" || string.Equals(p.CategoryID, _selectedCategory, StringComparison.OrdinalIgnoreCase)) &&
                     (string.IsNullOrWhiteSpace(_searchQuery) ||
-                     p.PortfolioName.Contains(_searchQuery, StringComparison.OrdinalIgnoreCase) ||
+                     (!string.IsNullOrEmpty(p.PortfolioName) && p.PortfolioName.Contains(_searchQuery, StringComparison.OrdinalIgnoreCase)) ||
                      (p.PortfolioDescription != null && p.PortfolioDescription.Contains(_searchQuery, StringComparison.OrdinalIgnoreCase))))
         .ToList();
 
@@ -671,14 +640,19 @@
         finally
         {
             _isLoading = false;
+            await InvokeAsync(StateHasChanged);
         }
     }
 
-    private string GetCategoryName(string catId) =>
-        _categories.FirstOrDefault(c => c.CategoryID.Equals(catId, StringComparison.OrdinalIgnoreCase))?.CategoryName ?? catId;
+    private string GetCategoryName(string? catId) =>
+        string.IsNullOrWhiteSpace(catId) ? "General" : (_categories.FirstOrDefault(c => string.Equals(c.CategoryID, catId, StringComparison.OrdinalIgnoreCase))?.CategoryName ?? catId);
 
     private void OpenAddWizard()
     {
+        _isEditingPortfolio = false;
+        _editingPortfolioId = string.Empty;
+        _editingOriginalFeatured = false;
+        _existingImages.Clear();
         _wizardStep = 1;
         _wizardError = null;
         _newPortfolioName = string.Empty;
@@ -689,99 +663,30 @@
         _isWizardOpen = true;
     }
 
+    private void OpenEditWizard(PortfolioFolderModel p)
+    {
+        _isEditingPortfolio = true;
+        _editingPortfolioId = p.PortfolioId;
+        _editingOriginalFeatured = p.IsFeatured;
+        _newPortfolioName = p.PortfolioName;
+        _newPortfolioCategory = p.CategoryID;
+        _newPortfolioDesc = p.PortfolioDescription ?? string.Empty;
+        _newPortfolioIsFeatured = p.IsFeatured;
+        _existingImages = p.Images != null ? new List<PortfolioImageModel>(p.Images) : new();
+        _selectedImages.Clear();
+        _wizardStep = 1;
+        _wizardError = null;
+        _isWizardOpen = true;
+    }
+
     private void OpenDetailsPanel(PortfolioFolderModel p)
     {
         _activeDetailPortfolio = p;
-        _isEditing = false;
-        _editError = null;
-        _appendImages.Clear();
     }
 
     private void CloseDetailsPanel()
     {
         _activeDetailPortfolio = null;
-        _isEditing = false;
-        _appendImages.Clear();
-    }
-
-    private void StartEditing()
-    {
-        if (_activeDetailPortfolio == null) return;
-        _editName = _activeDetailPortfolio.PortfolioName;
-        _editCategoryId = _activeDetailPortfolio.CategoryID;
-        _editDesc = _activeDetailPortfolio.PortfolioDescription ?? string.Empty;
-        _editError = null;
-        _appendImages.Clear();
-        _isEditing = true;
-    }
-
-    private async Task HandleAppendFileSelection(InputFileChangeEventArgs e)
-    {
-        _editError = null;
-        const long maxFileSize = 10 * 1024 * 1024;
-
-        foreach (var file in e.GetMultipleFiles(20))
-        {
-            try
-            {
-                using var stream = file.OpenReadStream(maxFileSize);
-                using var ms = new MemoryStream();
-                await stream.CopyToAsync(ms);
-                var data = ms.ToArray();
-                var previewUrl = $"data:{file.ContentType};base64,{Convert.ToBase64String(data)}";
-
-                _appendImages.Add(new AppendItem(file.Name, file.ContentType, data, previewUrl));
-            }
-            catch (Exception ex)
-            {
-                _editError = $"Error reading '{file.Name}': {ex.Message}";
-            }
-        }
-    }
-
-    private async Task HandleSaveEdit()
-    {
-        if (_activeDetailPortfolio == null) return;
-        if (string.IsNullOrWhiteSpace(_editName))
-        {
-            _editError = "Portfolio Title is required.";
-            return;
-        }
-
-        _isSaving = true;
-        _editError = null;
-
-        try
-        {
-            var newImgTuples = _appendImages.Select(i => (i.FileName, i.ContentType, i.Data)).ToList();
-            var ok = await PortfolioService.UpdatePortfolioAsync(
-                _activeDetailPortfolio.PortfolioId,
-                _editName,
-                _editDesc,
-                _editCategoryId,
-                newImgTuples);
-
-            if (ok)
-            {
-                _notification = $"Portfolio '{_editName}' ({_activeDetailPortfolio.PortfolioId}) updated successfully!";
-                _isEditing = false;
-                _appendImages.Clear();
-                await LoadData();
-                _activeDetailPortfolio = _portfolios.FirstOrDefault(p => p.PortfolioId == _activeDetailPortfolio.PortfolioId);
-            }
-            else
-            {
-                _editError = "Failed to update portfolio details. Please check your inputs.";
-            }
-        }
-        catch (Exception ex)
-        {
-            _editError = ex.Message;
-        }
-        finally
-        {
-            _isSaving = false;
-        }
     }
 
     private async Task HandleFileSelection(InputFileChangeEventArgs e)
@@ -797,9 +702,10 @@
                 using var ms = new MemoryStream();
                 await stream.CopyToAsync(ms);
                 var data = ms.ToArray();
-                var previewUrl = $"data:{file.ContentType};base64,{Convert.ToBase64String(data)}";
+                var contentType = string.IsNullOrWhiteSpace(file.ContentType) ? "image/jpeg" : file.ContentType;
+                var previewUrl = $"data:{contentType};base64,{Convert.ToBase64String(data)}";
 
-                _selectedImages.Add(new UploadItem(file.Name, file.ContentType, data, previewUrl));
+                _selectedImages.Add(new UploadItem(file.Name, contentType, data, previewUrl));
             }
             catch (Exception ex)
             {
@@ -835,10 +741,21 @@
         }
         else if (_wizardStep == 2)
         {
-            if (_selectedImages.Count == 0)
+            if (_isEditingPortfolio)
             {
-                _wizardError = "Please choose at least one image.";
-                return;
+                if (_existingImages.Count == 0 && _selectedImages.Count == 0)
+                {
+                    _wizardError = "Portfolio must have at least one photo.";
+                    return;
+                }
+            }
+            else
+            {
+                if (_selectedImages.Count == 0)
+                {
+                    _wizardError = "Please choose at least one image.";
+                    return;
+                }
             }
             _wizardStep = 3;
         }
@@ -848,6 +765,59 @@
     {
         _isSaving = true;
         _wizardError = null;
+
+        if (_isEditingPortfolio)
+        {
+            try
+            {
+                var newImagesTuples = _selectedImages.Select(i => (i.FileName, i.ContentType, i.Data)).ToList();
+                var ok = await PortfolioService.UpdatePortfolioAsync(
+                    _editingPortfolioId,
+                    _newPortfolioName,
+                    _newPortfolioDesc,
+                    _newPortfolioCategory,
+                    newImagesTuples.Count > 0 ? newImagesTuples : null);
+
+                if (ok)
+                {
+                    if (_newPortfolioIsFeatured != _editingOriginalFeatured)
+                    {
+                        await PortfolioService.ToggleFeatureAsync(_editingPortfolioId);
+                    }
+
+                    _isWizardOpen = false;
+                    _wizardStep = 1;
+                    var savedId = _editingPortfolioId;
+                    var savedName = _newPortfolioName;
+                    _selectedImages.Clear();
+                    _existingImages.Clear();
+                    _newPortfolioName = string.Empty;
+                    _newPortfolioCategory = string.Empty;
+                    _newPortfolioDesc = string.Empty;
+                    _newPortfolioIsFeatured = false;
+                    _notification = $"Portfolio '{savedName}' ({savedId}) updated successfully!";
+                    await LoadData();
+                    if (_activeDetailPortfolio?.PortfolioId == savedId)
+                    {
+                        _activeDetailPortfolio = _portfolios.FirstOrDefault(p => p.PortfolioId == savedId);
+                    }
+                    await InvokeAsync(StateHasChanged);
+                }
+                else
+                {
+                    _wizardError = "Failed to update portfolio. Please check your inputs.";
+                }
+            }
+            catch (Exception ex)
+            {
+                _wizardError = ex.Message;
+            }
+            finally
+            {
+                _isSaving = false;
+            }
+            return;
+        }
 
         try
         {
@@ -869,10 +839,13 @@
                 _newPortfolioCategory = string.Empty;
                 _newPortfolioDesc = string.Empty;
                 _newPortfolioIsFeatured = false;
+                _selectedCategory = "All";
+                _searchQuery = string.Empty;
 
                 // Show success message and refresh table
-                _notification = $"Portfolio '{res.PortfolioName}' ({res.PortfolioId}) created successfully with {res.Images.Count} photo(s)!";
+                _notification = $"Portfolio '{res.PortfolioName}' ({res.PortfolioId}) created successfully with {res.Images?.Count ?? 0} photo(s)!";
                 await LoadData();
+                await InvokeAsync(StateHasChanged);
             }
             else
             {

@@ -321,6 +321,15 @@ public static class DatabaseSeeder
                 IF OBJECT_ID(N'dbo.ComboPackageJoin', N'U') IS NOT NULL
                 BEGIN
                     ALTER TABLE dbo.ComboPackageJoin ALTER COLUMN ServicesID nvarchar(30) NULL;
+                    IF OBJECT_ID(N'dbo.PortfolioImages', N'U') IS NOT NULL
+                    BEGIN
+                        IF COL_LENGTH(N'dbo.PortfolioImages', N'ImageUrl') IS NULL
+                            ALTER TABLE dbo.PortfolioImages ADD ImageUrl nvarchar(500) NULL;
+                        IF COL_LENGTH(N'dbo.PortfolioImages', N'ContentType') IS NULL
+                            ALTER TABLE dbo.PortfolioImages ADD ContentType nvarchar(100) NULL CONSTRAINT DF_PortfolioImages_ContentType DEFAULT 'image/jpeg';
+                        IF COL_LENGTH(N'dbo.PortfolioImages', N'ImageData') IS NULL
+                            ALTER TABLE dbo.PortfolioImages ADD ImageData varbinary(max) NULL;
+                    END;
                 END;
 
                 IF NOT EXISTS (SELECT 1 FROM sys.sequences WHERE name = 'Seq_ComboPackageID')

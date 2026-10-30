@@ -145,21 +145,33 @@
                                 </td>
                                 <td class="px-5 py-3.5 text-center font-bold text-slate-900">@c.PortfolioCount</td>
                                 <td class="px-5 py-3.5 text-right">
-                                    @if (!_isReadOnly && c.PortfolioCount == 0)
-                                    {
-                                        <button type="button"
-                                                @onclick="() => HandleDeleteCategory(c.CategoryID, c.CategoryName)"
-                                                class="px-2.5 py-1 rounded text-rose-600 hover:bg-rose-50 text-[11px] font-semibold transition-colors"
-                                                title="Delete unused category">
-                                            Delete
-                                        </button>
-                                    }
-                                    else
-                                    {
-                                        <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider bg-emerald-50 text-emerald-700 border border-emerald-200">
-                                            Active
-                                        </span>
-                                    }
+                                    <div class="inline-flex items-center gap-1.5 justify-end">
+                                        @if (!_isReadOnly)
+                                        {
+                                            <button type="button"
+                                                    @onclick="() => OpenEditModal(c)"
+                                                    class="px-2.5 py-1 rounded text-slate-700 hover:text-slate-900 bg-slate-100 hover:bg-slate-200 border border-slate-300 text-[11px] font-semibold transition-colors"
+                                                    title="Edit category details">
+                                                Edit
+                                            </button>
+
+                                            @if (c.PortfolioCount == 0)
+                                            {
+                                                <button type="button"
+                                                        @onclick="() => HandleDeleteCategory(c.CategoryID, c.CategoryName)"
+                                                        class="px-2.5 py-1 rounded text-rose-600 hover:bg-rose-50 text-[11px] font-semibold transition-colors"
+                                                        title="Delete unused category">
+                                                    Delete
+                                                </button>
+                                            }
+                                        }
+                                        else
+                                        {
+                                            <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider bg-emerald-50 text-emerald-700 border border-emerald-200">
+                                                Active
+                                            </span>
+                                        }
+                                    </div>
                                 </td>
                             </tr>
                         }
@@ -170,13 +182,13 @@
     </div>
 </div>
 
-<!-- Modal: Add Category -->
+<!-- Modal: Add / Edit Category -->
 @if (_isModalOpen)
 {
     <div class="fixed inset-0 z-50 bg-slate-950/60 backdrop-blur-sm flex items-center justify-center p-4">
         <div class="bg-white rounded-2xl shadow-2xl border border-slate-200 w-full max-w-md overflow-hidden animate-in zoom-in duration-150">
             <div class="px-6 py-4 border-b border-slate-100 flex items-center justify-between bg-slate-50/50">
-                <h3 class="font-bold text-base text-slate-900">Add Portfolio Category</h3>
+                <h3 class="font-bold text-base text-slate-900">@(_isEditingCategory ? "Edit Portfolio Category" : "Add Portfolio Category")</h3>
                 <button type="button" @onclick="() => _isModalOpen = false" class="text-slate-400 hover:text-slate-700 text-lg">✕</button>
             </div>
 
@@ -184,6 +196,19 @@
                 @if (!string.IsNullOrEmpty(_modalError))
                 {
                     <div class="p-3 bg-rose-50 border border-rose-200 text-rose-700 rounded-lg font-medium">@_modalError</div>
+                }
+
+                @if (_isEditingCategory && !string.IsNullOrWhiteSpace(_editingCategoryId))
+                {
+                    <div class="p-3 bg-slate-50 border border-slate-200 rounded-xl flex items-center justify-between">
+                        <div>
+                            <span class="text-[10px] font-bold uppercase tracking-wider text-slate-500">Category ID (System-Assigned)</span>
+                            <p class="font-mono text-sm font-bold text-slate-900">@_editingCategoryId</p>
+                        </div>
+                        <span class="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-bold bg-amber-50 text-amber-700 border border-amber-200">
+                            Strictly Read-Only
+                        </span>
+                    </div>
                 }
 
                 <div>
@@ -229,7 +254,7 @@
                     }
                     else
                     {
-                        <span>Save Category</span>
+                        <span>@(_isEditingCategory ? "Save Changes" : "Save Category")</span>
                     }
                 </button>
             </div>
@@ -248,6 +273,8 @@
     private string? _notification;
 
     private bool _isModalOpen;
+    private bool _isEditingCategory;
+    private string _editingCategoryId = string.Empty;
     private bool _isSaving;
     private string? _modalError;
     private string _newName = string.Empty;
@@ -257,9 +284,9 @@
 
     private List<PortfolioCategoryModel> FilteredCategories => _categories
         .Where(c => string.IsNullOrWhiteSpace(_searchQuery) ||
-                    c.CategoryName.Contains(_searchQuery, StringComparison.OrdinalIgnoreCase) ||
-                    c.CategoryID.Contains(_searchQuery, StringComparison.OrdinalIgnoreCase) ||
-                    c.ParentSection.Contains(_searchQuery, StringComparison.OrdinalIgnoreCase))
+                    (!string.IsNullOrEmpty(c.CategoryName) && c.CategoryName.Contains(_searchQuery, StringComparison.OrdinalIgnoreCase)) ||
+                    (!string.IsNullOrEmpty(c.CategoryID) && c.CategoryID.Contains(_searchQuery, StringComparison.OrdinalIgnoreCase)) ||
+                    (!string.IsNullOrEmpty(c.ParentSection) && c.ParentSection.Contains(_searchQuery, StringComparison.OrdinalIgnoreCase)))
         .ToList();
 
     protected override async Task OnInitializedAsync()
@@ -281,15 +308,30 @@
         finally
         {
             _isLoading = false;
+            await InvokeAsync(StateHasChanged);
         }
     }
 
     private void OpenAddModal()
     {
+        _isEditingCategory = false;
+        _editingCategoryId = string.Empty;
         _newName = string.Empty;
         _newSection = "Photography";
         _newColor = "Blue";
         _newDesc = string.Empty;
+        _modalError = null;
+        _isModalOpen = true;
+    }
+
+    private void OpenEditModal(PortfolioCategoryModel cat)
+    {
+        _isEditingCategory = true;
+        _editingCategoryId = cat.CategoryID;
+        _newName = cat.CategoryName;
+        _newSection = cat.ParentSection;
+        _newColor = cat.ColorTag ?? "Blue";
+        _newDesc = cat.Description ?? string.Empty;
         _modalError = null;
         _isModalOpen = true;
     }
@@ -307,16 +349,36 @@
 
         try
         {
-            var res = await PortfolioService.CreateCategoryAsync(_newName, _newDesc, _newSection, _newColor);
-            if (res != null)
+            if (_isEditingCategory)
             {
-                _isModalOpen = false;
-                _notification = $"Category '{res.CategoryName}' ({res.CategoryID}) added successfully!";
-                await LoadCategories();
+                var ok = await PortfolioService.UpdateCategoryAsync(_editingCategoryId, _newName, _newDesc, _newSection, _newColor);
+                if (ok)
+                {
+                    _isModalOpen = false;
+                    _notification = $"Category '{_newName}' ({_editingCategoryId}) updated successfully!";
+                    await LoadCategories();
+                    await InvokeAsync(StateHasChanged);
+                }
+                else
+                {
+                    _modalError = "Failed to update category. Please verify your inputs.";
+                }
             }
             else
             {
-                _modalError = "Failed to create category. Please verify your inputs.";
+                var res = await PortfolioService.CreateCategoryAsync(_newName, _newDesc, _newSection, _newColor);
+                if (res != null)
+                {
+                    _isModalOpen = false;
+                    _searchQuery = string.Empty;
+                    _notification = $"Category '{res.CategoryName}' ({res.CategoryID}) added successfully!";
+                    await LoadCategories();
+                    await InvokeAsync(StateHasChanged);
+                }
+                else
+                {
+                    _modalError = "Failed to create category. Please verify your inputs.";
+                }
             }
         }
         catch (Exception ex)

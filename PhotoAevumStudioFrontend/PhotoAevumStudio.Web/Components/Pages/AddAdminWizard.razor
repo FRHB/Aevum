@@ -564,9 +564,13 @@
             copiedPassword = true;
             _ = Task.Run(async () =>
             {
-                await Task.Delay(2500);
-                copiedPassword = false;
-                await InvokeAsync(StateHasChanged);
+                try
+                {
+                    await Task.Delay(2500);
+                    copiedPassword = false;
+                    await InvokeAsync(StateHasChanged);
+                }
+                catch { }
             });
         }
         catch

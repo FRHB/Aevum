@@ -76,28 +76,13 @@ public class AdditionalServicesController : ControllerBase
         try
         {
             var dbCategories = await _service.GetCategoriesAsync(ct);
-            if (dbCategories.Count > 0)
-            {
-                return Ok(dbCategories.Select(c => c.Name).Distinct());
-            }
+            return Ok(dbCategories.Select(c => c.Name).Distinct());
         }
         catch (Exception ex)
         {
-            _logger.LogWarning(ex, "Failed to load dynamic categories from DB. Using standard catalog categories.");
+            _logger.LogWarning(ex, "Failed to load dynamic categories from DB.");
+            return Ok(Array.Empty<string>());
         }
-
-        var defaultCategories = new[]
-        {
-            "Portrait Photography",
-            "Event & Gala Coverage",
-            "Commercial & Branding",
-            "Wedding & Nuptials",
-            "Aerial & Drone Operations",
-            "Post-Processing & Retouching",
-            "Custom Framing & Prints",
-            "Equipment & Studio Props"
-        };
-        return Ok(defaultCategories);
     }
 
     /// <summary>

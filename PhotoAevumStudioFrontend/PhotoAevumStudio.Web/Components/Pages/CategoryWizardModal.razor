@@ -20,8 +20,8 @@
                         </svg>
                     </div>
                     <div>
-                        <h2 id="category-modal-title" class="text-lg sm:text-xl font-bold text-gray-900">Add New Service Category</h2>
-                        <p class="text-xs text-gray-500">Define classification group for master services and package offerings</p>
+                        <h2 id="category-modal-title" class="text-lg sm:text-xl font-bold text-gray-900">@(IsEditMode ? "Edit Service Category" : "Add New Service Category")</h2>
+                        <p class="text-xs text-gray-500">@(IsEditMode ? "Update category classification for master services and package offerings" : "Define classification group for master services and package offerings")</p>
                     </div>
                 </div>
                 <button type="button" 
@@ -95,6 +95,19 @@
                             <h3 class="text-xs font-bold uppercase tracking-wider text-gray-600 mb-1">Category Classification</h3>
                             <p class="text-xs text-gray-400">Define the category name and description used across service management and customer booking filters.</p>
                         </div>
+
+                        @if (IsEditMode && !string.IsNullOrWhiteSpace(model.GeneratedId))
+                        {
+                            <div class="p-3 bg-gray-50/80 border border-gray-200 rounded-xl flex items-center justify-between">
+                                <div>
+                                    <span class="text-[10px] font-bold uppercase tracking-wider text-gray-500">Service Category ID (Auto-Assigned)</span>
+                                    <p class="font-mono text-sm font-bold text-gray-900">@model.GeneratedId</p>
+                                </div>
+                                <span class="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-bold bg-amber-50 text-amber-700 border border-amber-200">
+                                    Read-Only System ID
+                                </span>
+                            </div>
+                        }
 
                         @* Field: Service Category Name (Text) *@
                         <div>
@@ -258,6 +271,8 @@
     [Parameter] public bool IsOpen { get; set; }
     [Parameter] public EventCallback<bool> IsOpenChanged { get; set; }
     [Parameter] public EventCallback<string> OnCategorySaved { get; set; }
+    [Parameter] public bool IsEditMode { get; set; }
+    [Parameter] public ServiceCategoryItem? EditItem { get; set; }
 
     private int currentStep = 1;
     private bool isSaving = false;
@@ -269,17 +284,26 @@
 
     private CategoryWizardModel model = new();
     private bool wasOpen = false;
+    private string? _lastEditCode = null;
 
     protected override void OnParametersSet()
     {
-        if (IsOpen && !wasOpen)
+        if (IsOpen && (!wasOpen || (IsEditMode && _lastEditCode != EditItem?.Code)))
         {
-            ResetWizard();
             wasOpen = true;
+            _lastEditCode = EditItem?.Code;
+            ResetWizard();
+            if (IsEditMode && EditItem != null)
+            {
+                model.GeneratedId = EditItem.Code;
+                model.Name = EditItem.Name;
+                model.Description = EditItem.Description;
+            }
         }
         else if (!IsOpen)
         {
             wasOpen = false;
+            _lastEditCode = null;
         }
     }
 
@@ -348,6 +372,12 @@
 
     private async Task PrepareOverviewStepAsync()
     {
+        if (IsEditMode && EditItem != null)
+        {
+            model.GeneratedId = EditItem.Code;
+            return;
+        }
+
         if (string.IsNullOrWhiteSpace(model.GeneratedId))
         {
             try
@@ -374,16 +404,32 @@
 
         try
         {
-            var (success, error, createdId) = await ServicesApi.CreateCategoryAsync(model);
-            if (!success)
+            if (IsEditMode && EditItem != null)
             {
-                errorMessage = error ?? "Failed to save category. Please try again.";
+                var (success, error) = await ServicesApi.UpdateCategoryAsync(model.GeneratedId, model.Name, model.Description);
+                if (!success)
+                {
+                    errorMessage = error ?? "Failed to update category. Please try again.";
+                    return;
+                }
+
+                var savedId = model.GeneratedId;
+                ResetWizard();
+                await OnCategorySaved.InvokeAsync(savedId);
+                await HandleClose();
                 return;
             }
 
-            var savedId = createdId ?? model.GeneratedId;
+            var (createSuccess, createError, createdId) = await ServicesApi.CreateCategoryAsync(model);
+            if (!createSuccess)
+            {
+                errorMessage = createError ?? "Failed to save category. Please try again.";
+                return;
+            }
+
+            var newSavedId = createdId ?? model.GeneratedId;
             ResetWizard();
-            await OnCategorySaved.InvokeAsync(savedId);
+            await OnCategorySaved.InvokeAsync(newSavedId);
             await HandleClose();
         }
         catch (Exception ex)

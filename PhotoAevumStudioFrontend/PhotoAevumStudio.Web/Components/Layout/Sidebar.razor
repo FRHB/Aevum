@@ -97,7 +97,11 @@
     {
         _isMobileOpen = false;
         AutoExpandActiveAccordion();
-        InvokeAsync(StateHasChanged);
+        _ = InvokeAsync(() =>
+        {
+            try { StateHasChanged(); }
+            catch { /* Component or circuit may be disposed during rapid navigation */ }
+        });
     }
 
     public void Dispose()

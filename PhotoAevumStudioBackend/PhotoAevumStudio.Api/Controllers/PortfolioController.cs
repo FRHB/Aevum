@@ -127,24 +127,37 @@ public class PortfolioController : ControllerBase
         var categories = await _db.PortfolioCategories.AsNoTracking().ToListAsync(cancellationToken);
         var catDict = categories.ToDictionary(c => c.CategoryID, c => c.CategoryName, StringComparer.OrdinalIgnoreCase);
 
-        var result = list.Select(p => new
+        var result = list.Select(p =>
         {
-            p.PortfolioId,
-            p.PortfolioName,
-            p.PortfolioDescription,
-            p.CategoryID,
-            CategoryName = catDict.TryGetValue(p.CategoryID, out var cName) ? cName : p.CategoryID,
-            p.IsFeatured,
-            p.HighlightImageFileName,
-            HighlightImageUrl = !string.IsNullOrEmpty(p.HighlightImageFileName) ? _r2Service.GetPresignedUrl(p.HighlightImageFileName) : (p.Images.FirstOrDefault() != null ? _r2Service.GetPresignedUrl(p.Images.First().FileName) : string.Empty),
-            p.CreatedAt,
-            Images = p.Images.Select(img => new
+            var resolvedImages = p.Images.Select(img => new
             {
                 img.Id,
                 img.FileName,
-                Url = _r2Service.GetPresignedUrl(img.FileName),
+                Url = ResolvePortfolioImageUrl(img),
                 img.UploadedAt
-            }).ToList()
+            }).ToList();
+
+            var highlightImg = !string.IsNullOrEmpty(p.HighlightImageFileName)
+                ? p.Images.FirstOrDefault(i => string.Equals(i.FileName, p.HighlightImageFileName, StringComparison.OrdinalIgnoreCase))
+                : p.Images.FirstOrDefault();
+
+            var highlightUrl = highlightImg != null
+                ? ResolvePortfolioImageUrl(highlightImg)
+                : (!string.IsNullOrEmpty(p.HighlightImageFileName) ? _r2Service.GetPresignedUrl(p.HighlightImageFileName, _r2Service.PortfolioBucket) : string.Empty);
+
+            return new
+            {
+                p.PortfolioId,
+                p.PortfolioName,
+                p.PortfolioDescription,
+                p.CategoryID,
+                CategoryName = catDict.TryGetValue(p.CategoryID, out var cName) ? cName : p.CategoryID,
+                p.IsFeatured,
+                p.HighlightImageFileName,
+                HighlightImageUrl = highlightUrl,
+                p.CreatedAt,
+                Images = resolvedImages
+            };
         });
 
         return Ok(result);
@@ -164,24 +177,51 @@ public class PortfolioController : ControllerBase
         var categories = await _db.PortfolioCategories.AsNoTracking().ToListAsync(cancellationToken);
         var catDict = categories.ToDictionary(c => c.CategoryID, c => c.CategoryName, StringComparer.OrdinalIgnoreCase);
 
-        var result = list.Select(p => new
+        var result = list.Select(p =>
         {
-            p.PortfolioId,
-            p.PortfolioName,
-            p.PortfolioDescription,
-            p.CategoryID,
-            CategoryName = catDict.TryGetValue(p.CategoryID, out var cName) ? cName : p.CategoryID,
-            p.IsFeatured,
-            HighlightImageUrl = !string.IsNullOrEmpty(p.HighlightImageFileName) ? _r2Service.GetPresignedUrl(p.HighlightImageFileName) : (p.Images.FirstOrDefault() != null ? _r2Service.GetPresignedUrl(p.Images.First().FileName) : string.Empty),
-            Images = p.Images.Select(img => new
+            var resolvedImages = p.Images.Select(img => new
             {
                 img.Id,
                 img.FileName,
-                Url = _r2Service.GetPresignedUrl(img.FileName)
-            }).ToList()
+                Url = ResolvePortfolioImageUrl(img)
+            }).ToList();
+
+            var highlightImg = !string.IsNullOrEmpty(p.HighlightImageFileName)
+                ? p.Images.FirstOrDefault(i => string.Equals(i.FileName, p.HighlightImageFileName, StringComparison.OrdinalIgnoreCase))
+                : p.Images.FirstOrDefault();
+
+            var highlightUrl = highlightImg != null
+                ? ResolvePortfolioImageUrl(highlightImg)
+                : (!string.IsNullOrEmpty(p.HighlightImageFileName) ? _r2Service.GetPresignedUrl(p.HighlightImageFileName, _r2Service.PortfolioBucket) : string.Empty);
+
+            return new
+            {
+                p.PortfolioId,
+                p.PortfolioName,
+                p.PortfolioDescription,
+                p.CategoryID,
+                CategoryName = catDict.TryGetValue(p.CategoryID, out var cName) ? cName : p.CategoryID,
+                p.IsFeatured,
+                HighlightImageUrl = highlightUrl,
+                Images = resolvedImages
+            };
         });
 
         return Ok(result);
+    }
+
+    private string ResolvePortfolioImageUrl(PortfolioImage img)
+    {
+        if (img.ImageData != null && img.ImageData.Length > 0)
+        {
+            var mime = string.IsNullOrWhiteSpace(img.ContentType) ? "image/jpeg" : img.ContentType;
+            return $"data:{mime};base64,{Convert.ToBase64String(img.ImageData)}";
+        }
+
+        if (!string.IsNullOrWhiteSpace(img.ImageUrl))
+            return img.ImageUrl;
+
+        return _r2Service.GetPresignedUrl(img.FileName, _r2Service.PortfolioBucket);
     }
 
     [HttpPost]

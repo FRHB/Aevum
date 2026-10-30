@@ -3,6 +3,7 @@
 @using PhotoAevumStudio.Web.Models
 @using PhotoAevumStudio.Web.Services
 @inject IServicesApiClient ServicesApi
+@inject IUserService UserService
 @inject ILogger<AddAddOnModal> Logger
 
 @if (IsOpen)
@@ -22,8 +23,8 @@
                             </svg>
                         </div>
                         <div>
-                            <h2 id="addon-wizard-title" class="text-lg font-bold text-gray-900">Add New Additional Service</h2>
-                            <p class="text-xs text-gray-500">Service upgrades, equipment rentals, and specialized add-ons</p>
+                            <h2 id="addon-wizard-title" class="text-lg font-bold text-gray-900">@(IsEditMode ? "Edit Additional Service" : "Add New Additional Service")</h2>
+                            <p class="text-xs text-gray-500">@(IsEditMode ? "Update service upgrades, equipment rentals, and specialized add-ons" : "Service upgrades, equipment rentals, and specialized add-ons")</p>
                         </div>
                     </div>
                     <button type="button" @onclick="HandleClose" disabled="@isSubmitting"
@@ -116,6 +117,19 @@
                                     Configure the identity, category assignment, and baseline pricing for this additional service.
                                 </p>
                             </div>
+
+                            @if (IsEditMode && !string.IsNullOrWhiteSpace(formModel.GeneratedId))
+                            {
+                                <div class="p-3 bg-gray-50/80 border border-gray-200 rounded-xl flex items-center justify-between">
+                                    <div>
+                                        <span class="text-[10px] font-bold uppercase tracking-wider text-gray-500">Additional Service ID (Auto-Assigned)</span>
+                                        <p class="font-mono text-sm font-bold text-gray-900">@formModel.GeneratedId</p>
+                                    </div>
+                                    <span class="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-bold bg-amber-50 text-amber-700 border border-amber-200">
+                                        Read-Only System ID
+                                    </span>
+                                </div>
+                            }
 
                             <!-- Service Category Name (Add-On Name) -->
                             <div>
@@ -215,7 +229,7 @@
                                            accept=".jpg,.jpeg,.png,.webp"
                                            class="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10" />
 
-                                @if (formModel.ImageBytes != null && !string.IsNullOrWhiteSpace(formModel.ImagePreviewUrl))
+                                @if (!string.IsNullOrWhiteSpace(formModel.ImagePreviewUrl))
                                 {
                                     <div class="flex flex-col items-center">
                                         <div class="relative w-48 h-32 rounded-lg overflow-hidden border border-gray-200 shadow-sm mb-3 bg-gray-100">
@@ -331,7 +345,7 @@
                                 <!-- Media Preview Row -->
                                 <div class="p-4 bg-white">
                                     <p class="text-[11px] font-bold text-gray-500 uppercase tracking-wider mb-2">Media Attachment</p>
-                                    @if (formModel.ImageBytes != null && !string.IsNullOrWhiteSpace(formModel.ImagePreviewUrl))
+                                    @if (!string.IsNullOrWhiteSpace(formModel.ImagePreviewUrl))
                                     {
                                         <div class="flex items-center gap-4 bg-gray-50 p-3 rounded-xl border border-gray-200">
                                             <img src="@formModel.ImagePreviewUrl"
@@ -398,7 +412,7 @@
                     {
                         <button type="button"
                                 @onclick="HandleNext"
-                                disabled="@(isReadingFile || isSubmitting || (currentStep == 2 && (formModel.ImageBytes == null || formModel.ImageBytes.Length == 0)))"
+                                disabled="@(isReadingFile || isSubmitting || (currentStep == 2 && string.IsNullOrEmpty(formModel.ImagePreviewUrl) && (formModel.ImageBytes == null || formModel.ImageBytes.Length == 0)))"
                                 class="inline-flex items-center gap-1.5 px-5 py-2.5 bg-gray-900 hover:bg-black text-white text-xs font-semibold rounded-lg shadow-sm transition-all duration-150 active:scale-95 disabled:opacity-60 disabled:cursor-not-allowed">
                             <span>Next Step</span>
                             <svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -439,6 +453,8 @@
     [Parameter] public bool IsOpen { get; set; }
     [Parameter] public EventCallback<bool> IsOpenChanged { get; set; }
     [Parameter] public EventCallback<AddOnServiceItem> OnAddOnCreated { get; set; }
+    [Parameter] public bool IsEditMode { get; set; }
+    [Parameter] public AddOnServiceItem? EditItem { get; set; }
 
     private int currentStep = 1;
     private bool isSubmitting = false;
@@ -450,6 +466,7 @@
     private EditContext editContext = default!;
     private List<string> availableCategories = new();
     private bool wasOpen = false;
+    private string? _lastEditCode = null;
 
     protected override void OnInitialized()
     {
@@ -458,15 +475,65 @@
 
     protected override async Task OnParametersSetAsync()
     {
-        if (IsOpen && !wasOpen)
+        if (IsOpen && (!wasOpen || (IsEditMode && _lastEditCode != EditItem?.Code)))
         {
             wasOpen = true;
+            _lastEditCode = EditItem?.Code;
             InitializeForm();
-            await LoadCategoriesAndNextIdAsync();
+
+            if (IsEditMode && EditItem != null)
+            {
+                formModel.GeneratedId = EditItem.Code;
+                formModel.IsIdLoaded = true;
+                formModel.ServiceCategoryName = EditItem.Title;
+                formModel.ServiceCategory = string.IsNullOrWhiteSpace(EditItem.TypeCategory) ? "Photo Enhancement" : EditItem.TypeCategory;
+                formModel.ServiceCategoryDescription = EditItem.Description ?? string.Empty;
+
+                var digits = new string((EditItem.PriceText ?? "").Where(c => char.IsDigit(c) || c == '.').ToArray());
+                if (decimal.TryParse(digits, out var p))
+                {
+                    formModel.ServicePrice = p;
+                }
+
+                try
+                {
+                    var cats = await ServicesApi.GetAdditionalServiceCategoriesAsync();
+                    if (cats != null && cats.Count > 0)
+                    {
+                        availableCategories = cats.ToList();
+                    }
+                }
+                catch (Exception ex)
+                {
+                    Logger.LogWarning(ex, "Failed to pre-load categories for Add-On wizard.");
+                }
+
+                try
+                {
+                    var (imgBytes, mime) = UserService.GetAdditionalServiceImage(EditItem.Code);
+                    if (imgBytes != null && imgBytes.Length > 0)
+                    {
+                        var mimeType = string.IsNullOrWhiteSpace(mime) ? "image/jpeg" : mime;
+                        formModel.ImagePreviewUrl = $"data:{mimeType};base64,{Convert.ToBase64String(imgBytes)}";
+                        formModel.ImageFileName = "Current Image";
+                        formModel.ImageMimeType = mimeType;
+                        formModel.ImageFileSize = imgBytes.Length;
+                    }
+                }
+                catch (Exception ex)
+                {
+                    Logger.LogWarning(ex, "Failed to load additional service image for {Code}", EditItem.Code);
+                }
+            }
+            else
+            {
+                await LoadCategoriesAndNextIdAsync();
+            }
         }
         else if (!IsOpen)
         {
             wasOpen = false;
+            _lastEditCode = null;
         }
     }
 
@@ -592,7 +659,7 @@
         }
         else if (currentStep == 2)
         {
-            if (formModel.ImageBytes == null || formModel.ImageBytes.Length == 0)
+            if (string.IsNullOrEmpty(formModel.ImagePreviewUrl) && (formModel.ImageBytes == null || formModel.ImageBytes.Length == 0))
             {
                 mediaErrorMessage = "A presentation showcase image is required to proceed.";
                 return;
@@ -622,7 +689,7 @@
             return;
         }
 
-        if (formModel.ImageBytes == null || formModel.ImageBytes.Length == 0)
+        if (string.IsNullOrEmpty(formModel.ImagePreviewUrl) && (formModel.ImageBytes == null || formModel.ImageBytes.Length == 0))
         {
             mediaErrorMessage = "A presentation showcase image is required before saving.";
             currentStep = 2;
@@ -632,6 +699,44 @@
         isSubmitting = true;
         try
         {
+            if (IsEditMode && EditItem != null)
+            {
+                var updatedItem = new AddOnServiceItem
+                {
+                    Code = formModel.GeneratedId,
+                    Title = formModel.ServiceCategoryName.Trim(),
+                    TypeCategory = formModel.ServiceCategory.Trim(),
+                    FilterCategory = formModel.ServiceCategory.Trim(),
+                    PriceText = $"₱{formModel.ServicePrice:N2}",
+                    Description = formModel.ServiceCategoryDescription.Trim(),
+                    Status = EditItem.Status
+                };
+
+                var ok = UserService.UpdateAdditionalService(updatedItem);
+                if (!ok)
+                {
+                    generalErrorMessage = "Failed to update additional service record.";
+                    return;
+                }
+
+                if (formModel.ImageBytes != null && formModel.ImageBytes.Length > 0)
+                {
+                    try
+                    {
+                        await UserService.UpdateAdditionalServiceImageAsync(formModel.GeneratedId, formModel.ImageBytes, formModel.ImageMimeType ?? "image/jpeg");
+                    }
+                    catch (Exception imgEx)
+                    {
+                        Logger.LogWarning(imgEx, "Could not update additional service image.");
+                    }
+                }
+
+                InitializeForm();
+                await OnAddOnCreated.InvokeAsync(updatedItem);
+                await CloseModal();
+                return;
+            }
+
             var result = await ServicesApi.CreateAdditionalServiceAsync(formModel);
             if (!result.Success)
             {

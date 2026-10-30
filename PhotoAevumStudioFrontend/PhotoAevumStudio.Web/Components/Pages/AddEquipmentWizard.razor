@@ -24,8 +24,8 @@
                         </svg>
                     </div>
                     <div>
-                        <h2 class="text-base font-bold text-white leading-tight">Register New Equipment</h2>
-                        <p class="text-[11px] text-slate-300">Studio hardware inventory registration wizard</p>
+                        <h2 class="text-base font-bold text-white leading-tight">@(IsEditMode ? "Edit Equipment" : "Register New Equipment")</h2>
+                        <p class="text-[11px] text-slate-300">@(IsEditMode ? "Update hardware specifications and asset records" : "Studio hardware inventory registration wizard")</p>
                     </div>
                 </div>
 
@@ -133,6 +133,19 @@
                             <h3 class="text-sm font-bold text-slate-900">Hardware Identification</h3>
                             <p class="text-xs text-slate-500">Provide the primary specification and manufacturer identifiers.</p>
                         </div>
+
+                        @if (IsEditMode && !string.IsNullOrWhiteSpace(systemGeneratedId))
+                        {
+                            <div class="p-3 bg-slate-50 border border-slate-200 rounded-xl flex items-center justify-between">
+                                <div>
+                                    <span class="text-[10px] font-bold uppercase tracking-wider text-slate-500">Equipment ID (Auto-Assigned)</span>
+                                    <p class="font-mono text-sm font-bold text-slate-900">@systemGeneratedId</p>
+                                </div>
+                                <span class="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-bold bg-amber-50 text-amber-700 border border-amber-200">
+                                    Read-Only System ID
+                                </span>
+                            </div>
+                        }
 
                         <!-- Field 1: Equipment Name (Text input) -->
                         <div>
@@ -492,14 +505,14 @@
                             @if (isSubmitting)
                             {
                                 <span class="w-3.5 h-3.5 border-2 border-white/30 border-t-white rounded-full animate-spin"></span>
-                                <span>Saving to Inventory...</span>
+                                <span>@(IsEditMode ? "Saving Changes..." : "Saving to Inventory...")</span>
                             }
                             else
                             {
                                 <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M5 13l4 4L19 7" />
                                 </svg>
-                                <span>Save Equipment</span>
+                                <span>@(IsEditMode ? "Save Changes" : "Save Equipment")</span>
                             }
                         </button>
                     }
@@ -523,6 +536,12 @@
 
     [Parameter]
     public IReadOnlyList<EquipmentTypeModel>? AvailableTypes { get; set; }
+
+    [Parameter]
+    public bool IsEditMode { get; set; }
+
+    [Parameter]
+    public EquipmentItemModel? EditEquipment { get; set; }
 
     // ── Form State Management ────────────────────────────────────────────────
     private int currentStep = 1;
@@ -553,16 +572,34 @@
         {
             wasOpen = true;
             currentStep = 1;
-            formModel = new EquipmentWizardModel();
-            customTypeName = string.Empty;
-            imageFile = null;
-            imagePreviewDataUrl = null;
-            selectedFileName = null;
-            selectedFileSizeBytes = 0;
-            systemGeneratedId = string.Empty;
             errors.Clear();
             submissionErrorMessage = null;
-            await PreloadNextEquipmentIdAsync();
+            imageFile = null;
+
+            if (IsEditMode && EditEquipment != null)
+            {
+                systemGeneratedId = EditEquipment.EquipmentID;
+                formModel = new EquipmentWizardModel
+                {
+                    EquipmentName = EditEquipment.EquipmentName,
+                    EquipmentDescription = EditEquipment.EquipmentDescription,
+                    EquipmentType = EditEquipment.EquipmentTypeID,
+                    SerialNo = EditEquipment.SerialNo
+                };
+                imagePreviewDataUrl = EditEquipment.ImagePath;
+                selectedFileName = !string.IsNullOrEmpty(EditEquipment.ImagePath) ? "Current Image" : null;
+                selectedFileSizeBytes = 0;
+            }
+            else
+            {
+                formModel = new EquipmentWizardModel();
+                customTypeName = string.Empty;
+                imagePreviewDataUrl = null;
+                selectedFileName = null;
+                selectedFileSizeBytes = 0;
+                systemGeneratedId = string.Empty;
+                await PreloadNextEquipmentIdAsync();
+            }
         }
         else if (!IsOpen)
         {
@@ -757,6 +794,39 @@
             ? customTypeName.Trim() 
             : formModel.EquipmentType.Trim();
 
+        if (IsEditMode && EditEquipment != null)
+        {
+            try
+            {
+                var (success, error) = await EquipmentService.UpdateEquipmentAsync(
+                    EditEquipment.EquipmentID,
+                    formModel.EquipmentName,
+                    formModel.EquipmentDescription,
+                    finalCategory,
+                    formModel.SerialNo,
+                    imagePreviewDataUrl);
+
+                if (success)
+                {
+                    EquipmentService.NotifyStateChanged();
+                    await OnEquipmentSaved.InvokeAsync();
+                    await CloseModalAsync();
+                    return;
+                }
+
+                submissionErrorMessage = error ?? "Failed to update equipment details.";
+            }
+            catch (Exception ex)
+            {
+                submissionErrorMessage = ex.Message;
+            }
+            finally
+            {
+                isSubmitting = false;
+            }
+            return;
+        }
+
         try
         {
             // 1. Prepare MultipartFormDataContent for API submission
@@ -791,15 +861,7 @@
 
             if (response.IsSuccessStatusCode)
             {
-                var createdDto = await response.Content.ReadFromJsonAsync<CreatedEquipmentDto>();
-                
-                // Also notify local singleton service so state stays synchronized
-                await EquipmentService.CreateEquipmentAsync(
-                    formModel.EquipmentName,
-                    formModel.EquipmentDescription,
-                    finalCategory,
-                    formModel.SerialNo,
-                    createdDto?.ImagePath);
+                EquipmentService.NotifyStateChanged();
 
                 await OnEquipmentSaved.InvokeAsync();
                 await CloseModalAsync();

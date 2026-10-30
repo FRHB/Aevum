@@ -23,8 +23,21 @@ public interface IEquipmentService
         string? imagePath,
         CancellationToken ct = default);
     Task<(bool Success, string? Error)> AddEquipmentAsync(string name, string typeId, string? serialNo, string? equipmentId = null, CancellationToken ct = default);
+    Task<(bool Success, string? Error)> UpdateEquipmentAsync(
+        string id,
+        string name,
+        string? description,
+        string typeId,
+        string? serialNo,
+        string? imagePath,
+        CancellationToken ct = default);
     Task<(bool Success, string? Error)> UpdateEquipmentStatusAsync(string equipmentId, string newStatus, string details, string actorId, string actorType = "Admin", CancellationToken ct = default);
     Task<(bool Success, string? Error)> AddEquipmentTypeAsync(string typeId, string typeName, string colorTag = "Blue", CancellationToken ct = default);
+    Task<(bool Success, string? Error)> UpdateEquipmentTypeAsync(
+        string id,
+        string name,
+        string colorTag = "Blue",
+        CancellationToken ct = default);
     Task<(bool Success, string? Error)> AssignEquipmentToEventAsync(string eventId, string equipmentId, string actorId = "ADM-001", CancellationToken ct = default);
     Task<(bool Success, string? Error)> AssignMultipleEquipmentToEventAsync(string eventId, IEnumerable<string> equipmentIds, string actorId = "ADM-001", CancellationToken ct = default);
     Task<(bool Success, string? Error)> VerifyReturnAsync(int eventEquipmentId, string notes, string actorId = "ADM-001", bool flagMaintenance = false, CancellationToken ct = default);

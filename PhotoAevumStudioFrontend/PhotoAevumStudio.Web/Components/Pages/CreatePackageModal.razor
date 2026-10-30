@@ -20,8 +20,12 @@
                         </svg>
                     </div>
                     <div>
-                        <h2 id="package-wizard-title" class="text-lg sm:text-xl font-bold text-gray-900">Create New Package</h2>
-                        <p class="text-xs text-gray-500">4-step wizard: bundle details, service selection, media upload, and review</p>
+                        <h2 id="package-wizard-title" class="text-lg sm:text-xl font-bold text-gray-900">
+                            @(IsEditMode ? "Edit Package Service" : "Create New Package")
+                        </h2>
+                        <p class="text-xs text-gray-500">
+                            @(IsEditMode ? "Update package details, service selection, media assets, and review" : "4-step wizard: bundle details, service selection, media upload, and review")
+                        </p>
                     </div>
                 </div>
                 <button type="button"
@@ -126,6 +130,20 @@
                             </div>
                             <span class="text-xs font-semibold px-2 py-0.5 bg-gray-200/70 text-gray-700 rounded-md">Page 1 of 4</span>
                         </div>
+
+                        @* Package System ID (Read-only if editing) *@
+                        @if (IsEditMode && !string.IsNullOrWhiteSpace(formModel.GeneratedPackageId))
+                        {
+                            <div class="p-3 bg-gray-50/80 border border-gray-200 rounded-xl flex items-center justify-between">
+                                <div>
+                                    <span class="text-[10px] font-bold uppercase tracking-wider text-gray-500">Combo Package ID (Auto-Assigned)</span>
+                                    <p class="font-mono text-sm font-bold text-gray-900">@formModel.GeneratedPackageId</p>
+                                </div>
+                                <span class="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-bold bg-amber-50 text-amber-700 border border-amber-200">
+                                    Read-Only System ID
+                                </span>
+                            </div>
+                        }
 
                         @* Combo Package Service Name *@
                         <div>
@@ -354,7 +372,7 @@
                             <span class="text-xs font-semibold px-2 py-0.5 bg-gray-200/70 text-gray-700 rounded-md">Page 3 of 4</span>
                         </div>
 
-                        @if (formModel.ImageBytes == null)
+                        @if (formModel.ImageBytes == null && string.IsNullOrEmpty(formModel.ImagePreviewBase64))
                         {
                             <div class="relative border-2 border-dashed border-gray-300 hover:border-gray-500 rounded-2xl p-8 text-center bg-gray-50/40 hover:bg-gray-50 transition-all cursor-pointer group">
                                 <InputFile OnChange="HandleFileSelected"
@@ -380,14 +398,14 @@
                         {
                             <div class="bg-gray-50 rounded-2xl p-4 border border-gray-200 space-y-3">
                                 <div class="flex items-center justify-between">
-                                    <span class="text-xs font-bold uppercase tracking-wider text-gray-700">Selected Package Showcase Image</span>
+                                    <span class="text-xs font-bold uppercase tracking-wider text-gray-700">@(IsEditMode && formModel.ImageBytes == null ? "Current Package Showcase Image" : "Selected Package Showcase Image")</span>
                                     <button type="button"
                                             @onclick="RemoveImage"
                                             class="text-xs font-semibold text-rose-600 hover:text-rose-800 hover:underline flex items-center gap-1 cursor-pointer">
                                         <svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                                             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
                                         </svg>
-                                        Remove Image
+                                        Change Image
                                     </button>
                                 </div>
 
@@ -567,7 +585,7 @@
                     {
                         <button type="button"
                                 @onclick="NextStep"
-                                disabled="@(currentStep == 3 && (formModel.ImageBytes == null || formModel.ImageBytes.Length == 0))"
+                                disabled="@(currentStep == 3 && string.IsNullOrEmpty(formModel.ImagePreviewBase64) && (formModel.ImageBytes == null || formModel.ImageBytes.Length == 0))"
                                 class="inline-flex items-center gap-1.5 px-6 py-2.5 bg-gray-900 hover:bg-black text-white text-xs font-semibold rounded-lg shadow-sm hover:shadow transition-all disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer">
                             <span>Next Step</span>
                             <span>&rarr;</span>
@@ -607,6 +625,8 @@
     [Parameter] public bool IsOpen { get; set; }
     [Parameter] public EventCallback<bool> IsOpenChanged { get; set; }
     [Parameter] public EventCallback<PackageServiceItem> OnPackageCreated { get; set; }
+    [Parameter] public bool IsEditMode { get; set; }
+    [Parameter] public PackageServiceItem? EditItem { get; set; }
 
     private int currentStep = 1;
     private bool isSaving = false;
@@ -631,17 +651,20 @@
     private string serviceSearch = string.Empty;
 
     private bool wasOpen = false;
+    private string? _lastEditCode = null;
 
     protected override async Task OnParametersSetAsync()
     {
-        if (IsOpen && !wasOpen)
+        if (IsOpen && (!wasOpen || (IsEditMode && _lastEditCode != EditItem?.Code)))
         {
             wasOpen = true;
+            _lastEditCode = EditItem?.Code;
             await ResetWizardAsync();
         }
         else if (!IsOpen)
         {
             wasOpen = false;
+            _lastEditCode = null;
         }
     }
 
@@ -660,8 +683,63 @@
         serviceFilter = "All";
         serviceSearch = string.Empty;
 
-        formModel = new PackageWizardFormModel();
-        await LoadInitialDataAsync();
+        if (IsEditMode && EditItem != null)
+        {
+            formModel = new PackageWizardFormModel
+            {
+                GeneratedPackageId = EditItem.Code,
+                Name = EditItem.Title,
+                Description = EditItem.Description ?? string.Empty,
+                CategoryId = EditItem.BundleCategory ?? string.Empty
+            };
+
+            var rawPrice = System.Text.RegularExpressions.Regex.Replace(EditItem.Price ?? "0", @"[^\d.]", "");
+            if (decimal.TryParse(rawPrice, System.Globalization.NumberStyles.Any, System.Globalization.CultureInfo.InvariantCulture, out var parsedPrice))
+            {
+                formModel.Price = parsedPrice;
+            }
+
+            await LoadInitialDataAsync();
+
+            var matchedCat = categories.FirstOrDefault(c => c.Id == EditItem.BundleCategory || c.Name.Equals(EditItem.BundleCategory, StringComparison.OrdinalIgnoreCase));
+            if (matchedCat != null)
+            {
+                formModel.CategoryId = matchedCat.Id;
+                formModel.CategoryName = matchedCat.Name;
+            }
+
+            try
+            {
+                var bundled = await UserService.GetBundledServiceIdsForPackageAsync(EditItem.Code);
+                formModel.SelectedServiceIds = new HashSet<string>(bundled);
+            }
+            catch (Exception ex)
+            {
+                Logger.LogWarning(ex, "Failed to load bundled service IDs for package {Code}", EditItem.Code);
+            }
+
+            try
+            {
+                var (imgBytes, mime) = UserService.GetComboPackageImage(EditItem.Code);
+                if (imgBytes != null && imgBytes.Length > 0)
+                {
+                    var mimeType = string.IsNullOrWhiteSpace(mime) ? "image/jpeg" : mime;
+                    formModel.ImagePreviewBase64 = $"data:{mimeType};base64,{Convert.ToBase64String(imgBytes)}";
+                    formModel.ImageFileName = "Current Image";
+                    formModel.ImageMimeType = mimeType;
+                    formModel.ImageFileSize = imgBytes.Length;
+                }
+            }
+            catch (Exception ex)
+            {
+                Logger.LogWarning(ex, "Failed to load package image for {Code}", EditItem.Code);
+            }
+        }
+        else
+        {
+            formModel = new PackageWizardFormModel();
+            await LoadInitialDataAsync();
+        }
     }
 
     private async Task LoadInitialDataAsync()
@@ -794,7 +872,7 @@
     private bool ValidateStep3()
     {
         fileError = null;
-        if (formModel.ImageBytes == null || formModel.ImageBytes.Length == 0)
+        if (string.IsNullOrEmpty(formModel.ImagePreviewBase64) && (formModel.ImageBytes == null || formModel.ImageBytes.Length == 0))
         {
             fileError = "A package showcase image is required to proceed.";
             return false;
@@ -910,6 +988,12 @@
         var match = categories.FirstOrDefault(c => c.Id == formModel.CategoryId);
         formModel.CategoryName = match?.Name ?? formModel.CategoryId;
 
+        if (IsEditMode && EditItem != null)
+        {
+            formModel.GeneratedPackageId = EditItem.Code;
+            return;
+        }
+
         if (string.IsNullOrWhiteSpace(formModel.GeneratedPackageId))
         {
             try
@@ -957,10 +1041,20 @@
 
         try
         {
-            var created = await UserService.CreateComboPackageViaApiAsync(formModel);
-            await ResetWizardAsync();
-            await OnPackageCreated.InvokeAsync(created);
-            await HandleClose();
+            if (IsEditMode)
+            {
+                var updated = await UserService.UpdateComboPackageViaApiAsync(formModel);
+                await ResetWizardAsync();
+                await OnPackageCreated.InvokeAsync(updated);
+                await HandleClose();
+            }
+            else
+            {
+                var created = await UserService.CreateComboPackageViaApiAsync(formModel);
+                await ResetWizardAsync();
+                await OnPackageCreated.InvokeAsync(created);
+                await HandleClose();
+            }
         }
         catch (Exception ex)
         {

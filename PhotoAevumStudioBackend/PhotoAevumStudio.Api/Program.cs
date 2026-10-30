@@ -206,6 +206,7 @@ builder.Services.Configure<PhotoAevumStudio.Application.Models.SmtpSettings>(bui
 builder.Services.AddScoped<PhotoAevumStudio.Application.Interfaces.IEmailService, PhotoAevumStudio.Infrastructure.Services.EmailService>();
 builder.Services.AddScoped<PhotoAevumStudio.Application.Interfaces.ISqlAuthService, PhotoAevumStudio.Infrastructure.Services.SqlAuthService>();
 builder.Services.AddScoped<PhotoAevumStudio.Application.Interfaces.IR2StorageService, PhotoAevumStudio.Infrastructure.Services.R2StorageService>();
+builder.Services.AddScoped<PhotoAevumStudio.Application.Interfaces.IDataArchiveService, PhotoAevumStudio.Infrastructure.Services.DataArchiveService>();
 
 // Book Schedule wizard (separate context; tables created by SchedulingSchema.sql at startup)
 builder.Services.AddDbContext<PhotoAevumStudio.Infrastructure.Scheduling.SchedulingDbContext>(options =>

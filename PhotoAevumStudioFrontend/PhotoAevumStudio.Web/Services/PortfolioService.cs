@@ -71,31 +71,66 @@ public class PortfolioService : IPortfolioService
         }
     }
 
-    private async Task<string> UploadToR2Async(string uniqueFileName, byte[] data, string contentType, CancellationToken ct)
+    private async Task<(string Key, string Url)> UploadToR2Async(string uniqueFileName, byte[] data, string contentType, CancellationToken ct)
     {
-        var key = $"portfolio/{uniqueFileName}";
+        var key = uniqueFileName.StartsWith("portfolio/", StringComparison.OrdinalIgnoreCase)
+            ? uniqueFileName
+            : $"portfolio/{uniqueFileName}";
+        var resolvedMime = string.IsNullOrWhiteSpace(contentType) ? "image/jpeg" : contentType;
+
         if (_r2Configured && _r2Client != null)
         {
             try
             {
+                using var cts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+                cts.CancelAfter(TimeSpan.FromSeconds(5));
+
                 using var ms = new MemoryStream(data);
                 var putReq = new PutObjectRequest
                 {
                     BucketName = _r2BucketName,
                     Key = key,
                     InputStream = ms,
-                    ContentType = string.IsNullOrWhiteSpace(contentType) ? "image/jpeg" : contentType,
+                    ContentType = resolvedMime,
                     DisablePayloadSigning = true
                 };
-                await _r2Client.PutObjectAsync(putReq, ct);
-                return $"{_r2PublicBaseUrl.TrimEnd('/')}/{key}";
+                await _r2Client.PutObjectAsync(putReq, cts.Token);
+
+                var presignedReq = new GetPreSignedUrlRequest
+                {
+                    BucketName = _r2BucketName,
+                    Key = key,
+                    Expires = DateTime.UtcNow.AddDays(7)
+                };
+                var presignedUrl = _r2Client.GetPreSignedURL(presignedReq);
+                if (!string.IsNullOrWhiteSpace(presignedUrl))
+                {
+                    return (key, presignedUrl);
+                }
             }
             catch (Exception ex)
             {
-                _logger?.LogError(ex, "Cloudflare R2 upload error for {Key}", key);
+                _logger?.LogWarning(ex, "Cloudflare R2 upload error for {Key} in bucket {Bucket}", key, _r2BucketName);
             }
         }
-        return $"{_r2PublicBaseUrl.TrimEnd('/')}/{key}";
+
+        return (key, $"{_r2PublicBaseUrl.TrimEnd('/')}/{key}");
+    }
+
+    private static async Task EnsurePortfolioSchemaAsync(SqlConnection conn, CancellationToken ct)
+    {
+        const string sql = @"
+            IF OBJECT_ID(N'dbo.PortfolioImages', N'U') IS NOT NULL
+            BEGIN
+                IF COL_LENGTH(N'dbo.PortfolioImages', N'ImageUrl') IS NULL
+                    ALTER TABLE dbo.PortfolioImages ADD ImageUrl nvarchar(500) NULL;
+                IF COL_LENGTH(N'dbo.PortfolioImages', N'ContentType') IS NULL
+                    ALTER TABLE dbo.PortfolioImages ADD ContentType nvarchar(100) NULL CONSTRAINT DF_PortfolioImages_ContentType DEFAULT 'image/jpeg';
+                IF COL_LENGTH(N'dbo.PortfolioImages', N'ImageData') IS NULL
+                    ALTER TABLE dbo.PortfolioImages ADD ImageData varbinary(max) NULL;
+            END;";
+        using var cmd = new SqlCommand(sql, conn);
+        await cmd.ExecuteNonQueryAsync(ct);
     }
 
     private async Task DeleteFromR2Async(string fileName, CancellationToken ct)
@@ -243,6 +278,48 @@ public class PortfolioService : IPortfolioService
         }
     }
 
+    public async Task<bool> UpdateCategoryAsync(string categoryId, string name, string? description, string parentSection, string colorTag, CancellationToken ct = default)
+    {
+        if (string.IsNullOrWhiteSpace(categoryId) || string.IsNullOrWhiteSpace(name))
+            return false;
+
+        try
+        {
+            using var conn = CreateConnection();
+            await conn.OpenAsync(ct);
+
+            const string updateSql = @"
+                UPDATE dbo.PortfolioCategory
+                SET CategoryName = @Name,
+                    Description = @Desc,
+                    ParentSection = @Section,
+                    ColorTag = @Color,
+                    UpdatedAt = SYSUTCDATETIME()
+                WHERE CategoryID = @Id;";
+
+            using var cmd = new SqlCommand(updateSql, conn);
+            cmd.Parameters.AddWithValue("@Id", categoryId.Trim());
+            cmd.Parameters.AddWithValue("@Name", name.Trim());
+            cmd.Parameters.AddWithValue("@Desc", ((object?)description?.Trim()) ?? DBNull.Value);
+            cmd.Parameters.AddWithValue("@Section", string.IsNullOrWhiteSpace(parentSection) ? "Photography" : parentSection.Trim());
+            cmd.Parameters.AddWithValue("@Color", string.IsNullOrWhiteSpace(colorTag) ? "Blue" : colorTag.Trim());
+
+            var affected = await cmd.ExecuteNonQueryAsync(ct);
+            if (affected > 0)
+            {
+                await LogHistorySafeAsync(conn, "UPDATE", "PortfolioCategory", categoryId.Trim(), $"Updated portfolio category '{name.Trim()}' ({categoryId.Trim()})", ct);
+                return true;
+            }
+
+            return false;
+        }
+        catch (Exception ex)
+        {
+            _logger?.LogError(ex, "Failed to update portfolio category '{CategoryID}'.", categoryId);
+            return false;
+        }
+    }
+
     public async Task<bool> DeleteCategoryAsync(string categoryId, CancellationToken ct = default)
     {
         if (string.IsNullOrWhiteSpace(categoryId)) return false;
@@ -279,6 +356,7 @@ public class PortfolioService : IPortfolioService
         {
             using var conn = CreateConnection();
             await conn.OpenAsync(ct);
+            await EnsurePortfolioSchemaAsync(conn, ct);
 
             string sql = @"
                 SELECT p.PortfolioId,
@@ -333,23 +411,24 @@ public class PortfolioService : IPortfolioService
                         CategoryName = catName,
                         IsFeatured = isFeatured,
                         HighlightImageFileName = highlight,
-                        HighlightImageUrl = ResolveImageUrl(highlight),
+                        HighlightImageUrl = !string.IsNullOrWhiteSpace(highlight) ? ResolveImageUrl(highlight) : string.Empty,
                         CreatedAt = createdAt
                     });
                 }
             }
 
-            // Populate images for each portfolio
+            // Populate images for each portfolio from SQL Server and Cloudflare R2
             if (list.Count > 0)
             {
                 const string imgSql = @"
-                    SELECT pi.Id, pi.PortfolioId, pi.FileName, pi.UploadedAt
+                    SELECT pi.Id, pi.PortfolioId, pi.FileName, pi.UploadedAt, pi.ImageUrl, pi.ContentType, pi.ImageData
                     FROM dbo.PortfolioImages pi
                     ORDER BY pi.UploadedAt ASC;";
 
                 using var imgCmd = new SqlCommand(imgSql, conn);
                 using var imgReader = await imgCmd.ExecuteReaderAsync(ct);
-                var dict = list.ToDictionary(p => p.PortfolioId, StringComparer.OrdinalIgnoreCase);
+                var dict = list.GroupBy(p => p.PortfolioId, StringComparer.OrdinalIgnoreCase)
+                               .ToDictionary(g => g.Key, g => g.First(), StringComparer.OrdinalIgnoreCase);
 
                 while (await imgReader.ReadAsync(ct))
                 {
@@ -357,30 +436,45 @@ public class PortfolioService : IPortfolioService
                     var pId = imgReader.GetString(1);
                     var fName = imgReader.GetString(2);
                     var upAt = imgReader.GetDateTime(3);
+                    var imgUrl = imgReader.FieldCount > 4 && !imgReader.IsDBNull(4) ? imgReader.GetString(4) : null;
+                    var contentType = imgReader.FieldCount > 5 && !imgReader.IsDBNull(5) ? imgReader.GetString(5) : "image/jpeg";
+                    var imgData = imgReader.FieldCount > 6 && !imgReader.IsDBNull(6) ? (byte[])imgReader[6] : null;
 
                     if (dict.TryGetValue(pId, out var folder))
                     {
+                        var resolvedUrl = ResolveImageUrl(fName, imgUrl, contentType, imgData);
                         folder.Images.Add(new PortfolioImageModel
                         {
                             Id = imgId,
                             PortfolioId = pId,
                             FileName = fName,
-                            Url = ResolveImageUrl(fName),
+                            ImageUrl = imgUrl ?? ResolveR2Url(fName),
+                            ContentType = contentType,
+                            Url = resolvedUrl,
                             UploadedAt = upAt
                         });
 
-                        // Fallback highlight image if not set
-                        if (string.IsNullOrEmpty(folder.HighlightImageUrl) && !string.IsNullOrEmpty(fName))
+                        // Set or update highlight image URL from SQL Server / R2
+                        if (string.IsNullOrEmpty(folder.HighlightImageUrl) ||
+                            string.Equals(folder.HighlightImageFileName, fName, StringComparison.OrdinalIgnoreCase))
                         {
-                            folder.HighlightImageUrl = ResolveImageUrl(fName);
+                            folder.HighlightImageUrl = resolvedUrl;
                         }
+                    }
+                }
+
+                foreach (var folder in list)
+                {
+                    if (string.IsNullOrWhiteSpace(folder.HighlightImageUrl))
+                    {
+                        folder.HighlightImageUrl = folder.Images.FirstOrDefault()?.Url ?? "images/AevumLogo.jpg";
                     }
                 }
             }
         }
         catch (Exception ex)
         {
-            _logger?.LogError(ex, "Failed to load portfolio categories.");
+            _logger?.LogError(ex, "Failed to load portfolios.");
         }
 
         return list;
@@ -401,13 +495,9 @@ public class PortfolioService : IPortfolioService
     {
         if (string.IsNullOrWhiteSpace(name)) return null;
 
-        var savedImageFileNames = new List<string>();
+        var uploadedImages = new List<(string Key, string R2Url, string ContentType, byte[] Data)>();
 
-        // Ensure local uploads directory exists
-        var uploadRoot = Path.Combine(_env.WebRootPath ?? Path.Combine(Directory.GetCurrentDirectory(), "wwwroot"), "uploads", "portfolio");
-        try { Directory.CreateDirectory(uploadRoot); } catch { }
-
-        // Upload image files to Cloudflare R2 and persist locally as reliable fallback
+        // Upload image files to Cloudflare R2
         foreach (var img in images)
         {
             if (img.Data == null || img.Data.Length == 0) continue;
@@ -415,27 +505,20 @@ public class PortfolioService : IPortfolioService
             var ext = Path.GetExtension(img.FileName);
             if (string.IsNullOrEmpty(ext)) ext = ".jpg";
             var uniqueFileName = $"{Guid.NewGuid():N}{ext}";
+            var resolvedMime = string.IsNullOrWhiteSpace(img.ContentType) ? "image/jpeg" : img.ContentType;
 
-            try
-            {
-                var localFilePath = Path.Combine(uploadRoot, uniqueFileName);
-                await File.WriteAllBytesAsync(localFilePath, img.Data, ct);
-            }
-            catch (Exception ex)
-            {
-                _logger?.LogWarning(ex, "Failed to persist image locally to {UploadRoot}", uploadRoot);
-            }
-
-            await UploadToR2Async(uniqueFileName, img.Data, img.ContentType, ct);
-            savedImageFileNames.Add(uniqueFileName);
+            var (r2Key, r2Url) = await UploadToR2Async(uniqueFileName, img.Data, resolvedMime, ct);
+            uploadedImages.Add((r2Key, r2Url, resolvedMime, img.Data));
         }
 
-        var highlightFileName = savedImageFileNames.FirstOrDefault();
+        var highlightFileName = uploadedImages.Count > 0 ? uploadedImages[0].Key : null;
 
         try
         {
+            var resolvedCatId = string.IsNullOrWhiteSpace(categoryId) ? "PCAT-0001" : categoryId.Trim();
             using var conn = CreateConnection();
             await conn.OpenAsync(ct);
+            await EnsurePortfolioSchemaAsync(conn, ct);
 
             string portfolioId;
             const string idSql = @"
@@ -471,26 +554,34 @@ public class PortfolioService : IPortfolioService
                 cmd.Parameters.AddWithValue("@Id", portfolioId);
                 cmd.Parameters.AddWithValue("@Name", name.Trim());
                 cmd.Parameters.AddWithValue("@Desc", ((object?)description?.Trim()) ?? DBNull.Value);
-                cmd.Parameters.AddWithValue("@CatId", categoryId.Trim());
+                cmd.Parameters.AddWithValue("@CatId", resolvedCatId);
                 cmd.Parameters.AddWithValue("@Featured", isFeatured);
                 cmd.Parameters.AddWithValue("@Highlight", ((object?)highlightFileName) ?? DBNull.Value);
                 await cmd.ExecuteNonQueryAsync(ct);
             }
 
-            // Insert images
-            foreach (var fn in savedImageFileNames)
+            // Insert images into SQL Server with R2 key/URL and binary ImageData
+            foreach (var item in uploadedImages)
             {
                 const string imgSql = @"
-                    INSERT INTO dbo.PortfolioImages (PortfolioId, FileName, UploadedAt)
-                    VALUES (@PId, @FileName, SYSUTCDATETIME());";
+                    INSERT INTO dbo.PortfolioImages (PortfolioId, FileName, ImageUrl, ContentType, ImageData, UploadedAt)
+                    VALUES (@PId, @FileName, @ImageUrl, @ContentType, @ImageData, SYSUTCDATETIME());";
 
                 using var imgCmd = new SqlCommand(imgSql, conn);
                 imgCmd.Parameters.AddWithValue("@PId", portfolioId);
-                imgCmd.Parameters.AddWithValue("@FileName", fn);
+                imgCmd.Parameters.AddWithValue("@FileName", item.Key);
+                imgCmd.Parameters.AddWithValue("@ImageUrl", (object?)item.R2Url ?? DBNull.Value);
+                imgCmd.Parameters.AddWithValue("@ContentType", item.ContentType);
+                imgCmd.Parameters.Add("@ImageData", SqlDbType.VarBinary, -1).Value = item.Data;
                 await imgCmd.ExecuteNonQueryAsync(ct);
             }
 
-            await LogHistorySafeAsync(conn, "CREATE", "Portfolio", portfolioId, $"Created portfolio album '{name.Trim()}' ({portfolioId}) with {savedImageFileNames.Count} image(s)", ct);
+            await LogHistorySafeAsync(conn, "CREATE", "Portfolio", portfolioId, $"Created portfolio album '{name.Trim()}' ({portfolioId}) with {uploadedImages.Count} image(s)", ct);
+
+            var firstItem = uploadedImages.FirstOrDefault();
+            var highlightUrl = uploadedImages.Count > 0
+                ? ResolveImageUrl(firstItem.Key, firstItem.R2Url, firstItem.ContentType, firstItem.Data)
+                : "images/AevumLogo.jpg";
 
             return new PortfolioFolderModel
             {
@@ -500,21 +591,23 @@ public class PortfolioService : IPortfolioService
                 CategoryID = categoryId.Trim(),
                 IsFeatured = isFeatured,
                 HighlightImageFileName = highlightFileName,
-                HighlightImageUrl = ResolveImageUrl(highlightFileName),
+                HighlightImageUrl = highlightUrl,
                 CreatedAt = DateTime.UtcNow,
-                Images = savedImageFileNames.Select((f, idx) => new PortfolioImageModel
+                Images = uploadedImages.Select((item, idx) => new PortfolioImageModel
                 {
                     Id = idx + 1,
                     PortfolioId = portfolioId,
-                    FileName = f,
-                    Url = ResolveImageUrl(f),
+                    FileName = item.Key,
+                    ImageUrl = item.R2Url,
+                    ContentType = item.ContentType,
+                    Url = ResolveImageUrl(item.Key, item.R2Url, item.ContentType, item.Data),
                     UploadedAt = DateTime.UtcNow
                 }).ToList()
             };
         }
         catch (Exception ex)
         {
-            _logger?.LogError(ex, "Failed to create portfolio category '{CategoryName}'.", name);
+            _logger?.LogError(ex, "Failed to create portfolio '{PortfolioName}'.", name);
             return null;
         }
     }
@@ -533,7 +626,9 @@ public class PortfolioService : IPortfolioService
         {
             using var conn = CreateConnection();
             await conn.OpenAsync(ct);
+            await EnsurePortfolioSchemaAsync(conn, ct);
 
+            var resolvedCatId = string.IsNullOrWhiteSpace(categoryId) ? "PCAT-0001" : categoryId.Trim();
             const string updateSql = @"
                 UPDATE dbo.Portfolios 
                 SET PortfolioName = @Name,
@@ -546,16 +641,13 @@ public class PortfolioService : IPortfolioService
                 cmd.Parameters.AddWithValue("@Id", portfolioId.Trim());
                 cmd.Parameters.AddWithValue("@Name", name.Trim());
                 cmd.Parameters.AddWithValue("@Desc", ((object?)description?.Trim()) ?? DBNull.Value);
-                cmd.Parameters.AddWithValue("@CatId", categoryId.Trim());
+                cmd.Parameters.AddWithValue("@CatId", resolvedCatId);
                 await cmd.ExecuteNonQueryAsync(ct);
             }
 
-            // Upload and insert any new images directly to Cloudflare R2 and local storage
+            // Upload and insert any new images to Cloudflare R2 and SQL Server
             if (newImages != null && newImages.Count > 0)
             {
-                var uploadRoot = Path.Combine(_env.WebRootPath ?? Path.Combine(Directory.GetCurrentDirectory(), "wwwroot"), "uploads", "portfolio");
-                try { Directory.CreateDirectory(uploadRoot); } catch { }
-
                 foreach (var img in newImages)
                 {
                     if (img.Data == null || img.Data.Length == 0) continue;
@@ -563,26 +655,20 @@ public class PortfolioService : IPortfolioService
                     var ext = Path.GetExtension(img.FileName);
                     if (string.IsNullOrEmpty(ext)) ext = ".jpg";
                     var uniqueFileName = $"{Guid.NewGuid():N}{ext}";
+                    var resolvedMime = string.IsNullOrWhiteSpace(img.ContentType) ? "image/jpeg" : img.ContentType;
 
-                    try
-                    {
-                        var localFilePath = Path.Combine(uploadRoot, uniqueFileName);
-                        await File.WriteAllBytesAsync(localFilePath, img.Data, ct);
-                    }
-                    catch (Exception ex)
-                    {
-                        _logger?.LogWarning(ex, "Failed to persist new image locally to {UploadRoot}", uploadRoot);
-                    }
-
-                    await UploadToR2Async(uniqueFileName, img.Data, img.ContentType, ct);
+                    var (r2Key, r2Url) = await UploadToR2Async(uniqueFileName, img.Data, resolvedMime, ct);
 
                     const string imgSql = @"
-                        INSERT INTO dbo.PortfolioImages (PortfolioId, FileName, UploadedAt)
-                        VALUES (@PId, @FileName, SYSUTCDATETIME());";
+                        INSERT INTO dbo.PortfolioImages (PortfolioId, FileName, ImageUrl, ContentType, ImageData, UploadedAt)
+                        VALUES (@PId, @FileName, @ImageUrl, @ContentType, @ImageData, SYSUTCDATETIME());";
 
                     using var imgCmd = new SqlCommand(imgSql, conn);
                     imgCmd.Parameters.AddWithValue("@PId", portfolioId.Trim());
-                    imgCmd.Parameters.AddWithValue("@FileName", uniqueFileName);
+                    imgCmd.Parameters.AddWithValue("@FileName", r2Key);
+                    imgCmd.Parameters.AddWithValue("@ImageUrl", (object?)r2Url ?? DBNull.Value);
+                    imgCmd.Parameters.AddWithValue("@ContentType", resolvedMime);
+                    imgCmd.Parameters.Add("@ImageData", SqlDbType.VarBinary, -1).Value = img.Data;
                     await imgCmd.ExecuteNonQueryAsync(ct);
                 }
             }
@@ -723,46 +809,29 @@ public class PortfolioService : IPortfolioService
         }
     }
 
-    private string ResolveImageUrl(string? fileName)
+    private string ResolveR2Url(string? fileName)
     {
-        if (string.IsNullOrWhiteSpace(fileName)) return "images/AevumLogo.jpg";
+        if (string.IsNullOrWhiteSpace(fileName)) return string.Empty;
         if (fileName.StartsWith("http://", StringComparison.OrdinalIgnoreCase) ||
-            fileName.StartsWith("https://", StringComparison.OrdinalIgnoreCase) ||
-            fileName.StartsWith("data:image", StringComparison.OrdinalIgnoreCase))
+            fileName.StartsWith("https://", StringComparison.OrdinalIgnoreCase))
         {
             return fileName;
         }
 
         var clean = fileName.TrimStart('/');
-        if (clean.StartsWith("uploads/portfolio/"))
-            clean = clean.Substring("uploads/portfolio/".Length);
-        if (clean.StartsWith("portfolio/"))
+        if (clean.StartsWith("portfolio/", StringComparison.OrdinalIgnoreCase))
             clean = clean.Substring("portfolio/".Length);
 
-        // Hybrid check:
-        // 1. If Cloudflare R2 is configured with a valid public domain, serve from R2
-        if (_r2Configured && !string.IsNullOrWhiteSpace(_r2PublicBaseUrl) && !_r2PublicBaseUrl.Contains("pub-photoaevum.r2.dev", StringComparison.OrdinalIgnoreCase))
-        {
-            return $"{_r2PublicBaseUrl.TrimEnd('/')}/portfolio/{clean}";
-        }
+        var key = $"portfolio/{clean}";
 
-        // 2. Fallback to local uploads folder
-        var webRoot = _env?.WebRootPath ?? Path.Combine(Directory.GetCurrentDirectory(), "wwwroot");
-        var localDiskPath = Path.Combine(webRoot, "uploads", "portfolio", clean);
-        if (File.Exists(localDiskPath))
-        {
-            return $"/uploads/portfolio/{clean}";
-        }
-
-        // 3. Fallback to R2 client presigned URL if client is available
         if (_r2Configured && _r2Client != null)
         {
             try
             {
-                var presigned = _r2Client.GetPreSignedURL(new Amazon.S3.Model.GetPreSignedUrlRequest
+                var presigned = _r2Client.GetPreSignedURL(new GetPreSignedUrlRequest
                 {
                     BucketName = _r2BucketName,
-                    Key = $"portfolio/{clean}",
+                    Key = key,
                     Expires = DateTime.UtcNow.AddHours(2)
                 });
                 if (!string.IsNullOrWhiteSpace(presigned)) return presigned;
@@ -772,6 +841,33 @@ public class PortfolioService : IPortfolioService
             }
         }
 
-        return $"/uploads/portfolio/{clean}";
+        return $"{_r2PublicBaseUrl.TrimEnd('/')}/{key}";
+    }
+
+    private string ResolveImageUrl(string? fileName, string? r2ImageUrl = null, string? contentType = null, byte[]? imageData = null)
+    {
+        if (imageData != null && imageData.Length > 0)
+        {
+            var mime = string.IsNullOrWhiteSpace(contentType) ? "image/jpeg" : contentType;
+            return $"data:{mime};base64,{Convert.ToBase64String(imageData)}";
+        }
+
+        if (!string.IsNullOrWhiteSpace(r2ImageUrl) &&
+            (r2ImageUrl.StartsWith("http://", StringComparison.OrdinalIgnoreCase) ||
+             r2ImageUrl.StartsWith("https://", StringComparison.OrdinalIgnoreCase) ||
+             r2ImageUrl.StartsWith("data:image", StringComparison.OrdinalIgnoreCase)))
+        {
+            return r2ImageUrl;
+        }
+
+        if (string.IsNullOrWhiteSpace(fileName)) return "images/AevumLogo.jpg";
+        if (fileName.StartsWith("http://", StringComparison.OrdinalIgnoreCase) ||
+            fileName.StartsWith("https://", StringComparison.OrdinalIgnoreCase) ||
+            fileName.StartsWith("data:image", StringComparison.OrdinalIgnoreCase))
+        {
+            return fileName;
+        }
+
+        return ResolveR2Url(fileName);
     }
 }
