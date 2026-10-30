@@ -303,12 +303,16 @@
         _isLoading = true;
         try
         {
-            _categories = await PortfolioService.GetCategoriesAsync();
+            _categories = await PortfolioService.GetCategoriesAsync() ?? new();
+        }
+        catch (Exception ex)
+        {
+            _notification = $"Unable to load categories: {ex.Message}";
+            _categories ??= new();
         }
         finally
         {
             _isLoading = false;
-            await InvokeAsync(StateHasChanged);
         }
     }
 
@@ -344,6 +348,7 @@
             return;
         }
 
+        if (_isSaving) return;
         _isSaving = true;
         _modalError = null;
 
@@ -354,10 +359,11 @@
                 var ok = await PortfolioService.UpdateCategoryAsync(_editingCategoryId, _newName, _newDesc, _newSection, _newColor);
                 if (ok)
                 {
+                    var savedName = _newName;
+                    var savedId = _editingCategoryId;
                     _isModalOpen = false;
-                    _notification = $"Category '{_newName}' ({_editingCategoryId}) updated successfully!";
+                    _notification = $"Category '{savedName}' ({savedId}) updated successfully!";
                     await LoadCategories();
-                    await InvokeAsync(StateHasChanged);
                 }
                 else
                 {
@@ -373,7 +379,6 @@
                     _searchQuery = string.Empty;
                     _notification = $"Category '{res.CategoryName}' ({res.CategoryID}) added successfully!";
                     await LoadCategories();
-                    await InvokeAsync(StateHasChanged);
                 }
                 else
                 {

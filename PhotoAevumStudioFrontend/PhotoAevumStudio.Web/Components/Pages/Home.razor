@@ -329,13 +329,13 @@
                     </div>
                     <div class="flex items-center gap-2">
                         <span class="text-xs font-semibold text-gray-500 bg-white border border-gray-200 px-3 py-1 rounded-full">
-                            📷 @_selectedPortfolio.Images.Count photos
+                            📷 @_selectedPortfolio.ImageCount photos
                         </span>
                     </div>
                 </div>
 
                 <div class="flex-1 overflow-y-auto p-6 sm:p-8">
-                    @if (_selectedPortfolio.Images.Count == 0)
+                    @if (_selectedPortfolio.ImageCount == 0)
                     {
                         <div class="py-20 text-center text-gray-400">
                             <p class="text-3xl mb-2">🖼️</p>
@@ -345,10 +345,10 @@
                     else
                     {
                         <div class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-4">
-                            @for (int idx = 0; idx < _selectedPortfolio.Images.Count; idx++)
+                            @for (int idx = 0; idx < _selectedPortfolio.ImageCount; idx++)
                             {
                                 var photoIdx = idx;
-                                var img = _selectedPortfolio.Images[photoIdx];
+                                var img = _selectedPortfolio.SafeImages[photoIdx];
                                 <div class="group relative aspect-square bg-gray-100 rounded-xl overflow-hidden border border-gray-200 cursor-pointer shadow-xs hover:shadow-lg transition-all"
                                      @onclick="() => OpenLightbox(photoIdx)">
                                     <img src="@img.Url"
@@ -429,7 +429,7 @@
                                         
                                         <div class="absolute top-2.5 right-2.5">
                                             <span class="px-2 py-0.5 rounded-full text-[10px] font-semibold bg-black/60 backdrop-blur-xs text-white">
-                                                📷 @p.Images.Count
+                                                📷 @p.ImageCount
                                             </span>
                                         </div>
 
@@ -461,9 +461,9 @@
 }
 
 @* ── Lightbox Modal for Fullscreen Photo Viewing ───────────────────────── *@
-@if (_lightboxOpen && _selectedPortfolio != null && _lightboxIndex >= 0 && _lightboxIndex < _selectedPortfolio.Images.Count)
+@if (_lightboxOpen && _selectedPortfolio != null && _lightboxIndex >= 0 && _lightboxIndex < _selectedPortfolio.ImageCount)
 {
-    var currentImg = _selectedPortfolio.Images[_lightboxIndex];
+    var currentImg = _selectedPortfolio.SafeImages[_lightboxIndex];
     <div class="fixed inset-0 z-[100] bg-black/95 backdrop-blur-md flex flex-col justify-between p-4 sm:p-8 animate-in fade-in duration-200"
          @onclick="CloseLightbox">
         
@@ -472,7 +472,7 @@
             <div>
                 <span class="text-xs uppercase tracking-wider text-amber-400 font-bold block">@_selectedPortfolio.CategoryName</span>
                 <h3 class="text-base sm:text-lg font-bold text-white">@_selectedPortfolio.PortfolioName</h3>
-                <p class="text-xs text-gray-400">Photo @(_lightboxIndex + 1) of @_selectedPortfolio.Images.Count</p>
+                <p class="text-xs text-gray-400">Photo @(_lightboxIndex + 1) of @_selectedPortfolio.ImageCount</p>
             </div>
             <button type="button"
                     @onclick="CloseLightbox"
@@ -483,7 +483,7 @@
 
         <!-- Image with Next/Prev Controls -->
         <div class="relative flex-1 flex items-center justify-center my-4 overflow-hidden" @onclick:stopPropagation="true">
-            @if (_selectedPortfolio.Images.Count > 1)
+            @if (_selectedPortfolio.ImageCount > 1)
             {
                 <button type="button"
                         @onclick="PrevLightboxPhoto"
@@ -497,7 +497,7 @@
                  class="max-h-[75vh] max-w-[90vw] object-contain rounded-lg shadow-2xl transition-all duration-300"
                  onerror="this.src='images/AevumLogo.jpg';" />
 
-            @if (_selectedPortfolio.Images.Count > 1)
+            @if (_selectedPortfolio.ImageCount > 1)
             {
                 <button type="button"
                         @onclick="NextLightboxPhoto"
@@ -509,10 +509,10 @@
 
         <!-- Lightbox Footer / Thumbnails -->
         <div class="flex justify-center gap-2 overflow-x-auto py-2 z-10" @onclick:stopPropagation="true">
-            @for (int i = 0; i < _selectedPortfolio.Images.Count; i++)
+            @for (int i = 0; i < _selectedPortfolio.ImageCount; i++)
             {
                 var thumbIdx = i;
-                var thumb = _selectedPortfolio.Images[thumbIdx];
+                var thumb = _selectedPortfolio.SafeImages[thumbIdx];
                 <button type="button"
                         @onclick="() => _lightboxIndex = thumbIdx"
                         class="w-12 h-12 rounded-md overflow-hidden border-2 transition-all flex-shrink-0 cursor-pointer @(_lightboxIndex == thumbIdx ? "border-amber-400 scale-105" : "border-transparent opacity-50 hover:opacity-100")">
@@ -696,17 +696,17 @@
 
     private void NextLightboxPhoto()
     {
-        if (_selectedPortfolio?.Images.Count > 0)
+        if (_selectedPortfolio?.ImageCount > 0)
         {
-            _lightboxIndex = (_lightboxIndex + 1) % _selectedPortfolio.Images.Count;
+            _lightboxIndex = (_lightboxIndex + 1) % _selectedPortfolio.ImageCount;
         }
     }
 
     private void PrevLightboxPhoto()
     {
-        if (_selectedPortfolio?.Images.Count > 0)
+        if (_selectedPortfolio?.ImageCount > 0)
         {
-            _lightboxIndex = (_lightboxIndex - 1 + _selectedPortfolio.Images.Count) % _selectedPortfolio.Images.Count;
+            _lightboxIndex = (_lightboxIndex - 1 + _selectedPortfolio.ImageCount) % _selectedPortfolio.ImageCount;
         }
     }
 }

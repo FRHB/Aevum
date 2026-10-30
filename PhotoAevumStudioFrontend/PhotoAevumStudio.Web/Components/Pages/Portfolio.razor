@@ -112,7 +112,7 @@
                         @if ((port.Images?.Count ?? 0) > 1)
                         {
                             <div class="flex items-center gap-2 overflow-x-auto py-1">
-                                @foreach (var thumb in (port.Images ?? new()).Take(5))
+                                @foreach (var thumb in port.SafeImages.Take(5))
                                 {
                                     <div class="w-12 h-12 rounded-lg overflow-hidden border border-gray-200 shrink-0">
                                         <img src="@thumb.Url" alt="Thumb" class="w-full h-full object-cover hover:opacity-80" />

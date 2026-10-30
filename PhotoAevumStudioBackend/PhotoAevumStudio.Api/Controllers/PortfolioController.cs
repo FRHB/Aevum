@@ -129,7 +129,8 @@ public class PortfolioController : ControllerBase
 
         var result = list.Select(p =>
         {
-            var resolvedImages = p.Images.Select(img => new
+            var images = p.Images ?? new List<PortfolioImage>();
+            var resolvedImages = images.Select(img => new
             {
                 img.Id,
                 img.FileName,
@@ -138,8 +139,8 @@ public class PortfolioController : ControllerBase
             }).ToList();
 
             var highlightImg = !string.IsNullOrEmpty(p.HighlightImageFileName)
-                ? p.Images.FirstOrDefault(i => string.Equals(i.FileName, p.HighlightImageFileName, StringComparison.OrdinalIgnoreCase))
-                : p.Images.FirstOrDefault();
+                ? images.FirstOrDefault(i => string.Equals(i.FileName, p.HighlightImageFileName, StringComparison.OrdinalIgnoreCase))
+                : images.FirstOrDefault();
 
             var highlightUrl = highlightImg != null
                 ? ResolvePortfolioImageUrl(highlightImg)
@@ -179,7 +180,8 @@ public class PortfolioController : ControllerBase
 
         var result = list.Select(p =>
         {
-            var resolvedImages = p.Images.Select(img => new
+            var images = p.Images ?? new List<PortfolioImage>();
+            var resolvedImages = images.Select(img => new
             {
                 img.Id,
                 img.FileName,
@@ -187,8 +189,8 @@ public class PortfolioController : ControllerBase
             }).ToList();
 
             var highlightImg = !string.IsNullOrEmpty(p.HighlightImageFileName)
-                ? p.Images.FirstOrDefault(i => string.Equals(i.FileName, p.HighlightImageFileName, StringComparison.OrdinalIgnoreCase))
-                : p.Images.FirstOrDefault();
+                ? images.FirstOrDefault(i => string.Equals(i.FileName, p.HighlightImageFileName, StringComparison.OrdinalIgnoreCase))
+                : images.FirstOrDefault();
 
             var highlightUrl = highlightImg != null
                 ? ResolvePortfolioImageUrl(highlightImg)
@@ -210,9 +212,11 @@ public class PortfolioController : ControllerBase
         return Ok(result);
     }
 
-    private string ResolvePortfolioImageUrl(PortfolioImage img)
+    private string ResolvePortfolioImageUrl(PortfolioImage? img)
     {
-        if (img.ImageData != null && img.ImageData.Length > 0)
+        if (img == null) return string.Empty;
+
+        if (img.ImageData is { Length: > 0 })
         {
             var mime = string.IsNullOrWhiteSpace(img.ContentType) ? "image/jpeg" : img.ContentType;
             return $"data:{mime};base64,{Convert.ToBase64String(img.ImageData)}";
@@ -220,6 +224,9 @@ public class PortfolioController : ControllerBase
 
         if (!string.IsNullOrWhiteSpace(img.ImageUrl))
             return img.ImageUrl;
+
+        if (string.IsNullOrWhiteSpace(img.FileName) || _r2Service == null)
+            return string.Empty;
 
         return _r2Service.GetPresignedUrl(img.FileName, _r2Service.PortfolioBucket);
     }

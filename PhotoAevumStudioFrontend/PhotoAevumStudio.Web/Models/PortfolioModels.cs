@@ -54,6 +54,9 @@ public class PortfolioFolderModel
     public string HighlightImageUrl { get; set; } = string.Empty;
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
     public List<PortfolioImageModel> Images { get; set; } = new();
+
+    public List<PortfolioImageModel> SafeImages => Images ??= new();
+    public int ImageCount => Images?.Count ?? 0;
 }
 
 public class CreatePortfolioDto

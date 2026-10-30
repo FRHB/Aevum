@@ -154,7 +154,7 @@
                         <!-- Images Count Pill -->
                         <div class="absolute top-3 right-3">
                             <span class="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-semibold bg-black/60 backdrop-blur-sm text-white">
-                                📷 @port.Images.Count
+                                📷 @port.ImageCount
                             </span>
                         </div>
 
@@ -236,7 +236,7 @@
                             @_activeDetailPortfolio.PortfolioName
                         </h3>
                         <p class="text-xs text-slate-500">
-                            @_activeDetailPortfolio.CategoryName &bull; @_activeDetailPortfolio.Images.Count photo(s) &bull; Added @_activeDetailPortfolio.CreatedAt.ToString("MMM d, yyyy")
+                            @_activeDetailPortfolio.CategoryName &bull; @_activeDetailPortfolio.ImageCount photo(s) &bull; Added @_activeDetailPortfolio.CreatedAt.ToString("MMM d, yyyy")
                         </p>
                     </div>
                 </div>
@@ -280,15 +280,15 @@
 
                 <!-- PHOTO GALLERY GRID -->
                 <div>
-                    <h4 class="font-bold text-xs uppercase tracking-wider text-slate-500 mb-3">Album Photographs (@_activeDetailPortfolio.Images.Count)</h4>
-                    @if (_activeDetailPortfolio.Images.Count == 0)
+                    <h4 class="font-bold text-xs uppercase tracking-wider text-slate-500 mb-3">Album Photographs (@_activeDetailPortfolio.ImageCount)</h4>
+                    @if (_activeDetailPortfolio.ImageCount == 0)
                     {
                         <p class="text-slate-400 text-xs py-6 text-center">No images currently uploaded for this portfolio.</p>
                     }
                     else
                     {
                         <div class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-4">
-                            @foreach (var img in _activeDetailPortfolio.Images)
+                            @foreach (var img in _activeDetailPortfolio.SafeImages)
                             {
                                 <div class="group relative rounded-xl overflow-hidden border border-slate-200 aspect-square bg-slate-100 shadow-sm cursor-pointer"
                                      @onclick="() => _lightboxImageUrl = img.Url">
@@ -634,13 +634,22 @@
         _isLoading = true;
         try
         {
-            _categories = await PortfolioService.GetCategoriesAsync();
-            _portfolios = await PortfolioService.GetPortfoliosAsync();
+            _categories = await PortfolioService.GetCategoriesAsync() ?? new();
+            _portfolios = await PortfolioService.GetPortfoliosAsync() ?? new();
+            foreach (var folder in _portfolios)
+            {
+                folder.Images ??= new List<PortfolioImageModel>();
+            }
+        }
+        catch (Exception ex)
+        {
+            _notification = $"Unable to load portfolios: {ex.Message}";
+            _categories ??= new();
+            _portfolios ??= new();
         }
         finally
         {
             _isLoading = false;
-            await InvokeAsync(StateHasChanged);
         }
     }
 
@@ -660,22 +669,26 @@
         _newPortfolioDesc = string.Empty;
         _newPortfolioIsFeatured = false;
         _selectedImages.Clear();
+        _isSaving = false;
         _isWizardOpen = true;
     }
 
-    private void OpenEditWizard(PortfolioFolderModel p)
+    private void OpenEditWizard(PortfolioFolderModel? p)
     {
+        if (p == null) return;
+
         _isEditingPortfolio = true;
-        _editingPortfolioId = p.PortfolioId;
+        _editingPortfolioId = p.PortfolioId ?? string.Empty;
         _editingOriginalFeatured = p.IsFeatured;
-        _newPortfolioName = p.PortfolioName;
-        _newPortfolioCategory = p.CategoryID;
+        _newPortfolioName = p.PortfolioName ?? string.Empty;
+        _newPortfolioCategory = p.CategoryID ?? string.Empty;
         _newPortfolioDesc = p.PortfolioDescription ?? string.Empty;
         _newPortfolioIsFeatured = p.IsFeatured;
         _existingImages = p.Images != null ? new List<PortfolioImageModel>(p.Images) : new();
         _selectedImages.Clear();
         _wizardStep = 1;
         _wizardError = null;
+        _isSaving = false;
         _isWizardOpen = true;
     }
 
@@ -763,14 +776,21 @@
 
     private async Task HandleCompleteWizard()
     {
+        if (_isSaving) return;
+
         _isSaving = true;
         _wizardError = null;
+        await InvokeAsync(StateHasChanged);
 
-        if (_isEditingPortfolio)
+        try
         {
-            try
+            if (_isEditingPortfolio)
             {
-                var newImagesTuples = _selectedImages.Select(i => (i.FileName, i.ContentType, i.Data)).ToList();
+                var newImagesTuples = (_selectedImages ?? new())
+                    .Where(i => i.Data is { Length: > 0 })
+                    .Select(i => (i.FileName ?? "photo.jpg", i.ContentType ?? "image/jpeg", i.Data))
+                    .ToList();
+
                 var ok = await PortfolioService.UpdatePortfolioAsync(
                     _editingPortfolioId,
                     _newPortfolioName,
@@ -778,50 +798,42 @@
                     _newPortfolioCategory,
                     newImagesTuples.Count > 0 ? newImagesTuples : null);
 
-                if (ok)
-                {
-                    if (_newPortfolioIsFeatured != _editingOriginalFeatured)
-                    {
-                        await PortfolioService.ToggleFeatureAsync(_editingPortfolioId);
-                    }
-
-                    _isWizardOpen = false;
-                    _wizardStep = 1;
-                    var savedId = _editingPortfolioId;
-                    var savedName = _newPortfolioName;
-                    _selectedImages.Clear();
-                    _existingImages.Clear();
-                    _newPortfolioName = string.Empty;
-                    _newPortfolioCategory = string.Empty;
-                    _newPortfolioDesc = string.Empty;
-                    _newPortfolioIsFeatured = false;
-                    _notification = $"Portfolio '{savedName}' ({savedId}) updated successfully!";
-                    await LoadData();
-                    if (_activeDetailPortfolio?.PortfolioId == savedId)
-                    {
-                        _activeDetailPortfolio = _portfolios.FirstOrDefault(p => p.PortfolioId == savedId);
-                    }
-                    await InvokeAsync(StateHasChanged);
-                }
-                else
+                if (!ok)
                 {
                     _wizardError = "Failed to update portfolio. Please check your inputs.";
+                    return;
                 }
-            }
-            catch (Exception ex)
-            {
-                _wizardError = ex.Message;
-            }
-            finally
-            {
-                _isSaving = false;
-            }
-            return;
-        }
 
-        try
-        {
-            var imagesList = _selectedImages.Select(i => (i.FileName, i.ContentType, i.Data)).ToList();
+                if (_newPortfolioIsFeatured != _editingOriginalFeatured)
+                {
+                    await PortfolioService.ToggleFeatureAsync(_editingPortfolioId);
+                }
+
+                var savedId = _editingPortfolioId;
+                var savedName = _newPortfolioName;
+                CloseWizardForm();
+                _notification = $"Portfolio '{savedName}' ({savedId}) updated successfully!";
+                await InvokeAsync(StateHasChanged);
+
+                await LoadData();
+                if (_activeDetailPortfolio?.PortfolioId == savedId)
+                {
+                    _activeDetailPortfolio = _portfolios.FirstOrDefault(p => p.PortfolioId == savedId);
+                }
+                return;
+            }
+
+            var imagesList = (_selectedImages ?? new())
+                .Where(i => i.Data is { Length: > 0 })
+                .Select(i => (i.FileName ?? "photo.jpg", i.ContentType ?? "image/jpeg", i.Data))
+                .ToList();
+
+            if (imagesList.Count == 0)
+            {
+                _wizardError = "Please choose at least one image.";
+                return;
+            }
+
             var res = await PortfolioService.CreatePortfolioAsync(
                 _newPortfolioName,
                 _newPortfolioDesc,
@@ -829,32 +841,24 @@
                 _newPortfolioIsFeatured,
                 imagesList);
 
-            if (res != null)
-            {
-                // Instant exit wizard setup
-                _isWizardOpen = false;
-                _wizardStep = 1;
-                _selectedImages.Clear();
-                _newPortfolioName = string.Empty;
-                _newPortfolioCategory = string.Empty;
-                _newPortfolioDesc = string.Empty;
-                _newPortfolioIsFeatured = false;
-                _selectedCategory = "All";
-                _searchQuery = string.Empty;
-
-                // Show success message and refresh table
-                _notification = $"Portfolio '{res.PortfolioName}' ({res.PortfolioId}) created successfully with {res.Images?.Count ?? 0} photo(s)!";
-                await LoadData();
-                await InvokeAsync(StateHasChanged);
-            }
-            else
+            if (res == null)
             {
                 _wizardError = "Failed to save portfolio. Please try again.";
+                return;
             }
+
+            CloseWizardForm();
+            _selectedCategory = "All";
+            _searchQuery = string.Empty;
+            _notification = $"Portfolio '{res.PortfolioName}' ({res.PortfolioId}) created successfully with {res.ImageCount} photo(s)!";
+            await InvokeAsync(StateHasChanged);
+            await LoadData();
         }
         catch (Exception ex)
         {
-            _wizardError = ex.Message;
+            _wizardError = string.IsNullOrWhiteSpace(ex.Message)
+                ? "An unexpected error occurred while saving the portfolio."
+                : ex.Message;
         }
         finally
         {
@@ -862,9 +866,25 @@
         }
     }
 
-    private async Task HandleToggleFeature(PortfolioFolderModel port)
+    private void CloseWizardForm()
     {
-        if (_isReadOnly) return;
+        _isWizardOpen = false;
+        _isEditingPortfolio = false;
+        _editingPortfolioId = string.Empty;
+        _editingOriginalFeatured = false;
+        _wizardStep = 1;
+        _wizardError = null;
+        _selectedImages.Clear();
+        _existingImages.Clear();
+        _newPortfolioName = string.Empty;
+        _newPortfolioCategory = string.Empty;
+        _newPortfolioDesc = string.Empty;
+        _newPortfolioIsFeatured = false;
+    }
+
+    private async Task HandleToggleFeature(PortfolioFolderModel? port)
+    {
+        if (_isReadOnly || port == null) return;
         var oldState = port.IsFeatured;
         port.IsFeatured = !oldState; // Optimistic update
 
