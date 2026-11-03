@@ -65,18 +65,16 @@ public sealed class ScheduleBookingService(
                 list.Add(new ScheduleServiceDto(id, name, desc, price));
             }
 
-            if (list.Count > 0)
-                return list;
+            return list;
         }
         catch (Exception ex)
         {
             logger.LogWarning(ex, "Failed to query unified service catalog via ADO.NET; falling back to CatalogServices.");
+            return await db.CatalogServices.AsNoTracking()
+                .OrderBy(s => s.ServiceName)
+                .Select(s => new ScheduleServiceDto(s.ServicesId, s.ServiceName, s.ServicesDescription, s.ServicePrice))
+                .ToListAsync(cancellationToken);
         }
-
-        return await db.CatalogServices.AsNoTracking()
-            .OrderBy(s => s.ServiceName)
-            .Select(s => new ScheduleServiceDto(s.ServicesId, s.ServiceName, s.ServicesDescription, s.ServicePrice))
-            .ToListAsync(cancellationToken);
     }
 
     public async Task<MonthAvailabilityDto> GetMonthAvailabilityAsync(int year, int month, CancellationToken cancellationToken = default)
@@ -179,10 +177,8 @@ public sealed class ScheduleBookingService(
     {
         var (serviceIds, slot, location) = Validate(request, customer);
 
-        var services = await db.CatalogServices.AsNoTracking()
-            .Where(s => serviceIds.Contains(s.ServicesId))
-            .Select(s => new ScheduleServiceDto(s.ServicesId, s.ServiceName, s.ServicesDescription, s.ServicePrice))
-            .ToListAsync(cancellationToken);
+        var availableServices = await GetServicesAsync(cancellationToken);
+        var services = availableServices.Where(s => serviceIds.Contains(s.ServicesId)).ToList();
         if (services.Count != serviceIds.Count)
             throw new ScheduleValidationException("One or more selected services are no longer available.");
 

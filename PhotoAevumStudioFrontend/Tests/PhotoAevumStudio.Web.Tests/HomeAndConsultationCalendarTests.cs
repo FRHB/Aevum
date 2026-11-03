@@ -120,5 +120,51 @@ public class HomeAndConsultationCalendarTests
         Assert.Equal("EMP-001", rosterReq.TeamLeaderEmployeeId);
         Assert.Equal(2, rosterReq.EquipmentIds.Count);
     }
-}
 
+    [Fact]
+    public void EmptyStateServices_SurfacesContainStandardEmptyMessage()
+    {
+        const string expectedMessage = "No services currently available";
+
+        var baseDir = AppContext.BaseDirectory;
+        var dir = new DirectoryInfo(baseDir);
+        while (dir != null && !File.Exists(Path.Combine(dir.FullName, "PhotoAevumStudio.slnx")) && !File.Exists(Path.Combine(dir.FullName, "PhotoAevumStudio.sln")))
+        {
+            dir = dir.Parent;
+        }
+
+        Assert.NotNull(dir);
+        var root = dir.FullName;
+
+        var homePath = Path.Combine(root, "PhotoAevumStudioFrontend", "PhotoAevumStudio.Web", "Components", "Pages", "Home.razor");
+        var servicesPath = Path.Combine(root, "PhotoAevumStudioFrontend", "PhotoAevumStudio.Web", "Components", "Pages", "Services.razor");
+        var bookingFlowPath = Path.Combine(root, "PhotoAevumStudioFrontend", "PhotoAevumStudio.Web", "Components", "Pages", "CustomerBookingFlow.razor");
+        var wizardModalPath = Path.Combine(root, "PhotoAevumStudioFrontend", "PhotoAevumStudio.Web", "Components", "Shared", "BookScheduleWizardModal.razor");
+        var calendarPath = Path.Combine(root, "PhotoAevumStudioFrontend", "PhotoAevumStudio.Web", "Components", "Pages", "CalendarOfEvents.razor");
+
+        Assert.True(File.Exists(homePath));
+        var homeContent = File.ReadAllText(homePath);
+        Assert.Contains(expectedMessage, homeContent);
+        Assert.DoesNotContain("SRV-001", homeContent);
+        Assert.DoesNotContain("SRV-002", homeContent);
+        Assert.DoesNotContain("SRV-003", homeContent);
+
+        Assert.True(File.Exists(servicesPath));
+        var servicesContent = File.ReadAllText(servicesPath);
+        Assert.Contains(expectedMessage, servicesContent);
+
+        Assert.True(File.Exists(bookingFlowPath));
+        var bookingFlowContent = File.ReadAllText(bookingFlowPath);
+        Assert.Contains(expectedMessage, bookingFlowContent);
+
+        Assert.True(File.Exists(wizardModalPath));
+        var wizardContent = File.ReadAllText(wizardModalPath);
+        Assert.Contains(expectedMessage, wizardContent);
+
+        Assert.True(File.Exists(calendarPath));
+        var calendarContent = File.ReadAllText(calendarPath);
+        Assert.Contains(expectedMessage, calendarContent);
+        Assert.DoesNotContain("<option value=\"Express Headshot\">", calendarContent);
+        Assert.DoesNotContain("<option value=\"Full Studio Session\">", calendarContent);
+    }
+}

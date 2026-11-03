@@ -149,7 +149,7 @@
 
             <div class="p-6 overflow-y-auto flex-1">
                 <div class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-4">
-                    @foreach (var img in (_activeGallery.Images ?? new()))
+                    @foreach (var img in _activeGallery.SafeImages)
                     {
                         <div class="rounded-xl overflow-hidden border border-gray-200 aspect-square bg-gray-100 shadow-sm group">
                             <img src="@img.Url" alt="Photo" class="w-full h-full object-cover group-hover:scale-105 transition-transform duration-200" />

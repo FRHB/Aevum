@@ -444,11 +444,18 @@
                     </div>
                     <div class="modal-field">
                         <label for="ev-service" class="modal-label">Service Type</label>
-                        <select id="ev-service" @bind="_newEvent.ServiceType" class="modal-input">
-                            <option value="Express Headshot">Express Headshot</option>
-                            <option value="Full Studio Session">Full Studio Session</option>
-                            <option value="Commercial Campaign">Commercial Campaign</option>
-                            <option value="Bridal Prep">Bridal Prep</option>
+                        <select id="ev-service" value="@_newEvent.ServiceType" @onchange="OnServiceTypeSelected" class="modal-input">
+                            @if (AvailableServices.Any())
+                            {
+                                @foreach (var svc in AvailableServices)
+                                {
+                                    <option value="@svc.Title">@svc.Title</option>
+                                }
+                            }
+                            else
+                            {
+                                <option value="" disabled selected>No services currently available</option>
+                            }
                         </select>
                     </div>
 
@@ -507,6 +514,8 @@
     private TimeOnly _newStartTime = new(9, 0);
     private TimeOnly _newEndTime = new(13, 0);
 
+    private List<MainServiceItem> AvailableServices = new();
+
     protected override async Task OnInitializedAsync()
     {
         if (AuthState != null)
@@ -524,6 +533,26 @@
         _isPhotographerOrCreative = EmployeeRoleHelper.IsPhotographerOrCreative(_currentUser, UserService);
         _currentEmployeeName = EmployeeRoleHelper.GetCurrentEmployeeName(_currentUser, UserService);
         _currentEmployeeId = EmployeeRoleHelper.GetCurrentEmployeeId(_currentUser);
+
+        try
+        {
+            AvailableServices = UserService.GetMainServices().Where(s => s.IsActive).ToList();
+        }
+        catch
+        {
+            AvailableServices = new();
+        }
+    }
+
+    private void OnServiceTypeSelected(ChangeEventArgs e)
+    {
+        var title = e.Value?.ToString() ?? string.Empty;
+        _newEvent.ServiceType = title;
+        var match = AvailableServices.FirstOrDefault(s => string.Equals(s.Title, title, StringComparison.OrdinalIgnoreCase));
+        if (match != null && match.BasePrice > 0)
+        {
+            _newEvent.EstimatedPrice = match.BasePrice;
+        }
     }
 
     private List<StudioSpaceResource> StudioSpaces => ScheduleService.GetStudioSpaces();
@@ -706,13 +735,14 @@
 
     private void OpenCreateModal()
     {
+        var defaultSvc = AvailableServices.FirstOrDefault();
         _newEvent = new EventBookingModel
         {
             StudioSpaceId = StudioSpaces.FirstOrDefault()?.Id ?? "studio-a",
-            ServiceType = "Full Studio Session",
+            ServiceType = defaultSvc?.Title ?? string.Empty,
             Status = "Confirmed",
             AssignedPhotographer = "Elena Rostova",
-            EstimatedPrice = 500.00m
+            EstimatedPrice = defaultSvc?.BasePrice ?? 0.00m
         };
         _newEventDate = _selectedDate;
         _newStartTime = new TimeOnly(9, 0);
@@ -723,14 +753,15 @@
 
     private void OpenCreateModalForSlot(string spaceId, DateTime date)
     {
+        var defaultSvc = AvailableServices.FirstOrDefault();
         _newEvent = new EventBookingModel
         {
             StudioSpaceId = spaceId,
             Date = date,
-            ServiceType = "Express Headshot",
+            ServiceType = defaultSvc?.Title ?? string.Empty,
             Status = "Confirmed",
             AssignedPhotographer = "Elena Rostova",
-            EstimatedPrice = 350.00m
+            EstimatedPrice = defaultSvc?.BasePrice ?? 0.00m
         };
         _newEventDate = date;
         _newStartTime = new TimeOnly(10, 0);

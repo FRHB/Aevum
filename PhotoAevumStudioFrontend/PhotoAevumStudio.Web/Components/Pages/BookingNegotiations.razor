@@ -1594,6 +1594,10 @@
 
 
 
+                                @if (!_availableServices.Any())
+                                {
+                                    <p class="text-xs text-slate-500 italic py-2 col-span-2">No services currently available</p>
+                                }
                                 @foreach (var svc in _availableServices)
 
 

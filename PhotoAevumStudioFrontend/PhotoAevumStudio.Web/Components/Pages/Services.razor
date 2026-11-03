@@ -100,11 +100,11 @@
         {
             <div class="p-16 text-center bg-white border border-slate-200 rounded-xl shadow-xs">
                 <span class="text-4xl block mb-2">📸</span>
-                <h3 class="text-lg font-bold text-slate-900">No Featured Services Found</h3>
+                <h3 class="text-lg font-bold text-slate-900">No services currently available</h3>
                 <p class="text-xs text-slate-500 mt-1 max-w-sm mx-auto">
                     @(_pool.Count == 0 
-                        ? "Curated services will be listed here once starred in studio administration." 
-                        : "No featured items match the selected category. Please choose another tab above.")
+                        ? "No services currently available" 
+                        : "No services match the selected category. Please choose another tab above.")
                 </p>
             </div>
         }
@@ -203,23 +203,30 @@
 
         var list = new List<FeaturedServiceCard>();
 
-        list.AddRange(UserService.GetMainServices()
-            .Where(s => s.IsActive && mainCodes.Contains(s.Code))
+        var allMain = UserService.GetMainServices().Where(s => s.IsActive).ToList();
+        var allPackages = UserService.GetPackageServices().Where(p => p.IsActive).ToList();
+        var allAddOns = UserService.GetAdditionalServices().Where(a => a.IsActive).ToList();
+
+        bool hasFeatured = mainCodes.Count > 0 || packageCodes.Count > 0 || addOnCodes.Count > 0;
+
+        var activeMain = hasFeatured ? allMain.Where(s => mainCodes.Contains(s.Code)) : allMain;
+        var activePackages = hasFeatured ? allPackages.Where(p => packageCodes.Contains(p.Code)) : allPackages;
+        var activeAddOns = hasFeatured ? allAddOns.Where(a => addOnCodes.Contains(a.Code)) : allAddOns;
+
+        list.AddRange(activeMain
             .Select(s => new FeaturedServiceCard(
                 s.Code, "Main Service", s.Title,
                 s.BasePrice > 0 ? $"₱{s.BasePrice:N0}" : "Custom Quote",
                 !string.IsNullOrWhiteSpace(s.Description) ? s.Description! : "Professional photography session executed in our premium studio bay.",
                 $"{s.Duration} • {s.Category}")));
 
-        list.AddRange(UserService.GetPackageServices()
-            .Where(p => p.IsActive && packageCodes.Contains(p.Code))
+        list.AddRange(activePackages
             .Select(p => new FeaturedServiceCard(
                 p.Code, "Package", p.Title, p.Price,
                 !string.IsNullOrWhiteSpace(p.Description) ? p.Description! : "A curated bundle of studio services at a package rate.",
                 !string.IsNullOrWhiteSpace(p.SavingsNote) ? p.SavingsNote! : p.BundleCategory)));
 
-        list.AddRange(UserService.GetAdditionalServices()
-            .Where(a => a.IsActive && addOnCodes.Contains(a.Code))
+        list.AddRange(activeAddOns
             .Select(a => new FeaturedServiceCard(
                 a.Code, "Add-On", a.Title, a.PriceText,
                 !string.IsNullOrWhiteSpace(a.Description) ? a.Description! : "Enhance your session with this optional extra.",

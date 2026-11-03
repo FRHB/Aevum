@@ -880,26 +880,7 @@ BEGIN
                 ORDER BY ServicesID;
             END
 
-            -- 3. If no services exist at all in dbo.Services, create a baseline default service
-            IF @AssocServiceID IS NULL
-            BEGIN
-                DECLARE @MaxSrvNum INT = 0;
-                SELECT @MaxSrvNum = ISNULL(MAX(TRY_CAST(SUBSTRING(ServicesID, CHARINDEX('-', ServicesID) + 1, 20) AS INT)), 0)
-                FROM dbo.Services WITH (UPDLOCK, HOLDLOCK)
-                WHERE ServicesID LIKE 'SRV-%';
-
-                SET @AssocServiceID = 'SRV-' + RIGHT('0000' + CAST((@MaxSrvNum + 1) AS VARCHAR(10)), 4);
-                WHILE EXISTS (SELECT 1 FROM dbo.Services WHERE ServicesID = @AssocServiceID)
-                BEGIN
-                    SET @MaxSrvNum = @MaxSrvNum + 1;
-                    SET @AssocServiceID = 'SRV-' + RIGHT('0000' + CAST((@MaxSrvNum + 1) AS VARCHAR(10)), 4);
-                END
-
-                INSERT INTO dbo.Services (ServicesID, ServiceName, ServicesDescription, ServicePrice)
-                VALUES (@AssocServiceID, @ServiceCategoryName + ' Session', 'Default baseline service for ' + @ServiceCategoryName, 150.00);
-            END
-
-            -- 4. Automatically insert the join association
+            -- 3. Automatically insert the join association if an existing service was found
             IF @AssocServiceID IS NOT NULL AND NOT EXISTS (
                 SELECT 1 FROM dbo.ServiceCategoryJoins 
                 WHERE ServiceCategoryID = @CreatedCategoryID AND ServicesID = @AssocServiceID

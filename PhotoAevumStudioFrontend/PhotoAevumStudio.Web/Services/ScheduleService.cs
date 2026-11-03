@@ -68,7 +68,7 @@ public class ScheduleService : IScheduleService
     {
         _useInMemory = configuration is null;
         _connectionString = configuration?.GetConnectionString("DefaultConnection")
-            ?? "Data Source=localhost\\SQLEXPRESS;Initial Catalog=PhotoAevumStudio;Integrated Security=True;Persist Security Info=False;Pooling=False;MultipleActiveResultSets=False;Encrypt=True;TrustServerCertificate=True;Application Name=\"SQL Server Management Studio\";Command Timeout=0";
+            ?? "Server=db77602.public.databaseasp.net; Database=db77602; User Id=db77602; Password=G!r7cB8#Z5_d; Encrypt=True; TrustServerCertificate=True; MultipleActiveResultSets=True;";
 
         if (_useInMemory)
         {

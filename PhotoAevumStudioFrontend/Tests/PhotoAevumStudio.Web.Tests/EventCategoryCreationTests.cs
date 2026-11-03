@@ -16,7 +16,7 @@ namespace PhotoAevumStudio.Web.Tests;
 public class EventCategoryCreationTests
 {
     private const string ConnectionString =
-        "Data Source=.\\SQLEXPRESS;Initial Catalog=PhotoAevumStudio;Integrated Security=True;Encrypt=True;TrustServerCertificate=True;MultipleActiveResultSets=True;";
+        "Server=db77602.public.databaseasp.net; Database=db77602; User Id=db77602; Password=G!r7cB8#Z5_d; Encrypt=True; TrustServerCertificate=True; MultipleActiveResultSets=True;";
 
     // ══════════════════════════════════════════════════════════════════════════
     // 1. Entity Framework Core Model & Relationship Configuration Tests

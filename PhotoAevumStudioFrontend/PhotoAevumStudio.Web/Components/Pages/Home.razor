@@ -84,7 +84,7 @@
                         <div>
                             <p class="text-xs text-gray-500 uppercase tracking-wider mb-1">Next Available</p>
                             <p class="font-semibold text-gray-900">
-                                @(DatabaseServices.FirstOrDefault()?.Title ?? "Portrait Session")
+                                @(DatabaseServices.FirstOrDefault()?.Title ?? "No services currently available")
                             </p>
                         </div>
                         <div class="w-10 h-10 rounded-full bg-gray-100 flex items-center justify-center">
@@ -92,11 +92,16 @@
                         </div>
                     </div>
                     <div class="flex justify-between items-center">
-                        <p class="text-sm font-medium text-gray-900">@DateTime.Today.AddDays(1).ToString("MMM d, 10:00 AM")</p>
-                        <a href="/schedule"
-                           class="text-xs font-bold text-gray-900 uppercase tracking-wider hover:underline">
-                            Book Now
-                        </a>
+                        <p class="text-sm font-medium text-gray-900">
+                            @(DatabaseServices.Any() ? DateTime.Today.AddDays(1).ToString("MMM d, 10:00 AM") : "Check back soon")
+                        </p>
+                        @if (DatabaseServices.Any())
+                        {
+                            <a href="/schedule"
+                               class="text-xs font-bold text-gray-900 uppercase tracking-wider hover:underline">
+                                Book Now
+                            </a>
+                        }
                     </div>
                 </div>
             </div>
@@ -125,8 +130,12 @@
 
         @if (!DatabaseServices.Any())
         {
-            <div class="p-12 text-center bg-white border border-gray-200 rounded-lg">
-                <p class="text-gray-500 text-base">Loading live services from the database...</p>
+            <div class="p-16 text-center bg-white border border-gray-200 rounded-2xl shadow-xs">
+                <span class="text-4xl block mb-3">📸</span>
+                <h3 class="text-lg font-bold text-gray-900">No services currently available</h3>
+                <p class="text-xs text-gray-500 mt-1 max-w-sm mx-auto leading-relaxed">
+                    There are currently no active studio services published in the catalog. Please check back later or contact us for custom bookings.
+                </p>
             </div>
         }
         else
@@ -540,19 +549,15 @@
             }
             else
             {
-                // Fallback if database table is not yet seeded
-                CarouselItems = new List<MainServiceItem>
-                {
-                    new() { Code = "SRV-001", Title = "Portrait Session", BasePrice = 250m, Duration = "1 Hr", Description = "1-hour studio or location shoot with retouched deliverables." },
-                    new() { Code = "SRV-002", Title = "Brand & Editorial", BasePrice = 450m, Duration = "4 Hrs", Description = "Half-day session tailored for personal brands and influencers." },
-                    new() { Code = "SRV-003", Title = "Express Headshot", BasePrice = 150m, Duration = "30 Min", Description = "Quick studio session ideal for executive headshots." }
-                };
-                activeIndex = 1;
+                CarouselItems = new List<MainServiceItem>();
+                activeIndex = 0;
             }
         }
         catch
         {
+            DatabaseServices = new List<MainServiceItem>();
             CarouselItems = new List<MainServiceItem>();
+            activeIndex = 0;
         }
     }
 
