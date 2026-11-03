@@ -118,4 +118,22 @@ public class XenditPaymentIntegrationTests
         Assert.Equal(expectedDeposit, deposit);
         Assert.Equal(expectedBalance, balance);
     }
+    [Fact]
+    public async Task XenditPaymentService_Sandbox_CheckPaymentStatus_ReturnsQRPhChannel()
+    {
+        var options = Options.Create(new XenditSettings
+        {
+            SecretKey = "xnd_development_mock_secret",
+            InvoiceBaseUrl = "https://checkout.xendit.co/web/"
+        });
+
+        using var httpClient = new HttpClient();
+        var service = new XenditPaymentService(options, httpClient, NullLogger<XenditPaymentService>.Instance);
+
+        var status = await service.CheckPaymentStatusAsync("inv_mock_12345");
+        Assert.NotNull(status);
+        Assert.Equal("PAID", status.Status);
+        Assert.Equal("QRPH", status.PaymentMethod);
+        Assert.Equal("QRPH", status.PaymentChannel);
+    }
 }

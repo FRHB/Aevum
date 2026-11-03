@@ -1954,7 +1954,7 @@
 
 
 
-                            <p class="text-[11px] text-slate-500 mb-2">Select the payment channel requested by the client. Only online card or QR Ph e-wallet are accepted for instant automated reservation confirmation.</p>
+                            <p class="text-[11px] text-slate-500 mb-2">Select the payment channel requested by the client. Scan via Bangko Sentral QR Ph for instant automated reservation confirmation.</p>
 
 
 
@@ -1962,145 +1962,24 @@
 
 
 
-                            <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
-
-
-
-                                <label class="flex items-start gap-3 p-3.5 rounded-xl border cursor-pointer transition-all @(_wizardPaymentMethod == "Online Card" ? "border-slate-900 bg-slate-50 ring-2 ring-slate-900 shadow-xs" : "border-slate-200 hover:border-slate-300")">
-
-
-
+                            <div class="w-full">
+                                <label class="flex items-start gap-3 p-3.5 rounded-xl border cursor-pointer transition-all border-slate-900 bg-slate-50 ring-2 ring-slate-900 shadow-xs">
                                     <input type="radio"
-
-
-
                                            name="paymentMethodRadio"
-
-
-
-                                           value="Online Card"
-
-
-
-                                           checked="@(_wizardPaymentMethod == "Online Card")"
-
-
-
-                                           @onchange='() => _wizardPaymentMethod = "Online Card"'
-
-
-
-                                           class="mt-0.5 text-slate-900 focus:ring-0" />
-
-
-
-                                    <div>
-
-
-
-                                        <div class="text-xs font-black text-slate-900 flex items-center gap-1.5">
-
-
-
-                                            <span>💳 Online Card</span>
-
-
-
-                                        </div>
-
-
-
-                                        <div class="text-[11px] text-slate-500 mt-0.5">Visa, Mastercard, JCB</div>
-
-
-
-                                        <div class="text-[10px] text-slate-400 mt-1">Instant checkout link with 3D Secure</div>
-
-
-
-                                    </div>
-
-
-
-                                </label>
-
-
-
-
-
-
-
-                                <label class="flex items-start gap-3 p-3.5 rounded-xl border cursor-pointer transition-all @(_wizardPaymentMethod == "QR Ph" ? "border-slate-900 bg-slate-50 ring-2 ring-slate-900 shadow-xs" : "border-slate-200 hover:border-slate-300")">
-
-
-
-                                    <input type="radio"
-
-
-
-                                           name="paymentMethodRadio"
-
-
-
                                            value="QR Ph"
-
-
-
                                            checked="@(_wizardPaymentMethod == "QR Ph")"
-
-
-
                                            @onchange='() => _wizardPaymentMethod = "QR Ph"'
-
-
-
                                            class="mt-0.5 text-slate-900 focus:ring-0" />
-
-
-
                                     <div>
-
-
-
                                         <div class="text-xs font-black text-slate-900 flex items-center gap-1.5">
-
-
-
                                             <span>📱 QR Ph / E-Wallet</span>
-
-
-
                                         </div>
-
-
-
                                         <div class="text-[11px] text-slate-500 mt-0.5">GCash, Maya, ShopeePay</div>
-
-
-
                                         <div class="text-[10px] text-slate-400 mt-1">Direct scan-to-pay via Bangko Sentral QR Ph</div>
-
-
-
                                     </div>
-
-
-
                                 </label>
-
-
-
                             </div>
-
-
-
                         </div>
-
-
-
-
-
-
 
                         <div class="p-3.5 bg-blue-50 border border-blue-200 rounded-xl flex items-start gap-3 text-blue-900">
 
@@ -2114,7 +1993,7 @@
 
 
 
-                                <strong>Notification Dispatch:</strong> Clicking <em>Proceed &amp; Send Payment Email</em> will initialize the appointment, generate the official Xendit deposit invoice, and email the customer directly with a secure payment link and a <strong>30-minute hold countdown</strong>.
+                                <strong>Notification Dispatch:</strong> Clicking <strong>Proceed &amp; Send Payment Email</strong> will initialize the appointment, generate the official QR Ph invoice, and email the customer directly with a secure scan-to-pay link and a <strong>30-minute hold countdown</strong>.
 
 
 
@@ -4134,7 +4013,7 @@
 
 
 
-    private string _wizardPaymentMethod = "Online Card";
+    private string _wizardPaymentMethod = "QR Ph";
 
 
 
@@ -4298,7 +4177,7 @@
 
 
 
-        _wizardPaymentMethod = "Online Card";
+        _wizardPaymentMethod = "QR Ph";
 
 
 
@@ -4590,7 +4469,7 @@
 
 
 
-            _wizardError = "Please select a payment method (Online Card or QR Ph).";
+            _wizardError = "Please select a payment method (QR Ph).";
 
 
 

@@ -96,13 +96,13 @@ public class HomeAndConsultationCalendarTests
     }
 
     [Theory]
-    [InlineData("Online Card", true)]
+    [InlineData("Online Card", false)]
     [InlineData("QR Ph", true)]
     [InlineData("Cash", false)]
     [InlineData("Cheque", false)]
-    public void WizardPaymentMethod_OnlyOnlineCardAndQRPhAllowed(string method, bool expectedValid)
+    public void WizardPaymentMethod_OnlyQRPhAllowed(string method, bool expectedValid)
     {
-        var validMethods = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "Online Card", "QR Ph" };
+        var validMethods = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "QR Ph" };
         Assert.Equal(expectedValid, validMethods.Contains(method));
     }
 

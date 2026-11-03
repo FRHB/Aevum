@@ -134,7 +134,7 @@ public class CompleteEventRequest
     public decimal HourlyRate { get; set; }
     public decimal SurchargeAmount { get; set; }
     public string? OvertimeNotes { get; set; }
-    public string PaymentMethod { get; set; } = "Cash_OnHand"; // 'Cash_OnHand', 'Xendit_QR', 'Xendit_Card'
+    public string PaymentMethod { get; set; } = "Cash_OnHand"; // 'Cash_OnHand', 'Xendit_QR'
     public string TeamLeaderEmployeeId { get; set; } = string.Empty;
     public string? Notes { get; set; }
 }
@@ -144,7 +144,7 @@ public class PaymentTransactionDto
     public string TransactionId { get; set; } = string.Empty;
     public string EventAppointmentId { get; set; } = string.Empty;
     public string PaymentType { get; set; } = "Downpayment_25";
-    public string PaymentMethod { get; set; } = "Xendit_Card";
+    public string PaymentMethod { get; set; } = "Xendit_QR";
     public decimal Amount { get; set; }
     public string Status { get; set; } = "Pending";
     public string? ExternalReference { get; set; }

@@ -2226,7 +2226,7 @@ public class ConsultationNegotiationService : IConsultationNegotiationService
 
 
 
-                "Online Card or QR Ph"
+                "QR Ph / E-Wallet"
 
 
 
@@ -3703,7 +3703,7 @@ public class ConsultationNegotiationService : IConsultationNegotiationService
 
 
 
-                        "Online Card or QR Ph");
+                        "QR Ph / E-Wallet");
 
 
 

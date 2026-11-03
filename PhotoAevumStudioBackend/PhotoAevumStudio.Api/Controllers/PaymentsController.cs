@@ -456,7 +456,10 @@ public class PaymentsController : ControllerBase
 
         var invoiceId = appt.XenditInvoiceId ?? $"inv_sim_{appointmentId}_{Guid.NewGuid():N[..6]}";
 
-        var updated = await _consultationService.VerifyDownpaymentAsync(appointmentId, invoiceId, paymentMethod, cancellationToken);
+        var effectiveMethod = !string.IsNullOrWhiteSpace(paymentMethod) && !paymentMethod.Contains("Card", StringComparison.OrdinalIgnoreCase)
+            ? paymentMethod
+            : "QR Ph";
+        var updated = await _consultationService.VerifyDownpaymentAsync(appointmentId, invoiceId, effectiveMethod, cancellationToken);
 
         _logger.LogInformation("Simulated payment webhook callback processed successfully for appointment {AppointmentId}", appointmentId);
 
@@ -534,7 +537,22 @@ public class PaymentsController : ControllerBase
 
             {
 
-                await _consultationService.VerifyDownpaymentAsync(payload.ExternalId, payload.Id, cancellationToken);
+                // Active Channel: Restrict automated webhook verification strictly to the QR Ph / E-Wallet channel
+                var allowedChannels = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+                {
+                    "QRPH", "GCASH", "PAYMAYA", "GRABPAY", "SHOPEEPAY", "QR Ph", "EWALLET", "XENDIT_QR", "Xendit_Sandbox"
+                };
+
+                var channel = payload.PaymentChannel ?? payload.PaymentMethod ?? "QRPH";
+                if (!string.IsNullOrWhiteSpace(payload.PaymentChannel) && !allowedChannels.Contains(payload.PaymentChannel) &&
+                    !string.IsNullOrWhiteSpace(payload.PaymentMethod) && !allowedChannels.Contains(payload.PaymentMethod))
+                {
+                    _logger.LogWarning("Webhook payment rejected for disallowed channel: {Channel} / {Method}. Only QR Ph / E-Wallets are permitted.",
+                        payload.PaymentChannel, payload.PaymentMethod);
+                    return BadRequest(new { message = "Payment channel not supported. Reservation fee must be paid via QR Ph or supported E-Wallet." });
+                }
+
+                await _consultationService.VerifyDownpaymentAsync(payload.ExternalId, payload.Id, channel, cancellationToken);
 
             }
 

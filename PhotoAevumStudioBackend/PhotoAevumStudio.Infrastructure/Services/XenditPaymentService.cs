@@ -34,16 +34,14 @@ public class XenditPaymentService : IXenditPaymentService
         string failureUrl,
         CancellationToken cancellationToken = default)
     {
-        // Permit e-wallet channels (GCash, Maya, GrabPay, ShopeePay) alongside Cards and QR Ph
+        // Restrict automated invoice generation strictly to QR Ph and Philippine E-Wallets (card processing removed)
         var allowedPaymentMethods = new[]
         {
+            "QRPH",
             "GCASH",
             "PAYMAYA",
             "GRABPAY",
-            "SHOPEEPAY",
-            "CARD",
-            "DIRECT_DEBIT",
-            "QRPH"
+            "SHOPEEPAY"
         };
 
         var holdDurationSeconds = (_settings.HoldDurationMinutes <= 0 ? 30 : _settings.HoldDurationMinutes) * 60;
@@ -182,8 +180,8 @@ public class XenditPaymentService : IXenditPaymentService
             ExternalId = invoiceId,
             Status = "PAID",
             Amount = 0m,
-            PaymentMethod = "Xendit_Sandbox",
-            PaymentChannel = "GCASH"
+            PaymentMethod = "QRPH",
+            PaymentChannel = "QRPH"
         };
     }
 
@@ -238,8 +236,8 @@ public class XenditPaymentService : IXenditPaymentService
             ExternalId = externalId,
             Status = "PAID",
             Amount = 0m,
-            PaymentMethod = "Xendit_Sandbox",
-            PaymentChannel = "GCASH"
+            PaymentMethod = "QRPH",
+            PaymentChannel = "QRPH"
         };
     }
 }
