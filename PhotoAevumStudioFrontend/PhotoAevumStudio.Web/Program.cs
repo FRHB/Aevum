@@ -56,7 +56,7 @@ builder.Services.AddScoped<BookingEvents>();
 
 var apiBaseUrl = builder.Configuration["Api:BaseUrl"]
     ?? builder.Configuration["ApiBaseUrl"]
-    ?? (builder.Environment.IsDevelopment() ? "https://localhost:5001/" : "https://api-photoaevum.tryasp.net/");
+    ?? "http://api-photoaevum.tryasp.net/";
 
 if (!apiBaseUrl.EndsWith("/"))
 {
@@ -65,7 +65,7 @@ if (!apiBaseUrl.EndsWith("/"))
 
 HttpMessageHandler CreateBypassSslHandler() => new HttpClientHandler
 {
-    ServerCertificateCustomValidationCallback = (message, cert, chain, errors) => true
+    ServerCertificateCustomValidationCallback = HttpClientHandler.DangerousAcceptAnyServerCertificateValidator
 };
 
 builder.Services.AddHttpClient("AevumApi", client =>

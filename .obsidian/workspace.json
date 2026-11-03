@@ -51,7 +51,7 @@
             "state": {
               "type": "search",
               "state": {
-                "query": "",
+                "query": "Dapp",
                 "matchingCase": false,
                 "explainSearch": false,
                 "collapseAll": false,
@@ -75,7 +75,8 @@
               "title": "Bookmarks"
             }
           }
-        ]
+        ],
+        "currentTab": 1
       }
     ],
     "direction": "horizontal",
@@ -183,16 +184,17 @@
   },
   "active": "4537deb5a2d22d5a",
   "lastOpenFiles": [
+    "Dapper.md",
+    "dbo.Customer.md",
+    "SqlAuthService.md",
+    "PhotoAevumStudioFrontend/PhotoAevumStudio.Web/obj/Debug/net10.0/staticwebassets.upToDateCheck.txt",
     "Cloudflare R2.md",
     "dbo.Admin.md",
     "TimesheetController.md",
-    "dbo.Customer.md",
     "dbo.AuditLogs.md",
     "Microsoft.AspNetCore.Identity.EntityFrameworkCore.md",
     "Logs/Dev-Log-2026-Week44.md",
     "ScheduleValidationException.md",
-    "Dapper.md",
-    "PhotoAevumStudioFrontend/PhotoAevumStudio.Web/obj/Debug/net10.0/staticwebassets.upToDateCheck.txt",
     "tools/read_blazor_code.py",
     "tools/query_obsidian_vault.py",
     "tools",
