@@ -19,9 +19,11 @@ using System.Threading.RateLimiting;
 
 var builder = WebApplication.CreateBuilder(args);
 
-// Fetch local Infisical auth keys from .NET Secret Manager
+// Fetch local Infisical auth keys from appsettings or environment variables
 var infisicalClientId = builder.Configuration["Infisical:ClientId"]?.Trim();
 var infisicalClientSecret = builder.Configuration["Infisical:ClientSecret"]?.Trim();
+var infisicalProjectId = builder.Configuration["Infisical:ProjectId"]?.Trim() ?? "26fb5dcd-e66c-4054-8dab-7cac8519bdee";
+var infisicalEnvironment = builder.Configuration["Infisical:Environment"]?.Trim() ?? "dev";
 
 // Only connect to Infisical if the keys are present (prevents crashes in environments without Infisical)
 if (!string.IsNullOrEmpty(infisicalClientId) && !string.IsNullOrEmpty(infisicalClientSecret))
@@ -29,8 +31,8 @@ if (!string.IsNullOrEmpty(infisicalClientId) && !string.IsNullOrEmpty(infisicalC
     try
     {
         builder.Configuration.AddInfisical(new InfisicalConfigBuilder()
-            .SetProjectId("26fb5dcd-e66c-4054-8dab-7cac8519bdee") 
-            .SetEnvironment("dev") 
+            .SetProjectId(infisicalProjectId) 
+            .SetEnvironment(infisicalEnvironment) 
             .SetAuth(new InfisicalAuthBuilder()
                 .SetUniversalAuth(infisicalClientId, infisicalClientSecret)
                 .Build())
@@ -148,32 +150,59 @@ builder.Services.AddCors(options =>
 {
     options.AddPolicy("BlazorFrontend", policy =>
     {
-        var origins = builder.Configuration
+        var configuredOrigins = builder.Configuration
             .GetSection("Cors:AllowedOrigins")
-            .Get<string[]>() ?? [
-                "https://site98282.siteasp.net",
-                "http://site98282.siteasp.net",
-                "https://site96971.siteasp.net",
-                "http://site96971.siteasp.net",
-                "https://localhost:7128",
-                "http://localhost:5181",
-                "https://localhost:7001",
-                "http://localhost:5000",
-                "https://localhost:5001"
-            ];
+            .Get<string[]>() ?? Array.Empty<string>();
 
-        policy.WithOrigins(origins)
+        var defaultOrigins = new[]
+        {
+            "http://photoaevum.tryasp.net",
+            "https://photoaevum.tryasp.net",
+            "http://site104417.siteasp.net",
+            "https://site104417.siteasp.net",
+            "http://api-photoaevum.tryasp.net",
+            "https://api-photoaevum.tryasp.net",
+            "http://site104421.siteasp.net",
+            "https://site104421.siteasp.net",
+            "https://photoaevumstudio.com",
+            "http://photoaevumstudio.com",
+            "https://site98282.siteasp.net",
+            "http://site98282.siteasp.net",
+            "https://site96971.siteasp.net",
+            "http://site96971.siteasp.net",
+            "https://localhost:7128",
+            "http://localhost:5181",
+            "https://localhost:7001",
+            "http://localhost:5000",
+            "https://localhost:5001"
+        };
+
+        var allOrigins = configuredOrigins.Concat(defaultOrigins).Distinct(StringComparer.OrdinalIgnoreCase).ToArray();
+
+        policy.WithOrigins(allOrigins)
               .AllowAnyHeader()
               .AllowAnyMethod()
               .SetIsOriginAllowed(origin =>
               {
-                  if (origins.Contains(origin, StringComparer.OrdinalIgnoreCase))
+                  if (allOrigins.Contains(origin, StringComparer.OrdinalIgnoreCase))
                       return true;
 
                   if (Uri.TryCreate(origin, UriKind.Absolute, out var uri))
                   {
-                      return uri.Host.Equals("localhost", StringComparison.OrdinalIgnoreCase)
-                          || uri.Host.Equals("127.0.0.1", StringComparison.OrdinalIgnoreCase);
+                      if (uri.Host.Equals("localhost", StringComparison.OrdinalIgnoreCase)
+                          || uri.Host.Equals("127.0.0.1", StringComparison.OrdinalIgnoreCase))
+                          return true;
+
+                      if (uri.Host.EndsWith(".tryasp.net", StringComparison.OrdinalIgnoreCase)
+                          || uri.Host.EndsWith(".siteasp.net", StringComparison.OrdinalIgnoreCase)
+                          || uri.Host.EndsWith("photoaevumstudio.com", StringComparison.OrdinalIgnoreCase))
+                          return true;
+
+                      if (builder.Environment.IsDevelopment() &&
+                          (uri.Host.StartsWith("192.168.", StringComparison.OrdinalIgnoreCase)
+                           || uri.Host.StartsWith("10.", StringComparison.OrdinalIgnoreCase)
+                           || uri.Host.StartsWith("172.", StringComparison.OrdinalIgnoreCase)))
+                          return true;
                   }
                   return false;
               });
@@ -310,6 +339,16 @@ app.Use(async (ctx, next) =>
 app.UseAuthorization();
 app.UseMiddleware<PhotoAevumStudio.Api.Middleware.AuditLoggingMiddleware>();
 app.MapControllers();
+
+app.MapGet("/", () => Results.Ok(new
+{
+    service = "Photo Aevum Studio API",
+    status = "Online",
+    environment = app.Environment.EnvironmentName,
+    health = "/health",
+    dbHealth = "/health/db",
+    timestamp = DateTime.UtcNow
+})).WithName("GetRoot");
 
 app.MapGet("/health", () => Results.Ok(new { Status = "Healthy", Timestamp = DateTime.UtcNow }))
    .WithName("GetHealth")

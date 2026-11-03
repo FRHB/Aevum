@@ -1,4 +1,5 @@
 using System.Security.Claims;
+using InfisicalConfiguration;
 using PhotoAevumStudio.Web.Components.Pages;
 using PhotoAevumStudio.Web.Components.Shared;
 using PhotoAevumStudio.Web.Models;
@@ -482,5 +483,30 @@ public class FormsAndSecurityTests
         var content = File.ReadAllText(idempPath);
         Assert.Contains("AssignedEmployeeName nvarchar(100) NULL", content, StringComparison.OrdinalIgnoreCase);
         Assert.Contains("ON DELETE SET NULL", content, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public void Infisical_FetchSecrets_SuccessfullyRetrievesAndMapsKeys()
+    {
+        var config = new Microsoft.Extensions.Configuration.ConfigurationBuilder()
+            .AddInfisical(new InfisicalConfiguration.InfisicalConfigBuilder()
+                .SetProjectId("26fb5dcd-e66c-4054-8dab-7cac8519bdee")
+                .SetEnvironment("dev")
+                .SetAuth(new InfisicalConfiguration.InfisicalAuthBuilder()
+                    .SetUniversalAuth("0f2e5849-86fb-4880-ac55-d1b6ae8552f9", "773cdc3cb3a6bc33efc4fad0c63288ed6452f7d0b78b30fc52646ec87f45fa65")
+                    .Build())
+                .Build())
+            .Build();
+
+        // Verify that all sensitive access keys, API keys, and tokens are retrieved securely from Infisical
+        Assert.False(string.IsNullOrWhiteSpace(config["CloudflareR2:AccessKey"]), "CloudflareR2:AccessKey must be loaded from Infisical.");
+        Assert.False(string.IsNullOrWhiteSpace(config["CloudflareR2:SecretKey"]), "CloudflareR2:SecretKey must be loaded from Infisical.");
+        Assert.False(string.IsNullOrWhiteSpace(config["Jwt:Key"]), "Jwt:Key must be loaded from Infisical.");
+        Assert.False(string.IsNullOrWhiteSpace(config["SmtpSettings:Username"]), "SmtpSettings:Username must be loaded from Infisical.");
+        Assert.False(string.IsNullOrWhiteSpace(config["SmtpSettings:Password"]), "SmtpSettings:Password must be loaded from Infisical.");
+        Assert.False(string.IsNullOrWhiteSpace(config["GoogleMeetSettings:ClientId"]), "GoogleMeetSettings:ClientId must be loaded from Infisical.");
+        Assert.False(string.IsNullOrWhiteSpace(config["GoogleMeetSettings:ClientSecret"]), "GoogleMeetSettings:ClientSecret must be loaded from Infisical.");
+        Assert.False(string.IsNullOrWhiteSpace(config["XenditSettings:SecretKey"]), "XenditSettings:SecretKey must be loaded from Infisical.");
+        Assert.False(string.IsNullOrWhiteSpace(config["XenditSettings:WebhookToken"]), "XenditSettings:WebhookToken must be loaded from Infisical.");
     }
 }
