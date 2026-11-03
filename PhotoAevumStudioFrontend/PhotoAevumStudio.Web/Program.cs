@@ -63,16 +63,24 @@ if (!apiBaseUrl.EndsWith("/"))
     apiBaseUrl += "/";
 }
 
+HttpMessageHandler CreateBypassSslHandler() => new HttpClientHandler
+{
+    ServerCertificateCustomValidationCallback = (message, cert, chain, errors) => true
+};
+
 builder.Services.AddHttpClient("AevumApi", client =>
     client.BaseAddress = new Uri(apiBaseUrl))
-    .AddHttpMessageHandler<AuthHttpHandler>();
+    .AddHttpMessageHandler<AuthHttpHandler>()
+    .ConfigurePrimaryHttpMessageHandler(CreateBypassSslHandler);
 
 builder.Services.AddHttpClient("AevumApi.Authorized", client =>
     client.BaseAddress = new Uri(apiBaseUrl))
-    .AddHttpMessageHandler<AuthHttpHandler>();
+    .AddHttpMessageHandler<AuthHttpHandler>()
+    .ConfigurePrimaryHttpMessageHandler(CreateBypassSslHandler);
 
 builder.Services.AddHttpClient("AevumApi.Anonymous", client =>
-    client.BaseAddress = new Uri(apiBaseUrl));
+    client.BaseAddress = new Uri(apiBaseUrl))
+    .ConfigurePrimaryHttpMessageHandler(CreateBypassSslHandler);
 
 var app = builder.Build();
 

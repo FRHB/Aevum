@@ -4,11 +4,11 @@
     "type": "split",
     "children": [
       {
-        "id": "3ed1925cee8a7a4a",
+        "id": "9cf464518ac7783c",
         "type": "tabs",
         "children": [
           {
-            "id": "59972a41ceecf64f",
+            "id": "4537deb5a2d22d5a",
             "type": "leaf",
             "state": {
               "type": "graph",
@@ -181,8 +181,17 @@
       "bases:Create new base": false
     }
   },
-  "active": "59972a41ceecf64f",
+  "active": "4537deb5a2d22d5a",
   "lastOpenFiles": [
+    "Cloudflare R2.md",
+    "dbo.Admin.md",
+    "TimesheetController.md",
+    "dbo.Customer.md",
+    "dbo.AuditLogs.md",
+    "Microsoft.AspNetCore.Identity.EntityFrameworkCore.md",
+    "Logs/Dev-Log-2026-Week44.md",
+    "ScheduleValidationException.md",
+    "Dapper.md",
     "PhotoAevumStudioFrontend/PhotoAevumStudio.Web/obj/Debug/net10.0/staticwebassets.upToDateCheck.txt",
     "tools/read_blazor_code.py",
     "tools/query_obsidian_vault.py",
@@ -190,7 +199,6 @@
     "New folder",
     "Employee.md",
     "Logs/Dev-Log-2026-Week40.md",
-    "Logs/Dev-Log-2026-Week44.md",
     "Logs/Dev-Log-2026-Week43.md"
   ]
 }
