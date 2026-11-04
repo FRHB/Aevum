@@ -4,17 +4,17 @@
     "type": "split",
     "children": [
       {
-        "id": "9cf464518ac7783c",
+        "id": "40f8ee2ea4046dec",
         "type": "tabs",
         "children": [
           {
-            "id": "4537deb5a2d22d5a",
+            "id": "ded3ee25abdb43a5",
             "type": "leaf",
             "state": {
-              "type": "graph",
+              "type": "empty",
               "state": {},
-              "icon": "lucide-git-fork",
-              "title": "Graph view"
+              "icon": "lucide-file",
+              "title": "New tab"
             }
           }
         ]
@@ -51,7 +51,7 @@
             "state": {
               "type": "search",
               "state": {
-                "query": "Dapp",
+                "query": "",
                 "matchingCase": false,
                 "explainSearch": false,
                 "collapseAll": false,
@@ -182,8 +182,9 @@
       "bases:Create new base": false
     }
   },
-  "active": "4537deb5a2d22d5a",
+  "active": "ded3ee25abdb43a5",
   "lastOpenFiles": [
+    "README.md",
     "Dapper.md",
     "dbo.Customer.md",
     "SqlAuthService.md",

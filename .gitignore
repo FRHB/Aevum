@@ -504,11 +504,20 @@ appsettings.*.json
 .agyrules
 .cursorrules
 litellm_config.yaml
-Employee.
+Employee.md
 Project-State.md
 tools/
 Logs/
 .agents/
+.obsidian/
+Cloudflare R2.md
+Dapper.md
+dbo.Admin.md
+dbo.AuditLogs
+dbo.Customer
+ScheduleValidationException.md
+SqlAuthService.md
+TimesheetController.md
 
 
 
