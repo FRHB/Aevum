@@ -231,7 +231,19 @@ builder.Services.AddHttpClient<PhotoAevumStudio.Application.Interfaces.IXenditPa
 });
 builder.Services.AddScoped<PhotoAevumStudio.Application.Interfaces.IConsultationNegotiationService, PhotoAevumStudio.Infrastructure.Services.ConsultationNegotiationService>();
 builder.Services.AddScoped<PhotoAevumStudio.Application.Interfaces.IPaymentService, PhotoAevumStudio.Infrastructure.Services.PaymentService>();
-builder.Services.Configure<PhotoAevumStudio.Application.Models.SmtpSettings>(builder.Configuration.GetSection("SmtpSettings"));
+builder.Services.Configure<PhotoAevumStudio.Application.Models.EmailConfig>(options =>
+{
+    builder.Configuration.GetSection("EmailConfig").Bind(options);
+    if (!options.Primary.IsConfigured)
+    {
+        var legacy = builder.Configuration.GetSection("SmtpSettings").Get<PhotoAevumStudio.Application.Models.SmtpSettings>();
+        if (legacy != null && legacy.IsConfigured)
+        {
+            options.Primary = legacy;
+        }
+    }
+});
+builder.Services.Configure<PhotoAevumStudio.Application.Models.SmtpSettings>(builder.Configuration.GetSection("EmailConfig:Primary"));
 builder.Services.AddScoped<PhotoAevumStudio.Application.Interfaces.IEmailService, PhotoAevumStudio.Infrastructure.Services.EmailService>();
 builder.Services.AddScoped<PhotoAevumStudio.Application.Interfaces.ISqlAuthService, PhotoAevumStudio.Infrastructure.Services.SqlAuthService>();
 builder.Services.AddScoped<PhotoAevumStudio.Application.Interfaces.IR2StorageService, PhotoAevumStudio.Infrastructure.Services.R2StorageService>();
@@ -314,6 +326,7 @@ app.UseStaticFiles();
 app.UseCors("BlazorFrontend");
 app.UseRateLimiter();
 app.UseAuthentication(); // Must come before UseAuthorization
+app.UseMiddleware<PhotoAevumStudio.Api.Middleware.SessionInactivityMiddleware>();
 var passwordChangeExempt = new[]
 {
     "/api/auth/change-password",

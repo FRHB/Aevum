@@ -395,6 +395,13 @@ public class PaymentService : IPaymentService
                     WHERE EventAppointmentID = @EvtId;
                 END;
 
+                IF OBJECT_ID(N'dbo.BookingNegotiation', N'U') IS NOT NULL
+                BEGIN
+                    UPDATE dbo.BookingNegotiation
+                    SET NegotiationStatus = 'Deal_Won'
+                    WHERE EventAppointmentID = @EvtId;
+                END;
+
                 IF OBJECT_ID(N'dbo.PaymentTransactions', N'U') IS NOT NULL
                 BEGIN
                     INSERT INTO dbo.PaymentTransactions (

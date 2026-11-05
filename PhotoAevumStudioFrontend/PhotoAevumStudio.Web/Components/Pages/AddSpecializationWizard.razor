@@ -109,14 +109,25 @@
                                 <label for="spec-dept" class="block text-sm font-semibold text-gray-800 mb-1.5">
                                     Department / Category <span class="text-red-500">*</span>
                                 </label>
-                                <InputSelect id="spec-dept" 
-                                             @bind-Value="model.Department"
-                                             class="w-full px-3.5 py-2.5 text-sm bg-white border border-gray-300 rounded-lg text-gray-900">
-                                    <option value="Photography">Photography</option>
-                                    <option value="Videography">Videography</option>
-                                    <option value="Post-Processing">Post-Processing & Editing</option>
-                                    <option value="Studio Staff">Studio Staff & Operations</option>
-                                </InputSelect>
+                                <select id="spec-dept" 
+                                        value="@model.DepartmentId"
+                                        @onchange="OnDepartmentChanged"
+                                        class="w-full px-3.5 py-2.5 text-sm bg-white border border-gray-300 rounded-lg text-gray-900 focus:outline-none focus:ring-2 focus:ring-gray-900 cursor-pointer">
+                                    @if (!departments.Any())
+                                    {
+                                        <option value="DEP-0001">Photography</option>
+                                        <option value="DEP-0002">Videography</option>
+                                        <option value="DEP-0003">Post-Processing &amp; Editing</option>
+                                        <option value="DEP-0004">Studio Staff &amp; Operations</option>
+                                    }
+                                    else
+                                    {
+                                        @foreach (var dept in departments)
+                                        {
+                                            <option value="@dept.DepartmentId">@dept.DepartmentName</option>
+                                        }
+                                    }
+                                </select>
                             </div>
 
                             <div>
@@ -301,6 +312,7 @@
     };
 
     private bool wasOpen = false;
+    private List<DepartmentModel> departments = new();
 
     protected override void OnInitialized()
     {
@@ -322,6 +334,45 @@
 
     private SpecializationLookupItem? _savedItem;
 
+    private void LoadDepartments()
+    {
+        try
+        {
+            departments = UserService.GetDepartments().ToList();
+            if (departments.Any())
+            {
+                if (string.IsNullOrWhiteSpace(model.DepartmentId))
+                {
+                    model.DepartmentId = departments[0].DepartmentId;
+                    model.Department = departments[0].DepartmentName;
+                }
+                else
+                {
+                    var match = departments.FirstOrDefault(d => d.DepartmentId == model.DepartmentId);
+                    if (match != null)
+                    {
+                        model.Department = match.DepartmentName;
+                    }
+                }
+            }
+        }
+        catch
+        {
+            departments = new List<DepartmentModel>();
+        }
+    }
+
+    private void OnDepartmentChanged(ChangeEventArgs e)
+    {
+        var deptId = e.Value?.ToString();
+        var match = departments.FirstOrDefault(d => d.DepartmentId == deptId);
+        if (match != null)
+        {
+            model.DepartmentId = match.DepartmentId;
+            model.Department = match.DepartmentName;
+        }
+    }
+
     private void ResetWizard()
     {
         currentStep = 1;
@@ -329,6 +380,7 @@
         saveErrorMessage = null;
         _savedItem = null;
         model = new SpecializationModel();
+        LoadDepartments();
         editContext = new EditContext(model);
         messageStore = new ValidationMessageStore(editContext);
     }

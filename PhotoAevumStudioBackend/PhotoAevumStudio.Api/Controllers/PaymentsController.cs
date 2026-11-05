@@ -467,6 +467,35 @@ public class PaymentsController : ControllerBase
 
     }
 
+    // POST api/payments/{appointmentId}/update-status
+    // Dynamically updates booking status during payment flow (e.g. Deal_Won, Deal_Lost, Rescheduled)
+    [HttpPost("{appointmentId}/update-status")]
+    [AllowAnonymous]
+    public async Task<IActionResult> UpdateBookingStatus(
+        string appointmentId,
+        [FromBody] UpdatePaymentBookingStatusRequest request,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            var updated = await _consultationService.UpdateBookingStatusFromPaymentAsync(appointmentId, request, cancellationToken);
+            return Ok(updated);
+        }
+        catch (KeyNotFoundException ex)
+        {
+            return NotFound(new { message = ex.Message });
+        }
+        catch (InvalidOperationException ex)
+        {
+            return BadRequest(new { message = ex.Message });
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to update booking status for appointment {AppointmentId}", appointmentId);
+            return StatusCode(500, new { message = ex.Message });
+        }
+    }
+
 
 
     // POST api/payments/xendit-webhook

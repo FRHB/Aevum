@@ -70,7 +70,7 @@ public sealed record ScheduleBookingResult(
 {
     public decimal DepositFee => Math.Round(TotalPrice * 0.15m, 2);
     public decimal BalanceFee => Math.Round(TotalPrice - DepositFee, 2);
-    public string PaymentStatus => "Cleared";
+    public string PaymentStatus => "Pending Negotiation";
 }
 
 /// <summary>One row for MyBookings / Dashboard, from GET api/schedule/my-bookings.</summary>
@@ -89,7 +89,7 @@ public sealed record MyBooking(
     public DateTime Start => Date.ToDateTime(SlotStart);
     public decimal DepositFee => Math.Round(TotalPrice * 0.15m, 2);
     public decimal BalanceFee => Math.Round(TotalPrice - DepositFee, 2);
-    public string PaymentStatus => "Cleared";
+    public string PaymentStatus => "Pending Negotiation";
 }
 
 public enum ApiErrorKind { SlotTaken, Validation, Unauthorized, Network, Server }

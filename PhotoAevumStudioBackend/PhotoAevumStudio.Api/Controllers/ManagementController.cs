@@ -19,9 +19,9 @@ public class ManagementController : ControllerBase
     }
 
     [HttpGet("employees")]
-    public async Task<IActionResult> GetEmployees(CancellationToken ct)
+    public async Task<IActionResult> GetEmployees([FromQuery] bool includeArchived, CancellationToken ct)
     {
-        var employees = await _service.GetEmployeesAsync(ct);
+        var employees = await _service.GetEmployeesAsync(includeArchived, ct);
         
         var result = employees.Select(e => new
         {
@@ -32,12 +32,48 @@ public class ManagementController : ControllerBase
             e.IdentityUser.MiddleName,
             e.IdentityUser.Email,
             Role = "Employee",
+            e.Address,
+            e.BirthYear,
+            DepartmentId = e.DepartmentID,
+            DepartmentName = e.DepartmentEntity?.DepartmentName,
             e.Specializations,
             e.Status,
             e.DaysOff
         });
         
         return Ok(result);
+    }
+
+    [HttpGet("departments")]
+    public async Task<IActionResult> GetDepartments(CancellationToken ct)
+    {
+        var depts = await _service.GetDepartmentsAsync(ct);
+        return Ok(depts);
+    }
+
+    [HttpGet("departments/next-id")]
+    public async Task<IActionResult> GetNextDepartmentId(CancellationToken ct)
+    {
+        var nextId = await _service.GetNextDepartmentIdAsync(ct);
+        return Ok(new NextIdResponseDto(nextId));
+    }
+
+    [HttpPost("departments")]
+    public async Task<IActionResult> CreateDepartment([FromBody] CreateDepartmentDto dto, CancellationToken ct)
+    {
+        if (dto == null || string.IsNullOrWhiteSpace(dto.DepartmentName))
+            return BadRequest(new { Message = "Department name is required." });
+
+        var adminId = User.FindFirst("studio_id")?.Value ?? User.Identity?.Name ?? "Admin";
+        try
+        {
+            var created = await _service.CreateDepartmentAsync(dto, adminId, ct);
+            return Ok(created);
+        }
+        catch (Exception ex)
+        {
+            return BadRequest(new { Message = ex.Message });
+        }
     }
 
     [HttpGet("specializations")]

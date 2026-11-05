@@ -8,6 +8,7 @@
 @using Microsoft.AspNetCore.Components.Authorization
 @inject IUserService UserService
 @inject IEmployeeService EmployeeService
+@inject IScheduleService ScheduleService
 @inject IConsultationClient ConsultationApi
 @inject AuthenticationStateProvider AuthStateProvider
 
@@ -27,42 +28,310 @@
             <span class="text-emerald-600 font-bold text-base">✓</span>
             <span>@_actionSuccessMessage</span>
         </div>
-        <button type="button" @onclick="() => _actionSuccessMessage = null" class="text-emerald-700 hover:text-emerald-900 text-xs">Dismiss</button>
+        <button type="button" @onclick="() => _actionSuccessMessage = null" class="text-emerald-700 hover:text-emerald-900 text-xs font-bold">Dismiss</button>
     </div>
 }
 
-<section class="aev-stat-grid" aria-label="Summary statistics">
+@* ── Relevant Statistics (KPIs) ───────────────────────────────────────────── *@
+<section class="aev-stat-grid" aria-label="Executive KPI statistics">
     <article class="aev-stat-card">
         <div class="aev-stat-card__icon aev-stat-card__icon--teal" aria-hidden="true">📅</div>
         <div>
-            <p class="aev-stat-card__label">Appointments Today</p>
+            <p class="aev-stat-card__label">Today's Schedule</p>
             <h2 class="aev-stat-card__value">@_appointmentsToday</h2>
+            <p class="text-[11px] text-slate-400 mt-0.5">@_bookingsThisWeek this week</p>
         </div>
     </article>
 
     <article class="aev-stat-card">
         <div class="aev-stat-card__icon aev-stat-card__icon--blue" aria-hidden="true">👥</div>
         <div>
-            <p class="aev-stat-card__label">Active Employees</p>
-            <h2 class="aev-stat-card__value">@_activeEmployees</h2>
+            <p class="aev-stat-card__label">On-Duty Staff</p>
+            <h2 class="aev-stat-card__value">@_clockedInStaffCount <span class="text-xs text-slate-400 font-normal">/ @_activeEmployees</span></h2>
+            <p class="text-[11px] text-slate-400 mt-0.5">@_onLeaveStaffCount on leave / day off</p>
         </div>
     </article>
 
     <article class="aev-stat-card">
-        <div class="aev-stat-card__icon aev-stat-card__icon--amber" aria-hidden="true">📷</div>
+        <div class="aev-stat-card__icon aev-stat-card__icon--violet" aria-hidden="true">📹</div>
         <div>
-            <p class="aev-stat-card__label">Equipment In Use</p>
-            <h2 class="aev-stat-card__value">@_equipmentInUse</h2>
+            <p class="aev-stat-card__label">Active Consultations</p>
+            <h2 class="aev-stat-card__value">@_activeConsultations</h2>
+            <p class="text-[11px] text-slate-400 mt-0.5">Inquiries in negotiation</p>
         </div>
     </article>
 
     <article class="aev-stat-card">
-        <div class="aev-stat-card__icon aev-stat-card__icon--violet" aria-hidden="true">💵</div>
+        <div class="aev-stat-card__icon aev-stat-card__icon--amber" aria-hidden="true">💵</div>
         <div>
-            <p class="aev-stat-card__label">Pending Cash Remittances</p>
+            <p class="aev-stat-card__label">Cash to Reconcile</p>
             <h2 class="aev-stat-card__value text-amber-600">@_pendingRemittances.Count</h2>
+            <p class="text-[11px] text-slate-400 mt-0.5">₱@_pendingRemittancesSum.ToString("N0") awaiting review</p>
         </div>
     </article>
+
+    <article class="aev-stat-card">
+        <div class="aev-stat-card__icon aev-stat-card__icon--teal" aria-hidden="true">💰</div>
+        <div>
+            <p class="aev-stat-card__label">Booked Deposits</p>
+            <h2 class="aev-stat-card__value text-emerald-700">₱@_totalBookedDeposits.ToString("N0")</h2>
+            <p class="text-[11px] text-slate-400 mt-0.5">@_totalActiveBookings confirmed sessions</p>
+        </div>
+    </article>
+</section>
+
+@* ── Current & Upcoming Events Widget ──────────────────────────────────────── *@
+<section class="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden mb-6" aria-label="Current and upcoming events">
+    <div class="px-6 py-4 border-b border-gray-200 bg-gradient-to-r from-slate-50 to-white flex items-center justify-between">
+        <div>
+            <h2 class="text-base font-bold text-gray-900 flex items-center gap-2">
+                <span>⚡</span> Current &amp; Upcoming Events Overview
+            </h2>
+            <p class="text-xs text-gray-500 mt-0.5">
+                Real-time tracking of active studio sessions, client video consultations, and upcoming schedule slots.
+            </p>
+        </div>
+        <a href="/admin/calendar/events" class="text-xs font-semibold text-teal-700 hover:text-teal-900 hover:underline">
+            Open Calendar of Events &rarr;
+        </a>
+    </div>
+
+    <div class="p-6 grid grid-cols-1 lg:grid-cols-12 gap-6">
+        @* Happening Now Panel *@
+        <div class="lg:col-span-5 bg-gradient-to-br from-slate-50 to-slate-100/70 border border-slate-200 rounded-xl p-5 flex flex-col justify-between">
+            <div>
+                <div class="flex items-center justify-between mb-3">
+                    <span class="text-xs font-bold uppercase tracking-wider text-slate-500">Live Status</span>
+                    @if (_liveEvent != null)
+                    {
+                        <span class="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-bold bg-emerald-100 text-emerald-800 border border-emerald-300 animate-pulse">
+                            <span class="w-2 h-2 rounded-full bg-emerald-500"></span> HAPPENING NOW
+                        </span>
+                    }
+                    else
+                    {
+                        <span class="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-medium bg-slate-200 text-slate-600">
+                            ☕ Studio Between Sessions
+                        </span>
+                    }
+                </div>
+
+                @if (_liveEvent != null)
+                {
+                    <div class="space-y-3">
+                        <div class="flex items-start justify-between">
+                            <div>
+                                <h3 class="text-base font-bold text-gray-900 leading-tight">@_liveEvent.ClientName</h3>
+                                <p class="text-xs font-semibold text-teal-700 mt-0.5">@_liveEvent.ServiceType</p>
+                            </div>
+                            <span class="px-2 py-0.5 rounded-md text-[11px] font-bold @(_liveEvent.IsConsultation ? "bg-purple-100 text-purple-800" : "bg-blue-100 text-blue-800")">
+                                @(_liveEvent.IsConsultation ? "Video Consultation" : "Studio Shoot")
+                            </span>
+                        </div>
+
+                        <div class="text-xs text-slate-600 space-y-1 bg-white/80 p-3 rounded-lg border border-slate-200/60">
+                            <div class="flex items-center justify-between">
+                                <span class="text-slate-400">Scheduled Time:</span>
+                                <span class="font-bold text-slate-900">@_liveEvent.FormattedTimeRange</span>
+                            </div>
+                            <div class="flex items-center justify-between">
+                                <span class="text-slate-400">Assigned Staff:</span>
+                                <span class="font-medium text-slate-800">@_liveEvent.AssignedPhotographer</span>
+                            </div>
+                            @if (!string.IsNullOrWhiteSpace(_liveEvent.ClientPhone) || !string.IsNullOrWhiteSpace(_liveEvent.ClientEmail))
+                            {
+                                <div class="flex items-center justify-between">
+                                    <span class="text-slate-400">Contact:</span>
+                                    <span class="font-mono text-[11px] text-slate-700">@(_liveEvent.ClientPhone ?? _liveEvent.ClientEmail)</span>
+                                </div>
+                            }
+                        </div>
+
+                        @if (_liveEvent.IsConsultation && !string.IsNullOrWhiteSpace(_liveEvent.MeetingLink))
+                        {
+                            <div class="pt-2">
+                                <a href="@_liveEvent.MeetingLink"
+                                   target="_blank"
+                                   rel="noopener noreferrer"
+                                   class="w-full inline-flex items-center justify-center gap-2 px-4 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-bold shadow-xs transition-colors">
+                                    <span>📹 Launch Google Meet Consultation</span>
+                                    <span>↗</span>
+                                </a>
+                            </div>
+                        }
+                    </div>
+                }
+                else
+                {
+                    <div class="py-4 text-center">
+                        <div class="w-12 h-12 rounded-full bg-slate-200/80 flex items-center justify-center mx-auto text-xl mb-2">📸</div>
+                        <h3 class="text-sm font-semibold text-gray-800">No Session Currently in Progress</h3>
+                        <p class="text-xs text-slate-500 mt-1 max-w-xs mx-auto">
+                            The studio is ready for upcoming bookings. Check the upcoming sessions roster to prepare crew and studio bays.
+                        </p>
+                    </div>
+                }
+            </div>
+
+            <div class="mt-4 pt-3 border-t border-slate-200/80 flex items-center justify-between text-[11px]">
+                <span class="text-slate-400">Date: @DateTime.Today.ToString("MMM d, yyyy")</span>
+                <a href="/admin/calendar/events" class="text-teal-700 hover:underline font-semibold">View Live Calendar &rarr;</a>
+            </div>
+        </div>
+
+        @* Upcoming Sessions List *@
+        <div class="lg:col-span-7 flex flex-col justify-between">
+            <div>
+                <h3 class="text-xs font-bold uppercase tracking-wider text-slate-500 mb-3 flex items-center justify-between">
+                    <span>Upcoming Scheduled Sessions</span>
+                    <span class="text-[10px] font-normal text-slate-400">Next @Math.Min(4, _upcomingEvents.Count) events</span>
+                </h3>
+
+                @if (!_upcomingEvents.Any())
+                {
+                    <div class="p-8 text-center text-xs text-gray-400 bg-slate-50 rounded-xl border border-dashed border-gray-200">
+                        ✨ No upcoming events scheduled for the rest of today or tomorrow.
+                    </div>
+                }
+                else
+                {
+                    <div class="space-y-2.5">
+                        @foreach (var ev in _upcomingEvents)
+                        {
+                            var isToday = ev.Date.Date == DateTime.Today;
+                            <div class="p-3 rounded-lg border border-gray-200 hover:border-teal-300 hover:bg-teal-50/20 transition-all flex items-center justify-between gap-3 bg-white">
+                                <div class="flex items-center gap-3">
+                                    <div class="text-center px-2 py-1.5 rounded-md @(isToday ? "bg-amber-100 text-amber-900 border border-amber-200" : "bg-slate-100 text-slate-700")">
+                                        <span class="block text-[10px] font-bold uppercase leading-none">@(isToday ? "Today" : ev.Date.ToString("ddd"))</span>
+                                        <span class="block text-xs font-extrabold leading-none mt-1">@ev.Date.ToString("MMM d")</span>
+                                    </div>
+                                    <div>
+                                        <div class="flex items-center gap-2">
+                                            <span class="font-bold text-xs text-gray-900">@ev.ClientName</span>
+                                            <span class="px-1.5 py-0.5 rounded text-[9px] font-semibold @(ev.IsConsultation ? "bg-purple-100 text-purple-700" : "bg-blue-100 text-blue-700")">
+                                                @(ev.IsConsultation ? "Consultation" : "Shoot")
+                                            </span>
+                                        </div>
+                                        <p class="text-[11px] text-gray-500 line-clamp-1 mt-0.5">
+                                            @ev.ServiceType &bull; <span class="font-medium text-gray-700">@ev.FormattedTimeRange</span>
+                                        </p>
+                                    </div>
+                                </div>
+
+                                <div class="text-right shrink-0">
+                                    <span class="block text-[10px] text-gray-400">Staff</span>
+                                    <span class="block text-[11px] font-medium text-gray-800">@ev.AssignedPhotographer</span>
+                                </div>
+                            </div>
+                        }
+                    </div>
+                }
+            </div>
+
+            <div class="mt-4 pt-3 border-t border-gray-100 flex items-center justify-between text-xs">
+                <span class="text-gray-400">Total active events in pipeline: @_allEvents.Count(e => e.Status != "Cancelled")</span>
+                <a href="/admin/calendar/events" class="font-semibold text-teal-700 hover:text-teal-900 hover:underline">
+                    View full studio schedule &rarr;
+                </a>
+            </div>
+        </div>
+    </div>
+</section>
+
+@* ── Timesheet & Today's Attendance View ───────────────────────────────────── *@
+<section class="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden mb-6" aria-label="Staff timesheet and attendance">
+    <div class="px-6 py-4 border-b border-gray-200 bg-gradient-to-r from-blue-50/50 to-white flex items-center justify-between">
+        <div>
+            <h2 class="text-base font-bold text-gray-900 flex items-center gap-2">
+                <span>⏱️</span> Staff Timesheet &amp; Attendance (Today)
+            </h2>
+            <p class="text-xs text-gray-500 mt-0.5">
+                Real-time employee clock-in punches, duty hours logged, and active leave status.
+            </p>
+        </div>
+        <div class="flex items-center gap-3">
+            <span class="hidden sm:inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-bold bg-emerald-50 text-emerald-800 border border-emerald-200">
+                <span class="w-2 h-2 rounded-full bg-emerald-500"></span> @_clockedInStaffCount On Duty Now
+            </span>
+            <a href="/admin/timesheet" class="text-xs font-semibold text-teal-700 hover:text-teal-900 hover:underline">
+                Open Full Timesheets Portal &rarr;
+            </a>
+        </div>
+    </div>
+
+    @if (!_todayAttendance.Any())
+    {
+        <div class="p-8 text-center text-xs text-gray-400 bg-gray-50/50">
+            ✨ No employee punch logs recorded for today yet.
+        </div>
+    }
+    else
+    {
+        <div class="overflow-x-auto">
+            <table class="w-full text-left text-xs">
+                <thead class="bg-gray-50 border-b border-gray-200 text-gray-500 uppercase font-semibold text-[10px]">
+                    <tr>
+                        <th class="py-3 px-4">Employee</th>
+                        <th class="py-3 px-4">Studio ID</th>
+                        <th class="py-3 px-4">Attendance Status</th>
+                        <th class="py-3 px-4">Clock-In Time</th>
+                        <th class="py-3 px-4">Hours Logged</th>
+                        <th class="py-3 px-4 text-right">Action</th>
+                    </tr>
+                </thead>
+                <tbody class="divide-y divide-gray-100">
+                    @foreach (var att in _todayAttendance)
+                    {
+                        <tr class="hover:bg-blue-50/20 transition-colors">
+                            <td class="py-3 px-4 font-semibold text-gray-900">
+                                @att.EmployeeName
+                            </td>
+                            <td class="py-3 px-4 font-mono text-[11px] text-gray-500">
+                                @att.EmployeeStudioId
+                            </td>
+                            <td class="py-3 px-4">
+                                @if (att.IsClockedIn)
+                                {
+                                    <span class="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-800 border border-emerald-200">
+                                        <span class="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span> On Duty
+                                    </span>
+                                }
+                                else if (att.IsOnLeaveToday)
+                                {
+                                    <span class="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-amber-100 text-amber-800 border border-amber-200">
+                                        🏖️ On Leave (@(att.ActiveLeaveType ?? "Approved"))
+                                    </span>
+                                }
+                                else if (att.IsDayOffToday)
+                                {
+                                    <span class="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-medium bg-slate-100 text-slate-600">
+                                        🗓️ Scheduled Day Off
+                                    </span>
+                                }
+                                else
+                                {
+                                    <span class="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-medium bg-gray-100 text-gray-500">
+                                        ⚪ Off Duty / Not Clocked In
+                                    </span>
+                                }
+                            </td>
+                            <td class="py-3 px-4 text-gray-700">
+                                @(att.ClockIn.HasValue ? att.ClockIn.Value.ToString("hh:mm tt") : "--")
+                            </td>
+                            <td class="py-3 px-4 font-bold text-gray-900">
+                                @(att.TotalHours > 0 ? $"{att.TotalHours:0.1} hrs" : (att.IsClockedIn ? "Active" : "--"))
+                            </td>
+                            <td class="py-3 px-4 text-right">
+                                <a href="/admin/timesheet" class="text-teal-700 hover:text-teal-900 font-semibold hover:underline">
+                                    Manage Punch &rarr;
+                                </a>
+                            </td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+    }
 </section>
 
 @* ── Admin Action Panel: Cash Remittance Approvals ─────────────────── *@
@@ -139,11 +408,105 @@
     }
 </section>
 
+@* ── Dynamic FAQ Management (Add/Edit directly from Dashboard) ─────────────── *@
+<section class="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden mb-6" aria-label="FAQ Management">
+    <div class="px-6 py-4 border-b border-gray-200 bg-gradient-to-r from-teal-50/50 to-white flex items-center justify-between">
+        <div>
+            <h2 class="text-base font-bold text-gray-900 flex items-center gap-2">
+                <span>❓</span> Frequently Asked Questions (FAQ) Management
+            </h2>
+            <p class="text-xs text-gray-500 mt-0.5">
+                Dynamically add, edit, reorder, and publish FAQs displayed to clients on the landing page.
+            </p>
+        </div>
+        <button type="button"
+                @onclick="OpenAddFaqModal"
+                class="inline-flex items-center gap-1.5 px-3 py-1.5 bg-teal-700 hover:bg-teal-800 text-white text-xs font-bold rounded-lg shadow-xs transition-colors">
+            <span>+ Add FAQ</span>
+        </button>
+    </div>
+
+    @if (!_faqs.Any())
+    {
+        <div class="p-8 text-center text-xs text-gray-400 bg-gray-50/50">
+            No FAQs defined yet. Click "+ Add FAQ" above to create your first published question.
+        </div>
+    }
+    else
+    {
+        <div class="overflow-x-auto">
+            <table class="w-full text-left text-xs">
+                <thead class="bg-gray-50 border-b border-gray-200 text-gray-500 uppercase font-semibold text-[10px]">
+                    <tr>
+                        <th class="py-3 px-4 w-12 text-center">#</th>
+                        <th class="py-3 px-4 w-28">Category</th>
+                        <th class="py-3 px-4">Question &amp; Answer</th>
+                        <th class="py-3 px-4 w-24">Status</th>
+                        <th class="py-3 px-4 w-32 text-right">Actions</th>
+                    </tr>
+                </thead>
+                <tbody class="divide-y divide-gray-100">
+                    @foreach (var faq in _faqs)
+                    {
+                        <tr class="hover:bg-slate-50/50 transition-colors">
+                            <td class="py-3 px-4 text-center font-mono font-bold text-gray-500">
+                                @faq.DisplayOrder
+                            </td>
+                            <td class="py-3 px-4">
+                                <span class="bg-slate-100 text-slate-700 px-2 py-0.5 rounded text-[10px] font-semibold">
+                                    @faq.Category
+                                </span>
+                            </td>
+                            <td class="py-3 px-4">
+                                <p class="font-bold text-gray-900 text-xs">@faq.Question</p>
+                                <p class="text-gray-500 text-[11px] line-clamp-1 mt-0.5 font-light">@faq.Answer</p>
+                            </td>
+                            <td class="py-3 px-4">
+                                @if (faq.IsActive)
+                                {
+                                    <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-800">
+                                        ✓ Active
+                                    </span>
+                                }
+                                else
+                                {
+                                    <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-medium bg-gray-100 text-gray-500">
+                                        Hidden
+                                    </span>
+                                }
+                            </td>
+                            <td class="py-3 px-4 text-right space-x-1">
+                                <button type="button"
+                                        @onclick="() => OpenEditFaqModal(faq)"
+                                        class="px-2 py-1 rounded bg-slate-100 hover:bg-slate-200 text-slate-700 text-[11px] font-bold transition-colors">
+                                    Edit
+                                </button>
+                                <button type="button"
+                                        @onclick="() => HandleToggleFaqStatus(faq)"
+                                        title="@(faq.IsActive ? "Hide FAQ" : "Show FAQ")"
+                                        class="px-2 py-1 rounded bg-slate-100 hover:bg-slate-200 text-slate-700 text-[11px] font-medium transition-colors">
+                                    @(faq.IsActive ? "Hide" : "Show")
+                                </button>
+                                <button type="button"
+                                        @onclick="() => HandleDeleteFaq(faq.Id)"
+                                        class="px-2 py-1 rounded bg-rose-50 hover:bg-rose-100 text-rose-700 text-[11px] font-bold transition-colors">
+                                    Delete
+                                </button>
+                            </td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+    }
+</section>
+
+@* ── Recent Bookings & Quick Actions ───────────────────────────────────────── *@
 <div class="aev-content-row">
     <section class="aev-card aev-card--wide" aria-label="Recent bookings">
         <header class="aev-card__header">
             <h2 class="aev-card__heading">Recent Bookings</h2>
-            <a href="/Schedules" class="aev-card__action-link">View All</a>
+            <a href="/admin/calendar/events" class="aev-card__action-link">View All</a>
         </header>
         <div class="aev-table-wrap">
             <table class="aev-table">
@@ -197,37 +560,141 @@
                 <span>Review Remittances</span>
                 <span class="aev-quick-action__arrow" aria-hidden="true">›</span>
             </a>
-            <a href="/Services" class="aev-quick-action">
+            <a href="/admin/services/main" class="aev-quick-action">
                 <span class="aev-quick-action__icon" aria-hidden="true">🗂</span>
-                <span>Manage Services</span>
+                <span>Manage Main Services</span>
                 <span class="aev-quick-action__arrow" aria-hidden="true">›</span>
             </a>
-            <a href="/Equipment" class="aev-quick-action">
-                <span class="aev-quick-action__icon" aria-hidden="true">📷</span>
-                <span>Track Equipment</span>
+            <a href="/admin/calendar/events" class="aev-quick-action">
+                <span class="aev-quick-action__icon" aria-hidden="true">📅</span>
+                <span>Calendar of Events</span>
                 <span class="aev-quick-action__arrow" aria-hidden="true">›</span>
             </a>
-            <a href="/Employee" class="aev-quick-action">
+            <a href="/admin/employees" class="aev-quick-action">
                 <span class="aev-quick-action__icon" aria-hidden="true">👤</span>
                 <span>Manage Staff</span>
                 <span class="aev-quick-action__arrow" aria-hidden="true">›</span>
             </a>
-            <a href="/admin/clients" class="aev-quick-action">
-                <span class="aev-quick-action__icon" aria-hidden="true">👥</span>
-                <span>View Clients</span>
+            <a href="/admin/timesheet" class="aev-quick-action">
+                <span class="aev-quick-action__icon" aria-hidden="true">⏱️</span>
+                <span>Staff Timesheets</span>
+                <span class="aev-quick-action__arrow" aria-hidden="true">›</span>
+            </a>
+            <a href="/admin/negotiations" class="aev-quick-action">
+                <span class="aev-quick-action__icon" aria-hidden="true">💬</span>
+                <span>Client Inquiries &amp; Calls</span>
                 <span class="aev-quick-action__arrow" aria-hidden="true">›</span>
             </a>
         </div>
     </section>
 </div>
 
+@* ── FAQ Add/Edit Modal ────────────────────────────────────────────────────── *@
+@if (_isFaqModalOpen)
+{
+    <div class="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4 animate-in fade-in duration-150">
+        <div class="bg-white rounded-2xl shadow-2xl max-w-lg w-full overflow-hidden border border-gray-200">
+            <div class="px-6 py-4 border-b border-gray-200 bg-slate-50 flex items-center justify-between">
+                <div>
+                    <h3 class="text-base font-bold text-gray-900">
+                        @(_editingFaq.Id == 0 ? "Add New FAQ" : $"Edit FAQ #{_editingFaq.Id}")
+                    </h3>
+                    <p class="text-xs text-gray-500 mt-0.5">Define questions and answers for the client landing page.</p>
+                </div>
+                <button type="button" @onclick="() => _isFaqModalOpen = false" class="text-gray-400 hover:text-gray-600 font-bold text-lg">×</button>
+            </div>
+
+            <div class="p-6 space-y-4">
+                @if (!string.IsNullOrWhiteSpace(_faqModalError))
+                {
+                    <div class="p-3 bg-rose-50 border border-rose-200 text-rose-700 text-xs rounded-lg font-medium">
+                        @_faqModalError
+                    </div>
+                }
+
+                <div>
+                    <label class="block text-xs font-bold text-gray-700 uppercase tracking-wider mb-1">Question</label>
+                    <input type="text"
+                           @bind="_editingFaq.Question"
+                           placeholder="e.g., What should I wear to my studio portrait session?"
+                           class="w-full px-3 py-2 text-xs border border-gray-300 rounded-lg focus:ring-2 focus:ring-teal-500 focus:outline-none" />
+                </div>
+
+                <div class="grid grid-cols-2 gap-4">
+                    <div>
+                        <label class="block text-xs font-bold text-gray-700 uppercase tracking-wider mb-1">Category</label>
+                        <input type="text"
+                               @bind="_editingFaq.Category"
+                               placeholder="e.g. Booking, Pricing, Bay Policies"
+                               class="w-full px-3 py-2 text-xs border border-gray-300 rounded-lg focus:ring-2 focus:ring-teal-500 focus:outline-none" />
+                    </div>
+                    <div>
+                        <label class="block text-xs font-bold text-gray-700 uppercase tracking-wider mb-1">Display Order</label>
+                        <input type="number"
+                               @bind="_editingFaq.DisplayOrder"
+                               min="1"
+                               class="w-full px-3 py-2 text-xs border border-gray-300 rounded-lg focus:ring-2 focus:ring-teal-500 focus:outline-none" />
+                    </div>
+                </div>
+
+                <div>
+                    <label class="block text-xs font-bold text-gray-700 uppercase tracking-wider mb-1">Answer</label>
+                    <textarea rows="4"
+                              @bind="_editingFaq.Answer"
+                              placeholder="Provide clear, concise guidance for clients visiting your website..."
+                              class="w-full px-3 py-2 text-xs border border-gray-300 rounded-lg focus:ring-2 focus:ring-teal-500 focus:outline-none"></textarea>
+                </div>
+
+                <div class="flex items-center gap-2 pt-1">
+                    <input type="checkbox" id="faqIsActive" @bind="_editingFaq.IsActive" class="rounded text-teal-600 focus:ring-teal-500" />
+                    <label for="faqIsActive" class="text-xs text-gray-700 font-medium">
+                        Publish immediately to client website landing page
+                    </label>
+                </div>
+            </div>
+
+            <div class="px-6 py-4 bg-gray-50 border-t border-gray-200 flex items-center justify-end gap-2">
+                <button type="button"
+                        @onclick="() => _isFaqModalOpen = false"
+                        class="px-4 py-2 text-xs font-semibold text-gray-600 hover:text-gray-800 rounded-lg">
+                    Cancel
+                </button>
+                <button type="button"
+                        @onclick="HandleSaveFaq"
+                        disabled="@_isSavingFaq"
+                        class="px-4 py-2 bg-teal-700 hover:bg-teal-800 text-white text-xs font-bold rounded-lg shadow-xs transition-colors">
+                    @(_isSavingFaq ? "Saving..." : "Save FAQ")
+                </button>
+            </div>
+        </div>
+    </div>
+}
+
 @code {
     private int _appointmentsToday;
     private int _activeEmployees;
-    private int _equipmentInUse;
     private int _bookingsThisWeek;
+    private int _clockedInStaffCount;
+    private int _onLeaveStaffCount;
+    private int _activeConsultations;
+    private decimal _totalBookedDeposits;
+    private int _totalActiveBookings;
+
+    private List<EventBookingModel> _allEvents = new();
+    private EventBookingModel? _liveEvent;
+    private List<EventBookingModel> _upcomingEvents = new();
+
+    private IReadOnlyList<TodayAttendanceSummaryDto> _todayAttendance = Array.Empty<TodayAttendanceSummaryDto>();
     private IReadOnlyList<BookingRowDto> _recentBookings = Array.Empty<BookingRowDto>();
     private List<PaymentSummaryModel> _pendingRemittances = new();
+    private decimal _pendingRemittancesSum => _pendingRemittances.Sum(r => r.Amount);
+
+    private List<FaqItem> _faqs = new();
+    private bool _isFaqModalOpen = false;
+    private FaqItem _editingFaq = new();
+    private string? _faqModalError;
+    private bool _isSavingFaq = false;
+
     private bool _isApproving = false;
     private string? _actionSuccessMessage;
     private string _adminId = "Admin";
@@ -247,17 +714,197 @@
         }
         catch { }
 
-        var stats = await EmployeeService.GetDashboardStatsAsync();
-        _appointmentsToday = stats.AppointmentsToday;
-        _activeEmployees = stats.ActiveEmployees;
-        _bookingsThisWeek = stats.BookedThisWeek;
+        // 1. Dashboard stats & attendance
+        try
+        {
+            var stats = await EmployeeService.GetDashboardStatsAsync();
+            _appointmentsToday = stats.AppointmentsToday;
+            _activeEmployees = stats.ActiveEmployees;
+            _bookingsThisWeek = stats.BookedThisWeek;
+        }
+        catch
+        {
+            _appointmentsToday = 0;
+            _activeEmployees = 0;
+            _bookingsThisWeek = 0;
+        }
 
-        var equipment = UserService.GetEquipmentRows();
-        _equipmentInUse = equipment.Count(e => e.Status.Equals("In Use", StringComparison.OrdinalIgnoreCase) || e.Status.Equals("Reserved", StringComparison.OrdinalIgnoreCase));
+        try
+        {
+            _todayAttendance = await EmployeeService.GetTodayAttendanceAsync();
+            _clockedInStaffCount = _todayAttendance.Count(a => a.IsClockedIn);
+            _onLeaveStaffCount = _todayAttendance.Count(a => a.IsOnLeaveToday || a.IsDayOffToday);
+        }
+        catch
+        {
+            _todayAttendance = Array.Empty<TodayAttendanceSummaryDto>();
+            _clockedInStaffCount = 0;
+            _onLeaveStaffCount = 0;
+        }
 
-        _recentBookings = UserService.GetBookings().Take(5).ToList();
+        // 2. Bookings, Revenue & Remittances
+        try
+        {
+            var allBookings = UserService.GetBookings();
+            _recentBookings = allBookings.Take(5).ToList();
+            var activeBookings = allBookings.Where(b => !string.Equals(b.Status, "Cancelled", StringComparison.OrdinalIgnoreCase)).ToList();
+            _totalActiveBookings = activeBookings.Count;
+            _totalBookedDeposits = activeBookings.Sum(b => b.DepositAmount);
+        }
+        catch
+        {
+            _recentBookings = Array.Empty<BookingRowDto>();
+            _totalActiveBookings = 0;
+            _totalBookedDeposits = 0;
+        }
 
+        // 3. Events & Consultations (ScheduleService)
+        try
+        {
+            _allEvents = ScheduleService.GetEventBookings();
+            _activeConsultations = _allEvents.Count(e => e.IsConsultation && !string.Equals(e.Status, "Cancelled", StringComparison.OrdinalIgnoreCase) && !string.Equals(e.Status, "Deal_Lost", StringComparison.OrdinalIgnoreCase));
+
+            var today = DateTime.Today;
+            var nowTime = DateTime.Now.TimeOfDay;
+
+            _liveEvent = _allEvents.FirstOrDefault(e =>
+                e.Date.Date == today &&
+                nowTime >= e.StartTime &&
+                nowTime < e.EndTime &&
+                !string.Equals(e.Status, "Cancelled", StringComparison.OrdinalIgnoreCase));
+
+            _upcomingEvents = _allEvents
+                .Where(e => (e.Date.Date == today && e.StartTime > nowTime) || (e.Date.Date > today))
+                .Where(e => !string.Equals(e.Status, "Cancelled", StringComparison.OrdinalIgnoreCase))
+                .OrderBy(e => e.Date.Date)
+                .ThenBy(e => e.StartTime)
+                .Take(4)
+                .ToList();
+        }
+        catch
+        {
+            _allEvents = new();
+            _activeConsultations = 0;
+            _liveEvent = null;
+            _upcomingEvents = new();
+        }
+
+        // 4. Dynamic FAQs
+        LoadFaqs();
+
+        // 5. Pending Remittances
         await LoadPendingRemittancesAsync();
+    }
+
+    private void LoadFaqs()
+    {
+        try
+        {
+            _faqs = UserService.GetFaqs(includeInactive: true).OrderBy(f => f.DisplayOrder).ToList();
+        }
+        catch
+        {
+            _faqs = new();
+        }
+    }
+
+    private void OpenAddFaqModal()
+    {
+        _editingFaq = new FaqItem
+        {
+            Id = 0,
+            Category = "General",
+            DisplayOrder = _faqs.Count + 1,
+            IsActive = true
+        };
+        _faqModalError = null;
+        _isFaqModalOpen = true;
+    }
+
+    private void OpenEditFaqModal(FaqItem faq)
+    {
+        _editingFaq = new FaqItem
+        {
+            Id = faq.Id,
+            Question = faq.Question,
+            Answer = faq.Answer,
+            Category = faq.Category,
+            DisplayOrder = faq.DisplayOrder,
+            IsActive = faq.IsActive
+        };
+        _faqModalError = null;
+        _isFaqModalOpen = true;
+    }
+
+    private void HandleSaveFaq()
+    {
+        if (string.IsNullOrWhiteSpace(_editingFaq.Question))
+        {
+            _faqModalError = "Please enter a question.";
+            return;
+        }
+
+        if (string.IsNullOrWhiteSpace(_editingFaq.Answer))
+        {
+            _faqModalError = "Please enter an answer.";
+            return;
+        }
+
+        _isSavingFaq = true;
+        try
+        {
+            var success = UserService.SaveFaq(_editingFaq);
+            if (success)
+            {
+                _actionSuccessMessage = $"FAQ \"{_editingFaq.Question}\" saved successfully.";
+                _isFaqModalOpen = false;
+                LoadFaqs();
+            }
+            else
+            {
+                _faqModalError = "Failed to save FAQ. Please try again.";
+            }
+        }
+        catch (Exception ex)
+        {
+            _faqModalError = $"Error saving FAQ: {ex.Message}";
+        }
+        finally
+        {
+            _isSavingFaq = false;
+        }
+    }
+
+    private void HandleToggleFaqStatus(FaqItem faq)
+    {
+        try
+        {
+            faq.IsActive = !faq.IsActive;
+            UserService.SaveFaq(faq);
+            _actionSuccessMessage = $"FAQ #{faq.Id} is now {(faq.IsActive ? "active on the landing page" : "hidden")}.";
+            LoadFaqs();
+        }
+        catch (Exception ex)
+        {
+            _actionSuccessMessage = $"Error updating status: {ex.Message}";
+        }
+    }
+
+    private void HandleDeleteFaq(int id)
+    {
+        try
+        {
+            var success = UserService.DeleteFaq(id);
+            if (success)
+            {
+                _actionSuccessMessage = $"FAQ #{id} deleted successfully.";
+                LoadFaqs();
+            }
+        }
+        catch (Exception ex)
+        {
+            _actionSuccessMessage = $"Error deleting FAQ: {ex.Message}";
+        }
     }
 
     private async Task LoadPendingRemittancesAsync()

@@ -11,6 +11,11 @@ public class Employee
     public string Status { get; set; } = "Active";
     public string DaysOff { get; set; } = "Sunday";
     
+    public string? Address { get; set; }
+    public int? BirthYear { get; set; }
+    public string? DepartmentID { get; set; }
+    public Department? DepartmentEntity { get; set; }
+    
     /// <summary>EF Core 8/9 supports primitive collections for simple JSON/array columns</summary>
     public List<string> Specializations { get; set; } = new();
     

@@ -1,0 +1,122 @@
+@using System.Security.Claims
+@using Microsoft.AspNetCore.Components.Authorization
+@using PhotoAevumStudio.Web.Services
+@inject AuthenticationStateProvider AuthStateProvider
+@inject IAuthService AuthService
+@inject NavigationManager Nav
+@inject IJSRuntime JS
+@inject IConfiguration Config
+@implements IAsyncDisposable
+
+@code {
+    private DotNetObjectReference<SessionTimeoutMonitor>? _dotNetRef;
+    private bool _isMonitoring = false;
+    private int _timeoutMinutes = 15;
+
+    protected override void OnInitialized()
+    {
+        _timeoutMinutes = Config.GetValue<int?>("Session:TimeoutMinutes") ?? 15;
+        if (_timeoutMinutes <= 0)
+        {
+            _timeoutMinutes = 15;
+        }
+
+        AuthStateProvider.AuthenticationStateChanged += OnAuthStateChanged;
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+        {
+            var authState = await AuthStateProvider.GetAuthenticationStateAsync();
+            if (authState.User.Identity?.IsAuthenticated == true)
+            {
+                await StartMonitoringAsync();
+            }
+        }
+    }
+
+    private void OnAuthStateChanged(Task<AuthenticationState> task)
+    {
+        _ = InvokeAsync(async () =>
+        {
+            try
+            {
+                var authState = await task;
+                if (authState.User.Identity?.IsAuthenticated == true)
+                {
+                    await StartMonitoringAsync();
+                }
+                else
+                {
+                    await StopMonitoringAsync();
+                }
+            }
+            catch
+            {
+                // Ignore transient circuit disposal exceptions
+            }
+        });
+    }
+
+    private async Task StartMonitoringAsync()
+    {
+        if (_isMonitoring)
+            return;
+
+        _dotNetRef ??= DotNetObjectReference.Create(this);
+        _isMonitoring = true;
+
+        try
+        {
+            await JS.InvokeVoidAsync("aevumSessionMonitor.start", _dotNetRef, _timeoutMinutes * 60 * 1000);
+        }
+        catch
+        {
+            // JS interop may fail if circuit is disconnected or page is unloading
+        }
+    }
+
+    private async Task StopMonitoringAsync()
+    {
+        if (!_isMonitoring)
+            return;
+
+        _isMonitoring = false;
+
+        try
+        {
+            await JS.InvokeVoidAsync("aevumSessionMonitor.stop");
+        }
+        catch
+        {
+            // Ignore
+        }
+    }
+
+    [JSInvokable]
+    public async Task HandleSessionTimeout()
+    {
+        _isMonitoring = false;
+        try
+        {
+            var authState = await AuthStateProvider.GetAuthenticationStateAsync();
+            if (authState.User.Identity?.IsAuthenticated == true)
+            {
+                await AuthService.LogoutAsync();
+                Nav.NavigateTo("/?sessionExpired=true", forceLoad: true);
+            }
+        }
+        catch
+        {
+            Nav.NavigateTo("/?sessionExpired=true", forceLoad: true);
+        }
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        AuthStateProvider.AuthenticationStateChanged -= OnAuthStateChanged;
+        await StopMonitoringAsync();
+        _dotNetRef?.Dispose();
+    }
+}

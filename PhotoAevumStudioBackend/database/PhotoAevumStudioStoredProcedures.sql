@@ -78,6 +78,9 @@ CREATE OR ALTER PROCEDURE dbo.sp_CreateEmployee
     @isFirstLogin bit = 1,
     @CreatedByAdminID nvarchar(30) = NULL,
     @EmployeeID nvarchar(30) = NULL,
+    @Address nvarchar(500) = NULL,
+    @BirthYear int = NULL,
+    @DepartmentID nvarchar(30) = NULL,
     @GeneratedEmployeeID nvarchar(30) = NULL OUTPUT
 AS
 BEGIN
@@ -102,11 +105,13 @@ BEGIN
         
         INSERT INTO dbo.Employees (
             EmployeeID, EmployeeFirstName, EmployeeLastName, EmployeeMiddleName, 
-            EmployeeEmail, EmployeePassword, EmployeeStatus, isFirstLogin, CreatedAt
+            EmployeeEmail, EmployeePassword, EmployeeStatus, isFirstLogin, CreatedAt,
+            Address, BirthYear, DepartmentID
         )
         VALUES (
             @NewID, @EmployeeFirstName, @EmployeeLastName, @EmployeeMiddleName, 
-            @EmployeeEmail, @EmployeePassword, 'Active', @isFirstLogin, SYSUTCDATETIME()
+            @EmployeeEmail, @EmployeePassword, 'Active', @isFirstLogin, SYSUTCDATETIME(),
+            @Address, @BirthYear, @DepartmentID
         );
         
         IF OBJECT_ID(N'dbo.HistoryLog', N'U') IS NOT NULL AND @CreatedByAdminID IS NOT NULL
@@ -822,15 +827,22 @@ CREATE OR ALTER PROCEDURE dbo.sp_GetServiceCategories
 AS
 BEGIN
     SET NOCOUNT ON;
-    SELECT ServiceCategoryID, ServiceCategoryName, ServiceCategoryDescription
-    FROM dbo.ServiceCategory
-    ORDER BY ServiceCategoryName;
+    SELECT 
+        sc.ServiceCategoryID, 
+        sc.ServiceCategoryName, 
+        sc.ServiceCategoryDescription,
+        ISNULL(sc.RateTypeID, 'RT-0001') AS RateTypeID,
+        ISNULL(sc.RateTypeName, 'Per Hour') AS RateTypeName
+    FROM dbo.ServiceCategory sc
+    ORDER BY sc.ServiceCategoryName;
 END;
 GO
 
 CREATE OR ALTER PROCEDURE dbo.sp_CreateServiceCategory
     @ServiceCategoryName        nvarchar(255),
     @ServiceCategoryDescription nvarchar(1000),
+    @RateTypeID                 nvarchar(30)  = 'RT-0001',
+    @RateTypeName               nvarchar(50)  = NULL,
     @CreatedByAdminID           nvarchar(30)  = NULL,
     @CreatedCategoryID          nvarchar(30)  = NULL OUTPUT
 AS
@@ -853,11 +865,17 @@ BEGIN
             SET @CreatedCategoryID = 'CAT-' + RIGHT('0000' + CAST((@MaxNum + 1) AS VARCHAR(10)), 4);
         END
 
+        IF @RateTypeName IS NULL OR LTRIM(RTRIM(@RateTypeName)) = ''
+        BEGIN
+            SELECT TOP 1 @RateTypeName = RateTypeName FROM dbo.RateType WHERE RateTypeID = @RateTypeID;
+            IF @RateTypeName IS NULL SET @RateTypeName = 'Per Hour';
+        END
+
         INSERT INTO dbo.ServiceCategory (
-            ServiceCategoryID, ServiceCategoryName, ServiceCategoryDescription
+            ServiceCategoryID, ServiceCategoryName, ServiceCategoryDescription, RateTypeID, RateTypeName
         )
         VALUES (
-            @CreatedCategoryID, @ServiceCategoryName, @ServiceCategoryDescription
+            @CreatedCategoryID, @ServiceCategoryName, @ServiceCategoryDescription, @RateTypeID, @RateTypeName
         );
 
         -- Automatically assign relevant or default associations in dbo.ServiceCategoryJoins
@@ -1403,13 +1421,18 @@ BEGIN
     SET NOCOUNT ON;
     IF OBJECT_ID(N'dbo.ServiceCategory', N'U') IS NOT NULL
     BEGIN
-        SELECT ServiceCategoryID AS CategoryId, ServiceCategoryName AS CategoryName, ServiceCategoryDescription AS CategoryDescription
-        FROM dbo.ServiceCategory
-        ORDER BY ServiceCategoryName ASC;
+        SELECT 
+            sc.ServiceCategoryID AS CategoryId, 
+            sc.ServiceCategoryName AS CategoryName, 
+            sc.ServiceCategoryDescription AS CategoryDescription,
+            ISNULL(sc.RateTypeID, 'RT-0001') AS RateTypeId,
+            ISNULL(sc.RateTypeName, 'Per Hour') AS RateTypeName
+        FROM dbo.ServiceCategory sc
+        ORDER BY sc.ServiceCategoryName ASC;
     END
     ELSE
     BEGIN
-        SELECT CAST('' AS nvarchar(30)) AS CategoryId, CAST('' AS nvarchar(255)) AS CategoryName, CAST('' AS nvarchar(255)) AS CategoryDescription
+        SELECT CAST('' AS nvarchar(30)) AS CategoryId, CAST('' AS nvarchar(255)) AS CategoryName, CAST('' AS nvarchar(255)) AS CategoryDescription, CAST('RT-0001' AS nvarchar(30)) AS RateTypeId, CAST('Per Hour' AS nvarchar(50)) AS RateTypeName
         WHERE 1 = 0;
     END
 END;
@@ -1740,6 +1763,15 @@ BEGIN
         @ClockInTime, NULL, 0.0, 'Open', @IsDayOff, @Notes, @ClockInTime
     );
 
+    -- 6. Update Employee Status tracking to Clock-In (Duty)
+    IF OBJECT_ID(N'dbo.Employees', N'U') IS NOT NULL
+    BEGIN
+        UPDATE dbo.Employees
+        SET EmployeeStatus = 'Clock-In (Duty)',
+            Status = 'Clock-In (Duty)'
+        WHERE EmployeeID = @EmployeeStudioId;
+    END;
+
     IF OBJECT_ID(N'dbo.sp_AddHistoryLog', N'P') IS NOT NULL
     BEGIN
         EXEC dbo.sp_AddHistoryLog
@@ -1800,6 +1832,15 @@ BEGIN
             ELSE Notes 
         END
     WHERE TimesheetId = @TimesheetId;
+
+    -- Update Employee Status tracking to Clock-Out (Off Duty)
+    IF OBJECT_ID(N'dbo.Employees', N'U') IS NOT NULL
+    BEGIN
+        UPDATE dbo.Employees
+        SET EmployeeStatus = 'Clock-Out (Off Duty)',
+            Status = 'Clock-Out (Off Duty)'
+        WHERE EmployeeID = @EmployeeStudioId;
+    END;
 
     IF OBJECT_ID(N'dbo.sp_AddHistoryLog', N'P') IS NOT NULL
     BEGIN
@@ -2046,5 +2087,81 @@ BEGIN
     END
 
     SELECT @AssignedEmployeeID AS EmployeeID, @AssignedEmployeeName AS EmployeeName, @AssignedEmployeeEmail AS EmployeeEmail;
+END;
+GO
+
+/* =====================================================================
+   DEPARTMENT MANAGEMENT PROCEDURES
+   ===================================================================== */
+
+CREATE OR ALTER PROCEDURE dbo.sp_GetNextDepartmentID
+AS
+BEGIN
+    SET NOCOUNT ON;
+    DECLARE @SeqVal INT = NEXT VALUE FOR dbo.Seq_DepartmentID;
+    SELECT 'DEP-' + RIGHT('0000' + CAST(@SeqVal AS VARCHAR(10)), 4) AS NextDepartmentID;
+END;
+GO
+
+CREATE OR ALTER PROCEDURE dbo.sp_GetDepartments
+AS
+BEGIN
+    SET NOCOUNT ON;
+    SELECT DepartmentID, DepartmentName, DepartmentDescription, CreatedAt
+    FROM dbo.Departments
+    ORDER BY DepartmentName ASC;
+END;
+GO
+
+CREATE OR ALTER PROCEDURE dbo.sp_CreateDepartment
+    @DepartmentName        nvarchar(100),
+    @DepartmentDescription nvarchar(500) = NULL,
+    @CreatedByAdminID      nvarchar(30)  = NULL,
+    @CreatedDepartmentID   nvarchar(30)  = NULL OUTPUT
+AS
+BEGIN
+    SET NOCOUNT ON;
+    SET XACT_ABORT ON;
+
+    BEGIN TRANSACTION;
+    BEGIN TRY
+        IF EXISTS (SELECT 1 FROM dbo.Departments WHERE LOWER(DepartmentName) = LOWER(@DepartmentName))
+        BEGIN
+            THROW 50020, 'A department with this name already exists.', 1;
+        END
+
+        DECLARE @SeqVal INT = NEXT VALUE FOR dbo.Seq_DepartmentID;
+        SET @CreatedDepartmentID = 'DEP-' + RIGHT('0000' + CAST(@SeqVal AS VARCHAR(10)), 4);
+
+        WHILE EXISTS (SELECT 1 FROM dbo.Departments WHERE DepartmentID = @CreatedDepartmentID)
+        BEGIN
+            SET @SeqVal = NEXT VALUE FOR dbo.Seq_DepartmentID;
+            SET @CreatedDepartmentID = 'DEP-' + RIGHT('0000' + CAST(@SeqVal AS VARCHAR(10)), 4);
+        END
+
+        INSERT INTO dbo.Departments (DepartmentID, DepartmentName, DepartmentDescription, CreatedAt)
+        VALUES (@CreatedDepartmentID, @DepartmentName, @DepartmentDescription, SYSUTCDATETIME());
+
+        IF OBJECT_ID(N'dbo.sp_AddHistoryLog', N'P') IS NOT NULL
+        BEGIN
+            EXEC dbo.sp_AddHistoryLog
+                @ActionType = 'INSERT',
+                @EntityName = 'Department',
+                @EntityID = @CreatedDepartmentID,
+                @ActionDetails = 'Created new department.',
+                @ChangedByType = 'Admin',
+                @ActorID = @CreatedByAdminID;
+        END
+
+        COMMIT TRANSACTION;
+
+        SELECT DepartmentID, DepartmentName, DepartmentDescription, CreatedAt
+        FROM dbo.Departments
+        WHERE DepartmentID = @CreatedDepartmentID;
+    END TRY
+    BEGIN CATCH
+        IF @@TRANCOUNT > 0 ROLLBACK TRANSACTION;
+        THROW;
+    END CATCH
 END;
 GO

@@ -22,11 +22,38 @@ CREATE SEQUENCE dbo.Seq_EventAppointmentID AS INT START WITH 1 INCREMENT BY 1;
 CREATE SEQUENCE dbo.Seq_PaymentTransactionID AS INT START WITH 1 INCREMENT BY 1;
 CREATE SEQUENCE dbo.Seq_PortfolioID AS INT START WITH 1 INCREMENT BY 1;
 CREATE SEQUENCE dbo.Seq_PortfolioCategoryID AS INT START WITH 1 INCREMENT BY 1;
+CREATE SEQUENCE dbo.Seq_DepartmentID AS INT START WITH 8 INCREMENT BY 1;
+CREATE SEQUENCE dbo.Seq_HomeHighlightID AS INT START WITH 1 INCREMENT BY 1;
 GO
 
 /* =====================================================================
    2. USER AND ACCESS MANAGEMENT TABLES
    ===================================================================== */
+
+CREATE TABLE dbo.Departments (
+    DepartmentID nvarchar(30) NOT NULL PRIMARY KEY,
+    DepartmentName nvarchar(100) NOT NULL UNIQUE,
+    DepartmentDescription nvarchar(500) NULL,
+    CreatedAt datetime2 NOT NULL CONSTRAINT DF_Departments_CreatedAt DEFAULT SYSUTCDATETIME()
+);
+
+IF OBJECT_ID(N'dbo.Departments', N'U') IS NOT NULL
+BEGIN
+    IF NOT EXISTS (SELECT 1 FROM dbo.Departments WHERE DepartmentID = 'DEP-0001')
+        INSERT INTO dbo.Departments (DepartmentID, DepartmentName, DepartmentDescription) VALUES ('DEP-0001', 'Photography', 'Professional studio and on-location photography services');
+    IF NOT EXISTS (SELECT 1 FROM dbo.Departments WHERE DepartmentID = 'DEP-0002')
+        INSERT INTO dbo.Departments (DepartmentID, DepartmentName, DepartmentDescription) VALUES ('DEP-0002', 'Videography', 'Cinematic video recording, coverage, and production');
+    IF NOT EXISTS (SELECT 1 FROM dbo.Departments WHERE DepartmentID = 'DEP-0003')
+        INSERT INTO dbo.Departments (DepartmentID, DepartmentName, DepartmentDescription) VALUES ('DEP-0003', 'Post-Processing & Editing', 'Retouching, color grading, and multimedia post-production');
+    IF NOT EXISTS (SELECT 1 FROM dbo.Departments WHERE DepartmentID = 'DEP-0004')
+        INSERT INTO dbo.Departments (DepartmentID, DepartmentName, DepartmentDescription) VALUES ('DEP-0004', 'Studio Staff & Operations', 'Studio logistics, client onboarding, and equipment handling');
+    IF NOT EXISTS (SELECT 1 FROM dbo.Departments WHERE DepartmentID = 'DEP-0005')
+        INSERT INTO dbo.Departments (DepartmentID, DepartmentName, DepartmentDescription) VALUES ('DEP-0005', 'Administration & Studio Management', 'Executive management, finances, scheduling, and staff supervision');
+    IF NOT EXISTS (SELECT 1 FROM dbo.Departments WHERE DepartmentID = 'DEP-0006')
+        INSERT INTO dbo.Departments (DepartmentID, DepartmentName, DepartmentDescription) VALUES ('DEP-0006', 'Production & Lighting', 'Set design, lighting engineering, and technical floor management');
+    IF NOT EXISTS (SELECT 1 FROM dbo.Departments WHERE DepartmentID = 'DEP-0007')
+        INSERT INTO dbo.Departments (DepartmentID, DepartmentName, DepartmentDescription) VALUES ('DEP-0007', 'Creative Direction', 'Art direction, concept styling, theme planning, and brand storytelling');
+END;
 
 CREATE TABLE dbo.Admin (
     AdminID nvarchar(30) NOT NULL PRIMARY KEY,
@@ -73,7 +100,7 @@ CREATE TABLE dbo.Employees (
     EmployeeMiddleName nvarchar(255),
     EmployeeEmail nvarchar(255),
     EmployeePassword nvarchar(255),
-    EmployeeStatus nvarchar(20) NOT NULL CONSTRAINT DF_Employee_Status DEFAULT 'Active',
+    EmployeeStatus nvarchar(50) NOT NULL CONSTRAINT DF_Employee_Status DEFAULT 'Active',
     isFirstLogin bit NOT NULL CONSTRAINT DF_Employee_isFirstLogin DEFAULT 1,
     CreatedAt datetime2 NOT NULL CONSTRAINT DF_Employee_CreatedAt DEFAULT SYSUTCDATETIME(),
     DaysOff nvarchar(50) NOT NULL CONSTRAINT DF_Employees_DaysOff DEFAULT 'Sunday',
@@ -81,7 +108,10 @@ CREATE TABLE dbo.Employees (
     IdentityUserId nvarchar(450) NULL,
     Status nvarchar(50) NOT NULL CONSTRAINT DF_Employees_EF_Status DEFAULT 'Active',
     Specializations nvarchar(max) NOT NULL CONSTRAINT DF_Employees_EF_Specializations DEFAULT '[]',
-    CONSTRAINT CK_Employee_Status CHECK (EmployeeStatus IN ('Active','Inactive'))
+    Address nvarchar(500) NULL,
+    BirthYear int NULL,
+    DepartmentID nvarchar(30) NULL,
+    CONSTRAINT CK_Employee_Status CHECK (EmployeeStatus IN ('Active','Inactive','Clock-In (Duty)','Clock-Out (Off Duty)','Archive'))
 );
 
 CREATE TABLE dbo.Customer (
@@ -110,6 +140,8 @@ CREATE TABLE dbo.EmployeeSpecialization (
     SpecializationDescription nvarchar(1000) NULL,
     Specialization nvarchar(255) NOT NULL,
     Description nvarchar(1000) NULL,
+    DepartmentID nvarchar(30) NULL,
+    DepartmentName nvarchar(100) NULL,
     ColorTag nvarchar(50) NOT NULL CONSTRAINT DF_EmployeeSpecialization_ColorTag DEFAULT 'Blue',
     CreatedAt datetime2 NOT NULL CONSTRAINT DF_EmployeeSpecialization_CreatedAt DEFAULT SYSUTCDATETIME()
 );
@@ -191,7 +223,9 @@ CREATE TABLE dbo.ServiceRate (
 CREATE TABLE dbo.ServiceCategory ( 
     ServiceCategoryID nvarchar(30) NOT NULL Primary Key,
     ServiceCategoryName nvarchar(255) NOT NULL,
-    ServiceCategoryDescription nvarchar(1000) NOT NULL
+    ServiceCategoryDescription nvarchar(1000) NOT NULL,
+    RateTypeID nvarchar(30) NOT NULL CONSTRAINT DF_ServiceCategory_RateTypeID DEFAULT 'RT-0001',
+    RateTypeName nvarchar(50) NOT NULL CONSTRAINT DF_ServiceCategory_RateTypeName DEFAULT 'Per Hour'
 );
 
 CREATE TABLE dbo.ServiceCategoryJoins (
@@ -350,6 +384,18 @@ CREATE TABLE dbo.ArchiveIndex (
 );
 GO
 
+CREATE TABLE dbo.StudioFAQs (
+    FaqId INT IDENTITY(1,1) NOT NULL CONSTRAINT PK_StudioFAQs PRIMARY KEY,
+    Question NVARCHAR(500) NOT NULL,
+    Answer NVARCHAR(MAX) NOT NULL,
+    Category NVARCHAR(100) NOT NULL CONSTRAINT DF_StudioFAQs_Category DEFAULT 'General',
+    DisplayOrder INT NOT NULL CONSTRAINT DF_StudioFAQs_DisplayOrder DEFAULT 0,
+    IsActive BIT NOT NULL CONSTRAINT DF_StudioFAQs_IsActive DEFAULT 1,
+    CreatedAt DATETIME2 NOT NULL CONSTRAINT DF_StudioFAQs_CreatedAt DEFAULT SYSUTCDATETIME(),
+    UpdatedAt DATETIME2 NOT NULL CONSTRAINT DF_StudioFAQs_UpdatedAt DEFAULT SYSUTCDATETIME()
+);
+GO
+
 /* =====================================================================
    6. OVERTIME CHARGES & PAYMENT TRANSACTIONS TABLES
    ===================================================================== */
@@ -429,6 +475,20 @@ CREATE TABLE dbo.PortfolioImages (
     ImageData varbinary(max) NULL,
     UploadedAt datetime2 NOT NULL CONSTRAINT DF_PortfolioImages_UploadedAt DEFAULT SYSUTCDATETIME()
 );
+
+CREATE TABLE dbo.HomeHighlights (
+    HighlightID nvarchar(30) NOT NULL PRIMARY KEY,
+    Title nvarchar(150) NOT NULL,
+    Subtitle nvarchar(255) NULL,
+    ImageUrl nvarchar(500) NOT NULL,
+    ImageFileName nvarchar(500) NULL,
+    ImageData varbinary(max) NULL,
+    ContentType nvarchar(100) NULL CONSTRAINT DF_HomeHighlights_ContentType DEFAULT 'image/jpeg',
+    DisplayOrder int NOT NULL CONSTRAINT DF_HomeHighlights_Order DEFAULT 0,
+    IsActive bit NOT NULL CONSTRAINT DF_HomeHighlights_Active DEFAULT 1,
+    CreatedAt datetime2 NOT NULL CONSTRAINT DF_HomeHighlights_CreatedAt DEFAULT SYSUTCDATETIME(),
+    UpdatedAt datetime2 NOT NULL CONSTRAINT DF_HomeHighlights_UpdatedAt DEFAULT SYSUTCDATETIME()
+);
 GO
 
 /* =====================================================================
@@ -466,6 +526,9 @@ ALTER TABLE dbo.HistoryLog ADD CONSTRAINT FK_HistoryLog_ChangedByEmployee FOREIG
 ALTER TABLE dbo.HistoryLog ADD CONSTRAINT FK_HistoryLog_ChangedByAdmin FOREIGN KEY (ChangedByAdminID) REFERENCES dbo.Admin(AdminID) ON DELETE SET NULL;
 ALTER TABLE dbo.ServiceRate ADD CONSTRAINT FK_ServiceRate_Services FOREIGN KEY (ServicesID) REFERENCES dbo.Services(ServicesID) ON DELETE CASCADE;
 ALTER TABLE dbo.ServiceRate ADD CONSTRAINT FK_ServiceRate_RateType FOREIGN KEY (RateTypeID) REFERENCES dbo.RateType(RateTypeID);
+ALTER TABLE dbo.Employees ADD CONSTRAINT FK_Employees_Department FOREIGN KEY (DepartmentID) REFERENCES dbo.Departments(DepartmentID) ON DELETE SET NULL;
+ALTER TABLE dbo.EmployeeSpecialization ADD CONSTRAINT FK_EmployeeSpecialization_Department FOREIGN KEY (DepartmentID) REFERENCES dbo.Departments(DepartmentID) ON DELETE SET NULL;
+ALTER TABLE dbo.ServiceCategory ADD CONSTRAINT FK_ServiceCategory_RateType FOREIGN KEY (RateTypeID) REFERENCES dbo.RateType(RateTypeID);
 ALTER TABLE dbo.EmployeeTimesheets ADD CONSTRAINT FK_EmployeeTimesheets_Employees FOREIGN KEY (EmployeeStudioId) REFERENCES dbo.Employees(EmployeeID) ON DELETE CASCADE;
 ALTER TABLE dbo.PortfolioCategoryService ADD CONSTRAINT FK_PortfolioCategoryService_Category FOREIGN KEY (CategoryID) REFERENCES dbo.PortfolioCategory(CategoryID) ON DELETE CASCADE;
 ALTER TABLE dbo.Portfolios ADD CONSTRAINT FK_Portfolios_PortfolioCategory FOREIGN KEY (CategoryID) REFERENCES dbo.PortfolioCategory(CategoryID);
@@ -495,6 +558,7 @@ CREATE INDEX IX_ServiceRate_Services       ON dbo.ServiceRate (ServicesID);
 CREATE INDEX IX_ServiceRate_RateType       ON dbo.ServiceRate (RateTypeID);
 CREATE INDEX IX_Portfolios_CategoryID      ON dbo.Portfolios (CategoryID);
 CREATE INDEX IX_PortfolioImages_PortfolioId ON dbo.PortfolioImages (PortfolioId);
+CREATE INDEX IX_HomeHighlights_DisplayOrder ON dbo.HomeHighlights (IsActive, DisplayOrder, CreatedAt DESC);
 CREATE INDEX IX_PaymentTransactions_Event  ON dbo.PaymentTransactions (EventAppointmentID, CreatedAt DESC);
 CREATE INDEX IX_EventOvertime_Event        ON dbo.EventOvertimeCharges (EventAppointmentID);
 CREATE INDEX IX_BookingNegotiation_Customer ON dbo.BookingNegotiation (CustomerID, ConsultationDate DESC);
@@ -595,4 +659,105 @@ IF OBJECT_ID(N'dbo.FK_PaymentTransactions_Employee', N'F') IS NOT NULL
 
 ALTER TABLE dbo.PaymentTransactions ADD CONSTRAINT FK_PaymentTransactions_Employee 
     FOREIGN KEY (ReceivedByEmployeeID) REFERENCES dbo.Employees(EmployeeID) ON DELETE SET NULL;
+
+-- Departments table & seed data
+IF OBJECT_ID(N'dbo.Departments', N'U') IS NULL
+BEGIN
+    CREATE TABLE dbo.Departments (
+        DepartmentID nvarchar(30) NOT NULL PRIMARY KEY,
+        DepartmentName nvarchar(100) NOT NULL UNIQUE,
+        DepartmentDescription nvarchar(500) NULL,
+        CreatedAt datetime2 NOT NULL CONSTRAINT DF_Departments_CreatedAt DEFAULT SYSUTCDATETIME()
+    );
+END;
+
+IF OBJECT_ID(N'dbo.Departments', N'U') IS NOT NULL
+BEGIN
+    IF NOT EXISTS (SELECT 1 FROM dbo.Departments WHERE DepartmentID = 'DEP-0001')
+        INSERT INTO dbo.Departments (DepartmentID, DepartmentName, DepartmentDescription) VALUES ('DEP-0001', 'Photography', 'Professional studio and on-location photography services');
+    IF NOT EXISTS (SELECT 1 FROM dbo.Departments WHERE DepartmentID = 'DEP-0002')
+        INSERT INTO dbo.Departments (DepartmentID, DepartmentName, DepartmentDescription) VALUES ('DEP-0002', 'Videography', 'Cinematic video recording, coverage, and production');
+    IF NOT EXISTS (SELECT 1 FROM dbo.Departments WHERE DepartmentID = 'DEP-0003')
+        INSERT INTO dbo.Departments (DepartmentID, DepartmentName, DepartmentDescription) VALUES ('DEP-0003', 'Post-Processing & Editing', 'Retouching, color grading, and multimedia post-production');
+    IF NOT EXISTS (SELECT 1 FROM dbo.Departments WHERE DepartmentID = 'DEP-0004')
+        INSERT INTO dbo.Departments (DepartmentID, DepartmentName, DepartmentDescription) VALUES ('DEP-0004', 'Studio Staff & Operations', 'Studio logistics, client onboarding, and equipment handling');
+    IF NOT EXISTS (SELECT 1 FROM dbo.Departments WHERE DepartmentID = 'DEP-0005')
+        INSERT INTO dbo.Departments (DepartmentID, DepartmentName, DepartmentDescription) VALUES ('DEP-0005', 'Administration & Studio Management', 'Executive management, finances, scheduling, and staff supervision');
+    IF NOT EXISTS (SELECT 1 FROM dbo.Departments WHERE DepartmentID = 'DEP-0006')
+        INSERT INTO dbo.Departments (DepartmentID, DepartmentName, DepartmentDescription) VALUES ('DEP-0006', 'Production & Lighting', 'Set design, lighting engineering, and technical floor management');
+    IF NOT EXISTS (SELECT 1 FROM dbo.Departments WHERE DepartmentID = 'DEP-0007')
+        INSERT INTO dbo.Departments (DepartmentID, DepartmentName, DepartmentDescription) VALUES ('DEP-0007', 'Creative Direction', 'Art direction, concept styling, theme planning, and brand storytelling');
+END;
+
+-- Employees schema updates (Address, BirthYear, DepartmentID, EmployeeStatus length & check constraint)
+IF OBJECT_ID(N'dbo.Employees', N'U') IS NOT NULL
+BEGIN
+    IF COL_LENGTH(N'dbo.Employees', N'Address') IS NULL
+        ALTER TABLE dbo.Employees ADD Address nvarchar(500) NULL;
+
+    IF COL_LENGTH(N'dbo.Employees', N'BirthYear') IS NULL
+        ALTER TABLE dbo.Employees ADD BirthYear int NULL;
+
+    IF COL_LENGTH(N'dbo.Employees', N'DepartmentID') IS NULL
+        ALTER TABLE dbo.Employees ADD DepartmentID nvarchar(30) NULL;
+
+    ALTER TABLE dbo.Employees ALTER COLUMN EmployeeStatus nvarchar(50) NOT NULL;
+
+    IF OBJECT_ID(N'dbo.CK_Employee_Status', N'C') IS NOT NULL
+        ALTER TABLE dbo.Employees DROP CONSTRAINT CK_Employee_Status;
+
+    ALTER TABLE dbo.Employees ADD CONSTRAINT CK_Employee_Status 
+        CHECK (EmployeeStatus IN ('Active','Inactive','Clock-In (Duty)','Clock-Out (Off Duty)','Archive'));
+
+    IF OBJECT_ID(N'dbo.FK_Employees_Department', N'F') IS NOT NULL
+        ALTER TABLE dbo.Employees DROP CONSTRAINT FK_Employees_Department;
+
+    ALTER TABLE dbo.Employees ADD CONSTRAINT FK_Employees_Department 
+        FOREIGN KEY (DepartmentID) REFERENCES dbo.Departments(DepartmentID) ON DELETE SET NULL;
+END;
+
+-- EmployeeSpecialization schema updates (DepartmentID, DepartmentName, FK)
+IF OBJECT_ID(N'dbo.EmployeeSpecialization', N'U') IS NOT NULL
+BEGIN
+    IF COL_LENGTH(N'dbo.EmployeeSpecialization', N'DepartmentID') IS NULL
+        ALTER TABLE dbo.EmployeeSpecialization ADD DepartmentID nvarchar(30) NULL;
+
+    IF COL_LENGTH(N'dbo.EmployeeSpecialization', N'DepartmentName') IS NULL
+        ALTER TABLE dbo.EmployeeSpecialization ADD DepartmentName nvarchar(100) NULL;
+
+    IF OBJECT_ID(N'dbo.FK_EmployeeSpecialization_Department', N'F') IS NOT NULL
+        ALTER TABLE dbo.EmployeeSpecialization DROP CONSTRAINT FK_EmployeeSpecialization_Department;
+
+    ALTER TABLE dbo.EmployeeSpecialization ADD CONSTRAINT FK_EmployeeSpecialization_Department 
+        FOREIGN KEY (DepartmentID) REFERENCES dbo.Departments(DepartmentID) ON DELETE SET NULL;
+END;
+
+-- ServiceCategory schema updates (RateTypeID, RateTypeName, FK)
+IF OBJECT_ID(N'dbo.ServiceCategory', N'U') IS NOT NULL
+BEGIN
+    IF COL_LENGTH(N'dbo.ServiceCategory', N'RateTypeID') IS NULL
+        ALTER TABLE dbo.ServiceCategory ADD RateTypeID nvarchar(30) NOT NULL CONSTRAINT DF_ServiceCategory_RateTypeID DEFAULT 'RT-0001';
+
+    IF COL_LENGTH(N'dbo.ServiceCategory', N'RateTypeName') IS NULL
+        ALTER TABLE dbo.ServiceCategory ADD RateTypeName nvarchar(50) NOT NULL CONSTRAINT DF_ServiceCategory_RateTypeName DEFAULT 'Per Hour';
+
+    IF OBJECT_ID(N'dbo.FK_ServiceCategory_RateType', N'F') IS NOT NULL
+        ALTER TABLE dbo.ServiceCategory DROP CONSTRAINT FK_ServiceCategory_RateType;
+
+    ALTER TABLE dbo.ServiceCategory ADD CONSTRAINT FK_ServiceCategory_RateType 
+        FOREIGN KEY (RateTypeID) REFERENCES dbo.RateType(RateTypeID);
+END;
+
+-- AspNetUsers schema updates for ApplicationUser (Address, BirthYear, DepartmentId)
+IF OBJECT_ID(N'dbo.AspNetUsers', N'U') IS NOT NULL
+BEGIN
+    IF COL_LENGTH(N'dbo.AspNetUsers', N'Address') IS NULL
+        ALTER TABLE dbo.AspNetUsers ADD Address nvarchar(500) NULL;
+
+    IF COL_LENGTH(N'dbo.AspNetUsers', N'BirthYear') IS NULL
+        ALTER TABLE dbo.AspNetUsers ADD BirthYear int NULL;
+
+    IF COL_LENGTH(N'dbo.AspNetUsers', N'DepartmentId') IS NULL
+        ALTER TABLE dbo.AspNetUsers ADD DepartmentId nvarchar(30) NULL;
+END;
 GO

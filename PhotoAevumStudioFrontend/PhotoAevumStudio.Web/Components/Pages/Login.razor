@@ -2,6 +2,8 @@
 @layout EmptyLayout
 @using PhotoAevumStudio.Web.Models
 @using PhotoAevumStudio.Web.Services
+@using PhotoAevumStudio.Web.Components.Shared
+@using PhotoAevumStudio.Web.Components.Layout
 @inject NavigationManager NavManager
 @inject IAuthService AuthService
 @inject AuthenticationStateProvider AuthStateProvider
@@ -10,28 +12,19 @@
 
 <div class="login-page-wrapper">
     <div class="login-card relative">
-        <!-- Close Button -->
-        <button type="button"
-                class="absolute top-4 right-4 p-1.5 text-gray-500 hover:text-gray-700 hover:bg-gray-100 rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-gray-300"
-                @onclick="HandleClose"
-                aria-label="Close">
-            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
-            </svg>
-        </button>
-
         <!-- Logo Section -->
         <div class="logo-wrapper">
             <img src="images/AevumLogo.jpg" alt="Aevum Studio Logo" class="aevum-logo" />
         </div>
 
         <div class="portal-badge-container">
-            <span class="portal-badge">Studio Access Portal</span>
+            <span class="portal-badge">Photo Aevum Studio</span>
         </div>
 
         <h2 class="login-header">Sign In</h2>
+        <p class="login-subtext">Sign in to access your bookings, gallery, or studio management portal</p>
 
-        <!-- Blazor EditForm for Data Binding -->
+        <!-- Blazor EditForm for Unified Data Binding -->
         <EditForm Model="@loginModel" OnValidSubmit="HandleLogin">
             <div class="input-group">
                 <label for="userId">Account ID or Email</label>
@@ -39,22 +32,22 @@
                        id="userId"
                        class="minimal-input"
                        @bind="loginModel.UserId"
-                       placeholder="e.g. ADM-001, EMP-001, or client email"
+                       placeholder="e.g. client email or Staff ID (ADM-001, EMP-001)"
                        required
                        disabled="@isSubmitting" />
             </div>
 
             <div class="input-group">
-                <div class="label-row">
-                    <label for="password">Password</label>
-                    <a href="/forgot-password" class="forgot-password-link">Forgot password?</a>
-                </div>
+                <label for="password">Password</label>
                 <PasswordInput Id="password"
                                Name="password"
                                Autocomplete="current-password"
                                @bind-Value="loginModel.Password"
                                Placeholder="Enter your account password"
                                Disabled="@isSubmitting" />
+                <div class="forgot-password-row">
+                    <a href="/forgot-password" class="forgot-password-link">Forgot password?</a>
+                </div>
             </div>
 
             <!-- Display error message if login fails -->
@@ -74,27 +67,41 @@
                 }
                 else
                 {
-                    <span>Sign In to Studio</span>
+                    <span>Sign In</span>
                 }
             </button>
         </EditForm>
 
-        <div class="mt-4 text-center">
-            <a href="/" class="inline-flex items-center gap-1.5 text-xs text-gray-500 hover:text-gray-900 transition-colors">
-                <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                    <line x1="19" y1="12" x2="5" y2="12"></line>
-                    <polyline points="12 19 5 12 12 5"></polyline>
-                </svg>
-                <span>Back to Home</span>
-            </a>
+        <!-- Client registration prompt for customers -->
+        <div class="client-signup-prompt">
+            <span>New customer?</span>
+            <button type="button" class="signup-link bg-transparent border-0 p-0 text-black font-semibold cursor-pointer underline" @onclick="() => showRegisterModal = true">
+                Create an account
+            </button>
+        </div>
+
+        <!-- Terms & Conditions in-place Modal trigger -->
+        <div class="mt-4 text-center text-xs text-gray-500">
+            <span>By signing in, you agree to our </span>
+            <button type="button" class="text-gray-700 hover:text-black underline font-medium cursor-pointer bg-transparent border-0 p-0" @onclick="() => showTermsModal = true">
+                Terms &amp; Conditions
+            </button>
         </div>
     </div>
 </div>
+
+<!-- Interactive Terms Modal (pop-up rather than a separate page) -->
+<TermsModal @bind-IsOpen="showTermsModal" />
+
+<!-- Inline Registration Portal Modal for new client account creation -->
+<AuthPortalModal IsVisible="showRegisterModal" OnClose="() => showRegisterModal = false" InitialView="SignUp" />
 
 @code {
     private LoginCredentials loginModel = new LoginCredentials();
     private string errorMessage = "";
     private bool isSubmitting = false;
+    private bool showTermsModal = false;
+    private bool showRegisterModal = false;
 
     private async Task HandleLogin()
     {
@@ -124,8 +131,9 @@
                 (!string.IsNullOrEmpty(loginModel.UserId) && loginModel.UserId.StartsWith("ADM-", StringComparison.OrdinalIgnoreCase));
 
             bool isEmployee = user.IsInRole("Employee") ||
-                (!string.IsNullOrEmpty(result.Role) && (result.Role.Contains("Employee", StringComparison.OrdinalIgnoreCase) || result.Role.Contains("Staff", StringComparison.OrdinalIgnoreCase))) ||
-                (!string.IsNullOrEmpty(loginModel.UserId) && loginModel.UserId.StartsWith("EMP-", StringComparison.OrdinalIgnoreCase));
+                user.IsInRole("Office Clerk") ||
+                (!string.IsNullOrEmpty(result.Role) && (result.Role.Contains("Employee", StringComparison.OrdinalIgnoreCase) || result.Role.Contains("Staff", StringComparison.OrdinalIgnoreCase) || result.Role.Contains("Clerk", StringComparison.OrdinalIgnoreCase))) ||
+                (!string.IsNullOrEmpty(loginModel.UserId) && (loginModel.UserId.StartsWith("EMP-", StringComparison.OrdinalIgnoreCase) || loginModel.UserId.StartsWith("CLK-", StringComparison.OrdinalIgnoreCase)));
 
             if (isAdmin)
                 NavManager.NavigateTo("/admin");
@@ -136,13 +144,11 @@
         }
         else
         {
-            errorMessage = result.Error ?? "Invalid Account ID or password. Please check your credentials.";
+            errorMessage = result.Error ?? "Invalid Account ID, Email, or password. Please check your credentials.";
         }
-        
+
         isSubmitting = false;
     }
-
-    private void HandleClose() => NavManager.NavigateTo("/");
 
     public class LoginCredentials
     {

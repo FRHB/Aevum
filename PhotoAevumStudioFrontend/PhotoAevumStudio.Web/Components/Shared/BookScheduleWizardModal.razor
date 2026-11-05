@@ -122,7 +122,7 @@
                                     <div class="min-w-0">
                                         <p class="font-semibold text-sm truncate">@svc.Name</p>
                                         <p class="text-xs mt-1 line-clamp-2 @(selected ? "text-gray-300" : "text-gray-500")">@svc.Description</p>
-                                        <p class="text-xs font-bold mt-2">₱@svc.Price.ToString("N2")</p>
+                                        <p class="text-xs mt-1 text-slate-400">Consultation discussion topic</p>
                                     </div>
                                     <span class="w-5 h-5 rounded border flex items-center justify-center text-xs shrink-0 mt-0.5
                                                  @(selected ? "bg-white text-black border-white" : "border-gray-300")">
@@ -366,13 +366,12 @@
                                     {
                                         <li class="flex justify-between">
                                             <span class="text-gray-800">@svc.Name</span>
-                                            <span class="font-medium text-gray-900">₱@svc.Price.ToString("N2")</span>
+                                            <span class="text-xs bg-gray-100 text-gray-600 px-2 py-0.5 rounded">Selected Item</span>
                                         </li>
                                     }
                                 </ul>
-                                <div class="mt-3 pt-2 border-t border-gray-100 flex justify-between font-bold text-gray-900">
-                                    <span>Total</span>
-                                    <span>₱@SelectedServices().Sum(s => s.Price).ToString("N2")</span>
+                                <div class="mt-3 pt-2 border-t border-gray-100 text-xs text-gray-500">
+                                    No upfront payment required. Final rates and package pricing will be agreed upon during your consultation call.
                                 </div>
                             </div>
 

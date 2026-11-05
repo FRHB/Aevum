@@ -24,11 +24,14 @@ public class EmployeeService : IEmployeeService
             ?? throw new InvalidOperationException("Connection string 'DefaultConnection' is missing.");
     }
 
-    public async Task<IReadOnlyList<EmployeeViewModel>> GetEmployeesAsync(CancellationToken cancellationToken = default)
+    public Task<IReadOnlyList<EmployeeViewModel>> GetEmployeesAsync(CancellationToken cancellationToken = default) =>
+        GetEmployeesAsync(includeArchived: false, cancellationToken);
+
+    public async Task<IReadOnlyList<EmployeeViewModel>> GetEmployeesAsync(bool includeArchived, CancellationToken cancellationToken = default)
     {
         if (cancellationToken.IsCancellationRequested)
         {
-            return GetLocalFallbackEmployees();
+            return GetLocalFallbackEmployees(includeArchived);
         }
 
         try
@@ -39,19 +42,20 @@ public class EmployeeService : IEmployeeService
             }
             catch (OperationCanceledException)
             {
-                return GetLocalFallbackEmployees();
+                return GetLocalFallbackEmployees(includeArchived);
             }
             catch { }
 
             List<EmployeeViewModel> list;
             try
             {
-                var result = await _http.GetFromJsonAsync<List<EmployeeViewModel>>("api/management/employees", cancellationToken);
+                var url = includeArchived ? "api/management/employees?includeArchived=true" : "api/management/employees";
+                var result = await _http.GetFromJsonAsync<List<EmployeeViewModel>>(url, cancellationToken);
                 list = result ?? new List<EmployeeViewModel>();
             }
             catch
             {
-                list = GetLocalFallbackEmployees();
+                list = GetLocalFallbackEmployees(includeArchived);
             }
 
             // Enrich with today's attendance & leave statuses from Timesheet API
@@ -89,19 +93,28 @@ public class EmployeeService : IEmployeeService
         }
         catch (OperationCanceledException)
         {
-            return GetLocalFallbackEmployees();
+            return GetLocalFallbackEmployees(includeArchived);
         }
         catch
         {
-            return GetLocalFallbackEmployees();
+            return GetLocalFallbackEmployees(includeArchived);
         }
     }
 
-    private List<EmployeeViewModel> GetLocalFallbackEmployees()
+    public async Task<IReadOnlyList<EmployeeViewModel>> GetArchivedEmployeesAsync(CancellationToken cancellationToken = default)
+    {
+        var all = await GetEmployeesAsync(includeArchived: true, cancellationToken);
+        return all.Where(e => e.Status.Equals("Archive", StringComparison.OrdinalIgnoreCase) ||
+                              e.Status.Equals("Archived", StringComparison.OrdinalIgnoreCase) ||
+                              e.Status.Equals("Deleted", StringComparison.OrdinalIgnoreCase))
+                  .ToList();
+    }
+
+    private List<EmployeeViewModel> GetLocalFallbackEmployees(bool includeArchived = false)
     {
         try
         {
-            var dbEmployees = _userService.GetEmployeeSpecializations();
+            var dbEmployees = _userService.GetEmployeeSpecializations(includeArchived);
             return dbEmployees.Select(e => new EmployeeViewModel
             {
                 Id = e.Id,
@@ -111,6 +124,10 @@ public class EmployeeService : IEmployeeService
                 MiddleName = e.MiddleName,
                 Email = e.Email,
                 Role = e.Role,
+                Address = e.Address,
+                BirthYear = e.BirthYear,
+                DepartmentId = e.DepartmentId,
+                Department = e.Department,
                 Specializations = e.Specializations,
                 Status = e.Status
             }).ToList();
@@ -191,7 +208,10 @@ public class EmployeeService : IEmployeeService
             r.Email,
             r.Password,
             Role = "Employee",
-            StudioId = r.EmployeeId
+            StudioId = r.EmployeeId,
+            Address = r.Address,
+            BirthYear = r.BirthYear,
+            DepartmentId = r.DepartmentId
         };
 
         try
@@ -221,11 +241,11 @@ public class EmployeeService : IEmployeeService
                 BEGIN
                     INSERT INTO dbo.Employees (
                         EmployeeID, EmployeeFirstName, EmployeeLastName, EmployeeMiddleName, EmployeeEmail,
-                        EmployeePassword, EmployeeStatus, isFirstLogin, CreatedAt, DaysOff
+                        EmployeePassword, EmployeeStatus, isFirstLogin, CreatedAt, DaysOff, Address, BirthYear, DepartmentID
                     )
                     VALUES (
                         @EmpId, @FirstName, @LastName, @MiddleName, @Email,
-                        @Password, 'Active', 1, SYSUTCDATETIME(), @DaysOff
+                        @Password, 'Active', 1, SYSUTCDATETIME(), @DaysOff, @Address, @BirthYear, @DepartmentID
                     );
                 END
                 ELSE
@@ -235,7 +255,10 @@ public class EmployeeService : IEmployeeService
                         EmployeeLastName = @LastName,
                         EmployeeMiddleName = @MiddleName,
                         EmployeeEmail = @Email,
-                        DaysOff = @DaysOff
+                        DaysOff = @DaysOff,
+                        Address = @Address,
+                        BirthYear = @BirthYear,
+                        DepartmentID = @DepartmentID
                     WHERE UPPER(EmployeeID) = UPPER(@EmpId);
                 END";
 
@@ -247,6 +270,9 @@ public class EmployeeService : IEmployeeService
             cmd.Parameters.AddWithValue("@Email", (object?)r.Email?.Trim() ?? DBNull.Value);
             cmd.Parameters.AddWithValue("@Password", string.IsNullOrWhiteSpace(r.Password) ? "TempPass123!" : r.Password);
             cmd.Parameters.AddWithValue("@DaysOff", string.IsNullOrWhiteSpace(r.DaysOff) ? "Sunday" : r.DaysOff.Trim());
+            cmd.Parameters.AddWithValue("@Address", (object?)r.Address?.Trim() ?? DBNull.Value);
+            cmd.Parameters.AddWithValue("@BirthYear", (object?)r.BirthYear ?? DBNull.Value);
+            cmd.Parameters.AddWithValue("@DepartmentID", (object?)r.DepartmentId?.Trim() ?? DBNull.Value);
             await cmd.ExecuteNonQueryAsync(cancellationToken);
 
             await PersistEmployeeSpecializationsAsync(r.EmployeeId, r.Specializations, cancellationToken);
@@ -276,6 +302,9 @@ public class EmployeeService : IEmployeeService
                     EmployeeMiddleName = @MiddleName,
                     EmployeeEmail = @Email,
                     DaysOff = @DaysOff,
+                    Address = @Address,
+                    BirthYear = @BirthYear,
+                    DepartmentID = @DepartmentID,
                     EmployeePassword = CASE WHEN @Password IS NOT NULL AND LEN(LTRIM(RTRIM(@Password))) > 0 THEN @Password ELSE EmployeePassword END
                 WHERE UPPER(EmployeeID) = UPPER(@EmpId);";
 
@@ -287,6 +316,9 @@ public class EmployeeService : IEmployeeService
             cmd.Parameters.AddWithValue("@Email", (object?)r.Email?.Trim() ?? DBNull.Value);
             cmd.Parameters.AddWithValue("@Password", string.IsNullOrWhiteSpace(r.Password) ? (object)DBNull.Value : r.Password.Trim());
             cmd.Parameters.AddWithValue("@DaysOff", string.IsNullOrWhiteSpace(r.DaysOff) ? "Sunday" : r.DaysOff.Trim());
+            cmd.Parameters.AddWithValue("@Address", (object?)r.Address?.Trim() ?? DBNull.Value);
+            cmd.Parameters.AddWithValue("@BirthYear", (object?)r.BirthYear ?? DBNull.Value);
+            cmd.Parameters.AddWithValue("@DepartmentID", (object?)r.DepartmentId?.Trim() ?? DBNull.Value);
             await cmd.ExecuteNonQueryAsync(cancellationToken);
 
             // Also synchronize AspNetUsers if username/email matches

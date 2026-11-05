@@ -37,6 +37,16 @@ public class CreateCategoryRequest
     /// General association names or IDs to resolve and associate.
     /// </summary>
     public List<string>? Associations { get; set; }
+
+    /// <summary>
+    /// Foreign key RateTypeID referencing dbo.RateType(RateTypeID) (e.g. RT-0001). Default is RT-0001.
+    /// </summary>
+    public string RateTypeId { get; set; } = "RT-0001";
+
+    /// <summary>
+    /// Rate type display name (e.g. Per Hour, Per Picture). Default is 'Per Hour'.
+    /// </summary>
+    public string? RateTypeName { get; set; }
 }
 
 [ApiController]
@@ -132,7 +142,9 @@ public class CategoriesController : ControllerBase
             request.AssociatedServiceIds,
             request.AssociatedAdditionalServiceIds,
             request.AssociatedComboPackageIds,
-            request.Associations);
+            request.Associations,
+            request.RateTypeId,
+            request.RateTypeName);
 
         try
         {

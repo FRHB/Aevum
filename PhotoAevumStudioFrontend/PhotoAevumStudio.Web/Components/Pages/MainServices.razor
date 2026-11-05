@@ -284,6 +284,9 @@
 
     private void HandleServiceSaved(string serviceId)
     {
+        isCreateModalOpen = false;
+        isEditModalOpen = false;
+        selectedEditService = null;
         searchQuery = string.Empty;
         LoadFromDatabase();
         notificationMessage = $"Service with custom ID '{serviceId}' has been saved to the database.";
@@ -292,6 +295,9 @@
 
     private void HandleServiceCreated(MainServiceItem newItem)
     {
+        isCreateModalOpen = false;
+        isEditModalOpen = false;
+        selectedEditService = null;
         searchQuery = string.Empty;
         LoadFromDatabase();
         notificationMessage = $"Service \"{newItem.Title}\" ({newItem.Code}) has been saved to the database.";

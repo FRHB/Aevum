@@ -6,8 +6,13 @@ namespace PhotoAevumStudio.Application.Interfaces;
 public interface IStudioManagementService
 {
     // Employees
-    Task<IReadOnlyList<Employee>> GetEmployeesAsync(CancellationToken cancellationToken = default);
+    Task<IReadOnlyList<Employee>> GetEmployeesAsync(bool includeArchived = false, CancellationToken cancellationToken = default);
     Task<IReadOnlyList<string>> GetSpecializationsAsync(CancellationToken cancellationToken = default);
+
+    // Departments
+    Task<IReadOnlyList<DepartmentDto>> GetDepartmentsAsync(CancellationToken cancellationToken = default);
+    Task<string> GetNextDepartmentIdAsync(CancellationToken cancellationToken = default);
+    Task<DepartmentDto> CreateDepartmentAsync(CreateDepartmentDto dto, string? requestingAdminId = null, CancellationToken cancellationToken = default);
 
     // Services (Entity based)
     Task<IReadOnlyList<StudioService>> GetServicesAsync(CancellationToken cancellationToken = default);

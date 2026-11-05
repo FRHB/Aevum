@@ -9,6 +9,8 @@ public class EventCategory
     public string Id { get; set; } = string.Empty;
     public string Name { get; set; } = string.Empty;
     public string Description { get; set; } = string.Empty;
+    public string RateTypeId { get; set; } = "RT-0001";
+    public string RateTypeName { get; set; } = "Per Hour";
 
     /// <summary>
     /// Navigation property: Automatic or explicitly assigned associations linked to this category.

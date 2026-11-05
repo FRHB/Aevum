@@ -9,6 +9,7 @@
   </Folder>
   <Folder Name="/Frontend/Employee/" />
   <Folder Name="/Tests/">
+    <Project Path="PhotoAevumStudioBackend/Tests/PhotoAevumStudio.Infrastructure.Tests/PhotoAevumStudio.Infrastructure.Tests.csproj" />
     <Project Path="PhotoAevumStudioFrontend/Tests/PhotoAevumStudio.Web.Tests/PhotoAevumStudio.Web.Tests.csproj" />
   </Folder>
 </Solution>

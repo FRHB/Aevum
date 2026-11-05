@@ -91,9 +91,10 @@ public sealed class ScheduleBookingService(
             .ToListAsync(cancellationToken);
         var taken = booked.Select(b => (b.SlotDate, b.SlotStart)).ToHashSet();
 
-        var activeEmployees = await GetActiveEmployeesDataAsync(cancellationToken);
+        var activeClerks = await GetActiveClerksDataAsync(cancellationToken);
         var leaves = await GetApprovedLeavesRangeAsync(first, last, cancellationToken);
         var assignedEvents = await GetAssignedEventsRangeAsync(first, last, cancellationToken);
+        var bookedConsultations = await GetBookedConsultationsRangeAsync(first, last, cancellationToken);
 
         var now = StudioNow();
         var days = Enumerable.Range(0, last.Day)
@@ -103,9 +104,9 @@ public sealed class ScheduleBookingService(
                 {
                     bool isSlotTaken = taken.Contains((d, s.Start));
                     bool isSlotTimeBookable = IsBookable(d, s.Start, now);
-                    bool hasAvailableEmployee = HasAnyAvailableEmployee(activeEmployees, leaves, assignedEvents, d, s.Start);
+                    bool hasAvailableClerk = HasAnyAvailableClerk(activeClerks, leaves, assignedEvents, bookedConsultations, d, s.Start);
 
-                    return new SlotAvailabilityDto(s.Start, s.End, isSlotTimeBookable && !isSlotTaken && hasAvailableEmployee);
+                    return new SlotAvailabilityDto(s.Start, s.End, isSlotTimeBookable && !isSlotTaken && hasAvailableClerk);
                 })
                 .ToList()))
             .ToList();
@@ -121,9 +122,10 @@ public sealed class ScheduleBookingService(
                 .ToListAsync(cancellationToken))
             .ToHashSet();
 
-        var activeEmployees = await GetActiveEmployeesDataAsync(cancellationToken);
+        var activeClerks = await GetActiveClerksDataAsync(cancellationToken);
         var leaves = await GetApprovedLeavesRangeAsync(date, date, cancellationToken);
         var assignedEvents = await GetAssignedEventsRangeAsync(date, date, cancellationToken);
+        var bookedConsultations = await GetBookedConsultationsRangeAsync(date, date, cancellationToken);
 
         var now = StudioNow();
         return new DayAvailabilityDto(date, StudioSlots.All
@@ -131,9 +133,9 @@ public sealed class ScheduleBookingService(
             {
                 bool isSlotTaken = taken.Contains(s.Start);
                 bool isSlotTimeBookable = IsBookable(date, s.Start, now);
-                bool hasAvailableEmployee = HasAnyAvailableEmployee(activeEmployees, leaves, assignedEvents, date, s.Start);
+                bool hasAvailableClerk = HasAnyAvailableClerk(activeClerks, leaves, assignedEvents, bookedConsultations, date, s.Start);
 
-                return new SlotAvailabilityDto(s.Start, s.End, isSlotTimeBookable && !isSlotTaken && hasAvailableEmployee);
+                return new SlotAvailabilityDto(s.Start, s.End, isSlotTimeBookable && !isSlotTaken && hasAvailableClerk);
             })
             .ToList());
     }
@@ -184,14 +186,22 @@ public sealed class ScheduleBookingService(
 
         var total = services.Sum(s => s.Price);
 
-        // Option A check: verify that an active employee is available for this slot
-        var activeEmployees = await GetActiveEmployeesDataAsync(cancellationToken);
+        // Verify that an active Office Clerk is available for this slot (and not on Day Off)
+        var activeClerks = await GetActiveClerksDataAsync(cancellationToken);
         var leaves = await GetApprovedLeavesRangeAsync(request.Date, request.Date, cancellationToken);
         var assignedEvents = await GetAssignedEventsRangeAsync(request.Date, request.Date, cancellationToken);
+        var bookedConsultations = await GetBookedConsultationsRangeAsync(request.Date, request.Date, cancellationToken);
 
-        var assignedEmployeeId = GetFirstAvailableEmployeeId(activeEmployees, leaves, assignedEvents, request.Date, slot.Start);
+        var assignedEmployeeId = GetFirstAvailableClerkId(activeClerks, leaves, assignedEvents, bookedConsultations, request.Date, slot.Start);
         if (assignedEmployeeId == null)
-            throw new SlotUnavailableException(request.Date, slot.Start, "No employee is available to be assigned for this schedule slot.");
+        {
+            var dayName = request.Date.DayOfWeek.ToString();
+            if (activeClerks.All(c => c.DaysOff.Contains(dayName, StringComparison.OrdinalIgnoreCase)))
+            {
+                throw new ScheduleValidationException($"Cannot schedule consultation: The Office Clerk has a scheduled Day Off on {request.Date:dddd, MMMM dd, yyyy}.");
+            }
+            throw new SlotUnavailableException(request.Date, slot.Start, "No Office Clerk is available to be assigned for this schedule slot.");
+        }
 
         // External call happens before the transaction so no DB locks are held while waiting on it.
         var meetingLink = meetingLinks.IsIssuedLink(request.Platform, request.MeetingLink)
@@ -275,8 +285,12 @@ public sealed class ScheduleBookingService(
                                 ) bn ON e.EmployeeID = bn.EmployeeID
                                 WHERE (e.EmployeeStatus = 'Active' OR e.Status = 'Active')
                                   AND (
-                                      UPPER(LTRIM(RTRIM(COALESCE(NULLIF(es.SpecializationName, ''), es.Specialization)))) = 'OFFICE CLERK'
+                                      UPPER(LTRIM(RTRIM(COALESCE(NULLIF(es.SpecializationName, ''), es.Specialization, '')))) = 'OFFICE CLERK'
                                       OR e.Specializations LIKE '%Office Clerk%'
+                                  )
+                                  AND (
+                                      COL_LENGTH(N'dbo.Employees', N'DaysOff') IS NULL
+                                      OR CHARINDEX(DATENAME(dw, @EvtDate), ISNULL(e.DaysOff, 'Sunday')) = 0
                                   )
                                 ORDER BY COALESCE(bn.LastAssignedAt, '1900-01-01') ASC, e.EmployeeID ASC;
 
@@ -303,7 +317,7 @@ public sealed class ScheduleBookingService(
                     var pNegId = evtCmd.CreateParameter(); pNegId.ParameterName = "@NegId"; pNegId.Value = $"NEG-{entity.AppointmentId:D4}"; evtCmd.Parameters.Add(pNegId);
                     var pMeetingLink = evtCmd.CreateParameter(); pMeetingLink.ParameterName = "@MeetingLink"; pMeetingLink.Value = meetingLink ?? (object)DBNull.Value; evtCmd.Parameters.Add(pMeetingLink);
                     var pInquiryNotes = evtCmd.CreateParameter(); pInquiryNotes.ParameterName = "@InquiryNotes"; pInquiryNotes.Value = location ?? "Consultation Booking"; evtCmd.Parameters.Add(pInquiryNotes);
-                    var pLogMsg = evtCmd.CreateParameter(); pLogMsg.ParameterName = "@LogMsg"; pLogMsg.Value = $"New consultation booked by {customer.FullName} ({customer.Email}). Total: {total:C2}"; evtCmd.Parameters.Add(pLogMsg);
+                    var pLogMsg = evtCmd.CreateParameter(); pLogMsg.ParameterName = "@LogMsg"; pLogMsg.Value = $"New consultation booked by {customer.FullName} ({customer.Email}) for initial negotiation."; evtCmd.Parameters.Add(pLogMsg);
 
                     await evtCmd.ExecuteNonQueryAsync(ct);
                 }
@@ -349,22 +363,83 @@ public sealed class ScheduleBookingService(
             services, total, request.Platform, meetingLink, location, emailSent);
     }
 
-    private sealed record EmployeeSummary(string EmployeeId, string DaysOff);
+    private sealed record ClerkSummary(string EmployeeId, string DaysOff);
     private sealed record LeaveSummary(string EmployeeStudioId, DateOnly StartDate, DateOnly EndDate);
     private sealed record EventSummary(string EmployeeId, DateOnly EventDate, TimeOnly EventTime);
+    private sealed record ConsultationSummary(string EmployeeId, DateOnly ConsultationDate, TimeOnly ConsultationTime);
 
-    private async Task<List<EmployeeSummary>> GetActiveEmployeesDataAsync(CancellationToken ct)
+    private async Task<List<ClerkSummary>> GetActiveClerksDataAsync(CancellationToken ct)
     {
-        var list = new List<EmployeeSummary>();
+        var list = new List<ClerkSummary>();
         var conn = db.Database.GetDbConnection();
         if (conn.State != ConnectionState.Open) await conn.OpenAsync(ct);
 
         await using var cmd = conn.CreateCommand();
-        cmd.CommandText = "SELECT EmployeeID, ISNULL(DaysOff, 'Sunday') FROM dbo.Employees WHERE EmployeeStatus = 'Active' OR Status = 'Active';";
+        // Specifically query active Office Clerks
+        cmd.CommandText = @"
+            SELECT e.EmployeeID, ISNULL(e.DaysOff, 'Sunday')
+            FROM dbo.Employees e
+            LEFT JOIN dbo.EmployeeJointSpecialization ejs ON e.EmployeeID = ejs.EmployeeID
+            LEFT JOIN dbo.EmployeeSpecialization es ON ejs.SpecializationID = es.SpecializationID
+            WHERE (e.EmployeeStatus = 'Active' OR e.Status = 'Active')
+              AND (
+                  UPPER(LTRIM(RTRIM(COALESCE(NULLIF(es.SpecializationName, ''), es.Specialization, '')))) = 'OFFICE CLERK'
+                  OR e.Specializations LIKE '%Office Clerk%'
+              );";
         await using var reader = await cmd.ExecuteReaderAsync(ct);
         while (await reader.ReadAsync(ct))
         {
-            list.Add(new EmployeeSummary(reader.GetString(0), reader.GetString(1)));
+            list.Add(new ClerkSummary(reader.GetString(0), reader.GetString(1)));
+        }
+
+        // Fallback: If no clerks explicitly found in specialization tables (e.g. initial dev seed), use any active employee
+        if (list.Count == 0)
+        {
+            cmd.CommandText = "SELECT EmployeeID, ISNULL(DaysOff, 'Sunday') FROM dbo.Employees WHERE EmployeeStatus = 'Active' OR Status = 'Active';";
+            await using var fallbackReader = await cmd.ExecuteReaderAsync(ct);
+            while (await fallbackReader.ReadAsync(ct))
+            {
+                list.Add(new ClerkSummary(fallbackReader.GetString(0), fallbackReader.GetString(1)));
+            }
+        }
+
+        return list;
+    }
+
+    private async Task<List<ConsultationSummary>> GetBookedConsultationsRangeAsync(DateOnly first, DateOnly last, CancellationToken ct)
+    {
+        var list = new List<ConsultationSummary>();
+        var conn = db.Database.GetDbConnection();
+        if (conn.State != ConnectionState.Open) await conn.OpenAsync(ct);
+
+        await using var cmd = conn.CreateCommand();
+        cmd.CommandText = @"
+            IF OBJECT_ID(N'dbo.BookingNegotiation', N'U') IS NOT NULL
+            BEGIN
+                SELECT EmployeeID, ConsultationDate, ConsultationTime
+                FROM dbo.BookingNegotiation
+                WHERE ConsultationDate >= @First AND ConsultationDate <= @Last
+                  AND NegotiationStatus NOT IN ('Cancelled', 'Deal_Lost')
+                  AND EmployeeID IS NOT NULL;
+            END";
+        var pFirst = cmd.CreateParameter();
+        pFirst.ParameterName = "@First";
+        pFirst.Value = first.ToDateTime(TimeOnly.MinValue);
+        cmd.Parameters.Add(pFirst);
+
+        var pLast = cmd.CreateParameter();
+        pLast.ParameterName = "@Last";
+        pLast.Value = last.ToDateTime(TimeOnly.MinValue);
+        cmd.Parameters.Add(pLast);
+
+        await using var reader = await cmd.ExecuteReaderAsync(ct);
+        while (await reader.ReadAsync(ct))
+        {
+            if (reader.IsDBNull(0) || reader.IsDBNull(1) || reader.IsDBNull(2)) continue;
+            var empId = reader.GetString(0);
+            var d = DateOnly.FromDateTime(reader.GetDateTime(1));
+            var t = TimeOnly.FromTimeSpan(reader.GetFieldValue<TimeSpan>(2));
+            list.Add(new ConsultationSummary(empId, d, t));
         }
         return list;
     }
@@ -440,24 +515,29 @@ public sealed class ScheduleBookingService(
         return list;
     }
 
-    private static bool HasAnyAvailableEmployee(
-        List<EmployeeSummary> employees,
+    private static bool HasAnyAvailableClerk(
+        List<ClerkSummary> clerks,
         List<LeaveSummary> leaves,
         List<EventSummary> assignedEvents,
+        List<ConsultationSummary> bookedConsultations,
         DateOnly date,
         TimeOnly slotStart)
     {
         var dayName = date.DayOfWeek.ToString();
 
-        foreach (var emp in employees)
+        foreach (var clerk in clerks)
         {
-            if (emp.DaysOff.Contains(dayName, StringComparison.OrdinalIgnoreCase))
+            // If Office Clerk is on Day Off, that specific date/time is completely unavailable for customer booking negotiations
+            if (clerk.DaysOff.Contains(dayName, StringComparison.OrdinalIgnoreCase))
                 continue;
 
-            if (leaves.Any(l => string.Equals(l.EmployeeStudioId, emp.EmployeeId, StringComparison.OrdinalIgnoreCase) && date >= l.StartDate && date <= l.EndDate))
+            if (leaves.Any(l => string.Equals(l.EmployeeStudioId, clerk.EmployeeId, StringComparison.OrdinalIgnoreCase) && date >= l.StartDate && date <= l.EndDate))
                 continue;
 
-            if (assignedEvents.Any(ev => string.Equals(ev.EmployeeId, emp.EmployeeId, StringComparison.OrdinalIgnoreCase) && ev.EventDate == date && ev.EventTime == slotStart))
+            if (assignedEvents.Any(ev => string.Equals(ev.EmployeeId, clerk.EmployeeId, StringComparison.OrdinalIgnoreCase) && ev.EventDate == date && ev.EventTime == slotStart))
+                continue;
+
+            if (bookedConsultations.Any(c => string.Equals(c.EmployeeId, clerk.EmployeeId, StringComparison.OrdinalIgnoreCase) && c.ConsultationDate == date && c.ConsultationTime == slotStart))
                 continue;
 
             return true;
@@ -466,27 +546,32 @@ public sealed class ScheduleBookingService(
         return false;
     }
 
-    private static string? GetFirstAvailableEmployeeId(
-        List<EmployeeSummary> employees,
+    private static string? GetFirstAvailableClerkId(
+        List<ClerkSummary> clerks,
         List<LeaveSummary> leaves,
         List<EventSummary> assignedEvents,
+        List<ConsultationSummary> bookedConsultations,
         DateOnly date,
         TimeOnly slotStart)
     {
         var dayName = date.DayOfWeek.ToString();
 
-        foreach (var emp in employees)
+        foreach (var clerk in clerks)
         {
-            if (emp.DaysOff.Contains(dayName, StringComparison.OrdinalIgnoreCase))
+            // Skip clerk if date is their scheduled Day Off
+            if (clerk.DaysOff.Contains(dayName, StringComparison.OrdinalIgnoreCase))
                 continue;
 
-            if (leaves.Any(l => string.Equals(l.EmployeeStudioId, emp.EmployeeId, StringComparison.OrdinalIgnoreCase) && date >= l.StartDate && date <= l.EndDate))
+            if (leaves.Any(l => string.Equals(l.EmployeeStudioId, clerk.EmployeeId, StringComparison.OrdinalIgnoreCase) && date >= l.StartDate && date <= l.EndDate))
                 continue;
 
-            if (assignedEvents.Any(ev => string.Equals(ev.EmployeeId, emp.EmployeeId, StringComparison.OrdinalIgnoreCase) && ev.EventDate == date && ev.EventTime == slotStart))
+            if (assignedEvents.Any(ev => string.Equals(ev.EmployeeId, clerk.EmployeeId, StringComparison.OrdinalIgnoreCase) && ev.EventDate == date && ev.EventTime == slotStart))
                 continue;
 
-            return emp.EmployeeId;
+            if (bookedConsultations.Any(c => string.Equals(c.EmployeeId, clerk.EmployeeId, StringComparison.OrdinalIgnoreCase) && c.ConsultationDate == date && c.ConsultationTime == slotStart))
+                continue;
+
+            return clerk.EmployeeId;
         }
 
         return null;

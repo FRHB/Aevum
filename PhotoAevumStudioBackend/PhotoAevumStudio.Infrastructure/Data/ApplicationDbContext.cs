@@ -28,6 +28,7 @@ public class ApplicationDbContext : IdentityDbContext<ApplicationUser>
     public DbSet<EquipmentAssignment> EquipmentAssignments => Set<EquipmentAssignment>();
     public DbSet<EmployeeLeave> EmployeeLeaves => Set<EmployeeLeave>();
     public DbSet<EmployeeTimesheet> EmployeeTimesheets => Set<EmployeeTimesheet>();
+    public DbSet<Department> Departments => Set<Department>();
     public DbSet<EmployeeSpecialization> EmployeeSpecializations => Set<EmployeeSpecialization>();
     public DbSet<EmployeeSpecialization> Specializations => EmployeeSpecializations;
 
@@ -80,11 +81,29 @@ public class ApplicationDbContext : IdentityDbContext<ApplicationUser>
             e.Property(s => s.Price).HasColumnType("decimal(18,2)");
         });
 
+        // ── Department ───────────────────────────────────────────────────────
+        builder.Entity<Department>(e =>
+        {
+            e.ToTable("Departments", "dbo");
+            e.HasKey(d => d.DepartmentID);
+            e.Property(d => d.DepartmentID).HasMaxLength(30).IsRequired();
+            e.Property(d => d.DepartmentName).HasMaxLength(100).IsRequired();
+            e.Property(d => d.DepartmentDescription).HasMaxLength(500);
+            e.Property(d => d.CreatedAt).HasDefaultValueSql("SYSUTCDATETIME()");
+        });
+
         // ── Employee ─────────────────────────────────────────────────────────
         builder.Entity<Employee>(e =>
         {
             e.ToTable("Employees");
             e.HasKey(emp => emp.Id);
+            e.Property(emp => emp.Address).HasMaxLength(500);
+            e.Property(emp => emp.BirthYear);
+            e.Property(emp => emp.DepartmentID).HasMaxLength(30);
+            e.HasOne(emp => emp.DepartmentEntity)
+             .WithMany()
+             .HasForeignKey(emp => emp.DepartmentID)
+             .OnDelete(DeleteBehavior.SetNull);
             e.HasOne(emp => emp.IdentityUser)
              .WithOne()
              .HasForeignKey<Employee>(emp => emp.IdentityUserId)
@@ -144,8 +163,15 @@ public class ApplicationDbContext : IdentityDbContext<ApplicationUser>
             e.Property(s => s.Specialization).HasMaxLength(255).IsRequired();
             e.Property(s => s.SpecializationDescription).HasMaxLength(1000);
             e.Property(s => s.Description).HasMaxLength(1000);
+            e.Property(s => s.DepartmentID).HasMaxLength(30);
+            e.Property(s => s.DepartmentName).HasMaxLength(100);
             e.Property(s => s.ColorTag).HasMaxLength(50).IsRequired().HasDefaultValue("Blue");
             e.Property(s => s.CreatedAt).HasDefaultValueSql("SYSUTCDATETIME()");
+
+            e.HasOne(s => s.DepartmentEntity)
+             .WithMany()
+             .HasForeignKey(s => s.DepartmentID)
+             .OnDelete(DeleteBehavior.SetNull);
         });
 
         // ── EventCategory / ServiceCategory ──────────────────────────────────
@@ -156,6 +182,8 @@ public class ApplicationDbContext : IdentityDbContext<ApplicationUser>
             e.Property(c => c.Id).HasColumnName("ServiceCategoryID").HasMaxLength(30).IsRequired();
             e.Property(c => c.Name).HasColumnName("ServiceCategoryName").HasMaxLength(255).IsRequired();
             e.Property(c => c.Description).HasColumnName("ServiceCategoryDescription").HasMaxLength(1000).IsRequired();
+            e.Property(c => c.RateTypeId).HasColumnName("RateTypeID").HasMaxLength(30).IsRequired().HasDefaultValue("RT-0001");
+            e.Property(c => c.RateTypeName).HasColumnName("RateTypeName").HasMaxLength(50).IsRequired().HasDefaultValue("Per Hour");
 
             e.HasMany(c => c.Associations)
              .WithOne(a => a.Category)

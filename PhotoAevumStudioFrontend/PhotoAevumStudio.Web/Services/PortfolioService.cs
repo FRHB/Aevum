@@ -925,4 +925,270 @@ public class PortfolioService : IPortfolioService
 
         return "images/AevumLogo.jpg";
     }
+
+    private static async Task EnsureHomeHighlightsSchemaAsync(SqlConnection conn, CancellationToken ct)
+    {
+        const string sql = @"
+            IF OBJECT_ID(N'dbo.HomeHighlights', N'U') IS NULL
+            BEGIN
+                CREATE TABLE dbo.HomeHighlights (
+                    HighlightID nvarchar(30) NOT NULL PRIMARY KEY,
+                    Title nvarchar(150) NOT NULL,
+                    Subtitle nvarchar(255) NULL,
+                    ImageUrl nvarchar(500) NOT NULL,
+                    ImageFileName nvarchar(500) NULL,
+                    ImageData varbinary(max) NULL,
+                    ContentType nvarchar(100) NULL CONSTRAINT DF_HomeHighlights_ContentType DEFAULT 'image/jpeg',
+                    DisplayOrder int NOT NULL CONSTRAINT DF_HomeHighlights_Order DEFAULT 0,
+                    IsActive bit NOT NULL CONSTRAINT DF_HomeHighlights_Active DEFAULT 1,
+                    CreatedAt datetime2 NOT NULL CONSTRAINT DF_HomeHighlights_CreatedAt DEFAULT SYSUTCDATETIME(),
+                    UpdatedAt datetime2 NOT NULL CONSTRAINT DF_HomeHighlights_UpdatedAt DEFAULT SYSUTCDATETIME()
+                );
+
+                IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = N'IX_HomeHighlights_DisplayOrder' AND object_id = OBJECT_ID(N'dbo.HomeHighlights'))
+                    CREATE INDEX IX_HomeHighlights_DisplayOrder ON dbo.HomeHighlights (IsActive, DisplayOrder, CreatedAt DESC);
+
+                INSERT INTO dbo.HomeHighlights (HighlightID, Title, Subtitle, ImageUrl, DisplayOrder, IsActive)
+                VALUES 
+                ('HL-0001', 'Editorial Fashion Shot', 'Studio Bay 1 • High Fashion Showcase', 'https://images.unsplash.com/photo-1604904612715-47bf9d9bc670?q=80&w=2000&auto=format&fit=crop', 1, 1),
+                ('HL-0002', 'Modern Portraiture', 'Artisan Lighting • Contemporary Session', 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?q=80&w=2000&auto=format&fit=crop', 2, 1),
+                ('HL-0003', 'Commercial & Brand Aesthetics', 'Clean Architectural Framing', 'https://images.unsplash.com/photo-1509631179647-0177331693ae?q=80&w=2000&auto=format&fit=crop', 3, 1);
+            END";
+
+        using var cmd = new SqlCommand(sql, conn);
+        await cmd.ExecuteNonQueryAsync(ct);
+    }
+
+    public async Task<List<HomeHighlightModel>> GetHomeHighlightsAsync(bool activeOnly = true, CancellationToken ct = default)
+    {
+        var list = new List<HomeHighlightModel>();
+        try
+        {
+            await using var conn = new SqlConnection(_connectionString);
+            await conn.OpenAsync(ct);
+            await EnsureHomeHighlightsSchemaAsync(conn, ct);
+
+            string sql = activeOnly
+                ? "SELECT HighlightID, Title, Subtitle, ImageUrl, ImageFileName, DisplayOrder, IsActive, CreatedAt, UpdatedAt, ContentType, ImageData FROM dbo.HomeHighlights WHERE IsActive = 1 ORDER BY DisplayOrder ASC, CreatedAt DESC;"
+                : "SELECT HighlightID, Title, Subtitle, ImageUrl, ImageFileName, DisplayOrder, IsActive, CreatedAt, UpdatedAt, ContentType, ImageData FROM dbo.HomeHighlights ORDER BY DisplayOrder ASC, CreatedAt DESC;";
+
+            await using var cmd = new SqlCommand(sql, conn);
+            await using var reader = await cmd.ExecuteReaderAsync(ct);
+            while (await reader.ReadAsync(ct))
+            {
+                var hId = reader.GetString(0);
+                var title = reader.GetString(1);
+                var subtitle = reader.IsDBNull(2) ? null : reader.GetString(2);
+                var rawUrl = reader.GetString(3);
+                var fileName = reader.IsDBNull(4) ? null : reader.GetString(4);
+                var order = reader.GetInt32(5);
+                var isActive = reader.GetBoolean(6);
+                var createdAt = reader.GetDateTime(7);
+                var updatedAt = reader.GetDateTime(8);
+                var contentType = reader.IsDBNull(9) ? "image/jpeg" : reader.GetString(9);
+                byte[]? imgData = reader.IsDBNull(10) ? null : (byte[])reader[10];
+
+                var resolvedUrl = ResolveImageUrl(fileName ?? rawUrl, rawUrl, contentType, imgData);
+
+                list.Add(new HomeHighlightModel
+                {
+                    HighlightID = hId,
+                    Title = title,
+                    Subtitle = subtitle,
+                    ImageUrl = resolvedUrl,
+                    ImageFileName = fileName,
+                    DisplayOrder = order,
+                    IsActive = isActive,
+                    CreatedAt = createdAt,
+                    UpdatedAt = updatedAt
+                });
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger?.LogError(ex, "Failed to load home highlights.");
+        }
+
+        if (list.Count == 0 && activeOnly)
+        {
+            list.Add(new HomeHighlightModel
+            {
+                HighlightID = "HL-0001",
+                Title = "Editorial Fashion Shot",
+                Subtitle = "Studio Bay 1 • High Fashion Showcase",
+                ImageUrl = "https://images.unsplash.com/photo-1604904612715-47bf9d9bc670?q=80&w=2000&auto=format&fit=crop",
+                DisplayOrder = 1,
+                IsActive = true
+            });
+            list.Add(new HomeHighlightModel
+            {
+                HighlightID = "HL-0002",
+                Title = "Modern Portraiture",
+                Subtitle = "Artisan Lighting • Contemporary Session",
+                ImageUrl = "https://images.unsplash.com/photo-1534528741775-53994a69daeb?q=80&w=2000&auto=format&fit=crop",
+                DisplayOrder = 2,
+                IsActive = true
+            });
+            list.Add(new HomeHighlightModel
+            {
+                HighlightID = "HL-0003",
+                Title = "Commercial & Brand Aesthetics",
+                Subtitle = "Clean Architectural Framing",
+                ImageUrl = "https://images.unsplash.com/photo-1509631179647-0177331693ae?q=80&w=2000&auto=format&fit=crop",
+                DisplayOrder = 3,
+                IsActive = true
+            });
+        }
+
+        return list;
+    }
+
+    public async Task<HomeHighlightModel?> SaveHomeHighlightAsync(HomeHighlightModel model, byte[]? imageData = null, string? imageMime = null, CancellationToken ct = default)
+    {
+        try
+        {
+            await using var conn = new SqlConnection(_connectionString);
+            await conn.OpenAsync(ct);
+            await EnsureHomeHighlightsSchemaAsync(conn, ct);
+
+            string highlightId = model.HighlightID?.Trim() ?? string.Empty;
+            bool isNew = string.IsNullOrWhiteSpace(highlightId);
+
+            if (isNew)
+            {
+                try
+                {
+                    await using var nextCmd = new SqlCommand("dbo.sp_GetNextHomeHighlightID", conn)
+                    {
+                        CommandType = CommandType.StoredProcedure
+                    };
+                    var pOut = new SqlParameter("@NextHighlightID", SqlDbType.NVarChar, 50)
+                    {
+                        Direction = ParameterDirection.Output
+                    };
+                    nextCmd.Parameters.Add(pOut);
+                    await nextCmd.ExecuteNonQueryAsync(ct);
+                    highlightId = pOut.Value?.ToString() ?? string.Empty;
+                }
+                catch
+                {
+                    await using var maxCmd = new SqlCommand(
+                        "SELECT ISNULL(MAX(TRY_CAST(SUBSTRING(HighlightID, 4, 10) AS INT)), 0) + 1 FROM dbo.HomeHighlights WHERE HighlightID LIKE 'HL-%';", conn);
+                    var nextNum = Convert.ToInt32(await maxCmd.ExecuteScalarAsync(ct));
+                    highlightId = $"HL-{nextNum:D4}";
+                }
+
+                if (string.IsNullOrWhiteSpace(highlightId))
+                {
+                    highlightId = $"HL-{Random.Shared.Next(1000, 9999)}";
+                }
+                model.HighlightID = highlightId;
+            }
+
+            string r2Key = model.ImageFileName ?? string.Empty;
+            string finalUrl = model.ImageUrl ?? string.Empty;
+            string resolvedMime = string.IsNullOrWhiteSpace(imageMime) ? "image/jpeg" : imageMime;
+
+            if (imageData is { Length: > 0 })
+            {
+                var uniqueName = $"highlights/{highlightId}_{Guid.NewGuid():N}.jpg";
+                var (k, u, _) = await UploadToR2Async(uniqueName, imageData, resolvedMime, ct);
+                r2Key = k;
+                finalUrl = !string.IsNullOrWhiteSpace(u) ? u : $"data:{resolvedMime};base64,{Convert.ToBase64String(imageData)}";
+            }
+            else if (string.IsNullOrWhiteSpace(finalUrl))
+            {
+                finalUrl = "https://images.unsplash.com/photo-1604904612715-47bf9d9bc670?q=80&w=2000&auto=format&fit=crop";
+            }
+
+            model.ImageUrl = finalUrl;
+            model.ImageFileName = r2Key;
+
+            const string upsertSql = @"
+                IF EXISTS (SELECT 1 FROM dbo.HomeHighlights WHERE HighlightID = @ID)
+                BEGIN
+                    UPDATE dbo.HomeHighlights
+                    SET Title = @Title,
+                        Subtitle = @Subtitle,
+                        ImageUrl = @ImageUrl,
+                        ImageFileName = CASE WHEN @FileName IS NOT NULL THEN @FileName ELSE ImageFileName END,
+                        ImageData = CASE WHEN @ImageData IS NOT NULL THEN @ImageData ELSE ImageData END,
+                        ContentType = CASE WHEN @ContentType IS NOT NULL THEN @ContentType ELSE ContentType END,
+                        DisplayOrder = @DisplayOrder,
+                        IsActive = @IsActive,
+                        UpdatedAt = SYSUTCDATETIME()
+                    WHERE HighlightID = @ID;
+                END
+                ELSE
+                BEGIN
+                    INSERT INTO dbo.HomeHighlights (HighlightID, Title, Subtitle, ImageUrl, ImageFileName, ImageData, ContentType, DisplayOrder, IsActive, CreatedAt, UpdatedAt)
+                    VALUES (@ID, @Title, @Subtitle, @ImageUrl, @FileName, @ImageData, @ContentType, @DisplayOrder, @IsActive, SYSUTCDATETIME(), SYSUTCDATETIME());
+                END;";
+
+            await using var cmd = new SqlCommand(upsertSql, conn);
+            cmd.Parameters.AddWithValue("@ID", highlightId);
+            cmd.Parameters.AddWithValue("@Title", model.Title?.Trim() ?? "Studio Highlight");
+            cmd.Parameters.AddWithValue("@Subtitle", (object?)model.Subtitle?.Trim() ?? DBNull.Value);
+            cmd.Parameters.AddWithValue("@ImageUrl", finalUrl);
+            cmd.Parameters.AddWithValue("@FileName", string.IsNullOrWhiteSpace(r2Key) ? DBNull.Value : r2Key);
+            cmd.Parameters.AddWithValue("@ContentType", resolvedMime);
+            cmd.Parameters.AddWithValue("@DisplayOrder", model.DisplayOrder);
+            cmd.Parameters.AddWithValue("@IsActive", model.IsActive ? 1 : 0);
+
+            if (imageData is { Length: > 0 })
+            {
+                cmd.Parameters.Add("@ImageData", SqlDbType.VarBinary, -1).Value = imageData;
+            }
+            else
+            {
+                cmd.Parameters.Add("@ImageData", SqlDbType.VarBinary, -1).Value = DBNull.Value;
+            }
+
+            await cmd.ExecuteNonQueryAsync(ct);
+            return model;
+        }
+        catch (Exception ex)
+        {
+            _logger?.LogError(ex, "Failed to save home highlight '{Title}'.", model.Title);
+            return null;
+        }
+    }
+
+    public async Task<bool> DeleteHomeHighlightAsync(string highlightId, CancellationToken ct = default)
+    {
+        if (string.IsNullOrWhiteSpace(highlightId)) return false;
+        try
+        {
+            await using var conn = new SqlConnection(_connectionString);
+            await conn.OpenAsync(ct);
+            await using var cmd = new SqlCommand("DELETE FROM dbo.HomeHighlights WHERE HighlightID = @ID;", conn);
+            cmd.Parameters.AddWithValue("@ID", highlightId.Trim());
+            var affected = await cmd.ExecuteNonQueryAsync(ct);
+            return affected > 0;
+        }
+        catch (Exception ex)
+        {
+            _logger?.LogError(ex, "Failed to delete home highlight '{ID}'.", highlightId);
+            return false;
+        }
+    }
+
+    public async Task<bool> ToggleHomeHighlightActiveAsync(string highlightId, CancellationToken ct = default)
+    {
+        if (string.IsNullOrWhiteSpace(highlightId)) return false;
+        try
+        {
+            await using var conn = new SqlConnection(_connectionString);
+            await conn.OpenAsync(ct);
+            await using var cmd = new SqlCommand("UPDATE dbo.HomeHighlights SET IsActive = ~IsActive, UpdatedAt = SYSUTCDATETIME() WHERE HighlightID = @ID;", conn);
+            cmd.Parameters.AddWithValue("@ID", highlightId.Trim());
+            var affected = await cmd.ExecuteNonQueryAsync(ct);
+            return affected > 0;
+        }
+        catch (Exception ex)
+        {
+            _logger?.LogError(ex, "Failed to toggle active for home highlight '{ID}'.", highlightId);
+            return false;
+        }
+    }
 }

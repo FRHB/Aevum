@@ -5,6 +5,8 @@ namespace PhotoAevumStudio.Web.Services;
 public interface IEmployeeService
 {
     Task<IReadOnlyList<EmployeeViewModel>> GetEmployeesAsync(CancellationToken cancellationToken = default);
+    Task<IReadOnlyList<EmployeeViewModel>> GetEmployeesAsync(bool includeArchived, CancellationToken cancellationToken = default);
+    Task<IReadOnlyList<EmployeeViewModel>> GetArchivedEmployeesAsync(CancellationToken cancellationToken = default);
     Task<IReadOnlyList<string>> GetSpecializationsAsync(CancellationToken cancellationToken = default);
     Task<SaveEmployeeResult> CreateEmployeeAsync(NewEmployeeRequest request, CancellationToken cancellationToken = default);
     Task<SaveEmployeeResult> UpdateEmployeeAsync(NewEmployeeRequest request, CancellationToken cancellationToken = default);

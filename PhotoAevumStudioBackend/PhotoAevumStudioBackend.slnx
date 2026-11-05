@@ -2,4 +2,5 @@
   <Project Path="PhotoAevumStudio.Api/PhotoAevumStudio.Api.csproj" />
   <Project Path="PhotoAevumStudio.Application/PhotoAevumStudio.Application.csproj" />
   <Project Path="PhotoAevumStudio.Infrastructure/PhotoAevumStudio.Infrastructure.csproj" />
+  <Project Path="Tests/PhotoAevumStudio.Infrastructure.Tests/PhotoAevumStudio.Infrastructure.Tests.csproj" />
 </Solution>

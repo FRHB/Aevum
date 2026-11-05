@@ -396,7 +396,9 @@ public class ServicesApiClient : IServicesApiClient
             var payload = new
             {
                 Name = model.Name.Trim(),
-                Description = model.Description.Trim()
+                Description = model.Description.Trim(),
+                RateTypeId = string.IsNullOrWhiteSpace(model.RateTypeID) ? "RT-0001" : model.RateTypeID.Trim(),
+                RateTypeName = string.IsNullOrWhiteSpace(model.RateTypeName) ? "Per Hour" : model.RateTypeName.Trim()
             };
 
             var response = await _http.PostAsJsonAsync("api/categories", payload, cancellationToken);
@@ -439,13 +441,15 @@ public class ServicesApiClient : IServicesApiClient
                 var nextId = (await idCmd.ExecuteScalarAsync(cancellationToken))?.ToString() ?? "CAT-0001";
 
                 const string insertSql = @"
-                    INSERT INTO dbo.ServiceCategory (ServiceCategoryID, ServiceCategoryName, ServiceCategoryDescription)
-                    VALUES (@Id, @Name, @Desc);";
+                    INSERT INTO dbo.ServiceCategory (ServiceCategoryID, ServiceCategoryName, ServiceCategoryDescription, RateTypeID, RateTypeName)
+                    VALUES (@Id, @Name, @Desc, @RateTypeId, @RateTypeName);";
 
                 await using var insertCmd = new SqlCommand(insertSql, conn, trans);
                 insertCmd.Parameters.AddWithValue("@Id", nextId);
                 insertCmd.Parameters.AddWithValue("@Name", model.Name.Trim());
                 insertCmd.Parameters.AddWithValue("@Desc", model.Description.Trim());
+                insertCmd.Parameters.AddWithValue("@RateTypeId", string.IsNullOrWhiteSpace(model.RateTypeID) ? "RT-0001" : model.RateTypeID.Trim());
+                insertCmd.Parameters.AddWithValue("@RateTypeName", string.IsNullOrWhiteSpace(model.RateTypeName) ? "Per Hour" : model.RateTypeName.Trim());
                 await insertCmd.ExecuteNonQueryAsync(cancellationToken);
 
                 await trans.CommitAsync(cancellationToken);
@@ -464,7 +468,7 @@ public class ServicesApiClient : IServicesApiClient
         }
     }
 
-    public async Task<(bool Success, string? ErrorMessage)> UpdateCategoryAsync(string id, string name, string description, CancellationToken cancellationToken = default)
+    public async Task<(bool Success, string? ErrorMessage)> UpdateCategoryAsync(string id, string name, string description, string? rateTypeId = null, string? rateTypeName = null, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(id);
         ArgumentNullException.ThrowIfNull(name);
@@ -476,13 +480,17 @@ public class ServicesApiClient : IServicesApiClient
             const string sql = @"
                 UPDATE dbo.ServiceCategory
                 SET ServiceCategoryName = @Name,
-                    ServiceCategoryDescription = @Desc
+                    ServiceCategoryDescription = @Desc,
+                    RateTypeID = COALESCE(@RateTypeId, RateTypeID, 'RT-0001'),
+                    RateTypeName = COALESCE(@RateTypeName, RateTypeName, 'Per Hour')
                 WHERE UPPER(ServiceCategoryID) = UPPER(@Id) OR UPPER(ServiceCategoryName) = UPPER(@Id);";
 
             await using var cmd = new SqlCommand(sql, conn);
             cmd.Parameters.AddWithValue("@Id", id.Trim());
             cmd.Parameters.AddWithValue("@Name", name.Trim());
             cmd.Parameters.AddWithValue("@Desc", description?.Trim() ?? string.Empty);
+            cmd.Parameters.AddWithValue("@RateTypeId", (object?)rateTypeId?.Trim() ?? DBNull.Value);
+            cmd.Parameters.AddWithValue("@RateTypeName", (object?)rateTypeName?.Trim() ?? DBNull.Value);
             int rows = await cmd.ExecuteNonQueryAsync(cancellationToken);
             return (rows > 0, rows > 0 ? null : "Category not found in database.");
         }

@@ -25,9 +25,6 @@
                 <span class="metric-pill highlight">
                     <strong>@ThisWeekBookingsCount</strong> this week (@ThisWeekHoursCount.ToString("0.#")h)
                 </span>
-                <span class="metric-pill">
-                    <strong>@StudioSpaces.Count</strong> spaces
-                </span>
                 @if (ConflictCount > 0)
                 {
                     <button type="button"
@@ -79,14 +76,6 @@
 
         <div class="toolbar-right">
             @* Dropdown Filters *@
-            <select @bind="_selectedSpaceFilter" class="toolbar-select">
-                <option value="">All Spaces</option>
-                @foreach (var space in StudioSpaces)
-                {
-                    <option value="@space.Id">@space.Name</option>
-                }
-            </select>
-
             <select @bind="_selectedStatusFilter" class="toolbar-select">
                 <option value="">All Statuses</option>
                 <option value="Confirmed">Confirmed</option>
@@ -313,7 +302,7 @@
                                         <div class="agenda-time">@b.FormattedTimeRange</div>
                                         <div class="agenda-details">
                                             <div class="font-bold text-sm">@b.ClientName</div>
-                                            <div class="text-xs text-gray-500">@b.ServiceType &bull; @b.StudioSpaceName &bull; 📷 @b.AssignedPhotographer</div>
+                                            <div class="text-xs text-gray-500">@b.ServiceType &bull; 📷 @b.AssignedPhotographer</div>
                                         </div>
                                         <div class="agenda-actions">
                                             <span class="status-pill text-xs">@b.Status</span>
@@ -373,10 +362,6 @@
                     <div class="drawer-field">
                         <span class="drawer-field-label">Service</span>
                         <span class="drawer-field-val">@_selectedBooking.ServiceType</span>
-                    </div>
-                    <div class="drawer-field">
-                        <span class="drawer-field-label">Studio Bay</span>
-                        <span class="drawer-field-val">@_selectedBooking.StudioSpaceName</span>
                     </div>
                     <div class="drawer-field">
                         <span class="drawer-field-label">Schedule</span>
@@ -500,7 +485,6 @@
     private ScheduleViewMode _currentView = ScheduleViewMode.Week;
     private DateTime _selectedDate = DateTime.Today;
     private string _searchQuery = string.Empty;
-    private string _selectedSpaceFilter = string.Empty;
     private string _selectedStatusFilter = string.Empty;
     private string _selectedServiceTypeFilter = string.Empty;
     private bool _filterOnlyConflicts = false;
@@ -569,8 +553,7 @@
 
     private bool HasActiveFilters =>
         !string.IsNullOrEmpty(_searchQuery) ||
-        !string.IsNullOrEmpty(_selectedSpaceFilter) ||
-        !string.IsNullOrEmpty(_selectedStatusFilter) ||
+                !string.IsNullOrEmpty(_selectedStatusFilter) ||
         !string.IsNullOrEmpty(_selectedServiceTypeFilter) ||
         _filterOnlyConflicts;
 
@@ -604,15 +587,7 @@
         _ => _selectedDate.ToString("MMMM yyyy")
     };
 
-    private IEnumerable<StudioSpaceResource> FilteredStudioSpaces
-    {
-        get
-        {
-            if (string.IsNullOrEmpty(_selectedSpaceFilter))
-                return StudioSpaces;
-            return StudioSpaces.Where(s => s.Id == _selectedSpaceFilter);
-        }
-    }
+    private IEnumerable<StudioSpaceResource> FilteredStudioSpaces => StudioSpaces;
 
     private IEnumerable<EventBookingModel> FilteredBookings
     {
@@ -631,8 +606,6 @@
                     b.Notes.ToLowerInvariant().Contains(q));
             }
 
-            if (!string.IsNullOrEmpty(_selectedSpaceFilter))
-                query = query.Where(b => b.StudioSpaceId == _selectedSpaceFilter);
 
             if (!string.IsNullOrEmpty(_selectedStatusFilter))
                 query = query.Where(b => b.Status.Equals(_selectedStatusFilter, StringComparison.OrdinalIgnoreCase));
@@ -699,8 +672,7 @@
     private void ClearFilters()
     {
         _searchQuery = string.Empty;
-        _selectedSpaceFilter = string.Empty;
-        _selectedStatusFilter = string.Empty;
+                _selectedStatusFilter = string.Empty;
         _selectedServiceTypeFilter = string.Empty;
         _filterOnlyConflicts = false;
     }

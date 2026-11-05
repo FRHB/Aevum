@@ -110,7 +110,7 @@ public class EmployeeManagementTests
     public async Task EmailService_BuildsFormattedWelcomeEmailWithCredentials()
     {
         // EmailService with empty SMTP configuration gracefully falls back to structured logging
-        var options = Options.Create(new SmtpSettings());
+        var options = Options.Create(new EmailConfig());
         var emailService = new EmailService(options, NullLogger<EmailService>.Instance);
 
         // Should complete without unhandled exception

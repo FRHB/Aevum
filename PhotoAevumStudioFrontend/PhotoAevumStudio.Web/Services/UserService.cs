@@ -403,12 +403,51 @@ public sealed class UserService : IUserService
 		}
 	}
 
-	public IReadOnlyList<Employee> GetEmployees()
+	public IReadOnlyList<Employee> GetEmployees(bool includeArchived = false)
 	{
 		List<Employee> list = new List<Employee>();
 		using SqlConnection sqlConnection = CreateConnection();
 		sqlConnection.Open();
-		using SqlCommand sqlCommand = new SqlCommand("\n            IF OBJECT_ID(N'dbo.Employees', N'U') IS NOT NULL\n            BEGIN\n                SELECT e.EmployeeID,\n                       e.EmployeeFirstName,\n                       e.EmployeeLastName,\n                       e.EmployeeMiddleName,\n                       e.EmployeeEmail,\n                       (\n                           SELECT TOP 1 COALESCE(NULLIF(es.SpecializationName, ''), es.Specialization)\n                           FROM dbo.EmployeeJointSpecialization ejs\n                           INNER JOIN dbo.EmployeeSpecialization es ON es.SpecializationID = ejs.SpecializationID\n                           WHERE ejs.EmployeeID = e.EmployeeID\n                       ) AS PrimarySpecialization,\n                       (\n                           SELECT TOP 1 COALESCE(NULLIF(es.SpecializationDescription, ''), es.Description)\n                           FROM dbo.EmployeeJointSpecialization ejs\n                           INNER JOIN dbo.EmployeeSpecialization es ON es.SpecializationID = ejs.SpecializationID\n                           WHERE ejs.EmployeeID = e.EmployeeID\n                       ) AS PrimaryDepartment\n                FROM dbo.Employees e\n                ORDER BY e.EmployeeID;\n            END", sqlConnection);
+		string filterClause = includeArchived
+			? string.Empty
+			: "WHERE (e.EmployeeStatus NOT IN ('Archive', 'Archived', 'Deleted') AND e.Status NOT IN ('Archive', 'Archived', 'Deleted'))";
+
+		string query = $@"
+            IF OBJECT_ID(N'dbo.Employees', N'U') IS NOT NULL
+            BEGIN
+                SELECT e.EmployeeID,
+                       e.EmployeeFirstName,
+                       e.EmployeeLastName,
+                       e.EmployeeMiddleName,
+                       e.EmployeeEmail,
+                       (
+                           SELECT TOP 1 COALESCE(NULLIF(es.SpecializationName, ''), es.Specialization)
+                           FROM dbo.EmployeeJointSpecialization ejs
+                           INNER JOIN dbo.EmployeeSpecialization es ON es.SpecializationID = ejs.SpecializationID
+                           WHERE ejs.EmployeeID = e.EmployeeID
+                       ) AS PrimarySpecialization,
+                       COALESCE(
+                           d.DepartmentName,
+                           (
+                               SELECT TOP 1 COALESCE(es_d.DepartmentName, es.DepartmentName)
+                               FROM dbo.EmployeeJointSpecialization ejs
+                               INNER JOIN dbo.EmployeeSpecialization es ON es.SpecializationID = ejs.SpecializationID
+                               LEFT JOIN dbo.Departments es_d ON es_d.DepartmentID = es.DepartmentID
+                               WHERE ejs.EmployeeID = e.EmployeeID
+                           ),
+                           'Photography'
+                       ) AS PrimaryDepartment,
+                       e.EmployeeStatus,
+                       CASE WHEN COL_LENGTH(N'dbo.Employees', N'Address') IS NOT NULL THEN e.Address ELSE NULL END AS Address,
+                       CASE WHEN COL_LENGTH(N'dbo.Employees', N'BirthYear') IS NOT NULL THEN e.BirthYear ELSE NULL END AS BirthYear,
+                       CASE WHEN COL_LENGTH(N'dbo.Employees', N'DepartmentID') IS NOT NULL THEN e.DepartmentID ELSE NULL END AS DepartmentID
+                FROM dbo.Employees e
+                LEFT JOIN dbo.Departments d ON d.DepartmentID = e.DepartmentID
+                {filterClause}
+                ORDER BY e.EmployeeID;
+            END";
+
+		using SqlCommand sqlCommand = new SqlCommand(query, sqlConnection);
 		using SqlDataReader sqlDataReader = sqlCommand.ExecuteReader();
 		while (sqlDataReader.Read())
 		{
@@ -420,7 +459,12 @@ public sealed class UserService : IUserService
 				string text4 = (sqlDataReader.IsDBNull(3) ? null : sqlDataReader.GetString(3));
 				string email = (sqlDataReader.IsDBNull(4) ? string.Empty : sqlDataReader.GetString(4));
 				string position = (sqlDataReader.IsDBNull(5) ? string.Empty : sqlDataReader.GetString(5));
-				string department = (sqlDataReader.IsDBNull(6) ? string.Empty : sqlDataReader.GetString(6));
+				string department = (sqlDataReader.IsDBNull(6) ? "Photography" : sqlDataReader.GetString(6));
+				string status = (sqlDataReader.IsDBNull(7) ? "Active" : sqlDataReader.GetString(7));
+				string? address = sqlDataReader.IsDBNull(8) ? null : sqlDataReader.GetString(8);
+				int? birthYear = sqlDataReader.IsDBNull(9) ? null : sqlDataReader.GetInt32(9);
+				string? deptId = sqlDataReader.IsDBNull(10) ? null : sqlDataReader.GetString(10);
+
 				string name = string.Join(" ", new string[3] { text2, text4, text3 }.Where((string s) => !string.IsNullOrWhiteSpace(s)));
 				list.Add(new Employee
 				{
@@ -428,12 +472,25 @@ public sealed class UserService : IUserService
 					Name = name,
 					Email = email,
 					Position = position,
-					Department = department
+					Department = department,
+					DepartmentId = deptId,
+					Address = address,
+					BirthYear = birthYear,
+					Status = status
 				});
 			}
 		}
 		return list;
 	}
+
+	public IReadOnlyList<Employee> GetEmployees() => GetEmployees(includeArchived: false);
+
+	public IReadOnlyList<Employee> GetArchivedEmployees() =>
+		GetEmployees(includeArchived: true)
+			.Where(e => e.Status.Equals("Archive", StringComparison.OrdinalIgnoreCase) ||
+			            e.Status.Equals("Archived", StringComparison.OrdinalIgnoreCase) ||
+			            e.Status.Equals("Deleted", StringComparison.OrdinalIgnoreCase))
+			.ToList();
 
 	public Employee? GetEmployeeById(string id)
 	{
@@ -444,7 +501,39 @@ public sealed class UserService : IUserService
 		string value = id.Trim().ToUpperInvariant();
 		using SqlConnection sqlConnection = CreateConnection();
 		sqlConnection.Open();
-		using SqlCommand sqlCommand = new SqlCommand("\n            IF OBJECT_ID(N'dbo.Employees', N'U') IS NOT NULL\n            BEGIN\n                SELECT e.EmployeeID,\n                       e.EmployeeFirstName,\n                       e.EmployeeLastName,\n                       e.EmployeeMiddleName,\n                       e.EmployeeEmail,\n                       (\n                           SELECT TOP 1 COALESCE(NULLIF(es.SpecializationName, ''), es.Specialization)\n                           FROM dbo.EmployeeJointSpecialization ejs\n                           INNER JOIN dbo.EmployeeSpecialization es ON es.SpecializationID = ejs.SpecializationID\n                           WHERE ejs.EmployeeID = e.EmployeeID\n                       ) AS PrimarySpecialization,\n                       (\n                           SELECT TOP 1 COALESCE(NULLIF(es.SpecializationDescription, ''), es.Description)\n                           FROM dbo.EmployeeJointSpecialization ejs\n                           INNER JOIN dbo.EmployeeSpecialization es ON es.SpecializationID = ejs.SpecializationID\n                           WHERE ejs.EmployeeID = e.EmployeeID\n                       ) AS PrimaryDepartment\n                FROM dbo.Employees e\n                WHERE UPPER(e.EmployeeID) = @Id;\n            END", sqlConnection);
+		using SqlCommand sqlCommand = new SqlCommand(@"
+            IF OBJECT_ID(N'dbo.Employees', N'U') IS NOT NULL
+            BEGIN
+                SELECT e.EmployeeID,
+                       e.EmployeeFirstName,
+                       e.EmployeeLastName,
+                       e.EmployeeMiddleName,
+                       e.EmployeeEmail,
+                       (
+                           SELECT TOP 1 COALESCE(NULLIF(es.SpecializationName, ''), es.Specialization)
+                           FROM dbo.EmployeeJointSpecialization ejs
+                           INNER JOIN dbo.EmployeeSpecialization es ON es.SpecializationID = ejs.SpecializationID
+                           WHERE ejs.EmployeeID = e.EmployeeID
+                       ) AS PrimarySpecialization,
+                       COALESCE(
+                           d.DepartmentName,
+                           (
+                               SELECT TOP 1 COALESCE(es_d.DepartmentName, es.DepartmentName)
+                               FROM dbo.EmployeeJointSpecialization ejs
+                               INNER JOIN dbo.EmployeeSpecialization es ON es.SpecializationID = ejs.SpecializationID
+                               LEFT JOIN dbo.Departments es_d ON es_d.DepartmentID = es.DepartmentID
+                               WHERE ejs.EmployeeID = e.EmployeeID
+                           ),
+                           'Photography'
+                       ) AS PrimaryDepartment,
+                       e.EmployeeStatus,
+                       CASE WHEN COL_LENGTH(N'dbo.Employees', N'Address') IS NOT NULL THEN e.Address ELSE NULL END AS Address,
+                       CASE WHEN COL_LENGTH(N'dbo.Employees', N'BirthYear') IS NOT NULL THEN e.BirthYear ELSE NULL END AS BirthYear,
+                       CASE WHEN COL_LENGTH(N'dbo.Employees', N'DepartmentID') IS NOT NULL THEN e.DepartmentID ELSE NULL END AS DepartmentID
+                FROM dbo.Employees e
+                LEFT JOIN dbo.Departments d ON d.DepartmentID = e.DepartmentID
+                WHERE UPPER(e.EmployeeID) = @Id;
+            END", sqlConnection);
 		sqlCommand.Parameters.AddWithValue("@Id", value);
 		using SqlDataReader sqlDataReader = sqlCommand.ExecuteReader();
 		if (!sqlDataReader.Read())
@@ -461,7 +550,12 @@ public sealed class UserService : IUserService
 		string text4 = (sqlDataReader.IsDBNull(3) ? null : sqlDataReader.GetString(3));
 		string email = (sqlDataReader.IsDBNull(4) ? string.Empty : sqlDataReader.GetString(4));
 		string position = (sqlDataReader.IsDBNull(5) ? string.Empty : sqlDataReader.GetString(5));
-		string department = (sqlDataReader.IsDBNull(6) ? string.Empty : sqlDataReader.GetString(6));
+		string department = (sqlDataReader.IsDBNull(6) ? "Photography" : sqlDataReader.GetString(6));
+		string status = (sqlDataReader.IsDBNull(7) ? "Active" : sqlDataReader.GetString(7));
+		string? address = sqlDataReader.IsDBNull(8) ? null : sqlDataReader.GetString(8);
+		int? birthYear = sqlDataReader.IsDBNull(9) ? null : sqlDataReader.GetInt32(9);
+		string? deptId = sqlDataReader.IsDBNull(10) ? null : sqlDataReader.GetString(10);
+
 		string name = string.Join(" ", new string[3] { text2, text4, text3 }.Where((string s) => !string.IsNullOrWhiteSpace(s)));
 		return new Employee
 		{
@@ -469,7 +563,11 @@ public sealed class UserService : IUserService
 			Name = name,
 			Email = email,
 			Position = position,
-			Department = department
+			Department = department,
+			DepartmentId = deptId,
+			Address = address,
+			BirthYear = birthYear,
+			Status = status
 		};
 	}
 
@@ -483,7 +581,35 @@ public sealed class UserService : IUserService
 		var (value, text, value2) = SplitFullName(employee.Name);
 		using SqlConnection sqlConnection = CreateConnection();
 		sqlConnection.Open();
-		using (SqlCommand sqlCommand = new SqlCommand("\n            INSERT INTO dbo.Employees (EmployeeID, EmployeeFirstName, EmployeeLastName, EmployeeMiddleName, EmployeeEmail, EmployeePassword, EmployeeStatus, isFirstLogin)\n            VALUES (@Id, @First, @Last, @Middle, @Email, @Password, 'Active', 1);", sqlConnection))
+
+		// Resolve Department ID and Name if provided
+		string? deptId = employee.DepartmentId;
+		string deptName = employee.Department?.Trim() ?? "Photography";
+		if (string.IsNullOrWhiteSpace(deptId) && !string.IsNullOrWhiteSpace(deptName))
+		{
+			using (SqlCommand dCmd = new SqlCommand("SELECT TOP 1 DepartmentID, DepartmentName FROM dbo.Departments WHERE LOWER(DepartmentName) = LOWER(@DName);", sqlConnection))
+			{
+				dCmd.Parameters.AddWithValue("@DName", deptName);
+				using SqlDataReader dReader = dCmd.ExecuteReader();
+				if (dReader.Read())
+				{
+					deptId = dReader.GetString(0);
+					deptName = dReader.GetString(1);
+				}
+			}
+		}
+
+		using (SqlCommand sqlCommand = new SqlCommand(@"
+            INSERT INTO dbo.Employees (
+                EmployeeID, EmployeeFirstName, EmployeeLastName, EmployeeMiddleName, 
+                EmployeeEmail, EmployeePassword, EmployeeStatus, isFirstLogin,
+                Address, BirthYear, DepartmentID
+            )
+            VALUES (
+                @Id, @First, @Last, @Middle, 
+                @Email, @Password, 'Active', 1,
+                @Address, @BirthYear, @DepartmentID
+            );", sqlConnection))
 		{
 			sqlCommand.Parameters.AddWithValue("@Id", employee.Id.ToUpperInvariant());
 			sqlCommand.Parameters.AddWithValue("@First", value);
@@ -491,18 +617,54 @@ public sealed class UserService : IUserService
 			sqlCommand.Parameters.AddWithValue("@Middle", ((object)text) ?? ((object)DBNull.Value));
 			sqlCommand.Parameters.AddWithValue("@Email", string.IsNullOrWhiteSpace(employee.Email) ? (employee.Id.ToLowerInvariant() + "@photoaevum.studio") : employee.Email);
 			sqlCommand.Parameters.AddWithValue("@Password", "AxiomBit@2026");
+			sqlCommand.Parameters.AddWithValue("@Address", (object?)employee.Address?.Trim() ?? DBNull.Value);
+			sqlCommand.Parameters.AddWithValue("@BirthYear", (object?)employee.BirthYear ?? DBNull.Value);
+			sqlCommand.Parameters.AddWithValue("@DepartmentID", (object?)deptId ?? DBNull.Value);
 			sqlCommand.ExecuteNonQuery();
 		}
 		if (!string.IsNullOrWhiteSpace(employee.Position) || !string.IsNullOrWhiteSpace(employee.Department))
 		{
 			string value3 = "SP-" + employee.Id.Replace("EMP-", "", StringComparison.OrdinalIgnoreCase);
 			string value4 = "EJS-" + employee.Id.Replace("EMP-", "", StringComparison.OrdinalIgnoreCase);
-			using SqlCommand sqlCommand2 = new SqlCommand("\n                IF NOT EXISTS (SELECT 1 FROM dbo.EmployeeSpecialization WHERE SpecializationID = @SpecId)\n                BEGIN\n                    INSERT INTO dbo.EmployeeSpecialization (SpecializationID, SpecializationName, SpecializationDescription, Specialization, Description, ColorTag, CreatedAt)\n                    VALUES (@SpecId, @Position, @Department, @Position, @Department, 'Blue', SYSUTCDATETIME());\n                END\n                ELSE\n                BEGIN\n                    UPDATE dbo.EmployeeSpecialization\n                    SET SpecializationName = @Position, SpecializationDescription = @Department, Specialization = @Position, Description = @Department\n                    WHERE SpecializationID = @SpecId;\n                END\n\n                IF NOT EXISTS (SELECT 1 FROM dbo.EmployeeJointSpecialization WHERE EmployeeJointSpecializationID = @JointId)\n                BEGIN\n                    IF COL_LENGTH('dbo.EmployeeJointSpecialization', 'AssignedAt') IS NOT NULL\n                    BEGIN\n                        EXEC sp_executesql N'INSERT INTO dbo.EmployeeJointSpecialization (EmployeeJointSpecializationID, SpecializationID, EmployeeID, AssignedAt) VALUES (@JointId, @SpecId, @EmpId, SYSUTCDATETIME())', N'@JointId nvarchar(30), @SpecId nvarchar(30), @EmpId nvarchar(30)', @JointId, @SpecId, @EmpId;\n                    END\n                    ELSE\n                    BEGIN\n                        INSERT INTO dbo.EmployeeJointSpecialization (EmployeeJointSpecializationID, SpecializationID, EmployeeID)\n                        VALUES (@JointId, @SpecId, @EmpId);\n                    END\n                END", sqlConnection);
+			using SqlCommand sqlCommand2 = new SqlCommand(@"
+                IF NOT EXISTS (SELECT 1 FROM dbo.EmployeeSpecialization WHERE SpecializationID = @SpecId)
+                BEGIN
+                    INSERT INTO dbo.EmployeeSpecialization (
+                        SpecializationID, SpecializationName, SpecializationDescription, 
+                        Specialization, Description, DepartmentID, DepartmentName, ColorTag, CreatedAt
+                    )
+                    VALUES (
+                        @SpecId, @Position, @Department, 
+                        @Position, @Department, @DeptId, @Department, 'Blue', SYSUTCDATETIME()
+                    );
+                END
+                ELSE
+                BEGIN
+                    UPDATE dbo.EmployeeSpecialization
+                    SET SpecializationName = @Position, SpecializationDescription = @Department, 
+                        Specialization = @Position, Description = @Department,
+                        DepartmentID = @DeptId, DepartmentName = @Department
+                    WHERE SpecializationID = @SpecId;
+                END
+
+                IF NOT EXISTS (SELECT 1 FROM dbo.EmployeeJointSpecialization WHERE EmployeeJointSpecializationID = @JointId)
+                BEGIN
+                    IF COL_LENGTH('dbo.EmployeeJointSpecialization', 'AssignedAt') IS NOT NULL
+                    BEGIN
+                        EXEC sp_executesql N'INSERT INTO dbo.EmployeeJointSpecialization (EmployeeJointSpecializationID, SpecializationID, EmployeeID, AssignedAt) VALUES (@JointId, @SpecId, @EmpId, SYSUTCDATETIME())', N'@JointId nvarchar(30), @SpecId nvarchar(30), @EmpId nvarchar(30)', @JointId, @SpecId, @EmpId;
+                    END
+                    ELSE
+                    BEGIN
+                        INSERT INTO dbo.EmployeeJointSpecialization (EmployeeJointSpecializationID, SpecializationID, EmployeeID)
+                        VALUES (@JointId, @SpecId, @EmpId);
+                    END
+                END", sqlConnection);
 			sqlCommand2.Parameters.AddWithValue("@SpecId", value3);
 			sqlCommand2.Parameters.AddWithValue("@JointId", value4);
 			sqlCommand2.Parameters.AddWithValue("@EmpId", employee.Id.ToUpperInvariant());
 			sqlCommand2.Parameters.AddWithValue("@Position", employee.Position ?? string.Empty);
-			sqlCommand2.Parameters.AddWithValue("@Department", employee.Department ?? string.Empty);
+			sqlCommand2.Parameters.AddWithValue("@Department", deptName);
+			sqlCommand2.Parameters.AddWithValue("@DeptId", (object?)deptId ?? DBNull.Value);
 			sqlCommand2.ExecuteNonQuery();
 			return;
 		}
@@ -630,12 +792,100 @@ public sealed class UserService : IUserService
 		return sqlCommand.ExecuteNonQuery() > 0;
 	}
 
+	// ── Departments ─────────────────────────────────────────────────────────
+	public IReadOnlyList<DepartmentModel> GetDepartments()
+	{
+		List<DepartmentModel> list = new List<DepartmentModel>();
+		using SqlConnection sqlConnection = CreateConnection();
+		sqlConnection.Open();
+		using SqlCommand sqlCommand = new SqlCommand(@"
+            IF OBJECT_ID(N'dbo.Departments', N'U') IS NOT NULL
+            BEGIN
+                SELECT DepartmentID, DepartmentName, DepartmentDescription, CreatedAt
+                FROM dbo.Departments
+                ORDER BY DepartmentName ASC;
+            END", sqlConnection);
+		using SqlDataReader reader = sqlCommand.ExecuteReader();
+		while (reader.Read())
+		{
+			list.Add(new DepartmentModel
+			{
+				DepartmentId = reader.GetString(0),
+				DepartmentName = reader.GetString(1),
+				DepartmentDescription = reader.IsDBNull(2) ? null : reader.GetString(2),
+				CreatedAt = reader.IsDBNull(3) ? DateTime.UtcNow : reader.GetDateTime(3)
+			});
+		}
+		return list;
+	}
+
+	public DepartmentModel AddDepartment(DepartmentModel model)
+	{
+		ArgumentNullException.ThrowIfNull(model);
+		using SqlConnection sqlConnection = CreateConnection();
+		sqlConnection.Open();
+
+		int maxNum = 0;
+		using (SqlCommand maxCmd = new SqlCommand(@"
+            SELECT ISNULL(MAX(TRY_CAST(SUBSTRING(DepartmentID, 5, 20) AS INT)), 0)
+            FROM dbo.Departments
+            WHERE DepartmentID LIKE 'DEP-%';", sqlConnection))
+		{
+			var val = maxCmd.ExecuteScalar();
+			if (val != null && val != DBNull.Value) maxNum = Convert.ToInt32(val);
+		}
+		string newId = $"DEP-{maxNum + 1:D4}";
+
+		using SqlCommand sqlCommand = new SqlCommand(@"
+            IF EXISTS (SELECT 1 FROM dbo.Departments WHERE LOWER(DepartmentName) = LOWER(@Name))
+            BEGIN
+                THROW 50020, 'A department with this name already exists.', 1;
+            END;
+            INSERT INTO dbo.Departments (DepartmentID, DepartmentName, DepartmentDescription, CreatedAt)
+            VALUES (@Id, @Name, @Desc, SYSUTCDATETIME());", sqlConnection);
+		sqlCommand.Parameters.AddWithValue("@Id", newId);
+		sqlCommand.Parameters.AddWithValue("@Name", model.DepartmentName.Trim());
+		sqlCommand.Parameters.AddWithValue("@Desc", (object?)model.DepartmentDescription?.Trim() ?? DBNull.Value);
+		sqlCommand.ExecuteNonQuery();
+
+		return new DepartmentModel
+		{
+			DepartmentId = newId,
+			DepartmentName = model.DepartmentName.Trim(),
+			DepartmentDescription = model.DepartmentDescription?.Trim(),
+			CreatedAt = DateTime.UtcNow
+		};
+	}
+
+	public bool DeleteDepartment(string id)
+	{
+		if (string.IsNullOrWhiteSpace(id)) return false;
+		using SqlConnection sqlConnection = CreateConnection();
+		sqlConnection.Open();
+		using SqlCommand sqlCommand = new SqlCommand("DELETE FROM dbo.Departments WHERE UPPER(DepartmentID) = UPPER(@Id);", sqlConnection);
+		sqlCommand.Parameters.AddWithValue("@Id", id.Trim());
+		return sqlCommand.ExecuteNonQuery() > 0;
+	}
+
 	public IReadOnlyList<SpecializationLookupItem> GetSpecializationLookups()
 	{
 		List<SpecializationLookupItem> list = new List<SpecializationLookupItem>();
 		using SqlConnection sqlConnection = CreateConnection();
 		sqlConnection.Open();
-		using SqlCommand sqlCommand = new SqlCommand("\n            IF OBJECT_ID(N'dbo.EmployeeSpecialization', N'U') IS NOT NULL\n            BEGIN\n                SELECT SpecializationID,\n                       COALESCE(NULLIF(SpecializationName, ''), Specialization, SpecializationID) AS Name,\n                       COALESCE(NULLIF(SpecializationDescription, ''), Description) AS Description,\n                       COALESCE(NULLIF(ColorTag, ''), 'Blue') AS ColorTag,\n                       COALESCE(CreatedAt, SYSUTCDATETIME()) AS CreatedAt\n                FROM dbo.EmployeeSpecialization\n                ORDER BY SpecializationID;\n            END", sqlConnection);
+		using SqlCommand sqlCommand = new SqlCommand(@"
+            IF OBJECT_ID(N'dbo.EmployeeSpecialization', N'U') IS NOT NULL
+            BEGIN
+                SELECT es.SpecializationID,
+                       COALESCE(NULLIF(es.SpecializationName, ''), es.Specialization, es.SpecializationID) AS Name,
+                       COALESCE(NULLIF(es.SpecializationDescription, ''), es.Description) AS Description,
+                       COALESCE(d.DepartmentName, es.DepartmentName, 'Photography') AS Department,
+                       COALESCE(NULLIF(es.ColorTag, ''), 'Blue') AS ColorTag,
+                       COALESCE(es.CreatedAt, SYSUTCDATETIME()) AS CreatedAt,
+                       COALESCE(d.DepartmentID, es.DepartmentID, 'DEP-0001') AS DepartmentId
+                FROM dbo.EmployeeSpecialization es
+                LEFT JOIN dbo.Departments d ON d.DepartmentID = es.DepartmentID
+                ORDER BY es.SpecializationID;
+            END", sqlConnection);
 		using SqlDataReader sqlDataReader = sqlCommand.ExecuteReader();
 		while (sqlDataReader.Read())
 		{
@@ -644,21 +894,29 @@ public sealed class UserService : IUserService
 				Id = sqlDataReader.GetString(0),
 				Name = sqlDataReader.GetString(1),
 				Description = (sqlDataReader.IsDBNull(2) ? null : sqlDataReader.GetString(2)),
-				Department = "Photography",
-				ColorTag = (sqlDataReader.IsDBNull(3) ? "Blue" : sqlDataReader.GetString(3)),
-				CreatedAt = (sqlDataReader.IsDBNull(4) ? DateTime.UtcNow : sqlDataReader.GetDateTime(4))
+				Department = (sqlDataReader.IsDBNull(3) ? "Photography" : sqlDataReader.GetString(3)),
+				ColorTag = (sqlDataReader.IsDBNull(4) ? "Blue" : sqlDataReader.GetString(4)),
+				CreatedAt = (sqlDataReader.IsDBNull(5) ? DateTime.UtcNow : sqlDataReader.GetDateTime(5)),
+				DepartmentId = (sqlDataReader.IsDBNull(6) ? null : sqlDataReader.GetString(6))
 			});
 		}
 		return list;
 	}
 
-	public IReadOnlyList<EmployeeSpecializationDto> GetEmployeeSpecializations()
+	public IReadOnlyList<EmployeeSpecializationDto> GetEmployeeSpecializations(bool includeArchived = false)
 	{
 		List<EmployeeSpecializationDto> list = new List<EmployeeSpecializationDto>();
 		using SqlConnection sqlConnection = CreateConnection();
 		sqlConnection.Open();
 		Dictionary<string, List<string>> dictionary = new Dictionary<string, List<string>>(StringComparer.OrdinalIgnoreCase);
-		using (SqlCommand sqlCommand = new SqlCommand("\n            IF OBJECT_ID(N'dbo.EmployeeJointSpecialization', N'U') IS NOT NULL\n               AND OBJECT_ID(N'dbo.EmployeeSpecialization', N'U') IS NOT NULL\n            BEGIN\n                SELECT ejs.EmployeeID, COALESCE(NULLIF(es.SpecializationName, ''), es.Specialization, es.SpecializationID)\n                FROM dbo.EmployeeJointSpecialization ejs\n                INNER JOIN dbo.EmployeeSpecialization es ON es.SpecializationID = ejs.SpecializationID;\n            END", sqlConnection))
+		using (SqlCommand sqlCommand = new SqlCommand(@"
+            IF OBJECT_ID(N'dbo.EmployeeJointSpecialization', N'U') IS NOT NULL
+               AND OBJECT_ID(N'dbo.EmployeeSpecialization', N'U') IS NOT NULL
+            BEGIN
+                SELECT ejs.EmployeeID, COALESCE(NULLIF(es.SpecializationName, ''), es.Specialization, es.SpecializationID)
+                FROM dbo.EmployeeJointSpecialization ejs
+                INNER JOIN dbo.EmployeeSpecialization es ON es.SpecializationID = ejs.SpecializationID;
+            END", sqlConnection))
 		{
 			using SqlDataReader sqlDataReader = sqlCommand.ExecuteReader();
 			while (sqlDataReader.Read())
@@ -678,7 +936,23 @@ public sealed class UserService : IUserService
 				}
 			}
 		}
-		using SqlCommand sqlCommand2 = new SqlCommand("\n            IF OBJECT_ID(N'dbo.Employees', N'U') IS NOT NULL\n            BEGIN\n                SELECT EmployeeID, EmployeeFirstName, EmployeeLastName, EmployeeMiddleName, EmployeeEmail, EmployeeStatus\n                FROM dbo.Employees\n                ORDER BY EmployeeID;\n            END", sqlConnection);
+
+		string filterClause = includeArchived
+			? string.Empty
+			: "WHERE (e.EmployeeStatus NOT IN ('Archive', 'Archived', 'Deleted') AND e.Status NOT IN ('Archive', 'Archived', 'Deleted'))";
+
+		string empQuery = $@"
+            IF OBJECT_ID(N'dbo.Employees', N'U') IS NOT NULL
+            BEGIN
+                SELECT e.EmployeeID, e.EmployeeFirstName, e.EmployeeLastName, e.EmployeeMiddleName, e.EmployeeEmail, e.EmployeeStatus,
+                       e.Address, e.BirthYear, e.DepartmentID, d.DepartmentName
+                FROM dbo.Employees e
+                LEFT JOIN dbo.Departments d ON d.DepartmentID = e.DepartmentID
+                {filterClause}
+                ORDER BY e.EmployeeID;
+            END";
+
+		using SqlCommand sqlCommand2 = new SqlCommand(empQuery, sqlConnection);
 		using SqlDataReader sqlDataReader2 = sqlCommand2.ExecuteReader();
 		int num = 1;
 		while (sqlDataReader2.Read())
@@ -695,17 +969,49 @@ public sealed class UserService : IUserService
 				Email = (sqlDataReader2.IsDBNull(4) ? string.Empty : sqlDataReader2.GetString(4)),
 				Role = "Employee",
 				Status = (sqlDataReader2.IsDBNull(5) ? "Active" : sqlDataReader2.GetString(5)),
+				Address = (sqlDataReader2.IsDBNull(6) ? null : sqlDataReader2.GetString(6)),
+				BirthYear = (sqlDataReader2.IsDBNull(7) ? null : sqlDataReader2.GetInt32(7)),
+				DepartmentId = (sqlDataReader2.IsDBNull(8) ? null : sqlDataReader2.GetString(8)),
+				Department = (sqlDataReader2.IsDBNull(9) ? null : sqlDataReader2.GetString(9)),
 				Specializations = (value2 ?? new List<string>())
 			});
 		}
 		return list;
 	}
 
+	public IReadOnlyList<EmployeeSpecializationDto> GetEmployeeSpecializations() =>
+		GetEmployeeSpecializations(includeArchived: false);
+
+	public IReadOnlyList<EmployeeSpecializationDto> GetArchivedEmployeeSpecializations() =>
+		GetEmployeeSpecializations(includeArchived: true)
+			.Where(e => e.Status.Equals("Archive", StringComparison.OrdinalIgnoreCase) ||
+			            e.Status.Equals("Archived", StringComparison.OrdinalIgnoreCase) ||
+			            e.Status.Equals("Deleted", StringComparison.OrdinalIgnoreCase))
+			.ToList();
+
 	public SpecializationLookupItem AddSpecialization(SpecializationModel model)
 	{
 		ArgumentNullException.ThrowIfNull(model, "model");
 		using SqlConnection sqlConnection = CreateConnection();
 		sqlConnection.Open();
+
+		// Resolve Department ID and Name
+		string deptId = model.DepartmentId ?? string.Empty;
+		string deptName = model.Department?.Trim() ?? "Photography";
+		if (string.IsNullOrWhiteSpace(deptId))
+		{
+			using (SqlCommand dCmd = new SqlCommand("SELECT TOP 1 DepartmentID, DepartmentName FROM dbo.Departments WHERE LOWER(DepartmentName) = LOWER(@DName);", sqlConnection))
+			{
+				dCmd.Parameters.AddWithValue("@DName", deptName);
+				using SqlDataReader dReader = dCmd.ExecuteReader();
+				if (dReader.Read())
+				{
+					deptId = dReader.GetString(0);
+					deptName = dReader.GetString(1);
+				}
+			}
+		}
+
 		var existing = GetSpecializationLookups();
 		int maxNum = 0;
 		foreach (var item in existing)
@@ -717,10 +1023,20 @@ public sealed class UserService : IUserService
 			}
 		}
 		string text = $"SP-{maxNum + 1:D3}";
-		using SqlCommand sqlCommand = new SqlCommand("\n            INSERT INTO dbo.EmployeeSpecialization (SpecializationID, SpecializationName, SpecializationDescription, Specialization, Description, ColorTag, CreatedAt)\n            VALUES (@Id, @Name, @Desc, @Name, @Desc, @Color, SYSUTCDATETIME());", sqlConnection);
+		using SqlCommand sqlCommand = new SqlCommand(@"
+            INSERT INTO dbo.EmployeeSpecialization (
+                SpecializationID, SpecializationName, SpecializationDescription, 
+                Specialization, Description, DepartmentID, DepartmentName, ColorTag, CreatedAt
+            )
+            VALUES (
+                @Id, @Name, @Desc, 
+                @Name, @Desc, @DeptId, @DeptName, @Color, SYSUTCDATETIME()
+            );", sqlConnection);
 		sqlCommand.Parameters.AddWithValue("@Id", text);
 		sqlCommand.Parameters.AddWithValue("@Name", model.Name.Trim());
 		sqlCommand.Parameters.AddWithValue("@Desc", ((object)model.Description?.Trim()) ?? ((object)DBNull.Value));
+		sqlCommand.Parameters.AddWithValue("@DeptId", string.IsNullOrWhiteSpace(deptId) ? (object)DBNull.Value : deptId);
+		sqlCommand.Parameters.AddWithValue("@DeptName", deptName);
 		sqlCommand.Parameters.AddWithValue("@Color", string.IsNullOrWhiteSpace(model.ColorTag) ? "Blue" : model.ColorTag);
 		sqlCommand.ExecuteNonQuery();
 
@@ -732,7 +1048,7 @@ public sealed class UserService : IUserService
             END", sqlConnection))
 		{
 			logCmd.Parameters.AddWithValue("@Id", text);
-			logCmd.Parameters.AddWithValue("@Details", $"Added specialization '{model.Name.Trim()}' ({text}) in {model.Department}");
+			logCmd.Parameters.AddWithValue("@Details", $"Added specialization '{model.Name.Trim()}' ({text}) in {deptName}");
 			logCmd.ExecuteNonQuery();
 		}
 
@@ -741,7 +1057,8 @@ public sealed class UserService : IUserService
 			Id = text,
 			Name = model.Name.Trim(),
 			Description = model.Description?.Trim(),
-			Department = model.Department,
+			Department = deptName,
+			DepartmentId = string.IsNullOrWhiteSpace(deptId) ? null : deptId,
 			ColorTag = model.ColorTag,
 			CreatedAt = DateTime.UtcNow
 		};
@@ -867,7 +1184,9 @@ public sealed class UserService : IUserService
                         WHEN sc.ServiceCategoryName LIKE '%Add-on%' OR sc.ServiceCategoryName LIKE '%Addon%' THEN 'Add-Ons'
                         WHEN sc.ServiceCategoryName LIKE '%Specialty%' THEN 'Specialty'
                         ELSE 'Main Services'
-                    END AS InferredCategoryType
+                    END AS InferredCategoryType,
+                    ISNULL(sc.RateTypeID, 'RT-0001') AS RateTypeID,
+                    ISNULL(sc.RateTypeName, 'Per Hour') AS RateTypeName
                 FROM dbo.ServiceCategory sc
                 LEFT JOIN dbo.ServiceCategoryJoins scj ON sc.ServiceCategoryID = scj.ServiceCategoryID
                 LEFT JOIN dbo.Services s ON scj.ServicesID = s.ServicesID
@@ -886,6 +1205,8 @@ public sealed class UserService : IUserService
 			string? desc = reader.IsDBNull(2) ? null : reader.GetString(2);
 			string? linkedService = reader.IsDBNull(3) ? null : reader.GetString(3);
 			string inferredType = reader.IsDBNull(4) ? "Main Services" : reader.GetString(4);
+			string rateTypeId = reader.IsDBNull(5) ? "RT-0001" : reader.GetString(5);
+			string rateTypeName = reader.IsDBNull(6) ? "Per Hour" : reader.GetString(6);
 
 			if (!dict.TryGetValue(catId, out var item))
 			{
@@ -898,6 +1219,8 @@ public sealed class UserService : IUserService
 					Type = inferredType,
 					Status = "Active",
 					IsFeatured = false,
+					RateTypeID = rateTypeId,
+					RateTypeName = rateTypeName,
 					AssociatedServices = new List<string>(),
 					CreatedAt = DateTime.UtcNow
 				};
@@ -936,22 +1259,29 @@ public sealed class UserService : IUserService
 			categoryId = (string)idCmd.ExecuteScalar();
 		}
 
+		string rateTypeId = string.IsNullOrWhiteSpace(category.RateTypeID) ? "RT-0001" : category.RateTypeID.Trim();
+		string rateTypeName = string.IsNullOrWhiteSpace(category.RateTypeName) ? "Per Hour" : category.RateTypeName.Trim();
+
 		using SqlCommand sqlCommand = new SqlCommand(@"
             IF NOT EXISTS (SELECT 1 FROM dbo.ServiceCategory WHERE ServiceCategoryID = @Id)
             BEGIN
-                INSERT INTO dbo.ServiceCategory (ServiceCategoryID, ServiceCategoryName, ServiceCategoryDescription)
-                VALUES (@Id, @Name, @Desc);
+                INSERT INTO dbo.ServiceCategory (ServiceCategoryID, ServiceCategoryName, ServiceCategoryDescription, RateTypeID, RateTypeName)
+                VALUES (@Id, @Name, @Desc, @RateTypeId, @RateTypeName);
             END
             ELSE
             BEGIN
                 UPDATE dbo.ServiceCategory
                 SET ServiceCategoryName = @Name,
-                    ServiceCategoryDescription = @Desc
+                    ServiceCategoryDescription = @Desc,
+                    RateTypeID = @RateTypeId,
+                    RateTypeName = @RateTypeName
                 WHERE ServiceCategoryID = @Id;
             END", sqlConnection);
 		sqlCommand.Parameters.AddWithValue("@Id", categoryId);
 		sqlCommand.Parameters.AddWithValue("@Name", category.Name.Trim());
 		sqlCommand.Parameters.AddWithValue("@Desc", (object?)category.Description?.Trim() ?? DBNull.Value);
+		sqlCommand.Parameters.AddWithValue("@RateTypeId", rateTypeId);
+		sqlCommand.Parameters.AddWithValue("@RateTypeName", rateTypeName);
 		sqlCommand.ExecuteNonQuery();
 
 		if (category.AssociatedServices != null && category.AssociatedServices.Count > 0)
@@ -2420,4 +2750,241 @@ public sealed class UserService : IUserService
 		{
 		}
 	}
+
+	private static readonly List<FaqItem> _inMemoryFaqs = new()
+	{
+		new FaqItem
+		{
+			Id = 1,
+			Question = "How do I book a session?",
+			Answer = "Booking is handled entirely online through our appointment system. Simply select your desired service above, choose an available date and time from the calendar, and complete the reservation to secure your spot.",
+			Category = "Booking",
+			DisplayOrder = 1,
+			IsActive = true,
+			UpdatedAt = DateTime.UtcNow
+		},
+		new FaqItem
+		{
+			Id = 2,
+			Question = "Do you provide a makeup artist or stylist?",
+			Answer = "Standard packages do not include a dedicated makeup artist or stylist. However, we have a network of trusted professionals we can recommend, or you can request one as an add-on during booking.",
+			Category = "Services",
+			DisplayOrder = 2,
+			IsActive = true,
+			UpdatedAt = DateTime.UtcNow
+		},
+		new FaqItem
+		{
+			Id = 3,
+			Question = "When will I receive my photos?",
+			Answer = "You will receive an online proofing gallery within 48 hours of your shoot to select your favorites. Final retouched photos will be delivered via your private digital gallery within 7 business days.",
+			Category = "Delivery",
+			DisplayOrder = 3,
+			IsActive = true,
+			UpdatedAt = DateTime.UtcNow
+		}
+	};
+
+	public IReadOnlyList<FaqItem> GetFaqs(bool includeInactive = false)
+	{
+		var list = new List<FaqItem>();
+		try
+		{
+			using SqlConnection conn = CreateConnection();
+			conn.Open();
+
+			const string sql = @"
+				IF OBJECT_ID(N'dbo.StudioFAQs', N'U') IS NOT NULL
+				BEGIN
+					SELECT FaqId, Question, Answer, Category, DisplayOrder, IsActive, UpdatedAt
+					FROM dbo.StudioFAQs
+					ORDER BY DisplayOrder ASC, FaqId ASC;
+				END";
+
+			using SqlCommand cmd = new SqlCommand(sql, conn);
+			using SqlDataReader reader = cmd.ExecuteReader();
+			while (reader.Read())
+			{
+				var faq = new FaqItem
+				{
+					Id = reader.GetInt32(0),
+					Question = reader.GetString(1),
+					Answer = reader.GetString(2),
+					Category = reader.IsDBNull(3) ? "General" : reader.GetString(3),
+					DisplayOrder = reader.IsDBNull(4) ? 0 : reader.GetInt32(4),
+					IsActive = !reader.IsDBNull(5) && reader.GetBoolean(5),
+					UpdatedAt = reader.IsDBNull(6) ? DateTime.UtcNow : reader.GetDateTime(6)
+				};
+				if (includeInactive || faq.IsActive)
+				{
+					list.Add(faq);
+				}
+			}
+
+			if (list.Count > 0)
+			{
+				return list;
+			}
+		}
+		catch
+		{
+		}
+
+		lock (_inMemoryFaqs)
+		{
+			return includeInactive
+				? _inMemoryFaqs.OrderBy(f => f.DisplayOrder).ToList()
+				: _inMemoryFaqs.Where(f => f.IsActive).OrderBy(f => f.DisplayOrder).ToList();
+		}
+	}
+
+	public FaqItem? GetFaqById(int id)
+	{
+		return GetFaqs(includeInactive: true).FirstOrDefault(f => f.Id == id);
+	}
+
+	public bool SaveFaq(FaqItem faq, string? requestingAdminId = null)
+	{
+		if (faq == null || string.IsNullOrWhiteSpace(faq.Question) || string.IsNullOrWhiteSpace(faq.Answer))
+			return false;
+
+		faq.Question = faq.Question.Trim();
+		faq.Answer = faq.Answer.Trim();
+		faq.Category = string.IsNullOrWhiteSpace(faq.Category) ? "General" : faq.Category.Trim();
+		faq.UpdatedAt = DateTime.UtcNow;
+
+		try
+		{
+			using SqlConnection conn = CreateConnection();
+			conn.Open();
+
+			const string ddl = @"
+				IF OBJECT_ID(N'dbo.StudioFAQs', N'U') IS NULL
+				BEGIN
+					CREATE TABLE dbo.StudioFAQs (
+						FaqId INT IDENTITY(1,1) NOT NULL PRIMARY KEY,
+						Question NVARCHAR(500) NOT NULL,
+						Answer NVARCHAR(MAX) NOT NULL,
+						Category NVARCHAR(100) NOT NULL DEFAULT 'General',
+						DisplayOrder INT NOT NULL DEFAULT 0,
+						IsActive BIT NOT NULL DEFAULT 1,
+						CreatedAt DATETIME2 NOT NULL DEFAULT SYSUTCDATETIME(),
+						UpdatedAt DATETIME2 NOT NULL DEFAULT SYSUTCDATETIME()
+					);
+				END";
+			using (var initCmd = new SqlCommand(ddl, conn))
+			{
+				initCmd.ExecuteNonQuery();
+			}
+
+			if (faq.Id > 0)
+			{
+				const string updateSql = @"
+					UPDATE dbo.StudioFAQs
+					SET Question = @Question,
+					    Answer = @Answer,
+					    Category = @Category,
+					    DisplayOrder = @DisplayOrder,
+					    IsActive = @IsActive,
+					    UpdatedAt = SYSUTCDATETIME()
+					WHERE FaqId = @FaqId;";
+
+				using var cmd = new SqlCommand(updateSql, conn);
+				cmd.Parameters.AddWithValue("@FaqId", faq.Id);
+				cmd.Parameters.AddWithValue("@Question", faq.Question);
+				cmd.Parameters.AddWithValue("@Answer", faq.Answer);
+				cmd.Parameters.AddWithValue("@Category", faq.Category);
+				cmd.Parameters.AddWithValue("@DisplayOrder", faq.DisplayOrder);
+				cmd.Parameters.AddWithValue("@IsActive", faq.IsActive);
+				cmd.ExecuteNonQuery();
+			}
+			else
+			{
+				const string insertSql = @"
+					INSERT INTO dbo.StudioFAQs (Question, Answer, Category, DisplayOrder, IsActive, CreatedAt, UpdatedAt)
+					OUTPUT INSERTED.FaqId
+					VALUES (@Question, @Answer, @Category, @DisplayOrder, @IsActive, SYSUTCDATETIME(), SYSUTCDATETIME());";
+
+				using var cmd = new SqlCommand(insertSql, conn);
+				cmd.Parameters.AddWithValue("@Question", faq.Question);
+				cmd.Parameters.AddWithValue("@Answer", faq.Answer);
+				cmd.Parameters.AddWithValue("@Category", faq.Category);
+				cmd.Parameters.AddWithValue("@DisplayOrder", faq.DisplayOrder);
+				cmd.Parameters.AddWithValue("@IsActive", faq.IsActive);
+				var insertedId = cmd.ExecuteScalar();
+				if (insertedId != null && int.TryParse(insertedId.ToString(), out int newId))
+				{
+					faq.Id = newId;
+				}
+			}
+		}
+		catch
+		{
+		}
+
+		lock (_inMemoryFaqs)
+		{
+			if (faq.Id > 0)
+			{
+				var existing = _inMemoryFaqs.FirstOrDefault(f => f.Id == faq.Id);
+				if (existing != null)
+				{
+					existing.Question = faq.Question;
+					existing.Answer = faq.Answer;
+					existing.Category = faq.Category;
+					existing.DisplayOrder = faq.DisplayOrder;
+					existing.IsActive = faq.IsActive;
+					existing.UpdatedAt = DateTime.UtcNow;
+				}
+				else
+				{
+					_inMemoryFaqs.Add(faq);
+				}
+			}
+			else
+			{
+				int nextId = _inMemoryFaqs.Count > 0 ? _inMemoryFaqs.Max(f => f.Id) + 1 : 1;
+				faq.Id = nextId;
+				_inMemoryFaqs.Add(faq);
+			}
+		}
+
+		LogActivity(faq.Id > 0 ? "UPDATE" : "CREATE", "StudioFAQs", faq.Id.ToString(), $"FAQ '{faq.Question}' saved by admin.", requestingAdminId ?? "Admin");
+		return true;
+	}
+
+	public bool DeleteFaq(int id, string? requestingAdminId = null)
+	{
+		try
+		{
+			using SqlConnection conn = CreateConnection();
+			conn.Open();
+
+			const string sql = @"
+				IF OBJECT_ID(N'dbo.StudioFAQs', N'U') IS NOT NULL
+				BEGIN
+					DELETE FROM dbo.StudioFAQs WHERE FaqId = @FaqId;
+				END";
+
+			using SqlCommand cmd = new SqlCommand(sql, conn);
+			cmd.Parameters.AddWithValue("@FaqId", id);
+			cmd.ExecuteNonQuery();
+		}
+		catch
+		{
+		}
+
+		lock (_inMemoryFaqs)
+		{
+			var existing = _inMemoryFaqs.FirstOrDefault(f => f.Id == id);
+			if (existing != null)
+			{
+				_inMemoryFaqs.Remove(existing);
+			}
+		}
+
+		LogActivity("DELETE", "StudioFAQs", id.ToString(), $"FAQ #{id} deleted by admin.", requestingAdminId ?? "Admin");
+		return true;
+	}
+
 }

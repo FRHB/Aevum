@@ -7,6 +7,9 @@ public class EmployeeSpecialization
     public string? SpecializationDescription { get; set; }
     public string Specialization { get; set; } = string.Empty;
     public string? Description { get; set; }
+    public string? DepartmentID { get; set; }
+    public string? DepartmentName { get; set; }
+    public Department? DepartmentEntity { get; set; }
     public string ColorTag { get; set; } = "Blue";
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
 }

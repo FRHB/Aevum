@@ -116,10 +116,16 @@ public interface IUserService
     void DeleteAdmin(string targetId, string requestingUserId);
 
     // ── Employees ───────────────────────────────────────────────────────────
-    IReadOnlyList<Employee> GetEmployees();
+    IReadOnlyList<Employee> GetEmployees(bool includeArchived = false);
+    IReadOnlyList<Employee> GetArchivedEmployees();
     Employee? GetEmployeeById(string id);
     void AddEmployee(Employee employee);
     bool DeleteEmployee(string id);
+
+    // ── Departments ─────────────────────────────────────────────────────────
+    IReadOnlyList<DepartmentModel> GetDepartments();
+    DepartmentModel AddDepartment(DepartmentModel model);
+    bool DeleteDepartment(string id);
 
     // ── Customers ───────────────────────────────────────────────────────────
     IReadOnlyList<Customer> GetCustomers();
@@ -129,7 +135,8 @@ public interface IUserService
 
     // ── Specializations ─────────────────────────────────────────────────────
     IReadOnlyList<SpecializationLookupItem> GetSpecializationLookups();
-    IReadOnlyList<EmployeeSpecializationDto> GetEmployeeSpecializations();
+    IReadOnlyList<EmployeeSpecializationDto> GetEmployeeSpecializations(bool includeArchived = false);
+    IReadOnlyList<EmployeeSpecializationDto> GetArchivedEmployeeSpecializations();
     SpecializationLookupItem AddSpecialization(SpecializationModel model);
     bool DeleteSpecialization(string id);
 
@@ -186,4 +193,20 @@ public interface IUserService
     void LogActivity(string actionType, string entityName, string? entityId, string? details, string? changedBy = null);
     List<PaymentSummaryModel> GetPendingCashRemittances();
     void ApproveCashRemittance(int paymentId, string adminId);
+    // -- FAQs ----------------------------------------------------------------
+    IReadOnlyList<FaqItem> GetFaqs(bool includeInactive = false);
+    FaqItem? GetFaqById(int id);
+    bool SaveFaq(FaqItem faq, string? requestingAdminId = null);
+    bool DeleteFaq(int id, string? requestingAdminId = null);
+}
+
+public class FaqItem
+{
+    public int Id { get; set; }
+    public string Question { get; set; } = string.Empty;
+    public string Answer { get; set; } = string.Empty;
+    public string Category { get; set; } = "General";
+ public int DisplayOrder { get; set; }
+ public bool IsActive { get; set; } = true;
+ public DateTime UpdatedAt { get; set; } = DateTime.UtcNow;
 }

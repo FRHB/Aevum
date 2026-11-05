@@ -1,7 +1,9 @@
 using System.Net;
-using System.Net.Mail;
+using MailKit.Net.Smtp;
+using MailKit.Security;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
+using MimeKit;
 using PhotoAevumStudio.Application.Interfaces;
 using PhotoAevumStudio.Application.Models;
 using PhotoAevumStudio.Application.Scheduling;
@@ -10,61 +12,184 @@ namespace PhotoAevumStudio.Infrastructure.Services;
 
 public class EmailService : IEmailService, IBookingNotificationService
 {
-    private readonly SmtpSettings _smtpSettings;
+    private readonly EmailConfig _emailConfig;
     private readonly ILogger<EmailService> _logger;
+    private readonly Func<ISmtpClient> _smtpClientFactory;
 
-    public EmailService(IOptions<SmtpSettings> smtpSettings, ILogger<EmailService> logger)
+    // Primary constructor used by Dependency Injection
+    public EmailService(IOptions<EmailConfig> emailConfig, ILogger<EmailService> logger)
+        : this(emailConfig, logger, () => new SmtpClient())
     {
-        _smtpSettings = smtpSettings.Value;
+    }
+
+    // Factory-injected constructor for testing EmailConfig & failover behavior
+    public EmailService(IOptions<EmailConfig> emailConfig, ILogger<EmailService> logger, Func<ISmtpClient> smtpClientFactory)
+    {
+        _emailConfig = emailConfig?.Value ?? new EmailConfig();
         _logger = logger;
+        _smtpClientFactory = smtpClientFactory ?? (() => new SmtpClient());
+    }
+
+    // Backward-compatibility constructor for unit tests injecting mock SmtpClient with legacy SmtpSettings
+    public EmailService(IOptions<SmtpSettings> smtpSettings, ILogger<EmailService> logger, Func<ISmtpClient> smtpClientFactory)
+        : this(Options.Create(new EmailConfig { Primary = smtpSettings?.Value ?? new SmtpSettings() }), logger, smtpClientFactory)
+    {
     }
 
     private enum SendOutcome { Sent, NotConfigured, Failed }
 
-    // Existing behaviour is unchanged: never throws, so callers like the admin welcome email keep working.
     public async Task SendEmailAsync(string toEmail, string subject, string body, bool isHtml = true) =>
         await DeliverAsync(toEmail, subject, body, isHtml, CancellationToken.None);
 
+    public async Task SendEmailAsync(string toEmail, string subject, string body, bool isHtml, CancellationToken cancellationToken) =>
+        await DeliverAsync(toEmail, subject, body, isHtml, cancellationToken);
+
+    private static bool IsConfigured(SmtpSettings? settings)
+    {
+        if (settings == null) return false;
+        if (string.IsNullOrWhiteSpace(settings.Host) || string.IsNullOrWhiteSpace(settings.Username))
+            return false;
+        if (settings.Username.Contains("YOUR_MAILTRAP", StringComparison.OrdinalIgnoreCase) ||
+            settings.Username.Contains("YOUR_BREVO", StringComparison.OrdinalIgnoreCase))
+            return false;
+        return true;
+    }
+
     private async Task<SendOutcome> DeliverAsync(string toEmail, string subject, string body, bool isHtml, CancellationToken ct)
     {
+        var primary = _emailConfig.Primary;
+        var fallback = _emailConfig.Fallback;
+
+        bool primaryConfigured = IsConfigured(primary);
+        bool fallbackConfigured = IsConfigured(fallback);
+
         // Gracefully handle unconfigured / dummy credentials so local development isn't blocked
-        if (string.IsNullOrWhiteSpace(_smtpSettings.Host) ||
-            string.IsNullOrWhiteSpace(_smtpSettings.Username) ||
-            _smtpSettings.Username.Contains("YOUR_MAILTRAP", StringComparison.OrdinalIgnoreCase))
+        if (!primaryConfigured && !fallbackConfigured)
         {
-            _logger.LogWarning("SMTP credentials not configured. Email simulated for {ToEmail}. Subject: {Subject}", toEmail, subject);
+            _logger.LogWarning("SMTP credentials not configured for Primary (Brevo) or Fallback (Mailtrap). Email simulated for {ToEmail}. Subject: {Subject}", toEmail, subject);
             return SendOutcome.NotConfigured;
         }
 
-        try
+        bool shouldFallback = false;
+
+        // 1. Attempt delivery via Primary provider (Brevo)
+        if (primaryConfigured)
         {
-            using var client = new SmtpClient(_smtpSettings.Host, _smtpSettings.Port)
+            try
             {
-                Credentials = new NetworkCredential(_smtpSettings.Username, _smtpSettings.Password),
-                EnableSsl = _smtpSettings.EnableSsl
-            };
-
-            using var mailMessage = new MailMessage
+                await SendViaProviderAsync(primary, "Brevo", toEmail, subject, body, isHtml, ct);
+                _logger.LogInformation("Email sent successfully via Primary SMTP (Brevo) to {ToEmail}", toEmail);
+                return SendOutcome.Sent;
+            }
+            catch (SmtpCommandException ex)
             {
-                From = new MailAddress(
-                    string.IsNullOrWhiteSpace(_smtpSettings.FromEmail) ? "noreply@photoaevum.com" : _smtpSettings.FromEmail,
-                    string.IsNullOrWhiteSpace(_smtpSettings.FromName) ? "Photo Aevum Studio" : _smtpSettings.FromName),
-                Subject = subject,
-                Body = body,
-                IsBodyHtml = isHtml
-            };
-            mailMessage.To.Add(toEmail);
-
-            await client.SendMailAsync(mailMessage, ct);
-
-            _logger.LogInformation("Email sent successfully to {ToEmail}", toEmail);
-            return SendOutcome.Sent;
+                var isRateLimit = (int)ex.StatusCode == 429 || (int)ex.StatusCode == 452;
+                _logger.LogWarning(
+                    ex,
+                    "Primary SMTP (Brevo) command error (StatusCode: {StatusCode}, IsRateLimit: {IsRateLimit}). Initiating fallback to Secondary SMTP (Mailtrap) for recipient {ToEmail}.",
+                    ex.StatusCode,
+                    isRateLimit,
+                    toEmail);
+                shouldFallback = true;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(
+                    ex,
+                    "Primary SMTP (Brevo) error ({ErrorType}: {ErrorMessage}). Initiating fallback to Secondary SMTP (Mailtrap) for recipient {ToEmail}.",
+                    ex.GetType().Name,
+                    ex.Message,
+                    toEmail);
+                shouldFallback = true;
+            }
         }
-        catch (Exception ex)
+        else
         {
-            _logger.LogError(ex, "Failed to send email to {ToEmail}. Continuing without breaking request flow.", toEmail);
-            return SendOutcome.Failed;
+            _logger.LogInformation("Primary SMTP (Brevo) is not configured. Falling back to Secondary SMTP (Mailtrap) for recipient {ToEmail}.", toEmail);
+            shouldFallback = true;
         }
+
+        // 2. Fallback delivery via Secondary provider (Mailtrap)
+        if (shouldFallback && fallbackConfigured)
+        {
+            try
+            {
+                _logger.LogInformation("Dispatching fallback email via Secondary SMTP (Mailtrap) to {ToEmail}.", toEmail);
+                await SendViaProviderAsync(fallback, "Mailtrap", toEmail, subject, body, isHtml, ct);
+                _logger.LogInformation("Email sent successfully via Secondary SMTP (Mailtrap) to {ToEmail}", toEmail);
+                return SendOutcome.Sent;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(
+                    ex,
+                    "Fallback SMTP (Mailtrap) also failed to send email to {ToEmail}. Continuing without breaking request flow.",
+                    toEmail);
+                return SendOutcome.Failed;
+            }
+        }
+
+        if (shouldFallback && !fallbackConfigured)
+        {
+            _logger.LogWarning("Primary SMTP failed and Fallback SMTP (Mailtrap) is not configured. Email delivery aborted for {ToEmail}.", toEmail);
+        }
+
+        return SendOutcome.Failed;
+    }
+
+    private async Task SendViaProviderAsync(
+        SmtpSettings settings,
+        string providerName,
+        string toEmail,
+        string subject,
+        string body,
+        bool isHtml,
+        CancellationToken ct)
+    {
+        var message = new MimeMessage();
+        var fromName = string.IsNullOrWhiteSpace(settings.FromName) ? "Photo Aevum Studio" : settings.FromName;
+        var fromEmail = string.IsNullOrWhiteSpace(settings.FromEmail) ? "noreply@photoaevum.com" : settings.FromEmail;
+
+        message.From.Add(new MailboxAddress(fromName, fromEmail));
+
+        if (MailboxAddress.TryParse(toEmail.Trim(), out var mailbox))
+        {
+            message.To.Add(mailbox);
+        }
+        else
+        {
+            message.To.Add(new MailboxAddress(toEmail.Trim(), toEmail.Trim()));
+        }
+
+        message.Subject = subject;
+
+        var bodyBuilder = new BodyBuilder();
+        if (isHtml)
+        {
+            bodyBuilder.HtmlBody = body;
+        }
+        else
+        {
+            bodyBuilder.TextBody = body;
+        }
+        message.Body = bodyBuilder.ToMessageBody();
+
+        using var client = _smtpClientFactory();
+        client.Timeout = 15000;
+
+        var secureSocketOptions = !settings.EnableSsl
+            ? SecureSocketOptions.None
+            : (settings.Port == 465 ? SecureSocketOptions.SslOnConnect : SecureSocketOptions.Auto);
+
+        await client.ConnectAsync(settings.Host, settings.Port, secureSocketOptions, ct);
+
+        if (!string.IsNullOrWhiteSpace(settings.Username) && !string.IsNullOrWhiteSpace(settings.Password))
+        {
+            await client.AuthenticateAsync(settings.Username, settings.Password, ct);
+        }
+
+        await client.SendAsync(message, ct);
+        await client.DisconnectAsync(true, ct);
     }
 
     /// <summary>
@@ -216,7 +341,7 @@ public class EmailService : IEmailService, IBookingNotificationService
 </html>";
 
         _logger.LogInformation("Dispatching onboarding credentials email to {Email} for {AdminId} ({Role}).", toEmail, adminId, role);
-        await SendEmailAsync(toEmail, subject, body, isHtml: true);
+        await SendEmailAsync(toEmail, subject, body, isHtml: true, cancellationToken);
     }
 
     public async Task SendEmployeeWelcomeEmailAsync(
@@ -293,6 +418,6 @@ public class EmailService : IEmailService, IBookingNotificationService
 </html>";
 
         _logger.LogInformation("Dispatching onboarding credentials email to {Email} for Employee {EmployeeId}.", toEmail, employeeId);
-        await SendEmailAsync(toEmail, subject, body, isHtml: true);
+        await SendEmailAsync(toEmail, subject, body, isHtml: true, cancellationToken);
     }
 }

@@ -22,6 +22,10 @@ public class EmployeeViewModel
     public string? MiddleName { get; set; }
     public string Email { get; set; } = string.Empty;
     public string Role { get; set; } = string.Empty;
+    public string? Address { get; set; }
+    public int? BirthYear { get; set; }
+    public string? DepartmentId { get; set; }
+    public string? Department { get; set; }
     public List<string> Specializations { get; set; } = new();
     public List<string> SelectedDaysOff { get; set; } = new() { "Sunday" };
     public string DaysOffString => SelectedDaysOff.Count > 0 ? string.Join(",", SelectedDaysOff) : "Sunday";
@@ -94,7 +98,10 @@ public record NewEmployeeRequest(
     string Email,
     IReadOnlyList<string> Specializations,
     string Password,
-    string DaysOff = "Sunday");
+    string DaysOff = "Sunday",
+    string? Address = null,
+    int? BirthYear = null,
+    string? DepartmentId = null);
 
 public record SaveEmployeeResult(bool Success, string? Error = null);
 
@@ -122,6 +129,13 @@ public class EmployeePersonalModel
     [Required(ErrorMessage = "Enter the employee's email address.")]
     [EmailAddress(ErrorMessage = "Enter a valid email address.")]
     public string Email { get; set; } = string.Empty;
+
+    [StringLength(500)]
+    public string? Address { get; set; }
+
+    public int? BirthYear { get; set; }
+
+    public string? DepartmentId { get; set; }
 }
 
 public class EmployeeAccountModel
@@ -165,6 +179,17 @@ public class EmployeeRegistrationModel : IValidatableObject
     [Display(Name = "Employee Email")]
     public string Email { get; set; } = string.Empty;
 
+    [StringLength(500, ErrorMessage = "Address cannot exceed 500 characters.")]
+    [Display(Name = "Home Address")]
+    public string? Address { get; set; }
+
+    [Range(1900, 2026, ErrorMessage = "Please enter a valid birth year.")]
+    [Display(Name = "Birth Year")]
+    public int? BirthYear { get; set; }
+
+    public string? DepartmentId { get; set; }
+    public string? DepartmentName { get; set; }
+
     // Step 2: Specializations
     public List<string> Specializations { get; set; } = new();
     public List<string> SelectedDaysOff { get; set; } = new() { "Sunday" };
@@ -194,7 +219,7 @@ public class EmployeeRegistrationModel : IValidatableObject
                 new[] { nameof(Specializations) });
         }
     }
-}
+}
 
 public class LeaveItemViewModel
 {

@@ -220,7 +220,10 @@ public class EventCategoryCreationTests
         public Task<string> GetNextComboPackageIdAsync(CancellationToken cancellationToken = default) => Task.FromResult("PKG-0001");
         public Task<IReadOnlyList<BundledServiceSelectionItem>> GetAvailableServicesForBundlingAsync(CancellationToken cancellationToken = default) => Task.FromResult<IReadOnlyList<BundledServiceSelectionItem>>(new List<BundledServiceSelectionItem>());
         public Task<ComboPackageCreatedResponseDto> CreateComboPackageWithServicesAsync(CreateComboPackageModel model, byte[]? imageBytes, string? imageMimeType, string? requestingAdminId = null, CancellationToken cancellationToken = default) => throw new NotImplementedException();
-        public Task<IReadOnlyList<Employee>> GetEmployeesAsync(CancellationToken cancellationToken = default) => Task.FromResult<IReadOnlyList<Employee>>(new List<Employee>());
+        public Task<IReadOnlyList<Employee>> GetEmployeesAsync(bool includeArchived = false, CancellationToken cancellationToken = default) => Task.FromResult<IReadOnlyList<Employee>>(new List<Employee>());
+        public Task<IReadOnlyList<DepartmentDto>> GetDepartmentsAsync(CancellationToken cancellationToken = default) => Task.FromResult<IReadOnlyList<DepartmentDto>>(new List<DepartmentDto>());
+        public Task<string> GetNextDepartmentIdAsync(CancellationToken cancellationToken = default) => Task.FromResult("DEP-0001");
+        public Task<DepartmentDto> CreateDepartmentAsync(CreateDepartmentDto dto, string? requestingAdminId = null, CancellationToken cancellationToken = default) => Task.FromResult(new DepartmentDto("DEP-0001", dto.DepartmentName, dto.DepartmentDescription, DateTime.UtcNow));
         public Task<IReadOnlyList<string>> GetSpecializationsAsync(CancellationToken cancellationToken = default) => Task.FromResult<IReadOnlyList<string>>(new List<string>());
         public Task<IReadOnlyList<Equipment>> GetEquipmentAsync(CancellationToken cancellationToken = default) => Task.FromResult<IReadOnlyList<Equipment>>(new List<Equipment>());
         public Task<IReadOnlyList<StudioService>> GetServicesAsync(CancellationToken cancellationToken = default) => Task.FromResult<IReadOnlyList<StudioService>>(new List<StudioService>());

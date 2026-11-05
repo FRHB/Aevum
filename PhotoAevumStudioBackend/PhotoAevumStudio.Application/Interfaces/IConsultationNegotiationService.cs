@@ -15,4 +15,5 @@ public interface IConsultationNegotiationService
     Task<bool> RequestExtensionAsync(string appointmentId, CancellationToken cancellationToken = default);
     Task<EventAppointmentDto> CompleteEventSettlementAsync(CompleteEventRequest request, CancellationToken cancellationToken = default);
     Task<bool> UpdateAppointmentRosterAsync(string appointmentId, UpdateAppointmentRosterRequest request, CancellationToken cancellationToken = default);
+    Task<EventAppointmentDto> UpdateBookingStatusFromPaymentAsync(string appointmentId, UpdatePaymentBookingStatusRequest request, CancellationToken cancellationToken = default);
 }

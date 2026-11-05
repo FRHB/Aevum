@@ -71,7 +71,7 @@
         @if (_view == ModalView.CustomerLogin)
         {
             <button class="apm-back" @onclick="() => _view = ModalView.Chooser" aria-label="Back">‹ Back</button>
-            <h2 id="apm-title" class="apm-title">Customer Login</h2>
+            <h2 id="apm-title" class="apm-title">Sign In</h2>
 
             @if (!string.IsNullOrEmpty(_loginError))
             {
@@ -82,9 +82,9 @@
                 <DataAnnotationsValidator />
 
                 <div class="apm-field">
-                    <label for="cl-email">Email address</label>
-                    <InputText id="cl-email" type="email" class="apm-input" @bind-Value="_loginForm.Email"
-                               placeholder="you@example.com" autocomplete="email" />
+                    <label for="cl-email">Account ID or Email</label>
+                    <InputText id="cl-email" type="text" class="apm-input" @bind-Value="_loginForm.Email"
+                               placeholder="e.g. client email or Staff ID (ADM-001, EMP-001)" autocomplete="username" />
                     <ValidationMessage For="() => _loginForm.Email" class="apm-validation" />
                 </div>
 
@@ -100,13 +100,12 @@
                             @(_showLoginPw ? "🙈" : "👁")
                         </button>
                     </div>
+                    <div class="flex justify-end mt-1">
+                        <button type="button" class="apm-link text-xs" @onclick="() => _view = ModalView.ForgotPassword">
+                            Forgot password?
+                        </button>
+                    </div>
                     <ValidationMessage For="() => _loginForm.Password" class="apm-validation" />
-                </div>
-
-                <div class="apm-row-between">
-                    <button type="button" class="apm-link" @onclick="() => _view = ModalView.ForgotPassword">
-                        Forgot password?
-                    </button>
                 </div>
 
                 <button type="submit" class="apm-btn apm-btn--primary" disabled="@_isBusy">
@@ -241,7 +240,7 @@
                     <div class="apm-legal-group">
                         <label class="apm-checkbox-label">
                             <InputCheckbox @bind-Value="_suName.AgreeToTerms" class="apm-checkbox" />
-                            <span>I agree to the <a href="/terms" target="_blank" rel="noopener noreferrer" class="apm-link apm-link--inline">Terms &amp; Conditions</a> <span class="apm-required">*</span></span>
+                            <span>I agree to the <button type="button" class="apm-link apm-link--inline underline font-medium cursor-pointer bg-transparent border-0 p-0 text-inherit" @onclick="OpenTermsModal">Terms &amp; Conditions</button> <span class="apm-required">*</span></span>
                         </label>
                         <ValidationMessage For="() => _suName.AgreeToTerms" class="apm-validation" />
                         @if (!string.IsNullOrEmpty(_step1TermsError))
@@ -385,12 +384,16 @@
         }
 
     </div>
+
+    <!-- Interactive Terms & Conditions pop-up Modal -->
+    <TermsModal @bind-IsOpen="_showTermsModal" OnAgree="HandleTermsAgreed" />
 }
 
 @code {
     // ── Visibility (controlled by parent) ───────────────────────────────────
     [Parameter] public bool IsVisible     { get; set; }
     [Parameter] public EventCallback OnClose { get; set; }
+    [Parameter] public string? InitialView { get; set; }
 
     // ── Modal state ─────────────────────────────────────────────────────────
     private enum ModalView { Chooser, CustomerLogin, ForgotPassword, SignUp }
@@ -399,6 +402,25 @@
     private bool _isBusy       = false;
     private bool _showLoginPw  = false;
     private bool _showSignUpPw = false;
+    private bool _showTermsModal = false;
+
+    protected override void OnParametersSet()
+    {
+        if (string.Equals(InitialView, "SignUp", StringComparison.OrdinalIgnoreCase))
+        {
+            _view = ModalView.SignUp;
+            _signUpStep = 1;
+        }
+    }
+
+    private void OpenTermsModal() => _showTermsModal = true;
+
+    private void HandleTermsAgreed()
+    {
+        _suName.AgreeToTerms = true;
+        _showTermsModal = false;
+        StateHasChanged();
+    }
 
     // ── Customer Login form ─────────────────────────────────────────────────
     private CustomerLoginForm  _loginForm  = new();
@@ -499,8 +521,22 @@
             var state = await AuthStateProvider.GetAuthenticationStateAsync();
             var user  = state.User;
             Close();
-            if (user.IsInRole("Admin"))        Nav.NavigateTo("/admin");
-            else if (user.IsInRole("Employee")) Nav.NavigateTo("/staff");
+
+            bool isSuper = user.IsInRole("Super Admin") ||
+                (!string.IsNullOrEmpty(result.Role) && result.Role.Contains("Super", StringComparison.OrdinalIgnoreCase)) ||
+                (!string.IsNullOrEmpty(_loginForm.Email) && _loginForm.Email.StartsWith("SADM-", StringComparison.OrdinalIgnoreCase));
+
+            bool isAdmin = isSuper || user.IsInRole("Admin") ||
+                (!string.IsNullOrEmpty(result.Role) && result.Role.Contains("Admin", StringComparison.OrdinalIgnoreCase)) ||
+                (!string.IsNullOrEmpty(_loginForm.Email) && _loginForm.Email.StartsWith("ADM-", StringComparison.OrdinalIgnoreCase));
+
+            bool isEmployee = user.IsInRole("Employee") ||
+                user.IsInRole("Office Clerk") ||
+                (!string.IsNullOrEmpty(result.Role) && (result.Role.Contains("Employee", StringComparison.OrdinalIgnoreCase) || result.Role.Contains("Staff", StringComparison.OrdinalIgnoreCase) || result.Role.Contains("Clerk", StringComparison.OrdinalIgnoreCase))) ||
+                (!string.IsNullOrEmpty(_loginForm.Email) && (_loginForm.Email.StartsWith("EMP-", StringComparison.OrdinalIgnoreCase) || _loginForm.Email.StartsWith("CLK-", StringComparison.OrdinalIgnoreCase)));
+
+            if (isAdmin)        Nav.NavigateTo("/admin");
+            else if (isEmployee) Nav.NavigateTo("/staff");
             else                               Nav.NavigateTo("/my");
         }
         else
@@ -673,8 +709,7 @@
 
     private sealed class CustomerLoginForm
     {
-        [Required(ErrorMessage = "Email is required.")]
-        [EmailAddress(ErrorMessage = "Enter a valid email address.")]
+        [Required(ErrorMessage = "Account ID or Email is required.")]
         public string Email { get; set; } = string.Empty;
 
         [Required(ErrorMessage = "Password is required.")]

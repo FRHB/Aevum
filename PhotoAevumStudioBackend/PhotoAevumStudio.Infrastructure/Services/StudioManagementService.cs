@@ -41,7 +41,7 @@ public class StudioManagementService : IStudioManagementService
         _db.Database.GetConnectionString()
         ?? throw new InvalidOperationException("Database connection string is not configured.");
 
-    public async Task<IReadOnlyList<Employee>> GetEmployeesAsync(CancellationToken cancellationToken = default)
+    public async Task<IReadOnlyList<Employee>> GetEmployeesAsync(bool includeArchived = false, CancellationToken cancellationToken = default)
     {
         await using var conn = new SqlConnection(GetConnectionString());
         await conn.OpenAsync(cancellationToken);
@@ -80,11 +80,21 @@ public class StudioManagementService : IStudioManagementService
         }
 
         var employees = new List<Employee>();
-        const string empSql = @"
-            SELECT EmployeeID, EmployeeFirstName, EmployeeLastName, EmployeeMiddleName, EmployeeEmail, EmployeeStatus,
-                   CASE WHEN COL_LENGTH(N'dbo.Employees', N'DaysOff') IS NOT NULL THEN ISNULL(DaysOff, 'Sunday') ELSE 'Sunday' END AS DaysOff
-            FROM dbo.Employees
-            ORDER BY EmployeeID;";
+        string filterClause = includeArchived
+            ? string.Empty
+            : "WHERE e.EmployeeStatus NOT IN ('Archive', 'Archived', 'Deleted') AND e.Status NOT IN ('Archive', 'Archived', 'Deleted')";
+
+        string empSql = $@"
+            SELECT e.EmployeeID, e.EmployeeFirstName, e.EmployeeLastName, e.EmployeeMiddleName, e.EmployeeEmail, e.EmployeeStatus,
+                   CASE WHEN COL_LENGTH(N'dbo.Employees', N'DaysOff') IS NOT NULL THEN ISNULL(e.DaysOff, 'Sunday') ELSE 'Sunday' END AS DaysOff,
+                   CASE WHEN COL_LENGTH(N'dbo.Employees', N'Address') IS NOT NULL THEN e.Address ELSE NULL END AS Address,
+                   CASE WHEN COL_LENGTH(N'dbo.Employees', N'BirthYear') IS NOT NULL THEN e.BirthYear ELSE NULL END AS BirthYear,
+                   CASE WHEN COL_LENGTH(N'dbo.Employees', N'DepartmentID') IS NOT NULL THEN e.DepartmentID ELSE NULL END AS DepartmentID,
+                   d.DepartmentName
+            FROM dbo.Employees e
+            LEFT JOIN dbo.Departments d ON d.DepartmentID = e.DepartmentID
+            {filterClause}
+            ORDER BY e.EmployeeID;";
 
         await using var cmd = new SqlCommand(empSql, conn);
         await using var reader = await cmd.ExecuteReaderAsync(cancellationToken);
@@ -98,6 +108,10 @@ public class StudioManagementService : IStudioManagementService
             var email = reader.IsDBNull(4) ? string.Empty : reader.GetString(4);
             var status = reader.IsDBNull(5) ? "Active" : reader.GetString(5);
             var daysOff = reader.IsDBNull(6) ? "Sunday" : reader.GetString(6);
+            var address = reader.IsDBNull(7) ? null : reader.GetString(7);
+            int? birthYear = reader.IsDBNull(8) ? null : reader.GetInt32(8);
+            var deptId = reader.IsDBNull(9) ? null : reader.GetString(9);
+            var deptName = reader.IsDBNull(10) ? null : reader.GetString(10);
 
             specializationsByEmployee.TryGetValue(empId, out var specs);
 
@@ -113,8 +127,15 @@ public class StudioManagementService : IStudioManagementService
                     LastName = lastName,
                     MiddleName = middleName,
                     Email = email,
-                    UserName = email
+                    UserName = email,
+                    Address = address,
+                    BirthYear = birthYear,
+                    DepartmentId = deptId
                 },
+                Address = address,
+                BirthYear = birthYear,
+                DepartmentID = deptId,
+                DepartmentEntity = !string.IsNullOrEmpty(deptId) ? new Department { DepartmentID = deptId, DepartmentName = deptName ?? deptId } : null,
                 Status = status,
                 DaysOff = daysOff,
                 Specializations = specs ?? new List<string>()
@@ -899,10 +920,18 @@ public class StudioManagementService : IStudioManagementService
             await using var reader = await cmd.ExecuteReaderAsync(cancellationToken);
             while (await reader.ReadAsync(cancellationToken))
             {
+                var catId = reader.GetString(0);
+                var catName = reader.GetString(1);
+                var catDesc = reader.IsDBNull(2) ? string.Empty : reader.GetString(2);
+                var rateTypeId = reader.FieldCount > 3 && !reader.IsDBNull(3) ? reader.GetString(3) : "RT-0001";
+                var rateTypeName = reader.FieldCount > 4 && !reader.IsDBNull(4) ? reader.GetString(4) : "Per Hour";
+
                 list.Add(new CategoryDto(
-                    Id: reader.GetString(0),
-                    Name: reader.GetString(1),
-                    Description: reader.IsDBNull(2) ? string.Empty : reader.GetString(2)
+                    Id: catId,
+                    Name: catName,
+                    Description: catDesc,
+                    RateTypeId: rateTypeId,
+                    RateTypeName: rateTypeName
                 ));
             }
         }
@@ -914,7 +943,9 @@ public class StudioManagementService : IStudioManagementService
         if (list.Count == 0)
         {
             const string fallbackSql = @"
-                SELECT ServiceCategoryID, ServiceCategoryName, ServiceCategoryDescription
+                SELECT ServiceCategoryID, ServiceCategoryName, ServiceCategoryDescription,
+                       ISNULL(RateTypeID, 'RT-0001') AS RateTypeID,
+                       ISNULL(RateTypeName, 'Per Hour') AS RateTypeName
                 FROM dbo.ServiceCategory
                 ORDER BY ServiceCategoryName;";
 
@@ -922,10 +953,18 @@ public class StudioManagementService : IStudioManagementService
             await using var readerFb = await fbCmd.ExecuteReaderAsync(cancellationToken);
             while (await readerFb.ReadAsync(cancellationToken))
             {
+                var catId = readerFb.GetString(0);
+                var catName = readerFb.GetString(1);
+                var catDesc = readerFb.IsDBNull(2) ? string.Empty : readerFb.GetString(2);
+                var rateTypeId = readerFb.FieldCount > 3 && !readerFb.IsDBNull(3) ? readerFb.GetString(3) : "RT-0001";
+                var rateTypeName = readerFb.FieldCount > 4 && !readerFb.IsDBNull(4) ? readerFb.GetString(4) : "Per Hour";
+
                 list.Add(new CategoryDto(
-                    Id: readerFb.GetString(0),
-                    Name: readerFb.GetString(1),
-                    Description: readerFb.IsDBNull(2) ? string.Empty : readerFb.GetString(2)
+                    Id: catId,
+                    Name: catName,
+                    Description: catDesc,
+                    RateTypeId: rateTypeId,
+                    RateTypeName: rateTypeName
                 ));
             }
         }
@@ -1151,11 +1190,16 @@ public class StudioManagementService : IStudioManagementService
         // 2. Primary: Save via Entity Framework Core models and relationships
         try
         {
+            var rateTypeId = !string.IsNullOrWhiteSpace(dto.RateTypeId) ? dto.RateTypeId : "RT-0001";
+            var rateTypeName = !string.IsNullOrWhiteSpace(dto.RateTypeName) ? dto.RateTypeName : "Per Hour";
+
             var eventCategory = new EventCategory
             {
                 Id = nextId,
                 Name = dto.Name.Trim(),
                 Description = dto.Description.Trim(),
+                RateTypeId = rateTypeId,
+                RateTypeName = rateTypeName,
                 Associations = joins
             };
 
@@ -1173,7 +1217,9 @@ public class StudioManagementService : IStudioManagementService
                 Id: eventCategory.Id,
                 Name: eventCategory.Name,
                 Description: eventCategory.Description,
-                AssociatedServices: serviceNames
+                AssociatedServices: serviceNames,
+                RateTypeId: eventCategory.RateTypeId,
+                RateTypeName: eventCategory.RateTypeName
             );
         }
         catch
@@ -1498,11 +1544,14 @@ public class StudioManagementService : IStudioManagementService
 
         try
         {
+            var rateTypeId = !string.IsNullOrWhiteSpace(dto.RateTypeId) ? dto.RateTypeId : "RT-0001";
+            var rateTypeName = !string.IsNullOrWhiteSpace(dto.RateTypeName) ? dto.RateTypeName : "Per Hour";
+
             const string insertCatSql = @"
                 IF NOT EXISTS (SELECT 1 FROM dbo.ServiceCategory WHERE ServiceCategoryID = @Id)
                 BEGIN
-                    INSERT INTO dbo.ServiceCategory (ServiceCategoryID, ServiceCategoryName, ServiceCategoryDescription)
-                    VALUES (@Id, @Name, @Desc);
+                    INSERT INTO dbo.ServiceCategory (ServiceCategoryID, ServiceCategoryName, ServiceCategoryDescription, RateTypeID, RateTypeName)
+                    VALUES (@Id, @Name, @Desc, @RateTypeID, @RateTypeName);
                 END";
 
             await using (var cmd = new SqlCommand(insertCatSql, conn, trans))
@@ -1510,6 +1559,8 @@ public class StudioManagementService : IStudioManagementService
                 cmd.Parameters.AddWithValue("@Id", categoryId);
                 cmd.Parameters.AddWithValue("@Name", dto.Name.Trim());
                 cmd.Parameters.AddWithValue("@Desc", dto.Description.Trim());
+                cmd.Parameters.AddWithValue("@RateTypeID", rateTypeId);
+                cmd.Parameters.AddWithValue("@RateTypeName", rateTypeName);
                 await cmd.ExecuteNonQueryAsync(ct);
             }
 
@@ -1538,7 +1589,7 @@ public class StudioManagementService : IStudioManagementService
             }
 
             var serviceNames = await ResolveAssociatedNamesAsync(joins, ct);
-            return new CategoryDto(categoryId, dto.Name.Trim(), dto.Description.Trim(), serviceNames);
+            return new CategoryDto(categoryId, dto.Name.Trim(), dto.Description.Trim(), serviceNames, RateTypeId: rateTypeId, RateTypeName: rateTypeName);
         }
         catch
         {
@@ -2289,5 +2340,116 @@ public class StudioManagementService : IStudioManagementService
                 return false;
             }
         }
+    }
+
+    public async Task<IReadOnlyList<DepartmentDto>> GetDepartmentsAsync(CancellationToken cancellationToken = default)
+    {
+        await using var conn = new SqlConnection(GetConnectionString());
+        await conn.OpenAsync(cancellationToken);
+        await EnsureServicesRateTypeSchemaAsync(conn, cancellationToken);
+
+        var list = new List<DepartmentDto>();
+        const string sql = @"
+            IF OBJECT_ID(N'dbo.Departments', N'U') IS NOT NULL
+            BEGIN
+                SELECT DepartmentID, DepartmentName, DepartmentDescription, CreatedAt
+                FROM dbo.Departments
+                ORDER BY DepartmentName ASC;
+            END";
+
+        await using var cmd = new SqlCommand(sql, conn);
+        await using var reader = await cmd.ExecuteReaderAsync(cancellationToken);
+        while (await reader.ReadAsync(cancellationToken))
+        {
+            list.Add(new DepartmentDto(
+                DepartmentId: reader.GetString(0),
+                DepartmentName: reader.GetString(1),
+                DepartmentDescription: reader.IsDBNull(2) ? null : reader.GetString(2),
+                CreatedAt: reader.GetDateTime(3)
+            ));
+        }
+
+        return list;
+    }
+
+    public async Task<string> GetNextDepartmentIdAsync(CancellationToken cancellationToken = default)
+    {
+        await using var conn = new SqlConnection(GetConnectionString());
+        await conn.OpenAsync(cancellationToken);
+        await EnsureServicesRateTypeSchemaAsync(conn, cancellationToken);
+
+        const string sql = @"
+            IF NOT EXISTS (SELECT 1 FROM sys.sequences WHERE name = 'Seq_DepartmentID')
+            BEGIN
+                CREATE SEQUENCE dbo.Seq_DepartmentID AS INT START WITH 8 INCREMENT BY 1;
+            END;
+            DECLARE @SeqVal INT = NEXT VALUE FOR dbo.Seq_DepartmentID;
+            SELECT 'DEP-' + RIGHT('0000' + CAST(@SeqVal AS VARCHAR(10)), 4);";
+
+        await using var cmd = new SqlCommand(sql, conn);
+        var res = await cmd.ExecuteScalarAsync(cancellationToken);
+        return res?.ToString() ?? "DEP-0008";
+    }
+
+    public async Task<DepartmentDto> CreateDepartmentAsync(CreateDepartmentDto dto, string? requestingAdminId = null, CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(dto);
+        if (string.IsNullOrWhiteSpace(dto.DepartmentName))
+            throw new ArgumentException("Department name is required.", nameof(dto));
+
+        await using var conn = new SqlConnection(GetConnectionString());
+        await conn.OpenAsync(cancellationToken);
+        await EnsureServicesRateTypeSchemaAsync(conn, cancellationToken);
+
+        var nextId = await GetNextDepartmentIdAsync(cancellationToken);
+
+        const string insertSql = @"
+            IF EXISTS (SELECT 1 FROM dbo.Departments WHERE LOWER(DepartmentName) = LOWER(@Name))
+            BEGIN
+                THROW 50020, 'A department with this name already exists.', 1;
+            END;
+
+            WHILE EXISTS (SELECT 1 FROM dbo.Departments WHERE DepartmentID = @Id)
+            BEGIN
+                DECLARE @SeqVal INT = NEXT VALUE FOR dbo.Seq_DepartmentID;
+                SET @Id = 'DEP-' + RIGHT('0000' + CAST(@SeqVal AS VARCHAR(10)), 4);
+            END;
+
+            INSERT INTO dbo.Departments (DepartmentID, DepartmentName, DepartmentDescription, CreatedAt)
+            VALUES (@Id, @Name, @Desc, SYSUTCDATETIME());
+
+            IF OBJECT_ID(N'dbo.sp_AddHistoryLog', N'P') IS NOT NULL
+            BEGIN
+                EXEC dbo.sp_AddHistoryLog
+                    @ActionType = 'INSERT',
+                    @EntityName = 'Department',
+                    @EntityID = @Id,
+                    @ActionDetails = 'Created new department via API.',
+                    @ChangedByType = 'Admin',
+                    @ActorID = @AdminId;
+            END;
+
+            SELECT DepartmentID, DepartmentName, DepartmentDescription, CreatedAt
+            FROM dbo.Departments
+            WHERE DepartmentID = @Id;";
+
+        await using var cmd = new SqlCommand(insertSql, conn);
+        cmd.Parameters.AddWithValue("@Id", nextId);
+        cmd.Parameters.AddWithValue("@Name", dto.DepartmentName.Trim());
+        cmd.Parameters.AddWithValue("@Desc", (object?)dto.DepartmentDescription?.Trim() ?? DBNull.Value);
+        cmd.Parameters.AddWithValue("@AdminId", (object?)requestingAdminId ?? DBNull.Value);
+
+        await using var reader = await cmd.ExecuteReaderAsync(cancellationToken);
+        if (await reader.ReadAsync(cancellationToken))
+        {
+            return new DepartmentDto(
+                DepartmentId: reader.GetString(0),
+                DepartmentName: reader.GetString(1),
+                DepartmentDescription: reader.IsDBNull(2) ? null : reader.GetString(2),
+                CreatedAt: reader.GetDateTime(3)
+            );
+        }
+
+        return new DepartmentDto(nextId, dto.DepartmentName.Trim(), dto.DepartmentDescription?.Trim(), DateTime.UtcNow);
     }
 }

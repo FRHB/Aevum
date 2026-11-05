@@ -84,3 +84,16 @@ public class UpdatePortfolioDto
     public string? PortfolioDescription { get; set; }
     public string CategoryID { get; set; } = string.Empty;
 }
+
+public class HomeHighlightModel
+{
+    public string HighlightID { get; set; } = string.Empty;
+    public string Title { get; set; } = string.Empty;
+    public string? Subtitle { get; set; }
+    public string ImageUrl { get; set; } = string.Empty;
+    public string? ImageFileName { get; set; }
+    public int DisplayOrder { get; set; } = 0;
+    public bool IsActive { get; set; } = true;
+    public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
+    public DateTime UpdatedAt { get; set; } = DateTime.UtcNow;
+}

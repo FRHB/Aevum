@@ -77,10 +77,8 @@
                         }
                     </span>
                 </div>
-                <div class="detail-row"><span class="detail-label">Total Package:</span><span class="detail-val">₱@_result.TotalPrice.ToString("N2")</span></div>
-                <div class="detail-row"><span class="detail-label">15% Reservation Deposit:</span><span class="detail-val" style="color:#047857; font-weight:700;">₱@_result.DepositFee.ToString("N2")</span></div>
-                <div class="detail-row"><span class="detail-label">Remaining Balance (85%):</span><span class="detail-val">₱@_result.BalanceFee.ToString("N2")</span></div>
-                <div class="detail-row"><span class="detail-label">Payment Status:</span><span class="detail-val"><span style="background:#dcfce7; color:#15803d; font-weight:700; padding:2px 8px; border-radius:12px; font-size:12px;">Paid / Cleared</span></span></div>
+                <div class="detail-row"><span class="detail-label">Consultation Status:</span><span class="detail-val"><span style="background:#fef3c7; color:#92400e; font-weight:700; padding:2px 8px; border-radius:12px; font-size:12px;">Scheduled • Negotiation Pending</span></span></div>
+                <div class="detail-row"><span class="detail-label">Pricing &amp; Payment:</span><span class="detail-val" style="color:#475569;">To be determined during consultation (No upfront payment)</span></div>
             </div>
             <p class="calendar-hint">
                 @(_result.ConfirmationEmailSent
@@ -133,7 +131,7 @@
                                         </div>
                                     </div>
                                     <div class="service-card__right">
-                                        <div class="service-price">₱@svc.Price.ToString("N2")</div>
+                                        <span class="badge bg-slate-100 text-slate-700 text-xs font-semibold px-2.5 py-1 rounded-full">For Negotiation</span>
                                     </div>
                                 </div>
                             }
@@ -495,7 +493,7 @@
                                 class="btn btn-dark btn-lg"
                                 disabled="@(!isPolicyAccepted || _submitting)"
                                 @onclick="ConfirmAsync">
-                            @(_submitting ? "Confirming…" : $"Confirm & Schedule Consultation (15% Deposit: ₱{DepositFee.ToString("N2")})")
+                            @(_submitting ? "Scheduling Consultation…" : "Confirm & Schedule Consultation")
                         </button>
                     </div>
                 </div>
@@ -503,12 +501,12 @@
 
             <aside class="booking-summary-sidebar">
                 <div class="summary-card">
-                    <h3 class="summary-title">Booking Summary</h3>
+                    <h3 class="summary-title">Consultation Summary</h3>
                     @foreach (var svc in SelectedServices)
                     {
                         <div class="summary-item">
                             <span class="item-name">@svc.Name</span>
-                            <span class="item-price">₱@svc.Price.ToString("N2")</span>
+                            <span class="badge bg-slate-100 text-slate-600 text-xs">Selected</span>
                         </div>
                     }
                     <div class="summary-divider"></div>
@@ -522,21 +520,12 @@
                         <div class="sched-row"><span>💻 Session:</span><strong>@(Wizard.Platform is { } sp ? MeetingPlatformInfo.Label(sp) : "—")</strong></div>
                     </div>
                     <div class="summary-divider"></div>
-                    <div class="summary-total-row">
-                        <span>Total:</span>
-                        <span class="total-figure">₱@Total.ToString("N2")</span>
-                    </div>
-                    <div style="background:#f0fdf4; border:1px solid #bbf7d0; border-radius:8px; padding:10px; margin-top:12px;">
-                        <div style="display:flex; justify-content:space-between; font-size:13px; font-weight:700; color:#065f46;">
-                            <span>15% Reservation Deposit:</span>
-                            <span>₱@DepositFee.ToString("N2")</span>
+                    <div style="background:#f8fafc; border:1px solid #e2e8f0; border-radius:8px; padding:12px; margin-top:12px;">
+                        <div style="font-size:12px; font-weight:700; color:#1e293b; margin-bottom:4px;">
+                            Initial Consultation Phase
                         </div>
-                        <div style="display:flex; justify-content:space-between; font-size:12px; color:#475569; margin-top:4px;">
-                            <span>Remaining Balance (85%):</span>
-                            <span>₱@BalanceFee.ToString("N2")</span>
-                        </div>
-                        <div style="margin-top:6px; font-size:11px; color:#15803d; font-weight:600;">
-                            ✓ Status: Paid / Cleared on submission
+                        <div style="font-size:11px; color:#64748b; line-height:1.45;">
+                            No upfront price or payment is required at this stage. Final rates, crew assignment, and reservation deposit will be negotiated and finalized during your consultation call with our Office Clerk.
                         </div>
                     </div>
                 </div>

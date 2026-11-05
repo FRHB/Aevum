@@ -311,12 +311,57 @@ public class SqlAuthService : ISqlAuthService
         await using var conn = CreateConnection();
         await conn.OpenAsync(cancellationToken);
 
-        // Check Admin
+        // 0. Check dbo.SystemAdmin
+        const string sysAdminCheck = @"
+            IF OBJECT_ID(N'dbo.SystemAdmin', N'U') IS NOT NULL
+            BEGIN
+                SELECT SystemAdminID, PasswordHash
+                FROM dbo.SystemAdmin
+                WHERE UPPER(SystemAdminID) = UPPER(@UserId)
+                   OR UPPER(SystemAdminID) = UPPER(@CandidateAdminId);
+            END";
+
+        await using (var sysCmd = new SqlCommand(sysAdminCheck, conn))
+        {
+            sysCmd.Parameters.AddWithValue("@UserId", trimmedId);
+            sysCmd.Parameters.AddWithValue("@CandidateAdminId", candidateAdminId);
+            await using var sysReader = await sysCmd.ExecuteReaderAsync(cancellationToken);
+            if (await sysReader.ReadAsync(cancellationToken))
+            {
+                var sysId = sysReader.GetString(sysReader.GetOrdinal("SystemAdminID"));
+                var storedPassword = sysReader.GetString(sysReader.GetOrdinal("PasswordHash"));
+                await sysReader.CloseAsync();
+
+                bool currentValid = VerifyPasswordFlexible(currentPassword, storedPassword, allowPlainText: true);
+                if (!currentValid)
+                    return (false, "Current password is incorrect.");
+
+                string newHashed = BCrypt.Net.BCrypt.HashPassword(newPassword);
+
+                const string updateSysSql = @"
+                    UPDATE dbo.SystemAdmin
+                    SET PasswordHash = @NewPassword
+                    WHERE SystemAdminID = @SystemAdminID;";
+                await using var updateCmd = new SqlCommand(updateSysSql, conn);
+                updateCmd.Parameters.AddWithValue("@NewPassword", newHashed);
+                updateCmd.Parameters.AddWithValue("@SystemAdminID", sysId);
+                await updateCmd.ExecuteNonQueryAsync(cancellationToken);
+
+                await TrySyncAspNetUsersAsync(conn, sysId, newHashed, cancellationToken);
+                await LogActivityAsync("PASSWORD_CHANGE", "SystemAdmin", sysId, "System Admin password updated successfully", AppRoles.SystemAdmin, sysId, cancellationToken);
+
+                _logger.LogInformation("System Admin {SystemAdminId} successfully updated password.", sysId);
+                return (true, "Password has been successfully updated.");
+            }
+        }
+
+        // 1. Check Admin
         const string adminCheck = @"
             SELECT AdminID, AdminPassword, isFirstLogin
             FROM dbo.Admin
             WHERE AdminID = @UserId 
                OR AdminID = @CandidateAdminId 
+               OR (COL_LENGTH(N'dbo.Admin', N'Email') IS NOT NULL AND (Email = @UserId OR UPPER(Email) = UPPER(@UserId)))
                OR UPPER(AdminID) = UPPER(@CandidateAdminId) 
                OR UPPER(AdminID) = UPPER(@UserId);";
 

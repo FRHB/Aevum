@@ -27,7 +27,10 @@ public class AdminEmailStubService : IEmailService
         _logger = logger;
     }
 
-    public Task SendEmailAsync(string toEmail, string subject, string body, bool isHtml = true)
+    public Task SendEmailAsync(string toEmail, string subject, string body, bool isHtml = true) =>
+        SendEmailAsync(toEmail, subject, body, isHtml, CancellationToken.None);
+
+    public Task SendEmailAsync(string toEmail, string subject, string body, bool isHtml, CancellationToken cancellationToken)
     {
         var record = new DispatchedEmail(toEmail, subject, body, isHtml, DateTime.UtcNow);
         _sentEmails.Add(record);

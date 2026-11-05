@@ -210,7 +210,7 @@ public class ConsultationNegotiationService : IConsultationNegotiationService
 
 
 
-        var (clerkId, clerkName, clerkEmail) = await AssignOfficeClerkAsync(conn, cancellationToken);
+        var (clerkId, clerkName, clerkEmail) = await AssignOfficeClerkAsync(conn, request.ConsultationDate, cancellationToken);
 
 
 
@@ -3239,6 +3239,13 @@ public class ConsultationNegotiationService : IConsultationNegotiationService
 
                     WHERE EventAppointmentID = @EvtId;
 
+                    IF OBJECT_ID(N'dbo.BookingNegotiation', N'U') IS NOT NULL
+                    BEGIN
+                        UPDATE dbo.BookingNegotiation
+                        SET NegotiationStatus = 'Deal_Won'
+                        WHERE EventAppointmentID = @EvtId;
+                    END;
+
 
 
 
@@ -5475,142 +5482,53 @@ public class ConsultationNegotiationService : IConsultationNegotiationService
 
 
 
-    private static async Task<(string EmployeeId, string EmployeeName, string EmployeeEmail)> AssignOfficeClerkAsync(
-
-
-
+        private static async Task<(string EmployeeId, string EmployeeName, string EmployeeEmail)> AssignOfficeClerkAsync(
         SqlConnection conn,
-
-
-
+        DateOnly? consultationDate,
         CancellationToken ct)
-
-
-
     {
-
-
-
-        // Query active employees who strictly have the verified 'Office Clerk' specialization
-
-
-
+        // Query active employees who strictly have the verified 'Office Clerk' specialization and are not on Day Off
         const string clerkSql = @"
-
-
-
             SELECT TOP 1 
-
-
-
                 e.EmployeeID, 
-
-
-
                 e.EmployeeFirstName + ' ' + e.EmployeeLastName AS EmployeeName, 
-
-
-
                 ISNULL(e.EmployeeEmail, '') AS EmployeeEmail
-
-
-
             FROM dbo.Employees e
-
-
-
             JOIN dbo.EmployeeJointSpecialization ejs ON e.EmployeeID = ejs.EmployeeID
-
-
-
             JOIN dbo.EmployeeSpecialization es ON ejs.SpecializationID = es.SpecializationID
-
-
-
             LEFT JOIN (
-
-
-
                 SELECT EmployeeID, MAX(CreatedAt) AS LastAssignedAt
-
-
-
                 FROM dbo.BookingNegotiation
-
-
-
                 GROUP BY EmployeeID
-
-
-
             ) bn ON e.EmployeeID = bn.EmployeeID
-
-
-
             WHERE (e.EmployeeStatus = 'Active' OR e.Status = 'Active')
-
-
-
               AND UPPER(LTRIM(RTRIM(COALESCE(NULLIF(es.SpecializationName, ''), es.Specialization)))) = 'OFFICE CLERK'
-
-
-
+              AND (
+                  @EvtDate IS NULL
+                  OR COL_LENGTH(N'dbo.Employees', N'DaysOff') IS NULL
+                  OR CHARINDEX(DATENAME(dw, @EvtDate), ISNULL(e.DaysOff, 'Sunday')) = 0
+              )
             ORDER BY COALESCE(bn.LastAssignedAt, '1900-01-01') ASC, e.EmployeeID ASC;";
 
-
-
-
-
-
-
         await using var cmd = new SqlCommand(clerkSql, conn);
-
-
-
+        cmd.Parameters.AddWithValue("@EvtDate", consultationDate.HasValue ? (object)consultationDate.Value.ToDateTime(TimeOnly.MinValue) : DBNull.Value);
         await using var reader = await cmd.ExecuteReaderAsync(ct);
-
-
-
         if (await reader.ReadAsync(ct))
-
-
-
         {
-
-
-
             var id = reader.GetString(0);
-
-
-
             var name = reader.GetString(1);
-
-
-
             var email = reader.GetString(2);
-
-
-
             return (id, name, email);
-
-
-
         }
-
-
 
         await reader.CloseAsync();
 
-
-
-
-
-
+        if (consultationDate.HasValue)
+        {
+            throw new InvalidOperationException($"Cannot schedule consultation: The Office Clerk has a scheduled Day Off on {consultationDate.Value:dddd, MMMM dd, yyyy}.");
+        }
 
         throw new InvalidOperationException("No active employee with the Office Clerk specialization is available to be assigned to this consultation.");
-
-
-
     }
 
 
@@ -5879,7 +5797,152 @@ public class ConsultationNegotiationService : IConsultationNegotiationService
 
 
 
+
+    public async Task<EventAppointmentDto> UpdateBookingStatusFromPaymentAsync(
+        string appointmentId,
+        UpdatePaymentBookingStatusRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        var appt = await GetAppointmentByIdAsync(appointmentId, cancellationToken);
+        if (appt == null)
+            throw new KeyNotFoundException($"Event appointment {appointmentId} not found.");
+
+        await using var conn = await OpenConnectionAsync(cancellationToken);
+
+        if (string.Equals(request.Status, "Deal_Won", StringComparison.OrdinalIgnoreCase))
+        {
+            var invoiceId = appt.XenditInvoiceId ?? $"inv_sim_{appointmentId}_{Guid.NewGuid():N[..6]}";
+            var updated = await VerifyDownpaymentAsync(appointmentId, invoiceId, request.PaymentMethod ?? "QR Ph", cancellationToken);
+
+            await using var cmdWon = conn.CreateCommand();
+            cmdWon.CommandText = @"
+                IF OBJECT_ID(N'dbo.BookingNegotiation', N'U') IS NOT NULL
+                BEGIN
+                    UPDATE dbo.BookingNegotiation
+                    SET NegotiationStatus = 'Deal_Won'
+                    WHERE EventAppointmentID = @EvtId OR NegotiationID = @NegId;
+                END";
+            cmdWon.Parameters.AddWithValue("@EvtId", appointmentId);
+            cmdWon.Parameters.AddWithValue("@NegId", (object?)appt.NegotiationId ?? DBNull.Value);
+            await cmdWon.ExecuteNonQueryAsync(cancellationToken);
+
+            return updated;
+        }
+        else if (string.Equals(request.Status, "Deal_Lost", StringComparison.OrdinalIgnoreCase))
+        {
+            await using var cmdLost = conn.CreateCommand();
+            cmdLost.CommandText = @"
+                IF OBJECT_ID(N'dbo.EventAppointment', N'U') IS NOT NULL
+                BEGIN
+                    UPDATE dbo.EventAppointment
+                    SET EventStatus = 'Cancelled',
+                        DownpaymentStatus = 'Cancelled'
+                    WHERE EventAppointmentID = @EvtId;
+                END
+
+                IF OBJECT_ID(N'dbo.BookingNegotiation', N'U') IS NOT NULL
+                BEGIN
+                    UPDATE dbo.BookingNegotiation
+                    SET NegotiationStatus = 'Deal_Lost'
+                    WHERE EventAppointmentID = @EvtId OR NegotiationID = @NegId;
+                END
+
+                IF OBJECT_ID(N'dbo.HistoryLog', N'U') IS NOT NULL
+                BEGIN
+                    INSERT INTO dbo.HistoryLog (
+                        ActionType, EntityName, EntityID, ActionDetails,
+                        EventAppointmentID, ChangedByType, LoggedAt
+                    )
+                    VALUES (
+                        'STATUS_CHANGE', 'EventAppointment', @EvtId,
+                        @Details,
+                        @EvtId, 'Customer', SYSUTCDATETIME()
+                    );
+                END";
+            cmdLost.Parameters.AddWithValue("@EvtId", appointmentId);
+            cmdLost.Parameters.AddWithValue("@NegId", (object?)appt.NegotiationId ?? DBNull.Value);
+            cmdLost.Parameters.AddWithValue("@Details", $"Customer marked deal lost during payment: {request.Reason ?? "Customer declined offer"}");
+            await cmdLost.ExecuteNonQueryAsync(cancellationToken);
+
+            appt.EventStatus = "Cancelled";
+            appt.DownpaymentStatus = "Cancelled";
+            return appt;
+        }
+        else if (string.Equals(request.Status, "Rescheduled", StringComparison.OrdinalIgnoreCase))
+        {
+            var newDate = request.NewDate ?? appt.EventDate;
+            var newTime = request.NewTime ?? appt.EventTime;
+
+            // Check if designated clerk has day off on newDate
+            await using var chkCmd = conn.CreateCommand();
+            chkCmd.CommandText = @"
+                SELECT TOP 1 e.DaysOff
+                FROM dbo.BookingNegotiation bn
+                JOIN dbo.Employees e ON bn.EmployeeID = e.EmployeeID
+                WHERE bn.EventAppointmentID = @EvtId OR bn.NegotiationID = @NegId;";
+            chkCmd.Parameters.AddWithValue("@EvtId", appointmentId);
+            chkCmd.Parameters.AddWithValue("@NegId", (object?)appt.NegotiationId ?? DBNull.Value);
+            var daysOffObj = await chkCmd.ExecuteScalarAsync(cancellationToken);
+            var daysOff = daysOffObj is string dStr ? dStr : "Sunday";
+            var dayName = newDate.DayOfWeek.ToString();
+            if (daysOff.Contains(dayName, StringComparison.OrdinalIgnoreCase))
+            {
+                throw new InvalidOperationException($"Cannot reschedule: The Office Clerk has a scheduled Day Off on {newDate:dddd, MMMM dd, yyyy}.");
+            }
+
+            await using var cmdResched = conn.CreateCommand();
+            cmdResched.CommandText = @"
+                IF OBJECT_ID(N'dbo.EventAppointment', N'U') IS NOT NULL
+                BEGIN
+                    UPDATE dbo.EventAppointment
+                    SET EventDate = @NewDate,
+                        EventTime = @NewTime,
+                        EventStatus = 'Pending',
+                        HoldExpiresAt = DATEADD(minute, 30, SYSUTCDATETIME())
+                    WHERE EventAppointmentID = @EvtId;
+                END
+
+                IF OBJECT_ID(N'dbo.BookingNegotiation', N'U') IS NOT NULL
+                BEGIN
+                    UPDATE dbo.BookingNegotiation
+                    SET NegotiationStatus = 'Rescheduled',
+                        ConsultationDate = @NewDate,
+                        ConsultationTime = @NewTime,
+                        InquiryNotes = ISNULL(InquiryNotes, '') + ' [Rescheduled: ' + @Reason + ']'
+                    WHERE EventAppointmentID = @EvtId OR NegotiationID = @NegId;
+                END
+
+                IF OBJECT_ID(N'dbo.HistoryLog', N'U') IS NOT NULL
+                BEGIN
+                    INSERT INTO dbo.HistoryLog (
+                        ActionType, EntityName, EntityID, ActionDetails,
+                        EventAppointmentID, ChangedByType, LoggedAt
+                    )
+                    VALUES (
+                        'STATUS_CHANGE', 'EventAppointment', @EvtId,
+                        @Details,
+                        @EvtId, 'Customer', SYSUTCDATETIME()
+                    );
+                END";
+            cmdResched.Parameters.AddWithValue("@EvtId", appointmentId);
+            cmdResched.Parameters.AddWithValue("@NegId", (object?)appt.NegotiationId ?? DBNull.Value);
+            cmdResched.Parameters.AddWithValue("@NewDate", newDate.ToDateTime(TimeOnly.MinValue));
+            cmdResched.Parameters.AddWithValue("@NewTime", newTime.ToTimeSpan());
+            cmdResched.Parameters.AddWithValue("@Reason", request.Reason ?? "Customer requested reschedule");
+            cmdResched.Parameters.AddWithValue("@Details", $"Appointment rescheduled to {newDate:yyyy-MM-dd} {newTime:HH:mm} by customer during payment. Reason: {request.Reason}");
+            await cmdResched.ExecuteNonQueryAsync(cancellationToken);
+
+            appt.EventDate = newDate;
+            appt.EventTime = newTime;
+            appt.EventStatus = "Pending";
+            appt.HoldExpiresAt = DateTime.UtcNow.AddMinutes(30);
+            return appt;
+        }
+
+        throw new ArgumentException($"Unsupported status: {request.Status}");
+    }
 }
+
 
 
 

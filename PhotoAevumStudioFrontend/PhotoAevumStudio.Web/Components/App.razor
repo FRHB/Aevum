@@ -48,6 +48,36 @@
                 }
             }
         });
+
+        // Inactive Session Inactivity Monitor
+        window.aevumSessionMonitor = {
+            timer: null,
+            lastActivity: Date.now(),
+            events: ['mousemove', 'keydown', 'click', 'scroll', 'touchstart'],
+            handler: null,
+            start: function (dotNetRef, timeoutMs) {
+                this.stop();
+                this.lastActivity = Date.now();
+                this.handler = () => { this.lastActivity = Date.now(); };
+                this.events.forEach(e => window.addEventListener(e, this.handler, { passive: true }));
+                this.timer = setInterval(() => {
+                    if (Date.now() - this.lastActivity >= timeoutMs) {
+                        this.stop();
+                        dotNetRef.invokeMethodAsync('HandleSessionTimeout');
+                    }
+                }, 10000);
+            },
+            stop: function () {
+                if (this.timer) {
+                    clearInterval(this.timer);
+                    this.timer = null;
+                }
+                if (this.handler) {
+                    this.events.forEach(e => window.removeEventListener(e, this.handler));
+                    this.handler = null;
+                }
+            }
+        };
     </script>
 </body>
 </html>

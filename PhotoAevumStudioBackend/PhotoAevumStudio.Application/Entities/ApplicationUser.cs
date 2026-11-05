@@ -19,6 +19,10 @@ public class ApplicationUser : IdentityUser
     /// </summary>
     public string? StudioId { get; set; }
 
+    public string? Address { get; set; }
+    public int? BirthYear { get; set; }
+    public string? DepartmentId { get; set; }
+
     /// <summary>Computed display name for UI rendering.</summary>
     public string FullName =>
         string.Join(' ',

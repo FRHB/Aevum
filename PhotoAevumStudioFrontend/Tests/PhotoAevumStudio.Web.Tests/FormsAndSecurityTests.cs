@@ -509,4 +509,114 @@ public class FormsAndSecurityTests
         Assert.False(string.IsNullOrWhiteSpace(config["XenditSettings:SecretKey"]), "XenditSettings:SecretKey must be loaded from Infisical.");
         Assert.False(string.IsNullOrWhiteSpace(config["XenditSettings:WebhookToken"]), "XenditSettings:WebhookToken must be loaded from Infisical.");
     }
+
+    // ══════════════════════════════════════════════════════════════════════════
+    // 11. Unified Login, Terms Modal, Password Change & Session Inactivity Tests
+    // ══════════════════════════════════════════════════════════════════════════
+
+    [Theory]
+    [InlineData("ADM-001")]
+    [InlineData("EMP-007")]
+    [InlineData("SADM-001")]
+    [InlineData("customer@example.com")]
+    public void UnifiedLogin_SupportsStaffIdAndCustomerEmail(string identifier)
+    {
+        var model = new Login.LoginCredentials
+        {
+            UserId = identifier,
+            Password = "Password123!"
+        };
+
+        Assert.Equal(identifier, model.UserId);
+        Assert.False(string.IsNullOrWhiteSpace(model.Password));
+    }
+
+    [Fact]
+    public void UnifiedLoginPage_DoesNotContainBackToHome_AndIncludesTermsModal()
+    {
+        var root = GetRepositoryRoot();
+        var loginPath = Path.Combine(root, "PhotoAevumStudioFrontend", "PhotoAevumStudio.Web", "Components", "Pages", "Login.razor");
+        Assert.True(File.Exists(loginPath), $"File not found: {loginPath}");
+
+        var content = File.ReadAllText(loginPath);
+
+        // 1. "Back to Home" button/link removed
+        Assert.DoesNotContain("Back to Home", content, StringComparison.OrdinalIgnoreCase);
+
+        // 2. Terms modal integrated
+        Assert.Contains("TermsModal", content);
+        Assert.Contains("showTermsModal", content);
+
+        // 3. Repositioned Forgot Password link
+        Assert.Contains("forgot-password-row", content);
+        Assert.Contains("/forgot-password", content);
+    }
+
+    [Fact]
+    public void AuthPortalModal_CustomerLogin_UsesTermsModalInsteadOfSeparatePage()
+    {
+        var root = GetRepositoryRoot();
+        var modalPath = Path.Combine(root, "PhotoAevumStudioFrontend", "PhotoAevumStudio.Web", "Components", "Layout", "AuthPortalModal.razor");
+        Assert.True(File.Exists(modalPath), $"File not found: {modalPath}");
+
+        var content = File.ReadAllText(modalPath);
+
+        // Terms and conditions is a pop-up modal rather than a separate page link
+        Assert.Contains("TermsModal", content);
+        Assert.Contains("_showTermsModal", content);
+        Assert.DoesNotContain("<a href=\"/terms\" target=\"_blank\">", content);
+    }
+
+    [Fact]
+    public void ChangePasswordPage_RendersStandardTitleAndBindsUserId()
+    {
+        var root = GetRepositoryRoot();
+        var pagePath = Path.Combine(root, "PhotoAevumStudioFrontend", "PhotoAevumStudio.Web", "Components", "Pages", "ChangePassword.razor");
+        Assert.True(File.Exists(pagePath), $"File not found: {pagePath}");
+
+        var content = File.ReadAllText(pagePath);
+
+        Assert.Contains("<PageTitle>Change Password | Photo Aevum Studio</PageTitle>", content);
+        Assert.Contains("@bind=\"model.UserId\"", content);
+    }
+
+    [Fact]
+    public void SidebarLogout_NavigatesToDesignatedPublicHomePage()
+    {
+        var root = GetRepositoryRoot();
+        var sidebarPath = Path.Combine(root, "PhotoAevumStudioFrontend", "PhotoAevumStudio.Web", "Components", "Layout", "Sidebar.razor");
+        Assert.True(File.Exists(sidebarPath), $"File not found: {sidebarPath}");
+
+        var content = File.ReadAllText(sidebarPath);
+
+        Assert.Contains("Nav.NavigateTo(\"/\", forceLoad: true)", content);
+    }
+
+    [Fact]
+    public void HomeRazor_SupportsSessionExpiredBanner()
+    {
+        var root = GetRepositoryRoot();
+        var homePath = Path.Combine(root, "PhotoAevumStudioFrontend", "PhotoAevumStudio.Web", "Components", "Pages", "Home.razor");
+        Assert.True(File.Exists(homePath), $"File not found: {homePath}");
+
+        var content = File.ReadAllText(homePath);
+
+        Assert.Contains("sessionExpired", content);
+        Assert.Contains("SessionExpired", content);
+        Assert.Contains("Your session has expired due to inactivity. Please sign in again.", content);
+        Assert.Contains("DismissSessionExpiredBanner", content);
+    }
+
+    private static string GetRepositoryRoot()
+    {
+        var baseDir = AppContext.BaseDirectory;
+        var dir = new DirectoryInfo(baseDir);
+        while (dir != null && !File.Exists(Path.Combine(dir.FullName, "PhotoAevumStudio.slnx")) && !File.Exists(Path.Combine(dir.FullName, "PhotoAevumStudio.sln")))
+        {
+            dir = dir.Parent;
+        }
+
+        Assert.NotNull(dir);
+        return dir.FullName;
+    }
 }

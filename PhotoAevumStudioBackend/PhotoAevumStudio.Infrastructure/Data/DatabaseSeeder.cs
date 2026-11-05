@@ -180,7 +180,83 @@ public static class DatabaseSeeder
                     BEGIN
                         ALTER TABLE dbo.Employees ADD Specializations nvarchar(max) NOT NULL CONSTRAINT DF_Employees_EF_Specializations DEFAULT '[]';
                     END;
+                    IF COL_LENGTH(N'dbo.Employees', N'Address') IS NULL
+                    BEGIN
+                        ALTER TABLE dbo.Employees ADD Address nvarchar(500) NULL;
+                    END;
+                    IF COL_LENGTH(N'dbo.Employees', N'BirthYear') IS NULL
+                    BEGIN
+                        ALTER TABLE dbo.Employees ADD BirthYear int NULL;
+                    END;
+                    IF COL_LENGTH(N'dbo.Employees', N'DepartmentID') IS NULL
+                    BEGIN
+                        ALTER TABLE dbo.Employees ADD DepartmentID nvarchar(30) NULL;
+                    END;
+                    ALTER TABLE dbo.Employees ALTER COLUMN EmployeeStatus nvarchar(50) NOT NULL;
+                    IF OBJECT_ID(N'dbo.CK_Employee_Status', N'C') IS NOT NULL
+                        ALTER TABLE dbo.Employees DROP CONSTRAINT CK_Employee_Status;
+                    ALTER TABLE dbo.Employees ADD CONSTRAINT CK_Employee_Status 
+                        CHECK (EmployeeStatus IN ('Active','Inactive','Clock-In (Duty)','Clock-Out (Off Duty)','Archive'));
                     EXEC(N'UPDATE dbo.Employees SET IdentityUserId = EmployeeID WHERE IdentityUserId IS NULL; UPDATE dbo.Employees SET Status = EmployeeStatus WHERE Status IS NULL;');
+                END;
+
+                IF OBJECT_ID(N'dbo.AspNetUsers', N'U') IS NOT NULL
+                BEGIN
+                    IF COL_LENGTH(N'dbo.AspNetUsers', N'Address') IS NULL
+                        ALTER TABLE dbo.AspNetUsers ADD Address nvarchar(500) NULL;
+                    IF COL_LENGTH(N'dbo.AspNetUsers', N'BirthYear') IS NULL
+                        ALTER TABLE dbo.AspNetUsers ADD BirthYear int NULL;
+                    IF COL_LENGTH(N'dbo.AspNetUsers', N'DepartmentId') IS NULL
+                        ALTER TABLE dbo.AspNetUsers ADD DepartmentId nvarchar(30) NULL;
+                END;
+
+                IF OBJECT_ID(N'dbo.Departments', N'U') IS NULL
+                BEGIN
+                    CREATE TABLE dbo.Departments (
+                        DepartmentID nvarchar(30) NOT NULL PRIMARY KEY,
+                        DepartmentName nvarchar(100) NOT NULL UNIQUE,
+                        DepartmentDescription nvarchar(500) NULL,
+                        CreatedAt datetime2 NOT NULL CONSTRAINT DF_Departments_CreatedAt DEFAULT SYSUTCDATETIME()
+                    );
+                END;
+
+                IF OBJECT_ID(N'dbo.Departments', N'U') IS NOT NULL
+                BEGIN
+                    IF NOT EXISTS (SELECT 1 FROM dbo.Departments WHERE DepartmentID = 'DEP-0001')
+                        INSERT INTO dbo.Departments (DepartmentID, DepartmentName, DepartmentDescription) VALUES ('DEP-0001', 'Photography', 'Professional studio and on-location photography services');
+                    IF NOT EXISTS (SELECT 1 FROM dbo.Departments WHERE DepartmentID = 'DEP-0002')
+                        INSERT INTO dbo.Departments (DepartmentID, DepartmentName, DepartmentDescription) VALUES ('DEP-0002', 'Videography', 'Cinematic video recording, coverage, and production');
+                    IF NOT EXISTS (SELECT 1 FROM dbo.Departments WHERE DepartmentID = 'DEP-0003')
+                        INSERT INTO dbo.Departments (DepartmentID, DepartmentName, DepartmentDescription) VALUES ('DEP-0003', 'Post-Processing & Editing', 'Retouching, color grading, and multimedia post-production');
+                    IF NOT EXISTS (SELECT 1 FROM dbo.Departments WHERE DepartmentID = 'DEP-0004')
+                        INSERT INTO dbo.Departments (DepartmentID, DepartmentName, DepartmentDescription) VALUES ('DEP-0004', 'Studio Staff & Operations', 'Studio logistics, client onboarding, and equipment handling');
+                    IF NOT EXISTS (SELECT 1 FROM dbo.Departments WHERE DepartmentID = 'DEP-0005')
+                        INSERT INTO dbo.Departments (DepartmentID, DepartmentName, DepartmentDescription) VALUES ('DEP-0005', 'Administration & Studio Management', 'Executive management, finances, scheduling, and staff supervision');
+                    IF NOT EXISTS (SELECT 1 FROM dbo.Departments WHERE DepartmentID = 'DEP-0006')
+                        INSERT INTO dbo.Departments (DepartmentID, DepartmentName, DepartmentDescription) VALUES ('DEP-0006', 'Production & Lighting', 'Set design, lighting engineering, and technical floor management');
+                    IF NOT EXISTS (SELECT 1 FROM dbo.Departments WHERE DepartmentID = 'DEP-0007')
+                        INSERT INTO dbo.Departments (DepartmentID, DepartmentName, DepartmentDescription) VALUES ('DEP-0007', 'Creative Direction', 'Art direction, concept styling, theme planning, and brand storytelling');
+                END;
+
+                IF NOT EXISTS (SELECT 1 FROM sys.sequences WHERE name = 'Seq_DepartmentID')
+                BEGIN
+                    CREATE SEQUENCE dbo.Seq_DepartmentID AS INT START WITH 8 INCREMENT BY 1;
+                END;
+
+                IF OBJECT_ID(N'dbo.Employees', N'U') IS NOT NULL AND OBJECT_ID(N'dbo.Departments', N'U') IS NOT NULL
+                BEGIN
+                    IF OBJECT_ID(N'dbo.FK_Employees_Department', N'F') IS NULL
+                        ALTER TABLE dbo.Employees ADD CONSTRAINT FK_Employees_Department FOREIGN KEY (DepartmentID) REFERENCES dbo.Departments(DepartmentID) ON DELETE SET NULL;
+                END;
+
+                IF OBJECT_ID(N'dbo.EmployeeSpecialization', N'U') IS NOT NULL
+                BEGIN
+                    IF COL_LENGTH(N'dbo.EmployeeSpecialization', N'DepartmentID') IS NULL
+                        ALTER TABLE dbo.EmployeeSpecialization ADD DepartmentID nvarchar(30) NULL;
+                    IF COL_LENGTH(N'dbo.EmployeeSpecialization', N'DepartmentName') IS NULL
+                        ALTER TABLE dbo.EmployeeSpecialization ADD DepartmentName nvarchar(100) NULL;
+                    IF OBJECT_ID(N'dbo.Departments', N'U') IS NOT NULL AND OBJECT_ID(N'dbo.FK_EmployeeSpecialization_Department', N'F') IS NULL
+                        ALTER TABLE dbo.EmployeeSpecialization ADD CONSTRAINT FK_EmployeeSpecialization_Department FOREIGN KEY (DepartmentID) REFERENCES dbo.Departments(DepartmentID) ON DELETE SET NULL;
                 END;
 
                 IF OBJECT_ID(N'dbo.EmployeeLeaves', N'U') IS NULL AND OBJECT_ID(N'dbo.EmployeeLeave', N'U') IS NULL
@@ -288,6 +364,12 @@ public static class DatabaseSeeder
                 IF OBJECT_ID(N'dbo.ServiceCategory', N'U') IS NOT NULL
                 BEGIN
                     ALTER TABLE dbo.ServiceCategory ALTER COLUMN ServiceCategoryDescription nvarchar(1000) NOT NULL;
+                    IF COL_LENGTH(N'dbo.ServiceCategory', N'RateTypeID') IS NULL
+                        ALTER TABLE dbo.ServiceCategory ADD RateTypeID nvarchar(30) NOT NULL CONSTRAINT DF_ServiceCategory_RateTypeID DEFAULT 'RT-0001';
+                    IF COL_LENGTH(N'dbo.ServiceCategory', N'RateTypeName') IS NULL
+                        ALTER TABLE dbo.ServiceCategory ADD RateTypeName nvarchar(50) NOT NULL CONSTRAINT DF_ServiceCategory_RateTypeName DEFAULT 'Per Hour';
+                    IF OBJECT_ID(N'dbo.RateType', N'U') IS NOT NULL AND OBJECT_ID(N'dbo.FK_ServiceCategory_RateType', N'F') IS NULL
+                        ALTER TABLE dbo.ServiceCategory ADD CONSTRAINT FK_ServiceCategory_RateType FOREIGN KEY (RateTypeID) REFERENCES dbo.RateType(RateTypeID);
                 END;
 
                 IF OBJECT_ID(N'dbo.AdditionalServices', N'U') IS NOT NULL

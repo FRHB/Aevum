@@ -173,6 +173,7 @@ public class AuthController : ControllerBase
         }
 
         var token = BuildJwt(user.Id, user.Email, user.FullName, user.Id, roles);
+        _cache.Set($"SessionActivity_{user.Id.ToUpperInvariant()}", DateTime.UtcNow, TimeSpan.FromHours(4));
         await _sqlAuthService.LogActivityAsync("LOGIN", "Session", user.Id, "Successful login session established", user.Role, user.Id);
 
         _logger.LogInformation("Successful login for {UserId} ({Role})", user.Id, user.Role);
@@ -200,6 +201,7 @@ public class AuthController : ControllerBase
 
         if (!string.IsNullOrWhiteSpace(userId))
         {
+            _cache.Remove($"SessionActivity_{userId.ToUpperInvariant()}");
             _logger.LogInformation("Global logout requested for {UserId} ({Role})", userId, role);
             await _sqlAuthService.LogActivityAsync("LOGOUT", "Session", userId, "Global user sign-out and session revocation", role, userId);
         }

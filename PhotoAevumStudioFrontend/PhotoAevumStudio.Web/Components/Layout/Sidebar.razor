@@ -150,7 +150,7 @@
             _openAccordions.Add("emp-history");
         }
 
-        if (path.StartsWith("admin/portfolio") || path.StartsWith("portfolio"))
+        if (path.StartsWith("admin/portfolio") || path.StartsWith("portfolio") || path.StartsWith("admin/highlights"))
         {
             _openAccordions.Add("portfolio");
         }
@@ -167,7 +167,7 @@
     private async Task HandleLogoutAsync()
     {
         await AuthService.LogoutAsync();
-        Nav.NavigateTo("/login", forceLoad: true);
+        Nav.NavigateTo("/", forceLoad: true);
     }
 
     private RenderFragment RenderNav()
@@ -320,7 +320,8 @@
                     <ul id="acc-portfolio"
                         class="aev-sidebar__sub @(IsOpen("portfolio") ? "is-expanded" : "")"
                         aria-hidden="@(!IsOpen("portfolio"))">
-                        <li><NavLink href="/admin/portfolio/features" class="aev-sidebar__sub-link" Match="NavLinkMatch.All" ActiveClass="aev-sidebar__link--active">Features</NavLink></li>
+                        <li><NavLink href="/admin/highlights" class="aev-sidebar__sub-link" Match="NavLinkMatch.All" ActiveClass="aev-sidebar__link--active">Hero Highlights</NavLink></li>
+                        <li><NavLink href="/admin/portfolio/features" class="aev-sidebar__sub-link" ActiveClass="aev-sidebar__link--active">Features</NavLink></li>
                         <li><NavLink href="/admin/portfolio/images" class="aev-sidebar__sub-link" ActiveClass="aev-sidebar__link--active">Portfolio Images</NavLink></li>
                         <li><NavLink href="/admin/portfolio/categories" class="aev-sidebar__sub-link" ActiveClass="aev-sidebar__link--active">Portfolio Categories</NavLink></li>
                     </ul>

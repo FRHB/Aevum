@@ -231,6 +231,8 @@ public class ServiceCategoryItem
     public string PortfolioSection { get; set; } = PortfolioSections.Photography;
 
     public string ColorTag { get; set; } = "Blue"; // "Blue", "Rose", "Purple", "Emerald", "Amber", "Indigo", "Cyan"
+    public string RateTypeID { get; set; } = "RT-0001";
+    public string RateTypeName { get; set; } = "Per Hour";
     public List<string> AssociatedServices { get; set; } = new();
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
 
@@ -274,6 +276,9 @@ public class CategoryModel
 
     [Required(ErrorMessage = "Please select a color tag.")]
     public string ColorTag { get; set; } = "Blue";
+
+    public string RateTypeID { get; set; } = "RT-0001";
+    public string RateTypeName { get; set; } = "Per Hour";
 
     public string Status { get; set; } = "Active";
 

@@ -15,6 +15,10 @@ public class EmployeeSpecializationDto
     public string Email { get; set; } = string.Empty;
     public string Role { get; set; } = "Employee";
     public string Status { get; set; } = "Active";
+    public string? Address { get; set; }
+    public int? BirthYear { get; set; }
+    public string? DepartmentId { get; set; }
+    public string? Department { get; set; }
     public List<string> Specializations { get; set; } = new();
 
     // Helper computed properties
@@ -43,8 +47,26 @@ public class SpecializationLookupItem
     public string Id { get; set; } = string.Empty;
     public string Name { get; set; } = string.Empty;
     public string? Description { get; set; }
+    public string? DepartmentId { get; set; }
     public string Department { get; set; } = "Photography";
     public string ColorTag { get; set; } = "Blue";
+    public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
+}
+
+/// <summary>
+/// Master Department lookup record. Corresponds to dbo.Departments.
+/// </summary>
+public class DepartmentModel
+{
+    public string DepartmentId { get; set; } = string.Empty;
+
+    [Required(ErrorMessage = "Department name is required.")]
+    [StringLength(100, MinimumLength = 2, ErrorMessage = "Department name must be between 2 and 100 characters.")]
+    public string DepartmentName { get; set; } = string.Empty;
+
+    [StringLength(500, ErrorMessage = "Description cannot exceed 500 characters.")]
+    public string? DepartmentDescription { get; set; }
+
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
 }
 
@@ -61,6 +83,8 @@ public class SpecializationModel
 
     [StringLength(300, ErrorMessage = "Description cannot exceed 300 characters.")]
     public string? Description { get; set; }
+
+    public string? DepartmentId { get; set; }
 
     [Required(ErrorMessage = "Please select a department category.")]
     public string Department { get; set; } = "Photography";

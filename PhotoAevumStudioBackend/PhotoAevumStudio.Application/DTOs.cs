@@ -51,13 +51,26 @@ public record UpdateServiceImageRequest(
     byte[] ImageBytes,
     string MimeType);
 
+// Departments
+public record DepartmentDto(
+    string DepartmentId,
+    string DepartmentName,
+    string? DepartmentDescription,
+    DateTime CreatedAt);
+
+public record CreateDepartmentDto(
+    string DepartmentName,
+    string? DepartmentDescription);
+
 // Categories
 public record CategoryDto(
     string Id,
     string Name,
     string Description,
     IReadOnlyList<string>? AssociatedServices = null,
-    IReadOnlyList<CategoryAssociationDetailDto>? Associations = null);
+    IReadOnlyList<CategoryAssociationDetailDto>? Associations = null,
+    string RateTypeId = "RT-0001",
+    string RateTypeName = "Per Hour");
 
 public record CategoryAssociationDetailDto(
     string JoinId,
@@ -74,7 +87,9 @@ public record CreateCategoryDto(
     IReadOnlyList<string>? AssociatedServiceIds = null,
     IReadOnlyList<string>? AssociatedAdditionalServiceIds = null,
     IReadOnlyList<string>? AssociatedComboPackageIds = null,
-    IReadOnlyList<string>? Associations = null);
+    IReadOnlyList<string>? Associations = null,
+    string RateTypeId = "RT-0001",
+    string? RateTypeName = null);
 
 // Service Wizard Creation Models
 public record CreateServiceDto(

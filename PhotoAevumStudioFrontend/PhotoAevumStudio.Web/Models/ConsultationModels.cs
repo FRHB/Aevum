@@ -159,3 +159,13 @@ public class PaymentTransactionDto
     public DateTime CreatedAt { get; set; }
 }
 
+
+
+public class UpdatePaymentBookingStatusRequest
+{
+    public string Status { get; set; } = string.Empty; // "Deal_Won", "Deal_Lost", "Rescheduled"
+    public string? Reason { get; set; }
+    public DateOnly? NewDate { get; set; }
+    public TimeOnly? NewTime { get; set; }
+    public string? PaymentMethod { get; set; }
+}

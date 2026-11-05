@@ -113,6 +113,23 @@
                                 <InputText id="emp-email" type="email" @bind-Value="model.Email" class="@InputClass" placeholder="j.doe@photoaevum.com" autocomplete="off" />
                                 <ValidationMessage For="() => model.Email" class="text-xs text-rose-600 mt-1" />
                             </div>
+
+                            <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                                <div>
+                                    <label for="emp-birthyear" class="block text-xs font-semibold uppercase tracking-wider text-slate-700 mb-1.5">
+                                        Birth Year <span class="text-slate-400 font-normal lowercase">(optional)</span>
+                                    </label>
+                                    <InputNumber id="emp-birthyear" @bind-Value="model.BirthYear" class="@InputClass" placeholder="e.g. 1995" />
+                                    <ValidationMessage For="() => model.BirthYear" class="text-xs text-rose-600 mt-1" />
+                                </div>
+                                <div>
+                                    <label for="emp-address" class="block text-xs font-semibold uppercase tracking-wider text-slate-700 mb-1.5">
+                                        Home Address <span class="text-slate-400 font-normal lowercase">(optional)</span>
+                                    </label>
+                                    <InputText id="emp-address" @bind-Value="model.Address" class="@InputClass" placeholder="e.g. 123 Studio Way, Quezon City" autocomplete="off" />
+                                    <ValidationMessage For="() => model.Address" class="text-xs text-rose-600 mt-1" />
+                                </div>
+                            </div>
                         </div>
                     }
 
@@ -228,6 +245,12 @@
                                 <div class="py-2.5 flex justify-between items-center">
                                     <span class="text-slate-500 font-medium">Email Address</span>
                                     <span class="text-slate-900 font-semibold text-right">@model.Email</span>
+                                </div>
+                                <div class="py-2.5 flex justify-between items-center">
+                                    <span class="text-slate-500 font-medium">Birth Year &amp; Address</span>
+                                    <span class="text-slate-900 font-semibold text-right max-w-xs truncate">
+                                        @(model.BirthYear != null ? $"b. {model.BirthYear}" : "")@(model.BirthYear != null && !string.IsNullOrWhiteSpace(model.Address) ? " • " : "")@(string.IsNullOrWhiteSpace(model.Address) ? (model.BirthYear == null ? "—" : "") : model.Address)
+                                    </span>
                                 </div>
                                 <div class="py-2 flex justify-between items-center">
                                     <span class="text-slate-500 font-medium">Days Off</span>
@@ -473,6 +496,9 @@
                 model.LastName = EditEmployee.LastName;
                 model.MiddleName = EditEmployee.MiddleName;
                 model.Email = EditEmployee.Email;
+                model.Address = EditEmployee.Address;
+                model.BirthYear = EditEmployee.BirthYear;
+                model.DepartmentId = EditEmployee.DepartmentId;
                 model.EmployeeId = EditEmployee.EmployeeId;
                 model.Specializations = new List<string>(EditEmployee.Specializations);
                 model.SelectedDaysOff = new List<string>(EditEmployee.SelectedDaysOff.Count > 0 ? EditEmployee.SelectedDaysOff : new List<string> { "Sunday" });
@@ -701,7 +727,10 @@
                 model.Email.Trim(),
                 model.Specializations.ToList(),
                 string.IsNullOrWhiteSpace(model.Password) ? string.Empty : model.Password.Trim(),
-                model.DaysOffString);
+                model.DaysOffString,
+                model.Address?.Trim(),
+                model.BirthYear,
+                model.DepartmentId?.Trim());
 
             var result = IsEditMode
                 ? await Employees.UpdateEmployeeAsync(request, _cts?.Token ?? CancellationToken.None)

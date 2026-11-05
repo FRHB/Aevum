@@ -57,4 +57,7 @@ public class CategoryWizardModel
     /// Auto-generated custom Category ID (format: CAT-####). Strictly read-only and assigned by system.
     /// </summary>
     public string GeneratedId { get; set; } = string.Empty;
+
+    public string RateTypeID { get; set; } = "RT-0001";
+    public string RateTypeName { get; set; } = "Per Hour";
 }

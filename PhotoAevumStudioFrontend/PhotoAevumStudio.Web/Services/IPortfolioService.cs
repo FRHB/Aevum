@@ -17,4 +17,8 @@ public interface IPortfolioService
     Task<bool> UpdatePortfolioAsync(string portfolioId, string name, string? description, string categoryId, List<(string FileName, string ContentType, byte[] Data)>? newImages = null, CancellationToken ct = default);
     Task<bool> ToggleFeatureAsync(string portfolioId, CancellationToken ct = default);
     Task<bool> DeletePortfolioAsync(string portfolioId, CancellationToken ct = default);
+    Task<List<HomeHighlightModel>> GetHomeHighlightsAsync(bool activeOnly = true, CancellationToken ct = default);
+    Task<HomeHighlightModel?> SaveHomeHighlightAsync(HomeHighlightModel model, byte[]? imageData = null, string? imageMime = null, CancellationToken ct = default);
+    Task<bool> DeleteHomeHighlightAsync(string highlightId, CancellationToken ct = default);
+    Task<bool> ToggleHomeHighlightActiveAsync(string highlightId, CancellationToken ct = default);
 }

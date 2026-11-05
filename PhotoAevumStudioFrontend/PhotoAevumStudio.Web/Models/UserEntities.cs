@@ -84,6 +84,10 @@ public sealed class Employee
     public string Email      { get; set; } = string.Empty;
     public string Position   { get; set; } = string.Empty;
     public string Department { get; set; } = string.Empty;
+    public string? DepartmentId { get; set; }
+    public string? Address   { get; set; }
+    public int? BirthYear    { get; set; }
+    public string Status     { get; set; } = "Active";
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

@@ -130,6 +130,13 @@
     color: #9ca3af;
 }
 
+.forgot-password-row {
+    display: flex;
+    justify-content: flex-end;
+    margin-top: 0.5rem;
+    margin-bottom: 0.25rem;
+}
+
 .forgot-password-link {
     font-size: 0.8rem;
     color: #2563eb;
