@@ -139,6 +139,7 @@ public interface IUserService
     IReadOnlyList<EmployeeSpecializationDto> GetArchivedEmployeeSpecializations();
     SpecializationLookupItem AddSpecialization(SpecializationModel model);
     bool DeleteSpecialization(string id);
+    bool AssignEmployeeSpecializations(string employeeId, IEnumerable<string> specializationNamesOrIds, string? departmentId = null);
 
     // ── Studio Services & Packages ──────────────────────────────────────────
     IReadOnlyList<ServiceCategoryItem> GetServiceCategories();

@@ -100,7 +100,7 @@
                     <tr class="bg-slate-50/75 border-b border-slate-200 text-slate-600 font-semibold uppercase tracking-wider">
                         <th class="px-5 py-3.5">Employee</th>
                         <th class="px-5 py-3.5">Employee ID</th>
-                        <th class="px-5 py-3.5">Department &amp; Details</th>
+                        <th class="px-5 py-3.5">Department</th>
                         <th class="px-5 py-3.5">Specializations</th>
                         <th class="px-5 py-3.5">Status</th>
                         @if (!EffectiveReadOnly)
@@ -140,6 +140,12 @@
                                         <div>
                                             <p class="font-semibold text-slate-900">@emp.FullName</p>
                                             <p class="text-slate-500 text-[11px]">@emp.Email</p>
+                                            @if (!string.IsNullOrWhiteSpace(emp.Address) || emp.BirthDate != null || emp.BirthYear != null)
+                                            {
+                                                <p class="text-slate-400 text-[10px] truncate max-w-xs mt-0.5" title="@emp.Address">
+                                                    @(emp.BirthDate != null ? $"{emp.BirthDate.Value:MMM dd, yyyy} • " : (emp.BirthYear != null ? $"b. {emp.BirthYear} • " : ""))@(string.IsNullOrWhiteSpace(emp.Address) ? "No address recorded" : emp.Address)
+                                                </p>
+                                            }
                                         </div>
                                     </div>
                                 </td>
@@ -149,22 +155,28 @@
                                     </span>
                                 </td>
                                 <td class="px-5 py-3.5">
-                                    <div>
-                                        <p class="font-semibold text-slate-800">@(string.IsNullOrWhiteSpace(emp.Department) ? "General" : emp.Department)</p>
-                                        <p class="text-slate-500 text-[11px] truncate max-w-xs" title="@emp.Address">
-                                            @(emp.BirthYear != null ? $"b. {emp.BirthYear} • " : "")@(string.IsNullOrWhiteSpace(emp.Address) ? "No address recorded" : emp.Address)
-                                        </p>
-                                    </div>
+                                    <span class="inline-flex items-center px-2.5 py-1 rounded-md text-[11px] font-semibold @(string.IsNullOrWhiteSpace(emp.Department) || emp.Department == "General" ? "bg-slate-100 text-slate-600 border border-slate-200" : "bg-indigo-50 text-indigo-700 border border-indigo-200/70")">
+                                        @(string.IsNullOrWhiteSpace(emp.Department) ? "General" : emp.Department)
+                                    </span>
                                 </td>
                                 <td class="px-5 py-3.5">
-                                    <div class="flex flex-wrap gap-1">
-                                        @foreach (var spec in emp.Specializations)
-                                        {
-                                            <span class="inline-block bg-slate-100 text-slate-800 text-[11px] px-2 py-0.5 rounded border border-slate-200">
-                                                @spec
-                                            </span>
-                                        }
-                                    </div>
+                                    @if (emp.Specializations != null && emp.Specializations.Any())
+                                    {
+                                        <div class="flex flex-wrap gap-1">
+                                            @foreach (var spec in emp.Specializations)
+                                            {
+                                                <span class="inline-block bg-slate-100 text-slate-800 text-[11px] font-medium px-2 py-0.5 rounded border border-slate-200">
+                                                    @spec
+                                                </span>
+                                            }
+                                        </div>
+                                    }
+                                    else
+                                    {
+                                        <span class="inline-flex items-center text-slate-400 italic text-[11px]">
+                                            No specialization
+                                        </span>
+                                    }
                                 </td>
                                 <td class="px-5 py-3.5">
                                     <span class="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-medium border @GetStatusBadgeClasses(emp.Status)">

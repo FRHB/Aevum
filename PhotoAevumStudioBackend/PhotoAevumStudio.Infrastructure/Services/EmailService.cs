@@ -141,6 +141,7 @@ public class EmailService : IEmailService, IBookingNotificationService
 
         var primaryFromName = GetEnv(
             "EMAIL_CONFIG__PRIMARY__FROM_NAME",
+            "EMAIL_CONFIG_PRIMARY_FROM_NAME",
             "EMAIL_CONFIG__PRIMARY__FROMNAME",
             "EMAIL_CONFIG:PRIMARY:FROM_NAME",
             "EMAIL_CONFIG:PRIMARY:FROMNAME",
@@ -152,6 +153,7 @@ public class EmailService : IEmailService, IBookingNotificationService
 
         var primaryFromEmail = GetEnv(
             "EMAIL_CONFIG__PRIMARY__FROM_EMAIL",
+            "EMAIL_CONFIG_PRIMARY_FROM_EMAIL",
             "EMAIL_CONFIG__PRIMARY__FROMEMAIL",
             "EMAIL_CONFIG:PRIMARY:FROM_EMAIL",
             "EMAIL_CONFIG:PRIMARY:FROMEMAIL",
@@ -160,6 +162,10 @@ public class EmailService : IEmailService, IBookingNotificationService
             "SMTP_FROM_EMAIL");
         if (!string.IsNullOrWhiteSpace(primaryFromEmail))
             config.Primary.FromEmail = primaryFromEmail;
+        else if (string.IsNullOrWhiteSpace(config.Primary.FromEmail) && !string.IsNullOrWhiteSpace(config.Primary.Username) && config.Primary.Username.Contains('@'))
+            config.Primary.FromEmail = config.Primary.Username;
+        else if (string.IsNullOrWhiteSpace(config.Primary.FromEmail))
+            config.Primary.FromEmail = "photoaevumstudio@gmail.com";
 
         var primarySslStr = GetEnv(
             "EMAIL_CONFIG__PRIMARY__ENABLE_SSL",
@@ -235,6 +241,8 @@ public class EmailService : IEmailService, IBookingNotificationService
             "MAILTRAP_FROM_EMAIL");
         if (!string.IsNullOrWhiteSpace(fallbackFromEmail))
             config.Fallback.FromEmail = fallbackFromEmail;
+        else if (string.IsNullOrWhiteSpace(config.Fallback.FromEmail) && !string.IsNullOrWhiteSpace(config.Fallback.Username) && config.Fallback.Username.Contains('@'))
+            config.Fallback.FromEmail = config.Fallback.Username;
 
         var fallbackSslStr = GetEnv(
             "EMAIL_CONFIG__FALLBACK__ENABLE_SSL",
@@ -253,6 +261,12 @@ public class EmailService : IEmailService, IBookingNotificationService
 
     public async Task SendEmailAsync(string toEmail, string subject, string body, bool isHtml, CancellationToken cancellationToken) =>
         await DeliverAsync(toEmail, subject, body, isHtml, cancellationToken);
+
+    public async Task<bool> TrySendEmailAsync(string toEmail, string subject, string body, bool isHtml = true, CancellationToken cancellationToken = default)
+    {
+        var outcome = await DeliverAsync(toEmail, subject, body, isHtml, cancellationToken);
+        return outcome == SendOutcome.Sent;
+    }
 
     private static bool IsConfigured(EmailServerSettings? settings)
     {
@@ -353,7 +367,9 @@ public class EmailService : IEmailService, IBookingNotificationService
     {
         var message = new MimeMessage();
         var fromName = string.IsNullOrWhiteSpace(settings.FromName) ? "Photo Aevum Studio" : settings.FromName;
-        var fromEmail = string.IsNullOrWhiteSpace(settings.FromEmail) ? "noreply@photoaevum.com" : settings.FromEmail;
+        var fromEmail = !string.IsNullOrWhiteSpace(settings.FromEmail)
+            ? settings.FromEmail
+            : (!string.IsNullOrWhiteSpace(settings.Username) && settings.Username.Contains('@') ? settings.Username : "photoaevumstudio@gmail.com");
 
         message.From.Add(new MailboxAddress(fromName, fromEmail));
 
@@ -421,7 +437,7 @@ public class EmailService : IEmailService, IBookingNotificationService
             ? $"<a href='{E(c.MeetingLink)}'>{E(c.MeetingLink)}</a>"
             : E(c.MeetingLink);
 
-        var services = string.Join(string.Empty, c.Services.Select(s => Row(E(s.Name), $"₱{s.Price:N2}")));
+        var services = string.Join(string.Empty, c.Services.Select(s => Row(E(s.Name), "For Negotiation")));
 
         var body = $@"
 <!DOCTYPE html>
@@ -454,10 +470,10 @@ public class EmailService : IEmailService, IBookingNotificationService
         {Row("Teleconference", E(platformLabel))}
         {Row("Session link", linkHtml)}
       </div>
-      <strong>Services</strong>
+      <strong>Services Requested</strong>
       <div class='info-box'>
         {services}
-        {Row("Total", $"₱{c.TotalPrice:N2}")}
+        {Row("Pricing & Terms", "To be finalized during consultation")}
       </div>
       <p style='font-size:13px;color:#475569;'>Complimentary rescheduling is available up to 24 hours before your session.</p>
     </div>
@@ -554,8 +570,10 @@ public class EmailService : IEmailService, IBookingNotificationService
         string employeeName,
         string employeeId,
         string initialPassword,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default,
+        string assignedRole = "Employee")
     {
+        var displayRole = string.IsNullOrWhiteSpace(assignedRole) ? "Employee" : assignedRole.Trim();
         var subject = "Welcome to Photo Aevum Studio – Employee Credentials";
 
         var body = $@"
@@ -596,7 +614,7 @@ public class EmailService : IEmailService, IBookingNotificationService
       <div class='info-box'>
         <div class='row'>
           <span class='label'>Assigned Role:</span>
-          <span class='val' style='font-family: inherit;'>Employee</span>
+          <span class='val' style='font-family: inherit;'>{WebUtility.HtmlEncode(displayRole)}</span>
         </div>
         <div class='row'>
           <span class='label'>Employee ID:</span>
@@ -622,7 +640,7 @@ public class EmailService : IEmailService, IBookingNotificationService
 </body>
 </html>";
 
-        _logger.LogInformation("Dispatching onboarding credentials email to {Email} for Employee {EmployeeId}.", toEmail, employeeId);
+        _logger.LogInformation("Dispatching onboarding credentials email to {Email} for Employee {EmployeeId} ({AssignedRole}).", toEmail, employeeId, displayRole);
         await SendEmailAsync(toEmail, subject, body, isHtml: true, cancellationToken);
     }
 }

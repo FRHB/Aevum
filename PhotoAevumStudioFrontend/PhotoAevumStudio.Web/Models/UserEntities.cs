@@ -86,7 +86,13 @@ public sealed class Employee
     public string Department { get; set; } = string.Empty;
     public string? DepartmentId { get; set; }
     public string? Address   { get; set; }
-    public int? BirthYear    { get; set; }
+    public DateTime? BirthDate { get; set; }
+    private int? _birthYear;
+    public int? BirthYear
+    {
+        get => BirthDate?.Year ?? _birthYear;
+        set => _birthYear = value;
+    }
     public string Status     { get; set; } = "Active";
 }
 

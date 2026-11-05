@@ -1,3 +1,5 @@
+using System.ComponentModel.DataAnnotations.Schema;
+
 namespace PhotoAevumStudio.Application.Entities;
 
 public class Employee
@@ -13,6 +15,8 @@ public class Employee
     
     public string? Address { get; set; }
     public int? BirthYear { get; set; }
+    [NotMapped]
+    public DateTime? BirthDate { get; set; }
     public string? DepartmentID { get; set; }
     public Department? DepartmentEntity { get; set; }
     

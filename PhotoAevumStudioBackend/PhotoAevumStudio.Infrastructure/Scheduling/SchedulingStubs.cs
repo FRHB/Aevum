@@ -66,7 +66,7 @@ public sealed class BookingNotificationService(IEmailService email, ILogger<Book
             _ => "Zoom"
         };
         var serviceRows = string.Concat(c.Services.Select(s =>
-            $"<tr><td style=\"padding:4px 12px 4px 0\">{E(s.Name)}</td><td style=\"text-align:right\">₱{s.Price:N2}</td></tr>"));
+            $"<tr><td style=\"padding:4px 12px 4px 0\">{E(s.Name)}</td><td style=\"text-align:right;color:#64748b;\">For Negotiation</td></tr>"));
 
         var body = $"""
             <div style="font-family:Arial,sans-serif;color:#111;max-width:560px">
@@ -76,8 +76,8 @@ public sealed class BookingNotificationService(IEmailService email, ILogger<Book
                  <strong>Time:</strong> {c.SlotStart:h:mm tt} – {c.SlotEnd:h:mm tt}<br/>
                  <strong>Location:</strong> {(c.EventLocation is null ? "Online only" : E(c.EventLocation))}<br/>
                  <strong>Platform:</strong> {platform}</p>
-              <table style="border-collapse:collapse">{serviceRows}
-                <tr><td style="padding-top:8px"><strong>Total</strong></td><td style="text-align:right;padding-top:8px"><strong>₱{c.TotalPrice:N2}</strong></td></tr>
+              <table style="border-collapse:collapse;width:100%">{serviceRows}
+                <tr><td style="padding-top:8px;color:#64748b;font-size:13px;" colspan="2"><em>Pricing and package terms will be agreed upon during your consultation call.</em></td></tr>
               </table>
               <p style="margin-top:16px"><a href="{E(c.MeetingLink)}" style="background:#000;color:#fff;padding:10px 16px;border-radius:6px;text-decoration:none">Join meeting</a></p>
               <p style="font-size:12px;color:#666">{E(c.MeetingLink)}</p>

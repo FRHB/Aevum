@@ -306,7 +306,10 @@
                                         </div>
                                         <div class="agenda-actions">
                                             <span class="status-pill text-xs">@b.Status</span>
-                                            <span class="text-xs font-bold text-gray-900">$@b.EstimatedPrice.ToString("F0")</span>
+                                            @if (!b.IsConsultation)
+                                            {
+                                                <span class="text-xs font-bold text-gray-900">₱@b.EstimatedPrice.ToString("F0")</span>
+                                            }
                                         </div>
                                     </div>
                                 }
@@ -371,10 +374,13 @@
                         <span class="drawer-field-label">Photographer</span>
                         <span class="drawer-field-val">@_selectedBooking.AssignedPhotographer</span>
                     </div>
-                    <div class="drawer-field">
-                        <span class="drawer-field-label">Price</span>
-                        <span class="drawer-field-val font-bold">$@_selectedBooking.EstimatedPrice.ToString("N2")</span>
-                    </div>
+                    @if (!_selectedBooking.IsConsultation)
+                    {
+                        <div class="drawer-field">
+                            <span class="drawer-field-label">Price</span>
+                            <span class="drawer-field-val font-bold">₱@_selectedBooking.EstimatedPrice.ToString("N2")</span>
+                        </div>
+                    }
 
                     @if (!string.IsNullOrWhiteSpace(_selectedBooking.Notes))
                     {

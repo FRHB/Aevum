@@ -73,17 +73,6 @@
             <button class="apm-back" @onclick="() => _view = ModalView.Chooser" aria-label="Back">‹ Back</button>
             <h2 id="apm-title" class="apm-title">Sign In</h2>
 
-            @if (!string.IsNullOrEmpty(_loginSuccessNotice))
-            {
-                <div class="apm-success" role="status">
-                    <span class="apm-success__icon" aria-hidden="true">✓</span>
-                    <div>
-                        <strong>Account Created!</strong>
-                        <div class="mt-0.5 text-xs">@_loginSuccessNotice</div>
-                    </div>
-                </div>
-            }
-
             @if (!string.IsNullOrEmpty(_loginError))
             {
                 <div class="apm-error" role="alert">@_loginError</div>
@@ -396,6 +385,7 @@
     // ── Visibility (controlled by parent) ───────────────────────────────────
     [Parameter] public bool IsVisible     { get; set; }
     [Parameter] public EventCallback OnClose { get; set; }
+    [Parameter] public EventCallback<string> OnRegistered { get; set; }
     [Parameter] public string? InitialView { get; set; }
 
     // ── Modal state ─────────────────────────────────────────────────────────
@@ -701,11 +691,18 @@
             if (ok)
             {
                 var registeredEmail = _suDetails.Email.Trim();
-                _loginSuccessNotice = "Account created successfully! You can now sign in with your email and password.";
-                _loginForm = new CustomerLoginForm { Email = registeredEmail };
                 ResetSignUpForms();
                 _signUpStep = 1;
-                _view = ModalView.CustomerLogin;
+                _view = ModalView.Chooser;
+                _loginSuccessNotice = string.Empty;
+
+                if (OnRegistered.HasDelegate)
+                {
+                    await OnRegistered.InvokeAsync(registeredEmail);
+                }
+
+                await OnClose.InvokeAsync();
+                Nav.NavigateTo("/login");
             }
             else
             {

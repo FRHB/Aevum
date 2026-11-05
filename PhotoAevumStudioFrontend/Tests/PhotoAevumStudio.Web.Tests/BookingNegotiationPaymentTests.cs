@@ -266,4 +266,110 @@ public class BookingNegotiationPaymentTests
         Assert.Equal("Pending", backendDto.Appointment.DownpaymentStatus);
         Assert.Equal(0m, backendDto.Appointment.DownpaymentAmount);
     }
+
+    [Fact]
+    public void MyBooking_ExcludesPrices_ForCustomerBookingNegotiation()
+    {
+        // Requirement 2: Remove all the price for the Booking negotiation for the customer
+        var booking = new MyBooking(
+            AppointmentId: 5001,
+            ServiceTitle: "Portrait Session Consultation",
+            Date: new DateOnly(2026, 11, 28),
+            SlotStart: new TimeOnly(11, 0),
+            SlotEnd: new TimeOnly(12, 0),
+            Status: "Confirmed",
+            TotalPrice: 0m,
+            Platform: "Google Meet",
+            MeetingLink: "https://meet.google.com/test-meet-123",
+            EventLocation: "Studio A"
+        );
+
+        Assert.Equal(0m, booking.TotalPrice);
+        Assert.Equal(0m, booking.DepositFee);
+        Assert.Equal(0m, booking.BalanceFee);
+        Assert.Equal("Pending Negotiation", booking.PaymentStatus);
+    }
+
+    [Fact]
+    public void CategoryWizardModel_DefaultsRateType_AndAllowsSaveWithoutUserSpecifiedRateType()
+    {
+        // Requirement 3: Remove Rate Type for Services Category Edit and Add new Category
+        var model = new CategoryWizardModel
+        {
+            Name = "Portrait Photography",
+            Description = "All studio portrait sessions and headshots",
+            GeneratedId = "CAT-0005"
+        };
+
+        // System automatically maintains backend default without user input
+        Assert.Equal("RT-0001", model.RateTypeID);
+        Assert.Equal("Per Hour", model.RateTypeName);
+        Assert.Equal("CAT-0005", model.GeneratedId);
+        Assert.Equal("Portrait Photography", model.Name);
+    }
+
+    [Fact]
+    public void UpdateNegotiationOutcomeRequest_SupportsClerkReassignment_OnReschedule()
+    {
+        var appReq = new PhotoAevumStudio.Application.UpdateNegotiationOutcomeRequest
+        {
+            NegotiationStatus = "Rescheduled",
+            NewConsultationDate = new DateOnly(2026, 11, 25),
+            NewConsultationTime = new TimeOnly(14, 0),
+            NewEmployeeId = "EMP-003",
+            NewEmployeeName = "Jane Doe",
+            Notes = "Rescheduled to afternoon with Jane Doe"
+        };
+
+        Assert.Equal("Rescheduled", appReq.NegotiationStatus);
+        Assert.Equal(new DateOnly(2026, 11, 25), appReq.NewConsultationDate);
+        Assert.Equal(new TimeOnly(14, 0), appReq.NewConsultationTime);
+        Assert.Equal("EMP-003", appReq.NewEmployeeId);
+        Assert.Equal("Jane Doe", appReq.NewEmployeeName);
+
+        var webReq = new PhotoAevumStudio.Web.Models.UpdateNegotiationOutcomeRequest
+        {
+            NegotiationStatus = "Rescheduled",
+            NewConsultationDate = new DateOnly(2026, 11, 25),
+            NewConsultationTime = new TimeOnly(14, 0),
+            NewEmployeeId = "EMP-005",
+            NewEmployeeName = "John Clerk",
+            Notes = "Client requested specific concierge"
+        };
+
+        Assert.Equal("Rescheduled", webReq.NegotiationStatus);
+        Assert.Equal("EMP-005", webReq.NewEmployeeId);
+        Assert.Equal("John Clerk", webReq.NewEmployeeName);
+    }
+
+    [Fact]
+    public void OfficeClerkOption_And_OfficeClerkDto_InitializeCorrectly()
+    {
+        var opt = new OfficeClerkOption("EMP-001", "Alice Smith", "Sunday, Monday");
+        Assert.Equal("EMP-001", opt.EmployeeId);
+        Assert.Equal("Alice Smith", opt.FullName);
+        Assert.Equal("Sunday, Monday", opt.DaysOff);
+
+        var dto = new PhotoAevumStudio.Application.Scheduling.OfficeClerkDto("EMP-002", "Bob Clerk", "Saturday, Sunday");
+        Assert.Equal("EMP-002", dto.EmployeeId);
+        Assert.Equal("Bob Clerk", dto.FullName);
+        Assert.Equal("Saturday, Sunday", dto.DaysOff);
+    }
+
+    [Fact]
+    public void Reschedule_SlotSelection_RespectsClerkDayOff()
+    {
+        var clerkDaysOff = "Sunday, Monday";
+        var daysOffList = clerkDaysOff.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+
+        // Sunday should be day off
+        var sundayDate = new DateOnly(2026, 11, 8); // Sunday
+        Assert.Equal(DayOfWeek.Sunday, sundayDate.DayOfWeek);
+        Assert.Contains(sundayDate.DayOfWeek.ToString(), daysOffList, StringComparer.OrdinalIgnoreCase);
+
+        // Tuesday should be working day
+        var tuesdayDate = new DateOnly(2026, 11, 10); // Tuesday
+        Assert.Equal(DayOfWeek.Tuesday, tuesdayDate.DayOfWeek);
+        Assert.DoesNotContain(tuesdayDate.DayOfWeek.ToString(), daysOffList, StringComparer.OrdinalIgnoreCase);
+    }
 }

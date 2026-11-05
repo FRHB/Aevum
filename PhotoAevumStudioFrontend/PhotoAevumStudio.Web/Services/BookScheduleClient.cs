@@ -7,8 +7,9 @@ namespace PhotoAevumStudio.Web.Services;
 public interface IBookScheduleClient
 {
     Task<ApiResult<IReadOnlyList<ScheduleServiceOption>>> GetServicesAsync(CancellationToken ct = default);
-    Task<ApiResult<MonthAvailability>> GetAvailabilityAsync(int year, int month, CancellationToken ct = default);
-    Task<ApiResult<DayAvailability>> GetDayAvailabilityAsync(DateOnly date, CancellationToken ct = default);
+    Task<ApiResult<IReadOnlyList<OfficeClerkOption>>> GetOfficeClerksAsync(CancellationToken ct = default);
+    Task<ApiResult<MonthAvailability>> GetAvailabilityAsync(int year, int month, string? clerkId = null, CancellationToken ct = default);
+    Task<ApiResult<DayAvailability>> GetDayAvailabilityAsync(DateOnly date, string? clerkId = null, CancellationToken ct = default);
     Task<ApiResult<MeetingLinkPreview>> PreviewMeetingLinkAsync(MeetingPlatform platform, DateOnly date, TimeOnly slotStart, CancellationToken ct = default);
     Task<ApiResult<ScheduleBookingResult>> BookAsync(ScheduleBookingRequest request, CancellationToken ct = default);
     Task<ApiResult<IReadOnlyList<MyBooking>>> GetMyBookingsAsync(CancellationToken ct = default);
@@ -25,11 +26,27 @@ public sealed class BookScheduleClient(IHttpClientFactory httpClientFactory, ITo
         return result.IsSuccess ? ApiResult<IReadOnlyList<ScheduleServiceOption>>.Ok(result.Value!) : new(null, result.Error);
     }
 
-    public Task<ApiResult<MonthAvailability>> GetAvailabilityAsync(int year, int month, CancellationToken ct = default) =>
-        SendAsync<MonthAvailability>(() => _http.GetAsync($"api/schedule/availability?year={year}&month={month}", ct), ct);
+    public async Task<ApiResult<IReadOnlyList<OfficeClerkOption>>> GetOfficeClerksAsync(CancellationToken ct = default)
+    {
+        var result = await SendAsync<List<OfficeClerkOption>>(() => _http.GetAsync("api/schedule/office-clerks", ct), ct);
+        return result.IsSuccess ? ApiResult<IReadOnlyList<OfficeClerkOption>>.Ok(result.Value!) : new(null, result.Error);
+    }
 
-    public Task<ApiResult<DayAvailability>> GetDayAvailabilityAsync(DateOnly date, CancellationToken ct = default) =>
-        SendAsync<DayAvailability>(() => _http.GetAsync($"api/schedule/availability/day?date={date:yyyy-MM-dd}", ct), ct);
+    public Task<ApiResult<MonthAvailability>> GetAvailabilityAsync(int year, int month, string? clerkId = null, CancellationToken ct = default)
+    {
+        var url = string.IsNullOrWhiteSpace(clerkId)
+            ? $"api/schedule/availability?year={year}&month={month}"
+            : $"api/schedule/availability?year={year}&month={month}&clerkId={Uri.EscapeDataString(clerkId)}";
+        return SendAsync<MonthAvailability>(() => _http.GetAsync(url, ct), ct);
+    }
+
+    public Task<ApiResult<DayAvailability>> GetDayAvailabilityAsync(DateOnly date, string? clerkId = null, CancellationToken ct = default)
+    {
+        var url = string.IsNullOrWhiteSpace(clerkId)
+            ? $"api/schedule/availability/day?date={date:yyyy-MM-dd}"
+            : $"api/schedule/availability/day?date={date:yyyy-MM-dd}&clerkId={Uri.EscapeDataString(clerkId)}";
+        return SendAsync<DayAvailability>(() => _http.GetAsync(url, ct), ct);
+    }
 
     public Task<ApiResult<MeetingLinkPreview>> PreviewMeetingLinkAsync(MeetingPlatform platform, DateOnly date, TimeOnly slotStart, CancellationToken ct = default) =>
         SendAsync<MeetingLinkPreview>(() => _http.PostAsJsonAsync("api/schedule/meeting-link/preview", new { platform, date, slotStart }, ct), ct);

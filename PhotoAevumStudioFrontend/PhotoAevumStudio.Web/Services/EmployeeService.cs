@@ -125,6 +125,7 @@ public class EmployeeService : IEmployeeService
                 Email = e.Email,
                 Role = e.Role,
                 Address = e.Address,
+                BirthDate = e.BirthDate,
                 BirthYear = e.BirthYear,
                 DepartmentId = e.DepartmentId,
                 Department = e.Department,
@@ -180,6 +181,19 @@ public class EmployeeService : IEmployeeService
         }
     }
 
+    public Task<IReadOnlyList<SpecializationLookupItem>> GetSpecializationLookupsAsync(CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            var lookups = _userService.GetSpecializationLookups();
+            return Task.FromResult<IReadOnlyList<SpecializationLookupItem>>(lookups);
+        }
+        catch
+        {
+            return Task.FromResult<IReadOnlyList<SpecializationLookupItem>>(Array.Empty<SpecializationLookupItem>());
+        }
+    }
+
     private List<string> GetLocalFallbackSpecializations()
     {
         try
@@ -200,6 +214,14 @@ public class EmployeeService : IEmployeeService
     {
         await _tokenStore.GetTokenAsync(cancellationToken);
 
+        int? birthYear = r.BirthDate?.Year ?? r.BirthYear;
+        var assignedRole = r.Specializations is { Count: > 0 }
+            ? string.Join(", ", r.Specializations.Where(s => !string.IsNullOrWhiteSpace(s)))
+            : "Employee";
+        var systemRole = r.Specializations != null && r.Specializations.Any(s => s.Contains("clerk", StringComparison.OrdinalIgnoreCase))
+            ? "Office Clerk"
+            : "Employee";
+
         var apiPayload = new
         {
             r.FirstName,
@@ -207,45 +229,43 @@ public class EmployeeService : IEmployeeService
             r.MiddleName,
             r.Email,
             r.Password,
-            Role = "Employee",
+            Role = systemRole,
+            AssignedRole = assignedRole,
+            Specializations = r.Specializations,
             StudioId = r.EmployeeId,
             Address = r.Address,
-            BirthYear = r.BirthYear,
-            DepartmentId = r.DepartmentId
+            BirthYear = birthYear,
+            BirthDate = r.BirthDate,
+            DepartmentId = r.DepartmentId,
+            DaysOff = r.DaysOff
         };
 
         try
         {
-            var response = await _http.PostAsJsonAsync("api/auth/register", apiPayload, cancellationToken);
-
-            if (response.IsSuccessStatusCode)
-            {
-                await PersistEmployeeSpecializationsAsync(r.EmployeeId, r.Specializations, cancellationToken);
-                await PersistEmployeeDaysOffAsync(r.EmployeeId, r.DaysOff, cancellationToken);
-                return new SaveEmployeeResult(true);
-            }
+            await _http.PostAsJsonAsync("api/auth/register", apiPayload, cancellationToken);
         }
         catch
         {
             // API call failed, attempt database fallback
         }
 
-        // Direct SQL fallback
+        // Persist full profile details, specializations, and days off in SQL
         try
         {
             await using var conn = new SqlConnection(_connectionString);
             await conn.OpenAsync(cancellationToken);
+            await EnsureEmployeeSchemaAsync(conn, cancellationToken);
 
             const string sql = @"
                 IF NOT EXISTS (SELECT 1 FROM dbo.Employees WHERE UPPER(EmployeeID) = UPPER(@EmpId))
                 BEGIN
                     INSERT INTO dbo.Employees (
                         EmployeeID, EmployeeFirstName, EmployeeLastName, EmployeeMiddleName, EmployeeEmail,
-                        EmployeePassword, EmployeeStatus, isFirstLogin, CreatedAt, DaysOff, Address, BirthYear, DepartmentID
+                        EmployeePassword, EmployeeStatus, isFirstLogin, CreatedAt, DaysOff, Address, BirthYear, BirthDate, DepartmentID
                     )
                     VALUES (
                         @EmpId, @FirstName, @LastName, @MiddleName, @Email,
-                        @Password, 'Active', 1, SYSUTCDATETIME(), @DaysOff, @Address, @BirthYear, @DepartmentID
+                        @Password, 'Active', 1, SYSUTCDATETIME(), @DaysOff, @Address, @BirthYear, @BirthDate, @DepartmentID
                     );
                 END
                 ELSE
@@ -258,6 +278,7 @@ public class EmployeeService : IEmployeeService
                         DaysOff = @DaysOff,
                         Address = @Address,
                         BirthYear = @BirthYear,
+                        BirthDate = @BirthDate,
                         DepartmentID = @DepartmentID
                     WHERE UPPER(EmployeeID) = UPPER(@EmpId);
                 END";
@@ -271,11 +292,12 @@ public class EmployeeService : IEmployeeService
             cmd.Parameters.AddWithValue("@Password", string.IsNullOrWhiteSpace(r.Password) ? "TempPass123!" : r.Password);
             cmd.Parameters.AddWithValue("@DaysOff", string.IsNullOrWhiteSpace(r.DaysOff) ? "Sunday" : r.DaysOff.Trim());
             cmd.Parameters.AddWithValue("@Address", (object?)r.Address?.Trim() ?? DBNull.Value);
-            cmd.Parameters.AddWithValue("@BirthYear", (object?)r.BirthYear ?? DBNull.Value);
+            cmd.Parameters.AddWithValue("@BirthYear", (object?)birthYear ?? DBNull.Value);
+            cmd.Parameters.AddWithValue("@BirthDate", (object?)r.BirthDate?.Date ?? DBNull.Value);
             cmd.Parameters.AddWithValue("@DepartmentID", (object?)r.DepartmentId?.Trim() ?? DBNull.Value);
             await cmd.ExecuteNonQueryAsync(cancellationToken);
 
-            await PersistEmployeeSpecializationsAsync(r.EmployeeId, r.Specializations, cancellationToken);
+            await PersistEmployeeSpecializationsAsync(r.EmployeeId, r.Specializations ?? Array.Empty<string>(), cancellationToken);
             await PersistEmployeeDaysOffAsync(r.EmployeeId, r.DaysOff, cancellationToken);
             return new SaveEmployeeResult(true);
         }
@@ -290,10 +312,13 @@ public class EmployeeService : IEmployeeService
         if (cancellationToken.IsCancellationRequested)
             return new SaveEmployeeResult(false, "Operation canceled.");
 
+        int? birthYear = r.BirthDate?.Year ?? r.BirthYear;
+
         try
         {
             await using var conn = new SqlConnection(_connectionString);
             await conn.OpenAsync(cancellationToken);
+            await EnsureEmployeeSchemaAsync(conn, cancellationToken);
 
             const string sql = @"
                 UPDATE dbo.Employees
@@ -304,6 +329,7 @@ public class EmployeeService : IEmployeeService
                     DaysOff = @DaysOff,
                     Address = @Address,
                     BirthYear = @BirthYear,
+                    BirthDate = @BirthDate,
                     DepartmentID = @DepartmentID,
                     EmployeePassword = CASE WHEN @Password IS NOT NULL AND LEN(LTRIM(RTRIM(@Password))) > 0 THEN @Password ELSE EmployeePassword END
                 WHERE UPPER(EmployeeID) = UPPER(@EmpId);";
@@ -317,7 +343,8 @@ public class EmployeeService : IEmployeeService
             cmd.Parameters.AddWithValue("@Password", string.IsNullOrWhiteSpace(r.Password) ? (object)DBNull.Value : r.Password.Trim());
             cmd.Parameters.AddWithValue("@DaysOff", string.IsNullOrWhiteSpace(r.DaysOff) ? "Sunday" : r.DaysOff.Trim());
             cmd.Parameters.AddWithValue("@Address", (object?)r.Address?.Trim() ?? DBNull.Value);
-            cmd.Parameters.AddWithValue("@BirthYear", (object?)r.BirthYear ?? DBNull.Value);
+            cmd.Parameters.AddWithValue("@BirthYear", (object?)birthYear ?? DBNull.Value);
+            cmd.Parameters.AddWithValue("@BirthDate", (object?)r.BirthDate?.Date ?? DBNull.Value);
             cmd.Parameters.AddWithValue("@DepartmentID", (object?)r.DepartmentId?.Trim() ?? DBNull.Value);
             await cmd.ExecuteNonQueryAsync(cancellationToken);
 
@@ -339,7 +366,7 @@ public class EmployeeService : IEmployeeService
                 // Best effort
             }
 
-            await PersistEmployeeSpecializationsAsync(r.EmployeeId, r.Specializations, cancellationToken);
+            await PersistEmployeeSpecializationsAsync(r.EmployeeId, r.Specializations ?? Array.Empty<string>(), cancellationToken);
             await PersistEmployeeDaysOffAsync(r.EmployeeId, r.DaysOff, cancellationToken);
             return new SaveEmployeeResult(true);
         }
@@ -350,6 +377,29 @@ public class EmployeeService : IEmployeeService
         catch (Exception dbEx)
         {
             return new SaveEmployeeResult(false, dbEx.Message);
+        }
+    }
+
+    private static async Task EnsureEmployeeSchemaAsync(SqlConnection conn, CancellationToken ct)
+    {
+        try
+        {
+            const string sql = @"
+                IF OBJECT_ID(N'dbo.Employees', N'U') IS NOT NULL
+                BEGIN
+                    IF COL_LENGTH(N'dbo.Employees', N'BirthDate') IS NULL
+                        EXEC(N'ALTER TABLE dbo.Employees ADD BirthDate date NULL');
+                    IF COL_LENGTH(N'dbo.Employees', N'BirthYear') IS NULL
+                        EXEC(N'ALTER TABLE dbo.Employees ADD BirthYear int NULL');
+                    IF COL_LENGTH(N'dbo.Employees', N'Address') IS NULL
+                        EXEC(N'ALTER TABLE dbo.Employees ADD Address nvarchar(500) NULL');
+                END";
+            await using var cmd = new SqlCommand(sql, conn);
+            await cmd.ExecuteNonQueryAsync(ct);
+        }
+        catch
+        {
+            // Best effort
         }
     }
 
@@ -421,8 +471,11 @@ public class EmployeeService : IEmployeeService
                     BEGIN
                         IF COL_LENGTH('dbo.EmployeeSpecialization', 'SpecializationDescription') IS NOT NULL
                         BEGIN
-                            INSERT INTO dbo.EmployeeSpecialization (SpecializationID, SpecializationName, SpecializationDescription, Specialization, Description, ColorTag, CreatedAt)
-                            VALUES (@SpecId, @SpecName, 'Photography', @SpecName, 'Photography', 'Blue', SYSUTCDATETIME());
+                            EXEC sp_executesql
+                                N'INSERT INTO dbo.EmployeeSpecialization (SpecializationID, SpecializationName, SpecializationDescription, Specialization, Description, ColorTag, CreatedAt)
+                                  VALUES (@SpecId, @SpecName, ''Photography'', @SpecName, ''Photography'', ''Blue'', SYSUTCDATETIME())',
+                                N'@SpecId nvarchar(30), @SpecName nvarchar(255)',
+                                @SpecId = @SpecId, @SpecName = @SpecName;
                         END
                         ELSE
                         BEGIN
@@ -442,8 +495,11 @@ public class EmployeeService : IEmployeeService
 
                     IF COL_LENGTH('dbo.EmployeeJointSpecialization', 'AssignedAt') IS NOT NULL
                     BEGIN
-                        INSERT INTO dbo.EmployeeJointSpecialization (EmployeeJointSpecializationID, SpecializationID, EmployeeID, AssignedAt)
-                        VALUES (@JointCandidate, @SpecId, @EmpId, SYSUTCDATETIME());
+                        EXEC sp_executesql
+                            N'INSERT INTO dbo.EmployeeJointSpecialization (EmployeeJointSpecializationID, SpecializationID, EmployeeID, AssignedAt)
+                              VALUES (@JointCandidate, @SpecId, @EmpId, SYSUTCDATETIME())',
+                            N'@JointCandidate nvarchar(30), @SpecId nvarchar(30), @EmpId nvarchar(30)',
+                            @JointCandidate = @JointCandidate, @SpecId = @SpecId, @EmpId = @EmpId;
                     END
                     ELSE
                     BEGIN
@@ -459,6 +515,40 @@ public class EmployeeService : IEmployeeService
             cmd.Parameters.AddWithValue("@EmpId", employeeId.Trim().ToUpperInvariant());
             await cmd.ExecuteNonQueryAsync(cancellationToken);
             seq++;
+        }
+
+        try
+        {
+            var validSpecs = specializations.Where(s => !string.IsNullOrWhiteSpace(s)).Distinct(StringComparer.OrdinalIgnoreCase).ToList();
+            var json = System.Text.Json.JsonSerializer.Serialize(validSpecs);
+            const string syncSql = @"
+                IF OBJECT_ID(N'dbo.Employees', N'U') IS NOT NULL AND COL_LENGTH(N'dbo.Employees', N'Specializations') IS NOT NULL
+                BEGIN
+                    UPDATE dbo.Employees SET Specializations = @Specs WHERE UPPER(EmployeeID) = UPPER(@EmpId);
+                END";
+            await using var syncCmd = new SqlCommand(syncSql, conn);
+            syncCmd.Parameters.AddWithValue("@Specs", json);
+            syncCmd.Parameters.AddWithValue("@EmpId", employeeId.Trim().ToUpperInvariant());
+            await syncCmd.ExecuteNonQueryAsync(cancellationToken);
+
+            // Synchronize DepartmentID in dbo.Employees based on assigned specializations
+            const string deptSyncSql = @"
+                IF OBJECT_ID(N'dbo.Employees', N'U') IS NOT NULL AND COL_LENGTH(N'dbo.Employees', N'DepartmentID') IS NOT NULL
+                BEGIN
+                    UPDATE e
+                    SET e.DepartmentID = COALESCE(es.DepartmentID, e.DepartmentID)
+                    FROM dbo.Employees e
+                    INNER JOIN dbo.EmployeeJointSpecialization ejs ON UPPER(ejs.EmployeeID) = UPPER(e.EmployeeID)
+                    INNER JOIN dbo.EmployeeSpecialization es ON UPPER(es.SpecializationID) = UPPER(ejs.SpecializationID)
+                    WHERE UPPER(e.EmployeeID) = UPPER(@EmpId) AND es.DepartmentID IS NOT NULL;
+                END";
+            await using var deptSyncCmd = new SqlCommand(deptSyncSql, conn);
+            deptSyncCmd.Parameters.AddWithValue("@EmpId", employeeId.Trim().ToUpperInvariant());
+            await deptSyncCmd.ExecuteNonQueryAsync(cancellationToken);
+        }
+        catch
+        {
+            // Best effort sync
         }
     }
 

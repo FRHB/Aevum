@@ -909,29 +909,57 @@ public sealed class UserService : IUserService
 		using SqlConnection sqlConnection = CreateConnection();
 		sqlConnection.Open();
 		Dictionary<string, List<string>> dictionary = new Dictionary<string, List<string>>(StringComparer.OrdinalIgnoreCase);
+		Dictionary<string, List<string>> deptDictionary = new Dictionary<string, List<string>>(StringComparer.OrdinalIgnoreCase);
+		Dictionary<string, string> deptIdDictionary = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+
 		using (SqlCommand sqlCommand = new SqlCommand(@"
             IF OBJECT_ID(N'dbo.EmployeeJointSpecialization', N'U') IS NOT NULL
-               AND OBJECT_ID(N'dbo.EmployeeSpecialization', N'U') IS NOT NULL
             BEGIN
-                SELECT ejs.EmployeeID, COALESCE(NULLIF(es.SpecializationName, ''), es.Specialization, es.SpecializationID)
+                SELECT ejs.EmployeeID, 
+                       COALESCE(NULLIF(es.SpecializationName, ''), es.Specialization, ejs.SpecializationID) AS SpecName,
+                       ejs.SpecializationID,
+                       COALESCE(NULLIF(d.DepartmentName, ''), NULLIF(es.DepartmentName, ''), 'General') AS DeptName,
+                       COALESCE(es.DepartmentID, d.DepartmentID) AS DeptId
                 FROM dbo.EmployeeJointSpecialization ejs
-                INNER JOIN dbo.EmployeeSpecialization es ON es.SpecializationID = ejs.SpecializationID;
+                LEFT JOIN dbo.EmployeeSpecialization es ON UPPER(es.SpecializationID) = UPPER(ejs.SpecializationID)
+                LEFT JOIN dbo.Departments d ON d.DepartmentID = es.DepartmentID;
             END", sqlConnection))
 		{
 			using SqlDataReader sqlDataReader = sqlCommand.ExecuteReader();
 			while (sqlDataReader.Read())
 			{
-				string key = sqlDataReader.GetString(0);
-				string text = (sqlDataReader.IsDBNull(1) ? string.Empty : sqlDataReader.GetString(1));
-				if (!string.IsNullOrWhiteSpace(text))
+				string key = sqlDataReader.GetString(0).Trim().ToUpperInvariant();
+				string text = (sqlDataReader.IsDBNull(1) ? string.Empty : sqlDataReader.GetString(1)?.Trim() ?? string.Empty);
+				string specId = (sqlDataReader.IsDBNull(2) ? string.Empty : sqlDataReader.GetString(2)?.Trim() ?? string.Empty);
+				string deptName = (sqlDataReader.FieldCount > 3 && !sqlDataReader.IsDBNull(3)) ? sqlDataReader.GetString(3)?.Trim() ?? string.Empty : string.Empty;
+				string specDeptId = (sqlDataReader.FieldCount > 4 && !sqlDataReader.IsDBNull(4)) ? sqlDataReader.GetString(4)?.Trim() : null;
+
+				if (!dictionary.TryGetValue(key, out var value))
 				{
-					if (!dictionary.TryGetValue(key, out var value))
+					value = (dictionary[key] = new List<string>());
+				}
+				if (!string.IsNullOrWhiteSpace(text) && !value.Contains(text, StringComparer.OrdinalIgnoreCase))
+				{
+					value.Add(text);
+				}
+				if (!string.IsNullOrWhiteSpace(specId) && !value.Contains(specId, StringComparer.OrdinalIgnoreCase))
+				{
+					value.Add(specId);
+				}
+
+				if (!string.IsNullOrWhiteSpace(deptName) && !string.Equals(deptName, "General", StringComparison.OrdinalIgnoreCase))
+				{
+					if (!deptDictionary.TryGetValue(key, out var dList))
 					{
-						value = (dictionary[key] = new List<string>());
+						dList = (deptDictionary[key] = new List<string>());
 					}
-					if (!value.Contains(text, StringComparer.OrdinalIgnoreCase))
+					if (!dList.Contains(deptName, StringComparer.OrdinalIgnoreCase))
 					{
-						value.Add(text);
+						dList.Add(deptName);
+					}
+					if (!string.IsNullOrWhiteSpace(specDeptId) && !deptIdDictionary.ContainsKey(key))
+					{
+						deptIdDictionary[key] = specDeptId;
 					}
 				}
 			}
@@ -944,21 +972,84 @@ public sealed class UserService : IUserService
 		string empQuery = $@"
             IF OBJECT_ID(N'dbo.Employees', N'U') IS NOT NULL
             BEGIN
+                IF COL_LENGTH(N'dbo.Employees', N'BirthDate') IS NULL
+                    EXEC(N'ALTER TABLE dbo.Employees ADD BirthDate date NULL');
                 SELECT e.EmployeeID, e.EmployeeFirstName, e.EmployeeLastName, e.EmployeeMiddleName, e.EmployeeEmail, e.EmployeeStatus,
-                       e.Address, e.BirthYear, e.DepartmentID, d.DepartmentName
+                       e.Address, e.BirthYear, e.DepartmentID, d.DepartmentName, e.BirthDate,
+                       CASE WHEN COL_LENGTH(N'dbo.Employees', N'Specializations') IS NOT NULL THEN e.Specializations ELSE NULL END AS SpecJson
                 FROM dbo.Employees e
                 LEFT JOIN dbo.Departments d ON d.DepartmentID = e.DepartmentID
                 {filterClause}
                 ORDER BY e.EmployeeID;
             END";
 
+		using (SqlCommand ensureCmd = new SqlCommand("IF OBJECT_ID(N'dbo.Employees', N'U') IS NOT NULL AND COL_LENGTH(N'dbo.Employees', N'BirthDate') IS NULL EXEC(N'ALTER TABLE dbo.Employees ADD BirthDate date NULL');", sqlConnection))
+		{
+			ensureCmd.ExecuteNonQuery();
+		}
 		using SqlCommand sqlCommand2 = new SqlCommand(empQuery, sqlConnection);
 		using SqlDataReader sqlDataReader2 = sqlCommand2.ExecuteReader();
 		int num = 1;
 		while (sqlDataReader2.Read())
 		{
-			string text2 = sqlDataReader2.GetString(0);
+			string text2 = sqlDataReader2.GetString(0).Trim().ToUpperInvariant();
 			dictionary.TryGetValue(text2, out var value2);
+			var specsList = value2 != null ? new List<string>(value2) : new List<string>();
+
+			if (sqlDataReader2.FieldCount > 11 && !sqlDataReader2.IsDBNull(11))
+			{
+				var specJson = sqlDataReader2.GetString(11);
+				if (!string.IsNullOrWhiteSpace(specJson) && specJson != "[]")
+				{
+					try
+					{
+						var parsed = System.Text.Json.JsonSerializer.Deserialize<List<string>>(specJson);
+						if (parsed != null)
+						{
+							foreach (var p in parsed.Where(s => !string.IsNullOrWhiteSpace(s)))
+							{
+								if (!specsList.Contains(p.Trim(), StringComparer.OrdinalIgnoreCase))
+								{
+									specsList.Add(p.Trim());
+								}
+							}
+						}
+					}
+					catch
+					{
+						var parts = specJson.Trim('[', ']', '"').Split(',', StringSplitOptions.RemoveEmptyEntries);
+						foreach (var part in parts)
+						{
+							var clean = part.Trim(' ', '"', '\'');
+							if (!string.IsNullOrWhiteSpace(clean) && !specsList.Contains(clean, StringComparer.OrdinalIgnoreCase))
+							{
+								specsList.Add(clean);
+							}
+						}
+					}
+				}
+			}
+
+			DateTime? birthDate = (sqlDataReader2.FieldCount > 10 && !sqlDataReader2.IsDBNull(10)) ? sqlDataReader2.GetDateTime(10) : (DateTime?)null;
+			int? birthYear = (sqlDataReader2.IsDBNull(7) ? (int?)null : sqlDataReader2.GetInt32(7)) ?? birthDate?.Year;
+
+			string? finalDept = null;
+			if (deptDictionary.TryGetValue(text2, out var deptList) && deptList.Count > 0)
+			{
+				finalDept = string.Join(", ", deptList);
+			}
+			else if (!sqlDataReader2.IsDBNull(9) && !string.IsNullOrWhiteSpace(sqlDataReader2.GetString(9)))
+			{
+				finalDept = sqlDataReader2.GetString(9);
+			}
+			finalDept ??= "General";
+
+			string? finalDeptId = (sqlDataReader2.IsDBNull(8) ? null : sqlDataReader2.GetString(8));
+			if (string.IsNullOrWhiteSpace(finalDeptId) && deptIdDictionary.TryGetValue(text2, out var sDeptId))
+			{
+				finalDeptId = sDeptId;
+			}
+
 			list.Add(new EmployeeSpecializationDto
 			{
 				Id = num++,
@@ -970,10 +1061,11 @@ public sealed class UserService : IUserService
 				Role = "Employee",
 				Status = (sqlDataReader2.IsDBNull(5) ? "Active" : sqlDataReader2.GetString(5)),
 				Address = (sqlDataReader2.IsDBNull(6) ? null : sqlDataReader2.GetString(6)),
-				BirthYear = (sqlDataReader2.IsDBNull(7) ? null : sqlDataReader2.GetInt32(7)),
-				DepartmentId = (sqlDataReader2.IsDBNull(8) ? null : sqlDataReader2.GetString(8)),
-				Department = (sqlDataReader2.IsDBNull(9) ? null : sqlDataReader2.GetString(9)),
-				Specializations = (value2 ?? new List<string>())
+				BirthDate = birthDate,
+				BirthYear = birthYear,
+				DepartmentId = finalDeptId,
+				Department = finalDept,
+				Specializations = specsList
 			});
 		}
 		return list;
@@ -1040,16 +1132,35 @@ public sealed class UserService : IUserService
 		sqlCommand.Parameters.AddWithValue("@Color", string.IsNullOrWhiteSpace(model.ColorTag) ? "Blue" : model.ColorTag);
 		sqlCommand.ExecuteNonQuery();
 
-		using (SqlCommand logCmd = new SqlCommand(@"
-            IF OBJECT_ID(N'dbo.HistoryLog', N'U') IS NOT NULL
-            BEGIN
-                INSERT INTO dbo.HistoryLog (ActionType, EntityName, EntityID, ChangedBy, ActionDetails, LoggedAt)
-                VALUES ('Create', 'Specialization', @Id, 'Admin', @Details, SYSUTCDATETIME());
-            END", sqlConnection))
+		try
 		{
-			logCmd.Parameters.AddWithValue("@Id", text);
-			logCmd.Parameters.AddWithValue("@Details", $"Added specialization '{model.Name.Trim()}' ({text}) in {deptName}");
-			logCmd.ExecuteNonQuery();
+			using (SqlCommand logCmd = new SqlCommand(@"
+				IF OBJECT_ID(N'dbo.HistoryLog', N'U') IS NOT NULL
+				BEGIN
+					IF COLUMNPROPERTY(OBJECT_ID(N'dbo.HistoryLog'), 'ChangedByType', 'ColumnId') IS NOT NULL
+					BEGIN
+						INSERT INTO dbo.HistoryLog (ActionType, EntityName, EntityID, ChangedByType, ActionDetails, LoggedAt)
+						VALUES ('Create', 'Specialization', @Id, 'Admin', @Details, SYSUTCDATETIME());
+					END
+					ELSE IF COLUMNPROPERTY(OBJECT_ID(N'dbo.HistoryLog'), 'ChangedBy', 'IsComputed') = 0
+					BEGIN
+						INSERT INTO dbo.HistoryLog (ActionType, EntityName, EntityID, ChangedBy, ActionDetails, LoggedAt)
+						VALUES ('Create', 'Specialization', @Id, 'Admin', @Details, SYSUTCDATETIME());
+					END
+					ELSE
+					BEGIN
+						INSERT INTO dbo.HistoryLog (ActionType, EntityName, EntityID, ActionDetails, LoggedAt)
+						VALUES ('Create', 'Specialization', @Id, @Details, SYSUTCDATETIME());
+					END
+				END", sqlConnection))
+			{
+				logCmd.Parameters.AddWithValue("@Id", text);
+				logCmd.Parameters.AddWithValue("@Details", $"Added specialization '{model.Name.Trim()}' ({text}) in {deptName}");
+				logCmd.ExecuteNonQuery();
+			}
+		}
+		catch
+		{
 		}
 
 		return new SpecializationLookupItem
@@ -1077,18 +1188,158 @@ public sealed class UserService : IUserService
 
 		if (deleted)
 		{
-			using SqlCommand logCmd = new SqlCommand(@"
-                IF OBJECT_ID(N'dbo.HistoryLog', N'U') IS NOT NULL
-                BEGIN
-                    INSERT INTO dbo.HistoryLog (ActionType, EntityName, EntityID, ChangedBy, ActionDetails, LoggedAt)
-                    VALUES ('Delete', 'Specialization', @Id, 'Admin', @Details, SYSUTCDATETIME());
-                END", sqlConnection);
-			logCmd.Parameters.AddWithValue("@Id", id.Trim());
-			logCmd.Parameters.AddWithValue("@Details", $"Deleted specialization {id.Trim()}");
-			logCmd.ExecuteNonQuery();
+			try
+			{
+				using SqlCommand logCmd = new SqlCommand(@"
+					IF OBJECT_ID(N'dbo.HistoryLog', N'U') IS NOT NULL
+					BEGIN
+						IF COLUMNPROPERTY(OBJECT_ID(N'dbo.HistoryLog'), 'ChangedByType', 'ColumnId') IS NOT NULL
+						BEGIN
+							INSERT INTO dbo.HistoryLog (ActionType, EntityName, EntityID, ChangedByType, ActionDetails, LoggedAt)
+							VALUES ('Delete', 'Specialization', @Id, 'Admin', @Details, SYSUTCDATETIME());
+						END
+						ELSE IF COLUMNPROPERTY(OBJECT_ID(N'dbo.HistoryLog'), 'ChangedBy', 'IsComputed') = 0
+						BEGIN
+							INSERT INTO dbo.HistoryLog (ActionType, EntityName, EntityID, ChangedBy, ActionDetails, LoggedAt)
+							VALUES ('Delete', 'Specialization', @Id, 'Admin', @Details, SYSUTCDATETIME());
+						END
+						ELSE
+						BEGIN
+							INSERT INTO dbo.HistoryLog (ActionType, EntityName, EntityID, ActionDetails, LoggedAt)
+							VALUES ('Delete', 'Specialization', @Id, @Details, SYSUTCDATETIME());
+						END
+					END", sqlConnection);
+				logCmd.Parameters.AddWithValue("@Id", id.Trim());
+				logCmd.Parameters.AddWithValue("@Details", $"Deleted specialization {id.Trim()}");
+				logCmd.ExecuteNonQuery();
+			}
+			catch
+			{
+			}
 		}
 
 		return deleted;
+	}
+
+	public bool AssignEmployeeSpecializations(string employeeId, IEnumerable<string> specializationNamesOrIds, string? departmentId = null)
+	{
+		if (string.IsNullOrWhiteSpace(employeeId)) return false;
+		using SqlConnection sqlConnection = CreateConnection();
+		sqlConnection.Open();
+
+		// 1. Delete existing joints for this employee
+		using (SqlCommand delCmd = new SqlCommand(@"
+			IF OBJECT_ID(N'dbo.EmployeeJointSpecialization', N'U') IS NOT NULL
+			BEGIN
+				DELETE FROM dbo.EmployeeJointSpecialization WHERE UPPER(EmployeeID) = UPPER(@EmpId);
+			END", sqlConnection))
+		{
+			delCmd.Parameters.AddWithValue("@EmpId", employeeId.Trim().ToUpperInvariant());
+			delCmd.ExecuteNonQuery();
+		}
+
+		var specList = specializationNamesOrIds?.Where(s => !string.IsNullOrWhiteSpace(s)).Distinct(StringComparer.OrdinalIgnoreCase).ToList() ?? new List<string>();
+
+		int seq = 1;
+		List<string> canonicalNames = new List<string>();
+
+		foreach (var spec in specList)
+		{
+			using (SqlCommand insCmd = new SqlCommand(@"
+				DECLARE @ResolvedSpecId NVARCHAR(30);
+				DECLARE @ResolvedSpecName NVARCHAR(100);
+
+				SELECT TOP 1 
+					@ResolvedSpecId = SpecializationID,
+					@ResolvedSpecName = COALESCE(NULLIF(SpecializationName, ''), Specialization, SpecializationID)
+				FROM dbo.EmployeeSpecialization
+				WHERE UPPER(SpecializationID) = UPPER(@Spec)
+				   OR UPPER(LTRIM(RTRIM(COALESCE(NULLIF(SpecializationName, ''), Specialization)))) = UPPER(@Spec);
+
+				IF @ResolvedSpecId IS NOT NULL
+				BEGIN
+					DECLARE @JointCandidate NVARCHAR(30) = @JointId;
+					IF EXISTS (SELECT 1 FROM dbo.EmployeeJointSpecialization WHERE EmployeeJointSpecializationID = @JointCandidate)
+					BEGIN
+						SET @JointCandidate = CONCAT('EJS-', LEFT(REPLACE(CONVERT(NVARCHAR(36), NEWID()), '-', ''), 12));
+					END
+
+					IF COL_LENGTH('dbo.EmployeeJointSpecialization', 'AssignedAt') IS NOT NULL
+					BEGIN
+						EXEC sp_executesql N'INSERT INTO dbo.EmployeeJointSpecialization (EmployeeJointSpecializationID, SpecializationID, EmployeeID, AssignedAt) VALUES (@JointCandidate, @ResolvedSpecId, @EmpId, SYSUTCDATETIME())',
+							N'@JointCandidate nvarchar(30), @ResolvedSpecId nvarchar(30), @EmpId nvarchar(30)',
+							@JointCandidate, @ResolvedSpecId, @EmpId;
+					END
+					ELSE
+					BEGIN
+						INSERT INTO dbo.EmployeeJointSpecialization (EmployeeJointSpecializationID, SpecializationID, EmployeeID)
+						VALUES (@JointCandidate, @ResolvedSpecId, @EmpId);
+					END
+
+					SELECT @ResolvedSpecName;
+				END
+				ELSE
+				BEGIN
+					SELECT NULL;
+				END", sqlConnection))
+			{
+				insCmd.Parameters.AddWithValue("@Spec", spec.Trim());
+				insCmd.Parameters.AddWithValue("@JointId", $"EJS-{employeeId.Replace("EMP-", "", StringComparison.OrdinalIgnoreCase)}-{seq++}");
+				insCmd.Parameters.AddWithValue("@EmpId", employeeId.Trim().ToUpperInvariant());
+				var resultName = insCmd.ExecuteScalar() as string;
+				canonicalNames.Add(!string.IsNullOrWhiteSpace(resultName) ? resultName : spec.Trim());
+			}
+		}
+
+		// Also synchronize dbo.Employees.Specializations and DepartmentID
+		var jsonSpecs = System.Text.Json.JsonSerializer.Serialize(canonicalNames.Distinct(StringComparer.OrdinalIgnoreCase));
+		using (SqlCommand syncCmd = new SqlCommand(@"
+			IF OBJECT_ID(N'dbo.Employees', N'U') IS NOT NULL AND COL_LENGTH('dbo.Employees', 'Specializations') IS NOT NULL
+			BEGIN
+				UPDATE dbo.Employees
+				SET Specializations = @SpecsJson,
+				    DepartmentID = COALESCE(@DeptId, DepartmentID)
+				WHERE UPPER(EmployeeID) = UPPER(@EmpId);
+			END", sqlConnection))
+		{
+			syncCmd.Parameters.AddWithValue("@SpecsJson", jsonSpecs);
+			syncCmd.Parameters.AddWithValue("@DeptId", string.IsNullOrWhiteSpace(departmentId) ? (object)DBNull.Value : departmentId.Trim());
+			syncCmd.Parameters.AddWithValue("@EmpId", employeeId.Trim().ToUpperInvariant());
+			syncCmd.ExecuteNonQuery();
+		}
+
+		try
+		{
+			using (SqlCommand logCmd = new SqlCommand(@"
+				IF OBJECT_ID(N'dbo.HistoryLog', N'U') IS NOT NULL
+				BEGIN
+					IF COLUMNPROPERTY(OBJECT_ID(N'dbo.HistoryLog'), 'ChangedByType', 'ColumnId') IS NOT NULL
+					BEGIN
+						INSERT INTO dbo.HistoryLog (ActionType, EntityName, EntityID, ChangedByType, ActionDetails, LoggedAt)
+						VALUES ('Update', 'EmployeeSpecializations', @EmpId, 'Admin', @Details, SYSUTCDATETIME());
+					END
+					ELSE IF COLUMNPROPERTY(OBJECT_ID(N'dbo.HistoryLog'), 'ChangedBy', 'IsComputed') = 0
+					BEGIN
+						INSERT INTO dbo.HistoryLog (ActionType, EntityName, EntityID, ChangedBy, ActionDetails, LoggedAt)
+						VALUES ('Update', 'EmployeeSpecializations', @EmpId, 'Admin', @Details, SYSUTCDATETIME());
+					END
+					ELSE
+					BEGIN
+						INSERT INTO dbo.HistoryLog (ActionType, EntityName, EntityID, ActionDetails, LoggedAt)
+						VALUES ('Update', 'EmployeeSpecializations', @EmpId, @Details, SYSUTCDATETIME());
+					END
+				END", sqlConnection))
+			{
+				logCmd.Parameters.AddWithValue("@EmpId", employeeId.Trim().ToUpperInvariant());
+				logCmd.Parameters.AddWithValue("@Details", $"Updated specializations for {employeeId}: {string.Join(", ", canonicalNames)}");
+				logCmd.ExecuteNonQuery();
+			}
+		}
+		catch
+		{
+		}
+
+		return true;
 	}
 
 	public IReadOnlyList<MainServiceItem> GetMainServices()
@@ -2736,8 +2987,21 @@ public sealed class UserService : IUserService
 			using SqlCommand sqlCommand = new SqlCommand(@"
                 IF OBJECT_ID(N'dbo.HistoryLog', N'U') IS NOT NULL
                 BEGIN
-                    INSERT INTO dbo.HistoryLog (ActionType, EntityName, EntityID, ChangedBy, ActionDetails, LoggedAt)
-                    VALUES (@ActionType, @EntityName, @EntityID, @ChangedBy, @ActionDetails, SYSUTCDATETIME());
+                    IF COLUMNPROPERTY(OBJECT_ID(N'dbo.HistoryLog'), 'ChangedByType', 'ColumnId') IS NOT NULL
+                    BEGIN
+                        INSERT INTO dbo.HistoryLog (ActionType, EntityName, EntityID, ChangedByType, ActionDetails, LoggedAt)
+                        VALUES (@ActionType, @EntityName, @EntityID, COALESCE(@ChangedBy, 'System'), @ActionDetails, SYSUTCDATETIME());
+                    END
+                    ELSE IF COLUMNPROPERTY(OBJECT_ID(N'dbo.HistoryLog'), 'ChangedBy', 'IsComputed') = 0
+                    BEGIN
+                        INSERT INTO dbo.HistoryLog (ActionType, EntityName, EntityID, ChangedBy, ActionDetails, LoggedAt)
+                        VALUES (@ActionType, @EntityName, @EntityID, @ChangedBy, @ActionDetails, SYSUTCDATETIME());
+                    END
+                    ELSE
+                    BEGIN
+                        INSERT INTO dbo.HistoryLog (ActionType, EntityName, EntityID, ActionDetails, LoggedAt)
+                        VALUES (@ActionType, @EntityName, @EntityID, @ActionDetails, SYSUTCDATETIME());
+                    END
                 END", sqlConnection);
 			sqlCommand.Parameters.AddWithValue("@ActionType", actionType);
 			sqlCommand.Parameters.AddWithValue("@EntityName", entityName);

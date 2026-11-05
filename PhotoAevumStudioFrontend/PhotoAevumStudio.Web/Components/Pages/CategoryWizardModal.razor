@@ -140,22 +140,6 @@
                                 <p class="text-xs text-rose-600 mt-1 font-medium">@descError</p>
                             }
                         </div>
-
-                        @* Field: Rate Type (Select) *@
-                        <div>
-                            <label for="cat-ratetype" class="block text-xs font-semibold uppercase tracking-wider text-gray-700 mb-1.5">
-                                Rate Type <span class="text-rose-500">*</span>
-                            </label>
-                            <select id="cat-ratetype"
-                                    value="@model.RateTypeID"
-                                    @onchange="OnRateTypeChanged"
-                                    class="w-full px-3.5 py-2.5 text-sm bg-white border border-gray-300 rounded-lg text-gray-900 focus:outline-none focus:ring-2 focus:ring-gray-900 transition-all shadow-xs cursor-pointer">
-                                <option value="RT-0001">Per Hour</option>
-                                <option value="RT-0002">Per Picture</option>
-                                <option value="RT-0003">Per Single Shot</option>
-                                <option value="RT-0004">Multi-Shot</option>
-                            </select>
-                        </div>
                     </div>
                 }
 
@@ -205,13 +189,6 @@
                             <div class="p-3.5 flex justify-between items-center bg-white">
                                 <span class="font-medium text-gray-500 uppercase tracking-wider text-[11px]">Category Name</span>
                                 <span class="font-bold text-gray-900 text-sm">@model.Name</span>
-                            </div>
-
-                            <div class="p-3.5 flex justify-between items-center bg-white">
-                                <span class="font-medium text-gray-500 uppercase tracking-wider text-[11px]">Rate Type</span>
-                                <span class="inline-flex items-center text-xs font-semibold text-blue-700 bg-blue-50 px-2.5 py-1 rounded-full border border-blue-200">
-                                    @model.RateTypeName (@model.RateTypeID)
-                                </span>
                             </div>
 
                             <div class="p-3.5">
@@ -330,19 +307,6 @@
             wasOpen = false;
             _lastEditCode = null;
         }
-    }
-
-    private void OnRateTypeChanged(ChangeEventArgs e)
-    {
-        var val = e.Value?.ToString() ?? "RT-0001";
-        model.RateTypeID = val;
-        model.RateTypeName = val switch
-        {
-            "RT-0002" => "Per Picture",
-            "RT-0003" => "Per Single Shot",
-            "RT-0004" => "Multi-Shot",
-            _ => "Per Hour"
-        };
     }
 
     public void ResetWizard()

@@ -80,6 +80,10 @@ public class HomeAndHighlightEnhancementTests
         Assert.Contains("<rect width=\"20\" height=\"16\" x=\"2\" y=\"4\" rx=\"2\"></rect>", content); // mail svg
         Assert.Contains("M22 16.92v3a2 2 0 0 1-2.18 2", content); // phone svg
         Assert.Contains("https://www.facebook.com/profile.php?id=100095100746143", content);
+        Assert.DoesNotContain("https://www.instagram.com", content);
+        Assert.DoesNotContain("https://twitter.com", content);
+        Assert.DoesNotContain("aria-label=\"Instagram\"", content);
+        Assert.DoesNotContain("aria-label=\"Twitter\"", content);
     }
 
     [Fact]
@@ -90,6 +94,14 @@ public class HomeAndHighlightEnhancementTests
         Assert.True(File.Exists(homePath), $"File not found: {homePath}");
 
         var content = File.ReadAllText(homePath);
+
+        // Verify Book Online button is removed from top nav bar
+        Assert.DoesNotContain("Book Online", content);
+
+        // Verify AuthPortalModal is removed and Login button directly navigates to /login
+        Assert.DoesNotContain("<AuthPortalModal", content);
+        Assert.DoesNotContain("OpenModal", content);
+        Assert.Contains("href=\"/login\"", content);
 
         // 1. Loading screen markup & logic
         Assert.Contains("_showLoadingScreen", content);

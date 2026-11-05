@@ -188,6 +188,10 @@ public static class DatabaseSeeder
                     BEGIN
                         ALTER TABLE dbo.Employees ADD BirthYear int NULL;
                     END;
+                    IF COL_LENGTH(N'dbo.Employees', N'BirthDate') IS NULL
+                    BEGIN
+                        ALTER TABLE dbo.Employees ADD BirthDate date NULL;
+                    END;
                     IF COL_LENGTH(N'dbo.Employees', N'DepartmentID') IS NULL
                     BEGIN
                         ALTER TABLE dbo.Employees ADD DepartmentID nvarchar(30) NULL;

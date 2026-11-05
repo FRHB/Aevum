@@ -77,7 +77,7 @@ public sealed class ScheduleBookingService(
         }
     }
 
-    public async Task<MonthAvailabilityDto> GetMonthAvailabilityAsync(int year, int month, CancellationToken cancellationToken = default)
+    public async Task<MonthAvailabilityDto> GetMonthAvailabilityAsync(int year, int month, string? clerkId = null, CancellationToken cancellationToken = default)
     {
         if (year is < 2000 or > 2100 || month is < 1 or > 12)
             throw new ScheduleValidationException("Invalid month requested.");
@@ -92,6 +92,11 @@ public sealed class ScheduleBookingService(
         var taken = booked.Select(b => (b.SlotDate, b.SlotStart)).ToHashSet();
 
         var activeClerks = await GetActiveClerksDataAsync(cancellationToken);
+        if (!string.IsNullOrWhiteSpace(clerkId) && !clerkId.Equals("any", StringComparison.OrdinalIgnoreCase) && !clerkId.Equals("all", StringComparison.OrdinalIgnoreCase))
+        {
+            activeClerks = activeClerks.Where(c => string.Equals(c.EmployeeId, clerkId, StringComparison.OrdinalIgnoreCase)).ToList();
+        }
+
         var leaves = await GetApprovedLeavesRangeAsync(first, last, cancellationToken);
         var assignedEvents = await GetAssignedEventsRangeAsync(first, last, cancellationToken);
         var bookedConsultations = await GetBookedConsultationsRangeAsync(first, last, cancellationToken);
@@ -114,7 +119,7 @@ public sealed class ScheduleBookingService(
         return new MonthAvailabilityDto(year, month, days);
     }
 
-    public async Task<DayAvailabilityDto> GetDayAvailabilityAsync(DateOnly date, CancellationToken cancellationToken = default)
+    public async Task<DayAvailabilityDto> GetDayAvailabilityAsync(DateOnly date, string? clerkId = null, CancellationToken cancellationToken = default)
     {
         var taken = (await db.Appointments.AsNoTracking()
                 .Where(a => a.SlotDate == date && a.Status != AppointmentStatus.Cancelled)
@@ -123,6 +128,11 @@ public sealed class ScheduleBookingService(
             .ToHashSet();
 
         var activeClerks = await GetActiveClerksDataAsync(cancellationToken);
+        if (!string.IsNullOrWhiteSpace(clerkId) && !clerkId.Equals("any", StringComparison.OrdinalIgnoreCase) && !clerkId.Equals("all", StringComparison.OrdinalIgnoreCase))
+        {
+            activeClerks = activeClerks.Where(c => string.Equals(c.EmployeeId, clerkId, StringComparison.OrdinalIgnoreCase)).ToList();
+        }
+
         var leaves = await GetApprovedLeavesRangeAsync(date, date, cancellationToken);
         var assignedEvents = await GetAssignedEventsRangeAsync(date, date, cancellationToken);
         var bookedConsultations = await GetBookedConsultationsRangeAsync(date, date, cancellationToken);
@@ -138,6 +148,12 @@ public sealed class ScheduleBookingService(
                 return new SlotAvailabilityDto(s.Start, s.End, isSlotTimeBookable && !isSlotTaken && hasAvailableClerk);
             })
             .ToList());
+    }
+
+    public async Task<IReadOnlyList<OfficeClerkDto>> GetOfficeClerksAsync(CancellationToken cancellationToken = default)
+    {
+        var clerks = await GetActiveClerksDataAsync(cancellationToken);
+        return clerks.Select(c => new OfficeClerkDto(c.EmployeeId, c.FullName, c.DaysOff)).ToList();
     }
 
     public async Task<IReadOnlyList<MyBookingDto>> GetMyBookingsAsync(string customerId, CancellationToken cancellationToken = default)
@@ -238,19 +254,19 @@ public sealed class ScheduleBookingService(
                     Platform = request.Platform.ToString(),
                     MeetingLink = meetingLink,
                     Status = AppointmentStatus.Confirmed,
-                    TotalPrice = total,
+                    TotalPrice = 0m,
                     CreatedAt = clock.GetUtcNow().UtcDateTime,
                     Services = services.Select(s => new AppointmentServiceLine
                     {
                         ServicesId = s.ServicesId,
                         ServiceName = s.Name,
-                        ServicePrice = s.Price
+                        ServicePrice = 0m
                     }).ToList()
                 };
                 db.Appointments.Add(entity);
                 await db.SaveChangesAsync(ct);
 
-                await UpsertOverviewAsync(request.Date, total, ct);
+                await UpsertOverviewAsync(request.Date, 0m, ct);
 
                 // Insert into BookingNegotiation for the Office Clerk (only 1 consultation entry, no duplicate event or senior photographer)
                 var conn = db.Database.GetDbConnection();
@@ -351,7 +367,7 @@ public sealed class ScheduleBookingService(
         {
             await notifications.SendBookingConfirmationAsync(new BookingConfirmation(
                 appointment.AppointmentId, customer, appointment.SlotDate, appointment.SlotStart, appointment.SlotEnd,
-                services, total, request.Platform, meetingLink, location), CancellationToken.None);
+                services, 0m, request.Platform, meetingLink, location), CancellationToken.None);
             emailSent = true;
         }
         catch (Exception ex)
@@ -360,10 +376,10 @@ public sealed class ScheduleBookingService(
         }
 
         return new ScheduleBookingResultDto(appointment.AppointmentId, appointment.SlotDate, appointment.SlotStart, appointment.SlotEnd,
-            services, total, request.Platform, meetingLink, location, emailSent);
+            services, 0m, request.Platform, meetingLink, location, emailSent);
     }
 
-    private sealed record ClerkSummary(string EmployeeId, string DaysOff);
+    private sealed record ClerkSummary(string EmployeeId, string DaysOff, string FullName);
     private sealed record LeaveSummary(string EmployeeStudioId, DateOnly StartDate, DateOnly EndDate);
     private sealed record EventSummary(string EmployeeId, DateOnly EventDate, TimeOnly EventTime);
     private sealed record ConsultationSummary(string EmployeeId, DateOnly ConsultationDate, TimeOnly ConsultationTime);
@@ -374,32 +390,43 @@ public sealed class ScheduleBookingService(
         var conn = db.Database.GetDbConnection();
         if (conn.State != ConnectionState.Open) await conn.OpenAsync(ct);
 
-        await using var cmd = conn.CreateCommand();
-        // Specifically query active Office Clerks
-        cmd.CommandText = @"
-            SELECT e.EmployeeID, ISNULL(e.DaysOff, 'Sunday')
-            FROM dbo.Employees e
-            LEFT JOIN dbo.EmployeeJointSpecialization ejs ON e.EmployeeID = ejs.EmployeeID
-            LEFT JOIN dbo.EmployeeSpecialization es ON ejs.SpecializationID = es.SpecializationID
-            WHERE (e.EmployeeStatus = 'Active' OR e.Status = 'Active')
-              AND (
-                  UPPER(LTRIM(RTRIM(COALESCE(NULLIF(es.SpecializationName, ''), es.Specialization, '')))) = 'OFFICE CLERK'
-                  OR e.Specializations LIKE '%Office Clerk%'
-              );";
-        await using var reader = await cmd.ExecuteReaderAsync(ct);
-        while (await reader.ReadAsync(ct))
+        await using (var cmd = conn.CreateCommand())
         {
-            list.Add(new ClerkSummary(reader.GetString(0), reader.GetString(1)));
+            // Specifically query active Office Clerks
+            cmd.CommandText = @"
+                SELECT DISTINCT e.EmployeeID, ISNULL(e.DaysOff, 'Sunday'), LTRIM(RTRIM(CONCAT(e.FirstName, ' ', e.LastName)))
+                FROM dbo.Employees e
+                LEFT JOIN dbo.EmployeeJointSpecialization ejs ON e.EmployeeID = ejs.EmployeeID
+                LEFT JOIN dbo.EmployeeSpecialization es ON ejs.SpecializationID = es.SpecializationID
+                WHERE (e.EmployeeStatus = 'Active' OR e.Status = 'Active')
+                  AND (
+                      UPPER(LTRIM(RTRIM(COALESCE(NULLIF(es.SpecializationName, ''), es.Specialization, '')))) = 'OFFICE CLERK'
+                      OR e.Specializations LIKE '%Office Clerk%'
+                  );";
+            await using (var reader = await cmd.ExecuteReaderAsync(ct))
+            {
+                while (await reader.ReadAsync(ct))
+                {
+                    var id = reader.GetString(0);
+                    var daysOff = reader.GetString(1);
+                    var name = reader.IsDBNull(2) || string.IsNullOrWhiteSpace(reader.GetString(2)) ? id : reader.GetString(2);
+                    list.Add(new ClerkSummary(id, daysOff, name));
+                }
+            }
         }
 
         // Fallback: If no clerks explicitly found in specialization tables (e.g. initial dev seed), use any active employee
         if (list.Count == 0)
         {
-            cmd.CommandText = "SELECT EmployeeID, ISNULL(DaysOff, 'Sunday') FROM dbo.Employees WHERE EmployeeStatus = 'Active' OR Status = 'Active';";
-            await using var fallbackReader = await cmd.ExecuteReaderAsync(ct);
+            await using var fallbackCmd = conn.CreateCommand();
+            fallbackCmd.CommandText = "SELECT DISTINCT EmployeeID, ISNULL(DaysOff, 'Sunday'), LTRIM(RTRIM(CONCAT(FirstName, ' ', LastName))) FROM dbo.Employees WHERE EmployeeStatus = 'Active' OR Status = 'Active';";
+            await using var fallbackReader = await fallbackCmd.ExecuteReaderAsync(ct);
             while (await fallbackReader.ReadAsync(ct))
             {
-                list.Add(new ClerkSummary(fallbackReader.GetString(0), fallbackReader.GetString(1)));
+                var id = fallbackReader.GetString(0);
+                var daysOff = fallbackReader.GetString(1);
+                var name = fallbackReader.IsDBNull(2) || string.IsNullOrWhiteSpace(fallbackReader.GetString(2)) ? id : fallbackReader.GetString(2);
+                list.Add(new ClerkSummary(id, daysOff, name));
             }
         }
 
@@ -528,7 +555,8 @@ public sealed class ScheduleBookingService(
         foreach (var clerk in clerks)
         {
             // If Office Clerk is on Day Off, that specific date/time is completely unavailable for customer booking negotiations
-            if (clerk.DaysOff.Contains(dayName, StringComparison.OrdinalIgnoreCase))
+            if (clerk.DaysOff.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+                .Any(d => string.Equals(d, dayName, StringComparison.OrdinalIgnoreCase)))
                 continue;
 
             if (leaves.Any(l => string.Equals(l.EmployeeStudioId, clerk.EmployeeId, StringComparison.OrdinalIgnoreCase) && date >= l.StartDate && date <= l.EndDate))
@@ -559,7 +587,8 @@ public sealed class ScheduleBookingService(
         foreach (var clerk in clerks)
         {
             // Skip clerk if date is their scheduled Day Off
-            if (clerk.DaysOff.Contains(dayName, StringComparison.OrdinalIgnoreCase))
+            if (clerk.DaysOff.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+                .Any(d => string.Equals(d, dayName, StringComparison.OrdinalIgnoreCase)))
                 continue;
 
             if (leaves.Any(l => string.Equals(l.EmployeeStudioId, clerk.EmployeeId, StringComparison.OrdinalIgnoreCase) && date >= l.StartDate && date <= l.EndDate))

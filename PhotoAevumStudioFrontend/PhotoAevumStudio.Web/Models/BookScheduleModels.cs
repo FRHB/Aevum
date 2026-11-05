@@ -33,6 +33,8 @@ public static class SessionWindows
 
 public sealed record ScheduleServiceOption(string ServicesId, string Name, string Description, decimal Price);
 
+public sealed record OfficeClerkOption(string EmployeeId, string FullName, string DaysOff);
+
 public sealed record SlotAvailability(TimeOnly Start, TimeOnly End, bool IsAvailable);
 
 public sealed record DayAvailability(DateOnly Date, IReadOnlyList<SlotAvailability> Slots)

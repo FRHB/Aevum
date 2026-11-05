@@ -48,14 +48,20 @@ public class StudioManagementService : IStudioManagementService
         await EnsureServicesRateTypeSchemaAsync(conn, cancellationToken);
 
         var specializationsByEmployee = new Dictionary<string, List<string>>(StringComparer.OrdinalIgnoreCase);
+        var departmentsByEmployee = new Dictionary<string, List<string>>(StringComparer.OrdinalIgnoreCase);
+        var departmentIdsByEmployee = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
 
         const string specJoinSql = @"
             IF OBJECT_ID(N'dbo.EmployeeJointSpecialization', N'U') IS NOT NULL
                AND OBJECT_ID(N'dbo.EmployeeSpecialization', N'U') IS NOT NULL
             BEGIN
-                SELECT ejs.EmployeeID, COALESCE(NULLIF(es.SpecializationName, ''), es.Specialization, es.SpecializationID) AS SpecName
+                SELECT ejs.EmployeeID,
+                       COALESCE(NULLIF(es.SpecializationName, ''), es.Specialization, es.SpecializationID) AS SpecName,
+                       COALESCE(NULLIF(d.DepartmentName, ''), NULLIF(es.DepartmentName, ''), 'General') AS DeptName,
+                       COALESCE(es.DepartmentID, d.DepartmentID) AS DeptId
                 FROM dbo.EmployeeJointSpecialization ejs
-                INNER JOIN dbo.EmployeeSpecialization es ON es.SpecializationID = ejs.SpecializationID;
+                INNER JOIN dbo.EmployeeSpecialization es ON es.SpecializationID = ejs.SpecializationID
+                LEFT JOIN dbo.Departments d ON d.DepartmentID = es.DepartmentID;
             END";
 
         await using (var specCmd = new SqlCommand(specJoinSql, conn))
@@ -65,16 +71,37 @@ public class StudioManagementService : IStudioManagementService
             {
                 var empId = specReader.GetString(0);
                 var specName = specReader.IsDBNull(1) ? string.Empty : specReader.GetString(1);
-                if (string.IsNullOrWhiteSpace(specName)) continue;
+                var deptName = specReader.IsDBNull(2) ? string.Empty : specReader.GetString(2);
+                var specDeptId = specReader.IsDBNull(3) ? null : specReader.GetString(3);
 
-                if (!specializationsByEmployee.TryGetValue(empId, out var list))
+                if (!string.IsNullOrWhiteSpace(specName))
                 {
-                    list = new List<string>();
-                    specializationsByEmployee[empId] = list;
+                    if (!specializationsByEmployee.TryGetValue(empId, out var list))
+                    {
+                        list = new List<string>();
+                        specializationsByEmployee[empId] = list;
+                    }
+                    if (!list.Contains(specName, StringComparer.OrdinalIgnoreCase))
+                    {
+                        list.Add(specName);
+                    }
                 }
-                if (!list.Contains(specName, StringComparer.OrdinalIgnoreCase))
+
+                if (!string.IsNullOrWhiteSpace(deptName) && !string.Equals(deptName, "General", StringComparison.OrdinalIgnoreCase))
                 {
-                    list.Add(specName);
+                    if (!departmentsByEmployee.TryGetValue(empId, out var dList))
+                    {
+                        dList = new List<string>();
+                        departmentsByEmployee[empId] = dList;
+                    }
+                    if (!dList.Contains(deptName, StringComparer.OrdinalIgnoreCase))
+                    {
+                        dList.Add(deptName);
+                    }
+                    if (!string.IsNullOrWhiteSpace(specDeptId) && !departmentIdsByEmployee.ContainsKey(empId))
+                    {
+                        departmentIdsByEmployee[empId] = specDeptId;
+                    }
                 }
             }
         }
@@ -90,7 +117,9 @@ public class StudioManagementService : IStudioManagementService
                    CASE WHEN COL_LENGTH(N'dbo.Employees', N'Address') IS NOT NULL THEN e.Address ELSE NULL END AS Address,
                    CASE WHEN COL_LENGTH(N'dbo.Employees', N'BirthYear') IS NOT NULL THEN e.BirthYear ELSE NULL END AS BirthYear,
                    CASE WHEN COL_LENGTH(N'dbo.Employees', N'DepartmentID') IS NOT NULL THEN e.DepartmentID ELSE NULL END AS DepartmentID,
-                   d.DepartmentName
+                   d.DepartmentName,
+                   CASE WHEN COL_LENGTH(N'dbo.Employees', N'BirthDate') IS NOT NULL THEN e.BirthDate ELSE NULL END AS BirthDate,
+                   CASE WHEN COL_LENGTH(N'dbo.Employees', N'Specializations') IS NOT NULL THEN e.Specializations ELSE NULL END AS EfSpecs
             FROM dbo.Employees e
             LEFT JOIN dbo.Departments d ON d.DepartmentID = e.DepartmentID
             {filterClause}
@@ -112,8 +141,34 @@ public class StudioManagementService : IStudioManagementService
             int? birthYear = reader.IsDBNull(8) ? null : reader.GetInt32(8);
             var deptId = reader.IsDBNull(9) ? null : reader.GetString(9);
             var deptName = reader.IsDBNull(10) ? null : reader.GetString(10);
+            DateTime? birthDate = reader.FieldCount > 11 && !reader.IsDBNull(11) ? reader.GetDateTime(11) : null;
+            var efSpecsJson = reader.FieldCount > 12 && !reader.IsDBNull(12) ? reader.GetString(12) : null;
+            birthYear ??= birthDate?.Year;
 
             specializationsByEmployee.TryGetValue(empId, out var specs);
+            if ((specs == null || specs.Count == 0) && !string.IsNullOrWhiteSpace(efSpecsJson) && efSpecsJson != "[]")
+            {
+                try
+                {
+                    var parsed = System.Text.Json.JsonSerializer.Deserialize<List<string>>(efSpecsJson);
+                    if (parsed != null && parsed.Count > 0)
+                    {
+                        specs = parsed;
+                    }
+                }
+                catch
+                {
+                    // Ignore JSON parse errors
+                }
+            }
+
+            // Connect department directly to specialization(s)
+            if (departmentsByEmployee.TryGetValue(empId, out var dList) && dList.Count > 0)
+            {
+                deptName = string.Join(", ", dList);
+                deptId = departmentIdsByEmployee.GetValueOrDefault(empId) ?? deptId;
+            }
+            deptName ??= "General";
 
             employees.Add(new Employee
             {
@@ -130,12 +185,14 @@ public class StudioManagementService : IStudioManagementService
                     UserName = email,
                     Address = address,
                     BirthYear = birthYear,
+                    BirthDate = birthDate,
                     DepartmentId = deptId
                 },
                 Address = address,
                 BirthYear = birthYear,
+                BirthDate = birthDate,
                 DepartmentID = deptId,
-                DepartmentEntity = !string.IsNullOrEmpty(deptId) ? new Department { DepartmentID = deptId, DepartmentName = deptName ?? deptId } : null,
+                DepartmentEntity = new Department { DepartmentID = deptId ?? "DEP-0001", DepartmentName = deptName },
                 Status = status,
                 DaysOff = daysOff,
                 Specializations = specs ?? new List<string>()
@@ -250,6 +307,15 @@ public class StudioManagementService : IStudioManagementService
         try
         {
             const string alignSql = @"
+                IF OBJECT_ID(N'dbo.Employees', N'U') IS NOT NULL
+                BEGIN
+                    IF COL_LENGTH(N'dbo.Employees', N'BirthDate') IS NULL
+                        ALTER TABLE dbo.Employees ADD BirthDate date NULL;
+                    IF COL_LENGTH(N'dbo.Employees', N'BirthYear') IS NULL
+                        ALTER TABLE dbo.Employees ADD BirthYear int NULL;
+                    IF COL_LENGTH(N'dbo.Employees', N'Address') IS NULL
+                        ALTER TABLE dbo.Employees ADD Address nvarchar(500) NULL;
+                END;
                 IF OBJECT_ID(N'dbo.Services', N'U') IS NOT NULL
                 BEGIN
                     IF COL_LENGTH(N'dbo.Services', N'RateType') IS NULL

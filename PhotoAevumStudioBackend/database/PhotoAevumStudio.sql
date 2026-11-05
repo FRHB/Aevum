@@ -730,6 +730,43 @@ BEGIN
 
     ALTER TABLE dbo.EmployeeSpecialization ADD CONSTRAINT FK_EmployeeSpecialization_Department 
         FOREIGN KEY (DepartmentID) REFERENCES dbo.Departments(DepartmentID) ON DELETE SET NULL;
+
+    -- Ensure default specializations are linked to their respective departments
+    IF NOT EXISTS (SELECT 1 FROM dbo.EmployeeSpecialization WHERE SpecializationID = 'SP-998')
+    BEGIN
+        INSERT INTO dbo.EmployeeSpecialization (
+            SpecializationID, SpecializationName, SpecializationDescription,
+            Specialization, Description, DepartmentID, DepartmentName, ColorTag, CreatedAt
+        )
+        VALUES (
+            'SP-998', 'Senior Photographer', 'Photography',
+            'Senior Photographer', 'Photography', 'DEP-0001', 'Photography', 'Blue', SYSUTCDATETIME()
+        );
+    END
+    ELSE
+    BEGIN
+        UPDATE dbo.EmployeeSpecialization
+        SET DepartmentID = 'DEP-0001', DepartmentName = 'Photography'
+        WHERE SpecializationID = 'SP-998' AND (DepartmentID IS NULL OR DepartmentID = '');
+    END;
+
+    IF NOT EXISTS (SELECT 1 FROM dbo.EmployeeSpecialization WHERE SpecializationID = 'SP-999')
+    BEGIN
+        INSERT INTO dbo.EmployeeSpecialization (
+            SpecializationID, SpecializationName, SpecializationDescription,
+            Specialization, Description, DepartmentID, DepartmentName, ColorTag, CreatedAt
+        )
+        VALUES (
+            'SP-999', 'Office Clerk', 'Studio Staff & Operations',
+            'Office Clerk', 'Studio Staff & Operations', 'DEP-0004', 'Studio Staff & Operations', 'Green', SYSUTCDATETIME()
+        );
+    END
+    ELSE
+    BEGIN
+        UPDATE dbo.EmployeeSpecialization
+        SET DepartmentID = 'DEP-0004', DepartmentName = 'Studio Staff & Operations'
+        WHERE SpecializationID = 'SP-999' AND (DepartmentID IS NULL OR DepartmentID = '');
+    END;
 END;
 
 -- ServiceCategory schema updates (RateTypeID, RateTypeName, FK)

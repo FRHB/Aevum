@@ -38,9 +38,6 @@
     </div>
 }
 
-@* ── Auth portal modal (rendered inline so Blazor Server wires the events) *@
-<AuthPortalModal IsVisible="_modalOpen" OnClose="CloseModal" />
-
 @* ── Public Top Navigation Bar ────────────────────────────────────────────── *@
 <header class="sticky top-0 z-50 bg-white/95 backdrop-blur-md border-b border-gray-100">
     <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-20 flex items-center justify-between">
@@ -62,13 +59,9 @@
 
         @* CTA group *@
         <div class="flex items-center gap-3">
-            <button @onclick="OpenModal"
-                    class="hidden md:inline-flex items-center gap-1.5 border border-gray-300 text-gray-700 hover:border-gray-700 hover:text-gray-900 px-5 py-2.5 rounded-none font-medium text-xs uppercase tracking-wider transition-colors">
+            <a href="/login"
+               class="inline-flex items-center gap-1.5 border border-gray-300 text-gray-700 hover:border-gray-700 hover:text-gray-900 px-5 py-2.5 rounded-none font-medium text-xs uppercase tracking-wider transition-colors cursor-pointer">
                 <span aria-hidden="true">→</span> Login / Sign In
-            </button>
-            <a href="/schedule"
-               class="bg-gray-900 hover:bg-black text-white px-5 py-2.5 rounded-none font-medium text-xs uppercase tracking-wider transition-colors">
-                Book Online
             </a>
         </div>
 
@@ -858,12 +851,6 @@
         1 => "https://images.unsplash.com/photo-1604904612715-47bf9d9bc670?q=80&w=800&auto=format&fit=crop",
         _ => "https://images.unsplash.com/photo-1542038784456-1ea8e935640e?q=80&w=800&auto=format&fit=crop"
     };
-
-    private bool _modalOpen = false;
-    private void OpenModal() => _modalOpen = true;
-    private void CloseModal() => _modalOpen = false;
-
-
 
     // ── Portfolio sidebar (Featured Albums & Photos Only) ────────────
     private bool _portfolioOpen = false;

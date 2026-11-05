@@ -44,6 +44,41 @@ public static class EmployeeCredentialGenerator
     }
 
     /// <summary>
+    /// Generates an initial employee password using the format: LastName + BirthYear + Employee ID No. ### (e.g. Doe1995001).
+    /// </summary>
+    public static string GenerateInitialPassword(string? lastName, int? birthYear, string? employeeId)
+    {
+        var cleanLastName = string.IsNullOrWhiteSpace(lastName)
+            ? "Staff"
+            : Regex.Replace(lastName.Trim(), @"\s+", "");
+
+        int year = birthYear is >= 1900 and <= 2100 ? birthYear.Value : DateTime.UtcNow.Year;
+
+        string idNum = "001";
+        if (!string.IsNullOrWhiteSpace(employeeId))
+        {
+            var match = Regex.Match(employeeId.Trim(), @"(\d{3,})$");
+            if (match.Success)
+            {
+                idNum = match.Groups[1].Value;
+            }
+            else
+            {
+                var digits = new string(employeeId.Where(char.IsDigit).ToArray());
+                if (!string.IsNullOrEmpty(digits))
+                {
+                    idNum = digits.Length >= 3 ? digits[^3..] : digits.PadLeft(3, '0');
+                }
+            }
+        }
+
+        return $"{cleanLastName}{year:D4}{idNum}";
+    }
+
+    public static string GenerateInitialPassword(string? lastName, DateTime? birthDate, string? employeeId) =>
+        GenerateInitialPassword(lastName, birthDate?.Year, employeeId);
+
+    /// <summary>
     /// Generates a cryptographically secure, random initial password that meets complexity policies:
     /// - At least 8 characters (default 12)
     /// - Contains uppercase, lowercase, digit, and symbol

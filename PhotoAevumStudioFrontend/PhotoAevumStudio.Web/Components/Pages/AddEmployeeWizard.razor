@@ -116,15 +116,15 @@
 
                             <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
                                 <div>
-                                    <label for="emp-birthyear" class="block text-xs font-semibold uppercase tracking-wider text-slate-700 mb-1.5">
-                                        Birth Year <span class="text-slate-400 font-normal lowercase">(optional)</span>
+                                    <label for="emp-birthdate" class="block text-xs font-semibold uppercase tracking-wider text-slate-700 mb-1.5">
+                                        Birth Date <span class="text-rose-500">*</span>
                                     </label>
-                                    <InputNumber id="emp-birthyear" @bind-Value="model.BirthYear" class="@InputClass" placeholder="e.g. 1995" />
-                                    <ValidationMessage For="() => model.BirthYear" class="text-xs text-rose-600 mt-1" />
+                                    <InputDate id="emp-birthdate" @bind-Value="model.BirthDate" class="@InputClass" />
+                                    <ValidationMessage For="() => model.BirthDate" class="text-xs text-rose-600 mt-1" />
                                 </div>
                                 <div>
                                     <label for="emp-address" class="block text-xs font-semibold uppercase tracking-wider text-slate-700 mb-1.5">
-                                        Home Address <span class="text-slate-400 font-normal lowercase">(optional)</span>
+                                        Home Address <span class="text-rose-500">*</span>
                                     </label>
                                     <InputText id="emp-address" @bind-Value="model.Address" class="@InputClass" placeholder="e.g. 123 Studio Way, Quezon City" autocomplete="off" />
                                     <ValidationMessage For="() => model.Address" class="text-xs text-rose-600 mt-1" />
@@ -140,7 +140,7 @@
                                 <label for="emp-spec" class="block text-xs font-semibold uppercase tracking-wider text-slate-700 mb-1.5">
                                     Specialization <span class="text-rose-500">*</span>
                                 </label>
-                                @if (!AvailableSpecializations.Any() && (allSpecializations?.Count ?? 0) == 0)
+                                @if (!AvailableSpecializations.Any() && (allSpecializationLookups?.Count ?? 0) == 0)
                                 {
                                     <div class="flex gap-2">
                                         <input id="emp-spec" type="text" @bind="pendingSpec" class="@InputClass flex-1" placeholder="Enter specialization name (no master records found in DB)..." />
@@ -159,7 +159,7 @@
                                                 <option value="">-- Choose a Specialization --</option>
                                                 @foreach (var s in AvailableSpecializations)
                                                 {
-                                                    <option value="@s">@s</option>
+                                                    <option value="@s.Name">@s.Name (@s.Department)</option>
                                                 }
                                             </select>
                                             <div class="pointer-events-none absolute inset-y-0 right-0 flex items-center px-3 text-slate-500">
@@ -177,6 +177,18 @@
                                             </svg>
                                             Add
                                         </button>
+                                    </div>
+                                }
+                                @if (!string.IsNullOrWhiteSpace(ConnectedDepartmentSummary))
+                                {
+                                    <div class="mt-2.5 p-3 bg-indigo-50/70 border border-indigo-200/60 rounded-xl flex items-center justify-between">
+                                        <div class="flex items-center gap-2">
+                                            <span class="text-xs text-indigo-700 font-medium">Connected Department:</span>
+                                            <span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-bold bg-white text-indigo-900 border border-indigo-200 shadow-2xs">
+                                                @ConnectedDepartmentSummary
+                                            </span>
+                                        </div>
+                                        <span class="text-[11px] text-indigo-600">Auto-linked from specialization</span>
                                     </div>
                                 }
                                 @if (specError is not null)
@@ -247,14 +259,18 @@
                                     <span class="text-slate-900 font-semibold text-right">@model.Email</span>
                                 </div>
                                 <div class="py-2.5 flex justify-between items-center">
-                                    <span class="text-slate-500 font-medium">Birth Year &amp; Address</span>
+                                    <span class="text-slate-500 font-medium">Birth Date &amp; Address</span>
                                     <span class="text-slate-900 font-semibold text-right max-w-xs truncate">
-                                        @(model.BirthYear != null ? $"b. {model.BirthYear}" : "")@(model.BirthYear != null && !string.IsNullOrWhiteSpace(model.Address) ? " • " : "")@(string.IsNullOrWhiteSpace(model.Address) ? (model.BirthYear == null ? "—" : "") : model.Address)
+                                        @(model.BirthDate != null ? model.BirthDate.Value.ToString("MMM dd, yyyy") : (model.BirthYear != null ? $"b. {model.BirthYear}" : ""))@((model.BirthDate != null || model.BirthYear != null) && !string.IsNullOrWhiteSpace(model.Address) ? " • " : "")@(string.IsNullOrWhiteSpace(model.Address) ? (model.BirthDate == null && model.BirthYear == null ? "—" : "") : model.Address)
                                     </span>
                                 </div>
                                 <div class="py-2 flex justify-between items-center">
                                     <span class="text-slate-500 font-medium">Days Off</span>
                                     <span class="text-slate-900 font-semibold text-right">@model.DaysOffString</span>
+                                </div>
+                                <div class="py-2.5 flex justify-between items-center">
+                                    <span class="text-slate-500 font-medium">Department</span>
+                                    <span class="text-slate-900 font-semibold text-right">@(string.IsNullOrWhiteSpace(ConnectedDepartmentSummary) ? "General" : ConnectedDepartmentSummary)</span>
                                 </div>
                                 <div class="pt-2.5 flex flex-col sm:flex-row sm:justify-between sm:items-start gap-1">
                                     <span class="text-slate-500 font-medium shrink-0">Specializations</span>
@@ -297,7 +313,7 @@
                                     </div>
                                     <ValidationMessage For="() => model.Password" class="text-xs text-rose-600 mt-1" />
                                     <p class="text-[11px] text-slate-400 mt-1">
-                                        @(IsEditMode ? "Leave empty to retain existing password, or enter at least 8 characters with letters & numbers." : "At least 8 characters with at least one letter and one number.")
+                                        @(IsEditMode ? "Leave empty to retain existing password, or enter at least 8 characters with letters & numbers." : "Format: LastName + BirthYear + Employee ID No. ### (e.g. Doe1995001).")
                                     </p>
                                 </div>
                             </div>
@@ -338,6 +354,10 @@
                                 <div class="flex justify-between items-center py-2">
                                     <span class="text-slate-500 font-medium">Email Address</span>
                                     <span class="text-slate-800">@model.Email</span>
+                                </div>
+                                <div class="flex justify-between items-center py-2">
+                                    <span class="text-slate-500 font-medium">Department</span>
+                                    <span class="text-slate-800 font-semibold">@(string.IsNullOrWhiteSpace(ConnectedDepartmentSummary) ? "General" : ConnectedDepartmentSummary)</span>
                                 </div>
                                 <div class="flex justify-between items-center py-2">
                                     <span class="text-slate-500 font-medium">Weekly Day(s) Off</span>
@@ -473,10 +493,31 @@
     private bool _previousIsOpen;
 
     private IReadOnlyList<string> allSpecializations = Array.Empty<string>();
+    private IReadOnlyList<SpecializationLookupItem> allSpecializationLookups = Array.Empty<SpecializationLookupItem>();
     private CancellationTokenSource? _cts;
 
-    private IEnumerable<string> AvailableSpecializations =>
-        allSpecializations.Except(model.Specializations, StringComparer.OrdinalIgnoreCase);
+    private IEnumerable<SpecializationLookupItem> AvailableSpecializations =>
+        allSpecializationLookups.Where(s => !model.Specializations.Contains(s.Name, StringComparer.OrdinalIgnoreCase));
+
+    private string ConnectedDepartmentSummary
+    {
+        get
+        {
+            if (model.Specializations == null || model.Specializations.Count == 0)
+                return !string.IsNullOrWhiteSpace(model.Department) ? model.Department : string.Empty;
+
+            var depts = model.Specializations
+                .Select(s => allSpecializationLookups.FirstOrDefault(l => string.Equals(l.Name, s, StringComparison.OrdinalIgnoreCase))?.Department)
+                .Where(d => !string.IsNullOrWhiteSpace(d))
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .ToList();
+
+            if (depts.Count > 0)
+                return string.Join(", ", depts);
+
+            return !string.IsNullOrWhiteSpace(model.Department) ? model.Department : "General";
+        }
+    }
 
     protected override async Task OnInitializedAsync()
     {
@@ -497,12 +538,15 @@
                 model.MiddleName = EditEmployee.MiddleName;
                 model.Email = EditEmployee.Email;
                 model.Address = EditEmployee.Address;
+                model.BirthDate = EditEmployee.BirthDate ?? (EditEmployee.BirthYear.HasValue ? new DateTime(EditEmployee.BirthYear.Value, 1, 1) : null);
                 model.BirthYear = EditEmployee.BirthYear;
                 model.DepartmentId = EditEmployee.DepartmentId;
+                model.Department = EditEmployee.Department;
                 model.EmployeeId = EditEmployee.EmployeeId;
                 model.Specializations = new List<string>(EditEmployee.Specializations);
                 model.SelectedDaysOff = new List<string>(EditEmployee.SelectedDaysOff.Count > 0 ? EditEmployee.SelectedDaysOff : new List<string> { "Sunday" });
                 model.Password = string.Empty;
+                SyncDepartmentFromSpecializations();
             }
             await LoadSpecializationsAsync();
         }
@@ -513,11 +557,13 @@
     {
         try
         {
-            var specs = await Employees.GetSpecializationsAsync(_cts?.Token ?? CancellationToken.None);
-            allSpecializations = specs ?? Array.Empty<string>();
+            var lookups = await Employees.GetSpecializationLookupsAsync(_cts?.Token ?? CancellationToken.None);
+            allSpecializationLookups = lookups ?? Array.Empty<SpecializationLookupItem>();
+            allSpecializations = allSpecializationLookups.Select(l => l.Name).ToList();
         }
         catch
         {
+            allSpecializationLookups = Array.Empty<SpecializationLookupItem>();
             allSpecializations = Array.Empty<string>();
         }
     }
@@ -585,12 +631,35 @@
         }
 
         model.Specializations.Add(pendingSpec.Trim());
+        SyncDepartmentFromSpecializations();
         pendingSpec = null;
     }
 
     private void RemoveSpecialization(string spec)
     {
         model.Specializations.Remove(spec);
+        SyncDepartmentFromSpecializations();
+    }
+
+    private void SyncDepartmentFromSpecializations()
+    {
+        var matched = allSpecializationLookups
+            .Where(l => model.Specializations.Contains(l.Name, StringComparer.OrdinalIgnoreCase))
+            .ToList();
+
+        if (matched.Count > 0)
+        {
+            var distinctDepts = matched.Select(m => m.Department).Where(d => !string.IsNullOrWhiteSpace(d)).Distinct(StringComparer.OrdinalIgnoreCase).ToList();
+            if (distinctDepts.Count > 0)
+            {
+                model.Department = string.Join(", ", distinctDepts);
+            }
+            var firstDeptId = matched.FirstOrDefault(m => !string.IsNullOrWhiteSpace(m.DepartmentId))?.DepartmentId;
+            if (!string.IsNullOrWhiteSpace(firstDeptId))
+            {
+                model.DepartmentId = firstDeptId;
+            }
+        }
     }
 
     private void ToggleDayOff(string day)
@@ -613,9 +682,11 @@
 
         var step1Properties = new[]
         {
-            new { Name = nameof(model.FirstName), Value = (object)model.FirstName },
-            new { Name = nameof(model.LastName), Value = (object)model.LastName },
-            new { Name = nameof(model.Email), Value = (object)model.Email }
+            new { Name = nameof(model.FirstName), Value = (object?)model.FirstName },
+            new { Name = nameof(model.LastName), Value = (object?)model.LastName },
+            new { Name = nameof(model.Email), Value = (object?)model.Email },
+            new { Name = nameof(model.BirthDate), Value = (object?)model.BirthDate },
+            new { Name = nameof(model.Address), Value = (object?)model.Address }
         };
 
         foreach (var prop in step1Properties)
@@ -667,9 +738,12 @@
             }
         }
 
-        if (!IsEditMode && string.IsNullOrWhiteSpace(model.Password))
+        if (!IsEditMode)
         {
-            model.Password = EmployeeCredentialGenerator.GenerateInitialPassword(12);
+            model.Password = EmployeeCredentialGenerator.GenerateInitialPassword(
+                model.LastName,
+                model.BirthDate?.Year ?? model.BirthYear,
+                model.EmployeeId);
         }
 
         specError = null;
@@ -719,6 +793,7 @@
 
         try
         {
+            SyncDepartmentFromSpecializations();
             var request = new NewEmployeeRequest(
                 model.EmployeeId.Trim().ToUpperInvariant(),
                 model.FirstName.Trim(),
@@ -729,8 +804,9 @@
                 string.IsNullOrWhiteSpace(model.Password) ? string.Empty : model.Password.Trim(),
                 model.DaysOffString,
                 model.Address?.Trim(),
-                model.BirthYear,
-                model.DepartmentId?.Trim());
+                model.BirthDate?.Year ?? model.BirthYear,
+                model.DepartmentId?.Trim(),
+                model.BirthDate);
 
             var result = IsEditMode
                 ? await Employees.UpdateEmployeeAsync(request, _cts?.Token ?? CancellationToken.None)

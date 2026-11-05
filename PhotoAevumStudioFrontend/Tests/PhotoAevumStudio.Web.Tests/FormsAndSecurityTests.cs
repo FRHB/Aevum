@@ -148,9 +148,9 @@ public class FormsAndSecurityTests
     public void Profile_EnrichesFromUserService_ForAdmin()
     {
         const string connStr = "Server=db77602.public.databaseasp.net; Database=db77602; User Id=db77602; Password=G!r7cB8#Z5_d; Encrypt=True; TrustServerCertificate=True; MultipleActiveResultSets=True;";
-        const string adminId = "SADM-998";
+        string adminId = $"SADM-{Random.Shared.Next(800, 999)}";
 
-        static void CleanupSuperAdmin()
+        void CleanupSuperAdmin()
         {
             using var conn = new Microsoft.Data.SqlClient.SqlConnection(connStr);
             conn.Open();
@@ -413,6 +413,8 @@ public class FormsAndSecurityTests
             FirstName = "Marcus",
             LastName = "Vance",
             Email = "marcus@photoaevum.com",
+            BirthDate = new DateTime(1995, 5, 10),
+            Address = "123 Studio Way",
             EmployeeId = "PA-001",
             Password = "Password123!"
         };
@@ -552,6 +554,9 @@ public class FormsAndSecurityTests
         // 3. Repositioned Forgot Password link
         Assert.Contains("forgot-password-row", content);
         Assert.Contains("/forgot-password", content);
+        Assert.Contains("login-exit-btn", content);
+        Assert.Contains("href=\"/\"", content);
+        Assert.Contains("NavigateToHome", content);
     }
 
     [Fact]
@@ -673,5 +678,38 @@ public class FormsAndSecurityTests
 
         Assert.NotNull(dir);
         return dir.FullName;
+    }
+
+    [Fact]
+    public void AuthPortalModal_OnSuccessfulRegistration_NavigatesImmediatelyToLogin_AndClosesModal()
+    {
+        var root = GetRepositoryRoot();
+        var modalPath = Path.Combine(root, "PhotoAevumStudioFrontend", "PhotoAevumStudio.Web", "Components", "Layout", "AuthPortalModal.razor");
+        var loginPath = Path.Combine(root, "PhotoAevumStudioFrontend", "PhotoAevumStudio.Web", "Components", "Pages", "Login.razor");
+        var loginCssPath = Path.Combine(root, "PhotoAevumStudioFrontend", "PhotoAevumStudio.Web", "Components", "Pages", "Login.razor.css");
+
+        Assert.True(File.Exists(modalPath), $"File not found: {modalPath}");
+        Assert.True(File.Exists(loginPath), $"File not found: {loginPath}");
+        Assert.True(File.Exists(loginCssPath), $"File not found: {loginCssPath}");
+
+        var modalContent = File.ReadAllText(modalPath);
+        var loginContent = File.ReadAllText(loginPath);
+        var loginCssContent = File.ReadAllText(loginCssPath);
+
+        // AuthPortalModal exposes OnRegistered callback and handles successful registration by closing and navigating to /login
+        Assert.Contains("EventCallback<string> OnRegistered", modalContent);
+        Assert.Contains("OnRegistered.InvokeAsync(registeredEmail)", modalContent);
+        Assert.Contains("Nav.NavigateTo(\"/login\")", modalContent);
+        Assert.Contains("_view = ModalView.Chooser;", modalContent);
+
+        // Login.razor wires OnRegistered, pre-fills UserId with newly registered email, and shows success alert
+        Assert.Contains("OnRegistered=\"HandleCustomerRegistered\"", loginContent);
+        Assert.Contains("HandleCustomerRegistered(string email)", loginContent);
+        Assert.Contains("loginModel.UserId = email", loginContent);
+        Assert.Contains("login-success-alert", loginContent);
+        Assert.Contains("Account created successfully! You can now sign in with your email and password.", loginContent);
+
+        // Login.razor.css defines styling for login-success-alert
+        Assert.Contains(".login-success-alert", loginCssContent);
     }
 }

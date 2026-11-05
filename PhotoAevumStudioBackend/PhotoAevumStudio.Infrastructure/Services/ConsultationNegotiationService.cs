@@ -1210,6 +1210,18 @@ public class ConsultationNegotiationService : IConsultationNegotiationService
 
 
 
+                EmployeeID = CASE WHEN @NewEmployeeId IS NOT NULL AND LEN(@NewEmployeeId) > 0 THEN @NewEmployeeId ELSE EmployeeID END,
+
+
+
+                AssignedEmployeeName = CASE 
+                    WHEN @NewEmployeeName IS NOT NULL AND LEN(@NewEmployeeName) > 0 THEN @NewEmployeeName 
+                    WHEN @NewEmployeeId IS NOT NULL AND LEN(@NewEmployeeId) > 0 THEN (SELECT TOP 1 LTRIM(RTRIM(CONCAT(FirstName, ' ', LastName))) FROM dbo.Employees WHERE EmployeeID = @NewEmployeeId)
+                    ELSE AssignedEmployeeName 
+                END,
+
+
+
                 InquiryNotes = CASE 
 
 
@@ -1246,7 +1258,19 @@ public class ConsultationNegotiationService : IConsultationNegotiationService
 
 
 
-                EventTime = CASE WHEN @NewTime IS NOT NULL THEN @NewTime ELSE EventTime END
+                EventTime = CASE WHEN @NewTime IS NOT NULL THEN @NewTime ELSE EventTime END,
+
+
+
+                EmployeeID = CASE WHEN @NewEmployeeId IS NOT NULL AND LEN(@NewEmployeeId) > 0 THEN @NewEmployeeId ELSE EmployeeID END,
+
+
+
+                AssignedEmployeeName = CASE 
+                    WHEN @NewEmployeeName IS NOT NULL AND LEN(@NewEmployeeName) > 0 THEN @NewEmployeeName 
+                    WHEN @NewEmployeeId IS NOT NULL AND LEN(@NewEmployeeId) > 0 THEN (SELECT TOP 1 LTRIM(RTRIM(CONCAT(FirstName, ' ', LastName))) FROM dbo.Employees WHERE EmployeeID = @NewEmployeeId)
+                    ELSE AssignedEmployeeName 
+                END
 
 
 
@@ -1287,6 +1311,14 @@ public class ConsultationNegotiationService : IConsultationNegotiationService
 
 
         cmd.Parameters.AddWithValue("@NewTime", request.NewConsultationTime.HasValue ? request.NewConsultationTime.Value.ToTimeSpan() : DBNull.Value);
+
+
+
+        cmd.Parameters.AddWithValue("@NewEmployeeId", (object?)request.NewEmployeeId ?? DBNull.Value);
+
+
+
+        cmd.Parameters.AddWithValue("@NewEmployeeName", (object?)request.NewEmployeeName ?? DBNull.Value);
 
 
 

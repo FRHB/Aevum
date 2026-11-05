@@ -130,4 +130,35 @@ public class SpecializationSchemaTests
         await using var reader = await cmd.ExecuteReaderAsync();
         Assert.NotNull(reader);
     }
+
+    [Fact]
+    public void EmployeeSpecializations_And_Lookups_ExecuteSuccessfully()
+    {
+        var userService = new UserService();
+        var lookups = userService.GetSpecializationLookups();
+        Assert.NotNull(lookups);
+
+        var empSpecs = userService.GetEmployeeSpecializations();
+        Assert.NotNull(empSpecs);
+
+        var depts = userService.GetDepartments();
+        Assert.NotNull(depts);
+
+        // Verify that assigning a specialization to an employee works and persists
+        if (empSpecs.Count > 0 && lookups.Count > 0)
+        {
+            var firstEmp = empSpecs[0];
+            var firstSpec = lookups[0];
+            var success = userService.AssignEmployeeSpecializations(
+                firstEmp.EmployeeId, 
+                new[] { firstSpec.Name }, 
+                firstEmp.DepartmentId);
+            Assert.True(success);
+
+            var updatedSpecs = userService.GetEmployeeSpecializations();
+            var updatedEmp = updatedSpecs.FirstOrDefault(e => e.EmployeeId == firstEmp.EmployeeId);
+            Assert.NotNull(updatedEmp);
+            Assert.Contains(firstSpec.Name, updatedEmp.Specializations);
+        }
+    }
 }

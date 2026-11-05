@@ -2822,230 +2822,298 @@
 
 
 @* ── Consultation Reschedule Modal ────────────────────────────────────────── *@
-
-
-
 @if (_isRescheduleModalOpen && _selectedNegotiation != null)
-
-
-
 {
-
-
-
-    <div class="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-xs p-4 animate-in fade-in duration-200">
-
-
-
-        <div class="bg-white rounded-2xl shadow-xl border border-slate-200 w-full max-w-md p-6 space-y-4">
-
-
-
+    <div class="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-xs p-4 overflow-y-auto animate-in fade-in duration-200">
+        <div class="bg-white rounded-2xl shadow-2xl border border-slate-200 w-full max-w-3xl p-6 sm:p-7 space-y-5 my-8 max-h-[92vh] overflow-y-auto">
+            @* Header *@
             <div class="flex items-center justify-between border-b border-slate-100 pb-3">
-
-
-
                 <div>
-
-
-
-                    <h3 class="text-sm font-black text-slate-900">Reschedule Consultation</h3>
-
-
-
-                    <p class="text-xs text-slate-500 mt-0.5">@_selectedNegotiation.CustomerName &bull; <span class="font-mono text-[11px]">#@_selectedNegotiation.NegotiationId</span></p>
-
-
-
+                    <h3 class="text-base font-black text-slate-900">Reschedule Consultation</h3>
+                    <p class="text-xs text-slate-500 mt-0.5">
+                        @_selectedNegotiation.CustomerName &bull; <span class="font-mono text-[11px] text-slate-600">#@_selectedNegotiation.NegotiationId</span>
+                    </p>
                 </div>
-
-
-
-                <button type="button" @onclick="() => _isRescheduleModalOpen = false" class="text-slate-400 hover:text-slate-700">✕</button>
-
-
-
+                <button type="button" @onclick="() => _isRescheduleModalOpen = false" class="text-slate-400 hover:text-slate-700 text-sm font-bold p-1 rounded-lg hover:bg-slate-100">✕</button>
             </div>
 
-
-
-
-
-
-
-            <div class="p-3 bg-blue-50 border border-blue-200 rounded-xl text-xs text-blue-800 space-y-1">
-
-
-
-                <p><strong>Current Schedule:</strong> @_selectedNegotiation.ConsultationDate.ToString("ddd, MMM d, yyyy") at @_selectedNegotiation.ConsultationTime.ToString("h:mm tt")</p>
-
-
-
-                <p class="text-[11px] text-blue-600">Selecting a new date/time will update the Events Calendar and notify the client.</p>
-
-
-
+            @* Current Schedule Notice *@
+            <div class="p-3.5 bg-blue-50/70 border border-blue-200 rounded-xl text-xs text-blue-900 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
+                <div>
+                    <div class="font-semibold text-blue-950">Current Consultation Schedule</div>
+                    <div class="text-[11px] text-blue-700 mt-0.5">
+                        @_selectedNegotiation.ConsultationDate.ToString("dddd, MMMM d, yyyy") at @_selectedNegotiation.ConsultationTime.ToString("h:mm tt")
+                        @if (!string.IsNullOrWhiteSpace(_selectedNegotiation.EmployeeName))
+                        {
+                            <span>&bull; Assigned Concierge: <strong>@_selectedNegotiation.EmployeeName</strong></span>
+                        }
+                    </div>
+                </div>
+                <span class="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold bg-blue-100 text-blue-800 self-start sm:self-auto">
+                    Live Calendar Link
+                </span>
             </div>
-
-
-
-
-
-
 
             @if (!string.IsNullOrEmpty(_rescheduleError))
-
-
-
             {
-
-
-
-                <div class="p-2.5 bg-red-50 border border-red-200 rounded-lg text-xs text-red-700">
-
-
-
-                    @_rescheduleError
-
-
-
+                <div class="p-3 bg-red-50 border border-red-200 rounded-xl text-xs text-red-700 flex items-start gap-2">
+                    <span class="font-bold">⚠️</span>
+                    <div>@_rescheduleError</div>
                 </div>
-
-
-
             }
 
-
-
-
-
-
-
-            <div class="space-y-3 text-xs">
-
-
-
-                <div>
-
-
-
-                    <label class="block font-bold text-slate-700 mb-1">New Consultation Date *</label>
-
-
-
-                    <input type="date" @bind="_rescheduleDate" min="@DateTime.Today.ToString("yyyy-MM-dd")"
-
-
-
-                           class="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg font-medium" />
-
-
-
+            @* ── Section 1: Choose Office Clerk (Option A: Clerk First) ── *@
+            <div class="bg-slate-50 border border-slate-200/80 rounded-xl p-4 space-y-2">
+                <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-1">
+                    <label class="block text-xs font-bold text-slate-800 uppercase tracking-wider">
+                        Assigned Office Clerk *
+                    </label>
+                    <span class="text-[11px] text-slate-500">
+                        Select a clerk to check their working days, days off, and schedule availability.
+                    </span>
                 </div>
 
+                @if (_loadingRescheduleClerks)
+                {
+                    <div class="text-xs text-slate-500 py-1 flex items-center gap-2">
+                        <span class="animate-spin inline-block w-3.5 h-3.5 border-2 border-slate-400 border-t-transparent rounded-full"></span>
+                        Loading office clerks...
+                    </div>
+                }
+                else
+                {
+                    <select value="@_selectedRescheduleClerkId" @onchange="OnRescheduleClerkChanged"
+                            class="w-full px-3.5 py-2.5 bg-white border border-slate-300 rounded-lg text-xs font-semibold text-slate-900 focus:outline-none focus:ring-2 focus:ring-black">
+                        <option value="any">Any Available Office Clerk (Auto-assign available clerk)</option>
+                        @foreach (var clerk in _rescheduleClerks)
+                        {
+                            <option value="@clerk.EmployeeId">
+                                @clerk.FullName (@clerk.EmployeeId) — Days Off: @(string.IsNullOrWhiteSpace(clerk.DaysOff) ? "None" : clerk.DaysOff)
+                            </option>
+                        }
+                    </select>
 
-
-                <div>
-
-
-
-                    <label class="block font-bold text-slate-700 mb-1">New Consultation Time *</label>
-
-
-
-                    <input type="time" @bind="_rescheduleTime"
-
-
-
-                           class="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg font-medium" />
-
-
-
-                </div>
-
-
-
-                <div>
-
-
-
-                    <label class="block font-bold text-slate-700 mb-1">Reschedule Reason &amp; Client Notes</label>
-
-
-
-                    <textarea @bind="_rescheduleNotes" rows="2"
-
-
-
-                              class="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg"
-
-
-
-                              placeholder="Client requested weekend morning slot instead..."></textarea>
-
-
-
-                </div>
-
-
-
+                    @if (_selectedRescheduleClerkId != "any")
+                    {
+                        var cur = _rescheduleClerks.FirstOrDefault(c => c.EmployeeId.Equals(_selectedRescheduleClerkId, StringComparison.OrdinalIgnoreCase));
+                        if (cur != null)
+                        {
+                            <div class="flex items-center gap-2 text-[11px] text-slate-600 pt-0.5">
+                                <span class="inline-block w-2 h-2 rounded-full bg-emerald-500"></span>
+                                <span>Checking availability for <strong>@cur.FullName</strong> &bull; Scheduled Days Off: <strong>@(string.IsNullOrWhiteSpace(cur.DaysOff) ? "None" : cur.DaysOff)</strong></span>
+                            </div>
+                        }
+                    }
+                }
             </div>
 
+            @* ── Section 2: Choose Date & Time (2-Column Grid matching Booking Flow) ── *@
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-6 pt-1" data-testid="reschedule-datetime">
+                @* Left Column: Interactive Month Calendar *@
+                <div>
+                    <div class="flex items-center justify-between mb-3">
+                        <h4 class="text-xs font-bold text-slate-900 uppercase tracking-wider">
+                            @_rescheduleVisibleMonth.ToString("MMMM yyyy")
+                        </h4>
+                        <div class="flex items-center gap-1">
+                            <button type="button" @onclick="() => ChangeRescheduleMonthAsync(-1)" disabled="@_loadingRescheduleMonth"
+                                    class="px-2 py-0.5 rounded border border-slate-200 text-xs hover:bg-slate-100 disabled:opacity-40" aria-label="Previous month">‹</button>
+                            <button type="button" @onclick="() => ChangeRescheduleMonthAsync(1)" disabled="@_loadingRescheduleMonth"
+                                    class="px-2 py-0.5 rounded border border-slate-200 text-xs hover:bg-slate-100 disabled:opacity-40" aria-label="Next month">›</button>
+                        </div>
+                    </div>
 
+                    <div class="grid grid-cols-7 text-center text-[11px] font-semibold text-slate-400 mb-1">
+                        <span>Su</span><span>Mo</span><span>Tu</span><span>We</span><span>Th</span><span>Fr</span><span>Sa</span>
+                    </div>
 
+                    @if (_loadingRescheduleMonth)
+                    {
+                        <div class="py-12 flex flex-col items-center justify-center text-xs text-slate-500 gap-2">
+                            <span class="animate-spin inline-block w-5 h-5 border-2 border-slate-700 border-t-transparent rounded-full"></span>
+                            <span>Checking clerk availability…</span>
+                        </div>
+                    }
+                    else
+                    {
+                        <div class="grid grid-cols-7 gap-1">
+                            @for (var i = 0; i < RescheduleLeadingBlankDays(); i++)
+                            {
+                                <span class="h-9"></span>
+                            }
+                            @foreach (var day in _rescheduleMonthDays)
+                            {
+                                var date = day.Date;
+                                var isSelected = _selectedRescheduleDate.HasValue &&
+                                                 DateOnly.FromDateTime(_selectedRescheduleDate.Value) == date;
+                                var available = IsRescheduleDateAvailable(date);
 
+                                @if (available)
+                                {
+                                    <button type="button"
+                                            @onclick="() => SelectRescheduleDate(date)"
+                                            aria-label="@date.ToString("MMMM d, yyyy") - Available"
+                                            class="h-9 rounded-lg text-xs font-semibold transition cursor-pointer
+                                                   @(isSelected ? "bg-black text-white ring-2 ring-black ring-offset-1 font-bold"
+                                                     : "bg-emerald-50 text-emerald-900 border border-emerald-300 hover:bg-emerald-100")">
+                                        @date.Day
+                                    </button>
+                                }
+                                else
+                                {
+                                    <span style="pointer-events: none; opacity: 0.4;"
+                                          aria-disabled="true"
+                                          aria-label="@date.ToString("MMMM d, yyyy") - Unavailable"
+                                          class="h-9 rounded-lg text-xs font-semibold bg-slate-50 text-slate-300 flex items-center justify-center cursor-not-allowed">
+                                        @date.Day
+                                    </span>
+                                }
+                            }
+                        </div>
+                        <p class="mt-2.5 text-[11px] text-slate-500 flex items-center gap-2">
+                            <span class="inline-block w-2.5 h-2.5 rounded bg-emerald-100 border border-emerald-400"></span>
+                            Highlighted dates have open slots for the clerk.
+                        </p>
+                    }
+                </div>
 
+                @* Right Column: Time Slots *@
+                <div>
+                    <div class="flex items-center justify-between mb-1">
+                        <h4 class="text-xs font-bold text-slate-900 uppercase tracking-wider">Available Time Slots</h4>
+                        @if (_selectedRescheduleSlot.HasValue)
+                        {
+                            <span class="text-[11px] font-bold text-emerald-800 bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200">
+                                Selected: @DateTime.Today.Add(_selectedRescheduleSlot.Value).ToString("h:mm tt")
+                            </span>
+                        }
+                    </div>
+                    <p class="text-[11px] text-slate-500 mb-3">Morning: 9:00 AM – 11:00 AM • Afternoon: 1:00 PM – 5:00 PM</p>
 
+                    @if (!_selectedRescheduleDate.HasValue)
+                    {
+                        <div class="rounded-xl border border-dashed border-slate-300 p-6 text-center text-xs text-slate-500">
+                            Select a highlighted date on the calendar to view open slots.
+                        </div>
+                    }
+                    else if (_loadingRescheduleSlots)
+                    {
+                        <div class="py-12 flex flex-col items-center justify-center text-xs text-slate-500 gap-2">
+                            <span class="animate-spin inline-block w-5 h-5 border-2 border-slate-700 border-t-transparent rounded-full"></span>
+                            <span>Loading slots for @_selectedRescheduleDate.Value.ToString("MMM d, yyyy")…</span>
+                        </div>
+                    }
+                    else
+                    {
+                        var morning = _selectedRescheduleDaySlots.Where(s => SessionWindows.IsMorning(s.Start, s.End)).ToList();
+                        var afternoon = _selectedRescheduleDaySlots.Where(s => SessionWindows.IsAfternoon(s.Start, s.End)).ToList();
+                        var totalAvailable = morning.Count(s => s.IsAvailable) + afternoon.Count(s => s.IsAvailable);
 
-            <div class="flex justify-end gap-2 pt-2 border-t border-slate-100">
+                        @if (totalAvailable == 0)
+                        {
+                            <div class="rounded-xl border border-slate-200 bg-slate-50 p-6 text-center space-y-1">
+                                <div class="text-xs font-bold text-slate-700">No Available Slots</div>
+                                <p class="text-[11px] text-slate-500">No open slots for this clerk on the chosen date. Please select another day or choose another clerk.</p>
+                            </div>
+                        }
+                        else
+                        {
+                            @if (morning.Count > 0)
+                            {
+                                <div class="text-[10px] font-bold text-slate-700 uppercase tracking-wider mb-1.5">
+                                    Morning Sessions (9:00 AM – 11:00 AM)
+                                </div>
+                                <div class="grid grid-cols-2 gap-2 mb-3">
+                                    @foreach (var slot in morning)
+                                    {
+                                        var slotTimeSpan = slot.Start.ToTimeSpan();
+                                        var isChosen = _selectedRescheduleSlot == slotTimeSpan;
 
+                                        <button type="button"
+                                                disabled="@(!slot.IsAvailable)"
+                                                @onclick="() => SelectRescheduleSlot(slot)"
+                                                aria-pressed="@isChosen"
+                                                class="px-2.5 py-2 rounded-xl border text-xs font-semibold transition text-center flex items-center justify-center
+                                                       @(isChosen ? "bg-black text-white border-black font-bold shadow-xs"
+                                                         : slot.IsAvailable ? "bg-white text-slate-900 border-slate-200 hover:border-black hover:bg-slate-50"
+                                                         : "bg-slate-100 text-slate-400 border-slate-100 line-through cursor-not-allowed opacity-50")">
+                                            <div>@slot.Start.ToString("h:mm tt") – @slot.End.ToString("h:mm tt")</div>
+                                        </button>
+                                    }
+                                </div>
+                            }
 
+                            @if (afternoon.Count > 0)
+                            {
+                                <div class="text-[10px] font-bold text-slate-700 uppercase tracking-wider mb-1.5">
+                                    Afternoon Sessions (1:00 PM – 5:00 PM)
+                                </div>
+                                <div class="grid grid-cols-2 gap-2">
+                                    @foreach (var slot in afternoon)
+                                    {
+                                        var slotTimeSpan = slot.Start.ToTimeSpan();
+                                        var isChosen = _selectedRescheduleSlot == slotTimeSpan;
 
-                <button type="button" @onclick="() => _isRescheduleModalOpen = false" class="px-3 py-1.5 border border-slate-300 rounded-lg text-xs font-semibold text-slate-700">Cancel</button>
-
-
-
-                <button type="button" @onclick="ConfirmRescheduleAsync" disabled="@_submittingReschedule"
-
-
-
-                        class="px-4 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-xs font-bold transition-colors">
-
-
-
-                    @(_submittingReschedule ? "Updating Calendar..." : "Confirm & Update Calendar")
-
-
-
-                </button>
-
-
-
+                                        <button type="button"
+                                                disabled="@(!slot.IsAvailable)"
+                                                @onclick="() => SelectRescheduleSlot(slot)"
+                                                aria-pressed="@isChosen"
+                                                class="px-2.5 py-2 rounded-xl border text-xs font-semibold transition text-center flex items-center justify-center
+                                                       @(isChosen ? "bg-black text-white border-black font-bold shadow-xs"
+                                                         : slot.IsAvailable ? "bg-white text-slate-900 border-slate-200 hover:border-black hover:bg-slate-50"
+                                                         : "bg-slate-100 text-slate-400 border-slate-100 line-through cursor-not-allowed opacity-50")">
+                                            <div>@slot.Start.ToString("h:mm tt") – @slot.End.ToString("h:mm tt")</div>
+                                        </button>
+                                    }
+                                </div>
+                            }
+                        }
+                    }
+                </div>
             </div>
 
+            @* ── Section 3: Reschedule Reason & Client Notes ── *@
+            <div class="space-y-1.5 pt-1">
+                <label class="block text-xs font-bold text-slate-700">Reschedule Reason &amp; Client Notes (Optional)</label>
+                <textarea @bind="_rescheduleNotes" rows="2"
+                          class="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-xs focus:bg-white focus:outline-none focus:ring-1 focus:ring-black"
+                          placeholder="e.g., Client requested morning consultation, or adjusted for clerk availability..."></textarea>
+            </div>
 
+            @* ── Section 4: Live Confirmation Summary & Action Buttons ── *@
+            <div class="pt-3 border-t border-slate-100 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                <div class="text-xs text-slate-600">
+                    @if (_selectedRescheduleDate.HasValue && _selectedRescheduleSlot.HasValue)
+                    {
+                        <div>
+                            New Slot: <strong class="text-slate-900">@_selectedRescheduleDate.Value.ToString("ddd, MMM d, yyyy") at @DateTime.Today.Add(_selectedRescheduleSlot.Value).ToString("h:mm tt")</strong>
+                            @if (!string.IsNullOrWhiteSpace(_selectedRescheduleClerkName))
+                            {
+                                <span> &bull; Clerk: <strong class="text-slate-900">@_selectedRescheduleClerkName</strong></span>
+                            }
+                        </div>
+                    }
+                    else
+                    {
+                        <span class="text-amber-700 font-medium">Please select an open date and time slot above.</span>
+                    }
+                </div>
 
+                <div class="flex items-center justify-end gap-2 shrink-0">
+                    <button type="button" @onclick="() => _isRescheduleModalOpen = false"
+                            class="px-3.5 py-2 border border-slate-300 rounded-xl text-xs font-semibold text-slate-700 hover:bg-slate-50 transition-colors">
+                        Cancel
+                    </button>
+                    <button type="button" @onclick="ConfirmRescheduleAsync"
+                            disabled="@(_submittingReschedule || !_selectedRescheduleDate.HasValue || !_selectedRescheduleSlot.HasValue)"
+                            class="px-5 py-2 bg-black hover:bg-slate-800 disabled:opacity-40 text-white rounded-xl text-xs font-bold transition-colors shadow-xs">
+                        @(_submittingReschedule ? "Updating Calendar..." : "Confirm & Update Calendar")
+                    </button>
+                </div>
+            </div>
         </div>
-
-
-
     </div>
-
-
-
 }
-
-
-
-
-
-
-
-
-
-
-
-
 
 
 
@@ -3573,131 +3641,244 @@
 
 
 
-    private bool _isRescheduleModalOpen = false;
-
-
-
-    private DateTime _rescheduleDate = DateTime.Today.AddDays(1);
-
-
-
-    private DateTime _rescheduleTime = DateTime.Today.AddHours(10);
-
-
-
+        private bool _isRescheduleModalOpen = false;
+    private DateOnly _rescheduleVisibleMonth = DateOnly.FromDateTime(DateTime.Today);
+    private DateTime? _selectedRescheduleDate;
+    private TimeSpan? _selectedRescheduleSlot;
     private string _rescheduleNotes = string.Empty;
-
-
-
     private string? _rescheduleError;
-
-
-
     private bool _submittingReschedule = false;
+    private bool _loadingRescheduleClerks = false;
+    private bool _loadingRescheduleMonth = false;
+    private bool _loadingRescheduleSlots = false;
 
+    // Clerk Selection for Reschedule
+    private List<OfficeClerkOption> _rescheduleClerks = new();
+    private string _selectedRescheduleClerkId = "any";
+    private string _selectedRescheduleClerkName = string.Empty;
 
+    // Availability data for Reschedule
+    private IReadOnlyList<DayAvailability> _rescheduleMonthDays = [];
+    private List<SlotAvailability> _selectedRescheduleDaySlots = [];
 
-
-
-
-
-    private void OpenRescheduleModal()
-
-
-
+    private async Task OpenRescheduleModal()
     {
-
-
-
         if (_selectedNegotiation == null) return;
-
-
-
-        _rescheduleDate = _selectedNegotiation.ConsultationDate.ToDateTime(TimeOnly.MinValue);
-
-
-
-        if (_rescheduleDate < DateTime.Today) _rescheduleDate = DateTime.Today.AddDays(1);
-
-
-
-        _rescheduleTime = DateTime.Today.Add(_selectedNegotiation.ConsultationTime.ToTimeSpan());
-
-
-
-        _rescheduleNotes = string.Empty;
-
-
-
-        _rescheduleError = null;
-
-
 
         _isRescheduleModalOpen = true;
+        _rescheduleError = null;
+        _rescheduleNotes = string.Empty;
 
+        // 1. Load active office clerks
+        _loadingRescheduleClerks = true;
+        StateHasChanged();
+        try
+        {
+            var clerkRes = await ScheduleApi.GetOfficeClerksAsync();
+            if (clerkRes.IsSuccess && clerkRes.Value != null && clerkRes.Value.Count > 0)
+            {
+                _rescheduleClerks = clerkRes.Value.ToList();
+            }
+            else
+            {
+                // Fallback from _availableEmployees
+                _rescheduleClerks = _availableEmployees
+                    .Where(e => (e.Role ?? "").Contains("Clerk", StringComparison.OrdinalIgnoreCase) ||
+                                (e.Specializations != null && e.Specializations.Any(s => s.Contains("Clerk", StringComparison.OrdinalIgnoreCase))))
+                    .Select(e => new OfficeClerkOption(e.EmployeeId, e.FullName, e.DaysOffString))
+                    .ToList();
+            }
+        }
+        catch
+        {
+            _rescheduleClerks = [];
+        }
+        finally
+        {
+            _loadingRescheduleClerks = false;
+        }
 
+        // Set initial selected clerk: matching existing clerk if present, or first clerk, or any
+        var currentClerk = _rescheduleClerks.FirstOrDefault(c => c.EmployeeId.Equals(_selectedNegotiation.EmployeeId, StringComparison.OrdinalIgnoreCase));
+        if (currentClerk != null)
+        {
+            _selectedRescheduleClerkId = currentClerk.EmployeeId;
+            _selectedRescheduleClerkName = currentClerk.FullName;
+        }
+        else if (_rescheduleClerks.Count > 0)
+        {
+            _selectedRescheduleClerkId = _rescheduleClerks[0].EmployeeId;
+            _selectedRescheduleClerkName = _rescheduleClerks[0].FullName;
+        }
+        else
+        {
+            _selectedRescheduleClerkId = "any";
+            _selectedRescheduleClerkName = "Any Available Clerk";
+        }
 
+        // 2. Set visible month and initial date
+        var targetDate = _selectedNegotiation.ConsultationDate.ToDateTime(TimeOnly.MinValue);
+        if (targetDate < DateTime.Today)
+            targetDate = DateTime.Today.AddDays(1);
+
+        _rescheduleVisibleMonth = new DateOnly(targetDate.Year, targetDate.Month, 1);
+        _selectedRescheduleDate = targetDate;
+        _selectedRescheduleSlot = _selectedNegotiation.ConsultationTime.ToTimeSpan();
+
+        // 3. Load availability
+        await LoadRescheduleMonthAsync(_rescheduleVisibleMonth);
+        await LoadRescheduleDaySlotsAsync(DateOnly.FromDateTime(targetDate));
     }
 
+    private async Task OnRescheduleClerkChanged(ChangeEventArgs e)
+    {
+        _selectedRescheduleClerkId = e.Value?.ToString() ?? "any";
+        var matched = _rescheduleClerks.FirstOrDefault(c => c.EmployeeId.Equals(_selectedRescheduleClerkId, StringComparison.OrdinalIgnoreCase));
+        _selectedRescheduleClerkName = matched?.FullName ?? (_selectedRescheduleClerkId == "any" ? "Any Available Clerk" : string.Empty);
 
+        // Reload month and day slots for this clerk
+        await LoadRescheduleMonthAsync(_rescheduleVisibleMonth);
+        if (_selectedRescheduleDate.HasValue)
+        {
+            await LoadRescheduleDaySlotsAsync(DateOnly.FromDateTime(_selectedRescheduleDate.Value));
+        }
+    }
 
+    private async Task ChangeRescheduleMonthAsync(int delta)
+    {
+        _rescheduleVisibleMonth = _rescheduleVisibleMonth.AddMonths(delta);
+        await LoadRescheduleMonthAsync(_rescheduleVisibleMonth);
+    }
 
+    private async Task LoadRescheduleMonthAsync(DateOnly month)
+    {
+        _loadingRescheduleMonth = true;
+        StateHasChanged();
+        try
+        {
+            var clerkParam = _selectedRescheduleClerkId == "any" ? null : _selectedRescheduleClerkId;
+            var res = await ScheduleApi.GetAvailabilityAsync(month.Year, month.Month, clerkParam);
+            if (res.IsSuccess && res.Value != null)
+            {
+                _rescheduleMonthDays = res.Value.Days;
+            }
+            else
+            {
+                _rescheduleMonthDays = [];
+                _rescheduleError = res.Error?.Message ?? "Unable to load calendar availability.";
+            }
+        }
+        catch (Exception ex)
+        {
+            _rescheduleMonthDays = [];
+            _rescheduleError = ex.Message;
+        }
+        finally
+        {
+            _loadingRescheduleMonth = false;
+            StateHasChanged();
+        }
+    }
 
+    private async Task SelectRescheduleDate(DateOnly date)
+    {
+        _selectedRescheduleDate = date.ToDateTime(TimeOnly.MinValue);
+        _selectedRescheduleSlot = null; // Clear previous time slot when changing date
+        _rescheduleError = null;
+        await LoadRescheduleDaySlotsAsync(date);
+    }
 
+    private async Task LoadRescheduleDaySlotsAsync(DateOnly date)
+    {
+        _loadingRescheduleSlots = true;
+        StateHasChanged();
+        try
+        {
+            var clerkParam = _selectedRescheduleClerkId == "any" ? null : _selectedRescheduleClerkId;
+            var res = await ScheduleApi.GetDayAvailabilityAsync(date, clerkParam);
+            if (res.IsSuccess && res.Value != null)
+            {
+                _selectedRescheduleDaySlots = res.Value.Slots.ToList();
+            }
+            else
+            {
+                _selectedRescheduleDaySlots = [];
+            }
+        }
+        catch
+        {
+            _selectedRescheduleDaySlots = [];
+        }
+        finally
+        {
+            _loadingRescheduleSlots = false;
+            StateHasChanged();
+        }
+    }
+
+    private void SelectRescheduleSlot(SlotAvailability slot)
+    {
+        if (!slot.IsAvailable) return;
+        _selectedRescheduleSlot = slot.Start.ToTimeSpan();
+        _rescheduleError = null;
+    }
+
+    private int RescheduleLeadingBlankDays()
+    {
+        var first = new DateOnly(_rescheduleVisibleMonth.Year, _rescheduleVisibleMonth.Month, 1);
+        return (int)first.DayOfWeek;
+    }
+
+    private bool IsRescheduleDateAvailable(DateOnly date)
+    {
+        return _rescheduleMonthDays.FirstOrDefault(d => d.Date == date)?.HasAvailability == true;
+    }
 
     private async Task ConfirmRescheduleAsync()
-
-
-
     {
-
-
-
         if (_selectedNegotiation == null) return;
-
-
+        if (!_selectedRescheduleDate.HasValue || !_selectedRescheduleSlot.HasValue)
+        {
+            _rescheduleError = "Please select both an available date and a time slot on the calendar.";
+            return;
+        }
 
         _submittingReschedule = true;
-
-
-
         _rescheduleError = null;
 
-
-
         try
-
-
-
         {
-
-
-
             var res = await ConsultationApi.UpdateNegotiationOutcomeAsync(_selectedNegotiation.NegotiationId, new UpdateNegotiationOutcomeRequest
-
-
-
             {
-
-
-
                 NegotiationStatus = "Rescheduled",
-
-
-
                 Notes = string.IsNullOrWhiteSpace(_rescheduleNotes) ? "Consultation rescheduled by office clerk." : _rescheduleNotes,
-
-
-
-                NewConsultationDate = DateOnly.FromDateTime(_rescheduleDate),
-
-
-
-                NewConsultationTime = TimeOnly.FromDateTime(_rescheduleTime)
-
-
-
+                NewConsultationDate = DateOnly.FromDateTime(_selectedRescheduleDate.Value),
+                NewConsultationTime = TimeOnly.FromTimeSpan(_selectedRescheduleSlot.Value),
+                NewEmployeeId = _selectedRescheduleClerkId == "any" ? null : _selectedRescheduleClerkId,
+                NewEmployeeName = string.IsNullOrWhiteSpace(_selectedRescheduleClerkName) || _selectedRescheduleClerkName == "Any Available Clerk" ? null : _selectedRescheduleClerkName
             });
+
+            if (res.IsSuccess)
+            {
+                _isRescheduleModalOpen = false;
+                await LoadNegotiationsAsync();
+                _selectedNegotiation = _negotiations.FirstOrDefault(n => n.NegotiationId == _selectedNegotiation.NegotiationId);
+                await DisplayToast("Consultation rescheduled and notification email dispatched to client.");
+            }
+            else
+            {
+                _rescheduleError = res.Error?.Message ?? "Failed to reschedule consultation.";
+            }
+        }
+        catch (Exception ex)
+        {
+            _rescheduleError = ex.Message;
+        }
+        finally
+        {
+            _submittingReschedule = false;
+        }
+    });
 
 
 

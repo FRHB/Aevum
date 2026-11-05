@@ -246,6 +246,53 @@ public class EmailServiceFallbackTests
     }
 
     [Fact]
+    public async Task SendBookingConfirmationAsync_ExcludesPrices_AndIncludesNegotiationTerms()
+    {
+        // Arrange
+        var config = CreateTestConfig();
+        var primaryMock = new Mock<ISmtpClient>();
+        var clients = new Queue<ISmtpClient>(new[] { primaryMock.Object });
+
+        var service = new EmailService(
+            Options.Create(config),
+            NullLogger<EmailService>.Instance,
+            () => clients.Dequeue());
+
+        var booking = new BookingConfirmation(
+            AppointmentId: 43,
+            Customer: new BookingCustomer("John Doe", "john@example.com", "09123456789"),
+            Date: new DateOnly(2026, 11, 25),
+            SlotStart: new TimeOnly(14, 0),
+            SlotEnd: new TimeOnly(15, 0),
+            Services: new List<ScheduleServiceDto> { new ScheduleServiceDto("SRV-002", "Editorial Shoot", "Editorial Session", 4500m) },
+            TotalPrice: 4500m,
+            Platform: MeetingPlatform.GoogleMeet,
+            MeetingLink: "https://meet.google.com/xyz-uvw-rst",
+            EventLocation: "Studio B");
+
+        MimeMessage? sentMessage = null;
+        primaryMock.Setup(c => c.SendAsync(It.IsAny<MimeMessage>(), It.IsAny<CancellationToken>(), It.IsAny<ITransferProgress>()))
+            .Callback<MimeMessage, CancellationToken, ITransferProgress>((m, _, _) => sentMessage = m)
+            .ReturnsAsync("OK");
+
+        // Act
+        await service.SendBookingConfirmationAsync(booking);
+
+        // Assert
+        Assert.NotNull(sentMessage);
+        var htmlBody = sentMessage.HtmlBody;
+        Assert.NotNull(htmlBody);
+
+        // Must NOT contain price or currency symbols for initial consultation with booking negotiation
+        Assert.DoesNotContain("₱", htmlBody);
+        Assert.DoesNotContain("4500", htmlBody);
+
+        // Must display negotiation terms instead
+        Assert.Contains("For Negotiation", htmlBody);
+        Assert.Contains("To be finalized during consultation", htmlBody);
+    }
+
+    [Fact]
     public async Task SendEmployeeWelcomeEmailAsync_WithConfiguredPrimary_DispatchesThroughPrimary()
     {
         // Arrange

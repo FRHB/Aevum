@@ -28,6 +28,8 @@ public static class StudioSlots
 
 public sealed record ScheduleServiceDto(string ServicesId, string Name, string Description, decimal Price);
 
+public sealed record OfficeClerkDto(string EmployeeId, string FullName, string DaysOff);
+
 public sealed record SlotAvailabilityDto(TimeOnly Start, TimeOnly End, bool IsAvailable);
 
 public sealed record DayAvailabilityDto(DateOnly Date, IReadOnlyList<SlotAvailabilityDto> Slots);

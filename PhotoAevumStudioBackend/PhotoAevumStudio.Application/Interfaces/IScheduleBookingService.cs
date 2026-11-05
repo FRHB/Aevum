@@ -6,7 +6,9 @@ public interface IScheduleBookingService
 {
     Task<IReadOnlyList<ScheduleServiceDto>> GetServicesAsync(CancellationToken cancellationToken = default);
 
-    Task<MonthAvailabilityDto> GetMonthAvailabilityAsync(int year, int month, CancellationToken cancellationToken = default);
+    Task<IReadOnlyList<OfficeClerkDto>> GetOfficeClerksAsync(CancellationToken cancellationToken = default);
+
+    Task<MonthAvailabilityDto> GetMonthAvailabilityAsync(int year, int month, string? clerkId = null, CancellationToken cancellationToken = default);
 
     /// <summary>Mock link shown on the Confirm step; reused on booking if still valid.</summary>
     Task<MeetingLinkDto> PreviewMeetingLinkAsync(MeetingPlatform platform, DateOnly date, TimeOnly slotStart, CancellationToken cancellationToken = default);
@@ -22,7 +24,7 @@ public interface IScheduleBookingService
         BookingCustomer customer,
         CancellationToken cancellationToken = default);
 
-    Task<DayAvailabilityDto> GetDayAvailabilityAsync(DateOnly date, CancellationToken cancellationToken = default);
+    Task<DayAvailabilityDto> GetDayAvailabilityAsync(DateOnly date, string? clerkId = null, CancellationToken cancellationToken = default);
 
     Task<IReadOnlyList<MyBookingDto>> GetMyBookingsAsync(string customerId, CancellationToken cancellationToken = default);
 }

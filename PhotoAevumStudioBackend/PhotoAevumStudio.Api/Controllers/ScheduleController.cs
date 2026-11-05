@@ -18,16 +18,21 @@ public sealed class ScheduleController(IScheduleBookingService schedule, ILogger
     public async Task<ActionResult<IReadOnlyList<ScheduleServiceDto>>> GetServices(CancellationToken ct) =>
         Ok(await schedule.GetServicesAsync(ct));
 
+    [HttpGet("office-clerks")]
+    [AllowAnonymous]
+    public async Task<ActionResult<IReadOnlyList<OfficeClerkDto>>> GetOfficeClerks(CancellationToken ct) =>
+        Ok(await schedule.GetOfficeClerksAsync(ct));
+
     [HttpGet("availability")]
     [AllowAnonymous]
-    public Task<IActionResult> GetAvailability([FromQuery] int year, [FromQuery] int month, CancellationToken ct) =>
-        Handle(async () => Ok(await schedule.GetMonthAvailabilityAsync(year, month, ct)));
+    public Task<IActionResult> GetAvailability([FromQuery] int year, [FromQuery] int month, [FromQuery] string? clerkId, CancellationToken ct) =>
+        Handle(async () => Ok(await schedule.GetMonthAvailabilityAsync(year, month, clerkId, ct)));
 
     /// <summary>Open slots for one date, limited to the studio windows (9-11 AM, 1-5 PM).</summary>
     [HttpGet("availability/day")]
     [AllowAnonymous]
-    public Task<IActionResult> GetDayAvailability([FromQuery] DateOnly date, CancellationToken ct) =>
-        Handle(async () => Ok(await schedule.GetDayAvailabilityAsync(date, ct)));
+    public Task<IActionResult> GetDayAvailability([FromQuery] DateOnly date, [FromQuery] string? clerkId, CancellationToken ct) =>
+        Handle(async () => Ok(await schedule.GetDayAvailabilityAsync(date, clerkId, ct)));
 
     /// <summary>The signed-in customer's appointments (feeds Overview and Appointments pages).</summary>
     [HttpGet("my-bookings")]

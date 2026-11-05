@@ -12,6 +12,14 @@
 
 <div class="login-page-wrapper">
     <div class="login-card relative">
+        <!-- Close / Exit Button returning to Home Page -->
+        <a href="/" @onclick="NavigateToHome" class="login-exit-btn" aria-label="Exit to home" title="Exit to Home">
+            <svg xmlns="http://www.w3.org/2000/svg" class="exit-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <line x1="18" y1="6" x2="6" y2="18"></line>
+                <line x1="6" y1="6" x2="18" y2="18"></line>
+            </svg>
+        </a>
+
         <!-- Logo Section -->
         <div class="logo-wrapper">
             <img src="images/AevumLogo.jpg" alt="Aevum Studio Logo" class="aevum-logo" />
@@ -59,6 +67,15 @@
                 </div>
             }
 
+            <!-- Display success message if account was just created -->
+            @if (!string.IsNullOrEmpty(successMessage))
+            {
+                <div class="login-success-alert" role="status">
+                    <span class="alert-icon">✓</span>
+                    <span>@successMessage</span>
+                </div>
+            }
+
             <button type="submit" class="login-button" disabled="@isSubmitting">
                 @if (isSubmitting)
                 {
@@ -94,19 +111,34 @@
 <TermsModal @bind-IsOpen="showTermsModal" />
 
 <!-- Inline Registration Portal Modal for new client account creation -->
-<AuthPortalModal IsVisible="showRegisterModal" OnClose="() => showRegisterModal = false" InitialView="SignUp" />
+<AuthPortalModal IsVisible="showRegisterModal"
+                 OnClose="() => showRegisterModal = false"
+                 OnRegistered="HandleCustomerRegistered"
+                 InitialView="SignUp" />
 
 @code {
     private LoginCredentials loginModel = new LoginCredentials();
     private string errorMessage = "";
+    private string successMessage = "";
     private bool isSubmitting = false;
     private bool showTermsModal = false;
     private bool showRegisterModal = false;
+
+    private void HandleCustomerRegistered(string email)
+    {
+        showRegisterModal = false;
+        loginModel.UserId = email;
+        loginModel.Password = string.Empty;
+        errorMessage = string.Empty;
+        successMessage = "Account created successfully! You can now sign in with your email and password.";
+        StateHasChanged();
+    }
 
     private async Task HandleLogin()
     {
         isSubmitting = true;
         errorMessage = "";
+        successMessage = "";
         StateHasChanged();
 
         var result = await AuthService.LoginAsync(loginModel.UserId, loginModel.Password, CancellationToken.None);
@@ -148,6 +180,11 @@
         }
 
         isSubmitting = false;
+    }
+
+    private void NavigateToHome()
+    {
+        NavManager.NavigateTo("/");
     }
 
     public class LoginCredentials

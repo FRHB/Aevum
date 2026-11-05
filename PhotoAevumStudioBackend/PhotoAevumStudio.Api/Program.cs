@@ -239,8 +239,8 @@ builder.Services.Configure<PhotoAevumStudio.Application.Models.EmailConfig>(opti
     var primaryHost = builder.Configuration["EMAIL_CONFIG__PRIMARY__HOST"] ?? builder.Configuration["EMAIL_CONFIG:PRIMARY:HOST"] ?? builder.Configuration["EmailConfig:Primary:Host"] ?? builder.Configuration["GMAIL_SMTP_HOST"] ?? builder.Configuration["SMTP_HOST"];
     var primaryUser = builder.Configuration["EMAIL_CONFIG__PRIMARY__USERNAME"] ?? builder.Configuration["EMAIL_CONFIG:PRIMARY:USERNAME"] ?? builder.Configuration["EmailConfig:Primary:Username"] ?? builder.Configuration["GMAIL_SMTP_USER"] ?? builder.Configuration["SMTP_USER"] ?? builder.Configuration["SMTP_USERNAME"];
     var primaryPass = builder.Configuration["EMAIL_CONFIG__PRIMARY__PASSWORD"] ?? builder.Configuration["EMAIL_CONFIG:PRIMARY:PASSWORD"] ?? builder.Configuration["EmailConfig:Primary:Password"] ?? builder.Configuration["GMAIL_SMTP_PASSWORD"] ?? builder.Configuration["SMTP_PASSWORD"];
-    var primaryFrom = builder.Configuration["EMAIL_CONFIG__PRIMARY__FROM_EMAIL"] ?? builder.Configuration["EMAIL_CONFIG:PRIMARY:FROM_EMAIL"] ?? builder.Configuration["EmailConfig:Primary:FromEmail"] ?? builder.Configuration["GMAIL_FROM_EMAIL"] ?? builder.Configuration["SMTP_FROM_EMAIL"];
-    var primaryName = builder.Configuration["EMAIL_CONFIG__PRIMARY__FROM_NAME"] ?? builder.Configuration["EMAIL_CONFIG:PRIMARY:FROM_NAME"] ?? builder.Configuration["EmailConfig:Primary:FromName"] ?? builder.Configuration["GMAIL_FROM_NAME"] ?? builder.Configuration["SMTP_FROM_NAME"];
+    var primaryFrom = builder.Configuration["EMAIL_CONFIG__PRIMARY__FROM_EMAIL"] ?? builder.Configuration["EMAIL_CONFIG_PRIMARY_FROM_EMAIL"] ?? builder.Configuration["EMAIL_CONFIG:PRIMARY:FROM_EMAIL"] ?? builder.Configuration["EmailConfig:Primary:FromEmail"] ?? builder.Configuration["GMAIL_FROM_EMAIL"] ?? builder.Configuration["SMTP_FROM_EMAIL"];
+    var primaryName = builder.Configuration["EMAIL_CONFIG__PRIMARY__FROM_NAME"] ?? builder.Configuration["EMAIL_CONFIG_PRIMARY_FROM_NAME"] ?? builder.Configuration["EMAIL_CONFIG:PRIMARY:FROM_NAME"] ?? builder.Configuration["EmailConfig:Primary:FromName"] ?? builder.Configuration["GMAIL_FROM_NAME"] ?? builder.Configuration["SMTP_FROM_NAME"];
     var primaryPortStr = builder.Configuration["EMAIL_CONFIG__PRIMARY__PORT"] ?? builder.Configuration["EMAIL_CONFIG:PRIMARY:PORT"] ?? builder.Configuration["EmailConfig:Primary:Port"] ?? builder.Configuration["GMAIL_SMTP_PORT"] ?? builder.Configuration["SMTP_PORT"];
 
     if (!string.IsNullOrWhiteSpace(primaryHost)) options.Primary.Host = primaryHost;
@@ -249,7 +249,14 @@ builder.Services.Configure<PhotoAevumStudio.Application.Models.EmailConfig>(opti
     if (!string.IsNullOrWhiteSpace(primaryUser)) options.Primary.Username = primaryUser;
     if (!string.IsNullOrWhiteSpace(primaryPass)) options.Primary.Password = primaryPass;
     if (!string.IsNullOrWhiteSpace(primaryFrom)) options.Primary.FromEmail = primaryFrom;
+    else if (string.IsNullOrWhiteSpace(options.Primary.FromEmail) && !string.IsNullOrWhiteSpace(options.Primary.Username) && options.Primary.Username.Contains('@'))
+        options.Primary.FromEmail = options.Primary.Username;
+    else if (string.IsNullOrWhiteSpace(options.Primary.FromEmail))
+        options.Primary.FromEmail = "photoaevumstudio@gmail.com";
+
     if (!string.IsNullOrWhiteSpace(primaryName)) options.Primary.FromName = primaryName;
+    else if (string.IsNullOrWhiteSpace(options.Primary.FromName)) options.Primary.FromName = "Photo Aevum Studio";
+
     if (int.TryParse(primaryPortStr, out int pPort) && pPort > 0) options.Primary.Port = pPort;
     else if (options.Primary.Port <= 0) options.Primary.Port = 587;
 
@@ -267,11 +274,20 @@ builder.Services.Configure<PhotoAevumStudio.Application.Models.EmailConfig>(opti
     if (!string.IsNullOrWhiteSpace(mtUser)) options.Fallback.Username = mtUser;
     if (!string.IsNullOrWhiteSpace(mtPass)) options.Fallback.Password = mtPass;
     if (!string.IsNullOrWhiteSpace(mtFrom)) options.Fallback.FromEmail = mtFrom;
+    else if (string.IsNullOrWhiteSpace(options.Fallback.FromEmail) && !string.IsNullOrWhiteSpace(options.Fallback.Username) && options.Fallback.Username.Contains('@'))
+        options.Fallback.FromEmail = options.Fallback.Username;
+    else if (string.IsNullOrWhiteSpace(options.Fallback.FromEmail))
+        options.Fallback.FromEmail = "photoaevumstudio@gmail.com";
+
     if (!string.IsNullOrWhiteSpace(mtName)) options.Fallback.FromName = mtName;
+    else if (string.IsNullOrWhiteSpace(options.Fallback.FromName)) options.Fallback.FromName = "Photo Aevum Studio";
+
     if (int.TryParse(mtPortStr, out int mPort) && mPort > 0) options.Fallback.Port = mPort;
     else if (options.Fallback.Port <= 0) options.Fallback.Port = 587;
 });
-builder.Services.AddScoped<PhotoAevumStudio.Application.Interfaces.IEmailService, PhotoAevumStudio.Infrastructure.Services.EmailService>();
+builder.Services.AddScoped<PhotoAevumStudio.Infrastructure.Services.EmailService>();
+builder.Services.AddScoped<PhotoAevumStudio.Application.Interfaces.IEmailService>(sp => sp.GetRequiredService<PhotoAevumStudio.Infrastructure.Services.EmailService>());
+builder.Services.AddScoped<PhotoAevumStudio.Application.Interfaces.IBookingNotificationService>(sp => sp.GetRequiredService<PhotoAevumStudio.Infrastructure.Services.EmailService>());
 builder.Services.AddScoped<PhotoAevumStudio.Application.Interfaces.ISqlAuthService, PhotoAevumStudio.Infrastructure.Services.SqlAuthService>();
 builder.Services.AddScoped<PhotoAevumStudio.Application.Interfaces.IR2StorageService, PhotoAevumStudio.Infrastructure.Services.R2StorageService>();
 builder.Services.AddScoped<PhotoAevumStudio.Application.Interfaces.IDataArchiveService, PhotoAevumStudio.Infrastructure.Services.DataArchiveService>();
@@ -286,7 +302,6 @@ builder.Services.Configure<PhotoAevumStudio.Infrastructure.Scheduling.Scheduling
 builder.Services.AddSingleton(TimeProvider.System);
 builder.Services.AddScoped<IScheduleBookingService, PhotoAevumStudio.Infrastructure.Scheduling.ScheduleBookingService>();
 builder.Services.AddSingleton<IMeetingLinkService, PhotoAevumStudio.Infrastructure.Scheduling.MockMeetingLinkService>();
-builder.Services.AddScoped<IBookingNotificationService, PhotoAevumStudio.Infrastructure.Scheduling.BookingNotificationService>();
 
 // ═════════════════════════════════════════════════════════════════════════════
 

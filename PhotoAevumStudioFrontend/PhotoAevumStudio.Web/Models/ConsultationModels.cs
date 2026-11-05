@@ -40,6 +40,8 @@ public class UpdateNegotiationOutcomeRequest
     public string? Notes { get; set; }
     public DateOnly? NewConsultationDate { get; set; }
     public TimeOnly? NewConsultationTime { get; set; }
+    public string? NewEmployeeId { get; set; }
+    public string? NewEmployeeName { get; set; }
 }
 
 public class CreateEventAppointmentFromNegotiationRequest

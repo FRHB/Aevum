@@ -82,6 +82,17 @@ public class EmployeeManagementTests
         Assert.Equal(50, passwords.Count);
     }
 
+    [Theory]
+    [InlineData("Doe", 1995, "EMP-001", "Doe1995001")]
+    [InlineData("Dela Cruz", 2001, "EMP-042", "DelaCruz2001042")]
+    [InlineData("Vance", 1998, "CLK-007", "Vance1998007")]
+    public void GenerateInitialPassword_FormattedStyle_MatchesLastNameBirthYearEmployeeNumber(
+        string lastName, int birthYear, string employeeId, string expectedPassword)
+    {
+        var pwd = EmployeeCredentialGenerator.GenerateInitialPassword(lastName, birthYear, employeeId);
+        Assert.Equal(expectedPassword, pwd);
+    }
+
     // ══════════════════════════════════════════════════════════════════════════
     // 2. EMAIL SERVICE & WELCOME CREDENTIALS DISPATCH TESTS
     // ══════════════════════════════════════════════════════════════════════════
@@ -95,15 +106,17 @@ public class EmployeeManagementTests
             toEmail: "sarah.jenkins@photoaevum.com",
             employeeName: "Sarah Jenkins",
             employeeId: "EMP-007",
-            initialPassword: "PassW@rd!2026");
+            initialPassword: "Jenkins1995007",
+            assignedRole: "Wedding Photography");
 
         var captured = emailStub.SentEmails.FirstOrDefault(e => e.ToEmail == "sarah.jenkins@photoaevum.com");
         Assert.NotNull(captured);
         Assert.Equal("sarah.jenkins@photoaevum.com", captured.ToEmail);
         Assert.Contains("Welcome to Photo Aevum Studio", captured.Subject);
         Assert.Contains("Sarah Jenkins", captured.Body);
+        Assert.Contains("Wedding Photography", captured.Body);
         Assert.Contains("EMP-007", captured.Body);
-        Assert.Contains("PassW@rd!2026", captured.Body);
+        Assert.Contains("Jenkins1995007", captured.Body);
         Assert.Contains("Please change your password on first login", captured.Body);
     }
 
@@ -167,10 +180,12 @@ public class EmployeeManagementTests
             LastName = "Vance",
             MiddleName = "Alexander",
             Email = "marcus.vance@photoaevum.com",
+            BirthDate = new DateTime(1995, 6, 15),
+            Address = "123 Studio Way, Quezon City",
             Specializations = new List<string> { "Wedding Photography" },
             SelectedDaysOff = new List<string> { "Sunday", "Monday" },
             EmployeeId = "EMP-015",
-            Password = "SecurePassword!1"
+            Password = "Vance1995015"
         };
 
         var context = new ValidationContext(model);
@@ -180,6 +195,7 @@ public class EmployeeManagementTests
         Assert.True(isValid);
         Assert.Empty(results);
         Assert.Equal("Marcus Alexander Vance", model.FullName);
+        Assert.Equal(1995, model.BirthYear);
         Assert.Equal("Sunday,Monday", model.DaysOffString);
     }
 
@@ -191,6 +207,8 @@ public class EmployeeManagementTests
             FirstName = "",
             LastName = "",
             Email = "invalid-email-format",
+            BirthDate = null,
+            Address = "",
             Specializations = new List<string>(),
             EmployeeId = "",
             Password = ""
@@ -204,6 +222,8 @@ public class EmployeeManagementTests
         Assert.Contains(results, r => r.MemberNames.Contains(nameof(EmployeeRegistrationModel.FirstName)));
         Assert.Contains(results, r => r.MemberNames.Contains(nameof(EmployeeRegistrationModel.LastName)));
         Assert.Contains(results, r => r.MemberNames.Contains(nameof(EmployeeRegistrationModel.Email)));
+        Assert.Contains(results, r => r.MemberNames.Contains(nameof(EmployeeRegistrationModel.BirthDate)));
+        Assert.Contains(results, r => r.MemberNames.Contains(nameof(EmployeeRegistrationModel.Address)));
         Assert.Contains(results, r => r.MemberNames.Contains(nameof(EmployeeRegistrationModel.EmployeeId)));
         Assert.Contains(results, r => r.MemberNames.Contains(nameof(EmployeeRegistrationModel.Password)));
 

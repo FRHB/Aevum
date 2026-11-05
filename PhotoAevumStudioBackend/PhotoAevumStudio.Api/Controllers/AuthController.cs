@@ -51,11 +51,22 @@ public class AuthController : ControllerBase
         _logger.LogInformation("Verification code for {Email}: {Code}", request.Email, code);
 
         var htmlBody = PhotoAevumStudio.Infrastructure.Services.StudioEmailTemplates.EmailVerificationCode(request.Email, code, 10);
-        await _emailService.SendEmailAsync(
+        var sent = await _emailService.TrySendEmailAsync(
             request.Email,
             "Photo Aevum Studio – Your Verification Code",
             htmlBody,
             isHtml: true);
+
+        if (!sent)
+        {
+            _logger.LogWarning("Email delivery failed for verification code to {Email}", request.Email);
+            return StatusCode(StatusCodes.Status503ServiceUnavailable, new ProblemDetails
+            {
+                Title = "Email delivery service unavailable",
+                Detail = "Could not deliver the verification email at this time. Please verify email configuration or try again later.",
+                Status = StatusCodes.Status503ServiceUnavailable
+            });
+        }
 
         return Ok(new { Message = "Verification code sent." });
     }
@@ -84,11 +95,22 @@ public class AuthController : ControllerBase
         _logger.LogInformation("Password reset code for {Email}: {Code}", request.Email, code);
 
         var htmlBody = PhotoAevumStudio.Infrastructure.Services.StudioEmailTemplates.PasswordResetCode(request.Email, code, 10);
-        await _emailService.SendEmailAsync(
+        var sent = await _emailService.TrySendEmailAsync(
             request.Email,
             "Photo Aevum Studio – Password Reset Code",
             htmlBody,
             isHtml: true);
+
+        if (!sent)
+        {
+            _logger.LogWarning("Email delivery failed for password reset code to {Email}", request.Email);
+            return StatusCode(StatusCodes.Status503ServiceUnavailable, new ProblemDetails
+            {
+                Title = "Email delivery service unavailable",
+                Detail = "Could not deliver the password reset email at this time. Please try again later.",
+                Status = StatusCodes.Status503ServiceUnavailable
+            });
+        }
 
         return Ok(new { Message = "If an account with that email exists, a reset code was sent." });
     }
@@ -323,6 +345,12 @@ public class AuthController : ControllerBase
             var fullName = string.Join(" ", new[] { request.FirstName, request.MiddleName, request.LastName }
                 .Where(s => !string.IsNullOrWhiteSpace(s)));
 
+            var assignedRole = !string.IsNullOrWhiteSpace(request.AssignedRole)
+                ? request.AssignedRole.Trim()
+                : (request.Specializations is { Count: > 0 }
+                    ? string.Join(", ", request.Specializations.Where(s => !string.IsNullOrWhiteSpace(s)))
+                    : request.Role);
+
             try
             {
                 await _emailService.SendEmployeeWelcomeEmailAsync(
@@ -330,7 +358,8 @@ public class AuthController : ControllerBase
                     employeeName: string.IsNullOrWhiteSpace(fullName) ? request.Email : fullName,
                     employeeId: request.StudioId!,
                     initialPassword: request.Password,
-                    cancellationToken: HttpContext.RequestAborted);
+                    cancellationToken: HttpContext.RequestAborted,
+                    assignedRole: assignedRole);
             }
             catch (Exception ex)
             {

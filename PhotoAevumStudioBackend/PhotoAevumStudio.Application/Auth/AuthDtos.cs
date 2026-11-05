@@ -16,7 +16,14 @@ public record RegisterRequest(
     string Email,
     string Password,
     string Role,
-    string? StudioId = null);
+    string? StudioId = null,
+    string? AssignedRole = null,
+    IReadOnlyList<string>? Specializations = null,
+    string? Address = null,
+    int? BirthYear = null,
+    DateTime? BirthDate = null,
+    string? DepartmentId = null,
+    string? DaysOff = null);
 
 public record ChangePasswordRequest(string CurrentPassword, string NewPassword, string ConfirmPassword);
 

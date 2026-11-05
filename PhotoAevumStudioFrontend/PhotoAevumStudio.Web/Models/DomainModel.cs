@@ -23,9 +23,25 @@ public class EmployeeViewModel
     public string Email { get; set; } = string.Empty;
     public string Role { get; set; } = string.Empty;
     public string? Address { get; set; }
-    public int? BirthYear { get; set; }
+    public DateTime? BirthDate { get; set; }
+    private int? _birthYear;
+    public int? BirthYear
+    {
+        get => BirthDate?.Year ?? _birthYear;
+        set => _birthYear = value;
+    }
     public string? DepartmentId { get; set; }
-    public string? Department { get; set; }
+    private string? _department;
+    public string? Department
+    {
+        get => _department;
+        set => _department = value;
+    }
+    public string? DepartmentName
+    {
+        get => _department;
+        set => _department = value;
+    }
     public List<string> Specializations { get; set; } = new();
     public List<string> SelectedDaysOff { get; set; } = new() { "Sunday" };
     public string DaysOffString => SelectedDaysOff.Count > 0 ? string.Join(",", SelectedDaysOff) : "Sunday";
@@ -101,7 +117,8 @@ public record NewEmployeeRequest(
     string DaysOff = "Sunday",
     string? Address = null,
     int? BirthYear = null,
-    string? DepartmentId = null);
+    string? DepartmentId = null,
+    DateTime? BirthDate = null);
 
 public record SaveEmployeeResult(bool Success, string? Error = null);
 
@@ -130,10 +147,19 @@ public class EmployeePersonalModel
     [EmailAddress(ErrorMessage = "Enter a valid email address.")]
     public string Email { get; set; } = string.Empty;
 
+    [Required(ErrorMessage = "Enter the employee's address.")]
     [StringLength(500)]
     public string? Address { get; set; }
 
-    public int? BirthYear { get; set; }
+    [Required(ErrorMessage = "Select the employee's birth date.")]
+    public DateTime? BirthDate { get; set; }
+
+    private int? _birthYear;
+    public int? BirthYear
+    {
+        get => BirthDate?.Year ?? _birthYear;
+        set => _birthYear = value;
+    }
 
     public string? DepartmentId { get; set; }
 }
@@ -179,16 +205,43 @@ public class EmployeeRegistrationModel : IValidatableObject
     [Display(Name = "Employee Email")]
     public string Email { get; set; } = string.Empty;
 
+    [Required(ErrorMessage = "Home address is required.")]
     [StringLength(500, ErrorMessage = "Address cannot exceed 500 characters.")]
     [Display(Name = "Home Address")]
     public string? Address { get; set; }
 
+    [Required(ErrorMessage = "Birth date is required.")]
+    [Display(Name = "Birth Date")]
+    public DateTime? BirthDate { get; set; }
+
+    private int? _birthYear;
     [Range(1900, 2026, ErrorMessage = "Please enter a valid birth year.")]
     [Display(Name = "Birth Year")]
-    public int? BirthYear { get; set; }
+    public int? BirthYear
+    {
+        get => BirthDate?.Year ?? _birthYear;
+        set
+        {
+            _birthYear = value;
+            if (value.HasValue && !BirthDate.HasValue && value.Value is >= 1900 and <= 2100)
+            {
+                BirthDate = new DateTime(value.Value, 1, 1);
+            }
+        }
+    }
 
     public string? DepartmentId { get; set; }
-    public string? DepartmentName { get; set; }
+    private string? _regDeptName;
+    public string? DepartmentName
+    {
+        get => _regDeptName;
+        set => _regDeptName = value;
+    }
+    public string? Department
+    {
+        get => _regDeptName;
+        set => _regDeptName = value;
+    }
 
     // Step 2: Specializations
     public List<string> Specializations { get; set; } = new();
