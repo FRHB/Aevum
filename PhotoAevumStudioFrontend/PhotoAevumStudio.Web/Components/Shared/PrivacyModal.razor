@@ -1,0 +1,341 @@
+@* =====================================================================
+   PrivacyModal.razor — Photo Aevum Studio Privacy Policy Modal
+   
+   Aesthetic: Ultra-minimalist, high contrast, sharp typography,
+   clean structural borders, dark accents matching Photo Aevum Studio.
+   ===================================================================== *@
+
+@implements IDisposable
+@inject IJSRuntime JS
+
+@if (IsOpen)
+{
+    @* ── Modal Overlay Container ────────────────────────────────────────────── *@
+    <div class="fixed inset-0 z-[300] flex items-center justify-center p-4 sm:p-6 md:p-10 overflow-hidden"
+         role="dialog"
+         aria-modal="true"
+         aria-labelledby="privacy-modal-title"
+         @onkeydown="HandleKeyDown">
+
+        @* ── Backdrop blur and dark overlay ─────────────────────────────────── *@
+        <div class="fixed inset-0 bg-black/75 backdrop-blur-sm transition-opacity animate-fade-in"
+             @onclick="CloseAsync"
+             aria-hidden="true"></div>
+
+        @* ── Modal Dialog Panel ─────────────────────────────────────────────── *@
+        <div class="relative w-full max-w-3xl bg-white border border-gray-200 shadow-2xl flex flex-col max-h-[90vh] rounded-none z-10 overflow-hidden text-slate-900 transition-all">
+
+            @* ── Header Bar ─────────────────────────────────────────────────── *@
+            <header class="px-6 py-5 border-b border-gray-200 bg-[#FAF9F6] flex items-start justify-between gap-4 shrink-0">
+                <div class="space-y-1">
+                    <div class="inline-flex items-center gap-2 px-2.5 py-0.5 bg-black text-white text-[10px] font-semibold uppercase tracking-widest rounded-none">
+                        <span>Legal Agreement</span>
+                    </div>
+                    <h2 id="privacy-modal-title" class="text-xl sm:text-2xl font-bold tracking-tight uppercase tracking-widest text-black pt-1">
+                        Privacy Policy
+                    </h2>
+                    <div class="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-gray-500 font-light">
+                        <span>Effective: <strong class="font-medium text-gray-800">@EffectiveDate</strong></span>
+                        <span class="text-gray-300">•</span>
+                        <span>Last Updated: <strong class="font-medium text-gray-800">@LastUpdated</strong></span>
+                    </div>
+                </div>
+
+                @* Close 'X' Button *@
+                <button type="button"
+                        @onclick="CloseAsync"
+                        class="p-2 border border-transparent hover:border-gray-300 text-gray-400 hover:text-black hover:bg-white rounded-none transition-all duration-150 focus:outline-none focus:ring-1 focus:ring-black"
+                        aria-label="Close Privacy Policy">
+                    <svg class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <line x1="18" y1="6" x2="6" y2="18"></line>
+                        <line x1="6" y1="6" x2="18" y2="18"></line>
+                    </svg>
+                </button>
+            </header>
+
+            @* ── Scrollable Body Content ────────────────────────────────────── *@
+            <div id="privacy-scroll-body" class="p-6 sm:p-8 overflow-y-auto flex-1 space-y-8 divide-y divide-gray-100 text-sm leading-relaxed font-light text-gray-600">
+
+                @* Preamble / Introduction *@
+                <div class="space-y-3">
+                    <p class="text-base text-gray-900 font-normal leading-relaxed">
+                        At <span class="font-bold uppercase tracking-wider text-black">Photo Aevum Studio</span>, we respect your artistic vision and personal privacy. This policy outlines our uncompromising commitment to protecting your personal information, booking details, and visual media assets from capture to final delivery.
+                    </p>
+                    <p class="text-xs text-gray-500 italic">
+                        Please review this privacy policy thoroughly. By registering an account, reserving studio services, or browsing our portfolios, you acknowledge and agree to our data handling practices.
+                    </p>
+                </div>
+
+                @* SECTION 1: Information We Collect *@
+                <section class="pt-6 space-y-4">
+                    <div class="flex items-center gap-2">
+                        <span class="px-2 py-0.5 bg-gray-900 text-white text-[11px] font-mono font-bold tracking-wider">01</span>
+                        <h3 class="text-base font-bold uppercase tracking-widest text-black">Information We Collect</h3>
+                    </div>
+
+                    <div class="space-y-3 text-xs sm:text-sm">
+                        <div class="border-l-2 border-black pl-3.5 py-0.5 space-y-1">
+                            <h4 class="font-semibold text-gray-900 uppercase tracking-wider text-xs">1.1 Client Identification &amp; Contact</h4>
+                            <p>
+                                Full legal name, email address, mobile phone number, and physical mailing address (for physical fine-art print deliveries or on-location shoot arrangements).
+                            </p>
+                        </div>
+
+                        <div class="border-l-2 border-black pl-3.5 py-0.5 space-y-1">
+                            <h4 class="font-semibold text-gray-900 uppercase tracking-wider text-xs">1.2 Booking Logistics &amp; Preferences</h4>
+                            <p>
+                                Desired appointment date and time slots, session package preferences, shoot venue or studio bay selections, creative mood boards, and aesthetic shot lists.
+                            </p>
+                        </div>
+
+                        <div class="border-l-2 border-black pl-3.5 py-0.5 space-y-1">
+                            <h4 class="font-semibold text-gray-900 uppercase tracking-wider text-xs">1.3 Visual Media Assets</h4>
+                            <p>
+                                High-resolution RAW camera files, proof contact sheets, retouching notes, client favorite selections, and finalized color-graded digital master photographs.
+                            </p>
+                        </div>
+
+                        <div class="border-l-2 border-black pl-3.5 py-0.5 space-y-1">
+                            <h4 class="font-semibold text-gray-900 uppercase tracking-wider text-xs">1.4 Billing &amp; Transaction Details</h4>
+                            <p>
+                                Transaction reference IDs, deposit amounts, and invoice statuses. Payment processing is tokenized directly via PCI-DSS certified gateways—our servers never store raw credit card numbers.
+                            </p>
+                        </div>
+                    </div>
+                </section>
+
+                @* SECTION 2: How We Use Your Information *@
+                <section class="pt-6 space-y-4">
+                    <div class="flex items-center gap-2">
+                        <span class="px-2 py-0.5 bg-gray-900 text-white text-[11px] font-mono font-bold tracking-wider">02</span>
+                        <h3 class="text-base font-bold uppercase tracking-widest text-black">How We Use Your Information</h3>
+                    </div>
+
+                    <div class="space-y-3 text-xs sm:text-sm">
+                        <div class="border-l-2 border-black pl-3.5 py-0.5 space-y-1">
+                            <h4 class="font-semibold text-gray-900 uppercase tracking-wider text-xs">2.1 Appointment Management &amp; Staff Scheduling</h4>
+                            <p>
+                                Reserving studio bays, assigning dedicated photographers, scheduling pre-shoot creative consultations, and preventing double-booking conflicts across studio equipment and rooms.
+                            </p>
+                        </div>
+
+                        <div class="border-l-2 border-black pl-3.5 py-0.5 space-y-1">
+                            <h4 class="font-semibold text-gray-900 uppercase tracking-wider text-xs">2.2 Private Client Gallery Delivery</h4>
+                            <p>
+                                Generating authenticated, password-protected private gallery portals where you can securely preview unedited proofs, favorite selections for retouching, and download full-resolution master files.
+                            </p>
+                        </div>
+
+                        <div class="border-l-2 border-black pl-3.5 py-0.5 space-y-1">
+                            <h4 class="font-semibold text-gray-900 uppercase tracking-wider text-xs">2.3 Customer Support &amp; Studio Alerts</h4>
+                            <p>
+                                Sending transactional booking confirmations, digital invoices, verification codes, gallery readiness notifications, and important schedule updates.
+                            </p>
+                        </div>
+                    </div>
+                </section>
+
+                @* SECTION 3: Media Rights & Photography Portfolios *@
+                <section class="pt-6 space-y-4">
+                    <div class="flex items-center gap-2">
+                        <span class="px-2 py-0.5 bg-gray-900 text-white text-[11px] font-mono font-bold tracking-wider">03</span>
+                        <h3 class="text-base font-bold uppercase tracking-widest text-black">Media Rights &amp; Photography Portfolios</h3>
+                    </div>
+
+                    <div class="space-y-3 text-xs sm:text-sm">
+                        <div class="p-4 bg-slate-900 text-white rounded-none space-y-1.5">
+                            <h4 class="font-bold uppercase tracking-wider text-xs text-amber-400">Zero Portfolio Surprises Policy</h4>
+                            <p class="text-xs text-slate-300 font-light leading-relaxed">
+                                We never publish, display, or share client photographs on our public website, social media, or marketing materials without your explicit, voluntary written consent or a signed Model Release agreement. Your session stays 100% private by default.
+                            </p>
+                        </div>
+
+                        <div class="border-l-2 border-black pl-3.5 py-0.5 space-y-1">
+                            <h4 class="font-semibold text-gray-900 uppercase tracking-wider text-xs">3.1 Private Closed-Set Sessions</h4>
+                            <p>
+                                All portrait, commercial, and personal shoots operate in private closed-set environments. Unauthorized staff or third-party visitors are strictly prohibited during your session.
+                            </p>
+                        </div>
+
+                        <div class="border-l-2 border-black pl-3.5 py-0.5 space-y-1">
+                            <h4 class="font-semibold text-gray-900 uppercase tracking-wider text-xs">3.2 Optional Portfolio Showcase</h4>
+                            <p>
+                                Clients who wish to have their editorial portraits featured in our curated public showcase may choose to sign an opt-in release. You retain the absolute right to revoke this consent at any point in the future.
+                            </p>
+                        </div>
+                    </div>
+                </section>
+
+                @* SECTION 4: Data Protection, Storage & Security *@
+                <section class="pt-6 space-y-4">
+                    <div class="flex items-center gap-2">
+                        <span class="px-2 py-0.5 bg-gray-900 text-white text-[11px] font-mono font-bold tracking-wider">04</span>
+                        <h3 class="text-base font-bold uppercase tracking-widest text-black">Data Protection, Storage &amp; Security</h3>
+                    </div>
+
+                    <div class="space-y-3 text-xs sm:text-sm">
+                        <div class="border-l-2 border-black pl-3.5 py-0.5 space-y-1">
+                            <h4 class="font-semibold text-gray-900 uppercase tracking-wider text-xs">4.1 Encrypted Cloudflare R2 Storage</h4>
+                            <p>
+                                Your full-resolution digital negatives, retouch proofs, and delivered master photographs are hosted in encrypted Cloudflare R2 object storage with strict role-based access control.
+                            </p>
+                        </div>
+
+                        <div class="border-l-2 border-black pl-3.5 py-0.5 space-y-1">
+                            <h4 class="font-semibold text-gray-900 uppercase tracking-wider text-xs">4.2 Account Protection &amp; Session Inactivity</h4>
+                            <p>
+                                User passwords are cryptographically salted and hashed using BCrypt. Authenticated client sessions enforce dual-tier 15-minute inactivity timeouts to safeguard your account.
+                            </p>
+                        </div>
+                    </div>
+                </section>
+
+                @* SECTION 5: Your Privacy Rights *@
+                <section class="pt-6 space-y-4">
+                    <div class="flex items-center gap-2">
+                        <span class="px-2 py-0.5 bg-gray-900 text-white text-[11px] font-mono font-bold tracking-wider">05</span>
+                        <h3 class="text-base font-bold uppercase tracking-widest text-black">Your Privacy Rights &amp; Inquiries</h3>
+                    </div>
+
+                    <div class="space-y-3 text-xs sm:text-sm">
+                        <p>
+                            You have the right to request access to your stored personal information, request correction of any inaccuracies, download your delivered media assets, or request account deletion.
+                        </p>
+                        <p>
+                            To exercise your data privacy rights, email our Data Protection Officer at <a href="mailto:photoaevumstudio@gmail.com" class="text-black font-semibold underline underline-offset-2">photoaevumstudio@gmail.com</a>.
+                        </p>
+                    </div>
+                </section>
+            </div>
+
+            @* ── Footer / Action Bar ────────────────────────────────────────── *@
+            <footer class="px-6 py-4 bg-gray-50 border-t border-gray-200 flex flex-col sm:flex-row items-center justify-between gap-4 shrink-0">
+                <div class="text-xs text-gray-500 font-light text-center sm:text-left">
+                    Questions about our privacy policy? Contact <a href="mailto:photoaevumstudio@gmail.com" class="text-black font-medium underline underline-offset-2 hover:text-gray-700">photoaevumstudio@gmail.com</a>
+                </div>
+
+                <div class="flex items-center gap-3 w-full sm:w-auto justify-end">
+                    <button type="button"
+                            @onclick="CloseAsync"
+                            class="flex-1 sm:flex-initial px-6 py-2.5 bg-white hover:bg-gray-100 text-gray-800 border border-gray-300 rounded-none font-medium text-xs uppercase tracking-wider transition-colors">
+                        Close
+                    </button>
+
+                    @if (ShowAgreeButton)
+                    {
+                        @if (_hasScrolledToEnd)
+                        {
+                            <button type="button"
+                                    @onclick="AgreeAsync"
+                                    class="flex-1 sm:flex-initial px-8 py-2.5 bg-black hover:bg-gray-800 text-white border border-black rounded-none font-bold text-xs uppercase tracking-wider transition-all duration-300 shadow-md flex items-center justify-center gap-1.5 cursor-pointer ring-2 ring-black/20">
+                                <svg class="w-3.5 h-3.5 text-white" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                                    <polyline points="20 6 9 17 4 12"></polyline>
+                                </svg>
+                                <span>I Agree</span>
+                            </button>
+                        }
+                        else
+                        {
+                            <div class="flex items-center gap-2">
+                                <span class="text-[11px] text-gray-400 italic hidden sm:inline">Scroll to bottom to agree</span>
+                                <button type="button"
+                                        disabled
+                                        class="flex-1 sm:flex-initial px-8 py-2.5 bg-gray-200 text-gray-400 border border-gray-200 rounded-none font-medium text-xs uppercase tracking-wider cursor-not-allowed opacity-60 flex items-center justify-center gap-1.5">
+                                    <svg class="w-3.5 h-3.5 text-gray-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                        <polyline points="20 6 9 17 4 12"></polyline>
+                                    </svg>
+                                    <span>I Agree (Scroll Down)</span>
+                                </button>
+                            </div>
+                        }
+                    }
+                </div>
+            </footer>
+        </div>
+    </div>
+}
+
+@code {
+    [Parameter]
+    public bool IsOpen { get; set; } = false;
+
+    [Parameter]
+    public EventCallback<bool> IsOpenChanged { get; set; }
+
+    [Parameter]
+    public EventCallback OnClose { get; set; }
+
+    [Parameter]
+    public EventCallback OnAgree { get; set; }
+
+    [Parameter]
+    public bool ShowAgreeButton { get; set; } = true;
+
+    [Parameter]
+    public string LastUpdated { get; set; } = "October 24, 2026";
+
+    [Parameter]
+    public string EffectiveDate { get; set; } = "January 1, 2026";
+
+    private DotNetObjectReference<PrivacyModal>? _dotNetRef;
+    private bool _hasScrolledToEnd = false;
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (IsOpen && !_hasScrolledToEnd)
+        {
+            try
+            {
+                _dotNetRef ??= DotNetObjectReference.Create(this);
+                await JS.InvokeVoidAsync("aevumScrollHelper.observeScrollToEnd", "privacy-scroll-body", _dotNetRef);
+            }
+            catch
+            {
+                // Fallback gracefully: if JS interop fails, enable agreement
+                _hasScrolledToEnd = true;
+                StateHasChanged();
+            }
+        }
+    }
+
+    [JSInvokable]
+    public void OnScrolledToEnd()
+    {
+        _hasScrolledToEnd = true;
+        StateHasChanged();
+    }
+
+    private async Task CloseAsync()
+    {
+        IsOpen = false;
+        await IsOpenChanged.InvokeAsync(false);
+        if (OnClose.HasDelegate)
+        {
+            await OnClose.InvokeAsync();
+        }
+    }
+
+    private async Task AgreeAsync()
+    {
+        if (!_hasScrolledToEnd) return;
+
+        if (OnAgree.HasDelegate)
+        {
+            await OnAgree.InvokeAsync();
+        }
+        await CloseAsync();
+    }
+
+    private async Task HandleKeyDown(KeyboardEventArgs e)
+    {
+        if (e.Key == "Escape")
+        {
+            await CloseAsync();
+        }
+    }
+
+    public void Dispose()
+    {
+        _dotNetRef?.Dispose();
+    }
+}

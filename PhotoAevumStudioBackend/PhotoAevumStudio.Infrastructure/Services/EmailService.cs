@@ -1,7 +1,9 @@
 using System.Net;
 using MailKit.Net.Smtp;
 using MailKit.Security;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using MimeKit;
 using PhotoAevumStudio.Application.Interfaces;
@@ -16,7 +18,11 @@ public class EmailService : IEmailService, IBookingNotificationService
     private readonly ILogger<EmailService> _logger;
     private readonly Func<ISmtpClient> _smtpClientFactory;
 
+    public EmailServerSettings Primary => _emailConfig.Primary;
+    public EmailServerSettings Fallback => _emailConfig.Fallback;
+
     // Primary constructor used by Dependency Injection
+    [ActivatorUtilitiesConstructor]
     public EmailService(IOptions<EmailConfig> emailConfig, ILogger<EmailService> logger)
         : this(emailConfig, logger, () => new SmtpClient())
     {
@@ -25,15 +31,219 @@ public class EmailService : IEmailService, IBookingNotificationService
     // Factory-injected constructor for testing EmailConfig & failover behavior
     public EmailService(IOptions<EmailConfig> emailConfig, ILogger<EmailService> logger, Func<ISmtpClient> smtpClientFactory)
     {
-        _emailConfig = emailConfig?.Value ?? new EmailConfig();
-        _logger = logger;
+        ArgumentNullException.ThrowIfNull(emailConfig);
+        _logger = logger ?? NullLogger<EmailService>.Instance;
         _smtpClientFactory = smtpClientFactory ?? (() => new SmtpClient());
+
+        var config = emailConfig.Value ?? new EmailConfig();
+        _emailConfig = new EmailConfig
+        {
+            Primary = CloneSettings(config.Primary),
+            Fallback = CloneSettings(config.Fallback)
+        };
+
+        ApplyEnvironmentVariables(_emailConfig);
     }
 
-    // Backward-compatibility constructor for unit tests injecting mock SmtpClient with legacy SmtpSettings
-    public EmailService(IOptions<SmtpSettings> smtpSettings, ILogger<EmailService> logger, Func<ISmtpClient> smtpClientFactory)
-        : this(Options.Create(new EmailConfig { Primary = smtpSettings?.Value ?? new SmtpSettings() }), logger, smtpClientFactory)
+    private static EmailServerSettings CloneSettings(EmailServerSettings? source)
     {
+        if (source == null) return new EmailServerSettings();
+        return new EmailServerSettings
+        {
+            Host = source.Host,
+            Port = source.Port,
+            Username = source.Username,
+            Password = source.Password,
+            FromName = source.FromName,
+            FromEmail = source.FromEmail,
+            EnableSsl = source.EnableSsl
+        };
+    }
+
+    private static string? GetEnv(params string[] variableNames)
+    {
+        foreach (var name in variableNames)
+        {
+            var value = Environment.GetEnvironmentVariable(name);
+            if (!string.IsNullOrWhiteSpace(value))
+                return value.Trim();
+
+            // Case-insensitive lookup across process environment variables
+            foreach (System.Collections.DictionaryEntry entry in Environment.GetEnvironmentVariables())
+            {
+                if (string.Equals(entry.Key?.ToString(), name, StringComparison.OrdinalIgnoreCase))
+                {
+                    var val = entry.Value?.ToString();
+                    if (!string.IsNullOrWhiteSpace(val))
+                        return val.Trim();
+                }
+            }
+        }
+
+        return null;
+    }
+
+    private static void ApplyEnvironmentVariables(EmailConfig config)
+    {
+        config.Primary ??= new EmailServerSettings();
+        config.Fallback ??= new EmailServerSettings();
+
+        // 1. Primary SMTP (Gmail)
+        var primaryHost = GetEnv(
+            "EMAIL_CONFIG__PRIMARY__HOST",
+            "EMAIL_CONFIG:PRIMARY:HOST",
+            "EmailConfig__Primary__Host",
+            "GMAIL_SMTP_HOST",
+            "GMAIL_HOST",
+            "SMTP_HOST");
+        if (!string.IsNullOrWhiteSpace(primaryHost))
+            config.Primary.Host = primaryHost;
+        else if (string.IsNullOrWhiteSpace(config.Primary.Host))
+            config.Primary.Host = "smtp.gmail.com";
+
+        var primaryPortStr = GetEnv(
+            "EMAIL_CONFIG__PRIMARY__PORT",
+            "EMAIL_CONFIG:PRIMARY:PORT",
+            "EmailConfig__Primary__Port",
+            "GMAIL_SMTP_PORT",
+            "GMAIL_PORT",
+            "SMTP_PORT");
+        if (int.TryParse(primaryPortStr, out var primaryPort) && primaryPort > 0)
+            config.Primary.Port = primaryPort;
+        else if (config.Primary.Port <= 0)
+            config.Primary.Port = 587;
+
+        var primaryUser = GetEnv(
+            "EMAIL_CONFIG__PRIMARY__USERNAME",
+            "EMAIL_CONFIG:PRIMARY:USERNAME",
+            "EmailConfig__Primary__Username",
+            "EMAIL_CONFIG__PRIMARY__USER",
+            "GMAIL_SMTP_USER",
+            "GMAIL_SMTP_USERNAME",
+            "GMAIL_USERNAME",
+            "GMAIL_USER",
+            "SMTP_USERNAME",
+            "SMTP_USER");
+        if (!string.IsNullOrWhiteSpace(primaryUser))
+            config.Primary.Username = primaryUser;
+
+        var primaryPass = GetEnv(
+            "EMAIL_CONFIG__PRIMARY__PASSWORD",
+            "EMAIL_CONFIG:PRIMARY:PASSWORD",
+            "EmailConfig__Primary__Password",
+            "EMAIL_CONFIG__PRIMARY__PASS",
+            "GMAIL_SMTP_PASSWORD",
+            "GMAIL_PASSWORD",
+            "GMAIL_APP_PASSWORD",
+            "SMTP_PASSWORD");
+        if (!string.IsNullOrWhiteSpace(primaryPass))
+            config.Primary.Password = primaryPass;
+
+        var primaryFromName = GetEnv(
+            "EMAIL_CONFIG__PRIMARY__FROM_NAME",
+            "EMAIL_CONFIG__PRIMARY__FROMNAME",
+            "EMAIL_CONFIG:PRIMARY:FROM_NAME",
+            "EMAIL_CONFIG:PRIMARY:FROMNAME",
+            "EmailConfig__Primary__FromName",
+            "GMAIL_FROM_NAME",
+            "SMTP_FROM_NAME");
+        if (!string.IsNullOrWhiteSpace(primaryFromName))
+            config.Primary.FromName = primaryFromName;
+
+        var primaryFromEmail = GetEnv(
+            "EMAIL_CONFIG__PRIMARY__FROM_EMAIL",
+            "EMAIL_CONFIG__PRIMARY__FROMEMAIL",
+            "EMAIL_CONFIG:PRIMARY:FROM_EMAIL",
+            "EMAIL_CONFIG:PRIMARY:FROMEMAIL",
+            "EmailConfig__Primary__FromEmail",
+            "GMAIL_FROM_EMAIL",
+            "SMTP_FROM_EMAIL");
+        if (!string.IsNullOrWhiteSpace(primaryFromEmail))
+            config.Primary.FromEmail = primaryFromEmail;
+
+        var primarySslStr = GetEnv(
+            "EMAIL_CONFIG__PRIMARY__ENABLE_SSL",
+            "EMAIL_CONFIG__PRIMARY__ENABLESSL",
+            "EMAIL_CONFIG:PRIMARY:ENABLE_SSL",
+            "EMAIL_CONFIG:PRIMARY:ENABLESSL",
+            "EmailConfig__Primary__EnableSsl",
+            "SMTP_ENABLE_SSL");
+        if (bool.TryParse(primarySslStr, out var primarySsl))
+            config.Primary.EnableSsl = primarySsl;
+
+        // 2. Fallback SMTP (Mailtrap)
+        var fallbackHost = GetEnv(
+            "EMAIL_CONFIG__FALLBACK__HOST",
+            "EMAIL_CONFIG:FALLBACK:HOST",
+            "EmailConfig__Fallback__Host",
+            "MAILTRAP_SMTP_HOST",
+            "MAILTRAP_HOST");
+        if (!string.IsNullOrWhiteSpace(fallbackHost))
+            config.Fallback.Host = fallbackHost;
+        else if (string.IsNullOrWhiteSpace(config.Fallback.Host))
+            config.Fallback.Host = "sandbox.smtp.mailtrap.io";
+
+        var fallbackPortStr = GetEnv(
+            "EMAIL_CONFIG__FALLBACK__PORT",
+            "EMAIL_CONFIG:FALLBACK:PORT",
+            "EmailConfig__Fallback__Port",
+            "MAILTRAP_SMTP_PORT",
+            "MAILTRAP_PORT");
+        if (int.TryParse(fallbackPortStr, out var fallbackPort) && fallbackPort > 0)
+            config.Fallback.Port = fallbackPort;
+        else if (config.Fallback.Port <= 0)
+            config.Fallback.Port = 587;
+
+        var fallbackUser = GetEnv(
+            "EMAIL_CONFIG__FALLBACK__USERNAME",
+            "EMAIL_CONFIG:FALLBACK:USERNAME",
+            "EmailConfig__Fallback__Username",
+            "EMAIL_CONFIG__FALLBACK__USER",
+            "MAILTRAP_SMTP_USER",
+            "MAILTRAP_SMTP_USERNAME",
+            "MAILTRAP_USERNAME");
+        if (!string.IsNullOrWhiteSpace(fallbackUser))
+            config.Fallback.Username = fallbackUser;
+
+        var fallbackPass = GetEnv(
+            "EMAIL_CONFIG__FALLBACK__PASSWORD",
+            "EMAIL_CONFIG:FALLBACK:PASSWORD",
+            "EmailConfig__Fallback__Password",
+            "EMAIL_CONFIG__FALLBACK__PASS",
+            "MAILTRAP_SMTP_PASSWORD",
+            "MAILTRAP_PASSWORD",
+            "MAILTRAP_API_TOKEN");
+        if (!string.IsNullOrWhiteSpace(fallbackPass))
+            config.Fallback.Password = fallbackPass;
+
+        var fallbackFromName = GetEnv(
+            "EMAIL_CONFIG__FALLBACK__FROM_NAME",
+            "EMAIL_CONFIG__FALLBACK__FROMNAME",
+            "EMAIL_CONFIG:FALLBACK:FROM_NAME",
+            "EMAIL_CONFIG:FALLBACK:FROMNAME",
+            "EmailConfig__Fallback__FromName",
+            "MAILTRAP_FROM_NAME");
+        if (!string.IsNullOrWhiteSpace(fallbackFromName))
+            config.Fallback.FromName = fallbackFromName;
+
+        var fallbackFromEmail = GetEnv(
+            "EMAIL_CONFIG__FALLBACK__FROM_EMAIL",
+            "EMAIL_CONFIG__FALLBACK__FROMEMAIL",
+            "EMAIL_CONFIG:FALLBACK:FROM_EMAIL",
+            "EMAIL_CONFIG:FALLBACK:FROMEMAIL",
+            "EmailConfig__Fallback__FromEmail",
+            "MAILTRAP_FROM_EMAIL");
+        if (!string.IsNullOrWhiteSpace(fallbackFromEmail))
+            config.Fallback.FromEmail = fallbackFromEmail;
+
+        var fallbackSslStr = GetEnv(
+            "EMAIL_CONFIG__FALLBACK__ENABLE_SSL",
+            "EMAIL_CONFIG__FALLBACK__ENABLESSL",
+            "EMAIL_CONFIG:FALLBACK:ENABLE_SSL",
+            "EMAIL_CONFIG:FALLBACK:ENABLESSL",
+            "EmailConfig__Fallback__EnableSsl");
+        if (bool.TryParse(fallbackSslStr, out var fallbackSsl))
+            config.Fallback.EnableSsl = fallbackSsl;
     }
 
     private enum SendOutcome { Sent, NotConfigured, Failed }
@@ -44,15 +254,10 @@ public class EmailService : IEmailService, IBookingNotificationService
     public async Task SendEmailAsync(string toEmail, string subject, string body, bool isHtml, CancellationToken cancellationToken) =>
         await DeliverAsync(toEmail, subject, body, isHtml, cancellationToken);
 
-    private static bool IsConfigured(SmtpSettings? settings)
+    private static bool IsConfigured(EmailServerSettings? settings)
     {
         if (settings == null) return false;
-        if (string.IsNullOrWhiteSpace(settings.Host) || string.IsNullOrWhiteSpace(settings.Username))
-            return false;
-        if (settings.Username.Contains("YOUR_MAILTRAP", StringComparison.OrdinalIgnoreCase) ||
-            settings.Username.Contains("YOUR_BREVO", StringComparison.OrdinalIgnoreCase))
-            return false;
-        return true;
+        return settings.IsConfigured;
     }
 
     private async Task<SendOutcome> DeliverAsync(string toEmail, string subject, string body, bool isHtml, CancellationToken ct)
@@ -63,22 +268,22 @@ public class EmailService : IEmailService, IBookingNotificationService
         bool primaryConfigured = IsConfigured(primary);
         bool fallbackConfigured = IsConfigured(fallback);
 
-        // Gracefully handle unconfigured / dummy credentials so local development isn't blocked
+        // Gracefully handle unconfigured / dummy credentials so local development and tests aren't blocked
         if (!primaryConfigured && !fallbackConfigured)
         {
-            _logger.LogWarning("SMTP credentials not configured for Primary (Brevo) or Fallback (Mailtrap). Email simulated for {ToEmail}. Subject: {Subject}", toEmail, subject);
+            _logger.LogWarning("SMTP credentials not configured for Primary (Gmail) or Fallback (Mailtrap). Email simulated for {ToEmail}. Subject: {Subject}", toEmail, subject);
             return SendOutcome.NotConfigured;
         }
 
         bool shouldFallback = false;
 
-        // 1. Attempt delivery via Primary provider (Brevo)
+        // 1. Attempt delivery via Primary provider (Gmail)
         if (primaryConfigured)
         {
             try
             {
-                await SendViaProviderAsync(primary, "Brevo", toEmail, subject, body, isHtml, ct);
-                _logger.LogInformation("Email sent successfully via Primary SMTP (Brevo) to {ToEmail}", toEmail);
+                await SendViaProviderAsync(primary, "Gmail", toEmail, subject, body, isHtml, ct);
+                _logger.LogInformation("Email sent successfully via Primary SMTP (Gmail) to {ToEmail}", toEmail);
                 return SendOutcome.Sent;
             }
             catch (SmtpCommandException ex)
@@ -86,7 +291,7 @@ public class EmailService : IEmailService, IBookingNotificationService
                 var isRateLimit = (int)ex.StatusCode == 429 || (int)ex.StatusCode == 452;
                 _logger.LogWarning(
                     ex,
-                    "Primary SMTP (Brevo) command error (StatusCode: {StatusCode}, IsRateLimit: {IsRateLimit}). Initiating fallback to Secondary SMTP (Mailtrap) for recipient {ToEmail}.",
+                    "Primary SMTP (Gmail) command error (StatusCode: {StatusCode}, IsRateLimit: {IsRateLimit}). Initiating fallback to Secondary SMTP (Mailtrap) for recipient {ToEmail}.",
                     ex.StatusCode,
                     isRateLimit,
                     toEmail);
@@ -96,7 +301,7 @@ public class EmailService : IEmailService, IBookingNotificationService
             {
                 _logger.LogWarning(
                     ex,
-                    "Primary SMTP (Brevo) error ({ErrorType}: {ErrorMessage}). Initiating fallback to Secondary SMTP (Mailtrap) for recipient {ToEmail}.",
+                    "Primary SMTP (Gmail) error ({ErrorType}: {ErrorMessage}). Initiating fallback to Secondary SMTP (Mailtrap) for recipient {ToEmail}.",
                     ex.GetType().Name,
                     ex.Message,
                     toEmail);
@@ -105,7 +310,7 @@ public class EmailService : IEmailService, IBookingNotificationService
         }
         else
         {
-            _logger.LogInformation("Primary SMTP (Brevo) is not configured. Falling back to Secondary SMTP (Mailtrap) for recipient {ToEmail}.", toEmail);
+            _logger.LogInformation("Primary SMTP (Gmail) is not configured. Falling back to Secondary SMTP (Mailtrap) for recipient {ToEmail}.", toEmail);
             shouldFallback = true;
         }
 
@@ -138,7 +343,7 @@ public class EmailService : IEmailService, IBookingNotificationService
     }
 
     private async Task SendViaProviderAsync(
-        SmtpSettings settings,
+        EmailServerSettings settings,
         string providerName,
         string toEmail,
         string subject,

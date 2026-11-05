@@ -1327,6 +1327,37 @@ details > summary {
     flex-direction: column;
     gap: .5rem;
 }
+.apm-checkbox-row {
+    display: flex;
+    align-items: flex-start;
+    gap: .65rem;
+    padding: .5rem .6rem;
+    border-radius: .375rem;
+    border: 1px solid transparent;
+    transition: background .15s ease, border-color .15s ease;
+    cursor: pointer;
+    background: #fbfbfb;
+}
+.apm-checkbox-row:hover {
+    background: #f3f4f6;
+    border-color: #e5e7eb;
+}
+.apm-checkbox-visual {
+    width: 1.15rem;
+    height: 1.15rem;
+    border: 1.5px solid #cbd5e1;
+    border-radius: .25rem;
+    display: grid;
+    place-items: center;
+    flex-shrink: 0;
+    margin-top: .05rem;
+    background: #fff;
+    transition: all .2s ease;
+}
+.apm-checkbox-visual.is-checked {
+    background: var(--ink);
+    border-color: var(--ink);
+}
 .apm-checkbox-label {
     display: flex;
     align-items: flex-start;

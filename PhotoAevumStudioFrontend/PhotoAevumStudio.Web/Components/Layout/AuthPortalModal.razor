@@ -73,6 +73,17 @@
             <button class="apm-back" @onclick="() => _view = ModalView.Chooser" aria-label="Back">‹ Back</button>
             <h2 id="apm-title" class="apm-title">Sign In</h2>
 
+            @if (!string.IsNullOrEmpty(_loginSuccessNotice))
+            {
+                <div class="apm-success" role="status">
+                    <span class="apm-success__icon" aria-hidden="true">✓</span>
+                    <div>
+                        <strong>Account Created!</strong>
+                        <div class="mt-0.5 text-xs">@_loginSuccessNotice</div>
+                    </div>
+                </div>
+            }
+
             @if (!string.IsNullOrEmpty(_loginError))
             {
                 <div class="apm-error" role="alert">@_loginError</div>
@@ -167,11 +178,10 @@
         }
 
         @* ════════════════════════════════════════════════════════════
-           VIEW: Sign-Up Wizard  (4 steps)
-           Step 1 – Personal Info (First, Last, Middle Name)
-           Step 2 – Email
-           Step 3 – Email Verification Code
-           Step 4 – Password  →  commits registration
+           VIEW: Sign-Up Wizard  (3 steps)
+           Step 1 – Account Info (First, Last, Middle Name, Phone, Email) & Terms + Privacy
+           Step 2 – Email Verification Code
+           Step 3 – Password  →  commits registration & transitions to Sign In
            ═══════════════════════════════════════════════════════════ *@
         @if (_view == ModalView.SignUp)
         {
@@ -180,7 +190,7 @@
 
             @* ── Stepper ─────────────────────────────────────────── *@
             <ol class="apm-stepper" aria-label="Registration steps">
-                @for (int i = 1; i <= 4; i++)
+                @for (int i = 1; i <= 3; i++)
                 {
                     var step = i; // capture for closure
                     <li class="apm-stepper__item @(step == _signUpStep ? "is-current" : step < _signUpStep ? "is-done" : "")">
@@ -188,34 +198,33 @@
                         <span class="apm-stepper__label">
                             @switch (step)
                             {
-                                case 1: <text>Name</text> break;
-                                case 2: <text>Email</text> break;
-                                case 3: <text>Verify</text> break;
-                                case 4: <text>Password</text> break;
+                                case 1: <text>Account</text> break;
+                                case 2: <text>Verify</text> break;
+                                case 3: <text>Password</text> break;
                             }
                         </span>
                     </li>
                 }
             </ol>
 
-            @* ── Step 1: Name, Contact & Legal ───────────────────── *@
+            @* ── Step 1: Personal Info, Contact, Email & Legal Agreements ───────────────────── *@
             @if (_signUpStep == 1)
             {
-                <EditForm Model="_suName" OnValidSubmit="HandleStep1Submit">
+                <EditForm Model="_suDetails" OnValidSubmit="HandleStep1Submit">
                     <DataAnnotationsValidator />
 
                     <div class="apm-field">
                         <label for="su-first">First Name <span class="apm-required">*</span></label>
-                        <InputText id="su-first" class="apm-input" @bind-Value="_suName.FirstName"
+                        <InputText id="su-first" class="apm-input" @bind-Value="_suDetails.FirstName"
                                    placeholder="e.g. Maria" autocomplete="given-name" />
-                        <ValidationMessage For="() => _suName.FirstName" class="apm-validation" />
+                        <ValidationMessage For="() => _suDetails.FirstName" class="apm-validation" />
                     </div>
 
                     <div class="apm-field">
                         <label for="su-last">Last Name <span class="apm-required">*</span></label>
-                        <InputText id="su-last" class="apm-input" @bind-Value="_suName.LastName"
+                        <InputText id="su-last" class="apm-input" @bind-Value="_suDetails.LastName"
                                    placeholder="e.g. Santos" autocomplete="family-name" />
-                        <ValidationMessage For="() => _suName.LastName" class="apm-validation" />
+                        <ValidationMessage For="() => _suDetails.LastName" class="apm-validation" />
                     </div>
 
                     <div class="apm-field">
@@ -223,8 +232,9 @@
                             Middle Name
                             <span class="apm-optional">(optional)</span>
                         </label>
-                        <InputText id="su-mid" class="apm-input" @bind-Value="_suName.MiddleName"
+                        <InputText id="su-mid" class="apm-input" @bind-Value="_suDetails.MiddleName"
                                    placeholder="e.g. Reyes" autocomplete="additional-name" />
+                        <ValidationMessage For="() => _suDetails.MiddleName" class="apm-validation" />
                     </div>
 
                     <div class="apm-field">
@@ -232,52 +242,16 @@
                             Cellphone No.
                             <span class="apm-optional">(optional)</span>
                         </label>
-                        <InputText id="su-phone" class="apm-input" @bind-Value="_suName.PhoneNumber"
+                        <InputText id="su-phone" class="apm-input" @bind-Value="_suDetails.PhoneNumber"
                                    placeholder="e.g. 09123456789 or +63 912 345 6789" autocomplete="tel" />
-                        <ValidationMessage For="() => _suName.PhoneNumber" class="apm-validation" />
+                        <ValidationMessage For="() => _suDetails.PhoneNumber" class="apm-validation" />
                     </div>
-
-                    <div class="apm-legal-group">
-                        <label class="apm-checkbox-label">
-                            <InputCheckbox @bind-Value="_suName.AgreeToTerms" class="apm-checkbox" />
-                            <span>I agree to the <button type="button" class="apm-link apm-link--inline underline font-medium cursor-pointer bg-transparent border-0 p-0 text-inherit" @onclick="OpenTermsModal">Terms &amp; Conditions</button> <span class="apm-required">*</span></span>
-                        </label>
-                        <ValidationMessage For="() => _suName.AgreeToTerms" class="apm-validation" />
-                        @if (!string.IsNullOrEmpty(_step1TermsError))
-                        {
-                            <div class="apm-validation">@_step1TermsError</div>
-                        }
-
-                        <label class="apm-checkbox-label">
-                            <InputCheckbox @bind-Value="_suName.AgreeToPrivacy" class="apm-checkbox" />
-                            <span>I agree to the <a href="/privacy" target="_blank" rel="noopener noreferrer" class="apm-link apm-link--inline">Privacy Policy</a> <span class="apm-required">*</span></span>
-                        </label>
-                        <ValidationMessage For="() => _suName.AgreeToPrivacy" class="apm-validation" />
-                        @if (!string.IsNullOrEmpty(_step1PrivacyError))
-                        {
-                            <div class="apm-validation">@_step1PrivacyError</div>
-                        }
-                    </div>
-
-                    <button type="submit" class="apm-btn apm-btn--primary" disabled="@(!_suName.AgreeToTerms || !_suName.AgreeToPrivacy)">Continue</button>
-                </EditForm>
-            }
-
-            @* ── Step 2: Email ───────────────────────────────────── *@
-            @if (_signUpStep == 2)
-            {
-                <EditForm Model="_suEmail" OnValidSubmit="HandleSendVerification">
-                    <DataAnnotationsValidator />
-
-                    <p class="apm-subtitle">
-                        Hi <strong>@_suName.FirstName</strong>! Enter the email address you'd like to use for your account.
-                    </p>
 
                     <div class="apm-field">
-                        <label for="su-email">Email address <span class="apm-required">*</span></label>
-                        <InputText id="su-email" type="email" class="apm-input" @bind-Value="_suEmail.Email"
+                        <label for="su-email">Email Address <span class="apm-required">*</span></label>
+                        <InputText id="su-email" type="email" class="apm-input" @bind-Value="_suDetails.Email"
                                    placeholder="you@example.com" autocomplete="email" />
-                        <ValidationMessage For="() => _suEmail.Email" class="apm-validation" />
+                        <ValidationMessage For="() => _suDetails.Email" class="apm-validation" />
                     </div>
 
                     @if (!string.IsNullOrEmpty(_suEmailError))
@@ -285,20 +259,60 @@
                         <div class="apm-error" role="alert">@_suEmailError</div>
                     }
 
-                    <button type="submit" class="apm-btn apm-btn--primary" disabled="@_isBusy">
-                        @if (_isBusy) { <span>Sending code…</span> } else { <span>Send Verification Code</span> }
+                    <div class="apm-legal-group">
+                        @* Terms & Conditions Row (clicking row opens modal; only checks upon modal agree) *@
+                        <div class="apm-checkbox-row cursor-pointer" @onclick="OpenTermsModal">
+                            <div class="apm-checkbox-visual @(_suDetails.AgreeToTerms ? "is-checked" : "")">
+                                @if (_suDetails.AgreeToTerms)
+                                {
+                                    <svg class="w-3.5 h-3.5 text-white" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3">
+                                        <polyline points="20 6 9 17 4 12"></polyline>
+                                    </svg>
+                                }
+                            </div>
+                            <span class="text-xs text-gray-700 leading-snug select-none">
+                                I agree to the <span class="underline font-semibold text-black">Terms &amp; Conditions</span> <span class="apm-required">*</span>
+                            </span>
+                        </div>
+                        @if (!string.IsNullOrEmpty(_step1TermsError))
+                        {
+                            <div class="apm-validation">@_step1TermsError</div>
+                        }
+
+                        @* Privacy Policy Row (clicking row opens modal; only checks upon modal agree) *@
+                        <div class="apm-checkbox-row cursor-pointer mt-2" @onclick="OpenPrivacyModal">
+                            <div class="apm-checkbox-visual @(_suDetails.AgreeToPrivacy ? "is-checked" : "")">
+                                @if (_suDetails.AgreeToPrivacy)
+                                {
+                                    <svg class="w-3.5 h-3.5 text-white" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3">
+                                        <polyline points="20 6 9 17 4 12"></polyline>
+                                    </svg>
+                                }
+                            </div>
+                            <span class="text-xs text-gray-700 leading-snug select-none">
+                                I agree to the <span class="underline font-semibold text-black">Privacy Policy</span> <span class="apm-required">*</span>
+                            </span>
+                        </div>
+                        @if (!string.IsNullOrEmpty(_step1PrivacyError))
+                        {
+                            <div class="apm-validation">@_step1PrivacyError</div>
+                        }
+                    </div>
+
+                    <button type="submit" class="apm-btn apm-btn--primary" disabled="@(!_suDetails.AgreeToTerms || !_suDetails.AgreeToPrivacy || _isBusy)">
+                        @if (_isBusy) { <span>Sending verification code…</span> } else { <span>Continue</span> }
                     </button>
                 </EditForm>
             }
 
-            @* ── Step 3: Verify ──────────────────────────────────── *@
-            @if (_signUpStep == 3)
+            @* ── Step 2: Verify Email ──────────────────────────────────── *@
+            @if (_signUpStep == 2)
             {
                 <EditForm Model="_suVerify" OnValidSubmit="HandleVerifyCode">
                     <DataAnnotationsValidator />
 
                     <p class="apm-subtitle">
-                        A 6-digit code was sent to <strong>@_suEmail.Email</strong>. Enter it below to verify your email address.
+                        A 6-digit code was sent to <strong>@_suDetails.Email</strong>. Enter it below to verify your email address.
                     </p>
 
                     <div class="apm-field">
@@ -318,14 +332,14 @@
                         @if (_isBusy) { <span>Verifying…</span> } else { <span>Verify Code</span> }
                     </button>
 
-                    <button type="button" class="apm-link apm-link--center" @onclick="HandleSendVerification" disabled="@_isBusy">
-                        Didn't receive it? Resend
+                    <button type="button" class="apm-link apm-link--center" @onclick="HandleResendVerification" disabled="@_isBusy">
+                        Didn't receive it? Resend code
                     </button>
                 </EditForm>
             }
 
-            @* ── Step 4: Password  ───────────────────────────────── *@
-            @if (_signUpStep == 4)
+            @* ── Step 3: Password & Commit Registration ─────────────────── *@
+            @if (_signUpStep == 3)
             {
                 <EditForm Model="_suPassword" OnValidSubmit="HandleSignUp">
                     <DataAnnotationsValidator />
@@ -367,26 +381,15 @@
                     </button>
                 </EditForm>
             }
-
-            @* ── Step 5 (post-success): Welcome ─────────────────── *@
-            @if (_signUpStep == 5)
-            {
-                <div class="apm-success" role="status">
-                    <span class="apm-success__icon" aria-hidden="true">🎉</span>
-                    <strong>Account created!</strong>
-                    Welcome to Photo Aevum Studio, @_suName.FirstName.
-                    You can now log in with your credentials.
-                </div>
-                <button class="apm-btn apm-btn--primary" @onclick="() => { _view = ModalView.CustomerLogin; _signUpStep = 1; ResetSignUpForms(); }">
-                    Go to Login
-                </button>
-            }
         }
 
     </div>
 
-    <!-- Interactive Terms & Conditions pop-up Modal -->
+    <!-- Interactive Terms & Conditions pop-up Modal in front of AuthPortalModal -->
     <TermsModal @bind-IsOpen="_showTermsModal" OnAgree="HandleTermsAgreed" />
+
+    <!-- Interactive Privacy Policy pop-up Modal in front of AuthPortalModal -->
+    <PrivacyModal @bind-IsOpen="_showPrivacyModal" OnAgree="HandlePrivacyAgreed" />
 }
 
 @code {
@@ -403,6 +406,8 @@
     private bool _showLoginPw  = false;
     private bool _showSignUpPw = false;
     private bool _showTermsModal = false;
+    private bool _showPrivacyModal = false;
+    private string _loginSuccessNotice = string.Empty;
 
     protected override void OnParametersSet()
     {
@@ -414,11 +419,21 @@
     }
 
     private void OpenTermsModal() => _showTermsModal = true;
+    private void OpenPrivacyModal() => _showPrivacyModal = true;
 
     private void HandleTermsAgreed()
     {
-        _suName.AgreeToTerms = true;
+        _suDetails.AgreeToTerms = true;
+        _step1TermsError = string.Empty;
         _showTermsModal = false;
+        StateHasChanged();
+    }
+
+    private void HandlePrivacyAgreed()
+    {
+        _suDetails.AgreeToPrivacy = true;
+        _step1PrivacyError = string.Empty;
+        _showPrivacyModal = false;
         StateHasChanged();
     }
 
@@ -432,19 +447,15 @@
     private bool               _fpSent  = false;
 
     // ── Sign-Up wizard state  (ACID: all in-memory until final commit) ───────
-    private int              _signUpStep  = 1;
-    private SignUpNameForm   _suName      = new();
-    private SignUpEmailForm  _suEmail     = new();
-    private SignUpVerifyForm _suVerify    = new();
-    private SignUpPwForm     _suPassword  = new();
-    private string           _suEmailError  = string.Empty;
-    private string           _suVerifyError = string.Empty;
-    private string           _suSignUpError = string.Empty;
-    private string           _step1TermsError   = string.Empty;
-    private string           _step1PrivacyError = string.Empty;
-
-    // Simulated verification code (replace with real API call)
-    private string _expectedCode = string.Empty;
+    private int                _signUpStep        = 1;
+    private SignUpDetailsForm  _suDetails         = new();
+    private SignUpVerifyForm   _suVerify          = new();
+    private SignUpPwForm       _suPassword        = new();
+    private string             _suEmailError      = string.Empty;
+    private string             _suVerifyError     = string.Empty;
+    private string             _suSignUpError     = string.Empty;
+    private string             _step1TermsError   = string.Empty;
+    private string             _step1PrivacyError = string.Empty;
 
     // ── Navigation helpers ──────────────────────────────────────────────────
     private void GoCustomerLogin() => _view = ModalView.CustomerLogin;
@@ -463,24 +474,48 @@
         _view = ModalView.SignUp;
     }
 
-    private void HandleStep1Submit()
+    private async Task HandleStep1Submit()
     {
         _step1TermsError = string.Empty;
         _step1PrivacyError = string.Empty;
+        _suEmailError = string.Empty;
 
-        if (!_suName.AgreeToTerms)
+        if (!_suDetails.AgreeToTerms)
         {
-            _step1TermsError = "You must agree to the Terms & Conditions to proceed.";
+            _step1TermsError = "You must review and agree to the Terms & Conditions to proceed.";
         }
-        if (!_suName.AgreeToPrivacy)
+        if (!_suDetails.AgreeToPrivacy)
         {
-            _step1PrivacyError = "You must agree to the Privacy Policy to proceed.";
+            _step1PrivacyError = "You must review and agree to the Privacy Policy to proceed.";
         }
 
-        if (_suName.AgreeToTerms && _suName.AgreeToPrivacy)
+        if (!_suDetails.AgreeToTerms || !_suDetails.AgreeToPrivacy)
         {
-            _signUpStep = 2;
+            return;
         }
+
+        _isBusy = true;
+        StateHasChanged();
+
+        try
+        {
+            var ok = await AuthService.SendVerificationCodeAsync(_suDetails.Email.Trim().ToLowerInvariant());
+            if (ok)
+            {
+                _suVerify = new();
+                _signUpStep = 2;
+            }
+            else
+            {
+                _suEmailError = "Could not send verification email. Please check your address.";
+            }
+        }
+        catch
+        {
+            _suEmailError = "Could not send verification email. Please try again.";
+        }
+
+        _isBusy = false;
     }
 
     private void SignUpBack()
@@ -574,36 +609,30 @@
         _isBusy = false;
     }
 
-    // ── Sign-Up Step 2: Send verification code ───────────────────────────────
-    // ACID Atomicity: only sends the code; does NOT create the account yet.
-    private async Task HandleSendVerification()
+    // ── Sign-Up Step 2: Resend verification code ─────────────────────────────
+    private async Task HandleResendVerification()
     {
-        _suEmailError = string.Empty;
-        _isBusy       = true;
+        _suVerifyError = string.Empty;
+        _isBusy        = true;
         StateHasChanged();
 
         try
         {
-            var ok = await AuthService.SendVerificationCodeAsync(_suEmail.Email.Trim().ToLowerInvariant());
-            if (ok)
+            var ok = await AuthService.SendVerificationCodeAsync(_suDetails.Email.Trim().ToLowerInvariant());
+            if (!ok)
             {
-                _suVerify     = new();
-                _signUpStep   = 3;
-            }
-            else
-            {
-                _suEmailError = "Could not send verification email. Please check your address.";
+                _suVerifyError = "Could not resend verification email. Please try again.";
             }
         }
         catch
         {
-            _suEmailError = "Could not send the verification email. Please try again.";
+            _suVerifyError = "Could not resend verification email. Please try again.";
         }
 
         _isBusy = false;
     }
 
-    // ── Sign-Up Step 3: Verify code ──────────────────────────────────────────
+    // ── Sign-Up Step 2: Verify code ──────────────────────────────────────────
     // ACID Isolation: code checked with backend cache; no DB write yet.
     private async Task HandleVerifyCode()
     {
@@ -613,10 +642,10 @@
 
         try
         {
-            var ok = await AuthService.VerifyCodeAsync(_suEmail.Email.Trim().ToLowerInvariant(), _suVerify.Code.Trim());
+            var ok = await AuthService.VerifyCodeAsync(_suDetails.Email.Trim().ToLowerInvariant(), _suVerify.Code.Trim());
             if (ok)
             {
-                _signUpStep = 4;
+                _signUpStep = 3;
             }
             else
             {
@@ -631,7 +660,7 @@
         _isBusy = false;
     }
 
-    // ── Sign-Up Step 4: Commit registration ─────────────────────────────────
+    // ── Sign-Up Step 3: Commit registration ─────────────────────────────────
     // ACID Atomicity: single RegisterCustomerAsync call. If it fails, nothing is written.
     // ACID Consistency: all fields validated before this is reached.
     // ACID Durability: backend persists the new user record.
@@ -641,7 +670,7 @@
         _isBusy        = true;
         StateHasChanged();
 
-        if (!_suName.AgreeToTerms || !_suName.AgreeToPrivacy)
+        if (!_suDetails.AgreeToTerms || !_suDetails.AgreeToPrivacy)
         {
             _suSignUpError = "You must agree to both the Terms & Conditions and Privacy Policy to create an account.";
             _isBusy = false;
@@ -657,11 +686,11 @@
 
         var customerPayload = new
         {
-            FirstName = _suName.FirstName.Trim(),
-            LastName = _suName.LastName.Trim(),
-            MiddleName = string.IsNullOrWhiteSpace(_suName.MiddleName) ? null : _suName.MiddleName.Trim(),
-            PhoneNumber = string.IsNullOrWhiteSpace(_suName.PhoneNumber) ? null : _suName.PhoneNumber.Trim(),
-            Email = _suEmail.Email.Trim().ToLowerInvariant(),
+            FirstName = _suDetails.FirstName.Trim(),
+            LastName = _suDetails.LastName.Trim(),
+            MiddleName = string.IsNullOrWhiteSpace(_suDetails.MiddleName) ? null : _suDetails.MiddleName.Trim(),
+            PhoneNumber = string.IsNullOrWhiteSpace(_suDetails.PhoneNumber) ? null : _suDetails.PhoneNumber.Trim(),
+            Email = _suDetails.Email.Trim().ToLowerInvariant(),
             Password = _suPassword.Password,
             VerificationCode = _suVerify.Code.Trim()
         };
@@ -671,9 +700,12 @@
             var ok = await AuthService.RegisterCustomerAsync(customerPayload);
             if (ok)
             {
-                // ACID Durability: record committed; clear all in-memory wizard state.
-                _signUpStep = 5;
+                var registeredEmail = _suDetails.Email.Trim();
+                _loginSuccessNotice = "Account created successfully! You can now sign in with your email and password.";
+                _loginForm = new CustomerLoginForm { Email = registeredEmail };
                 ResetSignUpForms();
+                _signUpStep = 1;
+                _view = ModalView.CustomerLogin;
             }
             else
             {
@@ -692,17 +724,15 @@
     // ACID: rollback all in-memory wizard state atomically on reset.
     private void ResetSignUpForms()
     {
-        _suName        = new();
-        _suEmail       = new();
-        _suVerify      = new();
-        _suPassword    = new();
-        _suEmailError  = string.Empty;
-        _suVerifyError = string.Empty;
-        _suSignUpError = string.Empty;
-        _step1TermsError = string.Empty;
+        _suDetails         = new();
+        _suVerify          = new();
+        _suPassword        = new();
+        _suEmailError      = string.Empty;
+        _suVerifyError     = string.Empty;
+        _suSignUpError     = string.Empty;
+        _step1TermsError   = string.Empty;
         _step1PrivacyError = string.Empty;
-        _expectedCode  = string.Empty;
-        _showSignUpPw  = false;
+        _showSignUpPw      = false;
     }
 
     // ── Form models with DataAnnotations ────────────────────────────────────
@@ -723,7 +753,7 @@
         public string Email { get; set; } = string.Empty;
     }
 
-    private sealed class SignUpNameForm
+    private sealed class SignUpDetailsForm
     {
         [Required(ErrorMessage = "First name is required.")]
         [StringLength(50, ErrorMessage = "Maximum 50 characters.")]
@@ -739,19 +769,13 @@
         [StringLength(30, ErrorMessage = "Maximum 30 characters.")]
         public string? PhoneNumber { get; set; }
 
-        [Range(typeof(bool), "true", "true", ErrorMessage = "You must agree to the Terms & Conditions to proceed.")]
-        public bool AgreeToTerms { get; set; }
-
-        [Range(typeof(bool), "true", "true", ErrorMessage = "You must agree to the Privacy Policy to proceed.")]
-        public bool AgreeToPrivacy { get; set; }
-    }
-
-    private sealed class SignUpEmailForm
-    {
         [Required(ErrorMessage = "Email is required.")]
         [EmailAddress(ErrorMessage = "Enter a valid email address.")]
         [StringLength(256)]
         public string Email { get; set; } = string.Empty;
+
+        public bool AgreeToTerms { get; set; }
+        public bool AgreeToPrivacy { get; set; }
     }
 
     private sealed class SignUpVerifyForm

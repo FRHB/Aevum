@@ -50,10 +50,11 @@ public class AuthController : ControllerBase
 
         _logger.LogInformation("Verification code for {Email}: {Code}", request.Email, code);
 
+        var htmlBody = PhotoAevumStudio.Infrastructure.Services.StudioEmailTemplates.EmailVerificationCode(request.Email, code, 10);
         await _emailService.SendEmailAsync(
             request.Email,
-            "Your Photo Aevum Studio Verification Code",
-            $"<p>Your verification code is: <strong>{code}</strong></p><p>This code will expire in 10 minutes.</p>",
+            "Photo Aevum Studio – Your Verification Code",
+            htmlBody,
             isHtml: true);
 
         return Ok(new { Message = "Verification code sent." });
@@ -82,10 +83,11 @@ public class AuthController : ControllerBase
         _cache.Set($"ResetCode_{request.Email}", code, TimeSpan.FromMinutes(10));
         _logger.LogInformation("Password reset code for {Email}: {Code}", request.Email, code);
 
+        var htmlBody = PhotoAevumStudio.Infrastructure.Services.StudioEmailTemplates.PasswordResetCode(request.Email, code, 10);
         await _emailService.SendEmailAsync(
             request.Email,
-            "Photo Aevum Studio - Password Reset Code",
-            $"<p>Your password reset code is: <strong>{code}</strong></p><p>This code will expire in 10 minutes.</p>",
+            "Photo Aevum Studio – Password Reset Code",
+            htmlBody,
             isHtml: true);
 
         return Ok(new { Message = "If an account with that email exists, a reset code was sent." });

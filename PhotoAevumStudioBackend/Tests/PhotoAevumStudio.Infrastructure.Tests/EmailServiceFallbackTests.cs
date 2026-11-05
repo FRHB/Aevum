@@ -20,17 +20,17 @@ public class EmailServiceFallbackTests
     {
         return new EmailConfig
         {
-            Primary = new SmtpSettings
+            Primary = new EmailServerSettings
             {
-                Host = "smtp-relay.brevo.com",
+                Host = "primary-smtp.example.com",
                 Port = 587,
-                Username = "brevo-user",
-                Password = "brevo-password",
+                Username = "primary-user",
+                Password = "primary-password",
                 FromName = "Photo Aevum Studio",
                 FromEmail = "primary@photoaevum.com",
                 EnableSsl = true
             },
-            Fallback = new SmtpSettings
+            Fallback = new EmailServerSettings
             {
                 Host = "sandbox.smtp.mailtrap.io",
                 Port = 587,
@@ -61,8 +61,8 @@ public class EmailServiceFallbackTests
         await service.SendEmailAsync("client@example.com", "Test Subject", "<p>Hello</p>", isHtml: true);
 
         // Assert
-        primaryMock.Verify(c => c.ConnectAsync("smtp-relay.brevo.com", 587, SecureSocketOptions.Auto, It.IsAny<CancellationToken>()), Times.Once);
-        primaryMock.Verify(c => c.AuthenticateAsync("brevo-user", "brevo-password", It.IsAny<CancellationToken>()), Times.Once);
+        primaryMock.Verify(c => c.ConnectAsync("primary-smtp.example.com", 587, SecureSocketOptions.Auto, It.IsAny<CancellationToken>()), Times.Once);
+        primaryMock.Verify(c => c.AuthenticateAsync("primary-user", "primary-password", It.IsAny<CancellationToken>()), Times.Once);
         primaryMock.Verify(c => c.SendAsync(It.Is<MimeMessage>(m => m.Subject == "Test Subject"), It.IsAny<CancellationToken>()), Times.Once);
         primaryMock.Verify(c => c.DisconnectAsync(true, It.IsAny<CancellationToken>()), Times.Once);
         primaryMock.Verify(c => c.Dispose(), Times.Once);
@@ -79,7 +79,7 @@ public class EmailServiceFallbackTests
         var primaryMock = new Mock<ISmtpClient>();
         var fallbackMock = new Mock<ISmtpClient>();
 
-        // Brevo throws rate limit 429
+        // Primary throws rate limit 429
         primaryMock.Setup(c => c.SendAsync(It.IsAny<MimeMessage>(), It.IsAny<CancellationToken>()))
             .ThrowsAsync(new SmtpCommandException(SmtpErrorCode.MessageNotAccepted, (SmtpStatusCode)429, "Rate limit exceeded (429)"));
 
@@ -118,7 +118,7 @@ public class EmailServiceFallbackTests
         var primaryMock = new Mock<ISmtpClient>();
         var fallbackMock = new Mock<ISmtpClient>();
 
-        // Brevo throws 452 InsufficientStorage
+        // Primary throws 452 InsufficientStorage
         primaryMock.Setup(c => c.SendAsync(It.IsAny<MimeMessage>(), It.IsAny<CancellationToken>()))
             .ThrowsAsync(new SmtpCommandException(SmtpErrorCode.MessageNotAccepted, SmtpStatusCode.InsufficientStorage, "Insufficient storage / quota limit"));
 
@@ -145,7 +145,7 @@ public class EmailServiceFallbackTests
         var primaryMock = new Mock<ISmtpClient>();
         var fallbackMock = new Mock<ISmtpClient>();
 
-        // Brevo fails at connection level
+        // Primary fails at connection level
         primaryMock.Setup(c => c.ConnectAsync(It.IsAny<string>(), It.IsAny<int>(), It.IsAny<SecureSocketOptions>(), It.IsAny<CancellationToken>()))
             .ThrowsAsync(new SocketException((int)SocketError.ConnectionRefused));
 
@@ -214,7 +214,7 @@ public class EmailServiceFallbackTests
         var fallbackMock = new Mock<ISmtpClient>();
 
         primaryMock.Setup(c => c.SendAsync(It.IsAny<MimeMessage>(), It.IsAny<CancellationToken>()))
-            .ThrowsAsync(new SmtpCommandException(SmtpErrorCode.MessageNotAccepted, (SmtpStatusCode)429, "Brevo rate limit"));
+            .ThrowsAsync(new SmtpCommandException(SmtpErrorCode.MessageNotAccepted, (SmtpStatusCode)429, "Primary rate limit"));
 
         var clients = new Queue<ISmtpClient>(new[] { primaryMock.Object, fallbackMock.Object });
 
@@ -246,24 +246,27 @@ public class EmailServiceFallbackTests
     }
 
     [Fact]
-    public async Task LegacyConstructor_WithSmtpSettings_DispatchesThroughPrimary()
+    public async Task SendEmployeeWelcomeEmailAsync_WithConfiguredPrimary_DispatchesThroughPrimary()
     {
         // Arrange
-        var legacySettings = new SmtpSettings
+        var config = new EmailConfig
         {
-            Host = "legacy-smtp.example.com",
-            Port = 587,
-            Username = "legacy-user",
-            Password = "legacy-password",
-            FromName = "Legacy Studio",
-            FromEmail = "legacy@photoaevum.com",
-            EnableSsl = true
+            Primary = new EmailServerSettings
+            {
+                Host = "primary-smtp.example.com",
+                Port = 587,
+                Username = "primary-user",
+                Password = "primary-password",
+                FromName = "Photo Aevum Studio",
+                FromEmail = "primary@photoaevum.com",
+                EnableSsl = true
+            }
         };
 
         var clientMock = new Mock<ISmtpClient>();
 
         var service = new EmailService(
-            Options.Create(legacySettings),
+            Options.Create(config),
             NullLogger<EmailService>.Instance,
             () => clientMock.Object);
 
@@ -271,8 +274,91 @@ public class EmailServiceFallbackTests
         await service.SendEmployeeWelcomeEmailAsync("staff@example.com", "John Doe", "EMP-100", "TempPass!123");
 
         // Assert
-        clientMock.Verify(c => c.ConnectAsync("legacy-smtp.example.com", 587, SecureSocketOptions.Auto, It.IsAny<CancellationToken>()), Times.Once);
-        clientMock.Verify(c => c.AuthenticateAsync("legacy-user", "legacy-password", It.IsAny<CancellationToken>()), Times.Once);
+        clientMock.Verify(c => c.ConnectAsync("primary-smtp.example.com", 587, SecureSocketOptions.Auto, It.IsAny<CancellationToken>()), Times.Once);
+        clientMock.Verify(c => c.AuthenticateAsync("primary-user", "primary-password", It.IsAny<CancellationToken>()), Times.Once);
         clientMock.Verify(c => c.SendAsync(It.Is<MimeMessage>(m => m.Subject != null && m.Subject.Contains("Employee Credentials")), It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    [Fact]
+    public async Task GmailPrimary_FailoverToMailtrapFallback_SuccessfullyDelivers()
+    {
+        // Arrange
+        var config = new EmailConfig
+        {
+            Primary = new EmailServerSettings
+            {
+                Host = "smtp.gmail.com",
+                Port = 587,
+                Username = "studio.photoaevum@gmail.com",
+                Password = "gmail-app-password",
+                FromName = "Photo Aevum Studio",
+                FromEmail = "noreply@photoaevum.com",
+                EnableSsl = true
+            },
+            Fallback = new EmailServerSettings
+            {
+                Host = "sandbox.smtp.mailtrap.io",
+                Port = 587,
+                Username = "mailtrap-live-user",
+                Password = "mailtrap-live-password",
+                FromName = "Photo Aevum Studio",
+                FromEmail = "fallback@photoaevum.com",
+                EnableSsl = true
+            }
+        };
+
+        var gmailMock = new Mock<ISmtpClient>();
+        var mailtrapMock = new Mock<ISmtpClient>();
+
+        // Gmail throws SmtpCommandException (rate limit 429)
+        gmailMock.Setup(c => c.SendAsync(It.IsAny<MimeMessage>(), It.IsAny<CancellationToken>()))
+            .ThrowsAsync(new SmtpCommandException(SmtpErrorCode.MessageNotAccepted, (SmtpStatusCode)429, "Gmail daily quota exceeded"));
+
+        var queue = new Queue<ISmtpClient>(new[] { gmailMock.Object, mailtrapMock.Object });
+        var service = new EmailService(Options.Create(config), NullLogger<EmailService>.Instance, () => queue.Dequeue());
+
+        // Act
+        await service.SendEmailAsync("customer@example.com", "Session Update", "<p>Your session details</p>", isHtml: true);
+
+        // Assert: Gmail was attempted first, then Mailtrap was called with the exact payload
+        gmailMock.Verify(c => c.ConnectAsync("smtp.gmail.com", 587, SecureSocketOptions.Auto, It.IsAny<CancellationToken>()), Times.Once);
+        gmailMock.Verify(c => c.AuthenticateAsync("studio.photoaevum@gmail.com", "gmail-app-password", It.IsAny<CancellationToken>()), Times.Once);
+        mailtrapMock.Verify(c => c.ConnectAsync("sandbox.smtp.mailtrap.io", 587, SecureSocketOptions.Auto, It.IsAny<CancellationToken>()), Times.Once);
+        mailtrapMock.Verify(c => c.AuthenticateAsync("mailtrap-live-user", "mailtrap-live-password", It.IsAny<CancellationToken>()), Times.Once);
+        mailtrapMock.Verify(c => c.SendAsync(It.Is<MimeMessage>(m => m.Subject == "Session Update"), It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    [Fact]
+    public void EnvironmentVariables_WithDoubleUnderscores_OverrideConfigProperties()
+    {
+        // Set environment variables injected by Infisical
+        Environment.SetEnvironmentVariable("EMAIL_CONFIG__PRIMARY__HOST", "custom.gmail.smtp.com");
+        Environment.SetEnvironmentVariable("EMAIL_CONFIG__PRIMARY__PORT", "465");
+        Environment.SetEnvironmentVariable("EMAIL_CONFIG__PRIMARY__USERNAME", "infisical-gmail-user@gmail.com");
+        Environment.SetEnvironmentVariable("EMAIL_CONFIG__FALLBACK__HOST", "custom.mailtrap.host");
+        Environment.SetEnvironmentVariable("EMAIL_CONFIG__FALLBACK__PORT", "2525");
+        Environment.SetEnvironmentVariable("EMAIL_CONFIG__FALLBACK__USERNAME", "infisical-mailtrap-user");
+
+        try
+        {
+            var config = new EmailConfig();
+            var service = new EmailService(Options.Create(config), NullLogger<EmailService>.Instance);
+
+            Assert.Equal("custom.gmail.smtp.com", service.Primary.Host);
+            Assert.Equal(465, service.Primary.Port);
+            Assert.Equal("infisical-gmail-user@gmail.com", service.Primary.Username);
+            Assert.Equal("custom.mailtrap.host", service.Fallback.Host);
+            Assert.Equal(2525, service.Fallback.Port);
+            Assert.Equal("infisical-mailtrap-user", service.Fallback.Username);
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable("EMAIL_CONFIG__PRIMARY__HOST", null);
+            Environment.SetEnvironmentVariable("EMAIL_CONFIG__PRIMARY__PORT", null);
+            Environment.SetEnvironmentVariable("EMAIL_CONFIG__PRIMARY__USERNAME", null);
+            Environment.SetEnvironmentVariable("EMAIL_CONFIG__FALLBACK__HOST", null);
+            Environment.SetEnvironmentVariable("EMAIL_CONFIG__FALLBACK__PORT", null);
+            Environment.SetEnvironmentVariable("EMAIL_CONFIG__FALLBACK__USERNAME", null);
+        }
     }
 }

@@ -5,12 +5,13 @@
    clean structural borders, dark accents matching Photo Aevum Studio.
    ===================================================================== *@
 
+@implements IDisposable
 @inject IJSRuntime JS
 
 @if (IsOpen)
 {
     @* ── Modal Overlay Container ────────────────────────────────────────────── *@
-    <div class="fixed inset-0 z-50 flex items-center justify-center p-4 sm:p-6 md:p-10 overflow-hidden"
+    <div class="fixed inset-0 z-[300] flex items-center justify-center p-4 sm:p-6 md:p-10 overflow-hidden"
          role="dialog"
          aria-modal="true"
          aria-labelledby="terms-modal-title"
@@ -53,7 +54,7 @@
             </header>
 
             @* ── Scrollable Body Content ────────────────────────────────────── *@
-            <div class="p-6 sm:p-8 overflow-y-auto flex-1 space-y-8 divide-y divide-gray-100 text-sm leading-relaxed font-light text-gray-600">
+            <div id="terms-scroll-body" class="p-6 sm:p-8 overflow-y-auto flex-1 space-y-8 divide-y divide-gray-100 text-sm leading-relaxed font-light text-gray-600">
 
                 @* Preamble / Introduction *@
                 <div class="space-y-3">
@@ -219,14 +220,31 @@
 
                     @if (ShowAgreeButton)
                     {
-                        <button type="button"
-                                @onclick="AgreeAsync"
-                                class="flex-1 sm:flex-initial px-8 py-2.5 bg-black hover:bg-gray-800 text-white border border-black rounded-none font-medium text-xs uppercase tracking-wider transition-colors shadow-xs flex items-center justify-center gap-1.5">
-                            <svg class="w-3.5 h-3.5 text-white" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
-                                <polyline points="20 6 9 17 4 12"></polyline>
-                            </svg>
-                            <span>I Agree</span>
-                        </button>
+                        @if (_hasScrolledToEnd)
+                        {
+                            <button type="button"
+                                    @onclick="AgreeAsync"
+                                    class="flex-1 sm:flex-initial px-8 py-2.5 bg-black hover:bg-gray-800 text-white border border-black rounded-none font-bold text-xs uppercase tracking-wider transition-all duration-300 shadow-md flex items-center justify-center gap-1.5 cursor-pointer ring-2 ring-black/20">
+                                <svg class="w-3.5 h-3.5 text-white" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                                    <polyline points="20 6 9 17 4 12"></polyline>
+                                </svg>
+                                <span>I Agree</span>
+                            </button>
+                        }
+                        else
+                        {
+                            <div class="flex items-center gap-2">
+                                <span class="text-[11px] text-gray-400 italic hidden sm:inline">Scroll to bottom to agree</span>
+                                <button type="button"
+                                        disabled
+                                        class="flex-1 sm:flex-initial px-8 py-2.5 bg-gray-200 text-gray-400 border border-gray-200 rounded-none font-medium text-xs uppercase tracking-wider cursor-not-allowed opacity-60 flex items-center justify-center gap-1.5">
+                                    <svg class="w-3.5 h-3.5 text-gray-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                        <polyline points="20 6 9 17 4 12"></polyline>
+                                    </svg>
+                                    <span>I Agree (Scroll Down)</span>
+                                </button>
+                            </div>
+                        }
                     }
                 </div>
             </footer>
@@ -256,6 +274,34 @@
     [Parameter]
     public string EffectiveDate { get; set; } = "January 1, 2026";
 
+    private DotNetObjectReference<TermsModal>? _dotNetRef;
+    private bool _hasScrolledToEnd = false;
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (IsOpen && !_hasScrolledToEnd)
+        {
+            try
+            {
+                _dotNetRef ??= DotNetObjectReference.Create(this);
+                await JS.InvokeVoidAsync("aevumScrollHelper.observeScrollToEnd", "terms-scroll-body", _dotNetRef);
+            }
+            catch
+            {
+                // Fallback gracefully: if JS interop fails, enable agreement
+                _hasScrolledToEnd = true;
+                StateHasChanged();
+            }
+        }
+    }
+
+    [JSInvokable]
+    public void OnScrolledToEnd()
+    {
+        _hasScrolledToEnd = true;
+        StateHasChanged();
+    }
+
     private async Task CloseAsync()
     {
         IsOpen = false;
@@ -268,6 +314,8 @@
 
     private async Task AgreeAsync()
     {
+        if (!_hasScrolledToEnd) return;
+
         if (OnAgree.HasDelegate)
         {
             await OnAgree.InvokeAsync();
@@ -281,5 +329,10 @@
         {
             await CloseAsync();
         }
+    }
+
+    public void Dispose()
+    {
+        _dotNetRef?.Dispose();
     }
 }

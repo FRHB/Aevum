@@ -78,6 +78,25 @@
                 }
             }
         };
+
+        // Modal Scroll-to-End Observer (Terms & Conditions, Privacy Policy)
+        window.aevumScrollHelper = {
+            observeScrollToEnd: function (elementId, dotNetHelper) {
+                const el = document.getElementById(elementId);
+                if (!el) return;
+                const check = () => {
+                    // Trigger when within 30px of bottom or if container does not overflow
+                    if (el.scrollHeight - el.scrollTop - el.clientHeight <= 30 || el.scrollHeight <= el.clientHeight) {
+                        try {
+                            dotNetHelper.invokeMethodAsync('OnScrolledToEnd');
+                        } catch (e) { }
+                        el.removeEventListener('scroll', check);
+                    }
+                };
+                el.addEventListener('scroll', check, { passive: true });
+                requestAnimationFrame(() => setTimeout(check, 100));
+            }
+        };
     </script>
 </body>
 </html>

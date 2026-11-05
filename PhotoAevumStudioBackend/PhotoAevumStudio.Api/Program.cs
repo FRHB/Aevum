@@ -234,16 +234,43 @@ builder.Services.AddScoped<PhotoAevumStudio.Application.Interfaces.IPaymentServi
 builder.Services.Configure<PhotoAevumStudio.Application.Models.EmailConfig>(options =>
 {
     builder.Configuration.GetSection("EmailConfig").Bind(options);
-    if (!options.Primary.IsConfigured)
-    {
-        var legacy = builder.Configuration.GetSection("SmtpSettings").Get<PhotoAevumStudio.Application.Models.SmtpSettings>();
-        if (legacy != null && legacy.IsConfigured)
-        {
-            options.Primary = legacy;
-        }
-    }
+
+    // Dynamic Infisical / Environment Variable Resolution for Primary SMTP (Gmail)
+    var primaryHost = builder.Configuration["EMAIL_CONFIG__PRIMARY__HOST"] ?? builder.Configuration["EMAIL_CONFIG:PRIMARY:HOST"] ?? builder.Configuration["EmailConfig:Primary:Host"] ?? builder.Configuration["GMAIL_SMTP_HOST"] ?? builder.Configuration["SMTP_HOST"];
+    var primaryUser = builder.Configuration["EMAIL_CONFIG__PRIMARY__USERNAME"] ?? builder.Configuration["EMAIL_CONFIG:PRIMARY:USERNAME"] ?? builder.Configuration["EmailConfig:Primary:Username"] ?? builder.Configuration["GMAIL_SMTP_USER"] ?? builder.Configuration["SMTP_USER"] ?? builder.Configuration["SMTP_USERNAME"];
+    var primaryPass = builder.Configuration["EMAIL_CONFIG__PRIMARY__PASSWORD"] ?? builder.Configuration["EMAIL_CONFIG:PRIMARY:PASSWORD"] ?? builder.Configuration["EmailConfig:Primary:Password"] ?? builder.Configuration["GMAIL_SMTP_PASSWORD"] ?? builder.Configuration["SMTP_PASSWORD"];
+    var primaryFrom = builder.Configuration["EMAIL_CONFIG__PRIMARY__FROM_EMAIL"] ?? builder.Configuration["EMAIL_CONFIG:PRIMARY:FROM_EMAIL"] ?? builder.Configuration["EmailConfig:Primary:FromEmail"] ?? builder.Configuration["GMAIL_FROM_EMAIL"] ?? builder.Configuration["SMTP_FROM_EMAIL"];
+    var primaryName = builder.Configuration["EMAIL_CONFIG__PRIMARY__FROM_NAME"] ?? builder.Configuration["EMAIL_CONFIG:PRIMARY:FROM_NAME"] ?? builder.Configuration["EmailConfig:Primary:FromName"] ?? builder.Configuration["GMAIL_FROM_NAME"] ?? builder.Configuration["SMTP_FROM_NAME"];
+    var primaryPortStr = builder.Configuration["EMAIL_CONFIG__PRIMARY__PORT"] ?? builder.Configuration["EMAIL_CONFIG:PRIMARY:PORT"] ?? builder.Configuration["EmailConfig:Primary:Port"] ?? builder.Configuration["GMAIL_SMTP_PORT"] ?? builder.Configuration["SMTP_PORT"];
+
+    if (!string.IsNullOrWhiteSpace(primaryHost)) options.Primary.Host = primaryHost;
+    else if (string.IsNullOrWhiteSpace(options.Primary.Host)) options.Primary.Host = "smtp.gmail.com";
+
+    if (!string.IsNullOrWhiteSpace(primaryUser)) options.Primary.Username = primaryUser;
+    if (!string.IsNullOrWhiteSpace(primaryPass)) options.Primary.Password = primaryPass;
+    if (!string.IsNullOrWhiteSpace(primaryFrom)) options.Primary.FromEmail = primaryFrom;
+    if (!string.IsNullOrWhiteSpace(primaryName)) options.Primary.FromName = primaryName;
+    if (int.TryParse(primaryPortStr, out int pPort) && pPort > 0) options.Primary.Port = pPort;
+    else if (options.Primary.Port <= 0) options.Primary.Port = 587;
+
+    // Dynamic Infisical / Environment Variable Resolution for Fallback SMTP (Mailtrap)
+    var mtHost = builder.Configuration["EMAIL_CONFIG__FALLBACK__HOST"] ?? builder.Configuration["EMAIL_CONFIG:FALLBACK:HOST"] ?? builder.Configuration["EmailConfig:Fallback:Host"] ?? builder.Configuration["MAILTRAP_SMTP_HOST"] ?? builder.Configuration["MAILTRAP_HOST"];
+    var mtUser = builder.Configuration["EMAIL_CONFIG__FALLBACK__USERNAME"] ?? builder.Configuration["EMAIL_CONFIG:FALLBACK:USERNAME"] ?? builder.Configuration["EmailConfig:Fallback:Username"] ?? builder.Configuration["MAILTRAP_SMTP_USER"] ?? builder.Configuration["MAILTRAP_USERNAME"];
+    var mtPass = builder.Configuration["EMAIL_CONFIG__FALLBACK__PASSWORD"] ?? builder.Configuration["EMAIL_CONFIG:FALLBACK:PASSWORD"] ?? builder.Configuration["EmailConfig:Fallback:Password"] ?? builder.Configuration["MAILTRAP_SMTP_PASSWORD"] ?? builder.Configuration["MAILTRAP_API_TOKEN"] ?? builder.Configuration["MAILTRAP_PASSWORD"];
+    var mtFrom = builder.Configuration["EMAIL_CONFIG__FALLBACK__FROM_EMAIL"] ?? builder.Configuration["EMAIL_CONFIG:FALLBACK:FROM_EMAIL"] ?? builder.Configuration["EmailConfig:Fallback:FromEmail"] ?? builder.Configuration["MAILTRAP_FROM_EMAIL"];
+    var mtName = builder.Configuration["EMAIL_CONFIG__FALLBACK__FROM_NAME"] ?? builder.Configuration["EMAIL_CONFIG:FALLBACK:FROM_NAME"] ?? builder.Configuration["EmailConfig:Fallback:FromName"] ?? builder.Configuration["MAILTRAP_FROM_NAME"];
+    var mtPortStr = builder.Configuration["EMAIL_CONFIG__FALLBACK__PORT"] ?? builder.Configuration["EMAIL_CONFIG:FALLBACK:PORT"] ?? builder.Configuration["EmailConfig:Fallback:Port"] ?? builder.Configuration["MAILTRAP_SMTP_PORT"];
+
+    if (!string.IsNullOrWhiteSpace(mtHost)) options.Fallback.Host = mtHost;
+    else if (string.IsNullOrWhiteSpace(options.Fallback.Host)) options.Fallback.Host = "sandbox.smtp.mailtrap.io";
+
+    if (!string.IsNullOrWhiteSpace(mtUser)) options.Fallback.Username = mtUser;
+    if (!string.IsNullOrWhiteSpace(mtPass)) options.Fallback.Password = mtPass;
+    if (!string.IsNullOrWhiteSpace(mtFrom)) options.Fallback.FromEmail = mtFrom;
+    if (!string.IsNullOrWhiteSpace(mtName)) options.Fallback.FromName = mtName;
+    if (int.TryParse(mtPortStr, out int mPort) && mPort > 0) options.Fallback.Port = mPort;
+    else if (options.Fallback.Port <= 0) options.Fallback.Port = 587;
 });
-builder.Services.Configure<PhotoAevumStudio.Application.Models.SmtpSettings>(builder.Configuration.GetSection("EmailConfig:Primary"));
 builder.Services.AddScoped<PhotoAevumStudio.Application.Interfaces.IEmailService, PhotoAevumStudio.Infrastructure.Services.EmailService>();
 builder.Services.AddScoped<PhotoAevumStudio.Application.Interfaces.ISqlAuthService, PhotoAevumStudio.Infrastructure.Services.SqlAuthService>();
 builder.Services.AddScoped<PhotoAevumStudio.Application.Interfaces.IR2StorageService, PhotoAevumStudio.Infrastructure.Services.R2StorageService>();

@@ -502,8 +502,10 @@ public class FormsAndSecurityTests
         Assert.False(string.IsNullOrWhiteSpace(config["CloudflareR2:AccessKey"]), "CloudflareR2:AccessKey must be loaded from Infisical.");
         Assert.False(string.IsNullOrWhiteSpace(config["CloudflareR2:SecretKey"]), "CloudflareR2:SecretKey must be loaded from Infisical.");
         Assert.False(string.IsNullOrWhiteSpace(config["Jwt:Key"]), "Jwt:Key must be loaded from Infisical.");
-        Assert.False(string.IsNullOrWhiteSpace(config["SmtpSettings:Username"]), "SmtpSettings:Username must be loaded from Infisical.");
-        Assert.False(string.IsNullOrWhiteSpace(config["SmtpSettings:Password"]), "SmtpSettings:Password must be loaded from Infisical.");
+        var smtpUsername = config["EMAIL_CONFIG:PRIMARY:USERNAME"] ?? config["EmailConfig:Primary:Username"];
+        var smtpPassword = config["EMAIL_CONFIG:PRIMARY:PASSWORD"] ?? config["EmailConfig:Primary:Password"];
+        Assert.False(string.IsNullOrWhiteSpace(smtpUsername), "EmailConfig:Primary:Username must be loaded from Infisical.");
+        Assert.False(string.IsNullOrWhiteSpace(smtpPassword), "EmailConfig:Primary:Password must be loaded from Infisical.");
         Assert.False(string.IsNullOrWhiteSpace(config["GoogleMeetSettings:ClientId"]), "GoogleMeetSettings:ClientId must be loaded from Infisical.");
         Assert.False(string.IsNullOrWhiteSpace(config["GoogleMeetSettings:ClientSecret"]), "GoogleMeetSettings:ClientSecret must be loaded from Infisical.");
         Assert.False(string.IsNullOrWhiteSpace(config["XenditSettings:SecretKey"]), "XenditSettings:SecretKey must be loaded from Infisical.");
@@ -561,10 +563,63 @@ public class FormsAndSecurityTests
 
         var content = File.ReadAllText(modalPath);
 
-        // Terms and conditions is a pop-up modal rather than a separate page link
+        // Terms and conditions & Privacy policy are pop-up modals rather than separate page links
         Assert.Contains("TermsModal", content);
         Assert.Contains("_showTermsModal", content);
+        Assert.Contains("PrivacyModal", content);
+        Assert.Contains("_showPrivacyModal", content);
         Assert.DoesNotContain("<a href=\"/terms\" target=\"_blank\">", content);
+        Assert.DoesNotContain("<a href=\"/privacy\" target=\"_blank\"", content);
+
+        // Wizard Step 1 contains Name, Phone, Email, Terms and Privacy
+        Assert.Contains("_suDetails.FirstName", content);
+        Assert.Contains("_suDetails.LastName", content);
+        Assert.Contains("_suDetails.MiddleName", content);
+        Assert.Contains("_suDetails.PhoneNumber", content);
+        Assert.Contains("_suDetails.Email", content);
+        Assert.Contains("OpenTermsModal", content);
+        Assert.Contains("OpenPrivacyModal", content);
+    }
+
+    [Fact]
+    public void Modals_TermsAndPrivacy_IncludeScrollToEndGatingAndHighZIndex()
+    {
+        var root = GetRepositoryRoot();
+        var termsPath = Path.Combine(root, "PhotoAevumStudioFrontend", "PhotoAevumStudio.Web", "Components", "Shared", "TermsModal.razor");
+        var privacyPath = Path.Combine(root, "PhotoAevumStudioFrontend", "PhotoAevumStudio.Web", "Components", "Shared", "PrivacyModal.razor");
+
+        Assert.True(File.Exists(termsPath), $"TermsModal not found: {termsPath}");
+        Assert.True(File.Exists(privacyPath), $"PrivacyModal not found: {privacyPath}");
+
+        var termsContent = File.ReadAllText(termsPath);
+        var privacyContent = File.ReadAllText(privacyPath);
+
+        // High z-index ensures modals show directly in front of AuthPortalModal
+        Assert.Contains("z-[300]", termsContent);
+        Assert.Contains("z-[300]", privacyContent);
+
+        // Both modals include scroll-to-end detection before lighting up "I Agree"
+        Assert.Contains("_hasScrolledToEnd", termsContent);
+        Assert.Contains("_hasScrolledToEnd", privacyContent);
+        Assert.Contains("observeScrollToEnd", termsContent);
+        Assert.Contains("observeScrollToEnd", privacyContent);
+        Assert.Contains("Scroll to bottom to agree", termsContent);
+        Assert.Contains("Scroll to bottom to agree", privacyContent);
+    }
+
+    [Fact]
+    public void StudioEmailTemplates_GenerateBrandedVerificationAndResetEmails()
+    {
+        var verificationHtml = PhotoAevumStudio.Infrastructure.Services.StudioEmailTemplates.EmailVerificationCode("client@test.com", "849201", 10);
+        var resetHtml = PhotoAevumStudio.Infrastructure.Services.StudioEmailTemplates.PasswordResetCode("client@test.com", "123456", 10);
+
+        Assert.Contains("849201", verificationHtml);
+        Assert.Contains("client@test.com", verificationHtml);
+        Assert.Contains("Photo Aevum Studio", verificationHtml);
+
+        Assert.Contains("123456", resetHtml);
+        Assert.Contains("client@test.com", resetHtml);
+        Assert.Contains("Photo Aevum Studio", resetHtml);
     }
 
     [Fact]

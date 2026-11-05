@@ -2,6 +2,7 @@ using System.ComponentModel.DataAnnotations;
 using System.Text.RegularExpressions;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
+using Moq;
 using PhotoAevumStudio.Application.DTOs;
 using PhotoAevumStudio.Application.Interfaces;
 using PhotoAevumStudio.Application.Models;
@@ -109,9 +110,41 @@ public class EmployeeManagementTests
     [Fact]
     public async Task EmailService_BuildsFormattedWelcomeEmailWithCredentials()
     {
-        // EmailService with empty SMTP configuration gracefully falls back to structured logging
-        var options = Options.Create(new EmailConfig());
-        var emailService = new EmailService(options, NullLogger<EmailService>.Instance);
+        // Mock IOptions<EmailConfig> with dummy data for Primary (Gmail) and Fallback (Mailtrap)
+        var dummyEmailConfig = new EmailConfig
+        {
+            Primary = new EmailServerSettings
+            {
+                Host = "smtp.gmail.com",
+                Port = 587,
+                Username = "dummy.gmail@photoaevum.com",
+                Password = "dummy_app_password",
+                FromName = "Photo Aevum Studio",
+                FromEmail = "noreply@photoaevum.com",
+                EnableSsl = true
+            },
+            Fallback = new EmailServerSettings
+            {
+                Host = "sandbox.smtp.mailtrap.io",
+                Port = 587,
+                Username = "dummy_mailtrap@photoaevum.com",
+                Password = "dummy_password",
+                FromName = "Photo Aevum Studio",
+                FromEmail = "fallback@photoaevum.com",
+                EnableSsl = true
+            }
+        };
+
+        var mockOptions = new Mock<IOptions<EmailConfig>>();
+        mockOptions.Setup(o => o.Value).Returns(dummyEmailConfig);
+
+        var emailService = new EmailService(mockOptions.Object, NullLogger<EmailService>.Instance);
+
+        // Verify constructor strictly maps Primary and Fallback properties
+        Assert.NotNull(emailService.Primary);
+        Assert.NotNull(emailService.Fallback);
+        Assert.Equal("smtp.gmail.com", emailService.Primary.Host);
+        Assert.Equal("sandbox.smtp.mailtrap.io", emailService.Fallback.Host);
 
         // Should complete without unhandled exception
         await emailService.SendEmployeeWelcomeEmailAsync(

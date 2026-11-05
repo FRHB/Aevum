@@ -1362,4 +1362,70 @@ public static class StudioEmailTemplates
 
     }
 
+    /// <summary>
+    /// Generates a branded, luxury responsive HTML email for 6-digit customer verification codes.
+    /// </summary>
+    public static string EmailVerificationCode(string email, string code, int expiryMinutes = 10)
+    {
+        var preview = $"Your verification code is {code} – Photo Aevum Studio";
+        var badge = "Identity Verification";
+        var title = "Confirm Your Email Address";
+
+        var content = $@"
+<p style=""margin:0 0 16px;font-size:15px;line-height:1.6;color:#334155;"">
+  Hello,
+</p>
+<p style=""margin:0 0 24px;font-size:15px;line-height:1.6;color:#334155;"">
+  Thank you for creating an account with <strong>Photo Aevum Studio</strong>. Please use the verification code below to verify your email address (<strong>{WebUtility.HtmlEncode(email)}</strong>) and continue your registration:
+</p>
+
+<div style=""text-align:center;margin:32px 0;padding:26px 16px;background-color:#f8fafc;border:2px dashed #cbd5e1;border-radius:12px;"">
+  <span style=""display:inline-block;font-size:36px;font-weight:800;letter-spacing:10px;color:#0f172a;font-family:monospace;"">
+    {WebUtility.HtmlEncode(code)}
+  </span>
+  <p style=""margin:12px 0 0;font-size:12px;color:#64748b;font-weight:600;text-transform:uppercase;letter-spacing:1px;"">
+    Valid for {expiryMinutes} minutes
+  </p>
+</div>
+
+<p style=""margin:0 0 12px;font-size:13px;line-height:1.6;color:#64748b;"">
+  If you did not request this verification code, you can safely ignore this email. No account will be activated without entering this code.
+</p>";
+
+        return WrapLayout(preview, badge, "#d97706", title, content);
+    }
+
+    /// <summary>
+    /// Generates a branded, luxury responsive HTML email for password reset verification codes.
+    /// </summary>
+    public static string PasswordResetCode(string email, string code, int expiryMinutes = 10)
+    {
+        var preview = $"Your password reset code is {code} – Photo Aevum Studio";
+        var badge = "Security Notice";
+        var title = "Password Reset Request";
+
+        var content = $@"
+<p style=""margin:0 0 16px;font-size:15px;line-height:1.6;color:#334155;"">
+  Hello,
+</p>
+<p style=""margin:0 0 24px;font-size:15px;line-height:1.6;color:#334155;"">
+  We received a request to reset the password for your <strong>Photo Aevum Studio</strong> account (<strong>{WebUtility.HtmlEncode(email)}</strong>). Use the verification code below to set a new password:
+</p>
+
+<div style=""text-align:center;margin:32px 0;padding:26px 16px;background-color:#f8fafc;border:2px dashed #cbd5e1;border-radius:12px;"">
+  <span style=""display:inline-block;font-size:36px;font-weight:800;letter-spacing:10px;color:#0f172a;font-family:monospace;"">
+    {WebUtility.HtmlEncode(code)}
+  </span>
+  <p style=""margin:12px 0 0;font-size:12px;color:#64748b;font-weight:600;text-transform:uppercase;letter-spacing:1px;"">
+    Expires in {expiryMinutes} minutes
+  </p>
+</div>
+
+<p style=""margin:0 0 12px;font-size:13px;line-height:1.6;color:#64748b;"">
+  If you did not make this request, you can safely ignore this email. Your account credentials remain secure.
+</p>";
+
+        return WrapLayout(preview, badge, "#dc2626", title, content);
+    }
+
 }
