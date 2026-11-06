@@ -370,70 +370,118 @@ public class AdminManagementService : IAdminManagementService
         await conn.OpenAsync(cancellationToken);
 
         // Check uniqueness across both dbo.Admin and dbo.SystemAdmin
+        bool accountPendingInitialLogin = false;
         const string checkSql = @"
-            SELECT 1 FROM dbo.Admin WHERE UPPER(AdminID) = @Id
-            UNION
-            SELECT 1 FROM dbo.SystemAdmin WHERE UPPER(SystemAdminID) = @Id;";
-        await using (var checkCmd = new SqlCommand(checkSql, conn))
+            SELECT 'Admin' AS Source,
+                   CASE WHEN COL_LENGTH(N'dbo.Admin', N'isFirstLogin') IS NOT NULL THEN isFirstLogin ELSE CAST(0 AS bit) END AS isFirstLogin
+            FROM dbo.Admin WHERE UPPER(AdminID) = @Id
+            UNION ALL
+            SELECT 'SystemAdmin' AS Source, CAST(0 AS bit) AS isFirstLogin
+            FROM dbo.SystemAdmin WHERE UPPER(SystemAdminID) = @Id;";
+        await using (var checkCmd = new SqlCommand(checkSql, conn) { CommandTimeout = 60 })
         {
             checkCmd.Parameters.AddWithValue("@Id", adminId);
-            if (await checkCmd.ExecuteScalarAsync(cancellationToken) is not null)
+            await using var chkReader = await checkCmd.ExecuteReaderAsync(cancellationToken);
+            if (await chkReader.ReadAsync(cancellationToken))
             {
-                throw new InvalidOperationException($"An administrator account with ID '{adminId}' already exists.");
+                var src = chkReader.GetString(0);
+                var isFirstLogin = !chkReader.IsDBNull(1) && Convert.ToBoolean(chkReader.GetValue(1));
+
+                // If account exists in dbo.Admin with isFirstLogin = true (e.g. from an aborted previous creation where email failed),
+                // allow re-provisioning credentials and dispatching the onboarding email.
+                if (src == "Admin" && isFirstLogin)
+                {
+                    accountPendingInitialLogin = true;
+                }
+                else
+                {
+                    throw new InvalidOperationException($"An administrator account with ID '{adminId}' already exists.");
+                }
             }
         }
 
         string hashedPassword = BCrypt.Net.BCrypt.HashPassword(temporaryPassword);
 
-        // Attempt creation via sp_CreateAdmin stored procedure with robust SQL fallback
-        try
+        if (accountPendingInitialLogin)
         {
-            await using var spCmd = new SqlCommand("dbo.sp_CreateAdmin", conn)
-            {
-                CommandType = CommandType.StoredProcedure
-            };
-            spCmd.Parameters.AddWithValue("@AdminID", adminId);
-            spCmd.Parameters.AddWithValue("@AdminRole", normalizedRole);
-            spCmd.Parameters.AddWithValue("@AdminFirstName", dto.FirstName.Trim());
-            spCmd.Parameters.AddWithValue("@AdminLastName", dto.LastName.Trim());
-            spCmd.Parameters.AddWithValue("@AdminMiddleName", string.IsNullOrWhiteSpace(dto.MiddleName) ? DBNull.Value : dto.MiddleName.Trim());
-            spCmd.Parameters.AddWithValue("@AdminEmail", dto.Email.Trim());
-            spCmd.Parameters.AddWithValue("@AdminPassword", hashedPassword);
-            spCmd.Parameters.AddWithValue("@RequestingUserID", requestingUserId.Trim());
+            const string updateExistingSql = @"
+                UPDATE dbo.Admin
+                SET AdminFirstName = @AdminFirstName,
+                    AdminLastName = @AdminLastName,
+                    AdminMiddleName = @AdminMiddleName,
+                    Email = @AdminEmail,
+                    AdminPassword = @AdminPassword,
+                    isFirstLogin = 1
+                WHERE UPPER(AdminID) = @AdminID;";
 
-            await spCmd.ExecuteNonQueryAsync(cancellationToken);
+            await using var updCmd = new SqlCommand(updateExistingSql, conn) { CommandTimeout = 60 };
+            updCmd.Parameters.AddWithValue("@AdminID", adminId);
+            updCmd.Parameters.AddWithValue("@AdminFirstName", dto.FirstName.Trim());
+            updCmd.Parameters.AddWithValue("@AdminLastName", dto.LastName.Trim());
+            updCmd.Parameters.AddWithValue("@AdminMiddleName", string.IsNullOrWhiteSpace(dto.MiddleName) ? DBNull.Value : dto.MiddleName.Trim());
+            updCmd.Parameters.AddWithValue("@AdminEmail", dto.Email.Trim());
+            updCmd.Parameters.AddWithValue("@AdminPassword", hashedPassword);
+
+            await updCmd.ExecuteNonQueryAsync(cancellationToken);
         }
-        catch (SqlException)
+        else
         {
-            // Direct SQL fallback: System Admin into dbo.SystemAdmin, Admin into dbo.Admin
-            const string fallbackSql = @"
-                IF (@AdminRole = 'SystemAdmin' OR @AdminID LIKE 'SADM-%')
-                BEGIN
-                    IF OBJECT_ID(N'dbo.SystemAdmin', N'U') IS NOT NULL
+            // Attempt creation via sp_CreateAdmin stored procedure with robust SQL fallback
+            try
+            {
+                await using var spCmd = new SqlCommand("dbo.sp_CreateAdmin", conn)
+                {
+                    CommandType = CommandType.StoredProcedure,
+                    CommandTimeout = 60
+                };
+                spCmd.Parameters.AddWithValue("@AdminID", adminId);
+                spCmd.Parameters.AddWithValue("@AdminRole", normalizedRole);
+                spCmd.Parameters.AddWithValue("@AdminFirstName", dto.FirstName.Trim());
+                spCmd.Parameters.AddWithValue("@AdminLastName", dto.LastName.Trim());
+                spCmd.Parameters.AddWithValue("@AdminMiddleName", string.IsNullOrWhiteSpace(dto.MiddleName) ? DBNull.Value : dto.MiddleName.Trim());
+                spCmd.Parameters.AddWithValue("@AdminEmail", dto.Email.Trim());
+                spCmd.Parameters.AddWithValue("@AdminPassword", hashedPassword);
+                spCmd.Parameters.AddWithValue("@RequestingUserID", requestingUserId.Trim());
+
+                await spCmd.ExecuteNonQueryAsync(cancellationToken);
+            }
+            catch (SqlException ex)
+            {
+                _logger.LogWarning(ex, "sp_CreateAdmin execution failed for {AdminId}. Running resilient direct fallback.", adminId);
+
+                // Direct SQL fallback: System Admin into dbo.SystemAdmin, Admin into dbo.Admin
+                const string fallbackSql = @"
+                    IF (@AdminRole = 'SystemAdmin' OR @AdminID LIKE 'SADM-%')
                     BEGIN
-                        IF NOT EXISTS (SELECT 1 FROM dbo.SystemAdmin WHERE SystemAdminID = @AdminID)
+                        IF OBJECT_ID(N'dbo.SystemAdmin', N'U') IS NOT NULL
                         BEGIN
-                            INSERT INTO dbo.SystemAdmin (SystemAdminID, FirstName, LastName, MiddleName, PasswordHash, CreatedAt)
-                            VALUES (@AdminID, @AdminFirstName, @AdminLastName, @AdminMiddleName, @AdminPassword, SYSUTCDATETIME());
+                            IF NOT EXISTS (SELECT 1 FROM dbo.SystemAdmin WHERE SystemAdminID = @AdminID)
+                            BEGIN
+                                INSERT INTO dbo.SystemAdmin (SystemAdminID, FirstName, LastName, MiddleName, PasswordHash, CreatedAt)
+                                VALUES (@AdminID, @AdminFirstName, @AdminLastName, @AdminMiddleName, @AdminPassword, SYSUTCDATETIME());
+                            END
                         END
                     END
-                END
-                ELSE
-                BEGIN
-                    INSERT INTO dbo.Admin (AdminID, AdminRole, AdminFirstName, AdminLastName, AdminMiddleName, Email, AdminPassword, isFirstLogin)
-                    VALUES (@AdminID, @AdminRole, @AdminFirstName, @AdminLastName, @AdminMiddleName, @AdminEmail, @AdminPassword, 1);
-                END";
+                    ELSE
+                    BEGIN
+                        IF NOT EXISTS (SELECT 1 FROM dbo.Admin WHERE AdminID = @AdminID)
+                        BEGIN
+                            INSERT INTO dbo.Admin (AdminID, AdminRole, AdminFirstName, AdminLastName, AdminMiddleName, Email, AdminPassword, isFirstLogin)
+                            VALUES (@AdminID, @AdminRole, @AdminFirstName, @AdminLastName, @AdminMiddleName, @AdminEmail, @AdminPassword, 1);
+                        END
+                    END";
 
-            await using var fbCmd = new SqlCommand(fallbackSql, conn);
-            fbCmd.Parameters.AddWithValue("@AdminID", adminId);
-            fbCmd.Parameters.AddWithValue("@AdminRole", normalizedRole);
-            fbCmd.Parameters.AddWithValue("@AdminFirstName", dto.FirstName.Trim());
-            fbCmd.Parameters.AddWithValue("@AdminLastName", dto.LastName.Trim());
-            fbCmd.Parameters.AddWithValue("@AdminMiddleName", string.IsNullOrWhiteSpace(dto.MiddleName) ? DBNull.Value : dto.MiddleName.Trim());
-            fbCmd.Parameters.AddWithValue("@AdminEmail", dto.Email.Trim());
-            fbCmd.Parameters.AddWithValue("@AdminPassword", hashedPassword);
+                await using var fbCmd = new SqlCommand(fallbackSql, conn) { CommandTimeout = 60 };
+                fbCmd.Parameters.AddWithValue("@AdminID", adminId);
+                fbCmd.Parameters.AddWithValue("@AdminRole", normalizedRole);
+                fbCmd.Parameters.AddWithValue("@AdminFirstName", dto.FirstName.Trim());
+                fbCmd.Parameters.AddWithValue("@AdminLastName", dto.LastName.Trim());
+                fbCmd.Parameters.AddWithValue("@AdminMiddleName", string.IsNullOrWhiteSpace(dto.MiddleName) ? DBNull.Value : dto.MiddleName.Trim());
+                fbCmd.Parameters.AddWithValue("@AdminEmail", dto.Email.Trim());
+                fbCmd.Parameters.AddWithValue("@AdminPassword", hashedPassword);
 
-            await fbCmd.ExecuteNonQueryAsync(cancellationToken);
+                await fbCmd.ExecuteNonQueryAsync(cancellationToken);
+            }
         }
 
         // Record History Log
@@ -610,6 +658,68 @@ public class AdminManagementService : IAdminManagementService
         return false;
     }
 
+    public async Task<bool> ResendAdminCredentialsAsync(
+        string id,
+        string requestingUserId,
+        bool isSystemAdmin,
+        CancellationToken cancellationToken = default)
+    {
+        if (!isSystemAdmin && !requestingUserId.StartsWith("SADM-", StringComparison.OrdinalIgnoreCase))
+        {
+            throw new UnauthorizedAccessException("Permission Denied: Only a SystemAdmin (SADM-###) is authorized to resend admin credentials.");
+        }
+
+        var trimmedId = id.Trim().ToUpperInvariant();
+        var admin = await GetAdminByIdAsync(trimmedId, cancellationToken);
+        if (admin == null)
+            throw new KeyNotFoundException($"Administrator '{id}' was not found.");
+
+        string newTempPassword = AdminCredentialGenerator.GenerateTemporaryPassword(12);
+        string hashedPassword = BCrypt.Net.BCrypt.HashPassword(newTempPassword);
+
+        await using var conn = CreateConnection();
+        await conn.OpenAsync(cancellationToken);
+
+        const string updateSql = @"
+            IF OBJECT_ID(N'dbo.Admin', N'U') IS NOT NULL
+            BEGIN
+                UPDATE dbo.Admin
+                SET AdminPassword = @Password,
+                    isFirstLogin = 1
+                WHERE UPPER(AdminID) = @Id;
+            END
+            IF OBJECT_ID(N'dbo.SystemAdmin', N'U') IS NOT NULL
+            BEGIN
+                UPDATE dbo.SystemAdmin
+                SET PasswordHash = @Password
+                WHERE UPPER(SystemAdminID) = @Id;
+            END";
+
+        await using var cmd = new SqlCommand(updateSql, conn) { CommandTimeout = 60 };
+        cmd.Parameters.AddWithValue("@Password", hashedPassword);
+        cmd.Parameters.AddWithValue("@Id", trimmedId);
+        await cmd.ExecuteNonQueryAsync(cancellationToken);
+
+        await LogHistoryAsync(
+            actionType: "PASSWORD_RESET",
+            entityName: "Admin",
+            entityId: trimmedId,
+            details: $"Regenerated and dispatched new temporary credentials for {trimmedId}",
+            actorType: "SystemAdmin",
+            actorId: requestingUserId,
+            cancellationToken: cancellationToken);
+
+        await _emailService.SendAdminWelcomeEmailAsync(
+            toEmail: admin.Email,
+            adminName: admin.FullName,
+            adminId: trimmedId,
+            temporaryPassword: newTempPassword,
+            role: admin.Role,
+            cancellationToken: cancellationToken);
+
+        return true;
+    }
+
     private async Task LogHistoryAsync(
         string actionType,
         string entityName,
@@ -627,15 +737,34 @@ public class AdminManagementService : IAdminManagementService
             const string logSql = @"
                 IF OBJECT_ID(N'dbo.HistoryLog', N'U') IS NOT NULL
                 BEGIN
-                    INSERT INTO dbo.HistoryLog (
-                        ActionType, EntityName, EntityID, ActionDetails, ChangedByType, ChangedByAdminID
-                    )
-                    VALUES (
-                        @ActionType, @EntityName, @EntityID, @ActionDetails, @ChangedByType, @ChangedByAdminID
-                    );
+                    IF COL_LENGTH(N'dbo.HistoryLog', N'ChangedByAdminID') IS NOT NULL
+                    BEGIN
+                        DECLARE @SafeActor nvarchar(30) = @ChangedByAdminID;
+                        -- Prevent foreign key violation if ChangedByAdminID references dbo.Admin but actor is SystemAdmin (SADM-###)
+                        IF @SafeActor LIKE 'SADM-%' AND NOT EXISTS (SELECT 1 FROM dbo.Admin WHERE AdminID = @SafeActor)
+                        BEGIN
+                            SET @SafeActor = NULL;
+                        END
+
+                        INSERT INTO dbo.HistoryLog (
+                            ActionType, EntityName, EntityID, ActionDetails, ChangedByType, ChangedByAdminID, LoggedAt
+                        )
+                        VALUES (
+                            @ActionType, @EntityName, @EntityID, @ActionDetails, @ChangedByType, @SafeActor, SYSUTCDATETIME()
+                        );
+                    END
+                    ELSE
+                    BEGIN
+                        INSERT INTO dbo.HistoryLog (
+                            ActionType, EntityName, EntityID, ActionDetails, ChangedByType, LoggedAt
+                        )
+                        VALUES (
+                            @ActionType, @EntityName, @EntityID, @ActionDetails, @ChangedByType, SYSUTCDATETIME()
+                        );
+                    END
                 END";
 
-            await using var cmd = new SqlCommand(logSql, conn);
+            await using var cmd = new SqlCommand(logSql, conn) { CommandTimeout = 60 };
             cmd.Parameters.AddWithValue("@ActionType", actionType);
             cmd.Parameters.AddWithValue("@EntityName", entityName);
             cmd.Parameters.AddWithValue("@EntityID", entityId);

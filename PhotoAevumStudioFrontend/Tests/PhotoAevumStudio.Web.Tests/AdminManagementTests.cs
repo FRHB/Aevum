@@ -620,5 +620,10 @@ public class AdminManagementTests
         {
             return Task.FromResult(true);
         }
+
+        public Task<bool> ResendAdminCredentialsAsync(string id, string requestingUserId, bool isSystemAdmin, CancellationToken cancellationToken = default)
+        {
+            return Task.FromResult(true);
+        }
     }
 }

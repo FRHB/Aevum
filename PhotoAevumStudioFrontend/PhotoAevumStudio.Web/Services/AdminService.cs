@@ -271,6 +271,28 @@ public class AdminService : IAdminService
         }
     }
 
+    public async Task<SaveAdminResult> ResendCredentialsAsync(string id, CancellationToken cancellationToken = default)
+    {
+        await _tokenStore.GetTokenAsync(cancellationToken);
+
+        try
+        {
+            var response = await _http.PostAsync($"api/management/admins/{Uri.EscapeDataString(id)}/resend-credentials", null, cancellationToken);
+            if (response.IsSuccessStatusCode)
+            {
+                return new SaveAdminResult(true, null);
+            }
+
+            var problem = await response.Content.ReadFromJsonAsync<ProblemDetails>(cancellationToken: cancellationToken);
+            return new SaveAdminResult(false, problem?.Detail ?? $"Failed to resend credentials (HTTP {response.StatusCode}).");
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to call API to resend admin credentials for {AdminId}.", id);
+            return new SaveAdminResult(false, ex.Message);
+        }
+    }
+
     private static (string First, string? Middle, string Last) SplitFullName(string fullName)
     {
         if (string.IsNullOrWhiteSpace(fullName))

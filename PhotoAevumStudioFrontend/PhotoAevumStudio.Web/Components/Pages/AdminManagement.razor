@@ -251,14 +251,25 @@
                                         else
                                         {
                                             <!-- System Admin can update regular Admin accounts -->
-                                            <button type="button" 
-                                                    class="inline-flex items-center gap-1 text-slate-900 hover:text-black font-semibold text-xs px-2.5 py-1 rounded hover:bg-slate-100 transition-colors"
-                                                    @onclick="() => OpenEditModal(admin)">
-                                                <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
-                                                </svg>
-                                                Edit
-                                            </button>
+                                            <div class="inline-flex items-center gap-1">
+                                                <button type="button" 
+                                                        class="inline-flex items-center gap-1 text-slate-900 hover:text-black font-semibold text-xs px-2.5 py-1 rounded hover:bg-slate-100 transition-colors"
+                                                        @onclick="() => OpenEditModal(admin)">
+                                                    <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
+                                                    </svg>
+                                                    Edit
+                                                </button>
+                                                <button type="button" 
+                                                        class="inline-flex items-center gap-1 text-slate-600 hover:text-slate-900 font-semibold text-xs px-2.5 py-1 rounded hover:bg-slate-100 transition-colors"
+                                                        title="Resend welcome email with temporary password"
+                                                        @onclick="() => ResendCredentialsAsync(admin)">
+                                                    <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
+                                                    </svg>
+                                                    Resend Credentials
+                                                </button>
+                                            </div>
                                         }
                                     }
                                     else
@@ -373,6 +384,27 @@
     {
         notificationMessage = "Administrator saved successfully and directory updated. Welcome email dispatched.";
         await LoadAdminsAsync();
+        StateHasChanged();
+    }
+
+    private async Task ResendCredentialsAsync(AdminViewModel admin)
+    {
+        try
+        {
+            var res = await AdminService.ResendCredentialsAsync(admin.Id, _cts?.Token ?? CancellationToken.None);
+            if (res.Success)
+            {
+                notificationMessage = $"Credentials successfully resent to {admin.FullName} ({admin.Email}).";
+            }
+            else
+            {
+                notificationMessage = $"Failed to resend credentials: {res.ErrorMessage}";
+            }
+        }
+        catch (Exception ex)
+        {
+            notificationMessage = $"Error resending credentials: {ex.Message}";
+        }
         StateHasChanged();
     }
 

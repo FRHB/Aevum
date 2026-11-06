@@ -129,6 +129,7 @@ public static class DatabaseSeeder
                 await conn.OpenAsync();
 
             await using var setCmd = conn.CreateCommand();
+            setCmd.CommandTimeout = 120;
             setCmd.CommandText = @"SET QUOTED_IDENTIFIER ON; SET ANSI_NULLS ON;
                 IF OBJECT_ID(N'dbo.Admin', N'U') IS NOT NULL
                 BEGIN
@@ -459,6 +460,7 @@ public static class DatabaseSeeder
             await setCmd.ExecuteNonQueryAsync();
 
             await using var xenditSchemaCmd = conn.CreateCommand();
+            xenditSchemaCmd.CommandTimeout = 120;
             xenditSchemaCmd.CommandText = @"
                 IF OBJECT_ID(N'dbo.BookingNegotiation', N'U') IS NOT NULL
                 BEGIN
@@ -652,8 +654,20 @@ public static class DatabaseSeeder
                         ChangedByType nvarchar(50) NOT NULL,
                         ChangedByCustomerID nvarchar(30) NULL,
                         ChangedByEmployeeID nvarchar(30) NULL,
+                        ChangedByAdminID nvarchar(30) NULL,
                         LoggedAt datetime2 NOT NULL CONSTRAINT DF_HistoryLog_LoggedAt DEFAULT SYSUTCDATETIME()
                     );
+                END
+                ELSE
+                BEGIN
+                    IF COL_LENGTH(N'dbo.HistoryLog', N'ChangedByAdminID') IS NULL
+                    BEGIN
+                        ALTER TABLE dbo.HistoryLog ADD ChangedByAdminID nvarchar(30) NULL;
+                    END;
+                    IF OBJECT_ID(N'dbo.FK_HistoryLog_ChangedByAdmin', N'F') IS NOT NULL
+                    BEGIN
+                        ALTER TABLE dbo.HistoryLog DROP CONSTRAINT FK_HistoryLog_ChangedByAdmin;
+                    END;
                 END;
             ";
             await xenditSchemaCmd.ExecuteNonQueryAsync();
@@ -692,6 +706,7 @@ public static class DatabaseSeeder
                     if (string.IsNullOrWhiteSpace(trimmed)) continue;
 
                     await using var cmd = conn.CreateCommand();
+                    cmd.CommandTimeout = 120;
                     cmd.CommandText = "SET QUOTED_IDENTIFIER ON;\nSET ANSI_NULLS ON;\n" + trimmed;
                     await cmd.ExecuteNonQueryAsync();
                 }

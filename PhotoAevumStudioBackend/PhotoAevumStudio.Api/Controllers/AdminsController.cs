@@ -250,4 +250,39 @@ public class AdminsController : ControllerBase
             });
         }
     }
+
+    /// <summary>
+    /// Resends onboarding credentials with a fresh temporary password to the administrator's email.
+    /// Restricted exclusively to System Admins.
+    /// </summary>
+    [HttpPost("{id}/resend-credentials")]
+    public async Task<IActionResult> ResendCredentials(string id, CancellationToken ct)
+    {
+        var (requesterId, isSystemAdmin) = GetCallerContext();
+
+        if (!isSystemAdmin)
+        {
+            return StatusCode(StatusCodes.Status403Forbidden, new ProblemDetails
+            {
+                Title = "Forbidden",
+                Detail = "Permission Denied: Only a SystemAdmin (SADM-###) is authorized to resend credentials.",
+                Status = StatusCodes.Status403Forbidden
+            });
+        }
+
+        try
+        {
+            var sent = await _adminService.ResendAdminCredentialsAsync(id, requesterId, isSystemAdmin, ct);
+            return Ok(new { success = sent, message = $"Credentials successfully resent to administrator '{id}'." });
+        }
+        catch (KeyNotFoundException ex)
+        {
+            return NotFound(new ProblemDetails
+            {
+                Title = "Not Found",
+                Detail = ex.Message,
+                Status = StatusCodes.Status404NotFound
+            });
+        }
+    }
 }

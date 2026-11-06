@@ -42,4 +42,9 @@ public interface IAdminManagementService
     /// Removes an administrator account if permitted.
     /// </summary>
     Task<bool> DeleteAdminAsync(string id, string requestingUserId, bool isSystemAdmin, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Resends onboarding credentials with a fresh temporary password to the administrator's email.
+    /// </summary>
+    Task<bool> ResendAdminCredentialsAsync(string id, string requestingUserId, bool isSystemAdmin, CancellationToken cancellationToken = default);
 }

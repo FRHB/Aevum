@@ -194,6 +194,7 @@ CREATE OR ALTER PROCEDURE dbo.sp_CreateAdmin
 AS
 BEGIN
     SET NOCOUNT ON;
+    SET XACT_ABORT ON;
 
     DECLARE @RequesterRole nvarchar(15) = NULL;
     SELECT @RequesterRole = AdminRole FROM dbo.Admin WHERE AdminID = @RequestingUserID;
@@ -212,29 +213,64 @@ BEGIN
         RETURN;
     END
 
-    INSERT INTO dbo.Admin (
-        AdminID, AdminRole, AdminFirstName, AdminLastName, AdminMiddleName, Email, AdminPassword, isFirstLogin
-    )
-    VALUES (
-        @AdminID, @AdminRole, @AdminFirstName, @AdminLastName, @AdminMiddleName, @AdminEmail, @AdminPassword, 1
-    );
+    BEGIN TRY
+        BEGIN TRANSACTION;
 
-    IF (@AdminRole = 'SystemAdmin' OR @AdminID LIKE 'SADM-%')
-    BEGIN
-        IF NOT EXISTS (SELECT 1 FROM dbo.SystemAdmin WHERE SystemAdminID = @AdminID)
+        IF NOT EXISTS (SELECT 1 FROM dbo.Admin WHERE AdminID = @AdminID)
         BEGIN
-            INSERT INTO dbo.SystemAdmin (SystemAdminID, FirstName, LastName, MiddleName, PasswordHash)
-            VALUES (@AdminID, @AdminFirstName, @AdminLastName, @AdminMiddleName, @AdminPassword);
+            INSERT INTO dbo.Admin (
+                AdminID, AdminRole, AdminFirstName, AdminLastName, AdminMiddleName, Email, AdminPassword, isFirstLogin
+            )
+            VALUES (
+                @AdminID, @AdminRole, @AdminFirstName, @AdminLastName, @AdminMiddleName, @AdminEmail, @AdminPassword, 1
+            );
         END
-    END
 
-    INSERT INTO dbo.HistoryLog (
-        ActionType, EntityName, EntityID, ActionDetails, ChangedByType, ChangedByAdminID
-    )
-    VALUES (
-        'INSERT', 'Admin', @AdminID, CONCAT('Created new Admin user ', @AdminID, ' (Role: ', @AdminRole, ')'),
-        'SystemAdmin', @RequestingUserID
-    );
+        IF (@AdminRole = 'SystemAdmin' OR @AdminID LIKE 'SADM-%')
+        BEGIN
+            IF NOT EXISTS (SELECT 1 FROM dbo.SystemAdmin WHERE SystemAdminID = @AdminID)
+            BEGIN
+                INSERT INTO dbo.SystemAdmin (SystemAdminID, FirstName, LastName, MiddleName, PasswordHash, CreatedAt)
+                VALUES (@AdminID, @AdminFirstName, @AdminLastName, @AdminMiddleName, @AdminPassword, SYSUTCDATETIME());
+            END
+        END
+
+        IF OBJECT_ID(N'dbo.HistoryLog', N'U') IS NOT NULL
+        BEGIN
+            IF COL_LENGTH(N'dbo.HistoryLog', N'ChangedByAdminID') IS NOT NULL
+            BEGIN
+                DECLARE @SafeAdminRef nvarchar(30) = @RequestingUserID;
+                IF @SafeAdminRef LIKE 'SADM-%' AND NOT EXISTS (SELECT 1 FROM dbo.Admin WHERE AdminID = @SafeAdminRef)
+                BEGIN
+                    SET @SafeAdminRef = NULL;
+                END
+
+                INSERT INTO dbo.HistoryLog (
+                    ActionType, EntityName, EntityID, ActionDetails, ChangedByType, ChangedByAdminID, LoggedAt
+                )
+                VALUES (
+                    'INSERT', 'Admin', @AdminID, CONCAT('Created new Admin user ', @AdminID, ' (Role: ', @AdminRole, ')'),
+                    'SystemAdmin', @SafeAdminRef, SYSUTCDATETIME()
+                );
+            END
+            ELSE
+            BEGIN
+                INSERT INTO dbo.HistoryLog (
+                    ActionType, EntityName, EntityID, ActionDetails, ChangedByType, LoggedAt
+                )
+                VALUES (
+                    'INSERT', 'Admin', @AdminID, CONCAT('Created new Admin user ', @AdminID, ' (Role: ', @AdminRole, ')'),
+                    'SystemAdmin', SYSUTCDATETIME()
+                );
+            END
+        END
+
+        COMMIT TRANSACTION;
+    END TRY
+    BEGIN CATCH
+        IF @@TRANCOUNT > 0 ROLLBACK TRANSACTION;
+        THROW;
+    END CATCH
 END;
 GO
 

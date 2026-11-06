@@ -12,4 +12,5 @@ public interface IAdminService
     Task<SaveAdminResult> CreateAdminAsync(AddAdminWizardModel model, CancellationToken cancellationToken = default);
     Task<SaveAdminResult> UpdateAdminAsync(string id, EditAdminModel model, CancellationToken cancellationToken = default);
     Task<bool> DeleteAdminAsync(string id, CancellationToken cancellationToken = default);
+    Task<SaveAdminResult> ResendCredentialsAsync(string id, CancellationToken cancellationToken = default);
 }
