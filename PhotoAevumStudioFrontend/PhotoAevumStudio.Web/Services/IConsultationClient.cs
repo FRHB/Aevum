@@ -10,6 +10,7 @@ public interface IConsultationClient
     Task<ApiResult<bool>> UpdateNegotiationOutcomeAsync(string id, UpdateNegotiationOutcomeRequest request, CancellationToken ct = default);
     Task<ApiResult<EventAppointmentDto>> CreateEventAppointmentAsync(string negotiationId, CreateEventAppointmentFromNegotiationRequest request, CancellationToken ct = default);
     Task<ApiResult<EventAppointmentDto>> GetAppointmentByIdAsync(string id, CancellationToken ct = default);
+    Task<ApiResult<QrPaymentInfoDto>> GetQrPaymentAsync(string appointmentId, CancellationToken ct = default);
     Task<ApiResult<IReadOnlyList<EventAppointmentDto>>> GetCustomerAppointmentsAsync(string? status = null, CancellationToken ct = default);
     Task<ApiResult<EventAppointmentDto>> VerifyDownpaymentAsync(string appointmentId, string? invoiceId = null, CancellationToken ct = default);
     Task<ApiResult<EventAppointmentDto>> SimulateWebhookPaymentAsync(string appointmentId, string? paymentMethod = null, CancellationToken ct = default);

@@ -1802,7 +1802,11 @@
 
 
 
-            var appts = await ConsultationApi.GetCustomerAppointmentsAsync(status: "Awaiting_Downpayment");
+            var appts = await ConsultationApi.GetCustomerAppointmentsAsync(status: "Pending Payment");
+            if (!appts.IsSuccess || appts.Value == null || appts.Value.Count == 0)
+            {
+                appts = await ConsultationApi.GetCustomerAppointmentsAsync(status: "Awaiting_Downpayment");
+            }
 
 
 
@@ -1938,7 +1942,7 @@
 
 
 
-        if (_awaitingDepositAppointment?.HoldExpiresAt == null)
+        var exp = _awaitingDepositAppointment?.LockExpiresAt ?? _awaitingDepositAppointment?.HoldExpiresAt; if (exp == null)
 
 
 
@@ -1962,7 +1966,7 @@
 
 
 
-        var diff = _awaitingDepositAppointment.HoldExpiresAt.Value - DateTime.UtcNow;
+        var diff = exp.Value - DateTime.UtcNow;
 
 
 
@@ -2025,11 +2029,11 @@
         private string GetCheckoutUrl(EventAppointmentDto? appt)
     {
         if (appt == null || string.IsNullOrWhiteSpace(appt.XenditInvoiceUrl))
-            return appt != null ? $"/checkout/simulate/{appt.EventAppointmentId}" : "#";
+            return appt != null ? $"/payments/{appt.EventAppointmentId}" : "#";
         if (appt.XenditInvoiceUrl.Contains("mock", StringComparison.OrdinalIgnoreCase) ||
             appt.XenditInvoiceUrl.Contains("inv_mock_", StringComparison.OrdinalIgnoreCase))
         {
-            return $"/checkout/simulate/{appt.EventAppointmentId}";
+            return $"/payments/{appt.EventAppointmentId}";
         }
         return appt.XenditInvoiceUrl;
     }

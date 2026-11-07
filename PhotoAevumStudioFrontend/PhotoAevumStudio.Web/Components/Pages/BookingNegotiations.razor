@@ -2769,15 +2769,15 @@
 
 
 
-                                disabled="@(_wizardPaymentStatus != "Paid" && _wizardPaymentStatus != "Confirmed")"
+                                
 
 
 
-                                class="inline-flex items-center gap-2 px-6 py-2.5 @(_wizardPaymentStatus == "Paid" || _wizardPaymentStatus == "Confirmed" ? "bg-emerald-700 hover:bg-emerald-800 cursor-pointer" : "bg-slate-300 cursor-not-allowed") text-white rounded-lg text-xs font-bold shadow-sm transition-all">
+                                class="inline-flex items-center gap-2 px-6 py-2.5 @(_wizardPaymentStatus == "Paid" || _wizardPaymentStatus == "Confirmed" ? "bg-emerald-700 hover:bg-emerald-800 cursor-pointer" : "bg-amber-600 hover:bg-amber-700 cursor-pointer") text-white rounded-lg text-xs font-bold shadow-sm transition-all">
 
 
 
-                            <span>Confirm &amp; Finalize Booking</span>
+                            <span>@(_wizardPaymentStatus == "Paid" || _wizardPaymentStatus == "Confirmed" ? "Confirm & Finalize Booking" : "Reserve Slot (Pending Payment)")</span>
 
 
 
@@ -4454,7 +4454,7 @@
 
 
 
-                _wizardHoldExpiresAt = res.Value.HoldExpiresAt ?? DateTime.UtcNow.AddMinutes(30);
+                _wizardHoldExpiresAt = res.Value.LockExpiresAt ?? res.Value.HoldExpiresAt ?? DateTime.UtcNow.AddMinutes(60);
 
 
 
@@ -4693,11 +4693,11 @@
     private string GetWizardCheckoutUrl()
     {
         if (string.IsNullOrWhiteSpace(_wizardInvoiceUrl))
-            return !string.IsNullOrWhiteSpace(_wizardCreatedAppointmentId) ? $"/checkout/simulate/{_wizardCreatedAppointmentId}" : "#";
+            return !string.IsNullOrWhiteSpace(_wizardCreatedAppointmentId) ? $"/payments/{_wizardCreatedAppointmentId}" : "#";
         if (_wizardInvoiceUrl.Contains("mock", StringComparison.OrdinalIgnoreCase) ||
             _wizardInvoiceUrl.Contains("inv_mock_", StringComparison.OrdinalIgnoreCase))
         {
-            return !string.IsNullOrWhiteSpace(_wizardCreatedAppointmentId) ? $"/checkout/simulate/{_wizardCreatedAppointmentId}" : _wizardInvoiceUrl;
+            return !string.IsNullOrWhiteSpace(_wizardCreatedAppointmentId) ? $"/payments/{_wizardCreatedAppointmentId}" : _wizardInvoiceUrl;
         }
         return _wizardInvoiceUrl;
     }
@@ -5008,23 +5008,7 @@
 
 
 
-        if (_wizardPaymentStatus != "Paid" && _wizardPaymentStatus != "Confirmed")
-
-
-
-        {
-
-
-
-            _wizardError = "The event appointment cannot be confirmed until the reservation fee is paid.";
-
-
-
-            return;
-
-
-
-        }
+        
 
 
 
@@ -5060,7 +5044,7 @@
 
 
 
-        await DisplayToast("Event photoshoot confirmed and booked successfully!");
+        await DisplayToast(_wizardPaymentStatus == "Paid" || _wizardPaymentStatus == "Confirmed" ? "Event photoshoot confirmed and booked successfully!" : "Slot reserved as Pending Payment (1-hour lock active).");
 
 
 

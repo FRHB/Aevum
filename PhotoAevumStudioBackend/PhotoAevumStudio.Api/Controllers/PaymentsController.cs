@@ -39,6 +39,9 @@ public class PaymentsController : ControllerBase
     private readonly XenditSettings _xenditSettings;
 
     private readonly ILogger<PaymentsController> _logger;
+    private readonly IPendingPaymentService _pendingPayments;
+    private readonly IPaymentNotifier _notifier;
+    private readonly IConfiguration _configuration;
 
 
 
@@ -50,7 +53,10 @@ public class PaymentsController : ControllerBase
 
         IOptions<XenditSettings> xenditOptions,
 
-        ILogger<PaymentsController> logger)
+        ILogger<PaymentsController> logger,
+        IPendingPaymentService pendingPayments,
+        IPaymentNotifier notifier,
+        IConfiguration configuration)
 
     {
 
@@ -61,6 +67,9 @@ public class PaymentsController : ControllerBase
         _xenditSettings = xenditOptions.Value;
 
         _logger = logger;
+        _pendingPayments = pendingPayments;
+        _notifier = notifier;
+        _configuration = configuration;
 
     }
 
@@ -439,18 +448,22 @@ public class PaymentsController : ControllerBase
     public async Task<IActionResult> SimulateWebhook(
 
         string appointmentId,
-
         [FromQuery] string? paymentMethod,
-
         CancellationToken cancellationToken)
-
     {
-
+        // Dev-only shortcut: never available once a real Xendit secret key is configured.
+        if (!IsMockXendit())
+            return NotFound();
         var appt = await _consultationService.GetAppointmentByIdAsync(appointmentId, cancellationToken);
-
         if (appt == null)
-
             return NotFound(new { message = $"Appointment {appointmentId} not found." });
+        if (appt.EventStatus == "Pending Payment")
+        {
+            var confirmation = await _pendingPayments.ConfirmByReferenceAsync(appointmentId, null, null, "QRPH", cancellationToken);
+            if (confirmation != null)
+                await _notifier.PaymentCompletedAsync(appointmentId, cancellationToken);
+            return Ok(await _consultationService.GetAppointmentByIdAsync(appointmentId, cancellationToken));
+        }
 
 
 
@@ -611,5 +624,118 @@ public class PaymentsController : ControllerBase
 
     }
 
-}
+    private bool IsMockXendit() =>
+        string.IsNullOrWhiteSpace(_xenditSettings.SecretKey) ||
+        _xenditSettings.SecretKey.Contains("mock", StringComparison.OrdinalIgnoreCase);
 
+    // GET api/payments/qr/{appointmentId}
+    // Returns the saved Xendit qr_string for the customer's /payments/{id} page (rendered into a QR image by Blazor).
+    [HttpGet("qr/{appointmentId}")]
+    [Authorize(Roles = $"{AppRoles.Customer},{AppRoles.Admin},{AppRoles.SystemAdmin},{AppRoles.Employee},{AppRoles.OfficeClerk}")]
+    public async Task<IActionResult> GetQrPayment(string appointmentId, CancellationToken cancellationToken)
+    {
+        var info = await _pendingPayments.GetQrPaymentAsync(appointmentId, cancellationToken);
+        if (info == null) return NotFound(new { message = "Booking not found." });
+
+        var isStaff = User.IsInRole(AppRoles.Admin) || User.IsInRole(AppRoles.SystemAdmin) ||
+                      User.IsInRole(AppRoles.Employee) || User.IsInRole(AppRoles.OfficeClerk);
+        var callerIds = new[]
+        {
+            User.FindFirstValue(ClaimTypes.NameIdentifier),
+            User.FindFirstValue("studio_id"),
+            User.FindFirstValue("sub")
+        };
+        if (!isStaff && !callerIds.Any(i => string.Equals(i, info.CustomerId, StringComparison.OrdinalIgnoreCase)))
+            return NotFound(new { message = "Booking not found." });
+
+        // Only an unpaid, still-locked booking exposes its QR.
+        if (info.EventStatus != "Pending Payment") info.QrString = null;
+        return Ok(info);
+    }
+
+    // POST api/payments/xendit-qr-webhook
+    // Xendit QR callback. Authenticated by the X-Callback-Token header (XENDIT_CALLBACK_TOKEN env var).
+    [HttpPost("xendit-qr-webhook")]
+    [AllowAnonymous]
+    public async Task<IActionResult> XenditQrWebhook(
+        [FromHeader(Name = "X-Callback-Token")] string? callbackToken,
+        [FromBody] System.Text.Json.JsonElement payload,
+        CancellationToken cancellationToken)
+    {
+        var expected = _configuration["XENDIT_CALLBACK_TOKEN"];
+        if (string.IsNullOrWhiteSpace(expected))
+        {
+            _logger.LogError("XENDIT_CALLBACK_TOKEN is not configured; rejecting QR webhook.");
+            return StatusCode(StatusCodes.Status503ServiceUnavailable, new { message = "Webhook not configured." });
+        }
+
+        var supplied = System.Text.Encoding.UTF8.GetBytes(callbackToken ?? string.Empty);
+        var expectedBytes = System.Text.Encoding.UTF8.GetBytes(expected);
+        if (supplied.Length != expectedBytes.Length ||
+            !System.Security.Cryptography.CryptographicOperations.FixedTimeEquals(supplied, expectedBytes))
+        {
+            _logger.LogWarning("Rejected Xendit QR callback with invalid or missing X-Callback-Token.");
+            return Unauthorized(new { message = "Invalid callback token." });
+        }
+
+        // Supports the new envelope { event, data: {...} } and the legacy flat payload.
+        var data = payload.ValueKind == System.Text.Json.JsonValueKind.Object &&
+                   payload.TryGetProperty("data", out var d) && d.ValueKind == System.Text.Json.JsonValueKind.Object
+            ? d : payload;
+
+        string? Str(System.Text.Json.JsonElement e, string name) =>
+            e.ValueKind == System.Text.Json.JsonValueKind.Object && e.TryGetProperty(name, out var v) &&
+            v.ValueKind == System.Text.Json.JsonValueKind.String ? v.GetString() : null;
+
+        var referenceId = Str(data, "reference_id") ?? Str(data, "external_id");
+        if (referenceId == null && data.ValueKind == System.Text.Json.JsonValueKind.Object &&
+            data.TryGetProperty("qr_code", out var qrCode))
+            referenceId = Str(qrCode, "external_id");
+
+        if (string.IsNullOrWhiteSpace(referenceId))
+            return BadRequest(new { message = "reference_id is required." });
+
+        var status = Str(data, "status") ?? string.Empty;
+        var succeeded = status.Equals("SUCCEEDED", StringComparison.OrdinalIgnoreCase) ||
+                        status.Equals("COMPLETED", StringComparison.OrdinalIgnoreCase) ||
+                        status.Equals("PAID", StringComparison.OrdinalIgnoreCase) ||
+                        status.Equals("SETTLED", StringComparison.OrdinalIgnoreCase);
+        if (!succeeded)
+        {
+            _logger.LogInformation("Ignoring Xendit QR callback for {Reference} with status {Status}.", referenceId, status);
+            return Ok(new { status = "IGNORED" });
+        }
+
+        decimal? paid = data.ValueKind == System.Text.Json.JsonValueKind.Object &&
+                        data.TryGetProperty("amount", out var amt) && amt.ValueKind == System.Text.Json.JsonValueKind.Number
+            ? amt.GetDecimal() : null;
+
+        var booking = await _pendingPayments.GetQrPaymentAsync(referenceId, cancellationToken);
+        if (booking == null)
+        {
+            _logger.LogWarning("Xendit QR callback for unknown reference {Reference}.", referenceId);
+            return Ok(new { status = "UNKNOWN_REFERENCE" });
+        }
+        if (paid.HasValue && paid.Value < booking.Amount)
+        {
+            _logger.LogWarning("Xendit QR callback for {Reference} paid {Paid} < required {Required}; not confirming.",
+                referenceId, paid, booking.Amount);
+            return Ok(new { status = "AMOUNT_MISMATCH" });
+        }
+
+        var confirmation = await _pendingPayments.ConfirmByReferenceAsync(
+            referenceId, Str(data, "qr_id") ?? Str(data, "id"), paid, Str(data, "channel_code") ?? "QRPH", cancellationToken);
+
+        if (confirmation == null)
+        {
+            // Duplicate delivery, or paid after the lock expired and the slot was released (needs manual refund).
+            _logger.LogWarning("QR payment for {Reference} not applied (booking status {Status}).", referenceId, booking.EventStatus);
+            return Ok(new { status = "NOT_APPLIED" });
+        }
+
+        try { await _notifier.PaymentCompletedAsync(confirmation.AppointmentId, cancellationToken); }
+        catch (Exception ex) { _logger.LogWarning(ex, "SignalR push failed for {Reference}; payment already confirmed.", referenceId); }
+
+        return Ok(new { status = "SUCCESS", reference_id = referenceId });
+    }
+}

@@ -19,8 +19,20 @@ public class XenditPaymentStatusResult
     public string? PaymentChannel { get; set; }
 }
 
+public class XenditQrResult
+{
+    public string QrId { get; set; } = string.Empty;
+    public string ReferenceId { get; set; } = string.Empty;
+    public string QrString { get; set; } = string.Empty;
+    public string Status { get; set; } = "ACTIVE";
+    public decimal Amount { get; set; }
+}
+
 public interface IXenditPaymentService
 {
+    /// <summary>POSTs to Xendit /qr_codes and returns the qr_string to render client-side.</summary>
+    Task<XenditQrResult> CreateQrCodeAsync(string referenceId, decimal amount, DateTime expiresAtUtc, CancellationToken cancellationToken = default);
+
     Task<XenditInvoiceResult> CreateInvoiceAsync(
         string externalId,
         string description,

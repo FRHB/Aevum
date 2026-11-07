@@ -53,6 +53,7 @@ builder.Services.AddScoped<PhotoAevumStudio.Web.Models.BookScheduleState>();
 builder.Services.AddScoped<IBookScheduleClient, BookScheduleClient>();
 builder.Services.AddScoped<IConsultationClient, ConsultationClient>();
 builder.Services.AddScoped<BookingEvents>();
+builder.Services.AddScoped<PaymentHubClient>();
 
 var apiBaseUrl = builder.Configuration["Api:BaseUrl"]
     ?? builder.Configuration["ApiBaseUrl"]

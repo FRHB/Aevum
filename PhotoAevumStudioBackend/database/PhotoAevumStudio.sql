@@ -275,12 +275,14 @@ CREATE TABLE dbo.EventAppointment (
     DownpaymentStatus nvarchar(30) NOT NULL CONSTRAINT DF_EventAppointment_DownpaymentStatus DEFAULT 'Pending',
     DownpaymentPaidAt datetime2 NULL,
     HoldExpiresAt datetime2 NULL,
+    LockExpiresAt datetime2 NULL,
+    QrString nvarchar(1000) NULL,
     XenditInvoiceId nvarchar(100) NULL,
     XenditExternalId nvarchar(100) NULL,
     XenditInvoiceUrl nvarchar(500) NULL,
     CreatedAt datetime2 NOT NULL CONSTRAINT DF_EventAppointment_Created DEFAULT SYSUTCDATETIME(),
     RowVer rowversion, 
-    CONSTRAINT CK_EventAppointment_Status CHECK (EventStatus IN ('Pending','Awaiting_Downpayment','Confirmed','Shot','Editing','Delivered','Cancelled','Expired'))
+    CONSTRAINT CK_EventAppointment_Status CHECK (EventStatus IN ('Pending','Awaiting_Downpayment','Pending Payment','Confirmed','Shot','Editing','Delivered','Cancelled','Expired'))
 );
 
 CREATE TABLE dbo.BookingNegotiation (
@@ -797,4 +799,36 @@ BEGIN
     IF COL_LENGTH(N'dbo.AspNetUsers', N'DepartmentId') IS NULL
         ALTER TABLE dbo.AspNetUsers ADD DepartmentId nvarchar(30) NULL;
 END;
+GO
+
+-- Pending Payment lock + Xendit QR (EventAppointment.LockExpiresAt / QrString)
+IF OBJECT_ID(N'dbo.EventAppointment', N'U') IS NOT NULL
+BEGIN
+    IF COL_LENGTH(N'dbo.EventAppointment', N'LockExpiresAt') IS NULL
+        ALTER TABLE dbo.EventAppointment ADD LockExpiresAt datetime2 NULL;
+END;
+GO
+
+IF OBJECT_ID(N'dbo.EventAppointment', N'U') IS NOT NULL
+BEGIN
+    IF COL_LENGTH(N'dbo.EventAppointment', N'QrString') IS NULL
+        ALTER TABLE dbo.EventAppointment ADD QrString nvarchar(1000) NULL;
+END;
+GO
+
+IF OBJECT_ID(N'dbo.EventAppointment', N'U') IS NOT NULL
+   AND NOT EXISTS (SELECT 1 FROM sys.check_constraints
+                   WHERE name = N'CK_EventAppointment_Status' AND definition LIKE N'%Pending Payment%')
+BEGIN
+    IF EXISTS (SELECT 1 FROM sys.check_constraints WHERE name = N'CK_EventAppointment_Status')
+        ALTER TABLE dbo.EventAppointment DROP CONSTRAINT CK_EventAppointment_Status;
+
+    ALTER TABLE dbo.EventAppointment ADD CONSTRAINT CK_EventAppointment_Status
+        CHECK (EventStatus IN ('Pending','Awaiting_Downpayment','Pending Payment','Confirmed','Shot','Editing','Delivered','Cancelled','Expired'));
+END;
+GO
+
+IF OBJECT_ID(N'dbo.EventAppointment', N'U') IS NOT NULL
+   AND NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = N'IX_EventAppointment_Status_LockExpiresAt' AND object_id = OBJECT_ID(N'dbo.EventAppointment'))
+    CREATE INDEX IX_EventAppointment_Status_LockExpiresAt ON dbo.EventAppointment (EventStatus, LockExpiresAt);
 GO

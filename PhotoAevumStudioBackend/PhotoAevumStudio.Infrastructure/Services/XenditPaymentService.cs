@@ -240,4 +240,69 @@ public class XenditPaymentService : IXenditPaymentService
             PaymentChannel = "QRPH"
         };
     }
+
+    public async Task<XenditQrResult> CreateQrCodeAsync(
+        string referenceId,
+        decimal amount,
+        DateTime expiresAtUtc,
+        CancellationToken cancellationToken = default)
+    {
+        var isMock = string.IsNullOrWhiteSpace(_settings.SecretKey) ||
+                     _settings.SecretKey.Contains("mock", StringComparison.OrdinalIgnoreCase);
+
+        if (isMock)
+        {
+            // Development only: no live key configured. Payment can be completed via the simulate-webhook endpoint.
+            _logger.LogWarning("Xendit SecretKey is not configured; generated MOCK QR for {ReferenceId}.", referenceId);
+            return new XenditQrResult
+            {
+                QrId = $"qr_mock_{Guid.NewGuid():N}",
+                ReferenceId = referenceId,
+                QrString = $"MOCK-QRPH|{referenceId}|{amount:0.00}",
+                Status = "ACTIVE",
+                Amount = amount
+            };
+        }
+
+        var body = new
+        {
+            reference_id = referenceId,
+            type = "DYNAMIC",
+            currency = "PHP",
+            amount,
+            expires_at = expiresAtUtc.ToUniversalTime().ToString("yyyy-MM-ddTHH:mm:ss.fffZ")
+        };
+
+        using var request = new HttpRequestMessage(HttpMethod.Post, "https://api.xendit.co/qr_codes")
+        {
+            Content = new StringContent(JsonSerializer.Serialize(body), Encoding.UTF8, "application/json")
+        };
+        request.Headers.Authorization = new AuthenticationHeaderValue(
+            "Basic", Convert.ToBase64String(Encoding.UTF8.GetBytes($"{_settings.SecretKey}:")));
+        request.Headers.Add("api-version", "2022-07-31");
+
+        using var response = await _httpClient.SendAsync(request, cancellationToken);
+        var json = await response.Content.ReadAsStringAsync(cancellationToken);
+        if (!response.IsSuccessStatusCode)
+        {
+            _logger.LogError("Xendit /qr_codes returned {Status}: {Body}", (int)response.StatusCode, json);
+            throw new InvalidOperationException("Unable to generate the payment QR code. Please try again.");
+        }
+
+        using var doc = JsonDocument.Parse(json);
+        var root = doc.RootElement;
+        var qrString = root.TryGetProperty("qr_string", out var q) ? q.GetString() : null;
+        if (string.IsNullOrWhiteSpace(qrString))
+            throw new InvalidOperationException("Xendit did not return a qr_string.");
+
+        _logger.LogInformation("Xendit QR created for {ReferenceId} (PHP {Amount:N2}).", referenceId, amount);
+        return new XenditQrResult
+        {
+            QrId = root.TryGetProperty("id", out var id) ? id.GetString() ?? string.Empty : string.Empty,
+            ReferenceId = referenceId,
+            QrString = qrString,
+            Status = root.TryGetProperty("status", out var s) ? s.GetString() ?? "ACTIVE" : "ACTIVE",
+            Amount = amount
+        };
+    }
 }

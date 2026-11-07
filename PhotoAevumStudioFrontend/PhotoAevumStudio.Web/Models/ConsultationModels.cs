@@ -83,6 +83,8 @@ public class EventAppointmentDto
     public decimal FinalBalanceAmount { get; set; }
     public string DownpaymentStatus { get; set; } = "Pending";
     public DateTime? HoldExpiresAt { get; set; }
+    public DateTime? LockExpiresAt { get; set; }
+    public string? QrString { get; set; }
     public string? XenditInvoiceUrl { get; set; }
     public string? XenditInvoiceId { get; set; }
     public string? XenditExternalId { get; set; }
@@ -170,4 +172,18 @@ public class UpdatePaymentBookingStatusRequest
     public DateOnly? NewDate { get; set; }
     public TimeOnly? NewTime { get; set; }
     public string? PaymentMethod { get; set; }
+}
+
+/// <summary>Reservation-fee QR payload for the /payments/{id} page (mirrors the API's QrPaymentInfoDto).</summary>
+public class QrPaymentInfoDto
+{
+    public string AppointmentId { get; set; } = string.Empty;
+    public string CustomerId { get; set; } = string.Empty;
+    public string EventName { get; set; } = string.Empty;
+    public DateTime EventDate { get; set; }
+    public TimeSpan EventTime { get; set; }
+    public string EventStatus { get; set; } = string.Empty;
+    public decimal Amount { get; set; }
+    public string? QrString { get; set; }
+    public DateTime? LockExpiresAt { get; set; }
 }

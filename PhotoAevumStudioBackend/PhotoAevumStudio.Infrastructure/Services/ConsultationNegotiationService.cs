@@ -1678,7 +1678,8 @@ public class ConsultationNegotiationService : IConsultationNegotiationService
 
 
 
-        var holdExpiresAt = DateTime.UtcNow.AddMinutes(holdMinutes);
+        var lockMinutes = _xenditSettings.LockDurationMinutes <= 0 ? 60 : _xenditSettings.LockDurationMinutes;
+        var holdExpiresAt = DateTime.UtcNow.AddMinutes(lockMinutes); // LockExpiresAt: slot is reserved until payment or this time
 
 
 
@@ -1766,55 +1767,29 @@ public class ConsultationNegotiationService : IConsultationNegotiationService
 
 
 
-        // 4. Generate Xendit 15% Downpayment Invoice (with e-wallets GCash, Maya enabled)
-
-
-
-        var successUrl = $"https://localhost:7128/my/bookings?checkout_success={appointmentId}";
-
-
-
-        var cancelUrl = $"https://localhost:7128/my/bookings?checkout_cancelled={appointmentId}";
-
-
-
-
-
-
-
-        var invoiceResult = await _xenditPaymentService.CreateInvoiceAsync(
-
-
-
-            appointmentId,
-
-
-
-            $"Photo Aevum Studio - 15% Reservation Deposit for {request.EventName}",
-
-
-
-            downpaymentAmount,
-
-
-
-            custName,
-
-
-
-            custEmail,
-
-
-
-            successUrl,
-
-
-
-            cancelUrl,
-
-
-
-            cancellationToken);
+        // 4. Verify the required staff are still free for the chosen date/time (active bookings and unexpired Pending Payment locks both block the slot)
+        if (request.EmployeeIds.Count > 0)
+        {
+            var empParams = string.Join(",", request.EmployeeIds.Select((_, i) => $"@e{i}"));
+            var conflictSql = $@"
+                SELECT TOP 1 ea.EventAppointmentID
+                FROM dbo.EventAppointment ea
+                JOIN dbo.EventEmployee ee ON ee.EventAppointmentID = ea.EventAppointmentID
+                WHERE ee.EmployeeID IN ({empParams})
+                  AND ea.EventDate = @CDate AND ea.EventTime = @CTime
+                  AND ea.EventStatus NOT IN ('Cancelled','Expired')
+                  AND NOT EXISTS (SELECT 1 FROM dbo.BookingNegotiation bn
+                                  WHERE bn.EventAppointmentID = ea.EventAppointmentID AND bn.NegotiationID = @CNeg);";
+            await using var conflictCmd = new SqlCommand(conflictSql, conn);
+            for (var i = 0; i < request.EmployeeIds.Count; i++)
+                conflictCmd.Parameters.AddWithValue($"@e{i}", request.EmployeeIds[i]);
+            conflictCmd.Parameters.AddWithValue("@CDate", request.EventDate.ToDateTime(TimeOnly.MinValue));
+            conflictCmd.Parameters.AddWithValue("@CTime", request.EventTime.ToTimeSpan());
+            conflictCmd.Parameters.AddWithValue("@CNeg", (object?)request.NegotiationId ?? DBNull.Value);
+            var conflictId = await conflictCmd.ExecuteScalarAsync(cancellationToken);
+            if (conflictId != null)
+                throw new InvalidOperationException($"The selected staff are no longer available on {request.EventDate:yyyy-MM-dd} at {request.EventTime:HH:mm} (conflicts with {conflictId}). Please pick another time slot.");
+        }
 
 
 
@@ -1854,11 +1829,8 @@ public class ConsultationNegotiationService : IConsultationNegotiationService
 
 
 
-                    FinalBalanceAmount, DownpaymentStatus, HoldExpiresAt,
-
-
-
-                    XenditInvoiceId, XenditExternalId, XenditInvoiceUrl, CreatedAt
+                    FinalBalanceAmount, DownpaymentStatus, HoldExpiresAt, LockExpiresAt,
+                    XenditExternalId, CreatedAt
 
 
 
@@ -1874,7 +1846,7 @@ public class ConsultationNegotiationService : IConsultationNegotiationService
 
 
 
-                    @Date, @Time, 'Awaiting_Downpayment', @Total, @Downpayment,
+                    @Date, @Time, 'Pending Payment', @Total, @Downpayment,
 
 
 
@@ -1882,7 +1854,7 @@ public class ConsultationNegotiationService : IConsultationNegotiationService
 
 
 
-                    @InvoiceId, @ExternalId, @InvoiceUrl, SYSUTCDATETIME()
+                    @ExpiresAt, @ExternalId, SYSUTCDATETIME()
 
 
 
@@ -1942,15 +1914,7 @@ public class ConsultationNegotiationService : IConsultationNegotiationService
 
 
 
-                cmd.Parameters.AddWithValue("@InvoiceId", (object?)invoiceResult.InvoiceId ?? DBNull.Value);
-
-
-
-                cmd.Parameters.AddWithValue("@ExternalId", (object?)invoiceResult.ExternalId ?? DBNull.Value);
-
-
-
-                cmd.Parameters.AddWithValue("@InvoiceUrl", (object?)invoiceResult.InvoiceUrl ?? DBNull.Value);
+                cmd.Parameters.AddWithValue("@ExternalId", appointmentId); // Xendit reference_id == EventAppointmentID (EVT-###)
 
 
 
@@ -1965,6 +1929,17 @@ public class ConsultationNegotiationService : IConsultationNegotiationService
 
 
 
+
+            // 5b. Record exists -> immediately request the dynamic QR from Xendit /qr_codes (reference_id = EVT-###) and save the qr_string with the booking.
+            // Inside the transaction: if Xendit fails the booking is rolled back, so no ghost booking is left behind.
+            var qr = await _xenditPaymentService.CreateQrCodeAsync(appointmentId, downpaymentAmount, holdExpiresAt, cancellationToken);
+            await using (var qrCmd = new SqlCommand("UPDATE dbo.EventAppointment SET QrString = @Qr, XenditInvoiceId = @QrId WHERE EventAppointmentID = @EvtId;", conn, tx))
+            {
+                qrCmd.Parameters.AddWithValue("@Qr", qr.QrString);
+                qrCmd.Parameters.AddWithValue("@QrId", string.IsNullOrWhiteSpace(qr.QrId) ? DBNull.Value : qr.QrId);
+                qrCmd.Parameters.AddWithValue("@EvtId", appointmentId);
+                await qrCmd.ExecuteNonQueryAsync(cancellationToken);
+            }
 
             // Assign staff in EventEmployee
 
@@ -2254,7 +2229,7 @@ public class ConsultationNegotiationService : IConsultationNegotiationService
 
 
 
-                invoiceResult.InvoiceUrl ?? "https://checkout.xendit.co",
+                $"{_xenditSettings.CustomerPortalBaseUrl.TrimEnd('/')}/payments/{appointmentId}",
 
 
 
@@ -2423,25 +2398,12 @@ public class ConsultationNegotiationService : IConsultationNegotiationService
 
 
                 ea.XenditInvoiceUrl,
-
-
-
-                ea.CreatedAt
-
-
-
+                ea.CreatedAt,
+                ea.LockExpiresAt,
+                ea.QrString
             FROM dbo.EventAppointment ea
-
-
-
             LEFT JOIN dbo.Customer c ON c.CustomerID = ea.CustomerID
-
-
-
             LEFT JOIN dbo.BookingNegotiation bn ON bn.EventAppointmentID = ea.EventAppointmentID
-
-
-
             WHERE ea.EventAppointmentID = @EvtId;";
 
 
@@ -2587,10 +2549,9 @@ public class ConsultationNegotiationService : IConsultationNegotiationService
 
 
                 XenditInvoiceUrl = invoiceUrl,
-
-
-
-                CreatedAt = reader.GetDateTime(18)
+                CreatedAt = reader.GetDateTime(18),
+                LockExpiresAt = reader.IsDBNull(19) ? null : reader.GetDateTime(19),
+                QrString = reader.IsDBNull(20) ? null : reader.GetString(20)
 
 
 
@@ -3194,14 +3155,10 @@ public class ConsultationNegotiationService : IConsultationNegotiationService
 
 
             throw new KeyNotFoundException($"Event appointment {appointmentId} not found.");
-
-
-
-
-
-
-
-        var invId = invoiceId ?? appt.XenditInvoiceId ?? $"inv_mock_{appointmentId}";
+        // QR bookings are confirmed only by the validated Xendit webhook; never self-verify them (the mock status fallback would otherwise mark them paid).
+        if (appt.EventStatus == "Pending Payment")
+            return appt;
+var invId = invoiceId ?? appt.XenditInvoiceId ?? $"inv_mock_{appointmentId}";
 
 
 
@@ -3262,6 +3219,10 @@ public class ConsultationNegotiationService : IConsultationNegotiationService
 
 
                     SET EventStatus = 'Confirmed',
+
+
+
+                        LockExpiresAt = NULL,
 
 
 
@@ -3638,7 +3599,7 @@ public class ConsultationNegotiationService : IConsultationNegotiationService
 
 
 
-            WHERE EventAppointmentID = @EvtId AND DownpaymentStatus = 'Pending';";
+            WHERE EventAppointmentID = @EvtId AND DownpaymentStatus = 'Pending' AND EventStatus <> 'Pending Payment';";
 
 
 
@@ -4011,9 +3972,15 @@ public class ConsultationNegotiationService : IConsultationNegotiationService
 
 
             await EnsureSchemaAsync(conn, ct);
-
-
-
+            try
+            {
+                foreach (var batch in PendingPaymentService.SchemaBatches)
+                {
+                    await using var pcmd = new SqlCommand(batch, conn);
+                    await pcmd.ExecuteNonQueryAsync(ct);
+                }
+            }
+            catch { /* Best effort schema reconciliation (LockExpiresAt / QrString / Pending Payment status) */ }
             _schemaEnsured = true;
 
 

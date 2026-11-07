@@ -85,6 +85,8 @@ public class EventAppointmentDto
     public decimal FinalBalanceAmount { get; set; }
     public string DownpaymentStatus { get; set; } = "Pending";
     public DateTime? HoldExpiresAt { get; set; }
+    public DateTime? LockExpiresAt { get; set; }
+    public string? QrString { get; set; }
     public string? XenditInvoiceUrl { get; set; }
     public string? XenditInvoiceId { get; set; }
     public string? XenditExternalId { get; set; }

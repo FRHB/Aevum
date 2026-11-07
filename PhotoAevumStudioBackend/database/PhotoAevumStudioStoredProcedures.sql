@@ -2201,3 +2201,44 @@ BEGIN
     END CATCH
 END;
 GO
+
+-- Releases 'Pending Payment' bookings whose LockExpiresAt elapsed (called by PendingPaymentExpiryService every minute).
+CREATE OR ALTER PROCEDURE dbo.usp_ReleaseExpiredPendingPayments
+AS
+BEGIN
+    SET NOCOUNT ON;
+    DECLARE @Released TABLE (
+        EventAppointmentID nvarchar(30), CustomerID nvarchar(30),
+        EventName nvarchar(255), EventDate date, EventTime time);
+
+    UPDATE dbo.EventAppointment
+    SET EventStatus = 'Cancelled',
+        DownpaymentStatus = 'Expired',
+        LockExpiresAt = NULL,
+        HoldExpiresAt = NULL,
+        QrString = NULL
+    OUTPUT inserted.EventAppointmentID, inserted.CustomerID, inserted.EventName, inserted.EventDate, inserted.EventTime
+    INTO @Released
+    WHERE EventStatus = 'Pending Payment'
+      AND LockExpiresAt IS NOT NULL
+      AND LockExpiresAt <= SYSUTCDATETIME();
+
+    -- Free the staff and equipment held by the released slot.
+    DELETE ee FROM dbo.EventEmployee ee JOIN @Released r ON r.EventAppointmentID = ee.EventAppointmentID;
+    DELETE eq FROM dbo.EventEquipment eq JOIN @Released r ON r.EventAppointmentID = eq.EventAppointmentID;
+
+    IF OBJECT_ID(N'dbo.HistoryLog', N'U') IS NOT NULL
+        INSERT INTO dbo.HistoryLog (ActionType, EntityName, EntityID, ActionDetails, EventAppointmentID, ChangedByType, LoggedAt)
+        SELECT 'STATUS_CHANGE', 'EventAppointment', r.EventAppointmentID,
+               'Reservation fee not received within the lock window. Booking cancelled and time slot released.',
+               r.EventAppointmentID, 'System', SYSUTCDATETIME()
+        FROM @Released r;
+
+    SELECT r.EventAppointmentID, r.CustomerID,
+           LTRIM(RTRIM(ISNULL(c.CustomerFirstName, '') + ' ' + ISNULL(c.CustomerLastName, ''))) AS CustomerName,
+           ISNULL(c.CustomerEmail, '') AS CustomerEmail,
+           r.EventName, r.EventDate, r.EventTime
+    FROM @Released r
+    LEFT JOIN dbo.Customer c ON c.CustomerID = r.CustomerID;
+END;
+GO

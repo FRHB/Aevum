@@ -136,4 +136,41 @@ public class XenditPaymentIntegrationTests
         Assert.Equal("QRPH", status.PaymentMethod);
         Assert.Equal("QRPH", status.PaymentChannel);
     }
+    [Fact]
+    public async Task XenditPaymentService_CreateQrCodeAsync_ReturnsMockQrStringWithEvtReference()
+    {
+        var options = Options.Create(new XenditSettings
+        {
+            SecretKey = "xnd_development_mock_secret",
+            LockDurationMinutes = 60
+        });
+
+        using var httpClient = new HttpClient();
+        var service = new XenditPaymentService(options, httpClient, NullLogger<XenditPaymentService>.Instance);
+
+        var expires = DateTime.UtcNow.AddHours(1);
+        var qr = await service.CreateQrCodeAsync("EVT-104", 1500m, expires);
+
+        Assert.NotNull(qr);
+        Assert.Equal("EVT-104", qr.ReferenceId);
+        Assert.Equal(1500m, qr.Amount);
+        Assert.Contains("EVT-104", qr.QrString);
+    }
+
+    [Fact]
+    public void EventAppointmentDto_ExposesLockExpiresAtAndQrString()
+    {
+        var exp = DateTime.UtcNow.AddHours(1);
+        var dto = new EventAppointmentDto
+        {
+            EventAppointmentId = "EVT-104",
+            EventStatus = "Pending Payment",
+            LockExpiresAt = exp,
+            QrString = "00020101021226..."
+        };
+
+        Assert.Equal("Pending Payment", dto.EventStatus);
+        Assert.Equal(exp, dto.LockExpiresAt);
+        Assert.Equal("00020101021226...", dto.QrString);
+    }
 }

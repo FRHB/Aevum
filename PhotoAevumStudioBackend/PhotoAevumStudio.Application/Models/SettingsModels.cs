@@ -14,5 +14,9 @@ public class XenditSettings
     public string WebhookToken { get; set; } = "xnd_webhook_token_photoaevum_2026";
     public decimal DownpaymentPercentage { get; set; } = 0.15m;
     public int HoldDurationMinutes { get; set; } = 30;
+    /// <summary>Minutes a 'Pending Payment' booking keeps its time slot locked (LockExpiresAt).</summary>
+    public int LockDurationMinutes { get; set; } = 60;
+    /// <summary>Base URL of the Blazor customer portal, used for the /payments/{id} link in emails.</summary>
+    public string CustomerPortalBaseUrl { get; set; } = "https://localhost:7128";
     public string InvoiceBaseUrl { get; set; } = "https://checkout.xendit.co/web/";
 }

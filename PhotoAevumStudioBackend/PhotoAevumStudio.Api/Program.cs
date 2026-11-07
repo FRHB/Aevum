@@ -118,6 +118,20 @@ builder.Services.AddAuthentication(options =>
         IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(jwtKey)),
         ClockSkew = TimeSpan.FromSeconds(30)
     };
+    // SignalR (WebSockets/SSE) cannot send an Authorization header: accept the JWT from ?access_token= on the hub route only.
+    options.Events = new JwtBearerEvents
+    {
+        OnMessageReceived = ctx =>
+        {
+            var token = ctx.Request.Query["access_token"];
+            if (!string.IsNullOrEmpty(token) &&
+                ctx.HttpContext.Request.Path.StartsWithSegments(PhotoAevumStudio.Api.Hubs.PaymentHub.Route))
+            {
+                ctx.Token = token;
+            }
+            return Task.CompletedTask;
+        }
+    };
 });
 builder.Services.AddAuthorization(o =>
 {
@@ -231,6 +245,10 @@ builder.Services.AddHttpClient<PhotoAevumStudio.Application.Interfaces.IXenditPa
 });
 builder.Services.AddScoped<PhotoAevumStudio.Application.Interfaces.IConsultationNegotiationService, PhotoAevumStudio.Infrastructure.Services.ConsultationNegotiationService>();
 builder.Services.AddScoped<PhotoAevumStudio.Application.Interfaces.IPaymentService, PhotoAevumStudio.Infrastructure.Services.PaymentService>();
+builder.Services.AddSignalR();
+builder.Services.AddScoped<PhotoAevumStudio.Application.Interfaces.IPendingPaymentService, PhotoAevumStudio.Infrastructure.Services.PendingPaymentService>();
+builder.Services.AddScoped<PhotoAevumStudio.Application.Interfaces.IPaymentNotifier, PhotoAevumStudio.Api.Hubs.SignalRPaymentNotifier>();
+builder.Services.AddHostedService<PhotoAevumStudio.Api.BackgroundServices.PendingPaymentExpiryService>();
 builder.Services.Configure<PhotoAevumStudio.Application.Models.EmailConfig>(options =>
 {
     builder.Configuration.GetSection("EmailConfig").Bind(options);
@@ -394,6 +412,7 @@ app.Use(async (ctx, next) =>
 app.UseAuthorization();
 app.UseMiddleware<PhotoAevumStudio.Api.Middleware.AuditLoggingMiddleware>();
 app.MapControllers();
+app.MapHub<PhotoAevumStudio.Api.Hubs.PaymentHub>(PhotoAevumStudio.Api.Hubs.PaymentHub.Route);
 
 app.MapGet("/", () => Results.Ok(new
 {

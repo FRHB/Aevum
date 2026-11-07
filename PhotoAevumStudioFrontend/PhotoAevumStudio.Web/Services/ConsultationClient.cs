@@ -76,6 +76,9 @@ public sealed class ConsultationClient(
 
 
 
+    public Task<ApiResult<QrPaymentInfoDto>> GetQrPaymentAsync(string appointmentId, CancellationToken ct = default) =>
+        SendAsync<QrPaymentInfoDto>(() => _http.GetAsync($"api/payments/qr/{Uri.EscapeDataString(appointmentId)}", ct), ct);
+
     public Task<ApiResult<EventAppointmentDto>> GetAppointmentByIdAsync(string id, CancellationToken ct = default) =>
 
         SendAsync<EventAppointmentDto>(() => _http.GetAsync($"api/payments/appointment/{id}", ct), ct);
