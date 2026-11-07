@@ -1,3 +1,5 @@
+using System.Collections.Concurrent;
+using System.Runtime.CompilerServices;
 using System.Security.Claims;
 using PhotoAevumStudio.Web.Models;
 
@@ -16,6 +18,15 @@ public static class AppRoles
 
 public static class EmployeeRoleHelper
 {
+    private static readonly ConcurrentDictionary<(int ServiceHash, string StudioId), (bool IsClerk, DateTime ExpiresAt)> _clerkLookupCache = new();
+    private static readonly ConcurrentDictionary<(int ServiceHash, string StudioId), (string Name, DateTime ExpiresAt)> _nameLookupCache = new();
+    private static readonly TimeSpan CacheDuration = TimeSpan.FromMinutes(5);
+
+    public static void InvalidateRoleCache()
+    {
+        _clerkLookupCache.Clear();
+        _nameLookupCache.Clear();
+    }
     public static bool IsSystemAdmin(ClaimsPrincipal? user)
     {
         if (user == null || user.Identity?.IsAuthenticated != true)
@@ -74,21 +85,35 @@ public static class EmployeeRoleHelper
 
         if (!string.IsNullOrEmpty(studioId) && userService != null)
         {
+            var cacheKey = (RuntimeHelpers.GetHashCode(userService), studioId.ToUpperInvariant());
+            var now = DateTime.UtcNow;
+            if (_clerkLookupCache.TryGetValue(cacheKey, out var cached) && cached.ExpiresAt > now)
+            {
+                return cached.IsClerk;
+            }
+
             try
             {
+                bool isClerkResolved = false;
                 var emp = userService.GetEmployeeById(studioId);
                 if (emp != null)
                 {
                     if (!string.IsNullOrEmpty(emp.Position) && emp.Position.Contains("clerk", StringComparison.OrdinalIgnoreCase))
-                        return true;
-                    if (!string.IsNullOrEmpty(emp.Department) && (emp.Department.Contains("clerk", StringComparison.OrdinalIgnoreCase) || emp.Department.Contains("office", StringComparison.OrdinalIgnoreCase)))
-                        return true;
+                        isClerkResolved = true;
+                    else if (!string.IsNullOrEmpty(emp.Department) && (emp.Department.Contains("clerk", StringComparison.OrdinalIgnoreCase) || emp.Department.Contains("office", StringComparison.OrdinalIgnoreCase)))
+                        isClerkResolved = true;
                 }
 
-                var allSpecs = userService.GetEmployeeSpecializations();
-                var mySpecs = allSpecs.FirstOrDefault(s => s.EmployeeId.Equals(studioId, StringComparison.OrdinalIgnoreCase));
-                if (mySpecs != null && mySpecs.Specializations.Any(s => s.Contains("clerk", StringComparison.OrdinalIgnoreCase)))
-                    return true;
+                if (!isClerkResolved)
+                {
+                    var allSpecs = userService.GetEmployeeSpecializations();
+                    var mySpecs = allSpecs.FirstOrDefault(s => s.EmployeeId.Equals(studioId, StringComparison.OrdinalIgnoreCase));
+                    if (mySpecs != null && mySpecs.Specializations.Any(s => s.Contains("clerk", StringComparison.OrdinalIgnoreCase)))
+                        isClerkResolved = true;
+                }
+
+                _clerkLookupCache[cacheKey] = (isClerkResolved, now.Add(CacheDuration));
+                return isClerkResolved;
             }
             catch
             {
@@ -135,11 +160,21 @@ public static class EmployeeRoleHelper
         var empId = GetCurrentEmployeeId(user);
         if (!string.IsNullOrWhiteSpace(empId) && userService != null)
         {
+            var cacheKey = (RuntimeHelpers.GetHashCode(userService), empId.ToUpperInvariant());
+            var now = DateTime.UtcNow;
+            if (_nameLookupCache.TryGetValue(cacheKey, out var cached) && cached.ExpiresAt > now)
+            {
+                return cached.Name;
+            }
+
             try
             {
                 var emp = userService.GetEmployeeById(empId);
                 if (emp != null && !string.IsNullOrWhiteSpace(emp.Name))
+                {
+                    _nameLookupCache[cacheKey] = (emp.Name, now.Add(CacheDuration));
                     return emp.Name;
+                }
             }
             catch
             {

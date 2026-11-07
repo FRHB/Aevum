@@ -716,10 +716,18 @@
 
     private async Task RefreshStatus()
     {
-        clockStatus = await Employees.GetClockStatusAsync();
-        var leaves = await Employees.GetMyLeavesAsync();
-        myLeaves = leaves.ToList();
+        var clockTask = Employees.GetClockStatusAsync();
+        var leavesTask = Employees.GetMyLeavesAsync();
+        var ledgerTask = SafeLoadEmployeeLedgerAsync();
 
+        await Task.WhenAll(clockTask, leavesTask, ledgerTask);
+
+        clockStatus = await clockTask;
+        myLeaves = (await leavesTask).ToList();
+    }
+
+    private async Task SafeLoadEmployeeLedgerAsync()
+    {
         try
         {
             var res = await ConsultationApi.GetEmployeeLedgerAsync(employeeId);

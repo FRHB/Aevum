@@ -380,8 +380,12 @@ public class EmployeeService : IEmployeeService
         }
     }
 
+    private static volatile bool _employeeSchemaAligned;
+
     private static async Task EnsureEmployeeSchemaAsync(SqlConnection conn, CancellationToken ct)
     {
+        if (_employeeSchemaAligned) return;
+
         try
         {
             const string sql = @"
@@ -396,6 +400,7 @@ public class EmployeeService : IEmployeeService
                 END";
             await using var cmd = new SqlCommand(sql, conn);
             await cmd.ExecuteNonQueryAsync(ct);
+            _employeeSchemaAligned = true;
         }
         catch
         {

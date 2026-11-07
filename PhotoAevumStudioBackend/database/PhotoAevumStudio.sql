@@ -566,6 +566,10 @@ CREATE INDEX IX_EventOvertime_Event        ON dbo.EventOvertimeCharges (EventApp
 CREATE INDEX IX_BookingNegotiation_Customer ON dbo.BookingNegotiation (CustomerID, ConsultationDate DESC);
 CREATE INDEX IX_BookingNegotiation_Employee ON dbo.BookingNegotiation (EmployeeID, ConsultationDate DESC);
 CREATE INDEX IX_ArchiveIndex_Entity_ArchivedAt ON dbo.ArchiveIndex (EntityName, ArchivedAt DESC);
+CREATE INDEX IX_Employees_Status_Dept ON dbo.Employees (EmployeeStatus, DepartmentID);
+CREATE INDEX IX_EmployeeJointSpecialization_Emp_Spec ON dbo.EmployeeJointSpecialization (EmployeeID, SpecializationID);
+CREATE INDEX IX_EventAppointment_Date_Status ON dbo.EventAppointment (EventDate, EventStatus);
+CREATE INDEX IX_PaymentTransactions_Remittance ON dbo.PaymentTransactions (EmployeeRemittanceStatus, PaymentType);
 GO
 
 /* =====================================================================

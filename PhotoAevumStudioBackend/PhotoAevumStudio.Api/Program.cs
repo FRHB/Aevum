@@ -224,10 +224,21 @@ builder.Services.AddCors(options =>
     });
 });
 
-// ── Problem Details (RFC 7807) ───────────────────────────────────────────────
+// ── Problem Details, Caching & Compression ──────────────────────────────────
 
 builder.Services.AddProblemDetails();
 builder.Services.AddMemoryCache();
+builder.Services.AddOutputCache(options =>
+{
+    options.AddPolicy("CatalogCache", policy => policy.Expire(TimeSpan.FromMinutes(10)).Tag("catalog"));
+    options.AddPolicy("StaffMetaCache", policy => policy.Expire(TimeSpan.FromMinutes(15)).Tag("staff_meta"));
+});
+builder.Services.AddResponseCompression(options =>
+{
+    options.EnableForHttps = true;
+    options.Providers.Add<Microsoft.AspNetCore.ResponseCompression.BrotliCompressionProvider>();
+    options.Providers.Add<Microsoft.AspNetCore.ResponseCompression.GzipCompressionProvider>();
+});
 
 // ── Application Services ─────────────────────────────────────────────────────
 
@@ -383,10 +394,12 @@ if (app.Environment.IsDevelopment())
 
 if (!app.Environment.IsEnvironment("Testing"))
     app.UseHttpsRedirection();
+app.UseResponseCompression();
 app.UseStaticFiles();
 app.UseCors("BlazorFrontend");
 app.UseRateLimiter();
 app.UseAuthentication(); // Must come before UseAuthorization
+app.UseOutputCache();
 app.UseMiddleware<PhotoAevumStudio.Api.Middleware.SessionInactivityMiddleware>();
 var passwordChangeExempt = new[]
 {

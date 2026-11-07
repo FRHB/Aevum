@@ -302,8 +302,12 @@ public class StudioManagementService : IStudioManagementService
 
     // ── Service Images & Stored Procedures ────────────────────────────────────
 
+    private static volatile bool _schemaAligned;
+
     private static async Task EnsureServicesRateTypeSchemaAsync(SqlConnection conn, CancellationToken ct)
     {
+        if (_schemaAligned) return;
+
         try
         {
             const string alignSql = @"
@@ -350,6 +354,7 @@ public class StudioManagementService : IStudioManagementService
                 END;";
             await using var alignCmd = new SqlCommand(alignSql, conn);
             await alignCmd.ExecuteNonQueryAsync(ct);
+            _schemaAligned = true;
         }
         catch { /* Best-effort schema alignment */ }
     }

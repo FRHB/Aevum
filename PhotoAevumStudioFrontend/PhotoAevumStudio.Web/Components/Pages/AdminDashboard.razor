@@ -714,35 +714,12 @@
         }
         catch { }
 
-        // 1. Dashboard stats & attendance
-        try
-        {
-            var stats = await EmployeeService.GetDashboardStatsAsync();
-            _appointmentsToday = stats.AppointmentsToday;
-            _activeEmployees = stats.ActiveEmployees;
-            _bookingsThisWeek = stats.BookedThisWeek;
-        }
-        catch
-        {
-            _appointmentsToday = 0;
-            _activeEmployees = 0;
-            _bookingsThisWeek = 0;
-        }
+        // 1. Dispatch independent async API queries in parallel via Task.WhenAll
+        var statsTask = SafeGetStatsAsync();
+        var attendanceTask = SafeGetAttendanceAsync();
+        var remittancesTask = LoadPendingRemittancesAsync();
 
-        try
-        {
-            _todayAttendance = await EmployeeService.GetTodayAttendanceAsync();
-            _clockedInStaffCount = _todayAttendance.Count(a => a.IsClockedIn);
-            _onLeaveStaffCount = _todayAttendance.Count(a => a.IsOnLeaveToday || a.IsDayOffToday);
-        }
-        catch
-        {
-            _todayAttendance = Array.Empty<TodayAttendanceSummaryDto>();
-            _clockedInStaffCount = 0;
-            _onLeaveStaffCount = 0;
-        }
-
-        // 2. Bookings, Revenue & Remittances
+        // 2. Bookings & Revenue
         try
         {
             var allBookings = UserService.GetBookings();
@@ -792,8 +769,41 @@
         // 4. Dynamic FAQs
         LoadFaqs();
 
-        // 5. Pending Remittances
-        await LoadPendingRemittancesAsync();
+        // 5. Await parallel async tasks
+        await Task.WhenAll(statsTask, attendanceTask, remittancesTask);
+    }
+
+    private async Task SafeGetStatsAsync()
+    {
+        try
+        {
+            var stats = await EmployeeService.GetDashboardStatsAsync();
+            _appointmentsToday = stats.AppointmentsToday;
+            _activeEmployees = stats.ActiveEmployees;
+            _bookingsThisWeek = stats.BookedThisWeek;
+        }
+        catch
+        {
+            _appointmentsToday = 0;
+            _activeEmployees = 0;
+            _bookingsThisWeek = 0;
+        }
+    }
+
+    private async Task SafeGetAttendanceAsync()
+    {
+        try
+        {
+            _todayAttendance = await EmployeeService.GetTodayAttendanceAsync();
+            _clockedInStaffCount = _todayAttendance.Count(a => a.IsClockedIn);
+            _onLeaveStaffCount = _todayAttendance.Count(a => a.IsOnLeaveToday || a.IsDayOffToday);
+        }
+        catch
+        {
+            _todayAttendance = Array.Empty<TodayAttendanceSummaryDto>();
+            _clockedInStaffCount = 0;
+            _onLeaveStaffCount = 0;
+        }
     }
 
     private void LoadFaqs()

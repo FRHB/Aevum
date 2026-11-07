@@ -984,6 +984,18 @@ IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = N'IX_BookingNegotiation_Em
 
 IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = N'IX_ArchiveIndex_Entity_ArchivedAt' AND object_id = OBJECT_ID(N'dbo.ArchiveIndex'))
     CREATE INDEX IX_ArchiveIndex_Entity_ArchivedAt ON dbo.ArchiveIndex (EntityName, ArchivedAt DESC);
+
+IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = N'IX_Employees_Status_Dept' AND object_id = OBJECT_ID(N'dbo.Employees'))
+    CREATE INDEX IX_Employees_Status_Dept ON dbo.Employees (EmployeeStatus, DepartmentID);
+
+IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = N'IX_EmployeeJointSpecialization_Emp_Spec' AND object_id = OBJECT_ID(N'dbo.EmployeeJointSpecialization'))
+    CREATE INDEX IX_EmployeeJointSpecialization_Emp_Spec ON dbo.EmployeeJointSpecialization (EmployeeID, SpecializationID);
+
+IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = N'IX_EventAppointment_Date_Status' AND object_id = OBJECT_ID(N'dbo.EventAppointment'))
+    CREATE INDEX IX_EventAppointment_Date_Status ON dbo.EventAppointment (EventDate, EventStatus);
+
+IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = N'IX_PaymentTransactions_Remittance' AND object_id = OBJECT_ID(N'dbo.PaymentTransactions'))
+    CREATE INDEX IX_PaymentTransactions_Remittance ON dbo.PaymentTransactions (EmployeeRemittanceStatus, PaymentType);
 GO
 
 /* =====================================================================

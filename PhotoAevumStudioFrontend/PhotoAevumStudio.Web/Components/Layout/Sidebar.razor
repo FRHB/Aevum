@@ -56,6 +56,8 @@
     }
 
     private System.Security.Claims.ClaimsPrincipal? _currentUser;
+    private bool? _cachedIsOfficeClerk;
+    private bool? _cachedIsPhotographerOrCreative;
 
     public bool IsSystemAdmin => EmployeeRoleHelper.IsSystemAdmin(_currentUser) ||
         (_currentUser == null && ((UserRole ?? "").Trim().Equals("systemadmin", StringComparison.OrdinalIgnoreCase) ||
@@ -65,12 +67,18 @@
         IsSystemAdmin ||
         (_currentUser == null && (UserRole ?? "").Trim().Equals("admin", StringComparison.OrdinalIgnoreCase));
 
-    public bool IsOfficeClerk => EmployeeRoleHelper.IsOfficeClerk(_currentUser, UserService) ||
+    public bool IsOfficeClerk => _cachedIsOfficeClerk ??= (EmployeeRoleHelper.IsOfficeClerk(_currentUser, UserService) ||
         (_currentUser == null && ((UserRole ?? "").Trim().Equals("office clerk", StringComparison.OrdinalIgnoreCase) ||
                                   (UserRole ?? "").Trim().Equals("officeclerk", StringComparison.OrdinalIgnoreCase) ||
-                                  (UserRole ?? "").Trim().Equals("clerk", StringComparison.OrdinalIgnoreCase)));
+                                  (UserRole ?? "").Trim().Equals("clerk", StringComparison.OrdinalIgnoreCase))));
 
-    public bool IsPhotographerOrCreative => EmployeeRoleHelper.IsPhotographerOrCreative(_currentUser, UserService);
+    public bool IsPhotographerOrCreative => _cachedIsPhotographerOrCreative ??= EmployeeRoleHelper.IsPhotographerOrCreative(_currentUser, UserService);
+
+    protected override void OnParametersSet()
+    {
+        _cachedIsOfficeClerk = null;
+        _cachedIsPhotographerOrCreative = null;
+    }
 
     protected override async Task OnInitializedAsync()
     {
@@ -90,6 +98,8 @@
             UserRole = "admin";
         }
 
+        _cachedIsOfficeClerk = null;
+        _cachedIsPhotographerOrCreative = null;
         AutoExpandActiveAccordion();
     }
 
