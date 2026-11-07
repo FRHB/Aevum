@@ -85,7 +85,8 @@ builder.Services.AddIdentity<ApplicationUser, IdentityRole>(options =>
     options.SignIn.RequireConfirmedEmail    = false; // Email confirm done via admin
 })
 .AddEntityFrameworkStores<ApplicationDbContext>()
-.AddDefaultTokenProviders();
+.AddDefaultTokenProviders()
+.AddErrorDescriber<PhotoAevumStudio.Infrastructure.Auth.CustomIdentityErrorDescriber>();
 
 // ── JWT Authentication ────────────────────────────────────────────────────────
 

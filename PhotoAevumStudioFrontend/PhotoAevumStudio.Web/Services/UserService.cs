@@ -1,3254 +1,6824 @@
 using System;
+
 using System.Collections.Generic;
+
 using System.Data;
+
 using System.Globalization;
+
 using System.IO;
+
 using System.Linq;
+
 using System.Net;
+
 using System.Net.Http;
+
 using System.Net.Http.Headers;
+
 using System.Net.Http.Json;
+
 using System.Text.Json;
+
 using System.Text.RegularExpressions;
+
 using System.Threading;
+
 using System.Threading.Tasks;
+
 using Amazon.Runtime;
+
 using Amazon.S3;
+
 using Amazon.S3.Model;
+
 using Microsoft.AspNetCore.Hosting;
+
 using Microsoft.Data.SqlClient;
+
 using Microsoft.Extensions.Configuration;
+
 using PhotoAevumStudio.Web.Models;
+
+
 
 namespace PhotoAevumStudio.Web.Services;
 
-public sealed class UserService : IUserService
+
+
+public class UserService : IUserService
+
 {
+
 	private const string DefaultLocalConnectionString = "Server=db77602.public.databaseasp.net; Database=db77602; User Id=db77602; Password=G!r7cB8#Z5_d; Encrypt=True; TrustServerCertificate=True; MultipleActiveResultSets=True;";
+
+
 
 	private static readonly Regex ValidAdminIdRegex = new Regex("^(SADM|ADM)-\\d{3}$", RegexOptions.IgnoreCase | RegexOptions.Compiled);
 
+
+
 	private static readonly Regex ValidEmployeeIdRegex = new Regex("^EMP-\\d{3}$", RegexOptions.IgnoreCase | RegexOptions.Compiled);
+
+
 
 	private static readonly Regex ValidCustomerIdRegex = new Regex("^CUST-\\d{4}$", RegexOptions.IgnoreCase | RegexOptions.Compiled);
 
+
+
 	private readonly string _connectionString;
 
+
+
 	private readonly IHttpClientFactory? _httpClientFactory;
+
 	private readonly IWebHostEnvironment? _env;
+
 	private readonly AmazonS3Client? _r2Client;
+
 	private readonly string _servicesBucket;
+
 	private readonly string _r2PublicBaseUrl;
+
 	private readonly bool _r2Configured;
 
+
+
 	public UserService(IConfiguration? configuration = null, IHttpClientFactory? httpClientFactory = null, IWebHostEnvironment? env = null)
+
 	{
+
 		_connectionString = configuration?.GetConnectionString("DefaultConnection") ?? DefaultLocalConnectionString;
+
 		_httpClientFactory = httpClientFactory;
+
 		_env = env;
 
+
+
 		var accessKey = configuration?["CloudflareR2:AccessKey"] ?? "PLACEHOLDER";
+
 		var secretKey = configuration?["CloudflareR2:SecretKey"] ?? "PLACEHOLDER";
+
 		var accountId = configuration?["CloudflareR2:AccountId"];
+
 		var serviceUrl = configuration?["CloudflareR2:ServiceUrl"];
+
 		if (string.IsNullOrWhiteSpace(serviceUrl))
+
 		{
+
 			serviceUrl = !string.IsNullOrWhiteSpace(accountId)
+
 				? $"https://{accountId}.r2.cloudflarestorage.com"
+
 				: "https://f6757b400d51c23671cedb8b0efc4b32.r2.cloudflarestorage.com";
+
 		}
+
+
 
 		_servicesBucket = configuration?["CloudflareR2:Buckets:Services"] ?? "services";
+
 		_r2PublicBaseUrl = configuration?["CloudflareR2:PublicUrl"] ?? serviceUrl.TrimEnd('/');
+
 		_r2Configured = !string.IsNullOrWhiteSpace(accessKey)
+
 			&& !string.IsNullOrWhiteSpace(secretKey)
+
 			&& accessKey != "PLACEHOLDER"
+
 			&& secretKey != "PLACEHOLDER";
 
+
+
 		try
+
 		{
+
 			var credentials = new BasicAWSCredentials(accessKey, secretKey);
+
 			var s3Config = new AmazonS3Config
+
 			{
+
 				ServiceURL = serviceUrl,
+
 				AuthenticationRegion = "auto",
+
 				ForcePathStyle = true
+
 			};
+
 			_r2Client = new AmazonS3Client(credentials, s3Config);
+
 		}
+
 		catch
+
 		{
+
 		}
+
 	}
+
+
 
 	private async Task<(string? ImageFileName, string? ImageUrl)> UploadServiceAssetToR2Async(
+
 		byte[]? imageBytes,
+
 		string? originalFileName,
+
 		string? contentType,
+
 		string subFolder,
+
 		CancellationToken ct = default)
+
 	{
+
 		if (imageBytes == null || imageBytes.Length == 0)
+
 			return (null, null);
 
+
+
 		var ext = Path.GetExtension(originalFileName ?? string.Empty);
+
 		if (string.IsNullOrWhiteSpace(ext))
+
 		{
+
 			ext = contentType?.ToLowerInvariant() switch
+
 			{
+
 				"image/png" => ".png",
+
 				"image/webp" => ".webp",
+
 				_ => ".jpg"
+
 			};
+
 		}
+
+
 
 		var uniqueName = $"{Guid.NewGuid():N}{ext}";
+
 		var key = $"{subFolder.Trim('/')}/{uniqueName}";
+
 		string? resolvedUrl = null;
 
+
+
 		if (_r2Configured && _r2Client != null)
+
 		{
+
 			try
+
 			{
+
 				using var cts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+
 				cts.CancelAfter(TimeSpan.FromSeconds(5));
 
+
+
 				using var ms = new MemoryStream(imageBytes);
+
 				var putReq = new PutObjectRequest
+
 				{
+
 					BucketName = _servicesBucket,
+
 					Key = key,
+
 					InputStream = ms,
+
 					ContentType = string.IsNullOrWhiteSpace(contentType) ? "image/jpeg" : contentType,
+
 					DisablePayloadSigning = true
+
 				};
+
 				await _r2Client.PutObjectAsync(putReq, cts.Token);
 
+
+
 				var presignedReq = new GetPreSignedUrlRequest
+
 				{
+
 					BucketName = _servicesBucket,
+
 					Key = key,
+
 					Expires = DateTime.UtcNow.AddDays(7)
+
 				};
+
 				resolvedUrl = _r2Client.GetPreSignedURL(presignedReq);
+
 			}
+
 			catch
+
 			{
+
 			}
+
 		}
+
+
 
 		resolvedUrl ??= $"{_r2PublicBaseUrl}/{_servicesBucket}/{key}";
+
 		return (key, resolvedUrl);
+
 	}
+
+
 
 	private SqlConnection CreateConnection()
+
 	{
+
 		return new SqlConnection(_connectionString);
+
 	}
+
+
 
 	private static (string FirstName, string? MiddleName, string LastName) SplitFullName(string fullName)
+
 	{
+
 		string[] array = (fullName ?? string.Empty).Split(' ', StringSplitOptions.RemoveEmptyEntries);
+
 		int num = array.Length;
+
 		if (1 == 0)
+
 		{
+
 		}
+
 		(string FirstName, string? MiddleName, string LastName) result = num switch
+
 		{
+
 			0 => ("User", null, "Account"), 
+
 			1 => (array[0], null, array[0]), 
+
 			2 => (array[0], null, array[1]), 
+
 			_ => (array[0], string.Join(" ", array[1..^1]), array[^1]), 
+
 		};
+
 		if (1 == 0)
+
 		{
+
 		}
+
 		return result;
+
 	}
+
+
 
 	public IReadOnlyList<Admin> GetAdmins()
+
 	{
+
 		List<Admin> list = new List<Admin>();
+
 		HashSet<string> seenIds = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
 		using SqlConnection sqlConnection = CreateConnection();
+
 		sqlConnection.Open();
+
+
 
 		// 1. Query dbo.SystemAdmin for System Admin accounts
+
 		using (SqlCommand sysCmd = new SqlCommand(@"
+
             IF OBJECT_ID(N'dbo.SystemAdmin', N'U') IS NOT NULL
+
             BEGIN
+
                 SELECT SystemAdminID, FirstName, LastName, MiddleName
+
                 FROM dbo.SystemAdmin
+
                 ORDER BY SystemAdminID;
+
             END", sqlConnection))
+
 		using (SqlDataReader sysReader = sysCmd.ExecuteReader())
+
 		{
+
 			while (sysReader.Read())
+
 			{
+
 				string id = sysReader.GetString(0).Trim().ToUpperInvariant();
+
 				string first = sysReader.IsDBNull(1) ? string.Empty : sysReader.GetString(1);
+
 				string last = sysReader.IsDBNull(2) ? string.Empty : sysReader.GetString(2);
+
 				string middle = sysReader.IsDBNull(3) ? null : sysReader.GetString(3);
+
 				string name = string.Join(" ", new[] { first, middle, last }.Where(s => !string.IsNullOrWhiteSpace(s)));
+
 				list.Add(new Admin
+
 				{
+
 					Id = id,
+
 					Name = name,
+
 					Email = $"{id.ToLowerInvariant()}@photoaevum.studio",
+
 					Role = "System Admin"
+
 				});
+
 				seenIds.Add(id);
+
 			}
+
 		}
+
+
 
 		// 2. Query dbo.Admin for Admin accounts
+
 		bool flag = false;
+
 		using (SqlCommand sqlCommand = new SqlCommand("SELECT 1 FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_NAME = 'Admin' AND COLUMN_NAME = 'Email';", sqlConnection))
+
 		{
+
 			flag = sqlCommand.ExecuteScalar() != null;
+
 		}
+
 		string cmdText = (flag ? "IF OBJECT_ID(N'dbo.Admin', N'U') IS NOT NULL\n                BEGIN\n                    SELECT AdminID, AdminRole, AdminFirstName, AdminLastName, AdminMiddleName, Email\n                    FROM dbo.Admin\n                    ORDER BY AdminID;\n                END" : "IF OBJECT_ID(N'dbo.Admin', N'U') IS NOT NULL\n                BEGIN\n                    SELECT AdminID, AdminRole, AdminFirstName, AdminLastName, AdminMiddleName, NULL AS Email\n                    FROM dbo.Admin\n                    ORDER BY AdminID;\n                END");
+
 		using SqlCommand sqlCommand2 = new SqlCommand(cmdText, sqlConnection);
+
 		using SqlDataReader sqlDataReader = sqlCommand2.ExecuteReader();
+
 		while (sqlDataReader.Read())
+
 		{
+
 			string text = sqlDataReader.GetString(0).Trim().ToUpperInvariant();
+
 			if (ValidAdminIdRegex.IsMatch(text))
+
 			{
+
 				if (seenIds.Contains(text)) continue;
+
 				string text2 = (sqlDataReader.IsDBNull(1) ? "Admin" : sqlDataReader.GetString(1));
+
 				string text3 = (sqlDataReader.IsDBNull(2) ? string.Empty : sqlDataReader.GetString(2));
+
 				string text4 = (sqlDataReader.IsDBNull(3) ? string.Empty : sqlDataReader.GetString(3));
+
 				string text5 = (sqlDataReader.IsDBNull(4) ? null : sqlDataReader.GetString(4));
+
 				string text6 = (sqlDataReader.IsDBNull(5) ? (text.ToLowerInvariant() + "@photoaevum.studio") : sqlDataReader.GetString(5));
+
 				string name = string.Join(" ", new string[3] { text3, text5, text4 }.Where((string s) => !string.IsNullOrWhiteSpace(s)));
+
 				list.Add(new Admin
+
 				{
+
 					Id = text,
+
 					Name = name,
+
 					Email = (string.IsNullOrWhiteSpace(text6) ? (text.ToLowerInvariant() + "@photoaevum.studio") : text6),
+
 					Role = (text.StartsWith("SADM-", StringComparison.OrdinalIgnoreCase) || text2.Equals("SystemAdmin", StringComparison.OrdinalIgnoreCase) ? "System Admin" : text2)
+
 				});
+
 				seenIds.Add(text);
+
 			}
+
 		}
+
 		return list;
+
 	}
+
+
 
 	public Admin? GetAdminById(string id)
+
 	{
+
 		if (string.IsNullOrWhiteSpace(id))
+
 		{
+
 			return null;
+
 		}
+
 		string value = id.Trim().ToUpperInvariant();
+
 		using SqlConnection sqlConnection = CreateConnection();
+
 		sqlConnection.Open();
+
+
 
 		if (value.StartsWith("SADM-", StringComparison.OrdinalIgnoreCase))
+
 		{
+
 			using SqlCommand sysCmd = new SqlCommand(@"
+
                 IF OBJECT_ID(N'dbo.SystemAdmin', N'U') IS NOT NULL
+
                 BEGIN
+
                     SELECT SystemAdminID, FirstName, LastName, MiddleName
+
                     FROM dbo.SystemAdmin
+
                     WHERE UPPER(SystemAdminID) = @Id;
+
                 END", sqlConnection);
+
 			sysCmd.Parameters.AddWithValue("@Id", value);
+
 			using SqlDataReader sysReader = sysCmd.ExecuteReader();
+
 			if (sysReader.Read())
+
 			{
+
 				string sysId = sysReader.GetString(0).Trim().ToUpperInvariant();
+
 				string first = sysReader.IsDBNull(1) ? string.Empty : sysReader.GetString(1);
+
 				string last = sysReader.IsDBNull(2) ? string.Empty : sysReader.GetString(2);
+
 				string middle = sysReader.IsDBNull(3) ? null : sysReader.GetString(3);
+
 				string sysName = string.Join(" ", new[] { first, middle, last }.Where(s => !string.IsNullOrWhiteSpace(s)));
+
 				return new Admin
+
 				{
+
 					Id = sysId,
+
 					Name = sysName,
+
 					Email = $"{sysId.ToLowerInvariant()}@photoaevum.studio",
+
 					Role = "System Admin"
+
 				};
+
 			}
+
 		}
+
+
 
 		bool flag = false;
+
 		using (SqlCommand sqlCommand = new SqlCommand("SELECT 1 FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_NAME = 'Admin' AND COLUMN_NAME = 'Email';", sqlConnection))
+
 		{
+
 			flag = sqlCommand.ExecuteScalar() != null;
+
 		}
+
 		string cmdText = (flag ? "IF OBJECT_ID(N'dbo.Admin', N'U') IS NOT NULL\n                BEGIN\n                    SELECT AdminID, AdminRole, AdminFirstName, AdminLastName, AdminMiddleName, Email\n                    FROM dbo.Admin\n                    WHERE UPPER(AdminID) = @Id;\n                END" : "IF OBJECT_ID(N'dbo.Admin', N'U') IS NOT NULL\n                BEGIN\n                    SELECT AdminID, AdminRole, AdminFirstName, AdminLastName, AdminMiddleName, NULL AS Email\n                    FROM dbo.Admin\n                    WHERE UPPER(AdminID) = @Id;\n                END");
+
 		using SqlCommand sqlCommand2 = new SqlCommand(cmdText, sqlConnection);
+
 		sqlCommand2.Parameters.AddWithValue("@Id", value);
+
 		using SqlDataReader sqlDataReader = sqlCommand2.ExecuteReader();
+
 		if (!sqlDataReader.Read())
+
 		{
+
 			return null;
+
 		}
+
 		string text = sqlDataReader.GetString(0).Trim().ToUpperInvariant();
+
 		if (!ValidAdminIdRegex.IsMatch(text))
+
 		{
+
 			return null;
+
 		}
+
 		string text2 = (sqlDataReader.IsDBNull(1) ? "Admin" : sqlDataReader.GetString(1));
+
 		string text3 = (sqlDataReader.IsDBNull(2) ? string.Empty : sqlDataReader.GetString(2));
+
 		string text4 = (sqlDataReader.IsDBNull(3) ? string.Empty : sqlDataReader.GetString(3));
+
 		string text5 = (sqlDataReader.IsDBNull(4) ? null : sqlDataReader.GetString(4));
+
 		string text6 = (sqlDataReader.IsDBNull(5) ? (text.ToLowerInvariant() + "@photoaevum.studio") : sqlDataReader.GetString(5));
+
 		string name = string.Join(" ", new string[3] { text3, text5, text4 }.Where((string s) => !string.IsNullOrWhiteSpace(s)));
+
 		return new Admin
+
 		{
+
 			Id = text,
+
 			Name = name,
+
 			Email = (string.IsNullOrWhiteSpace(text6) ? (text.ToLowerInvariant() + "@photoaevum.studio") : text6),
+
 			Role = (text.StartsWith("SADM-", StringComparison.OrdinalIgnoreCase) || text2.Equals("SystemAdmin", StringComparison.OrdinalIgnoreCase) ? "System Admin" : text2)
+
 		};
+
 	}
 
+
+
 	public void AddAdmin(Admin admin, string? requestingUserId = null)
+
 	{
+
 		ArgumentNullException.ThrowIfNull(admin, "admin");
+
 		if (!string.IsNullOrWhiteSpace(requestingUserId) && !requestingUserId.StartsWith("SADM-", StringComparison.OrdinalIgnoreCase))
+
 		{
+
 			throw new InvalidOperationException("Insufficient privileges. Only a System Administrator (SADM-###) is authorized to create a new Admin account.");
+
 		}
+
 		var (value, text, value2) = SplitFullName(admin.Name);
+
 		using SqlConnection sqlConnection = CreateConnection();
+
 		sqlConnection.Open();
+
 		if (GetAdminById(admin.Id) != null)
+
 		{
+
 			throw new InvalidOperationException("An admin with ID '" + admin.Id + "' already exists.");
+
 		}
+
+		if (!IsEmailUnique(admin.Email, admin.Id))
+
+		{
+
+			throw new InvalidOperationException("This email address is already registered under another account role. Please use a different email.");
+
+		}
+
 		bool isSysAdminRole = admin.Id.StartsWith("SADM-", StringComparison.OrdinalIgnoreCase) 
+
 			|| string.Equals(admin.Role, "System Admin", StringComparison.OrdinalIgnoreCase) 
+
 			|| string.Equals(admin.Role, "SystemAdmin", StringComparison.OrdinalIgnoreCase);
+
+
 
 		string value3 = (string.IsNullOrWhiteSpace(admin.Email) ? (admin.Id.ToLowerInvariant() + "@photoaevum.studio") : admin.Email.Trim());
 
+
+
 		if (isSysAdminRole)
+
 		{
+
 			using SqlCommand sysInsertCmd = new SqlCommand(@"
+
                 IF OBJECT_ID(N'dbo.SystemAdmin', N'U') IS NOT NULL
+
                 BEGIN
+
                     INSERT INTO dbo.SystemAdmin (SystemAdminID, FirstName, LastName, MiddleName, PasswordHash, CreatedAt)
+
                     VALUES (@Id, @First, @Last, @Middle, @Password, SYSUTCDATETIME());
+
                 END", sqlConnection);
+
 			sysInsertCmd.Parameters.AddWithValue("@Id", admin.Id.ToUpperInvariant());
+
 			sysInsertCmd.Parameters.AddWithValue("@First", value);
+
 			sysInsertCmd.Parameters.AddWithValue("@Last", value2);
+
 			sysInsertCmd.Parameters.AddWithValue("@Middle", ((object)text) ?? ((object)DBNull.Value));
+
 			sysInsertCmd.Parameters.AddWithValue("@Password", "AxiomBit@2026");
+
 			sysInsertCmd.ExecuteNonQuery();
+
 		}
+
 		else
+
 		{
+
 			bool flag = false;
+
 			using (SqlCommand sqlCommand = new SqlCommand("SELECT 1 FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_NAME = 'Admin' AND COLUMN_NAME = 'Email';", sqlConnection))
+
 			{
+
 				flag = sqlCommand.ExecuteScalar() != null;
+
 			}
+
 			string cmdText = (flag ? "INSERT INTO dbo.Admin (AdminID, AdminRole, AdminFirstName, AdminLastName, AdminMiddleName, Email, AdminPassword, isFirstLogin)\n                VALUES (@Id, @Role, @First, @Last, @Middle, @Email, @Password, 1);" : "INSERT INTO dbo.Admin (AdminID, AdminRole, AdminFirstName, AdminLastName, AdminMiddleName, AdminPassword, isFirstLogin)\n                VALUES (@Id, @Role, @First, @Last, @Middle, @Password, 1);");
+
 			using SqlCommand sqlCommand2 = new SqlCommand(cmdText, sqlConnection);
+
 			sqlCommand2.Parameters.AddWithValue("@Id", admin.Id.ToUpperInvariant());
+
 			sqlCommand2.Parameters.AddWithValue("@Role", string.IsNullOrWhiteSpace(admin.Role) ? "Admin" : admin.Role);
+
 			sqlCommand2.Parameters.AddWithValue("@First", value);
+
 			sqlCommand2.Parameters.AddWithValue("@Last", value2);
+
 			sqlCommand2.Parameters.AddWithValue("@Middle", ((object)text) ?? ((object)DBNull.Value));
+
 			if (flag)
+
 			{
+
 				sqlCommand2.Parameters.AddWithValue("@Email", value3);
+
 			}
+
 			sqlCommand2.Parameters.AddWithValue("@Password", "AxiomBit@2026");
+
 			sqlCommand2.ExecuteNonQuery();
+
 		}
+
 		try
+
 		{
+
 			using SqlCommand sqlCommand3 = new SqlCommand("\n                IF OBJECT_ID(N'dbo.HistoryLog', N'U') IS NOT NULL\n                BEGIN\n                    INSERT INTO dbo.HistoryLog (ActionType, EntityName, EntityID, ChangedBy, ActionDetails, LoggedAt)\n                    VALUES ('Create', 'Admin', @Id, @By, @Details, SYSUTCDATETIME());\n                END", sqlConnection);
+
 			sqlCommand3.Parameters.AddWithValue("@Id", admin.Id.ToUpperInvariant());
+
 			sqlCommand3.Parameters.AddWithValue("@By", string.IsNullOrWhiteSpace(requestingUserId) ? "SADM-001" : requestingUserId.Trim());
+
 			sqlCommand3.Parameters.AddWithValue("@Details", $"Created admin {admin.Id} ({admin.Name}) with email {value3}");
+
 			sqlCommand3.ExecuteNonQuery();
+
 		}
+
 		catch
+
 		{
+
 		}
+
 	}
+
+
 
 	public void DeleteAdmin(string targetId, string requestingUserId)
+
 	{
+
 		if (targetId.StartsWith("SADM-", StringComparison.OrdinalIgnoreCase))
+
 		{
+
 			throw new InvalidOperationException("The Super Admin account (SADM-###) is the root administrator and can never be deleted or modified.");
+
 		}
+
 		if (!requestingUserId.StartsWith("SADM-", StringComparison.OrdinalIgnoreCase))
+
 		{
+
 			throw new InvalidOperationException("Insufficient privileges. Only the Super Admin (SADM-###) can delete a regular Admin account.");
+
 		}
+
 		Admin admin = GetAdminById(targetId) ?? throw new KeyNotFoundException("Admin with ID '" + targetId + "' was not found.");
+
 		using SqlConnection sqlConnection = CreateConnection();
+
 		sqlConnection.Open();
+
 		using SqlCommand sqlCommand = new SqlCommand("DELETE FROM dbo.Admin WHERE UPPER(AdminID) = @Id;", sqlConnection);
+
 		sqlCommand.Parameters.AddWithValue("@Id", admin.Id.ToUpperInvariant());
+
 		sqlCommand.ExecuteNonQuery();
+
 		try
+
 		{
+
 			using SqlCommand sqlCommand2 = new SqlCommand("\n                IF OBJECT_ID(N'dbo.HistoryLog', N'U') IS NOT NULL\n                BEGIN\n                    INSERT INTO dbo.HistoryLog (ActionType, EntityName, EntityID, ChangedBy, ActionDetails, LoggedAt)\n                    VALUES ('Delete', 'Admin', @Id, @By, 'Deleted admin account', SYSUTCDATETIME());\n                END", sqlConnection);
+
 			sqlCommand2.Parameters.AddWithValue("@Id", admin.Id.ToUpperInvariant());
+
 			sqlCommand2.Parameters.AddWithValue("@By", requestingUserId.Trim());
+
 			sqlCommand2.ExecuteNonQuery();
+
 		}
+
 		catch
+
 		{
+
 		}
+
 	}
+
+
 
 	public IReadOnlyList<Employee> GetEmployees(bool includeArchived = false)
+
 	{
+
 		List<Employee> list = new List<Employee>();
+
 		using SqlConnection sqlConnection = CreateConnection();
+
 		sqlConnection.Open();
+
 		string filterClause = includeArchived
+
 			? string.Empty
+
 			: "WHERE (e.EmployeeStatus NOT IN ('Archive', 'Archived', 'Deleted') AND e.Status NOT IN ('Archive', 'Archived', 'Deleted'))";
 
+
+
 		string query = $@"
+
             IF OBJECT_ID(N'dbo.Employees', N'U') IS NOT NULL
+
             BEGIN
+
                 SELECT e.EmployeeID,
+
                        e.EmployeeFirstName,
+
                        e.EmployeeLastName,
+
                        e.EmployeeMiddleName,
+
                        e.EmployeeEmail,
+
                        (
+
                            SELECT TOP 1 COALESCE(NULLIF(es.SpecializationName, ''), es.Specialization)
+
                            FROM dbo.EmployeeJointSpecialization ejs
+
                            INNER JOIN dbo.EmployeeSpecialization es ON es.SpecializationID = ejs.SpecializationID
+
                            WHERE ejs.EmployeeID = e.EmployeeID
+
                        ) AS PrimarySpecialization,
+
                        COALESCE(
+
                            d.DepartmentName,
+
                            (
+
                                SELECT TOP 1 COALESCE(es_d.DepartmentName, es.DepartmentName)
+
                                FROM dbo.EmployeeJointSpecialization ejs
+
                                INNER JOIN dbo.EmployeeSpecialization es ON es.SpecializationID = ejs.SpecializationID
+
                                LEFT JOIN dbo.Departments es_d ON es_d.DepartmentID = es.DepartmentID
+
                                WHERE ejs.EmployeeID = e.EmployeeID
+
                            ),
+
                            'Photography'
+
                        ) AS PrimaryDepartment,
+
                        e.EmployeeStatus,
+
                        CASE WHEN COL_LENGTH(N'dbo.Employees', N'Address') IS NOT NULL THEN e.Address ELSE NULL END AS Address,
+
                        CASE WHEN COL_LENGTH(N'dbo.Employees', N'BirthYear') IS NOT NULL THEN e.BirthYear ELSE NULL END AS BirthYear,
+
                        CASE WHEN COL_LENGTH(N'dbo.Employees', N'DepartmentID') IS NOT NULL THEN e.DepartmentID ELSE NULL END AS DepartmentID
+
                 FROM dbo.Employees e
+
                 LEFT JOIN dbo.Departments d ON d.DepartmentID = e.DepartmentID
+
                 {filterClause}
+
                 ORDER BY e.EmployeeID;
+
             END";
 
+
+
 		using SqlCommand sqlCommand = new SqlCommand(query, sqlConnection);
+
 		using SqlDataReader sqlDataReader = sqlCommand.ExecuteReader();
+
 		while (sqlDataReader.Read())
+
 		{
+
 			string text = sqlDataReader.GetString(0).Trim().ToUpperInvariant();
+
 			if (ValidEmployeeIdRegex.IsMatch(text))
+
 			{
+
 				string text2 = (sqlDataReader.IsDBNull(1) ? string.Empty : sqlDataReader.GetString(1));
+
 				string text3 = (sqlDataReader.IsDBNull(2) ? string.Empty : sqlDataReader.GetString(2));
+
 				string text4 = (sqlDataReader.IsDBNull(3) ? null : sqlDataReader.GetString(3));
+
 				string email = (sqlDataReader.IsDBNull(4) ? string.Empty : sqlDataReader.GetString(4));
+
 				string position = (sqlDataReader.IsDBNull(5) ? string.Empty : sqlDataReader.GetString(5));
+
 				string department = (sqlDataReader.IsDBNull(6) ? "Photography" : sqlDataReader.GetString(6));
+
 				string status = (sqlDataReader.IsDBNull(7) ? "Active" : sqlDataReader.GetString(7));
+
 				string? address = sqlDataReader.IsDBNull(8) ? null : sqlDataReader.GetString(8);
+
 				int? birthYear = sqlDataReader.IsDBNull(9) ? null : sqlDataReader.GetInt32(9);
+
 				string? deptId = sqlDataReader.IsDBNull(10) ? null : sqlDataReader.GetString(10);
 
+
+
 				string name = string.Join(" ", new string[3] { text2, text4, text3 }.Where((string s) => !string.IsNullOrWhiteSpace(s)));
+
 				list.Add(new Employee
+
 				{
+
 					Id = text,
+
 					Name = name,
+
 					Email = email,
+
 					Position = position,
+
 					Department = department,
+
 					DepartmentId = deptId,
+
 					Address = address,
+
 					BirthYear = birthYear,
+
 					Status = status
+
 				});
+
 			}
+
 		}
+
 		return list;
+
 	}
+
+
 
 	public IReadOnlyList<Employee> GetEmployees() => GetEmployees(includeArchived: false);
 
+
+
 	public IReadOnlyList<Employee> GetArchivedEmployees() =>
+
 		GetEmployees(includeArchived: true)
+
 			.Where(e => e.Status.Equals("Archive", StringComparison.OrdinalIgnoreCase) ||
+
 			            e.Status.Equals("Archived", StringComparison.OrdinalIgnoreCase) ||
+
 			            e.Status.Equals("Deleted", StringComparison.OrdinalIgnoreCase))
+
 			.ToList();
+
+
 
 	public Employee? GetEmployeeById(string id)
+
 	{
+
 		if (string.IsNullOrWhiteSpace(id))
+
 		{
+
 			return null;
+
 		}
+
 		string value = id.Trim().ToUpperInvariant();
+
 		using SqlConnection sqlConnection = CreateConnection();
+
 		sqlConnection.Open();
+
 		using SqlCommand sqlCommand = new SqlCommand(@"
+
             IF OBJECT_ID(N'dbo.Employees', N'U') IS NOT NULL
+
             BEGIN
+
                 SELECT e.EmployeeID,
+
                        e.EmployeeFirstName,
+
                        e.EmployeeLastName,
+
                        e.EmployeeMiddleName,
+
                        e.EmployeeEmail,
+
                        (
+
                            SELECT TOP 1 COALESCE(NULLIF(es.SpecializationName, ''), es.Specialization)
+
                            FROM dbo.EmployeeJointSpecialization ejs
+
                            INNER JOIN dbo.EmployeeSpecialization es ON es.SpecializationID = ejs.SpecializationID
+
                            WHERE ejs.EmployeeID = e.EmployeeID
+
                        ) AS PrimarySpecialization,
+
                        COALESCE(
+
                            d.DepartmentName,
+
                            (
+
                                SELECT TOP 1 COALESCE(es_d.DepartmentName, es.DepartmentName)
+
                                FROM dbo.EmployeeJointSpecialization ejs
+
                                INNER JOIN dbo.EmployeeSpecialization es ON es.SpecializationID = ejs.SpecializationID
+
                                LEFT JOIN dbo.Departments es_d ON es_d.DepartmentID = es.DepartmentID
+
                                WHERE ejs.EmployeeID = e.EmployeeID
+
                            ),
+
                            'Photography'
+
                        ) AS PrimaryDepartment,
+
                        e.EmployeeStatus,
+
                        CASE WHEN COL_LENGTH(N'dbo.Employees', N'Address') IS NOT NULL THEN e.Address ELSE NULL END AS Address,
+
                        CASE WHEN COL_LENGTH(N'dbo.Employees', N'BirthYear') IS NOT NULL THEN e.BirthYear ELSE NULL END AS BirthYear,
+
                        CASE WHEN COL_LENGTH(N'dbo.Employees', N'DepartmentID') IS NOT NULL THEN e.DepartmentID ELSE NULL END AS DepartmentID
+
                 FROM dbo.Employees e
+
                 LEFT JOIN dbo.Departments d ON d.DepartmentID = e.DepartmentID
+
                 WHERE UPPER(e.EmployeeID) = @Id;
+
             END", sqlConnection);
+
 		sqlCommand.Parameters.AddWithValue("@Id", value);
+
 		using SqlDataReader sqlDataReader = sqlCommand.ExecuteReader();
+
 		if (!sqlDataReader.Read())
+
 		{
+
 			return null;
+
 		}
+
 		string text = sqlDataReader.GetString(0).Trim().ToUpperInvariant();
+
 		if (!ValidEmployeeIdRegex.IsMatch(text))
+
 		{
+
 			return null;
+
 		}
+
 		string text2 = (sqlDataReader.IsDBNull(1) ? string.Empty : sqlDataReader.GetString(1));
+
 		string text3 = (sqlDataReader.IsDBNull(2) ? string.Empty : sqlDataReader.GetString(2));
+
 		string text4 = (sqlDataReader.IsDBNull(3) ? null : sqlDataReader.GetString(3));
+
 		string email = (sqlDataReader.IsDBNull(4) ? string.Empty : sqlDataReader.GetString(4));
+
 		string position = (sqlDataReader.IsDBNull(5) ? string.Empty : sqlDataReader.GetString(5));
+
 		string department = (sqlDataReader.IsDBNull(6) ? "Photography" : sqlDataReader.GetString(6));
+
 		string status = (sqlDataReader.IsDBNull(7) ? "Active" : sqlDataReader.GetString(7));
+
 		string? address = sqlDataReader.IsDBNull(8) ? null : sqlDataReader.GetString(8);
+
 		int? birthYear = sqlDataReader.IsDBNull(9) ? null : sqlDataReader.GetInt32(9);
+
 		string? deptId = sqlDataReader.IsDBNull(10) ? null : sqlDataReader.GetString(10);
 
+
+
 		string name = string.Join(" ", new string[3] { text2, text4, text3 }.Where((string s) => !string.IsNullOrWhiteSpace(s)));
+
 		return new Employee
+
 		{
+
 			Id = text,
+
 			Name = name,
+
 			Email = email,
+
 			Position = position,
+
 			Department = department,
+
 			DepartmentId = deptId,
+
 			Address = address,
+
 			BirthYear = birthYear,
+
 			Status = status
+
 		};
+
 	}
+
+
 
 	public void AddEmployee(Employee employee)
+
 	{
+
 		ArgumentNullException.ThrowIfNull(employee, "employee");
+
 		if (GetEmployeeById(employee.Id) != null)
+
 		{
+
 			throw new InvalidOperationException("An employee with ID '" + employee.Id + "' already exists.");
+
 		}
+
+		if (!IsEmailUnique(employee.Email, employee.Id))
+
+		{
+
+			throw new InvalidOperationException("This email address is already registered under another account role. Please use a different email.");
+
+		}
+
 		var (value, text, value2) = SplitFullName(employee.Name);
+
 		using SqlConnection sqlConnection = CreateConnection();
+
 		sqlConnection.Open();
+
+
 
 		// Resolve Department ID and Name if provided
+
 		string? deptId = employee.DepartmentId;
+
 		string deptName = employee.Department?.Trim() ?? "Photography";
+
 		if (string.IsNullOrWhiteSpace(deptId) && !string.IsNullOrWhiteSpace(deptName))
+
 		{
+
 			using (SqlCommand dCmd = new SqlCommand("SELECT TOP 1 DepartmentID, DepartmentName FROM dbo.Departments WHERE LOWER(DepartmentName) = LOWER(@DName);", sqlConnection))
+
 			{
+
 				dCmd.Parameters.AddWithValue("@DName", deptName);
+
 				using SqlDataReader dReader = dCmd.ExecuteReader();
+
 				if (dReader.Read())
+
 				{
+
 					deptId = dReader.GetString(0);
+
 					deptName = dReader.GetString(1);
+
 				}
+
 			}
+
 		}
 
+
+
 		using (SqlCommand sqlCommand = new SqlCommand(@"
+
             INSERT INTO dbo.Employees (
+
                 EmployeeID, EmployeeFirstName, EmployeeLastName, EmployeeMiddleName, 
+
                 EmployeeEmail, EmployeePassword, EmployeeStatus, isFirstLogin,
+
                 Address, BirthYear, DepartmentID
+
             )
+
             VALUES (
+
                 @Id, @First, @Last, @Middle, 
+
                 @Email, @Password, 'Active', 1,
+
                 @Address, @BirthYear, @DepartmentID
+
             );", sqlConnection))
+
 		{
+
 			sqlCommand.Parameters.AddWithValue("@Id", employee.Id.ToUpperInvariant());
+
 			sqlCommand.Parameters.AddWithValue("@First", value);
+
 			sqlCommand.Parameters.AddWithValue("@Last", value2);
+
 			sqlCommand.Parameters.AddWithValue("@Middle", ((object)text) ?? ((object)DBNull.Value));
+
 			sqlCommand.Parameters.AddWithValue("@Email", string.IsNullOrWhiteSpace(employee.Email) ? (employee.Id.ToLowerInvariant() + "@photoaevum.studio") : employee.Email);
+
 			sqlCommand.Parameters.AddWithValue("@Password", "AxiomBit@2026");
+
 			sqlCommand.Parameters.AddWithValue("@Address", (object?)employee.Address?.Trim() ?? DBNull.Value);
+
 			sqlCommand.Parameters.AddWithValue("@BirthYear", (object?)employee.BirthYear ?? DBNull.Value);
+
 			sqlCommand.Parameters.AddWithValue("@DepartmentID", (object?)deptId ?? DBNull.Value);
+
 			sqlCommand.ExecuteNonQuery();
+
 		}
+
 		if (!string.IsNullOrWhiteSpace(employee.Position) || !string.IsNullOrWhiteSpace(employee.Department))
+
 		{
+
 			string value3 = "SP-" + employee.Id.Replace("EMP-", "", StringComparison.OrdinalIgnoreCase);
+
 			string value4 = "EJS-" + employee.Id.Replace("EMP-", "", StringComparison.OrdinalIgnoreCase);
+
 			using SqlCommand sqlCommand2 = new SqlCommand(@"
+
                 IF NOT EXISTS (SELECT 1 FROM dbo.EmployeeSpecialization WHERE SpecializationID = @SpecId)
+
                 BEGIN
+
                     INSERT INTO dbo.EmployeeSpecialization (
+
                         SpecializationID, SpecializationName, SpecializationDescription, 
+
                         Specialization, Description, DepartmentID, DepartmentName, ColorTag, CreatedAt
+
                     )
+
                     VALUES (
+
                         @SpecId, @Position, @Department, 
+
                         @Position, @Department, @DeptId, @Department, 'Blue', SYSUTCDATETIME()
+
                     );
+
                 END
+
                 ELSE
+
                 BEGIN
+
                     UPDATE dbo.EmployeeSpecialization
+
                     SET SpecializationName = @Position, SpecializationDescription = @Department, 
+
                         Specialization = @Position, Description = @Department,
+
                         DepartmentID = @DeptId, DepartmentName = @Department
+
                     WHERE SpecializationID = @SpecId;
+
                 END
+
+
 
                 IF NOT EXISTS (SELECT 1 FROM dbo.EmployeeJointSpecialization WHERE EmployeeJointSpecializationID = @JointId)
+
                 BEGIN
+
                     IF COL_LENGTH('dbo.EmployeeJointSpecialization', 'AssignedAt') IS NOT NULL
+
                     BEGIN
+
                         EXEC sp_executesql N'INSERT INTO dbo.EmployeeJointSpecialization (EmployeeJointSpecializationID, SpecializationID, EmployeeID, AssignedAt) VALUES (@JointId, @SpecId, @EmpId, SYSUTCDATETIME())', N'@JointId nvarchar(30), @SpecId nvarchar(30), @EmpId nvarchar(30)', @JointId, @SpecId, @EmpId;
+
                     END
+
                     ELSE
+
                     BEGIN
+
                         INSERT INTO dbo.EmployeeJointSpecialization (EmployeeJointSpecializationID, SpecializationID, EmployeeID)
+
                         VALUES (@JointId, @SpecId, @EmpId);
+
                     END
+
                 END", sqlConnection);
+
 			sqlCommand2.Parameters.AddWithValue("@SpecId", value3);
+
 			sqlCommand2.Parameters.AddWithValue("@JointId", value4);
+
 			sqlCommand2.Parameters.AddWithValue("@EmpId", employee.Id.ToUpperInvariant());
+
 			sqlCommand2.Parameters.AddWithValue("@Position", employee.Position ?? string.Empty);
+
 			sqlCommand2.Parameters.AddWithValue("@Department", deptName);
+
 			sqlCommand2.Parameters.AddWithValue("@DeptId", (object?)deptId ?? DBNull.Value);
+
 			sqlCommand2.ExecuteNonQuery();
+
 			return;
+
 		}
+
 	}
+
+
 
 	public bool DeleteEmployee(string id)
+
 	{
+
 		if (string.IsNullOrWhiteSpace(id))
+
 		{
+
 			return false;
+
 		}
+
 		using SqlConnection sqlConnection = CreateConnection();
+
 		sqlConnection.Open();
+
 		using SqlCommand sqlCommand = new SqlCommand(@"
+
             IF OBJECT_ID(N'dbo.spDeleteEmployee', N'P') IS NOT NULL
+
                 EXEC dbo.spDeleteEmployee @EmployeeID = @Id;
+
             ELSE IF OBJECT_ID(N'dbo.sp_DeleteEmployee', N'P') IS NOT NULL
+
                 EXEC dbo.sp_DeleteEmployee @EmployeeID = @Id;
+
             ELSE
+
             BEGIN
+
                 DELETE FROM dbo.EmployeeJointSpecialization WHERE UPPER(EmployeeID) = @Id;
+
                 DELETE FROM dbo.Employees WHERE UPPER(EmployeeID) = @Id;
+
             END", sqlConnection);
+
 		sqlCommand.Parameters.AddWithValue("@Id", id.Trim().ToUpperInvariant());
+
 		return sqlCommand.ExecuteNonQuery() > 0;
+
 	}
+
+
 
 	public IReadOnlyList<Customer> GetCustomers()
+
 	{
+
 		List<Customer> list = new List<Customer>();
+
 		using SqlConnection sqlConnection = CreateConnection();
+
 		sqlConnection.Open();
+
 		using SqlCommand sqlCommand = new SqlCommand("\n            IF OBJECT_ID(N'dbo.Customer', N'U') IS NOT NULL\n            BEGIN\n                SELECT CustomerID, CustomerFirstName, CustomerLastName, CustomerMiddleName, CustomerEmail, CustomerPhoneNumber\n                FROM dbo.Customer\n                ORDER BY CustomerID;\n            END", sqlConnection);
+
 		using SqlDataReader sqlDataReader = sqlCommand.ExecuteReader();
+
 		while (sqlDataReader.Read())
+
 		{
+
 			string text = sqlDataReader.GetString(0).Trim().ToUpperInvariant();
+
 			if (ValidCustomerIdRegex.IsMatch(text))
+
 			{
+
 				string text2 = (sqlDataReader.IsDBNull(1) ? string.Empty : sqlDataReader.GetString(1));
+
 				string text3 = (sqlDataReader.IsDBNull(2) ? string.Empty : sqlDataReader.GetString(2));
+
 				string text4 = (sqlDataReader.IsDBNull(3) ? null : sqlDataReader.GetString(3));
+
 				string email = (sqlDataReader.IsDBNull(4) ? string.Empty : sqlDataReader.GetString(4));
+
 				string phone = (sqlDataReader.IsDBNull(5) ? string.Empty : sqlDataReader.GetString(5));
+
 				string name = string.Join(" ", new string[3] { text2, text4, text3 }.Where((string s) => !string.IsNullOrWhiteSpace(s)));
+
 				list.Add(new Customer
+
 				{
+
 					Id = text,
+
 					Name = name,
+
 					Email = email,
+
 					Phone = phone
+
 				});
+
 			}
+
 		}
+
 		return list;
+
 	}
+
+
 
 	public Customer? GetCustomerById(string id)
+
 	{
+
 		if (string.IsNullOrWhiteSpace(id))
+
 		{
+
 			return null;
+
 		}
+
 		string value = id.Trim().ToUpperInvariant();
+
 		using SqlConnection sqlConnection = CreateConnection();
+
 		sqlConnection.Open();
+
 		using SqlCommand sqlCommand = new SqlCommand("\n            IF OBJECT_ID(N'dbo.Customer', N'U') IS NOT NULL\n            BEGIN\n                SELECT CustomerID, CustomerFirstName, CustomerLastName, CustomerMiddleName, CustomerEmail, CustomerPhoneNumber\n                FROM dbo.Customer\n                WHERE UPPER(CustomerID) = @Id OR UPPER(CustomerEmail) = @Id;\n            END", sqlConnection);
+
 		sqlCommand.Parameters.AddWithValue("@Id", value);
+
 		using SqlDataReader sqlDataReader = sqlCommand.ExecuteReader();
+
 		if (!sqlDataReader.Read())
+
 		{
+
 			return null;
+
 		}
+
 		string text = sqlDataReader.GetString(0).Trim().ToUpperInvariant();
+
 		if (!ValidCustomerIdRegex.IsMatch(text))
+
 		{
+
 			return null;
+
 		}
+
 		string text2 = (sqlDataReader.IsDBNull(1) ? string.Empty : sqlDataReader.GetString(1));
+
 		string text3 = (sqlDataReader.IsDBNull(2) ? string.Empty : sqlDataReader.GetString(2));
+
 		string text4 = (sqlDataReader.IsDBNull(3) ? null : sqlDataReader.GetString(3));
+
 		string email = (sqlDataReader.IsDBNull(4) ? string.Empty : sqlDataReader.GetString(4));
+
 		string phone = (sqlDataReader.IsDBNull(5) ? string.Empty : sqlDataReader.GetString(5));
+
 		string name = string.Join(" ", new string[3] { text2, text4, text3 }.Where((string s) => !string.IsNullOrWhiteSpace(s)));
+
 		return new Customer
+
 		{
+
 			Id = text,
+
 			Name = name,
+
 			Email = email,
+
 			Phone = phone
+
 		};
+
 	}
+
+
 
 	public void AddCustomer(Customer customer)
+
 	{
+
 		ArgumentNullException.ThrowIfNull(customer, "customer");
+
 		if (GetCustomerById(customer.Id) != null)
+
 		{
+
 			throw new InvalidOperationException("A customer with ID '" + customer.Id + "' already exists.");
+
 		}
+
+		if (!IsEmailUnique(customer.Email, customer.Id))
+
+		{
+
+			throw new InvalidOperationException("This email address is already registered under another account role. Please use a different email.");
+
+		}
+
 		var (value, text, value2) = SplitFullName(customer.Name);
+
 		using SqlConnection sqlConnection = CreateConnection();
+
 		sqlConnection.Open();
+
 		using SqlCommand sqlCommand = new SqlCommand("\n            INSERT INTO dbo.Customer (CustomerID, CustomerFirstName, CustomerLastName, CustomerMiddleName, CustomerEmail, CustomerPhoneNumber, CustomerPassword)\n            VALUES (@Id, @First, @Last, @Middle, @Email, @Phone, @Password);", sqlConnection);
+
 		sqlCommand.Parameters.AddWithValue("@Id", customer.Id.ToUpperInvariant());
+
 		sqlCommand.Parameters.AddWithValue("@First", value);
+
 		sqlCommand.Parameters.AddWithValue("@Last", value2);
+
 		sqlCommand.Parameters.AddWithValue("@Middle", ((object)text) ?? ((object)DBNull.Value));
+
 		sqlCommand.Parameters.AddWithValue("@Email", customer.Email ?? string.Empty);
+
 		sqlCommand.Parameters.AddWithValue("@Phone", string.IsNullOrWhiteSpace(customer.Phone) ? ((IConvertible)DBNull.Value) : ((IConvertible)customer.Phone));
+
 		sqlCommand.Parameters.AddWithValue("@Password", "AxiomBit@2026");
+
 		sqlCommand.ExecuteNonQuery();
+
 	}
+
+
 
 	public bool DeleteCustomer(string id)
+
 	{
+
 		if (string.IsNullOrWhiteSpace(id))
+
 		{
+
 			return false;
+
 		}
+
 		using SqlConnection sqlConnection = CreateConnection();
+
 		sqlConnection.Open();
+
 		using SqlCommand sqlCommand = new SqlCommand("DELETE FROM dbo.Customer WHERE UPPER(CustomerID) = @Id;", sqlConnection);
+
 		sqlCommand.Parameters.AddWithValue("@Id", id.Trim().ToUpperInvariant());
+
 		return sqlCommand.ExecuteNonQuery() > 0;
+
 	}
+
+
 
 	// ── Departments ─────────────────────────────────────────────────────────
+
 	public IReadOnlyList<DepartmentModel> GetDepartments()
+
 	{
+
 		List<DepartmentModel> list = new List<DepartmentModel>();
+
 		using SqlConnection sqlConnection = CreateConnection();
+
 		sqlConnection.Open();
+
 		using SqlCommand sqlCommand = new SqlCommand(@"
+
             IF OBJECT_ID(N'dbo.Departments', N'U') IS NOT NULL
+
             BEGIN
+
                 SELECT DepartmentID, DepartmentName, DepartmentDescription, CreatedAt
+
                 FROM dbo.Departments
+
                 ORDER BY DepartmentName ASC;
+
             END", sqlConnection);
+
 		using SqlDataReader reader = sqlCommand.ExecuteReader();
+
 		while (reader.Read())
+
 		{
+
 			list.Add(new DepartmentModel
+
 			{
+
 				DepartmentId = reader.GetString(0),
+
 				DepartmentName = reader.GetString(1),
+
 				DepartmentDescription = reader.IsDBNull(2) ? null : reader.GetString(2),
+
 				CreatedAt = reader.IsDBNull(3) ? DateTime.UtcNow : reader.GetDateTime(3)
+
 			});
+
 		}
+
 		return list;
+
 	}
+
+
 
 	public DepartmentModel AddDepartment(DepartmentModel model)
+
 	{
+
 		ArgumentNullException.ThrowIfNull(model);
+
 		using SqlConnection sqlConnection = CreateConnection();
+
 		sqlConnection.Open();
 
+
+
 		int maxNum = 0;
+
 		using (SqlCommand maxCmd = new SqlCommand(@"
+
             SELECT ISNULL(MAX(TRY_CAST(SUBSTRING(DepartmentID, 5, 20) AS INT)), 0)
+
             FROM dbo.Departments
+
             WHERE DepartmentID LIKE 'DEP-%';", sqlConnection))
+
 		{
+
 			var val = maxCmd.ExecuteScalar();
+
 			if (val != null && val != DBNull.Value) maxNum = Convert.ToInt32(val);
+
 		}
+
 		string newId = $"DEP-{maxNum + 1:D4}";
 
+
+
 		using SqlCommand sqlCommand = new SqlCommand(@"
+
             IF EXISTS (SELECT 1 FROM dbo.Departments WHERE LOWER(DepartmentName) = LOWER(@Name))
+
             BEGIN
+
                 THROW 50020, 'A department with this name already exists.', 1;
+
             END;
+
             INSERT INTO dbo.Departments (DepartmentID, DepartmentName, DepartmentDescription, CreatedAt)
+
             VALUES (@Id, @Name, @Desc, SYSUTCDATETIME());", sqlConnection);
+
 		sqlCommand.Parameters.AddWithValue("@Id", newId);
+
 		sqlCommand.Parameters.AddWithValue("@Name", model.DepartmentName.Trim());
+
 		sqlCommand.Parameters.AddWithValue("@Desc", (object?)model.DepartmentDescription?.Trim() ?? DBNull.Value);
+
 		sqlCommand.ExecuteNonQuery();
+
+
 
 		return new DepartmentModel
+
 		{
+
 			DepartmentId = newId,
+
 			DepartmentName = model.DepartmentName.Trim(),
+
 			DepartmentDescription = model.DepartmentDescription?.Trim(),
+
 			CreatedAt = DateTime.UtcNow
+
 		};
+
 	}
+
+
 
 	public bool DeleteDepartment(string id)
+
 	{
+
 		if (string.IsNullOrWhiteSpace(id)) return false;
+
 		using SqlConnection sqlConnection = CreateConnection();
+
 		sqlConnection.Open();
+
 		using SqlCommand sqlCommand = new SqlCommand("DELETE FROM dbo.Departments WHERE UPPER(DepartmentID) = UPPER(@Id);", sqlConnection);
+
 		sqlCommand.Parameters.AddWithValue("@Id", id.Trim());
+
 		return sqlCommand.ExecuteNonQuery() > 0;
+
 	}
+
+
 
 	public IReadOnlyList<SpecializationLookupItem> GetSpecializationLookups()
+
 	{
+
 		List<SpecializationLookupItem> list = new List<SpecializationLookupItem>();
+
 		using SqlConnection sqlConnection = CreateConnection();
+
 		sqlConnection.Open();
+
 		using SqlCommand sqlCommand = new SqlCommand(@"
+
             IF OBJECT_ID(N'dbo.EmployeeSpecialization', N'U') IS NOT NULL
+
             BEGIN
+
                 SELECT es.SpecializationID,
+
                        COALESCE(NULLIF(es.SpecializationName, ''), es.Specialization, es.SpecializationID) AS Name,
+
                        COALESCE(NULLIF(es.SpecializationDescription, ''), es.Description) AS Description,
+
                        COALESCE(d.DepartmentName, es.DepartmentName, 'Photography') AS Department,
+
                        COALESCE(NULLIF(es.ColorTag, ''), 'Blue') AS ColorTag,
+
                        COALESCE(es.CreatedAt, SYSUTCDATETIME()) AS CreatedAt,
+
                        COALESCE(d.DepartmentID, es.DepartmentID, 'DEP-0001') AS DepartmentId
+
                 FROM dbo.EmployeeSpecialization es
+
                 LEFT JOIN dbo.Departments d ON d.DepartmentID = es.DepartmentID
+
                 ORDER BY es.SpecializationID;
+
             END", sqlConnection);
+
 		using SqlDataReader sqlDataReader = sqlCommand.ExecuteReader();
+
 		while (sqlDataReader.Read())
+
 		{
+
 			list.Add(new SpecializationLookupItem
+
 			{
+
 				Id = sqlDataReader.GetString(0),
+
 				Name = sqlDataReader.GetString(1),
+
 				Description = (sqlDataReader.IsDBNull(2) ? null : sqlDataReader.GetString(2)),
+
 				Department = (sqlDataReader.IsDBNull(3) ? "Photography" : sqlDataReader.GetString(3)),
+
 				ColorTag = (sqlDataReader.IsDBNull(4) ? "Blue" : sqlDataReader.GetString(4)),
+
 				CreatedAt = (sqlDataReader.IsDBNull(5) ? DateTime.UtcNow : sqlDataReader.GetDateTime(5)),
+
 				DepartmentId = (sqlDataReader.IsDBNull(6) ? null : sqlDataReader.GetString(6))
+
 			});
+
 		}
+
 		return list;
+
 	}
+
+
 
 	public IReadOnlyList<EmployeeSpecializationDto> GetEmployeeSpecializations(bool includeArchived = false)
+
 	{
+
 		List<EmployeeSpecializationDto> list = new List<EmployeeSpecializationDto>();
+
 		using SqlConnection sqlConnection = CreateConnection();
+
 		sqlConnection.Open();
+
 		Dictionary<string, List<string>> dictionary = new Dictionary<string, List<string>>(StringComparer.OrdinalIgnoreCase);
+
 		Dictionary<string, List<string>> deptDictionary = new Dictionary<string, List<string>>(StringComparer.OrdinalIgnoreCase);
+
 		Dictionary<string, string> deptIdDictionary = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
 
+
+
 		using (SqlCommand sqlCommand = new SqlCommand(@"
+
             IF OBJECT_ID(N'dbo.EmployeeJointSpecialization', N'U') IS NOT NULL
+
             BEGIN
+
                 SELECT ejs.EmployeeID, 
+
                        COALESCE(NULLIF(es.SpecializationName, ''), es.Specialization, ejs.SpecializationID) AS SpecName,
+
                        ejs.SpecializationID,
+
                        COALESCE(NULLIF(d.DepartmentName, ''), NULLIF(es.DepartmentName, ''), 'General') AS DeptName,
+
                        COALESCE(es.DepartmentID, d.DepartmentID) AS DeptId
+
                 FROM dbo.EmployeeJointSpecialization ejs
+
                 LEFT JOIN dbo.EmployeeSpecialization es ON UPPER(es.SpecializationID) = UPPER(ejs.SpecializationID)
+
                 LEFT JOIN dbo.Departments d ON d.DepartmentID = es.DepartmentID;
+
             END", sqlConnection))
+
 		{
+
 			using SqlDataReader sqlDataReader = sqlCommand.ExecuteReader();
+
 			while (sqlDataReader.Read())
+
 			{
+
 				string key = sqlDataReader.GetString(0).Trim().ToUpperInvariant();
+
 				string text = (sqlDataReader.IsDBNull(1) ? string.Empty : sqlDataReader.GetString(1)?.Trim() ?? string.Empty);
+
 				string specId = (sqlDataReader.IsDBNull(2) ? string.Empty : sqlDataReader.GetString(2)?.Trim() ?? string.Empty);
+
 				string deptName = (sqlDataReader.FieldCount > 3 && !sqlDataReader.IsDBNull(3)) ? sqlDataReader.GetString(3)?.Trim() ?? string.Empty : string.Empty;
+
 				string specDeptId = (sqlDataReader.FieldCount > 4 && !sqlDataReader.IsDBNull(4)) ? sqlDataReader.GetString(4)?.Trim() : null;
 
+
+
 				if (!dictionary.TryGetValue(key, out var value))
+
 				{
+
 					value = (dictionary[key] = new List<string>());
+
 				}
+
 				if (!string.IsNullOrWhiteSpace(text) && !value.Contains(text, StringComparer.OrdinalIgnoreCase))
+
 				{
+
 					value.Add(text);
+
 				}
+
 				if (!string.IsNullOrWhiteSpace(specId) && !value.Contains(specId, StringComparer.OrdinalIgnoreCase))
+
 				{
+
 					value.Add(specId);
+
 				}
+
+
 
 				if (!string.IsNullOrWhiteSpace(deptName) && !string.Equals(deptName, "General", StringComparison.OrdinalIgnoreCase))
+
 				{
+
 					if (!deptDictionary.TryGetValue(key, out var dList))
+
 					{
+
 						dList = (deptDictionary[key] = new List<string>());
+
 					}
+
 					if (!dList.Contains(deptName, StringComparer.OrdinalIgnoreCase))
+
 					{
+
 						dList.Add(deptName);
+
 					}
+
 					if (!string.IsNullOrWhiteSpace(specDeptId) && !deptIdDictionary.ContainsKey(key))
+
 					{
+
 						deptIdDictionary[key] = specDeptId;
+
 					}
+
 				}
+
 			}
+
 		}
+
+
 
 		string filterClause = includeArchived
+
 			? string.Empty
+
 			: "WHERE (e.EmployeeStatus NOT IN ('Archive', 'Archived', 'Deleted') AND e.Status NOT IN ('Archive', 'Archived', 'Deleted'))";
 
+
+
 		string empQuery = $@"
+
             IF OBJECT_ID(N'dbo.Employees', N'U') IS NOT NULL
+
             BEGIN
+
                 IF COL_LENGTH(N'dbo.Employees', N'BirthDate') IS NULL
+
                     EXEC(N'ALTER TABLE dbo.Employees ADD BirthDate date NULL');
+
                 SELECT e.EmployeeID, e.EmployeeFirstName, e.EmployeeLastName, e.EmployeeMiddleName, e.EmployeeEmail, e.EmployeeStatus,
+
                        e.Address, e.BirthYear, e.DepartmentID, d.DepartmentName, e.BirthDate,
+
                        CASE WHEN COL_LENGTH(N'dbo.Employees', N'Specializations') IS NOT NULL THEN e.Specializations ELSE NULL END AS SpecJson
+
                 FROM dbo.Employees e
+
                 LEFT JOIN dbo.Departments d ON d.DepartmentID = e.DepartmentID
+
                 {filterClause}
+
                 ORDER BY e.EmployeeID;
+
             END";
 
+
+
 		using (SqlCommand ensureCmd = new SqlCommand("IF OBJECT_ID(N'dbo.Employees', N'U') IS NOT NULL AND COL_LENGTH(N'dbo.Employees', N'BirthDate') IS NULL EXEC(N'ALTER TABLE dbo.Employees ADD BirthDate date NULL');", sqlConnection))
+
 		{
+
 			ensureCmd.ExecuteNonQuery();
+
 		}
+
 		using SqlCommand sqlCommand2 = new SqlCommand(empQuery, sqlConnection);
+
 		using SqlDataReader sqlDataReader2 = sqlCommand2.ExecuteReader();
+
 		int num = 1;
+
 		while (sqlDataReader2.Read())
+
 		{
+
 			string text2 = sqlDataReader2.GetString(0).Trim().ToUpperInvariant();
+
 			dictionary.TryGetValue(text2, out var value2);
+
 			var specsList = value2 != null ? new List<string>(value2) : new List<string>();
 
+
+
 			if (sqlDataReader2.FieldCount > 11 && !sqlDataReader2.IsDBNull(11))
+
 			{
+
 				var specJson = sqlDataReader2.GetString(11);
+
 				if (!string.IsNullOrWhiteSpace(specJson) && specJson != "[]")
+
 				{
+
 					try
+
 					{
+
 						var parsed = System.Text.Json.JsonSerializer.Deserialize<List<string>>(specJson);
+
 						if (parsed != null)
+
 						{
+
 							foreach (var p in parsed.Where(s => !string.IsNullOrWhiteSpace(s)))
+
 							{
+
 								if (!specsList.Contains(p.Trim(), StringComparer.OrdinalIgnoreCase))
+
 								{
+
 									specsList.Add(p.Trim());
+
 								}
+
 							}
+
 						}
+
 					}
+
 					catch
+
 					{
+
 						var parts = specJson.Trim('[', ']', '"').Split(',', StringSplitOptions.RemoveEmptyEntries);
+
 						foreach (var part in parts)
+
 						{
+
 							var clean = part.Trim(' ', '"', '\'');
+
 							if (!string.IsNullOrWhiteSpace(clean) && !specsList.Contains(clean, StringComparer.OrdinalIgnoreCase))
+
 							{
+
 								specsList.Add(clean);
+
 							}
+
 						}
+
 					}
+
 				}
+
 			}
+
+
 
 			DateTime? birthDate = (sqlDataReader2.FieldCount > 10 && !sqlDataReader2.IsDBNull(10)) ? sqlDataReader2.GetDateTime(10) : (DateTime?)null;
+
 			int? birthYear = (sqlDataReader2.IsDBNull(7) ? (int?)null : sqlDataReader2.GetInt32(7)) ?? birthDate?.Year;
 
+
+
 			string? finalDept = null;
+
 			if (deptDictionary.TryGetValue(text2, out var deptList) && deptList.Count > 0)
+
 			{
+
 				finalDept = string.Join(", ", deptList);
+
 			}
+
 			else if (!sqlDataReader2.IsDBNull(9) && !string.IsNullOrWhiteSpace(sqlDataReader2.GetString(9)))
+
 			{
+
 				finalDept = sqlDataReader2.GetString(9);
+
 			}
+
 			finalDept ??= "General";
 
+
+
 			string? finalDeptId = (sqlDataReader2.IsDBNull(8) ? null : sqlDataReader2.GetString(8));
+
 			if (string.IsNullOrWhiteSpace(finalDeptId) && deptIdDictionary.TryGetValue(text2, out var sDeptId))
+
 			{
+
 				finalDeptId = sDeptId;
+
 			}
+
+
 
 			list.Add(new EmployeeSpecializationDto
+
 			{
+
 				Id = num++,
+
 				EmployeeId = text2,
+
 				FirstName = (sqlDataReader2.IsDBNull(1) ? string.Empty : sqlDataReader2.GetString(1)),
+
 				LastName = (sqlDataReader2.IsDBNull(2) ? string.Empty : sqlDataReader2.GetString(2)),
+
 				MiddleName = (sqlDataReader2.IsDBNull(3) ? null : sqlDataReader2.GetString(3)),
+
 				Email = (sqlDataReader2.IsDBNull(4) ? string.Empty : sqlDataReader2.GetString(4)),
+
 				Role = "Employee",
+
 				Status = (sqlDataReader2.IsDBNull(5) ? "Active" : sqlDataReader2.GetString(5)),
+
 				Address = (sqlDataReader2.IsDBNull(6) ? null : sqlDataReader2.GetString(6)),
+
 				BirthDate = birthDate,
+
 				BirthYear = birthYear,
+
 				DepartmentId = finalDeptId,
+
 				Department = finalDept,
+
 				Specializations = specsList
+
 			});
+
 		}
+
 		return list;
+
 	}
+
+
 
 	public IReadOnlyList<EmployeeSpecializationDto> GetEmployeeSpecializations() =>
+
 		GetEmployeeSpecializations(includeArchived: false);
 
+
+
 	public IReadOnlyList<EmployeeSpecializationDto> GetArchivedEmployeeSpecializations() =>
+
 		GetEmployeeSpecializations(includeArchived: true)
+
 			.Where(e => e.Status.Equals("Archive", StringComparison.OrdinalIgnoreCase) ||
+
 			            e.Status.Equals("Archived", StringComparison.OrdinalIgnoreCase) ||
+
 			            e.Status.Equals("Deleted", StringComparison.OrdinalIgnoreCase))
+
 			.ToList();
 
+
+
 	public SpecializationLookupItem AddSpecialization(SpecializationModel model)
+
 	{
+
 		ArgumentNullException.ThrowIfNull(model, "model");
+
 		using SqlConnection sqlConnection = CreateConnection();
+
 		sqlConnection.Open();
+
+
 
 		// Resolve Department ID and Name
+
 		string deptId = model.DepartmentId ?? string.Empty;
+
 		string deptName = model.Department?.Trim() ?? "Photography";
+
 		if (string.IsNullOrWhiteSpace(deptId))
+
 		{
+
 			using (SqlCommand dCmd = new SqlCommand("SELECT TOP 1 DepartmentID, DepartmentName FROM dbo.Departments WHERE LOWER(DepartmentName) = LOWER(@DName);", sqlConnection))
+
 			{
+
 				dCmd.Parameters.AddWithValue("@DName", deptName);
+
 				using SqlDataReader dReader = dCmd.ExecuteReader();
+
 				if (dReader.Read())
+
 				{
+
 					deptId = dReader.GetString(0);
+
 					deptName = dReader.GetString(1);
+
 				}
+
 			}
+
 		}
+
+
 
 		var existing = GetSpecializationLookups();
+
 		int maxNum = 0;
+
 		foreach (var item in existing)
+
 		{
+
 			if (item.Id.StartsWith("SP-", StringComparison.OrdinalIgnoreCase) &&
+
 			    int.TryParse(item.Id[3..], out int num))
+
 			{
+
 				if (num > maxNum) maxNum = num;
+
 			}
+
 		}
+
 		string text = $"SP-{maxNum + 1:D3}";
+
 		using SqlCommand sqlCommand = new SqlCommand(@"
+
             INSERT INTO dbo.EmployeeSpecialization (
+
                 SpecializationID, SpecializationName, SpecializationDescription, 
+
                 Specialization, Description, DepartmentID, DepartmentName, ColorTag, CreatedAt
+
             )
+
             VALUES (
+
                 @Id, @Name, @Desc, 
+
                 @Name, @Desc, @DeptId, @DeptName, @Color, SYSUTCDATETIME()
+
             );", sqlConnection);
+
 		sqlCommand.Parameters.AddWithValue("@Id", text);
+
 		sqlCommand.Parameters.AddWithValue("@Name", model.Name.Trim());
+
 		sqlCommand.Parameters.AddWithValue("@Desc", ((object)model.Description?.Trim()) ?? ((object)DBNull.Value));
+
 		sqlCommand.Parameters.AddWithValue("@DeptId", string.IsNullOrWhiteSpace(deptId) ? (object)DBNull.Value : deptId);
+
 		sqlCommand.Parameters.AddWithValue("@DeptName", deptName);
+
 		sqlCommand.Parameters.AddWithValue("@Color", string.IsNullOrWhiteSpace(model.ColorTag) ? "Blue" : model.ColorTag);
+
 		sqlCommand.ExecuteNonQuery();
 
+
+
 		try
+
 		{
+
 			using (SqlCommand logCmd = new SqlCommand(@"
+
 				IF OBJECT_ID(N'dbo.HistoryLog', N'U') IS NOT NULL
+
 				BEGIN
+
 					IF COLUMNPROPERTY(OBJECT_ID(N'dbo.HistoryLog'), 'ChangedByType', 'ColumnId') IS NOT NULL
+
 					BEGIN
+
 						INSERT INTO dbo.HistoryLog (ActionType, EntityName, EntityID, ChangedByType, ActionDetails, LoggedAt)
+
 						VALUES ('Create', 'Specialization', @Id, 'Admin', @Details, SYSUTCDATETIME());
+
 					END
+
 					ELSE IF COLUMNPROPERTY(OBJECT_ID(N'dbo.HistoryLog'), 'ChangedBy', 'IsComputed') = 0
+
 					BEGIN
+
 						INSERT INTO dbo.HistoryLog (ActionType, EntityName, EntityID, ChangedBy, ActionDetails, LoggedAt)
+
 						VALUES ('Create', 'Specialization', @Id, 'Admin', @Details, SYSUTCDATETIME());
+
 					END
+
 					ELSE
+
 					BEGIN
+
 						INSERT INTO dbo.HistoryLog (ActionType, EntityName, EntityID, ActionDetails, LoggedAt)
+
 						VALUES ('Create', 'Specialization', @Id, @Details, SYSUTCDATETIME());
+
 					END
+
 				END", sqlConnection))
+
 			{
+
 				logCmd.Parameters.AddWithValue("@Id", text);
+
 				logCmd.Parameters.AddWithValue("@Details", $"Added specialization '{model.Name.Trim()}' ({text}) in {deptName}");
+
 				logCmd.ExecuteNonQuery();
+
 			}
+
 		}
+
 		catch
+
 		{
+
 		}
+
+
 
 		return new SpecializationLookupItem
+
 		{
+
 			Id = text,
+
 			Name = model.Name.Trim(),
+
 			Description = model.Description?.Trim(),
+
 			Department = deptName,
+
 			DepartmentId = string.IsNullOrWhiteSpace(deptId) ? null : deptId,
+
 			ColorTag = model.ColorTag,
+
 			CreatedAt = DateTime.UtcNow
+
 		};
+
 	}
+
+
 
 	public bool DeleteSpecialization(string id)
+
 	{
+
 		if (string.IsNullOrWhiteSpace(id)) return false;
+
 		using SqlConnection sqlConnection = CreateConnection();
+
 		sqlConnection.Open();
+
 		using SqlCommand sqlCommand = new SqlCommand(@"
+
             DELETE FROM dbo.EmployeeJointSpecialization WHERE UPPER(SpecializationID) = UPPER(@Id);
+
             DELETE FROM dbo.EmployeeSpecialization WHERE UPPER(SpecializationID) = UPPER(@Id);", sqlConnection);
+
 		sqlCommand.Parameters.AddWithValue("@Id", id.Trim());
+
 		bool deleted = sqlCommand.ExecuteNonQuery() > 0;
 
+
+
 		if (deleted)
+
 		{
+
 			try
+
 			{
+
 				using SqlCommand logCmd = new SqlCommand(@"
+
 					IF OBJECT_ID(N'dbo.HistoryLog', N'U') IS NOT NULL
+
 					BEGIN
+
 						IF COLUMNPROPERTY(OBJECT_ID(N'dbo.HistoryLog'), 'ChangedByType', 'ColumnId') IS NOT NULL
+
 						BEGIN
+
 							INSERT INTO dbo.HistoryLog (ActionType, EntityName, EntityID, ChangedByType, ActionDetails, LoggedAt)
+
 							VALUES ('Delete', 'Specialization', @Id, 'Admin', @Details, SYSUTCDATETIME());
+
 						END
+
 						ELSE IF COLUMNPROPERTY(OBJECT_ID(N'dbo.HistoryLog'), 'ChangedBy', 'IsComputed') = 0
+
 						BEGIN
+
 							INSERT INTO dbo.HistoryLog (ActionType, EntityName, EntityID, ChangedBy, ActionDetails, LoggedAt)
+
 							VALUES ('Delete', 'Specialization', @Id, 'Admin', @Details, SYSUTCDATETIME());
+
 						END
+
 						ELSE
+
 						BEGIN
+
 							INSERT INTO dbo.HistoryLog (ActionType, EntityName, EntityID, ActionDetails, LoggedAt)
+
 							VALUES ('Delete', 'Specialization', @Id, @Details, SYSUTCDATETIME());
+
 						END
+
 					END", sqlConnection);
+
 				logCmd.Parameters.AddWithValue("@Id", id.Trim());
+
 				logCmd.Parameters.AddWithValue("@Details", $"Deleted specialization {id.Trim()}");
+
 				logCmd.ExecuteNonQuery();
+
 			}
+
 			catch
+
 			{
+
 			}
+
 		}
+
+
 
 		return deleted;
+
 	}
 
+
+
 	public bool AssignEmployeeSpecializations(string employeeId, IEnumerable<string> specializationNamesOrIds, string? departmentId = null)
+
 	{
+
 		if (string.IsNullOrWhiteSpace(employeeId)) return false;
+
 		using SqlConnection sqlConnection = CreateConnection();
+
 		sqlConnection.Open();
 
+
+
 		// 1. Delete existing joints for this employee
+
 		using (SqlCommand delCmd = new SqlCommand(@"
+
 			IF OBJECT_ID(N'dbo.EmployeeJointSpecialization', N'U') IS NOT NULL
+
 			BEGIN
+
 				DELETE FROM dbo.EmployeeJointSpecialization WHERE UPPER(EmployeeID) = UPPER(@EmpId);
+
 			END", sqlConnection))
+
 		{
+
 			delCmd.Parameters.AddWithValue("@EmpId", employeeId.Trim().ToUpperInvariant());
+
 			delCmd.ExecuteNonQuery();
+
 		}
+
+
 
 		var specList = specializationNamesOrIds?.Where(s => !string.IsNullOrWhiteSpace(s)).Distinct(StringComparer.OrdinalIgnoreCase).ToList() ?? new List<string>();
 
+
+
 		int seq = 1;
+
 		List<string> canonicalNames = new List<string>();
 
+
+
 		foreach (var spec in specList)
+
 		{
+
 			using (SqlCommand insCmd = new SqlCommand(@"
+
 				DECLARE @ResolvedSpecId NVARCHAR(30);
+
 				DECLARE @ResolvedSpecName NVARCHAR(100);
 
+
+
 				SELECT TOP 1 
+
 					@ResolvedSpecId = SpecializationID,
+
 					@ResolvedSpecName = COALESCE(NULLIF(SpecializationName, ''), Specialization, SpecializationID)
+
 				FROM dbo.EmployeeSpecialization
+
 				WHERE UPPER(SpecializationID) = UPPER(@Spec)
+
 				   OR UPPER(LTRIM(RTRIM(COALESCE(NULLIF(SpecializationName, ''), Specialization)))) = UPPER(@Spec);
 
+
+
 				IF @ResolvedSpecId IS NOT NULL
+
 				BEGIN
+
 					DECLARE @JointCandidate NVARCHAR(30) = @JointId;
+
 					IF EXISTS (SELECT 1 FROM dbo.EmployeeJointSpecialization WHERE EmployeeJointSpecializationID = @JointCandidate)
+
 					BEGIN
+
 						SET @JointCandidate = CONCAT('EJS-', LEFT(REPLACE(CONVERT(NVARCHAR(36), NEWID()), '-', ''), 12));
+
 					END
+
+
 
 					IF COL_LENGTH('dbo.EmployeeJointSpecialization', 'AssignedAt') IS NOT NULL
+
 					BEGIN
+
 						EXEC sp_executesql N'INSERT INTO dbo.EmployeeJointSpecialization (EmployeeJointSpecializationID, SpecializationID, EmployeeID, AssignedAt) VALUES (@JointCandidate, @ResolvedSpecId, @EmpId, SYSUTCDATETIME())',
+
 							N'@JointCandidate nvarchar(30), @ResolvedSpecId nvarchar(30), @EmpId nvarchar(30)',
+
 							@JointCandidate, @ResolvedSpecId, @EmpId;
+
 					END
+
 					ELSE
+
 					BEGIN
+
 						INSERT INTO dbo.EmployeeJointSpecialization (EmployeeJointSpecializationID, SpecializationID, EmployeeID)
+
 						VALUES (@JointCandidate, @ResolvedSpecId, @EmpId);
+
 					END
+
+
 
 					SELECT @ResolvedSpecName;
+
 				END
+
 				ELSE
+
 				BEGIN
+
 					SELECT NULL;
+
 				END", sqlConnection))
+
 			{
+
 				insCmd.Parameters.AddWithValue("@Spec", spec.Trim());
+
 				insCmd.Parameters.AddWithValue("@JointId", $"EJS-{employeeId.Replace("EMP-", "", StringComparison.OrdinalIgnoreCase)}-{seq++}");
+
 				insCmd.Parameters.AddWithValue("@EmpId", employeeId.Trim().ToUpperInvariant());
+
 				var resultName = insCmd.ExecuteScalar() as string;
+
 				canonicalNames.Add(!string.IsNullOrWhiteSpace(resultName) ? resultName : spec.Trim());
+
 			}
+
 		}
+
+
 
 		// Also synchronize dbo.Employees.Specializations and DepartmentID
+
 		var jsonSpecs = System.Text.Json.JsonSerializer.Serialize(canonicalNames.Distinct(StringComparer.OrdinalIgnoreCase));
+
 		using (SqlCommand syncCmd = new SqlCommand(@"
+
 			IF OBJECT_ID(N'dbo.Employees', N'U') IS NOT NULL AND COL_LENGTH('dbo.Employees', 'Specializations') IS NOT NULL
+
 			BEGIN
+
 				UPDATE dbo.Employees
+
 				SET Specializations = @SpecsJson,
+
 				    DepartmentID = COALESCE(@DeptId, DepartmentID)
+
 				WHERE UPPER(EmployeeID) = UPPER(@EmpId);
+
 			END", sqlConnection))
+
 		{
+
 			syncCmd.Parameters.AddWithValue("@SpecsJson", jsonSpecs);
+
 			syncCmd.Parameters.AddWithValue("@DeptId", string.IsNullOrWhiteSpace(departmentId) ? (object)DBNull.Value : departmentId.Trim());
+
 			syncCmd.Parameters.AddWithValue("@EmpId", employeeId.Trim().ToUpperInvariant());
+
 			syncCmd.ExecuteNonQuery();
+
 		}
+
+
 
 		try
+
 		{
+
 			using (SqlCommand logCmd = new SqlCommand(@"
+
 				IF OBJECT_ID(N'dbo.HistoryLog', N'U') IS NOT NULL
+
 				BEGIN
+
 					IF COLUMNPROPERTY(OBJECT_ID(N'dbo.HistoryLog'), 'ChangedByType', 'ColumnId') IS NOT NULL
+
 					BEGIN
+
 						INSERT INTO dbo.HistoryLog (ActionType, EntityName, EntityID, ChangedByType, ActionDetails, LoggedAt)
+
 						VALUES ('Update', 'EmployeeSpecializations', @EmpId, 'Admin', @Details, SYSUTCDATETIME());
+
 					END
+
 					ELSE IF COLUMNPROPERTY(OBJECT_ID(N'dbo.HistoryLog'), 'ChangedBy', 'IsComputed') = 0
+
 					BEGIN
+
 						INSERT INTO dbo.HistoryLog (ActionType, EntityName, EntityID, ChangedBy, ActionDetails, LoggedAt)
+
 						VALUES ('Update', 'EmployeeSpecializations', @EmpId, 'Admin', @Details, SYSUTCDATETIME());
+
 					END
+
 					ELSE
+
 					BEGIN
+
 						INSERT INTO dbo.HistoryLog (ActionType, EntityName, EntityID, ActionDetails, LoggedAt)
+
 						VALUES ('Update', 'EmployeeSpecializations', @EmpId, @Details, SYSUTCDATETIME());
+
 					END
+
 				END", sqlConnection))
+
 			{
+
 				logCmd.Parameters.AddWithValue("@EmpId", employeeId.Trim().ToUpperInvariant());
+
 				logCmd.Parameters.AddWithValue("@Details", $"Updated specializations for {employeeId}: {string.Join(", ", canonicalNames)}");
+
 				logCmd.ExecuteNonQuery();
+
 			}
+
 		}
+
 		catch
+
 		{
+
 		}
+
+
 
 		return true;
+
 	}
 
+
+
 	public IReadOnlyList<MainServiceItem> GetMainServices()
+
 	{
+
 		List<MainServiceItem> list = new List<MainServiceItem>();
+
 		using SqlConnection sqlConnection = CreateConnection();
+
 		sqlConnection.Open();
+
 		using SqlCommand sqlCommand = new SqlCommand(@"
+
             IF OBJECT_ID(N'dbo.Services', N'U') IS NOT NULL
+
             BEGIN
+
                 SELECT 
+
                     s.ServicesID, 
+
                     s.ServiceName, 
+
                     s.ServicesDescription,
+
                     ISNULL(s.ServicePrice, 0) AS ServicePrice,
+
                     ISNULL(sc.ServiceCategoryName, 'Portrait Photography') AS ServiceCategoryName,
+
                     s.ServiceImage,
+
                     s.ServiceImageMimeType,
+
                     ISNULL(s.RateType, 'per hour') AS RateType
+
                 FROM dbo.Services s
+
                 LEFT JOIN (
+
                     SELECT ServicesID, MIN(ServiceCategoryID) AS ServiceCategoryID
+
                     FROM dbo.ServiceCategoryJoins
+
                     WHERE ServicesID IS NOT NULL
+
                     GROUP BY ServicesID
+
                 ) scj ON s.ServicesID = scj.ServicesID
+
                 LEFT JOIN dbo.ServiceCategory sc ON scj.ServiceCategoryID = sc.ServiceCategoryID
+
                 ORDER BY s.ServicesID;
+
             END", sqlConnection);
+
 		using SqlDataReader sqlDataReader = sqlCommand.ExecuteReader();
+
 		while (sqlDataReader.Read())
+
 		{
+
 			string code = sqlDataReader.GetString(0);
+
 			string title = sqlDataReader.GetString(1);
+
 			string? description = sqlDataReader.IsDBNull(2) ? null : sqlDataReader.GetString(2);
+
 			decimal price = sqlDataReader.IsDBNull(3) ? 0m : sqlDataReader.GetDecimal(3);
+
 			string category = sqlDataReader.IsDBNull(4) ? "Portrait Photography" : sqlDataReader.GetString(4);
 
+
+
 			string? imageBase64 = null;
+
 			if (!sqlDataReader.IsDBNull(5))
+
 			{
+
 				byte[] imgBytes = (byte[])sqlDataReader[5];
+
 				if (imgBytes != null && imgBytes.Length > 0)
+
 				{
+
 					string mime = sqlDataReader.IsDBNull(6) ? "image/jpeg" : sqlDataReader.GetString(6);
+
 					imageBase64 = $"data:{mime};base64,{Convert.ToBase64String(imgBytes)}";
+
 				}
+
 			}
+
+
 
 			string rateType = sqlDataReader.IsDBNull(7) ? "per hour" : sqlDataReader.GetString(7);
 
+
+
 			list.Add(new MainServiceItem
+
 			{
+
 				Code = code,
+
 				Title = title,
+
 				Category = category,
+
 				CategorySpec = category,
+
 				Deliverables = new List<(string, string)>(),
+
 				Duration = "1 hr",
+
 				BasePrice = price,
+
 				Description = description,
+
 				ImageBase64 = imageBase64,
+
 				Status = "Active",
+
 				RateType = rateType
+
 			});
+
 		}
+
 		return list;
+
 	}
+
+
 
 	public IReadOnlyList<MainServiceItem> GetMainServicesSummary()
+
 	{
+
 		return GetMainServices();
+
 	}
+
+
 
 	public IReadOnlyList<ServiceCategoryItem> GetServiceCategories()
+
 	{
+
 		var list = new List<ServiceCategoryItem>();
+
 		using SqlConnection sqlConnection = CreateConnection();
+
 		sqlConnection.Open();
+
 		using SqlCommand sqlCommand = new SqlCommand(@"
+
             IF OBJECT_ID(N'dbo.ServiceCategory', N'U') IS NOT NULL
+
             BEGIN
+
                 SELECT 
+
                     sc.ServiceCategoryID,
+
                     sc.ServiceCategoryName,
+
                     sc.ServiceCategoryDescription,
+
                     COALESCE(s.ServiceName, ads.AdditionalServiceName, cp.ComboPackageName) AS LinkedServiceName,
+
                     CASE 
+
                         WHEN scj.ComboPackageID IS NOT NULL THEN 'Packages'
+
                         WHEN scj.AdditionalServicesID IS NOT NULL THEN 'Add-Ons'
+
                         WHEN scj.ServicesID IS NOT NULL THEN 'Main Services'
+
                         WHEN sc.ServiceCategoryName LIKE '%Package%' THEN 'Packages'
+
                         WHEN sc.ServiceCategoryName LIKE '%Add-on%' OR sc.ServiceCategoryName LIKE '%Addon%' THEN 'Add-Ons'
+
                         WHEN sc.ServiceCategoryName LIKE '%Specialty%' THEN 'Specialty'
+
                         ELSE 'Main Services'
+
                     END AS InferredCategoryType,
+
                     ISNULL(sc.RateTypeID, 'RT-0001') AS RateTypeID,
+
                     ISNULL(sc.RateTypeName, 'Per Hour') AS RateTypeName
+
                 FROM dbo.ServiceCategory sc
+
                 LEFT JOIN dbo.ServiceCategoryJoins scj ON sc.ServiceCategoryID = scj.ServiceCategoryID
+
                 LEFT JOIN dbo.Services s ON scj.ServicesID = s.ServicesID
+
                 LEFT JOIN dbo.AdditionalServices ads ON scj.AdditionalServicesID = ads.AdditionalServicesID
+
                 LEFT JOIN dbo.ComboPackage cp ON scj.ComboPackageID = cp.ComboPackageID
+
                 ORDER BY sc.ServiceCategoryID, LinkedServiceName;
+
             END", sqlConnection);
+
+
 
 		using SqlDataReader reader = sqlCommand.ExecuteReader();
+
 		var dict = new Dictionary<string, ServiceCategoryItem>(StringComparer.OrdinalIgnoreCase);
 
+
+
 		while (reader.Read())
+
 		{
+
 			string catId = reader.GetString(0);
+
 			string name = reader.GetString(1);
+
 			string? desc = reader.IsDBNull(2) ? null : reader.GetString(2);
+
 			string? linkedService = reader.IsDBNull(3) ? null : reader.GetString(3);
+
 			string inferredType = reader.IsDBNull(4) ? "Main Services" : reader.GetString(4);
+
 			string rateTypeId = reader.IsDBNull(5) ? "RT-0001" : reader.GetString(5);
+
 			string rateTypeName = reader.IsDBNull(6) ? "Per Hour" : reader.GetString(6);
 
+
+
 			if (!dict.TryGetValue(catId, out var item))
+
 			{
+
 				item = new ServiceCategoryItem
+
 				{
+
 					Id = catId,
+
 					Code = catId,
+
 					Name = name,
+
 					Description = desc,
+
 					Type = inferredType,
+
 					Status = "Active",
+
 					IsFeatured = false,
+
 					RateTypeID = rateTypeId,
+
 					RateTypeName = rateTypeName,
+
 					AssociatedServices = new List<string>(),
+
 					CreatedAt = DateTime.UtcNow
+
 				};
+
 				dict[catId] = item;
+
 				list.Add(item);
+
 			}
+
 			else if (item.Type == "Main Services" && inferredType != "Main Services")
+
 			{
+
 				item.Type = inferredType;
+
 			}
+
+
 
 			if (!string.IsNullOrWhiteSpace(linkedService) && !item.AssociatedServices.Contains(linkedService))
+
 			{
+
 				item.AssociatedServices.Add(linkedService);
+
 			}
+
 		}
 
+
+
 		return list;
+
 	}
+
+
 
 	public ServiceCategoryItem AddServiceCategory(ServiceCategoryItem category)
+
 	{
+
 		ArgumentNullException.ThrowIfNull(category);
+
 		using SqlConnection sqlConnection = CreateConnection();
+
 		sqlConnection.Open();
+
+
 
 		string categoryId = category.Code;
+
 		if (string.IsNullOrWhiteSpace(categoryId) || categoryId.StartsWith("temp-", StringComparison.OrdinalIgnoreCase))
+
 		{
+
 			using SqlCommand idCmd = new SqlCommand(@"
+
                 DECLARE @MaxNum INT = 0;
+
                 SELECT @MaxNum = ISNULL(MAX(TRY_CAST(SUBSTRING(ServiceCategoryID, CHARINDEX('-', ServiceCategoryID) + 1, 20) AS INT)), 0)
+
                 FROM dbo.ServiceCategory
+
                 WHERE ServiceCategoryID LIKE 'CAT-%';
+
                 SELECT 'CAT-' + RIGHT('0000' + CAST((@MaxNum + 1) AS VARCHAR(10)), 4);", sqlConnection);
+
 			categoryId = (string)idCmd.ExecuteScalar();
+
 		}
+
+
 
 		string rateTypeId = string.IsNullOrWhiteSpace(category.RateTypeID) ? "RT-0001" : category.RateTypeID.Trim();
+
 		string rateTypeName = string.IsNullOrWhiteSpace(category.RateTypeName) ? "Per Hour" : category.RateTypeName.Trim();
 
+
+
 		using SqlCommand sqlCommand = new SqlCommand(@"
+
             IF NOT EXISTS (SELECT 1 FROM dbo.ServiceCategory WHERE ServiceCategoryID = @Id)
+
             BEGIN
+
                 INSERT INTO dbo.ServiceCategory (ServiceCategoryID, ServiceCategoryName, ServiceCategoryDescription, RateTypeID, RateTypeName)
+
                 VALUES (@Id, @Name, @Desc, @RateTypeId, @RateTypeName);
+
             END
+
             ELSE
+
             BEGIN
+
                 UPDATE dbo.ServiceCategory
+
                 SET ServiceCategoryName = @Name,
+
                     ServiceCategoryDescription = @Desc,
+
                     RateTypeID = @RateTypeId,
+
                     RateTypeName = @RateTypeName
+
                 WHERE ServiceCategoryID = @Id;
+
             END", sqlConnection);
+
 		sqlCommand.Parameters.AddWithValue("@Id", categoryId);
+
 		sqlCommand.Parameters.AddWithValue("@Name", category.Name.Trim());
+
 		sqlCommand.Parameters.AddWithValue("@Desc", (object?)category.Description?.Trim() ?? DBNull.Value);
+
 		sqlCommand.Parameters.AddWithValue("@RateTypeId", rateTypeId);
+
 		sqlCommand.Parameters.AddWithValue("@RateTypeName", rateTypeName);
+
 		sqlCommand.ExecuteNonQuery();
+
+
 
 		if (category.AssociatedServices != null && category.AssociatedServices.Count > 0)
+
 		{
+
 			foreach (var svcName in category.AssociatedServices)
+
 			{
+
 				if (string.IsNullOrWhiteSpace(svcName)) continue;
 
+
+
 				using SqlCommand joinCmd = new SqlCommand(@"
+
                     DECLARE @SvcId NVARCHAR(50) = NULL;
+
                     SELECT TOP 1 @SvcId = ServicesID FROM dbo.Services WHERE ServiceName = @SvcName OR ServicesID = @SvcName;
+
                     
+
                     DECLARE @AddId NVARCHAR(50) = NULL;
+
                     IF @SvcId IS NULL
+
                         SELECT TOP 1 @AddId = AdditionalServicesID FROM dbo.AdditionalServices WHERE AdditionalServiceName = @SvcName OR AdditionalServicesID = @SvcName;
 
+
+
                     DECLARE @PkgId NVARCHAR(50) = NULL;
+
                     IF @SvcId IS NULL AND @AddId IS NULL
+
                         SELECT TOP 1 @PkgId = ComboPackageID FROM dbo.ComboPackage WHERE ComboPackageName = @SvcName OR ComboPackageID = @SvcName;
 
+
+
                     IF (@SvcId IS NOT NULL OR @AddId IS NOT NULL OR @PkgId IS NOT NULL)
+
                     BEGIN
+
                         IF NOT EXISTS (
+
                             SELECT 1 FROM dbo.ServiceCategoryJoins 
+
                             WHERE ServiceCategoryID = @CatId 
+
                               AND (
+
                                 (@SvcId IS NOT NULL AND ServicesID = @SvcId) OR 
+
                                 (@AddId IS NOT NULL AND AdditionalServicesID = @AddId) OR 
+
                                 (@PkgId IS NOT NULL AND ComboPackageID = @PkgId)
+
                               )
+
                         )
+
                         BEGIN
+
                             DECLARE @JoinID NVARCHAR(30) = 'SCJ-' + SUBSTRING(CONVERT(NVARCHAR(36), NEWID()), 1, 8);
+
                             INSERT INTO dbo.ServiceCategoryJoins (ServiceCategoryJoinID, ServiceCategoryID, ServicesID, AdditionalServicesID, ComboPackageID)
+
                             VALUES (@JoinID, @CatId, @SvcId, @AddId, @PkgId);
+
                         END
+
                     END", sqlConnection);
+
 				joinCmd.Parameters.AddWithValue("@CatId", categoryId);
+
 				joinCmd.Parameters.AddWithValue("@SvcName", svcName.Trim());
+
 				joinCmd.ExecuteNonQuery();
+
 			}
+
 		}
+
+
 
 		category.Id = categoryId;
+
 		category.Code = categoryId;
+
 		return category;
+
 	}
+
+
 
 	public bool DeleteServiceCategory(string id)
+
 	{
+
 		if (string.IsNullOrWhiteSpace(id)) return false;
+
 		using SqlConnection sqlConnection = CreateConnection();
+
 		sqlConnection.Open();
+
 		using SqlCommand sqlCommand = new SqlCommand(@"
+
             DELETE FROM dbo.ServiceCategoryJoins WHERE UPPER(ServiceCategoryID) = UPPER(@Id);
+
             DELETE FROM dbo.ServiceCategory WHERE UPPER(ServiceCategoryID) = UPPER(@Id);", sqlConnection);
+
 		sqlCommand.Parameters.AddWithValue("@Id", id.Trim());
+
 		return sqlCommand.ExecuteNonQuery() > 0;
+
 	}
+
+
 
 	public (byte[]? Image, string? MimeType) GetServiceImage(string code)
+
 	{
+
 		if (string.IsNullOrWhiteSpace(code))
+
 		{
+
 			return (Image: null, MimeType: null);
+
 		}
+
 		try
+
 		{
+
 			using SqlConnection sqlConnection = CreateConnection();
+
 			sqlConnection.Open();
+
 			using SqlCommand sqlCommand = new SqlCommand("\n                IF OBJECT_ID(N'dbo.sp_GetServiceDetailWithImage', N'P') IS NOT NULL\n                BEGIN\n                    EXEC dbo.sp_GetServiceDetailWithImage @ServicesID = @Id;\n                END\n                ELSE IF OBJECT_ID(N'dbo.Services', N'U') IS NOT NULL\n                BEGIN\n                    SELECT ServiceImage, ServiceImageMimeType\n                    FROM dbo.Services\n                    WHERE UPPER(ServicesID) = UPPER(@Id);\n                END", sqlConnection);
+
 			sqlCommand.Parameters.AddWithValue("@Id", code.Trim());
+
 			using SqlDataReader sqlDataReader = sqlCommand.ExecuteReader();
+
 			if (sqlDataReader.Read())
+
 			{
+
 				if (sqlDataReader.FieldCount >= 5)
+
 				{
+
 					byte[] item = (sqlDataReader.IsDBNull(3) ? null : ((byte[])sqlDataReader[3]));
+
 					string item2 = (sqlDataReader.IsDBNull(4) ? "image/jpeg" : sqlDataReader.GetString(4));
+
 					return (Image: item, MimeType: item2);
+
 				}
+
 				byte[] item3 = (sqlDataReader.IsDBNull(0) ? null : ((byte[])sqlDataReader[0]));
+
 				string item4 = (sqlDataReader.IsDBNull(1) ? "image/jpeg" : sqlDataReader.GetString(1));
+
 				return (Image: item3, MimeType: item4);
+
 			}
+
 		}
+
 		catch
+
 		{
+
 		}
+
 		return (Image: null, MimeType: null);
+
 	}
+
+
 
 	public void UpdateServiceImage(string code, byte[] imageBytes, string mimeType, string? requestingAdminId = null)
+
 	{
+
 		UpdateServiceImageAsync(code, imageBytes, mimeType, requestingAdminId).GetAwaiter().GetResult();
+
 	}
+
+
 
 	public async Task UpdateServiceImageAsync(string code, byte[] imageBytes, string mimeType, string? requestingAdminId = null, CancellationToken ct = default)
+
 	{
+
 		ArgumentNullException.ThrowIfNull(imageBytes, "imageBytes");
+
 		var (imageFileName, imageUrl) = await UploadServiceAssetToR2Async(imageBytes, null, mimeType, "services/main", ct);
 
+
+
 		await using SqlConnection sqlConnection = CreateConnection();
+
 		await sqlConnection.OpenAsync(ct);
+
 		await using SqlCommand sqlCommand = new SqlCommand(@"
+
             IF OBJECT_ID(N'dbo.Services', N'U') IS NOT NULL
+
             BEGIN
+
                 IF COL_LENGTH(N'dbo.Services', N'ImageFileName') IS NULL
+
                     ALTER TABLE dbo.Services ADD ImageFileName nvarchar(500) NULL;
+
                 IF COL_LENGTH(N'dbo.Services', N'ImageUrl') IS NULL
+
                     ALTER TABLE dbo.Services ADD ImageUrl nvarchar(500) NULL;
+
             END;
+
             IF OBJECT_ID(N'dbo.sp_UpdateServiceImage', N'P') IS NOT NULL AND EXISTS (
+
                 SELECT 1 FROM sys.parameters WHERE object_id = OBJECT_ID(N'dbo.sp_UpdateServiceImage') AND name = '@ImageFileName'
+
             )
+
             BEGIN
+
                 EXEC dbo.sp_UpdateServiceImage
+
                     @ServicesID = @Id,
+
                     @ServiceImage = @Img,
+
                     @ServiceImageMimeType = @Mime,
+
                     @ImageFileName = @ImgFileName,
+
                     @ImageUrl = @ImgUrl,
+
                     @UpdatedBy = @By;
+
             END
+
             ELSE IF OBJECT_ID(N'dbo.Services', N'U') IS NOT NULL
+
             BEGIN
+
                 UPDATE dbo.Services
+
                 SET ServiceImage = @Img,
+
                     ServiceImageMimeType = @Mime,
+
                     ImageFileName = COALESCE(@ImgFileName, ImageFileName),
+
                     ImageUrl = COALESCE(@ImgUrl, ImageUrl)
+
                 WHERE UPPER(ServicesID) = UPPER(@Id);
+
             END", sqlConnection);
+
 		sqlCommand.Parameters.AddWithValue("@Id", code.Trim());
+
 		sqlCommand.Parameters.AddWithValue("@Img", imageBytes);
+
 		sqlCommand.Parameters.AddWithValue("@Mime", string.IsNullOrWhiteSpace(mimeType) ? "image/jpeg" : mimeType);
+
 		sqlCommand.Parameters.AddWithValue("@ImgFileName", (object?)imageFileName ?? DBNull.Value);
+
 		sqlCommand.Parameters.AddWithValue("@ImgUrl", (object?)imageUrl ?? DBNull.Value);
+
 		sqlCommand.Parameters.AddWithValue("@By", requestingAdminId ?? "Admin");
+
 		await sqlCommand.ExecuteNonQueryAsync(ct);
+
 	}
+
+
 
 	public MainServiceItem AddMainService(MainServiceModel model)
+
 	{
+
 		ArgumentNullException.ThrowIfNull(model, "model");
+
 		using SqlConnection sqlConnection = CreateConnection();
+
 		sqlConnection.Open();
+
 		int count = GetMainServices().Count;
+
 		string text = (string.IsNullOrWhiteSpace(model.Code) ? $"SRV-{count + 1:D3}" : model.Code.Trim());
+
 		using SqlCommand sqlCommand = new SqlCommand(@"
+
             INSERT INTO dbo.Services (ServicesID, ServiceName, ServicesDescription, ServicePrice)
+
             VALUES (@Id, @Name, @Desc, @Price);", sqlConnection);
+
 		sqlCommand.Parameters.AddWithValue("@Id", text);
+
 		sqlCommand.Parameters.AddWithValue("@Name", model.Name.Trim());
+
 		sqlCommand.Parameters.AddWithValue("@Desc", string.IsNullOrWhiteSpace(model.Description) ? model.Category : model.Description.Trim());
+
 		sqlCommand.Parameters.AddWithValue("@Price", model.BasePrice);
+
 		sqlCommand.ExecuteNonQuery();
+
+
 
 		if (!string.IsNullOrWhiteSpace(model.Category))
+
 		{
+
 			using SqlCommand catCmd = new SqlCommand(@"
+
                 DECLARE @CatId NVARCHAR(50) = NULL;
+
                 SELECT TOP 1 @CatId = ServiceCategoryID FROM dbo.ServiceCategory WHERE ServiceCategoryName = @CatName OR ServiceCategoryID = @CatName;
+
                 IF @CatId IS NOT NULL AND NOT EXISTS (SELECT 1 FROM dbo.ServiceCategoryJoins WHERE ServiceCategoryID = @CatId AND ServicesID = @SvcId)
+
                 BEGIN
+
                     DECLARE @JoinID NVARCHAR(30) = 'SCJ-' + SUBSTRING(CONVERT(NVARCHAR(36), NEWID()), 1, 8);
+
                     INSERT INTO dbo.ServiceCategoryJoins (ServiceCategoryJoinID, ServiceCategoryID, ServicesID)
+
                     VALUES (@JoinID, @CatId, @SvcId);
+
                 END", sqlConnection);
+
 			catCmd.Parameters.AddWithValue("@CatName", model.Category.Trim());
+
 			catCmd.Parameters.AddWithValue("@SvcId", text);
+
 			catCmd.ExecuteNonQuery();
+
 		}
+
+
 
 		return new MainServiceItem
+
 		{
+
 			Code = text,
+
 			Title = model.Name.Trim(),
+
 			Category = (string.IsNullOrWhiteSpace(model.Category) ? "Portrait Photography" : model.Category),
+
 			CategorySpec = (string.IsNullOrWhiteSpace(model.CategorySpec) ? "Photography" : model.CategorySpec),
+
 			Deliverables = (model.Deliverables ?? new List<(string, string)>()),
+
 			Duration = $"{model.DurationHours:0.#} hrs",
+
 			BasePrice = model.BasePrice,
+
 			Description = model.Description,
+
 			Status = model.Status
+
 		};
+
 	}
+
+
 
 	public bool UpdateMainService(MainServiceItem item, string? requestingAdminId = null)
+
 	{
+
 		ArgumentNullException.ThrowIfNull(item, nameof(item));
+
 		using SqlConnection conn = CreateConnection();
+
 		conn.Open();
 
+
+
 		using SqlCommand cmd = new SqlCommand(@"
+
             IF OBJECT_ID(N'dbo.Services', N'U') IS NOT NULL
+
             BEGIN
+
                 UPDATE dbo.Services
+
                 SET ServiceName = @Name,
+
                     ServicesDescription = @Desc,
+
                     ServicePrice = @Price,
+
                     RateType = @RateType
+
                 WHERE UPPER(ServicesID) = UPPER(@Id);
 
+
+
                 IF OBJECT_ID(N'dbo.ServiceRate', N'U') IS NOT NULL
+
                 BEGIN
+
                     DECLARE @RateTypeID NVARCHAR(30) = NULL;
+
                     SELECT TOP 1 @RateTypeID = RateTypeID FROM dbo.RateType WHERE LOWER(RateTypeName) = LOWER(@RateType);
+
                     IF @RateTypeID IS NULL
+
                     BEGIN
+
                         SET @RateTypeID = 'RT-0001';
+
                     END
+
+
 
                     IF EXISTS (SELECT 1 FROM dbo.ServiceRate WHERE UPPER(ServicesID) = UPPER(@Id))
+
                     BEGIN
+
                         UPDATE dbo.ServiceRate
+
                         SET RateTypeID = @RateTypeID,
+
                             RateTypeName = @RateType,
+
                             Price = @Price
+
                         WHERE UPPER(ServicesID) = UPPER(@Id);
+
                     END
+
                     ELSE
+
                     BEGIN
+
                         DECLARE @NewRateId NVARCHAR(30) = 'SRT-' + SUBSTRING(CONVERT(NVARCHAR(36), NEWID()), 1, 8);
+
                         INSERT INTO dbo.ServiceRate (ServiceRateID, ServicesID, RateTypeID, RateTypeName, Price, UnitsIncluded, IsDefault)
+
                         VALUES (@NewRateId, @Id, @RateTypeID, @RateType, @Price, 1, 1);
+
                     END
+
                 END
+
+
 
                 IF @CatName IS NOT NULL AND LEN(@CatName) > 0
+
                 BEGIN
+
                     DECLARE @CatId NVARCHAR(50) = NULL;
+
                     SELECT TOP 1 @CatId = ServiceCategoryID FROM dbo.ServiceCategory WHERE ServiceCategoryName = @CatName OR ServiceCategoryID = @CatName;
+
                     IF @CatId IS NOT NULL
+
                     BEGIN
+
                         IF EXISTS (SELECT 1 FROM dbo.ServiceCategoryJoins WHERE UPPER(ServicesID) = UPPER(@Id))
+
                         BEGIN
+
                             UPDATE dbo.ServiceCategoryJoins SET ServiceCategoryID = @CatId WHERE UPPER(ServicesID) = UPPER(@Id);
+
                         END
+
                         ELSE
+
                         BEGIN
+
                             DECLARE @JoinID NVARCHAR(30) = 'SCJ-' + SUBSTRING(CONVERT(NVARCHAR(36), NEWID()), 1, 8);
+
                             INSERT INTO dbo.ServiceCategoryJoins (ServiceCategoryJoinID, ServiceCategoryID, ServicesID)
+
                             VALUES (@JoinID, @CatId, @Id);
+
                         END
+
                     END
+
                 END
+
             END", conn);
 
+
+
 		cmd.Parameters.AddWithValue("@Id", item.Code.Trim());
+
 		cmd.Parameters.AddWithValue("@Name", item.Title.Trim());
+
 		cmd.Parameters.AddWithValue("@Desc", string.IsNullOrWhiteSpace(item.Description) ? item.Category : item.Description.Trim());
+
 		cmd.Parameters.AddWithValue("@Price", item.BasePrice);
+
 		cmd.Parameters.AddWithValue("@RateType", string.IsNullOrWhiteSpace(item.RateType) ? "per hour" : item.RateType.Trim());
+
 		cmd.Parameters.AddWithValue("@CatName", (object?)item.Category?.Trim() ?? DBNull.Value);
+
 		int rows = cmd.ExecuteNonQuery();
+
+
 
 		LogActivity("UPDATE", "Services", item.Code, $"Updated main service '{item.Title}'", requestingAdminId);
+
 		return rows > 0;
+
 	}
+
+
 
 	public IReadOnlyList<PackageServiceItem> GetPackageServices()
+
 	{
+
 		List<PackageServiceItem> list = new List<PackageServiceItem>();
+
 		using SqlConnection sqlConnection = CreateConnection();
+
 		sqlConnection.Open();
+
 		using SqlCommand sqlCommand = new SqlCommand(@"
+
             IF OBJECT_ID(N'dbo.ComboPackage', N'U') IS NOT NULL
+
             BEGIN
+
                 SELECT ComboPackageID, ComboPackageName, ComboPackageDescription, ISNULL(ComboPackagePrice, 0)
+
                 FROM dbo.ComboPackage
+
                 ORDER BY ComboPackageID;
+
             END", sqlConnection);
+
 		using SqlDataReader sqlDataReader = sqlCommand.ExecuteReader();
+
 		while (sqlDataReader.Read())
+
 		{
+
 			decimal pkgPrice = sqlDataReader.IsDBNull(3) ? 0m : sqlDataReader.GetDecimal(3);
+
 			list.Add(new PackageServiceItem
+
 			{
+
 				Code = sqlDataReader.GetString(0),
+
 				Title = sqlDataReader.GetString(1),
+
 				BundleCategory = "Package",
+
 				Inclusions = new List<(string, string)>(),
+
 				Price = pkgPrice > 0 ? $"₱{pkgPrice:N0}" : "₱0",
+
 				Description = (sqlDataReader.IsDBNull(2) ? null : sqlDataReader.GetString(2)),
+
 				Status = "Active"
+
 			});
+
 		}
+
 		return list;
+
 	}
+
+
 
 	public IReadOnlyList<PackageServiceItem> GetPackageServicesSummary()
+
 	{
+
 		return GetPackageServices();
+
 	}
+
 	public (byte[]? Image, string? MimeType) GetComboPackageImage(string code)
+
 	{
+
 		if (string.IsNullOrWhiteSpace(code))
+
 		{
+
 			return (Image: null, MimeType: null);
+
 		}
+
 		try
+
 		{
+
 			using SqlConnection sqlConnection = CreateConnection();
+
 			sqlConnection.Open();
+
 			using SqlCommand sqlCommand = new SqlCommand("\n                IF OBJECT_ID(N'dbo.sp_GetComboPackageDetailWithImage', N'P') IS NOT NULL\n                BEGIN\n                    EXEC dbo.sp_GetComboPackageDetailWithImage @ComboPackageID = @Id;\n                END\n                ELSE IF OBJECT_ID(N'dbo.ComboPackage', N'U') IS NOT NULL\n                BEGIN\n                    SELECT ComboPackageImage, ComboPackageImageMimeType\n                    FROM dbo.ComboPackage\n                    WHERE UPPER(ComboPackageID) = UPPER(@Id);\n                END", sqlConnection);
+
 			sqlCommand.Parameters.AddWithValue("@Id", code.Trim());
+
 			using SqlDataReader sqlDataReader = sqlCommand.ExecuteReader();
+
 			if (sqlDataReader.Read())
+
 			{
+
 				if (sqlDataReader.FieldCount >= 5)
+
 				{
+
 					byte[] item = (sqlDataReader.IsDBNull(3) ? null : ((byte[])sqlDataReader[3]));
+
 					string item2 = (sqlDataReader.IsDBNull(4) ? "image/jpeg" : sqlDataReader.GetString(4));
+
 					return (Image: item, MimeType: item2);
+
 				}
+
 				byte[] item3 = (sqlDataReader.IsDBNull(0) ? null : ((byte[])sqlDataReader[0]));
+
 				string item4 = (sqlDataReader.IsDBNull(1) ? "image/jpeg" : sqlDataReader.GetString(1));
+
 				return (Image: item3, MimeType: item4);
+
 			}
+
 		}
+
 		catch
+
 		{
+
 		}
+
 		return (Image: null, MimeType: null);
+
 	}
+
+
 
 	public void UpdateComboPackageImage(string code, byte[] imageBytes, string mimeType, string? requestingAdminId = null)
+
 	{
+
 		UpdateComboPackageImageAsync(code, imageBytes, mimeType, requestingAdminId).GetAwaiter().GetResult();
+
 	}
+
+
 
 	public async Task UpdateComboPackageImageAsync(string code, byte[] imageBytes, string mimeType, string? requestingAdminId = null, CancellationToken ct = default)
+
 	{
+
 		ArgumentNullException.ThrowIfNull(imageBytes, "imageBytes");
+
 		var (imageFileName, imageUrl) = await UploadServiceAssetToR2Async(imageBytes, null, mimeType, "services/packages", ct);
 
+
+
 		await using SqlConnection sqlConnection = CreateConnection();
+
 		await sqlConnection.OpenAsync(ct);
+
 		await using SqlCommand sqlCommand = new SqlCommand(@"
+
             IF OBJECT_ID(N'dbo.ComboPackage', N'U') IS NOT NULL
+
             BEGIN
+
                 IF COL_LENGTH(N'dbo.ComboPackage', N'ImageFileName') IS NULL
+
                     ALTER TABLE dbo.ComboPackage ADD ImageFileName nvarchar(500) NULL;
+
                 IF COL_LENGTH(N'dbo.ComboPackage', N'ImageUrl') IS NULL
+
                     ALTER TABLE dbo.ComboPackage ADD ImageUrl nvarchar(500) NULL;
+
             END;
+
             IF OBJECT_ID(N'dbo.sp_UpdateComboPackageImage', N'P') IS NOT NULL AND EXISTS (
+
                 SELECT 1 FROM sys.parameters WHERE object_id = OBJECT_ID(N'dbo.sp_UpdateComboPackageImage') AND name = '@ImageFileName'
+
             )
+
             BEGIN
+
                 EXEC dbo.sp_UpdateComboPackageImage
+
                     @ComboPackageID = @Id,
+
                     @ComboPackageImage = @Img,
+
                     @ComboPackageImageMimeType = @Mime,
+
                     @ImageFileName = @ImgFileName,
+
                     @ImageUrl = @ImgUrl,
+
                     @UpdatedBy = @By;
+
             END
+
             ELSE IF OBJECT_ID(N'dbo.ComboPackage', N'U') IS NOT NULL
+
             BEGIN
+
                 UPDATE dbo.ComboPackage
+
                 SET ComboPackageImage = @Img,
+
                     ComboPackageImageMimeType = @Mime,
+
                     ImageFileName = COALESCE(@ImgFileName, ImageFileName),
+
                     ImageUrl = COALESCE(@ImgUrl, ImageUrl)
+
                 WHERE UPPER(ComboPackageID) = UPPER(@Id);
+
             END", sqlConnection);
+
 		sqlCommand.Parameters.AddWithValue("@Id", code.Trim());
+
 		sqlCommand.Parameters.AddWithValue("@Img", imageBytes);
+
 		sqlCommand.Parameters.AddWithValue("@Mime", string.IsNullOrWhiteSpace(mimeType) ? "image/jpeg" : mimeType);
+
 		sqlCommand.Parameters.AddWithValue("@ImgFileName", (object?)imageFileName ?? DBNull.Value);
+
 		sqlCommand.Parameters.AddWithValue("@ImgUrl", (object?)imageUrl ?? DBNull.Value);
+
 		sqlCommand.Parameters.AddWithValue("@By", requestingAdminId ?? "Admin");
+
 		await sqlCommand.ExecuteNonQueryAsync(ct);
+
 	}
+
+
 
 	public PackageServiceItem AddPackageService(PackageServiceModel model)
+
 	{
+
 		ArgumentNullException.ThrowIfNull(model, "model");
+
 		using SqlConnection sqlConnection = CreateConnection();
+
 		sqlConnection.Open();
+
 		int count = GetPackageServices().Count;
+
 		string text = (string.IsNullOrWhiteSpace(model.Code) ? $"PKG-{count + 1:D3}" : model.Code.Trim());
+
 		using SqlCommand sqlCommand = new SqlCommand("\n            INSERT INTO dbo.ComboPackage (ComboPackageID, ComboPackageName, ComboPackageDescription)\n            VALUES (@Id, @Name, @Desc);", sqlConnection);
+
 		sqlCommand.Parameters.AddWithValue("@Id", text);
+
 		sqlCommand.Parameters.AddWithValue("@Name", model.Name.Trim());
+
 		sqlCommand.Parameters.AddWithValue("@Desc", string.IsNullOrWhiteSpace(model.Description) ? model.TargetCategory : model.Description.Trim());
+
 		sqlCommand.ExecuteNonQuery();
+
 		return new PackageServiceItem
+
 		{
+
 			Code = text,
+
 			Title = model.Name.Trim(),
+
 			BundleCategory = (string.IsNullOrWhiteSpace(model.TargetCategory) ? "Package" : model.TargetCategory),
+
 			Inclusions = (model.Inclusions ?? new List<(string, string)>()),
+
 			Price = $"${model.Price:N0}",
+
 			SavingsNote = model.SavingsNote,
+
 			Description = model.Description,
+
 			Status = model.Status
+
 		};
+
 	}
+
+
 
 	public bool UpdatePackageService(PackageServiceItem item, string? requestingAdminId = null)
+
 	{
+
 		ArgumentNullException.ThrowIfNull(item, nameof(item));
+
 		using SqlConnection conn = CreateConnection();
+
 		conn.Open();
 
+
+
 		decimal price = 0;
+
 		if (!string.IsNullOrWhiteSpace(item.Price))
+
 		{
+
 			var digits = new string(item.Price.Where(c => char.IsDigit(c) || c == '.').ToArray());
+
 			decimal.TryParse(digits, out price);
+
 		}
 
+
+
 		using SqlCommand cmd = new SqlCommand(@"
+
             IF OBJECT_ID(N'dbo.ComboPackage', N'U') IS NOT NULL
+
             BEGIN
+
                 UPDATE dbo.ComboPackage
+
                 SET ComboPackageName = @Name,
+
                     ComboPackageDescription = @Desc,
+
                     ComboPackagePrice = @Price
+
                 WHERE UPPER(ComboPackageID) = UPPER(@Id);
+
             END", conn);
+
 		cmd.Parameters.AddWithValue("@Id", item.Code.Trim());
+
 		cmd.Parameters.AddWithValue("@Name", item.Title.Trim());
+
 		cmd.Parameters.AddWithValue("@Desc", string.IsNullOrWhiteSpace(item.Description) ? item.BundleCategory : item.Description.Trim());
+
 		cmd.Parameters.AddWithValue("@Price", price);
+
 		int rows = cmd.ExecuteNonQuery();
+
+
 
 		LogActivity("UPDATE", "ComboPackage", item.Code, $"Updated package service '{item.Title}'", requestingAdminId);
+
 		return rows > 0;
+
 	}
+
+
 
 	public async Task<string> GetNextComboPackageIdAsync(CancellationToken ct = default(CancellationToken))
+
 	{
+
 		if (_httpClientFactory != null)
+
 		{
+
 			try
+
 			{
+
 				HttpClient client = _httpClientFactory.CreateClient("AevumApi.Authorized");
+
 				HttpResponseMessage response = await client.GetAsync("api/packages/next-id", ct);
+
 				if (response.IsSuccessStatusCode)
+
 				{
+
 					JsonElement result = await response.Content.ReadFromJsonAsync<JsonElement>(ct);
+
 					if (result.TryGetProperty("packageId", out var pkgId) || result.TryGetProperty("nextId", out pkgId))
+
 					{
+
 						string val = pkgId.GetString();
+
 						if (!string.IsNullOrWhiteSpace(val))
+
 						{
+
 							return val;
+
 						}
+
 					}
+
 				}
+
 			}
+
 			catch
+
 			{
+
 			}
+
 		}
+
 		try
+
 		{
+
 			await using SqlConnection conn = CreateConnection();
+
 			await conn.OpenAsync(ct);
+
 			string result2;
+
 			await using (SqlCommand cmd = new SqlCommand("dbo.sp_GetNextComboPackageId", conn)
+
 			{
+
 				CommandType = CommandType.StoredProcedure
+
 			})
+
 			{
+
 				SqlParameter outParam = new SqlParameter("@NextPackageID", SqlDbType.NVarChar, 30)
+
 				{
+
 					Direction = ParameterDirection.Output
+
 				};
+
 				cmd.Parameters.Add(outParam);
+
 				await cmd.ExecuteNonQueryAsync(ct);
+
 				string nextId = outParam.Value?.ToString();
+
 				if (!string.IsNullOrWhiteSpace(nextId))
+
 				{
+
 					result2 = nextId;
+
 					goto IL_04fb;
+
 				}
+
 			}
+
 			goto end_IL_02b2;
+
 			IL_04fb:
+
 			return result2;
+
 			end_IL_02b2:;
+
 		}
+
 		catch
+
 		{
+
 		}
+
 		try
+
 		{
+
 			string result3;
+
 			await using (SqlConnection conn2 = CreateConnection())
+
 			{
+
 				await conn2.OpenAsync(ct);
+
 				string text;
+
 				await using (SqlCommand cmd2 = new SqlCommand("\n                IF EXISTS (SELECT 1 FROM sys.sequences WHERE name = 'Seq_ComboPackageID')\n                BEGIN\n                    DECLARE @CurVal SQL_VARIANT;\n                    SELECT @CurVal = current_value FROM sys.sequences WHERE name = 'Seq_ComboPackageID';\n                    DECLARE @NextNum INT = 1;\n                    IF @CurVal IS NOT NULL\n                    BEGIN\n                        DECLARE @ExistingCount INT = 0;\n                        SELECT @ExistingCount = COUNT(*) FROM dbo.ComboPackage WHERE ComboPackageID LIKE 'PKG-%';\n                        IF @ExistingCount > 0 OR CAST(@CurVal AS INT) > 1\n                            SET @NextNum = CAST(@CurVal AS INT) + 1;\n                    END\n                    SELECT 'PKG-' + RIGHT('0000' + CAST(@NextNum AS VARCHAR(10)), 4);\n                END\n                ELSE\n                BEGIN\n                    DECLARE @MaxVal INT = 0;\n                    IF OBJECT_ID(N'dbo.ComboPackage', N'U') IS NOT NULL\n                    BEGIN\n                        SELECT @MaxVal = ISNULL(MAX(TRY_CAST(SUBSTRING(ComboPackageID, 5, 20) AS INT)), 0)\n                        FROM dbo.ComboPackage WITH (NOLOCK)\n                        WHERE ComboPackageID LIKE 'PKG-%';\n                    END\n                    SELECT 'PKG-' + RIGHT('0000' + CAST(@MaxVal + 1 AS VARCHAR(10)), 4);\n                END", conn2))
+
 				{
+
 					text = (await cmd2.ExecuteScalarAsync(ct))?.ToString() ?? "PKG-0001";
+
 				}
+
 				result3 = text;
+
 			}
+
 			return result3;
+
 		}
+
 		catch
+
 		{
+
 			int fallbackCount = GetPackageServices().Count + 1;
+
 			return $"PKG-{fallbackCount:D4}";
+
 		}
+
 	}
+
+
 
 	public async Task<IReadOnlyList<CategoryLookupModel>> GetServiceCategoriesLookupAsync(CancellationToken ct = default(CancellationToken))
+
 	{
+
 		if (_httpClientFactory != null)
+
 		{
+
 			try
+
 			{
+
 				HttpClient client = _httpClientFactory.CreateClient("AevumApi.Authorized");
+
 				HttpResponseMessage response = await client.GetAsync("api/packages/categories", ct);
+
 				if (response.IsSuccessStatusCode)
+
 				{
+
 					List<CategoryLookupModel> apiList = await response.Content.ReadFromJsonAsync<List<CategoryLookupModel>>(ct);
+
 					if (apiList != null && apiList.Count > 0)
+
 					{
+
 						return apiList;
+
 					}
+
 				}
+
 			}
+
 			catch
+
 			{
+
 			}
+
 		}
+
 		List<CategoryLookupModel> list = new List<CategoryLookupModel>();
+
 		try
+
 		{
+
 			await using SqlConnection conn = CreateConnection();
+
 			await conn.OpenAsync(ct);
+
 			await using SqlCommand cmd = new SqlCommand("\n                IF OBJECT_ID(N'dbo.ServiceCategory', N'U') IS NOT NULL\n                BEGIN\n                    SELECT ServiceCategoryID, ServiceCategoryName, ServiceCategoryDescription\n                    FROM dbo.ServiceCategory\n                    ORDER BY ServiceCategoryName;\n                END", conn);
+
 			await using SqlDataReader reader = await cmd.ExecuteReaderAsync(ct);
+
 			while (await reader.ReadAsync(ct))
+
 			{
+
 				list.Add(new CategoryLookupModel
+
 				{
+
 					Id = reader.GetString(0),
+
 					Name = reader.GetString(1),
+
 					Description = (reader.IsDBNull(2) ? null : reader.GetString(2))
+
 				});
+
 			}
+
 		}
+
 		catch
+
 		{
+
 		}
+
 		return list;
+
 	}
+
+
 
 	public async Task<IReadOnlyList<BundleServiceOption>> GetAvailableServicesForBundlingAsync(CancellationToken ct = default(CancellationToken))
+
 	{
+
 		if (_httpClientFactory != null)
+
 		{
+
 			try
+
 			{
+
 				HttpClient client = _httpClientFactory.CreateClient("AevumApi.Authorized");
+
 				HttpResponseMessage response = await client.GetAsync("api/packages/available-services", ct);
+
 				if (response.IsSuccessStatusCode)
+
 				{
+
 					List<BundleServiceOption> apiList = await response.Content.ReadFromJsonAsync<List<BundleServiceOption>>(ct);
+
 					if (apiList != null && apiList.Count > 0)
+
 					{
+
 						return apiList;
+
 					}
+
 				}
+
 			}
+
 			catch
+
 			{
+
 			}
+
 		}
+
 		List<BundleServiceOption> list = new List<BundleServiceOption>();
+
 		try
+
 		{
+
 			await using SqlConnection conn = CreateConnection();
+
 			await conn.OpenAsync(ct);
+
 			await using SqlCommand cmd = new SqlCommand("\n                IF OBJECT_ID(N'dbo.sp_GetAvailableServicesForBundling', N'P') IS NOT NULL\n                BEGIN\n                    EXEC dbo.sp_GetAvailableServicesForBundling;\n                END\n                ELSE\n                BEGIN\n                    IF OBJECT_ID(N'dbo.Services', N'U') IS NOT NULL\n                    BEGIN\n                        SELECT ServicesID, ServiceName, ServicesDescription, ServicePrice, 'Main' AS ServiceType,\n                               CAST(CASE WHEN ServiceImage IS NOT NULL THEN 1 ELSE 0 END AS bit) AS HasImage\n                        FROM dbo.Services\n                    END\n                    UNION ALL\n                    IF OBJECT_ID(N'dbo.AdditionalServices', N'U') IS NOT NULL\n                    BEGIN\n                        SELECT AdditionalServicesID, AdditionalServiceName, AdditionalServicesDescription, 0.00 AS ServicePrice, 'Additional' AS ServiceType,\n                               CAST(CASE WHEN AdditionalServiceImage IS NOT NULL THEN 1 ELSE 0 END AS bit) AS HasImage\n                        FROM dbo.AdditionalServices\n                    END\n                    ORDER BY ServiceType DESC, ServiceName ASC;\n                END", conn);
+
 			await using SqlDataReader reader = await cmd.ExecuteReaderAsync(ct);
+
 			while (await reader.ReadAsync(ct))
+
 			{
+
 				list.Add(new BundleServiceOption
+
 				{
+
 					Id = reader.GetString(0),
+
 					Name = reader.GetString(1),
+
 					Description = (reader.IsDBNull(2) ? string.Empty : reader.GetString(2)),
+
 					Price = (reader.IsDBNull(3) ? 0m : reader.GetDecimal(3)),
+
 					ServiceType = reader.GetString(4),
+
 					HasImage = (!reader.IsDBNull(5) && reader.GetBoolean(5))
+
 				});
+
 			}
+
 		}
+
 		catch
+
 		{
+
 		}
+
 		if (list.Count == 0)
+
 		{
+
 			foreach (MainServiceItem m in GetMainServices())
+
 			{
+
 				list.Add(new BundleServiceOption
+
 				{
+
 					Id = m.Code,
+
 					Name = m.Title,
+
 					Description = m.Description,
+
 					Price = m.BasePrice,
+
 					ServiceType = "Main",
+
 					HasImage = false
+
 				});
+
 			}
+
 			foreach (AddOnServiceItem a in GetAdditionalServices())
+
 			{
+
 				list.Add(new BundleServiceOption
+
 				{
+
 					Id = a.Code,
+
 					Name = a.Title,
+
 					Description = a.Description,
+
 					Price = 50.00m,
+
 					ServiceType = "Additional",
+
 					HasImage = false
+
 				});
+
 			}
+
 		}
+
 		return list;
+
 	}
+
+
 
 	public async Task<PackageServiceItem> CreateComboPackageViaApiAsync(PackageWizardFormModel formModel, CancellationToken ct = default(CancellationToken))
+
 	{
+
 		ArgumentNullException.ThrowIfNull(formModel, "formModel");
+
 		var (imageFileName, imageUrl) = await UploadServiceAssetToR2Async(
+
 			formModel.ImageBytes, formModel.ImageFileName, formModel.ImageMimeType, "services/packages", ct);
 
+
+
 		if (_httpClientFactory != null)
+
 		{
+
 			try
+
 			{
+
 				HttpClient client = _httpClientFactory.CreateClient("AevumApi.Authorized");
+
 				using MultipartFormDataContent form = new MultipartFormDataContent();
+
 				form.Add(new StringContent(formModel.Name.Trim()), "Name");
+
 				form.Add(new StringContent(formModel.Description?.Trim() ?? string.Empty), "Description");
+
 				form.Add(new StringContent(formModel.CategoryId.Trim()), "CategoryId");
+
 				form.Add(new StringContent(formModel.Price.ToString(CultureInfo.InvariantCulture)), "Price");
+
 				if (formModel.SelectedServiceIds != null)
+
 				{
+
 					foreach (string sId in formModel.SelectedServiceIds)
+
 					{
+
 						form.Add(new StringContent(sId), "SelectedServiceIds");
+
 					}
+
 					string json = JsonSerializer.Serialize(formModel.SelectedServiceIds);
+
 					form.Add(new StringContent(json), "SelectedServiceIdsRaw");
+
 				}
+
 				if (formModel.ImageBytes != null && formModel.ImageBytes.Length != 0)
+
 				{
+
 					ByteArrayContent fileContent = new ByteArrayContent(formModel.ImageBytes);
+
 					string mime = (string.IsNullOrWhiteSpace(formModel.ImageMimeType) ? "image/jpeg" : formModel.ImageMimeType);
+
 					fileContent.Headers.ContentType = new MediaTypeHeaderValue(mime);
+
 					form.Add(fileContent, "ImageFile", formModel.ImageFileName ?? "package-hero.jpg");
+
 				}
+
 				HttpResponseMessage response = await client.PostAsync("api/packages", form, ct);
+
 				if (response.IsSuccessStatusCode)
+
 				{
+
 					JsonElement created = await response.Content.ReadFromJsonAsync<JsonElement>(ct);
+
 					string packageId = (created.TryGetProperty("packageId", out var pid) ? (pid.GetString() ?? formModel.GeneratedPackageId) : formModel.GeneratedPackageId);
+
 					string title = (created.TryGetProperty("name", out var ptitle) ? (ptitle.GetString() ?? formModel.Name) : formModel.Name);
+
 					return new PackageServiceItem
+
 					{
+
 						Code = packageId,
+
 						Title = title,
+
 						BundleCategory = formModel.CategoryName,
+
 						Description = formModel.Description,
+
 						Price = $"${formModel.Price:N0}",
+
 						Status = "Active"
+
 					};
+
 				}
+
 				string errBody = await response.Content.ReadAsStringAsync(ct);
+
 				if (response.StatusCode == HttpStatusCode.BadRequest)
+
 				{
+
 					throw new InvalidOperationException("API Validation Failed: " + errBody);
+
 				}
+
 			}
+
 			catch (InvalidOperationException)
+
 			{
+
 				throw;
+
 			}
+
 			catch
+
 			{
+
 			}
+
 		}
+
 		string text = ((!string.IsNullOrWhiteSpace(formModel.GeneratedPackageId)) ? formModel.GeneratedPackageId : (await GetNextComboPackageIdAsync(ct)));
+
 		string packageCode = text;
+
 		PackageServiceItem result;
+
 		await using (SqlConnection conn = CreateConnection())
+
 		{
+
 			await conn.OpenAsync(ct);
+
 			await using (SqlCommand prepCmd = new SqlCommand(@"
+
             IF OBJECT_ID(N'dbo.ComboPackage', N'U') IS NOT NULL
+
             BEGIN
+
                 IF COL_LENGTH(N'dbo.ComboPackage', N'ComboPackagePrice') IS NULL
+
                     ALTER TABLE dbo.ComboPackage ADD ComboPackagePrice decimal(18,2) NOT NULL CONSTRAINT DF_ComboPackage_Price DEFAULT 0.00;
+
                 IF COL_LENGTH(N'dbo.ComboPackage', N'ImageFileName') IS NULL
+
                     ALTER TABLE dbo.ComboPackage ADD ImageFileName nvarchar(500) NULL;
+
                 IF COL_LENGTH(N'dbo.ComboPackage', N'ImageUrl') IS NULL
+
                     ALTER TABLE dbo.ComboPackage ADD ImageUrl nvarchar(500) NULL;
+
             END;
+
             IF OBJECT_ID(N'dbo.ComboPackageJoin', N'U') IS NOT NULL
+
             BEGIN
+
                 ALTER TABLE dbo.ComboPackageJoin ALTER COLUMN ServicesID nvarchar(30) NULL;
+
             END;", conn))
+
 			{
+
 				await prepCmd.ExecuteNonQueryAsync(ct);
+
 			}
+
 			PackageServiceItem packageServiceItem;
+
 			await using (SqlTransaction trans = (SqlTransaction)(await conn.BeginTransactionAsync(IsolationLevel.Serializable, ct)))
+
 			{
+
 				try
+
 				{
+
 					await using (SqlCommand lockCmd = new SqlCommand("\n                DECLARE @res INT;\n                EXEC @res = sp_getapplock @Resource = 'ComboPackage_IdGen_Lock', @LockMode = 'Exclusive', @LockOwner = 'Transaction';\n                SELECT @res;", conn, trans))
+
 					{
+
 						await lockCmd.ExecuteScalarAsync(ct);
+
 					}
+
 					await using (SqlCommand cmd = new SqlCommand(@"
+
                 INSERT INTO dbo.ComboPackage (
+
                     ComboPackageID, ComboPackageName, ComboPackageDescription, ComboPackagePrice, ComboPackageImage, ComboPackageImageMimeType, ImageFileName, ImageUrl
+
                 )
+
                 VALUES (@Id, @Name, @Desc, @Price, @Img, @Mime, @ImgFileName, @ImgUrl);", conn, trans))
+
 					{
+
 						cmd.Parameters.AddWithValue("@Id", packageCode);
+
 						cmd.Parameters.AddWithValue("@Name", formModel.Name.Trim());
+
 						cmd.Parameters.AddWithValue("@Desc", formModel.Description?.Trim() ?? string.Empty);
+
 						cmd.Parameters.AddWithValue("@Price", formModel.Price);
+
 						cmd.Parameters.Add("@Img", SqlDbType.VarBinary, -1).Value = ((object)formModel.ImageBytes) ?? ((object)DBNull.Value);
+
 						cmd.Parameters.AddWithValue("@Mime", string.IsNullOrWhiteSpace(formModel.ImageMimeType) ? "image/jpeg" : formModel.ImageMimeType.Trim());
+
 						cmd.Parameters.AddWithValue("@ImgFileName", (object?)imageFileName ?? DBNull.Value);
+
 						cmd.Parameters.AddWithValue("@ImgUrl", (object?)imageUrl ?? DBNull.Value);
+
 						await cmd.ExecuteNonQueryAsync(ct);
+
 					}
+
 					if (!string.IsNullOrWhiteSpace(formModel.CategoryId))
+
 					{
+
 						await using SqlCommand catCmd = new SqlCommand("\n                    IF NOT EXISTS (SELECT 1 FROM dbo.ServiceCategory WHERE ServiceCategoryID = @CatId)\n                    BEGIN\n                        INSERT INTO dbo.ServiceCategory (ServiceCategoryID, ServiceCategoryName, ServiceCategoryDescription)\n                        VALUES (@CatId, @CatId, @CatId);\n                    END;\n                    INSERT INTO dbo.ServiceCategoryJoins (ServiceCategoryJoinID, ServiceCategoryID, ServicesID, AdditionalServicesID, ComboPackageID)\n                    VALUES ('SCJ-' + SUBSTRING(REPLACE(CAST(NEWID() AS nvarchar(36)), '-', ''), 1, 10), @CatId, NULL, NULL, @PkgId);", conn, trans);
+
 						catCmd.Parameters.AddWithValue("@CatId", formModel.CategoryId.Trim());
+
 						catCmd.Parameters.AddWithValue("@PkgId", packageCode);
+
 						await catCmd.ExecuteNonQueryAsync(ct);
+
 					}
+
 					if (formModel.SelectedServiceIds != null && formModel.SelectedServiceIds.Count > 0)
+
 					{
+
 						foreach (string svcId in formModel.SelectedServiceIds)
+
 						{
+
 							if (!string.IsNullOrWhiteSpace(svcId))
+
 							{
+
 								await using SqlCommand joinCmd = new SqlCommand("\n                        DECLARE @JID nvarchar(30) = 'CPJ-' + SUBSTRING(REPLACE(CAST(NEWID() AS nvarchar(36)), '-', ''), 1, 10);\n                        IF EXISTS (SELECT 1 FROM dbo.Services WHERE ServicesID = @SvcId)\n                        BEGIN\n                            INSERT INTO dbo.ComboPackageJoin (ComboPackageJoinID, ComboPackageID, ServicesID, AdditionalServicesID)\n                            VALUES (@JID, @PkgId, @SvcId, NULL);\n                        END\n                        ELSE IF EXISTS (SELECT 1 FROM dbo.AdditionalServices WHERE AdditionalServicesID = @SvcId)\n                        BEGIN\n                            INSERT INTO dbo.ComboPackageJoin (ComboPackageJoinID, ComboPackageID, ServicesID, AdditionalServicesID)\n                            VALUES (@JID, @PkgId, NULL, @SvcId);\n                        END\n                        ELSE\n                        BEGIN\n                            INSERT INTO dbo.ComboPackageJoin (ComboPackageJoinID, ComboPackageID, ServicesID, AdditionalServicesID)\n                            VALUES (@JID, @PkgId, @SvcId, NULL);\n                        END;", conn, trans);
+
 								joinCmd.Parameters.AddWithValue("@PkgId", packageCode);
+
 								joinCmd.Parameters.AddWithValue("@SvcId", svcId.Trim());
+
 								await joinCmd.ExecuteNonQueryAsync(ct);
+
 							}
+
 						}
+
 					}
+
 					await trans.CommitAsync(ct);
+
 					packageServiceItem = new PackageServiceItem
+
 					{
+
 						Code = packageCode,
+
 						Title = formModel.Name.Trim(),
+
 						BundleCategory = formModel.CategoryName,
+
 						Description = formModel.Description,
+
 						Price = $"${formModel.Price:N0}",
+
 						Status = "Active"
+
 					};
+
 				}
+
 				catch
+
 				{
+
 					await trans.RollbackAsync(ct);
+
 					throw;
+
 				}
+
 			}
+
 			result = packageServiceItem;
+
 		}
+
 		return result;
+
 	}
+
+
 
 	public async Task<IReadOnlyList<string>> GetBundledServiceIdsForPackageAsync(string packageId, CancellationToken ct = default)
+
 	{
+
 		var list = new List<string>();
+
 		if (string.IsNullOrWhiteSpace(packageId)) return list;
+
 		try
+
 		{
+
 			await using var conn = CreateConnection();
+
 			await conn.OpenAsync(ct);
+
 			const string sql = @"
+
 				SELECT COALESCE(ServicesID, AdditionalServicesID)
+
 				FROM dbo.ComboPackageJoin
+
 				WHERE UPPER(ComboPackageID) = UPPER(@PkgId) AND (ServicesID IS NOT NULL OR AdditionalServicesID IS NOT NULL);";
+
 			await using var cmd = new SqlCommand(sql, conn);
+
 			cmd.Parameters.AddWithValue("@PkgId", packageId.Trim());
+
 			await using var reader = await cmd.ExecuteReaderAsync(ct);
+
 			while (await reader.ReadAsync(ct))
+
 			{
+
 				if (!reader.IsDBNull(0))
+
 				{
+
 					list.Add(reader.GetString(0));
+
 				}
+
 			}
+
 		}
+
 		catch
+
 		{
+
 			// Best effort
+
 		}
+
 		return list;
+
 	}
+
+
 
 	public async Task<PackageServiceItem> UpdateComboPackageViaApiAsync(PackageWizardFormModel formModel, CancellationToken ct = default)
+
 	{
+
 		ArgumentNullException.ThrowIfNull(formModel);
+
 		string packageCode = formModel.GeneratedPackageId;
+
 		if (string.IsNullOrWhiteSpace(packageCode))
+
 			throw new InvalidOperationException("Package ID cannot be empty on update.");
 
+
+
 		string? imageFileName = null;
+
 		string? imageUrl = null;
+
 		if (formModel.ImageBytes != null && formModel.ImageBytes.Length > 0)
+
 		{
+
 			var uploadResult = await UploadServiceAssetToR2Async(
+
 				formModel.ImageBytes,
+
 				formModel.ImageFileName,
+
 				formModel.ImageMimeType ?? "image/jpeg",
+
 				"packages/images",
+
 				ct);
+
 			imageFileName = uploadResult.ImageFileName;
+
 			imageUrl = uploadResult.ImageUrl;
+
 		}
+
+
 
 		await using var conn = CreateConnection();
+
 		await conn.OpenAsync(ct);
 
+
+
 		await using var trans = (SqlTransaction)(await conn.BeginTransactionAsync(ct));
+
 		try
+
 		{
+
 			const string updateSql = @"
+
 				UPDATE dbo.ComboPackage
+
 				SET ComboPackageName = @Name,
+
 					ComboPackageDescription = @Desc,
+
 					ComboPackagePrice = @Price,
+
 					ComboPackageImage = CASE WHEN @Img IS NOT NULL THEN @Img ELSE ComboPackageImage END,
+
 					ComboPackageImageMimeType = CASE WHEN @Img IS NOT NULL THEN @Mime ELSE ComboPackageImageMimeType END,
+
 					ImageFileName = CASE WHEN @ImgFileName IS NOT NULL THEN @ImgFileName ELSE ImageFileName END,
+
 					ImageUrl = CASE WHEN @ImgUrl IS NOT NULL THEN @ImgUrl ELSE ImageUrl END
+
 				WHERE UPPER(ComboPackageID) = UPPER(@Id);";
 
+
+
 			await using (var cmd = new SqlCommand(updateSql, conn, trans))
+
 			{
+
 				cmd.Parameters.AddWithValue("@Id", packageCode.Trim());
+
 				cmd.Parameters.AddWithValue("@Name", formModel.Name.Trim());
+
 				cmd.Parameters.AddWithValue("@Desc", formModel.Description?.Trim() ?? string.Empty);
+
 				cmd.Parameters.AddWithValue("@Price", formModel.Price);
+
 				cmd.Parameters.Add("@Img", SqlDbType.VarBinary, -1).Value = (object?)formModel.ImageBytes ?? DBNull.Value;
+
 				cmd.Parameters.AddWithValue("@Mime", string.IsNullOrWhiteSpace(formModel.ImageMimeType) ? "image/jpeg" : formModel.ImageMimeType.Trim());
+
 				cmd.Parameters.AddWithValue("@ImgFileName", (object?)imageFileName ?? DBNull.Value);
+
 				cmd.Parameters.AddWithValue("@ImgUrl", (object?)imageUrl ?? DBNull.Value);
+
 				await cmd.ExecuteNonQueryAsync(ct);
+
 			}
+
+
 
 			// Synchronize Category in dbo.ServiceCategoryJoins
+
 			if (!string.IsNullOrWhiteSpace(formModel.CategoryId))
+
 			{
+
 				const string catSql = @"
+
 					DELETE FROM dbo.ServiceCategoryJoins WHERE UPPER(ComboPackageID) = UPPER(@PkgId);
+
 					DECLARE @CatId NVARCHAR(50) = NULL;
+
 					SELECT TOP 1 @CatId = ServiceCategoryID FROM dbo.ServiceCategory WHERE ServiceCategoryID = @InputCatId OR ServiceCategoryName = @InputCatId;
+
 					IF @CatId IS NULL
+
 					BEGIN
+
 						SET @CatId = @InputCatId;
+
 						INSERT INTO dbo.ServiceCategory (ServiceCategoryID, ServiceCategoryName, ServiceCategoryDescription)
+
 						VALUES (@CatId, @CatId, @CatId);
+
 					END
+
 					INSERT INTO dbo.ServiceCategoryJoins (ServiceCategoryJoinID, ServiceCategoryID, ServicesID, AdditionalServicesID, ComboPackageID)
+
 					VALUES ('SCJ-' + SUBSTRING(REPLACE(CAST(NEWID() AS nvarchar(36)), '-', ''), 1, 10), @CatId, NULL, NULL, @PkgId);";
 
+
+
 				await using var catCmd = new SqlCommand(catSql, conn, trans);
+
 				catCmd.Parameters.AddWithValue("@InputCatId", formModel.CategoryId.Trim());
+
 				catCmd.Parameters.AddWithValue("@PkgId", packageCode.Trim());
+
 				await catCmd.ExecuteNonQueryAsync(ct);
+
 			}
+
+
 
 			// Clear and recreate bundled services in dbo.ComboPackageJoin
+
 			const string clearJoinsSql = "DELETE FROM dbo.ComboPackageJoin WHERE UPPER(ComboPackageID) = UPPER(@PkgId);";
+
 			await using (var clearCmd = new SqlCommand(clearJoinsSql, conn, trans))
+
 			{
+
 				clearCmd.Parameters.AddWithValue("@PkgId", packageCode.Trim());
+
 				await clearCmd.ExecuteNonQueryAsync(ct);
+
 			}
+
+
 
 			if (formModel.SelectedServiceIds != null && formModel.SelectedServiceIds.Count > 0)
+
 			{
+
 				foreach (string svcId in formModel.SelectedServiceIds)
+
 				{
+
 					if (!string.IsNullOrWhiteSpace(svcId))
+
 					{
+
 						const string joinSql = @"
+
 							DECLARE @JID nvarchar(30) = 'CPJ-' + SUBSTRING(REPLACE(CAST(NEWID() AS nvarchar(36)), '-', ''), 1, 10);
+
 							IF EXISTS (SELECT 1 FROM dbo.Services WHERE UPPER(ServicesID) = UPPER(@SvcId))
+
 							BEGIN
+
 								INSERT INTO dbo.ComboPackageJoin (ComboPackageJoinID, ComboPackageID, ServicesID, AdditionalServicesID)
+
 								VALUES (@JID, @PkgId, @SvcId, NULL);
+
 							END
+
 							ELSE IF EXISTS (SELECT 1 FROM dbo.AdditionalServices WHERE UPPER(AdditionalServicesID) = UPPER(@SvcId))
+
 							BEGIN
+
 								INSERT INTO dbo.ComboPackageJoin (ComboPackageJoinID, ComboPackageID, ServicesID, AdditionalServicesID)
+
 								VALUES (@JID, @PkgId, NULL, @SvcId);
+
 							END
+
 							ELSE
+
 							BEGIN
+
 								INSERT INTO dbo.ComboPackageJoin (ComboPackageJoinID, ComboPackageID, ServicesID, AdditionalServicesID)
+
 								VALUES (@JID, @PkgId, @SvcId, NULL);
+
 							END;";
 
+
+
 						await using var joinCmd = new SqlCommand(joinSql, conn, trans);
+
 						joinCmd.Parameters.AddWithValue("@PkgId", packageCode.Trim());
+
 						joinCmd.Parameters.AddWithValue("@SvcId", svcId.Trim());
+
 						await joinCmd.ExecuteNonQueryAsync(ct);
+
 					}
+
 				}
+
 			}
+
+
 
 			await trans.CommitAsync(ct);
+
 		}
+
 		catch
+
 		{
+
 			await trans.RollbackAsync(ct);
+
 			throw;
+
 		}
+
+
 
 		return new PackageServiceItem
+
 		{
+
 			Code = packageCode,
+
 			Title = formModel.Name.Trim(),
+
 			BundleCategory = formModel.CategoryName,
+
 			Description = formModel.Description,
+
 			Price = $"₱{formModel.Price:N0}",
+
 			Status = "Active"
+
 		};
+
 	}
+
+
 
 	public IReadOnlyList<AddOnServiceItem> GetAdditionalServices()
+
 	{
+
 		List<AddOnServiceItem> list = new List<AddOnServiceItem>();
+
 		using SqlConnection sqlConnection = CreateConnection();
+
 		sqlConnection.Open();
+
 		using SqlCommand sqlCommand = new SqlCommand(@"
+
             IF OBJECT_ID(N'dbo.AdditionalServices', N'U') IS NOT NULL
+
             BEGIN
+
                 SELECT AdditionalServicesID, AdditionalServiceName, AdditionalServicesDescription, ISNULL(ServicePrice, 0)
+
                 FROM dbo.AdditionalServices
+
                 ORDER BY AdditionalServicesID;
+
             END", sqlConnection);
+
 		using SqlDataReader sqlDataReader = sqlCommand.ExecuteReader();
+
 		while (sqlDataReader.Read())
+
 		{
+
 			decimal addPrice = sqlDataReader.IsDBNull(3) ? 0m : sqlDataReader.GetDecimal(3);
+
 			list.Add(new AddOnServiceItem
+
 			{
+
 				Code = sqlDataReader.GetString(0),
+
 				Title = sqlDataReader.GetString(1),
+
 				TypeCategory = "Add-On",
+
 				FilterCategory = "Add-On",
+
 				PriceText = addPrice > 0 ? $"₱{addPrice:N2}" : "₱0.00",
+
 				CompatibleServices = new List<(string, string)>(),
+
 				Description = (sqlDataReader.IsDBNull(2) ? null : sqlDataReader.GetString(2)),
+
 				Status = "Active"
+
 			});
+
 		}
+
 		return list;
+
 	}
+
+
 
 	public IReadOnlyList<AddOnServiceItem> GetAdditionalServicesSummary()
+
 	{
+
 		return GetAdditionalServices();
+
 	}
+
 	public (byte[]? Image, string? MimeType) GetAdditionalServiceImage(string code)
+
 	{
+
 		if (string.IsNullOrWhiteSpace(code))
+
 		{
+
 			return (Image: null, MimeType: null);
+
 		}
+
 		try
+
 		{
+
 			using SqlConnection sqlConnection = CreateConnection();
+
 			sqlConnection.Open();
+
 			using SqlCommand sqlCommand = new SqlCommand("\n                IF OBJECT_ID(N'dbo.sp_GetAdditionalServiceDetailWithImage', N'P') IS NOT NULL\n                BEGIN\n                    EXEC dbo.sp_GetAdditionalServiceDetailWithImage @AdditionalServicesID = @Id;\n                END\n                ELSE IF OBJECT_ID(N'dbo.AdditionalServices', N'U') IS NOT NULL\n                BEGIN\n                    SELECT AdditionalServiceImage, AdditionalServiceImageMimeType\n                    FROM dbo.AdditionalServices\n                    WHERE UPPER(AdditionalServicesID) = UPPER(@Id);\n                END", sqlConnection);
+
 			sqlCommand.Parameters.AddWithValue("@Id", code.Trim());
+
 			using SqlDataReader sqlDataReader = sqlCommand.ExecuteReader();
+
 			if (sqlDataReader.Read())
+
 			{
+
 				if (sqlDataReader.FieldCount >= 5)
+
 				{
+
 					byte[] item = (sqlDataReader.IsDBNull(3) ? null : ((byte[])sqlDataReader[3]));
+
 					string item2 = (sqlDataReader.IsDBNull(4) ? "image/jpeg" : sqlDataReader.GetString(4));
+
 					return (Image: item, MimeType: item2);
+
 				}
+
 				byte[] item3 = (sqlDataReader.IsDBNull(0) ? null : ((byte[])sqlDataReader[0]));
+
 				string item4 = (sqlDataReader.IsDBNull(1) ? "image/jpeg" : sqlDataReader.GetString(1));
+
 				return (Image: item3, MimeType: item4);
+
 			}
+
 		}
+
 		catch
+
 		{
+
 		}
+
 		return (Image: null, MimeType: null);
+
 	}
+
+
 
 	public void UpdateAdditionalServiceImage(string code, byte[] imageBytes, string mimeType, string? requestingAdminId = null)
+
 	{
+
 		UpdateAdditionalServiceImageAsync(code, imageBytes, mimeType, requestingAdminId).GetAwaiter().GetResult();
+
 	}
+
+
 
 	public async Task UpdateAdditionalServiceImageAsync(string code, byte[] imageBytes, string mimeType, string? requestingAdminId = null, CancellationToken ct = default)
+
 	{
+
 		ArgumentNullException.ThrowIfNull(imageBytes, "imageBytes");
+
 		var (imageFileName, imageUrl) = await UploadServiceAssetToR2Async(imageBytes, null, mimeType, "services/addons", ct);
 
+
+
 		await using SqlConnection sqlConnection = CreateConnection();
+
 		await sqlConnection.OpenAsync(ct);
+
 		await using SqlCommand sqlCommand = new SqlCommand(@"
+
             IF OBJECT_ID(N'dbo.AdditionalServices', N'U') IS NOT NULL
+
             BEGIN
+
                 IF COL_LENGTH(N'dbo.AdditionalServices', N'ImageFileName') IS NULL
+
                     ALTER TABLE dbo.AdditionalServices ADD ImageFileName nvarchar(500) NULL;
+
                 IF COL_LENGTH(N'dbo.AdditionalServices', N'ImageUrl') IS NULL
+
                     ALTER TABLE dbo.AdditionalServices ADD ImageUrl nvarchar(500) NULL;
+
             END;
+
             IF OBJECT_ID(N'dbo.sp_UpdateAdditionalServiceImage', N'P') IS NOT NULL AND EXISTS (
+
                 SELECT 1 FROM sys.parameters WHERE object_id = OBJECT_ID(N'dbo.sp_UpdateAdditionalServiceImage') AND name = '@ImageFileName'
+
             )
+
             BEGIN
+
                 EXEC dbo.sp_UpdateAdditionalServiceImage
+
                     @AdditionalServicesID = @Id,
+
                     @AdditionalServiceImage = @Img,
+
                     @AdditionalServiceImageMimeType = @Mime,
+
                     @ImageFileName = @ImgFileName,
+
                     @ImageUrl = @ImgUrl,
+
                     @UpdatedBy = @By;
+
             END
+
             ELSE IF OBJECT_ID(N'dbo.AdditionalServices', N'U') IS NOT NULL
+
             BEGIN
+
                 UPDATE dbo.AdditionalServices
+
                 SET AdditionalServiceImage = @Img,
+
                     AdditionalServiceImageMimeType = @Mime,
+
                     ImageFileName = COALESCE(@ImgFileName, ImageFileName),
+
                     ImageUrl = COALESCE(@ImgUrl, ImageUrl)
+
                 WHERE UPPER(AdditionalServicesID) = UPPER(@Id);
+
             END", sqlConnection);
+
 		sqlCommand.Parameters.AddWithValue("@Id", code.Trim());
+
 		sqlCommand.Parameters.AddWithValue("@Img", imageBytes);
+
 		sqlCommand.Parameters.AddWithValue("@Mime", string.IsNullOrWhiteSpace(mimeType) ? "image/jpeg" : mimeType);
+
 		sqlCommand.Parameters.AddWithValue("@ImgFileName", (object?)imageFileName ?? DBNull.Value);
+
 		sqlCommand.Parameters.AddWithValue("@ImgUrl", (object?)imageUrl ?? DBNull.Value);
+
 		sqlCommand.Parameters.AddWithValue("@By", requestingAdminId ?? "Admin");
+
 		await sqlCommand.ExecuteNonQueryAsync(ct);
+
 	}
+
+
 
 	public AddOnServiceItem AddAdditionalService(AddOnServiceModel model)
+
 	{
+
 		ArgumentNullException.ThrowIfNull(model, "model");
+
 		using SqlConnection sqlConnection = CreateConnection();
+
 		sqlConnection.Open();
+
 		int count = GetAdditionalServices().Count;
+
 		string text = (string.IsNullOrWhiteSpace(model.Code) ? $"ADD-{count + 1:D3}" : model.Code.Trim());
+
 		using SqlCommand sqlCommand = new SqlCommand("\n            INSERT INTO dbo.AdditionalServices (AdditionalServicesID, AdditionalServiceName, AdditionalServicesDescription)\n            VALUES (@Id, @Name, @Desc);", sqlConnection);
+
 		sqlCommand.Parameters.AddWithValue("@Id", text);
+
 		sqlCommand.Parameters.AddWithValue("@Name", model.Title.Trim());
+
 		sqlCommand.Parameters.AddWithValue("@Desc", string.IsNullOrWhiteSpace(model.Description) ? model.TypeCategory : model.Description.Trim());
+
 		sqlCommand.ExecuteNonQuery();
+
 		return new AddOnServiceItem
+
 		{
+
 			Code = text,
+
 			Title = model.Title.Trim(),
+
 			TypeCategory = (string.IsNullOrWhiteSpace(model.TypeCategory) ? "Add-On" : model.TypeCategory),
+
 			FilterCategory = (string.IsNullOrWhiteSpace(model.FilterCategory) ? "Add-On" : model.FilterCategory),
+
 			PriceText = $"₱{model.Rate:N0} {model.RateUnit}",
+
 			CompatibleServices = (model.CompatibleServices ?? new List<(string, string)>()),
+
 			Description = model.Description,
+
 			Status = model.Status
+
 		};
+
 	}
+
+
 
 	public bool UpdateAdditionalService(AddOnServiceItem item, string? requestingAdminId = null)
+
 	{
+
 		ArgumentNullException.ThrowIfNull(item, nameof(item));
+
 		using SqlConnection conn = CreateConnection();
+
 		conn.Open();
 
+
+
 		decimal price = 0;
+
 		if (!string.IsNullOrWhiteSpace(item.PriceText))
+
 		{
+
 			var digits = new string(item.PriceText.Where(c => char.IsDigit(c) || c == '.').ToArray());
+
 			decimal.TryParse(digits, out price);
+
 		}
+
+
 
 		using SqlCommand cmd = new SqlCommand(@"
+
             IF OBJECT_ID(N'dbo.AdditionalServices', N'U') IS NOT NULL
+
             BEGIN
+
                 UPDATE dbo.AdditionalServices
+
                 SET AdditionalServiceName = @Name,
+
                     AdditionalServicesDescription = @Desc,
+
                     ServicePrice = @Price,
+
                     CategoryName = @CatName
+
                 WHERE UPPER(AdditionalServicesID) = UPPER(@Id);
+
             END", conn);
+
 		cmd.Parameters.AddWithValue("@Id", item.Code.Trim());
+
 		cmd.Parameters.AddWithValue("@Name", item.Title.Trim());
+
 		cmd.Parameters.AddWithValue("@Desc", string.IsNullOrWhiteSpace(item.Description) ? item.TypeCategory : item.Description.Trim());
+
 		cmd.Parameters.AddWithValue("@Price", price);
+
 		cmd.Parameters.AddWithValue("@CatName", string.IsNullOrWhiteSpace(item.TypeCategory) ? "Add-On" : item.TypeCategory.Trim());
+
 		int rows = cmd.ExecuteNonQuery();
 
+
+
 		LogActivity("UPDATE", "AdditionalServices", item.Code, $"Updated additional service '{item.Title}'", requestingAdminId);
+
 		return rows > 0;
+
 	}
+
+
 
 	public List<EquipmentRowDto> GetEquipmentRows()
+
 	{
+
 		List<EquipmentRowDto> list = new List<EquipmentRowDto>();
+
 		using SqlConnection sqlConnection = CreateConnection();
+
 		sqlConnection.Open();
+
 		using SqlCommand sqlCommand = new SqlCommand("\n            IF OBJECT_ID(N'dbo.Equipment', N'U') IS NOT NULL\n            BEGIN\n                SELECT eq.EquipmentID,\n                       eq.EquipmentName,\n                       eq.EquipmentTypeID,\n                       COALESCE(et.EquipmentTypeName, eq.EquipmentTypeID) AS TypeName,\n                       COALESCE(eq.SerialNo, eq.EquipmentID) AS SerialNo,\n                       eq.EquipmentStatus,\n                       eq.EquipmentImage\n                FROM dbo.Equipment eq\n                LEFT JOIN dbo.EquipmentType et ON et.EquipmentTypeID = eq.EquipmentTypeID\n                ORDER BY eq.EquipmentID;\n            END", sqlConnection);
+
 		using SqlDataReader sqlDataReader = sqlCommand.ExecuteReader();
+
 		while (sqlDataReader.Read())
+
 		{
+
 			list.Add(new EquipmentRowDto(sqlDataReader.GetString(0), sqlDataReader.GetString(1), sqlDataReader.GetString(2), sqlDataReader.IsDBNull(3) ? "General" : sqlDataReader.GetString(3), sqlDataReader.IsDBNull(4) ? string.Empty : sqlDataReader.GetString(4), sqlDataReader.IsDBNull(5) ? "Available" : sqlDataReader.GetString(5), sqlDataReader.IsDBNull(6) ? null : sqlDataReader.GetString(6)));
+
 		}
+
 		return list;
+
 	}
+
+
 
 	public List<EquipmentTypeRowDto> GetEquipmentTypes()
+
 	{
+
 		List<EquipmentTypeRowDto> list = new List<EquipmentTypeRowDto>();
+
 		using SqlConnection sqlConnection = CreateConnection();
+
 		sqlConnection.Open();
+
 		using SqlCommand sqlCommand = new SqlCommand("\n            IF OBJECT_ID(N'dbo.EquipmentType', N'U') IS NOT NULL\n            BEGIN\n                SELECT et.EquipmentTypeID,\n                       et.EquipmentTypeName,\n                       COUNT(eq.EquipmentID) AS TotalUnits,\n                       SUM(CASE WHEN eq.EquipmentStatus = 'Available' THEN 1 ELSE 0 END) AS AvailableUnits\n                FROM dbo.EquipmentType et\n                LEFT JOIN dbo.Equipment eq ON eq.EquipmentTypeID = et.EquipmentTypeID\n                GROUP BY et.EquipmentTypeID, et.EquipmentTypeName\n                ORDER BY et.EquipmentTypeID;\n            END", sqlConnection);
+
 		using SqlDataReader sqlDataReader = sqlCommand.ExecuteReader();
+
 		while (sqlDataReader.Read())
+
 		{
+
 			list.Add(new EquipmentTypeRowDto(sqlDataReader.GetString(0), sqlDataReader.GetString(1), (!sqlDataReader.IsDBNull(2)) ? sqlDataReader.GetInt32(2) : 0, (!sqlDataReader.IsDBNull(3)) ? sqlDataReader.GetInt32(3) : 0));
+
 		}
+
 		return list;
+
 	}
+
+
 
 	public EquipmentRowDto AddEquipment(string name, string typeName, string serialNo, string status = "Available")
+
 	{
+
 		using SqlConnection sqlConnection = CreateConnection();
+
 		sqlConnection.Open();
+
 		string text = (string.IsNullOrWhiteSpace(typeName) ? "Camera" : typeName.Trim());
+
 		string text2 = "ET-" + text.ToUpperInvariant().Substring(0, Math.Min(3, text.Length));
+
 		using (SqlCommand sqlCommand = new SqlCommand("\n            IF NOT EXISTS (SELECT 1 FROM dbo.EquipmentType WHERE EquipmentTypeID = @TypeId)\n            BEGIN\n                INSERT INTO dbo.EquipmentType (EquipmentTypeID, EquipmentTypeName)\n                VALUES (@TypeId, @TypeName);\n            END", sqlConnection))
+
 		{
+
 			sqlCommand.Parameters.AddWithValue("@TypeId", text2);
+
 			sqlCommand.Parameters.AddWithValue("@TypeName", text);
+
 			sqlCommand.ExecuteNonQuery();
-		}
-		int count = GetEquipmentRows().Count;
-		string text3 = $"EQ-{count + 1:D3}";
-		string text4 = (string.IsNullOrWhiteSpace(serialNo) ? text3 : serialNo.Trim());
-		using (SqlCommand sqlCommand2 = new SqlCommand("\n            INSERT INTO dbo.Equipment (EquipmentID, EquipmentName, EquipmentTypeID, EquipmentStatus, SerialNo)\n            VALUES (@Id, @Name, @TypeId, @Status, @SerialNo);", sqlConnection))
-		{
-			sqlCommand2.Parameters.AddWithValue("@Id", text3);
-			sqlCommand2.Parameters.AddWithValue("@Name", name.Trim());
-			sqlCommand2.Parameters.AddWithValue("@TypeId", text2);
-			sqlCommand2.Parameters.AddWithValue("@Status", string.IsNullOrWhiteSpace(status) ? "Available" : status);
-			sqlCommand2.Parameters.AddWithValue("@SerialNo", text4);
-			sqlCommand2.ExecuteNonQuery();
+
 		}
 
-		using (SqlCommand logCmd = new SqlCommand(@"
-            IF OBJECT_ID(N'dbo.HistoryLog', N'U') IS NOT NULL
-            BEGIN
-                INSERT INTO dbo.HistoryLog (ActionType, EntityName, EntityID, ChangedBy, ActionDetails, LoggedAt)
-                VALUES ('Create', 'Equipment', @Id, 'Admin', @Details, SYSUTCDATETIME());
-            END", sqlConnection))
+		int count = GetEquipmentRows().Count;
+
+		string text3 = $"EQ-{count + 1:D3}";
+
+		string text4 = (string.IsNullOrWhiteSpace(serialNo) ? text3 : serialNo.Trim());
+
+		using (SqlCommand sqlCommand2 = new SqlCommand("\n            INSERT INTO dbo.Equipment (EquipmentID, EquipmentName, EquipmentTypeID, EquipmentStatus, SerialNo)\n            VALUES (@Id, @Name, @TypeId, @Status, @SerialNo);", sqlConnection))
+
 		{
-			logCmd.Parameters.AddWithValue("@Id", text3);
-			logCmd.Parameters.AddWithValue("@Details", $"Added equipment '{name.Trim()}' ({text3}, Serial: {text4}, Type: {text})");
-			logCmd.ExecuteNonQuery();
+
+			sqlCommand2.Parameters.AddWithValue("@Id", text3);
+
+			sqlCommand2.Parameters.AddWithValue("@Name", name.Trim());
+
+			sqlCommand2.Parameters.AddWithValue("@TypeId", text2);
+
+			sqlCommand2.Parameters.AddWithValue("@Status", string.IsNullOrWhiteSpace(status) ? "Available" : status);
+
+			sqlCommand2.Parameters.AddWithValue("@SerialNo", text4);
+
+			sqlCommand2.ExecuteNonQuery();
+
 		}
+
+
+
+		using (SqlCommand logCmd = new SqlCommand(@"
+
+            IF OBJECT_ID(N'dbo.HistoryLog', N'U') IS NOT NULL
+
+            BEGIN
+
+                INSERT INTO dbo.HistoryLog (ActionType, EntityName, EntityID, ChangedBy, ActionDetails, LoggedAt)
+
+                VALUES ('Create', 'Equipment', @Id, 'Admin', @Details, SYSUTCDATETIME());
+
+            END", sqlConnection))
+
+		{
+
+			logCmd.Parameters.AddWithValue("@Id", text3);
+
+			logCmd.Parameters.AddWithValue("@Details", $"Added equipment '{name.Trim()}' ({text3}, Serial: {text4}, Type: {text})");
+
+			logCmd.ExecuteNonQuery();
+
+		}
+
+
 
 		return new EquipmentRowDto(text3, name.Trim(), text2, text, text4, status, null);
+
 	}
+
+
 
 	public List<BookingRowDto> GetBookings(string? customerId = null)
+
 	{
+
 		List<BookingRowDto> list = new List<BookingRowDto>();
+
 		using SqlConnection sqlConnection = CreateConnection();
+
 		sqlConnection.Open();
+
 		using SqlCommand sqlCommand = new SqlCommand("\n            IF OBJECT_ID(N'dbo.EventAppointment', N'U') IS NOT NULL\n            BEGIN\n                SELECT ea.EventAppointmentID,\n                       ea.EventName,\n                       ea.EventDescription,\n                       ea.CustomerID,\n                       COALESCE(c.CustomerFirstName + ' ' + c.CustomerLastName, ea.CustomerID) AS CustomerName,\n                       ea.EventDate,\n                       ea.EventTime,\n                       ea.EventStatus,\n                       ea.CreatedAt\n                FROM dbo.EventAppointment ea\n                LEFT JOIN dbo.Customer c ON c.CustomerID = ea.CustomerID\n                WHERE (@CustomerId IS NULL OR UPPER(ea.CustomerID) = UPPER(@CustomerId) OR UPPER(c.CustomerEmail) = UPPER(@CustomerId))\n                ORDER BY ea.EventDate DESC, ea.EventTime DESC;\n            END", sqlConnection);
+
 		sqlCommand.Parameters.AddWithValue("@CustomerId", ((object)customerId) ?? ((object)DBNull.Value));
+
 		using SqlDataReader sqlDataReader = sqlCommand.ExecuteReader();
+
 		while (sqlDataReader.Read())
+
 		{
+
 			var row = new BookingRowDto(sqlDataReader.GetString(0), sqlDataReader.GetString(1), sqlDataReader.IsDBNull(2) ? string.Empty : sqlDataReader.GetString(2), sqlDataReader.IsDBNull(3) ? string.Empty : sqlDataReader.GetString(3), sqlDataReader.IsDBNull(4) ? string.Empty : sqlDataReader.GetString(4), sqlDataReader.GetDateTime(5), sqlDataReader.GetFieldValue<TimeSpan>(6), sqlDataReader.IsDBNull(7) ? "Scheduled" : sqlDataReader.GetString(7), sqlDataReader.IsDBNull(8) ? DateTime.UtcNow : sqlDataReader.GetDateTime(8));
+
 			row.TotalAmount = 5000m;
+
 			row.DepositAmount = Math.Round(5000m * 0.15m, 2);
+
 			row.RemainingBalance = 5000m - row.DepositAmount;
+
 			row.CustomerPaymentStatus = "Cleared";
+
 			row.EmployeeRemittanceStatus = "PendingAdminApproval";
+
 			list.Add(row);
+
 		}
+
 		return list;
+
 	}
+
+
 
 	public void UpdateBookingStatus(string eventAppointmentId, string newStatus)
+
 	{
+
 		if (string.IsNullOrWhiteSpace(eventAppointmentId) || string.IsNullOrWhiteSpace(newStatus))
+
 		{
+
 			return;
+
 		}
+
 		using SqlConnection sqlConnection = CreateConnection();
+
 		sqlConnection.Open();
+
 		using SqlCommand sqlCommand = new SqlCommand("\n            UPDATE dbo.EventAppointment\n            SET EventStatus = @Status\n            WHERE EventAppointmentID = @Id;", sqlConnection);
+
 		sqlCommand.Parameters.AddWithValue("@Id", eventAppointmentId.Trim());
+
 		sqlCommand.Parameters.AddWithValue("@Status", newStatus.Trim());
+
 		sqlCommand.ExecuteNonQuery();
 
+
+
 		using (SqlCommand logCmd = new SqlCommand(@"
+
             IF OBJECT_ID(N'dbo.HistoryLog', N'U') IS NOT NULL
+
             BEGIN
+
                 INSERT INTO dbo.HistoryLog (ActionType, EntityName, EntityID, ChangedBy, ActionDetails, LoggedAt)
+
                 VALUES ('Update', 'EventAppointment', @Id, 'Staff', @Details, SYSUTCDATETIME());
+
             END", sqlConnection))
+
 		{
+
 			logCmd.Parameters.AddWithValue("@Id", eventAppointmentId.Trim());
+
 			logCmd.Parameters.AddWithValue("@Details", $"Updated appointment status to '{newStatus.Trim()}'");
+
 			logCmd.ExecuteNonQuery();
+
 		}
+
 	}
+
+
 
 	public List<PhotoRowDto> GetPhotos(string? bookingId = null)
+
 	{
+
 		List<PhotoRowDto> list = new List<PhotoRowDto>();
+
 		using SqlConnection sqlConnection = CreateConnection();
+
 		sqlConnection.Open();
+
 		using SqlCommand sqlCommand = new SqlCommand("\n            IF OBJECT_ID(N'dbo.Photos', N'U') IS NOT NULL\n            BEGIN\n                SELECT Id, BookingId, FileName, StoragePath, UploadedById, UploadedAt, IsWatermarked, IsFinalDelivery\n                FROM dbo.Photos\n                WHERE (@BookingId IS NULL OR BookingId = @BookingId)\n                ORDER BY UploadedAt DESC;\n            END", sqlConnection);
+
 		sqlCommand.Parameters.AddWithValue("@BookingId", ((object)bookingId) ?? ((object)DBNull.Value));
+
 		using SqlDataReader sqlDataReader = sqlCommand.ExecuteReader();
+
 		while (sqlDataReader.Read())
+
 		{
+
 			list.Add(new PhotoRowDto(sqlDataReader.GetInt32(0), sqlDataReader.GetString(1), sqlDataReader.GetString(2), sqlDataReader.GetString(3), sqlDataReader.GetString(4), sqlDataReader.GetDateTime(5), sqlDataReader.GetBoolean(6), sqlDataReader.GetBoolean(7)));
+
 		}
+
 		return list;
+
 	}
+
+
 
 	public List<AuditLogRowDto> GetAuditLogs(string? userId = null)
+
 	{
+
 		List<AuditLogRowDto> list = new List<AuditLogRowDto>();
+
 		try
+
 		{
+
 			using SqlConnection sqlConnection = CreateConnection();
+
 			sqlConnection.Open();
+
 			using SqlCommand sqlCommand = new SqlCommand("\n                IF OBJECT_ID(N'dbo.HistoryLog', N'U') IS NOT NULL\n                BEGIN\n                    SELECT TOP 20 HistoryLogID, ActionType, EntityName, EntityID, ChangedBy, ActionDetails, LoggedAt\n                    FROM dbo.HistoryLog\n                    WHERE (@UserId IS NULL OR UPPER(ChangedBy) = UPPER(@UserId))\n                    ORDER BY LoggedAt DESC;\n                END\n                ELSE IF OBJECT_ID(N'dbo.AuditLogs', N'U') IS NOT NULL\n                BEGIN\n                    SELECT TOP 20 Id, Action, EntityType, EntityId, UserId, IpAddress, Timestamp\n                    FROM dbo.AuditLogs\n                    WHERE (@UserId IS NULL OR UPPER(UserId) = UPPER(@UserId))\n                    ORDER BY Timestamp DESC;\n                END", sqlConnection);
+
 			sqlCommand.Parameters.AddWithValue("@UserId", ((object)userId) ?? ((object)DBNull.Value));
+
 			using SqlDataReader sqlDataReader = sqlCommand.ExecuteReader();
+
 			while (sqlDataReader.Read())
+
 			{
+
 				list.Add(new AuditLogRowDto(sqlDataReader.GetInt64(0), sqlDataReader.IsDBNull(1) ? "Action" : sqlDataReader.GetString(1), sqlDataReader.IsDBNull(2) ? "General" : sqlDataReader.GetString(2), sqlDataReader.IsDBNull(3) ? null : sqlDataReader.GetString(3), sqlDataReader.IsDBNull(4) ? null : sqlDataReader.GetString(4), sqlDataReader.IsDBNull(5) ? null : sqlDataReader.GetString(5), sqlDataReader.IsDBNull(6) ? DateTime.UtcNow : sqlDataReader.GetDateTime(6)));
+
 			}
+
 		}
+
 		catch
+
 		{
+
 		}
+
 		return list;
+
 	}
+
+
 
 	public IReadOnlyList<AuditLogRowDto> GetHistoryLogs(string requestingUserId, int topCount = 100)
+
 	{
+
 		List<AuditLogRowDto> list = new List<AuditLogRowDto>();
+
 		try
+
 		{
+
 			using SqlConnection sqlConnection = CreateConnection();
+
 			sqlConnection.Open();
+
 			string cmdText = @"
+
                 IF OBJECT_ID(N'dbo.HistoryLog', N'U') IS NOT NULL
+
                 BEGIN
+
                     SELECT TOP (@TopCount) HistoryLogID, ActionType, EntityName, EntityID, ChangedBy, ActionDetails, LoggedAt
+
                     FROM dbo.HistoryLog
+
                     ORDER BY LoggedAt DESC;
+
                 END";
+
 			using SqlCommand sqlCommand = new SqlCommand(cmdText, sqlConnection);
+
 			sqlCommand.Parameters.AddWithValue("@TopCount", topCount);
+
 			using SqlDataReader sqlDataReader = sqlCommand.ExecuteReader();
+
 			while (sqlDataReader.Read())
+
 			{
+
 				list.Add(new AuditLogRowDto(sqlDataReader.GetInt64(0), sqlDataReader.IsDBNull(1) ? "Action" : sqlDataReader.GetString(1), sqlDataReader.IsDBNull(2) ? "General" : sqlDataReader.GetString(2), sqlDataReader.IsDBNull(3) ? null : sqlDataReader.GetString(3), sqlDataReader.IsDBNull(4) ? null : sqlDataReader.GetString(4), sqlDataReader.IsDBNull(5) ? null : sqlDataReader.GetString(5), sqlDataReader.IsDBNull(6) ? DateTime.UtcNow : sqlDataReader.GetDateTime(6)));
+
 			}
+
 		}
+
 		catch
+
 		{
+
 		}
+
 		return list;
+
 	}
+
+
 
 	public List<PaymentSummaryModel> GetPendingCashRemittances()
+
 	{
+
 		var list = new List<PaymentSummaryModel>();
+
 		try
+
 		{
+
 			using SqlConnection conn = CreateConnection();
+
 			conn.Open();
 
+
+
 			const string sql = @"
+
 				IF OBJECT_ID(N'dbo.Payments', N'U') IS NOT NULL
+
 				BEGIN
+
 					SELECT Id, BookingId, EventAppointmentId, TotalAmount, DepositAmount,
+
 					       RemainingBalance, Amount, PaymentType, CustomerPaymentStatus,
+
 					       EmployeeRemittanceStatus, Channel, EmployeeId, EmployeeName,
+
 					       AdminApproverId, AdminApproverName, ApprovalTimestamp, CreatedAt,
+
 					       ExternalReference, Notes
+
 					FROM dbo.Payments
+
 					WHERE EmployeeRemittanceStatus = 'PendingAdminApproval'
+
 					ORDER BY CreatedAt DESC;
+
 				END
+
 				ELSE IF OBJECT_ID(N'dbo.PaymentTransactions', N'U') IS NOT NULL
+
 				BEGIN
+
 					IF COL_LENGTH(N'dbo.PaymentTransactions', N'CustomerPaymentStatus') IS NULL
+
 						ALTER TABLE dbo.PaymentTransactions ADD CustomerPaymentStatus nvarchar(40) NULL;
+
 					IF COL_LENGTH(N'dbo.PaymentTransactions', N'EmployeeRemittanceStatus') IS NULL
+
 						ALTER TABLE dbo.PaymentTransactions ADD EmployeeRemittanceStatus nvarchar(40) NULL;
+
 					IF COL_LENGTH(N'dbo.PaymentTransactions', N'AdminApproverID') IS NULL
+
 						ALTER TABLE dbo.PaymentTransactions ADD AdminApproverID nvarchar(50) NULL;
+
 					IF COL_LENGTH(N'dbo.PaymentTransactions', N'ApprovalTimestamp') IS NULL
+
 						ALTER TABLE dbo.PaymentTransactions ADD ApprovalTimestamp datetime2 NULL;
+
+
 
 					SELECT CAST(ABS(CHECKSUM(PaymentTransactionID)) % 100000 AS int) AS Id,
+
 					       NULL AS BookingId,
+
 					       EventAppointmentID,
+
 					       Amount AS TotalAmount,
+
 					       Amount AS DepositAmount,
+
 					       0.00 AS RemainingBalance,
+
 					       Amount,
+
 					       PaymentType,
+
 					       COALESCE(CustomerPaymentStatus, 'Cleared') AS CustomerPaymentStatus,
+
 					       COALESCE(EmployeeRemittanceStatus, 'PendingAdminApproval') AS EmployeeRemittanceStatus,
+
 					       PaymentMethod AS Channel,
+
 					       ReceivedByEmployeeID AS EmployeeId,
+
 					       ReceivedByEmployeeID AS EmployeeName,
+
 					       AdminApproverID AS AdminApproverId,
+
 					       NULL AS AdminApproverName,
+
 					       ApprovalTimestamp,
+
 					       CreatedAt,
+
 					       ExternalReference,
+
 					       NULL AS Notes
+
 					FROM dbo.PaymentTransactions
+
 					WHERE PaymentMethod LIKE '%Cash%'
+
 					  AND (EmployeeRemittanceStatus = 'PendingAdminApproval' OR (EmployeeRemittanceStatus IS NULL AND ReceivedByEmployeeID IS NOT NULL))
+
 					ORDER BY CreatedAt DESC;
+
 				END";
 
+
+
 			using SqlCommand cmd = new SqlCommand(sql, conn);
+
 			using SqlDataReader reader = cmd.ExecuteReader();
+
 			while (reader.Read())
+
 			{
+
 				list.Add(new PaymentSummaryModel
+
 				{
+
 					Id = reader.GetInt32(0),
+
 					BookingId = reader.IsDBNull(1) ? null : reader.GetInt32(1),
+
 					EventAppointmentId = reader.IsDBNull(2) ? null : reader.GetString(2),
+
 					TotalAmount = reader.GetDecimal(3),
+
 					DepositAmount = reader.GetDecimal(4),
+
 					RemainingBalance = reader.GetDecimal(5),
+
 					Amount = reader.GetDecimal(6),
+
 					PaymentType = reader.GetString(7),
+
 					CustomerPaymentStatus = reader.GetString(8),
+
 					EmployeeRemittanceStatus = reader.GetString(9),
+
 					PaymentChannel = reader.GetString(10),
+
 					EmployeeId = reader.IsDBNull(11) ? null : reader.GetString(11),
+
 					EmployeeName = reader.IsDBNull(12) ? null : reader.GetString(12),
+
 					AdminApproverId = reader.IsDBNull(13) ? null : reader.GetString(13),
+
 					AdminApproverName = reader.IsDBNull(14) ? null : reader.GetString(14),
+
 					ApprovalTimestamp = reader.IsDBNull(15) ? null : reader.GetDateTime(15),
+
 					CreatedAt = reader.GetDateTime(16),
+
 					ExternalReference = reader.IsDBNull(17) ? null : reader.GetString(17),
+
 					Notes = reader.IsDBNull(18) ? null : reader.GetString(18)
+
 				});
+
 			}
+
 		}
+
 		catch
+
 		{
+
 		}
+
 		return list;
+
 	}
+
+
 
 	public void ApproveCashRemittance(int paymentId, string adminId)
+
 	{
+
 		try
+
 		{
+
 			using SqlConnection conn = CreateConnection();
+
 			conn.Open();
 
+
+
 			const string sql = @"
+
 				IF OBJECT_ID(N'dbo.Payments', N'U') IS NOT NULL
+
 				BEGIN
+
 					UPDATE dbo.Payments
+
 					SET EmployeeRemittanceStatus = 'Cleared',
+
 					    AdminApproverId = @AdminId,
+
 					    ApprovalTimestamp = SYSUTCDATETIME()
+
 					WHERE Id = @PaymentId;
+
 				END;
+
+
 
 				IF OBJECT_ID(N'dbo.PaymentTransactions', N'U') IS NOT NULL
+
 				BEGIN
+
 					IF COL_LENGTH(N'dbo.PaymentTransactions', N'EmployeeRemittanceStatus') IS NULL
+
 						ALTER TABLE dbo.PaymentTransactions ADD EmployeeRemittanceStatus nvarchar(40) NULL;
+
 					IF COL_LENGTH(N'dbo.PaymentTransactions', N'AdminApproverID') IS NULL
+
 						ALTER TABLE dbo.PaymentTransactions ADD AdminApproverID nvarchar(50) NULL;
+
 					IF COL_LENGTH(N'dbo.PaymentTransactions', N'ApprovalTimestamp') IS NULL
+
 						ALTER TABLE dbo.PaymentTransactions ADD ApprovalTimestamp datetime2 NULL;
 
+
+
 					UPDATE dbo.PaymentTransactions
+
 					SET EmployeeRemittanceStatus = 'Cleared',
+
 					    AdminApproverID = @AdminId,
+
 					    ApprovalTimestamp = SYSUTCDATETIME()
+
 					WHERE CAST(ABS(CHECKSUM(PaymentTransactionID)) % 100000 AS int) = @PaymentId
+
 					   OR PaymentTransactionID = CAST(@PaymentId AS nvarchar(50));
+
 				END;
+
+
 
 				IF OBJECT_ID(N'dbo.HistoryLog', N'U') IS NOT NULL
+
 				BEGIN
+
 					INSERT INTO dbo.HistoryLog (ActionType, EntityName, EntityID, ChangedBy, ChangedByType, ActionDetails, LoggedAt)
+
 					VALUES ('APPROVAL', 'Payment', CAST(@PaymentId AS nvarchar(30)), @AdminId, 'Admin', 'Admin approved cash remittance. Employee status cleared.', SYSUTCDATETIME());
+
 				END;
 
+
+
 				IF OBJECT_ID(N'dbo.AuditLogs', N'U') IS NOT NULL
+
 				BEGIN
+
 					INSERT INTO dbo.AuditLogs (UserId, UserEmail, Action, Resource, ResourceId, Timestamp, Details)
+
 					VALUES (@AdminId, @AdminId, 'Approve Cash Remittance', 'Payment', CAST(@PaymentId AS nvarchar(30)), SYSUTCDATETIME(), 'Admin approved employee cash remittance.');
+
 				END;";
 
+
+
 			using SqlCommand cmd = new SqlCommand(sql, conn);
+
 			cmd.Parameters.AddWithValue("@PaymentId", paymentId);
+
 			cmd.Parameters.AddWithValue("@AdminId", adminId);
+
 			cmd.ExecuteNonQuery();
+
 		}
+
 		catch
+
 		{
+
 		}
+
 	}
+
+
 
 	public void LogActivity(string actionType, string entityName, string? entityId, string? details, string? changedBy = null)
+
 	{
+
 		try
+
 		{
+
 			using SqlConnection sqlConnection = CreateConnection();
+
 			sqlConnection.Open();
+
 			using SqlCommand sqlCommand = new SqlCommand(@"
+
                 IF OBJECT_ID(N'dbo.HistoryLog', N'U') IS NOT NULL
+
                 BEGIN
+
                     IF COLUMNPROPERTY(OBJECT_ID(N'dbo.HistoryLog'), 'ChangedByType', 'ColumnId') IS NOT NULL
+
                     BEGIN
+
                         INSERT INTO dbo.HistoryLog (ActionType, EntityName, EntityID, ChangedByType, ActionDetails, LoggedAt)
+
                         VALUES (@ActionType, @EntityName, @EntityID, COALESCE(@ChangedBy, 'System'), @ActionDetails, SYSUTCDATETIME());
+
                     END
+
                     ELSE IF COLUMNPROPERTY(OBJECT_ID(N'dbo.HistoryLog'), 'ChangedBy', 'IsComputed') = 0
+
                     BEGIN
+
                         INSERT INTO dbo.HistoryLog (ActionType, EntityName, EntityID, ChangedBy, ActionDetails, LoggedAt)
+
                         VALUES (@ActionType, @EntityName, @EntityID, @ChangedBy, @ActionDetails, SYSUTCDATETIME());
+
                     END
+
                     ELSE
+
                     BEGIN
+
                         INSERT INTO dbo.HistoryLog (ActionType, EntityName, EntityID, ActionDetails, LoggedAt)
+
                         VALUES (@ActionType, @EntityName, @EntityID, @ActionDetails, SYSUTCDATETIME());
+
                     END
+
                 END", sqlConnection);
+
 			sqlCommand.Parameters.AddWithValue("@ActionType", actionType);
+
 			sqlCommand.Parameters.AddWithValue("@EntityName", entityName);
+
 			sqlCommand.Parameters.AddWithValue("@EntityID", ((object)entityId) ?? ((object)DBNull.Value));
+
 			sqlCommand.Parameters.AddWithValue("@ChangedBy", string.IsNullOrWhiteSpace(changedBy) ? "System" : changedBy.Trim());
+
 			sqlCommand.Parameters.AddWithValue("@ActionDetails", ((object)details) ?? ((object)DBNull.Value));
+
 			sqlCommand.ExecuteNonQuery();
+
 		}
+
 		catch
+
 		{
+
 		}
+
 	}
+
+
 
 	private static readonly List<FaqItem> _inMemoryFaqs = new()
+
 	{
+
 		new FaqItem
+
 		{
+
 			Id = 1,
+
 			Question = "How do I book a session?",
+
 			Answer = "Booking is handled entirely online through our appointment system. Simply select your desired service above, choose an available date and time from the calendar, and complete the reservation to secure your spot.",
+
 			Category = "Booking",
+
 			DisplayOrder = 1,
+
 			IsActive = true,
+
 			UpdatedAt = DateTime.UtcNow
+
 		},
+
 		new FaqItem
+
 		{
+
 			Id = 2,
+
 			Question = "Do you provide a makeup artist or stylist?",
+
 			Answer = "Standard packages do not include a dedicated makeup artist or stylist. However, we have a network of trusted professionals we can recommend, or you can request one as an add-on during booking.",
+
 			Category = "Services",
+
 			DisplayOrder = 2,
+
 			IsActive = true,
+
 			UpdatedAt = DateTime.UtcNow
+
 		},
+
 		new FaqItem
+
 		{
+
 			Id = 3,
+
 			Question = "When will I receive my photos?",
+
 			Answer = "You will receive an online proofing gallery within 48 hours of your shoot to select your favorites. Final retouched photos will be delivered via your private digital gallery within 7 business days.",
+
 			Category = "Delivery",
+
 			DisplayOrder = 3,
+
 			IsActive = true,
+
 			UpdatedAt = DateTime.UtcNow
+
 		}
+
 	};
 
+
+
 	public IReadOnlyList<FaqItem> GetFaqs(bool includeInactive = false)
+
 	{
+
 		var list = new List<FaqItem>();
+
 		try
+
 		{
+
 			using SqlConnection conn = CreateConnection();
+
 			conn.Open();
 
+
+
 			const string sql = @"
+
 				IF OBJECT_ID(N'dbo.StudioFAQs', N'U') IS NOT NULL
+
 				BEGIN
+
 					SELECT FaqId, Question, Answer, Category, DisplayOrder, IsActive, UpdatedAt
+
 					FROM dbo.StudioFAQs
+
 					ORDER BY DisplayOrder ASC, FaqId ASC;
+
 				END";
 
+
+
 			using SqlCommand cmd = new SqlCommand(sql, conn);
+
 			using SqlDataReader reader = cmd.ExecuteReader();
+
 			while (reader.Read())
+
 			{
+
 				var faq = new FaqItem
+
 				{
+
 					Id = reader.GetInt32(0),
+
 					Question = reader.GetString(1),
+
 					Answer = reader.GetString(2),
+
 					Category = reader.IsDBNull(3) ? "General" : reader.GetString(3),
+
 					DisplayOrder = reader.IsDBNull(4) ? 0 : reader.GetInt32(4),
+
 					IsActive = !reader.IsDBNull(5) && reader.GetBoolean(5),
+
 					UpdatedAt = reader.IsDBNull(6) ? DateTime.UtcNow : reader.GetDateTime(6)
+
 				};
+
 				if (includeInactive || faq.IsActive)
+
 				{
+
 					list.Add(faq);
+
 				}
+
 			}
+
+
 
 			if (list.Count > 0)
+
 			{
+
 				return list;
+
 			}
-		}
-		catch
-		{
+
 		}
 
-		lock (_inMemoryFaqs)
+		catch
+
 		{
-			return includeInactive
-				? _inMemoryFaqs.OrderBy(f => f.DisplayOrder).ToList()
-				: _inMemoryFaqs.Where(f => f.IsActive).OrderBy(f => f.DisplayOrder).ToList();
+
 		}
+
+
+
+		lock (_inMemoryFaqs)
+
+		{
+
+			return includeInactive
+
+				? _inMemoryFaqs.OrderBy(f => f.DisplayOrder).ToList()
+
+				: _inMemoryFaqs.Where(f => f.IsActive).OrderBy(f => f.DisplayOrder).ToList();
+
+		}
+
 	}
+
+
 
 	public FaqItem? GetFaqById(int id)
+
 	{
+
 		return GetFaqs(includeInactive: true).FirstOrDefault(f => f.Id == id);
+
 	}
+
+
 
 	public bool SaveFaq(FaqItem faq, string? requestingAdminId = null)
+
 	{
+
 		if (faq == null || string.IsNullOrWhiteSpace(faq.Question) || string.IsNullOrWhiteSpace(faq.Answer))
+
 			return false;
 
+
+
 		faq.Question = faq.Question.Trim();
+
 		faq.Answer = faq.Answer.Trim();
+
 		faq.Category = string.IsNullOrWhiteSpace(faq.Category) ? "General" : faq.Category.Trim();
+
 		faq.UpdatedAt = DateTime.UtcNow;
 
+
+
 		try
+
 		{
+
 			using SqlConnection conn = CreateConnection();
+
 			conn.Open();
+
+
 
 			const string ddl = @"
+
 				IF OBJECT_ID(N'dbo.StudioFAQs', N'U') IS NULL
+
 				BEGIN
+
 					CREATE TABLE dbo.StudioFAQs (
+
 						FaqId INT IDENTITY(1,1) NOT NULL PRIMARY KEY,
+
 						Question NVARCHAR(500) NOT NULL,
+
 						Answer NVARCHAR(MAX) NOT NULL,
+
 						Category NVARCHAR(100) NOT NULL DEFAULT 'General',
+
 						DisplayOrder INT NOT NULL DEFAULT 0,
+
 						IsActive BIT NOT NULL DEFAULT 1,
+
 						CreatedAt DATETIME2 NOT NULL DEFAULT SYSUTCDATETIME(),
+
 						UpdatedAt DATETIME2 NOT NULL DEFAULT SYSUTCDATETIME()
+
 					);
+
 				END";
+
 			using (var initCmd = new SqlCommand(ddl, conn))
+
 			{
+
 				initCmd.ExecuteNonQuery();
+
 			}
 
+
+
 			if (faq.Id > 0)
+
 			{
+
 				const string updateSql = @"
+
 					UPDATE dbo.StudioFAQs
+
 					SET Question = @Question,
+
 					    Answer = @Answer,
+
 					    Category = @Category,
+
 					    DisplayOrder = @DisplayOrder,
+
 					    IsActive = @IsActive,
+
 					    UpdatedAt = SYSUTCDATETIME()
+
 					WHERE FaqId = @FaqId;";
 
+
+
 				using var cmd = new SqlCommand(updateSql, conn);
+
 				cmd.Parameters.AddWithValue("@FaqId", faq.Id);
+
 				cmd.Parameters.AddWithValue("@Question", faq.Question);
+
 				cmd.Parameters.AddWithValue("@Answer", faq.Answer);
+
 				cmd.Parameters.AddWithValue("@Category", faq.Category);
+
 				cmd.Parameters.AddWithValue("@DisplayOrder", faq.DisplayOrder);
+
 				cmd.Parameters.AddWithValue("@IsActive", faq.IsActive);
+
 				cmd.ExecuteNonQuery();
+
 			}
+
 			else
+
 			{
+
 				const string insertSql = @"
+
 					INSERT INTO dbo.StudioFAQs (Question, Answer, Category, DisplayOrder, IsActive, CreatedAt, UpdatedAt)
+
 					OUTPUT INSERTED.FaqId
+
 					VALUES (@Question, @Answer, @Category, @DisplayOrder, @IsActive, SYSUTCDATETIME(), SYSUTCDATETIME());";
 
+
+
 				using var cmd = new SqlCommand(insertSql, conn);
+
 				cmd.Parameters.AddWithValue("@Question", faq.Question);
+
 				cmd.Parameters.AddWithValue("@Answer", faq.Answer);
+
 				cmd.Parameters.AddWithValue("@Category", faq.Category);
+
 				cmd.Parameters.AddWithValue("@DisplayOrder", faq.DisplayOrder);
+
 				cmd.Parameters.AddWithValue("@IsActive", faq.IsActive);
+
 				var insertedId = cmd.ExecuteScalar();
+
 				if (insertedId != null && int.TryParse(insertedId.ToString(), out int newId))
+
 				{
+
 					faq.Id = newId;
+
 				}
+
 			}
-		}
-		catch
-		{
+
 		}
 
-		lock (_inMemoryFaqs)
+		catch
+
 		{
-			if (faq.Id > 0)
-			{
-				var existing = _inMemoryFaqs.FirstOrDefault(f => f.Id == faq.Id);
-				if (existing != null)
-				{
-					existing.Question = faq.Question;
-					existing.Answer = faq.Answer;
-					existing.Category = faq.Category;
-					existing.DisplayOrder = faq.DisplayOrder;
-					existing.IsActive = faq.IsActive;
-					existing.UpdatedAt = DateTime.UtcNow;
-				}
-				else
-				{
-					_inMemoryFaqs.Add(faq);
-				}
-			}
-			else
-			{
-				int nextId = _inMemoryFaqs.Count > 0 ? _inMemoryFaqs.Max(f => f.Id) + 1 : 1;
-				faq.Id = nextId;
-				_inMemoryFaqs.Add(faq);
-			}
+
 		}
+
+
+
+		lock (_inMemoryFaqs)
+
+		{
+
+			if (faq.Id > 0)
+
+			{
+
+				var existing = _inMemoryFaqs.FirstOrDefault(f => f.Id == faq.Id);
+
+				if (existing != null)
+
+				{
+
+					existing.Question = faq.Question;
+
+					existing.Answer = faq.Answer;
+
+					existing.Category = faq.Category;
+
+					existing.DisplayOrder = faq.DisplayOrder;
+
+					existing.IsActive = faq.IsActive;
+
+					existing.UpdatedAt = DateTime.UtcNow;
+
+				}
+
+				else
+
+				{
+
+					_inMemoryFaqs.Add(faq);
+
+				}
+
+			}
+
+			else
+
+			{
+
+				int nextId = _inMemoryFaqs.Count > 0 ? _inMemoryFaqs.Max(f => f.Id) + 1 : 1;
+
+				faq.Id = nextId;
+
+				_inMemoryFaqs.Add(faq);
+
+			}
+
+		}
+
+
 
 		LogActivity(faq.Id > 0 ? "UPDATE" : "CREATE", "StudioFAQs", faq.Id.ToString(), $"FAQ '{faq.Question}' saved by admin.", requestingAdminId ?? "Admin");
+
 		return true;
+
 	}
+
+
 
 	public bool DeleteFaq(int id, string? requestingAdminId = null)
+
 	{
+
 		try
+
 		{
+
 			using SqlConnection conn = CreateConnection();
+
 			conn.Open();
 
+
+
 			const string sql = @"
+
 				IF OBJECT_ID(N'dbo.StudioFAQs', N'U') IS NOT NULL
+
 				BEGIN
+
 					DELETE FROM dbo.StudioFAQs WHERE FaqId = @FaqId;
+
 				END";
 
+
+
 			using SqlCommand cmd = new SqlCommand(sql, conn);
+
 			cmd.Parameters.AddWithValue("@FaqId", id);
+
 			cmd.ExecuteNonQuery();
+
 		}
+
 		catch
+
 		{
+
 		}
+
+
 
 		lock (_inMemoryFaqs)
+
 		{
+
 			var existing = _inMemoryFaqs.FirstOrDefault(f => f.Id == id);
+
 			if (existing != null)
+
 			{
+
 				_inMemoryFaqs.Remove(existing);
+
 			}
+
 		}
 
+
+
 		LogActivity("DELETE", "StudioFAQs", id.ToString(), $"FAQ #{id} deleted by admin.", requestingAdminId ?? "Admin");
+
 		return true;
+
 	}
 
+
+
+
+
+	// ── Email Uniqueness Across Roles ─────────────────────────────────────────
+
+	public virtual bool IsEmailUnique(string email, string? excludeUserId = null)
+
+	{
+
+		if (string.IsNullOrWhiteSpace(email)) return true;
+
+
+
+		var cleanEmail = email.Trim().ToLowerInvariant();
+
+		var cleanExclude = string.IsNullOrWhiteSpace(excludeUserId) ? null : excludeUserId.Trim();
+
+
+
+		using SqlConnection sqlConnection = CreateConnection();
+
+		sqlConnection.Open();
+
+
+
+		const string sql = @"
+
+            DECLARE @Found bit = 0;
+
+
+
+            IF OBJECT_ID(N'dbo.Customer', N'U') IS NOT NULL AND @Found = 0
+
+            BEGIN
+
+                IF EXISTS (
+
+                    SELECT 1 FROM dbo.Customer 
+
+                    WHERE UPPER(LTRIM(RTRIM(CustomerEmail))) = UPPER(@Email)
+
+                      AND (@ExcludeUserId IS NULL OR UPPER(CustomerID) <> UPPER(@ExcludeUserId))
+
+                ) SET @Found = 1;
+
+            END
+
+
+
+            IF OBJECT_ID(N'dbo.Employees', N'U') IS NOT NULL AND @Found = 0
+
+            BEGIN
+
+                IF EXISTS (
+
+                    SELECT 1 FROM dbo.Employees 
+
+                    WHERE UPPER(LTRIM(RTRIM(EmployeeEmail))) = UPPER(@Email)
+
+                      AND (@ExcludeUserId IS NULL OR UPPER(EmployeeID) <> UPPER(@ExcludeUserId))
+
+                ) SET @Found = 1;
+
+            END
+
+
+
+            IF OBJECT_ID(N'dbo.Admin', N'U') IS NOT NULL AND @Found = 0
+
+            BEGIN
+
+                IF COL_LENGTH(N'dbo.Admin', N'Email') IS NOT NULL
+
+                BEGIN
+
+                    IF EXISTS (
+
+                        SELECT 1 FROM dbo.Admin 
+
+                        WHERE UPPER(LTRIM(RTRIM(Email))) = UPPER(@Email)
+
+                          AND (@ExcludeUserId IS NULL OR UPPER(AdminID) <> UPPER(@ExcludeUserId))
+
+                    ) SET @Found = 1;
+
+                END
+
+            END
+
+
+
+            IF OBJECT_ID(N'dbo.SystemAdmin', N'U') IS NOT NULL AND @Found = 0
+
+            BEGIN
+
+                IF EXISTS (
+
+                    SELECT 1 FROM dbo.SystemAdmin 
+
+                    WHERE UPPER(LTRIM(RTRIM(CONCAT(LOWER(SystemAdminID), '@photoaevum.studio')))) = UPPER(@Email)
+
+                      AND (@ExcludeUserId IS NULL OR UPPER(SystemAdminID) <> UPPER(@ExcludeUserId))
+
+                ) SET @Found = 1;
+
+            END
+
+
+
+            IF OBJECT_ID(N'dbo.AspNetUsers', N'U') IS NOT NULL AND @Found = 0
+
+            BEGIN
+
+                IF EXISTS (
+
+                    SELECT 1 FROM dbo.AspNetUsers 
+
+                    WHERE (UPPER(LTRIM(RTRIM(Email))) = UPPER(@Email) OR UPPER(LTRIM(RTRIM(UserName))) = UPPER(@Email))
+
+                      AND (@ExcludeUserId IS NULL OR (UPPER(Id) <> UPPER(@ExcludeUserId) AND UPPER(ISNULL(StudioId, '')) <> UPPER(@ExcludeUserId)))
+
+                ) SET @Found = 1;
+
+            END
+
+
+
+            SELECT @Found;";
+
+
+
+		using SqlCommand sqlCommand = new SqlCommand(sql, sqlConnection);
+
+		sqlCommand.Parameters.AddWithValue("@Email", cleanEmail);
+
+		sqlCommand.Parameters.AddWithValue("@ExcludeUserId", (object?)cleanExclude ?? DBNull.Value);
+
+
+
+		var result = sqlCommand.ExecuteScalar();
+
+		bool found = result is bool b && b || result is int i && i == 1;
+
+		return !found;
+
+	}
+
+
+
+	public virtual async Task<bool> IsEmailUniqueAsync(string email, string? excludeUserId = null, CancellationToken cancellationToken = default)
+
+	{
+
+		if (string.IsNullOrWhiteSpace(email)) return true;
+
+
+
+		var cleanEmail = email.Trim().ToLowerInvariant();
+
+		var cleanExclude = string.IsNullOrWhiteSpace(excludeUserId) ? null : excludeUserId.Trim();
+
+
+
+		await using SqlConnection sqlConnection = CreateConnection();
+
+		await sqlConnection.OpenAsync(cancellationToken);
+
+
+
+		const string sql = @"
+
+            DECLARE @Found bit = 0;
+
+
+
+            IF OBJECT_ID(N'dbo.Customer', N'U') IS NOT NULL AND @Found = 0
+
+            BEGIN
+
+                IF EXISTS (
+
+                    SELECT 1 FROM dbo.Customer 
+
+                    WHERE UPPER(LTRIM(RTRIM(CustomerEmail))) = UPPER(@Email)
+
+                      AND (@ExcludeUserId IS NULL OR UPPER(CustomerID) <> UPPER(@ExcludeUserId))
+
+                ) SET @Found = 1;
+
+            END
+
+
+
+            IF OBJECT_ID(N'dbo.Employees', N'U') IS NOT NULL AND @Found = 0
+
+            BEGIN
+
+                IF EXISTS (
+
+                    SELECT 1 FROM dbo.Employees 
+
+                    WHERE UPPER(LTRIM(RTRIM(EmployeeEmail))) = UPPER(@Email)
+
+                      AND (@ExcludeUserId IS NULL OR UPPER(EmployeeID) <> UPPER(@ExcludeUserId))
+
+                ) SET @Found = 1;
+
+            END
+
+
+
+            IF OBJECT_ID(N'dbo.Admin', N'U') IS NOT NULL AND @Found = 0
+
+            BEGIN
+
+                IF COL_LENGTH(N'dbo.Admin', N'Email') IS NOT NULL
+
+                BEGIN
+
+                    IF EXISTS (
+
+                        SELECT 1 FROM dbo.Admin 
+
+                        WHERE UPPER(LTRIM(RTRIM(Email))) = UPPER(@Email)
+
+                          AND (@ExcludeUserId IS NULL OR UPPER(AdminID) <> UPPER(@ExcludeUserId))
+
+                    ) SET @Found = 1;
+
+                END
+
+            END
+
+
+
+            IF OBJECT_ID(N'dbo.SystemAdmin', N'U') IS NOT NULL AND @Found = 0
+
+            BEGIN
+
+                IF EXISTS (
+
+                    SELECT 1 FROM dbo.SystemAdmin 
+
+                    WHERE UPPER(LTRIM(RTRIM(CONCAT(LOWER(SystemAdminID), '@photoaevum.studio')))) = UPPER(@Email)
+
+                      AND (@ExcludeUserId IS NULL OR UPPER(SystemAdminID) <> UPPER(@ExcludeUserId))
+
+                ) SET @Found = 1;
+
+            END
+
+
+
+            IF OBJECT_ID(N'dbo.AspNetUsers', N'U') IS NOT NULL AND @Found = 0
+
+            BEGIN
+
+                IF EXISTS (
+
+                    SELECT 1 FROM dbo.AspNetUsers 
+
+                    WHERE (UPPER(LTRIM(RTRIM(Email))) = UPPER(@Email) OR UPPER(LTRIM(RTRIM(UserName))) = UPPER(@Email))
+
+                      AND (@ExcludeUserId IS NULL OR (UPPER(Id) <> UPPER(@ExcludeUserId) AND UPPER(ISNULL(StudioId, '')) <> UPPER(@ExcludeUserId)))
+
+                ) SET @Found = 1;
+
+            END
+
+
+
+            SELECT @Found;";
+
+
+
+		await using SqlCommand sqlCommand = new SqlCommand(sql, sqlConnection);
+
+		sqlCommand.Parameters.AddWithValue("@Email", cleanEmail);
+
+		sqlCommand.Parameters.AddWithValue("@ExcludeUserId", (object?)cleanExclude ?? DBNull.Value);
+
+
+
+		var result = await sqlCommand.ExecuteScalarAsync(cancellationToken);
+
+		bool found = result is bool b && b || result is int i && i == 1;
+
+		return !found;
+
+	}
+
+
+
 }
+

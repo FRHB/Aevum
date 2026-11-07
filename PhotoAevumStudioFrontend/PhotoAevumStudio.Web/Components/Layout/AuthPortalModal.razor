@@ -540,9 +540,16 @@
         _isBusy = true;
         StateHasChanged();
 
+        if (await AuthService.IsEmailInUseAsync(_suDetails.Email.Trim().ToLowerInvariant()))
+        {
+            _suEmailError = "This email address is already registered under another account role. Please use a different email.";
+            _isBusy = false;
+            return;
+        }
+
         try
         {
-            var ok = await AuthService.SendVerificationCodeAsync(_suDetails.Email.Trim().ToLowerInvariant());
+            var (ok, error) = await AuthService.RequestVerificationCodeAsync(_suDetails.Email.Trim().ToLowerInvariant());
             if (ok)
             {
                 _suVerify = new();
@@ -550,7 +557,7 @@
             }
             else
             {
-                _suEmailError = "Could not send verification email. Please check your address.";
+                _suEmailError = error ?? "Could not send verification email. Please check your address.";
             }
         }
         catch
@@ -750,8 +757,8 @@
 
         try
         {
-            var ok = await AuthService.RegisterCustomerAsync(customerPayload);
-            if (ok)
+            var result = await AuthService.RegisterCustomerWithResultAsync(customerPayload);
+            if (result.Success)
             {
                 var registeredEmail = _suDetails.Email.Trim();
                 ResetSignUpForms();
@@ -769,7 +776,7 @@
             }
             else
             {
-                _suSignUpError = "Registration failed. Verification code may be invalid or email already registered.";
+                _suSignUpError = result.Error ?? "Registration failed. Verification code may be invalid or email already registered.";
             }
         }
         catch

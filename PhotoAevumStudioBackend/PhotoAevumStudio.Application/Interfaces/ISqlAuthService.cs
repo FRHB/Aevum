@@ -24,4 +24,6 @@ public interface ISqlAuthService
     Task<(bool Success, string Message)> RegisterAdminAsync(string adminId, string role, string firstName, string lastName, string? middleName, string? email, string password, string requestingUserId, CancellationToken cancellationToken = default);
     Task<(bool Success, string Message)> ResetPasswordAsync(string email, string newPassword, CancellationToken cancellationToken = default);
     Task LogActivityAsync(string actionType, string entityName, string? entityId, string? details, string changedByType, string? actorId, CancellationToken cancellationToken = default);
+    Task<bool> IsEmailInUseAcrossRolesAsync(string email, string? excludeUserId = null, CancellationToken cancellationToken = default);
+    bool IsEmailInUseAcrossRoles(string email, string? excludeUserId = null);
 }

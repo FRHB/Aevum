@@ -3,6 +3,7 @@
 @using PhotoAevumStudio.Web.Services
 @attribute [Authorize(Roles = "Admin,SystemAdmin,Office Clerk")]
 @inject IEmployeeService Employees
+@inject IUserService UserService
 @implements IDisposable
 
 @if (IsOpen)
@@ -701,6 +702,16 @@
                 {
                     _messageStore.Add(fieldId, res.ErrorMessage ?? "Invalid value.");
                 }
+            }
+        }
+
+        if (!string.IsNullOrWhiteSpace(model.Email))
+        {
+            var excludeId = IsEditMode ? model.EmployeeId : null;
+            if (!UserService.IsEmailUnique(model.Email, excludeId))
+            {
+                isValid = false;
+                _messageStore.Add(new FieldIdentifier(model, nameof(model.Email)), "This email address is already registered under another account role. Please use a different email.");
             }
         }
 

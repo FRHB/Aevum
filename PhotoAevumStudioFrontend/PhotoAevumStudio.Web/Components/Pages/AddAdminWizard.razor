@@ -3,6 +3,7 @@
 @using PhotoAevumStudio.Web.Services
 @attribute [Authorize(Roles = "SystemAdmin,System Admin,Super Admin,Admin")]
 @inject IAdminService AdminService
+@inject IUserService UserService
 @inject IJSRuntime JSRuntime
 @implements IDisposable
 
@@ -472,6 +473,7 @@
         model = new AddAdminWizardModel { Role = "Admin" };
         _editContext = new EditContext(model);
         _messageStore = new ValidationMessageStore(_editContext);
+        _editContext.OnFieldChanged += (s, e) => _messageStore.Clear(e.FieldIdentifier);
         currentStep = 1;
         saveError = null;
         saveSuccess = false;
@@ -493,6 +495,17 @@
         // Validate Step 1 input fields
         var isValid = _editContext.Validate();
         if (!isValid) return;
+
+        if (!string.IsNullOrWhiteSpace(model.Email))
+        {
+            var isUnique = await UserService.IsEmailUniqueAsync(model.Email);
+            if (!isUnique)
+            {
+                _messageStore.Add(new FieldIdentifier(model, nameof(model.Email)), "This email address is already registered under another account role. Please use a different email.");
+                _editContext.NotifyValidationStateChanged();
+                return;
+            }
+        }
 
         isGeneratingCredentials = true;
         StateHasChanged();

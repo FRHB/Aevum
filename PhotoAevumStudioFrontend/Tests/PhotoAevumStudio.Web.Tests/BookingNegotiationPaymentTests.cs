@@ -375,7 +375,7 @@ public class BookingNegotiationPaymentTests
     [Fact]
     public void CalendarOfEvents_StudioSpacesColumn_IsRemoved()
     {
-        var root = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "..", ".."));
+        var root = GetRepositoryRoot();
         var calendarPath = Path.Combine(root, "PhotoAevumStudioFrontend", "PhotoAevumStudio.Web", "Components", "Pages", "CalendarOfEvents.razor");
         if (!File.Exists(calendarPath)) calendarPath = @"C:\Aevum\PhotoAevumStudioFrontend\PhotoAevumStudio.Web\Components\Pages\CalendarOfEvents.razor";
         Assert.True(File.Exists(calendarPath), $"File not found at {calendarPath}");
@@ -388,7 +388,7 @@ public class BookingNegotiationPaymentTests
     [Fact]
     public void BookingNegotiations_Step1Button_IsReservationFeePayment_WhenDateTimeChosen()
     {
-        var root = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "..", ".."));
+        var root = GetRepositoryRoot();
         var negPath = Path.Combine(root, "PhotoAevumStudioFrontend", "PhotoAevumStudio.Web", "Components", "Pages", "BookingNegotiations.razor");
         if (!File.Exists(negPath)) negPath = @"C:\Aevum\PhotoAevumStudioFrontend\PhotoAevumStudio.Web\Components\Pages\BookingNegotiations.razor";
         Assert.True(File.Exists(negPath), $"File not found at {negPath}");
@@ -402,7 +402,7 @@ public class BookingNegotiationPaymentTests
     [Fact]
     public void BookingNegotiations_EnablesEmployeeAndAdmin_ToAccessAndProceed()
     {
-        var root = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "..", ".."));
+        var root = GetRepositoryRoot();
         var negPath = Path.Combine(root, "PhotoAevumStudioFrontend", "PhotoAevumStudio.Web", "Components", "Pages", "BookingNegotiations.razor");
         if (!File.Exists(negPath)) negPath = @"C:\Aevum\PhotoAevumStudioFrontend\PhotoAevumStudio.Web\Components\Pages\BookingNegotiations.razor";
         Assert.True(File.Exists(negPath));
@@ -422,7 +422,7 @@ public class BookingNegotiationPaymentTests
     [Fact]
     public void DealSuccess_PendingPaymentStatus_IsUsedWhenReservationFeeNotPaid()
     {
-        var root = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "..", ".."));
+        var root = GetRepositoryRoot();
         var servicePath = Path.Combine(root, "PhotoAevumStudioBackend", "PhotoAevumStudio.Infrastructure", "Services", "ConsultationNegotiationService.cs");
         if (!File.Exists(servicePath)) servicePath = @"C:\Aevum\PhotoAevumStudioBackend\PhotoAevumStudio.Infrastructure\Services\ConsultationNegotiationService.cs";
         Assert.True(File.Exists(servicePath));
@@ -435,5 +435,16 @@ public class BookingNegotiationPaymentTests
         var negContent = File.ReadAllText(negPath);
         Assert.Contains("\"Pending Payment\"", negContent);
     }
-}
+    private static string GetRepositoryRoot()
+    {
+        var baseDir = AppContext.BaseDirectory;
+        var dir = new DirectoryInfo(baseDir);
+        while (dir != null && !File.Exists(Path.Combine(dir.FullName, "PhotoAevumStudio.slnx")) && !File.Exists(Path.Combine(dir.FullName, "PhotoAevumStudio.sln")))
+        {
+            dir = dir.Parent;
+        }
 
+        Assert.NotNull(dir);
+        return dir.FullName;
+    }
+}
