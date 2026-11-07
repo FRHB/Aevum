@@ -42,8 +42,66 @@ public sealed class EquipmentService : IEquipmentService
     // 1. EQUIPMENT CATALOG & TYPES (dbo.Equipment & dbo.EquipmentType)
     // ─────────────────────────────────────────────────────────────────────────
 
-    public Task<IReadOnlyList<EquipmentItemModel>> GetEquipmentsAsync(CancellationToken ct = default)
+        private record ApiEquipmentDto(
+        string EquipmentId,
+        string EquipmentName,
+        string? EquipmentDescription,
+        string EquipmentType,
+        string EquipmentStatus,
+        string? SerialNo,
+        string? ImagePath,
+        DateTime CreatedAt);
+
+    public async Task<IReadOnlyList<EquipmentItemModel>> GetEquipmentsAsync(CancellationToken ct = default)
     {
+        if (_httpClientFactory != null)
+        {
+            try
+            {
+                var client = _httpClientFactory.CreateClient("AevumApi");
+                var apiItems = await client.GetFromJsonAsync<List<ApiEquipmentDto>>("api/equipments", ct);
+                if (apiItems != null && apiItems.Count > 0)
+                {
+                    lock (_lock)
+                    {
+                        foreach (var dto in apiItems)
+                        {
+                            var existing = _equipments.FirstOrDefault(e => e.EquipmentID.Equals(dto.EquipmentId, StringComparison.OrdinalIgnoreCase));
+                            var matchedType = _types.FirstOrDefault(t =>
+                                t.EquipmentTypeName.Equals(dto.EquipmentType, StringComparison.OrdinalIgnoreCase) ||
+                                t.EquipmentTypeID.Equals(dto.EquipmentType, StringComparison.OrdinalIgnoreCase));
+                            if (existing == null)
+                            {
+                                _equipments.Add(new EquipmentItemModel
+                                {
+                                    EquipmentID = dto.EquipmentId,
+                                    EquipmentName = dto.EquipmentName,
+                                    EquipmentDescription = dto.EquipmentDescription,
+                                    EquipmentTypeID = matchedType?.EquipmentTypeID ?? dto.EquipmentType,
+                                    EquipmentTypeName = matchedType?.EquipmentTypeName ?? dto.EquipmentType,
+                                    EquipmentStatus = dto.EquipmentStatus,
+                                    SerialNo = dto.SerialNo,
+                                    ImagePath = dto.ImagePath
+                                });
+                            }
+                            else
+                            {
+                                existing.EquipmentName = dto.EquipmentName;
+                                existing.EquipmentDescription = dto.EquipmentDescription;
+                                existing.EquipmentStatus = dto.EquipmentStatus;
+                                existing.SerialNo = dto.SerialNo;
+                                existing.ImagePath = dto.ImagePath ?? existing.ImagePath;
+                            }
+                        }
+                    }
+                }
+            }
+            catch
+            {
+                // Fallback to local seeded state if API is unreachable
+            }
+        }
+
         lock (_lock)
         {
             // Sync with current type names and active dispatches
@@ -68,7 +126,7 @@ public sealed class EquipmentService : IEquipmentService
                 }
             }
 
-            return Task.FromResult<IReadOnlyList<EquipmentItemModel>>(_equipments.OrderBy(e => e.EquipmentID).ToList());
+            return _equipments.OrderBy(e => e.EquipmentID).ToList();
         }
     }
 

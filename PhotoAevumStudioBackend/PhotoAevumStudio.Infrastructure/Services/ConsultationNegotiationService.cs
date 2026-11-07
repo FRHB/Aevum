@@ -1216,7 +1216,7 @@ public class ConsultationNegotiationService : IConsultationNegotiationService
 
                 AssignedEmployeeName = CASE 
                     WHEN @NewEmployeeName IS NOT NULL AND LEN(@NewEmployeeName) > 0 THEN @NewEmployeeName 
-                    WHEN @NewEmployeeId IS NOT NULL AND LEN(@NewEmployeeId) > 0 THEN (SELECT TOP 1 LTRIM(RTRIM(CONCAT(FirstName, ' ', LastName))) FROM dbo.Employees WHERE EmployeeID = @NewEmployeeId)
+                    WHEN @NewEmployeeId IS NOT NULL AND LEN(@NewEmployeeId) > 0 THEN (SELECT TOP 1 LTRIM(RTRIM(CONCAT(ISNULL(EmployeeFirstName, ''), ' ', ISNULL(EmployeeLastName, '')))) FROM dbo.Employees WHERE EmployeeID = @NewEmployeeId)
                     ELSE AssignedEmployeeName 
                 END,
 
@@ -1268,7 +1268,7 @@ public class ConsultationNegotiationService : IConsultationNegotiationService
 
                 AssignedEmployeeName = CASE 
                     WHEN @NewEmployeeName IS NOT NULL AND LEN(@NewEmployeeName) > 0 THEN @NewEmployeeName 
-                    WHEN @NewEmployeeId IS NOT NULL AND LEN(@NewEmployeeId) > 0 THEN (SELECT TOP 1 LTRIM(RTRIM(CONCAT(FirstName, ' ', LastName))) FROM dbo.Employees WHERE EmployeeID = @NewEmployeeId)
+                    WHEN @NewEmployeeId IS NOT NULL AND LEN(@NewEmployeeId) > 0 THEN (SELECT TOP 1 LTRIM(RTRIM(CONCAT(ISNULL(EmployeeFirstName, ''), ' ', ISNULL(EmployeeLastName, '')))) FROM dbo.Employees WHERE EmployeeID = @NewEmployeeId)
                     ELSE AssignedEmployeeName 
                 END
 
@@ -2041,7 +2041,7 @@ public class ConsultationNegotiationService : IConsultationNegotiationService
 
 
 
-                        IF NOT EXISTS (SELECT 1 FROM dbo.EventEquipment WHERE EventAppointmentID = @EvtId AND EquipmentID = @EqId)
+                        IF EXISTS (SELECT 1 FROM dbo.Equipment WHERE EquipmentID = @EqId) AND NOT EXISTS (SELECT 1 FROM dbo.EventEquipment WHERE EventAppointmentID = @EvtId AND EquipmentID = @EqId)
 
 
 
@@ -2113,7 +2113,7 @@ public class ConsultationNegotiationService : IConsultationNegotiationService
 
 
 
-                        NegotiationStatus = 'Deal_Won'
+                        NegotiationStatus = 'Pending Payment'
 
 
 
@@ -2595,7 +2595,7 @@ public class ConsultationNegotiationService : IConsultationNegotiationService
 
 
 
-                   ISNULL(s.SpecializationName, 'Staff') AS Specialization,
+                   ISNULL(es.SpecializationName, 'Staff') AS Specialization,
 
 
 
@@ -2611,11 +2611,11 @@ public class ConsultationNegotiationService : IConsultationNegotiationService
 
 
 
-            LEFT JOIN dbo.EmployeeSpecialization es ON es.EmployeeID = ee.EmployeeID
+            LEFT JOIN dbo.EmployeeJointSpecialization ejs ON ejs.EmployeeID = ee.EmployeeID
 
 
 
-            LEFT JOIN dbo.Specialization s ON s.SpecializationID = es.SpecializationID
+            LEFT JOIN dbo.EmployeeSpecialization es ON es.SpecializationID = ejs.SpecializationID
 
 
 
@@ -5621,14 +5621,12 @@ var invId = invoiceId ?? appt.XenditInvoiceId ?? $"inv_mock_{appointmentId}";
 
 
                     const string insEmp = @"
-
-
-
-                        INSERT INTO dbo.EventEmployee (EventAppointmentID, EmployeeID, IsTeamLeader)
-
-
-
-                        VALUES (@EvtId, @EmpId, @IsTL);";
+                        IF EXISTS (SELECT 1 FROM dbo.Employees WHERE EmployeeID = @EmpId)
+                           AND NOT EXISTS (SELECT 1 FROM dbo.EventEmployee WHERE EventAppointmentID = @EvtId AND EmployeeID = @EmpId)
+                        BEGIN
+                            INSERT INTO dbo.EventEmployee (EventAppointmentID, EmployeeID, IsTeamLeader)
+                            VALUES (@EvtId, @EmpId, @IsTL);
+                        END;";
 
 
 
@@ -5717,14 +5715,12 @@ var invId = invoiceId ?? appt.XenditInvoiceId ?? $"inv_mock_{appointmentId}";
 
 
                     const string insEq = @"
-
-
-
-                        INSERT INTO dbo.EventEquipment (EventAppointmentID, EquipmentID)
-
-
-
-                        VALUES (@EvtId, @EqId);";
+                        IF EXISTS (SELECT 1 FROM dbo.Equipment WHERE EquipmentID = @EqId)
+                           AND NOT EXISTS (SELECT 1 FROM dbo.EventEquipment WHERE EventAppointmentID = @EvtId AND EquipmentID = @EqId)
+                        BEGIN
+                            INSERT INTO dbo.EventEquipment (EventAppointmentID, EquipmentID)
+                            VALUES (@EvtId, @EqId);
+                        END;";
 
 
 

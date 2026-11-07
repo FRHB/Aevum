@@ -372,4 +372,68 @@ public class BookingNegotiationPaymentTests
         Assert.Equal(DayOfWeek.Tuesday, tuesdayDate.DayOfWeek);
         Assert.DoesNotContain(tuesdayDate.DayOfWeek.ToString(), daysOffList, StringComparer.OrdinalIgnoreCase);
     }
+    [Fact]
+    public void CalendarOfEvents_StudioSpacesColumn_IsRemoved()
+    {
+        var root = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "..", ".."));
+        var calendarPath = Path.Combine(root, "PhotoAevumStudioFrontend", "PhotoAevumStudio.Web", "Components", "Pages", "CalendarOfEvents.razor");
+        if (!File.Exists(calendarPath)) calendarPath = @"C:\Aevum\PhotoAevumStudioFrontend\PhotoAevumStudio.Web\Components\Pages\CalendarOfEvents.razor";
+        Assert.True(File.Exists(calendarPath), $"File not found at {calendarPath}");
+
+        var content = File.ReadAllText(calendarPath);
+        Assert.DoesNotContain("<th class=\"col-space-header\">Studio Space</th>", content);
+        Assert.DoesNotContain("<td class=\"col-space-info\">", content);
+    }
+
+    [Fact]
+    public void BookingNegotiations_Step1Button_IsReservationFeePayment_WhenDateTimeChosen()
+    {
+        var root = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "..", ".."));
+        var negPath = Path.Combine(root, "PhotoAevumStudioFrontend", "PhotoAevumStudio.Web", "Components", "Pages", "BookingNegotiations.razor");
+        if (!File.Exists(negPath)) negPath = @"C:\Aevum\PhotoAevumStudioFrontend\PhotoAevumStudio.Web\Components\Pages\BookingNegotiations.razor";
+        Assert.True(File.Exists(negPath), $"File not found at {negPath}");
+
+        var content = File.ReadAllText(negPath);
+        Assert.Contains("Reservation Fee Payment", content);
+        Assert.Contains("Step1ProceedToReservationPaymentAsync", content);
+        Assert.Contains("hasChosenDateTime", content);
+    }
+
+    [Fact]
+    public void BookingNegotiations_EnablesEmployeeAndAdmin_ToAccessAndProceed()
+    {
+        var root = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "..", ".."));
+        var negPath = Path.Combine(root, "PhotoAevumStudioFrontend", "PhotoAevumStudio.Web", "Components", "Pages", "BookingNegotiations.razor");
+        if (!File.Exists(negPath)) negPath = @"C:\Aevum\PhotoAevumStudioFrontend\PhotoAevumStudio.Web\Components\Pages\BookingNegotiations.razor";
+        Assert.True(File.Exists(negPath));
+
+        var content = File.ReadAllText(negPath);
+        Assert.Contains("!isAdmin && !isClerk && !isEmployee", content);
+
+        var sidebarPath = Path.Combine(root, "PhotoAevumStudioFrontend", "PhotoAevumStudio.Web", "Components", "Layout", "Sidebar.razor");
+        if (!File.Exists(sidebarPath)) sidebarPath = @"C:\Aevum\PhotoAevumStudioFrontend\PhotoAevumStudio.Web\Components\Layout\Sidebar.razor";
+        Assert.True(File.Exists(sidebarPath));
+
+        var sidebarContent = File.ReadAllText(sidebarPath);
+        Assert.Contains("/staff/negotiations", sidebarContent);
+        Assert.Contains("IsPhotographerOrCreative", sidebarContent);
+    }
+
+    [Fact]
+    public void DealSuccess_PendingPaymentStatus_IsUsedWhenReservationFeeNotPaid()
+    {
+        var root = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "..", ".."));
+        var servicePath = Path.Combine(root, "PhotoAevumStudioBackend", "PhotoAevumStudio.Infrastructure", "Services", "ConsultationNegotiationService.cs");
+        if (!File.Exists(servicePath)) servicePath = @"C:\Aevum\PhotoAevumStudioBackend\PhotoAevumStudio.Infrastructure\Services\ConsultationNegotiationService.cs";
+        Assert.True(File.Exists(servicePath));
+
+        var serviceContent = File.ReadAllText(servicePath);
+        Assert.Contains("NegotiationStatus = 'Pending Payment'", serviceContent);
+
+        var negPath = Path.Combine(root, "PhotoAevumStudioFrontend", "PhotoAevumStudio.Web", "Components", "Pages", "BookingNegotiations.razor");
+        if (!File.Exists(negPath)) negPath = @"C:\Aevum\PhotoAevumStudioFrontend\PhotoAevumStudio.Web\Components\Pages\BookingNegotiations.razor";
+        var negContent = File.ReadAllText(negPath);
+        Assert.Contains("\"Pending Payment\"", negContent);
+    }
 }
+

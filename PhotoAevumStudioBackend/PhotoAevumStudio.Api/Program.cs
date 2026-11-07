@@ -1,3 +1,4 @@
+using System.Reflection;
 using FluentValidation;
 using FluentValidation.AspNetCore;
 using InfisicalConfiguration;
@@ -414,15 +415,43 @@ app.UseMiddleware<PhotoAevumStudio.Api.Middleware.AuditLoggingMiddleware>();
 app.MapControllers();
 app.MapHub<PhotoAevumStudio.Api.Hubs.PaymentHub>(PhotoAevumStudio.Api.Hubs.PaymentHub.Route);
 
-app.MapGet("/", () => Results.Ok(new
+var informationalVersion = System.Reflection.Assembly.GetExecutingAssembly()
+    .GetCustomAttribute<System.Reflection.AssemblyInformationalVersionAttribute>()?
+    .InformationalVersion;
+var buildHash = informationalVersion?.Contains('+') == true 
+    ? informationalVersion.Split('+')[1] 
+    : (informationalVersion ?? "unknown");
+
+app.MapGet("/", (HttpContext context) =>
 {
-    service = "Photo Aevum Studio API",
-    status = "Online",
-    environment = app.Environment.EnvironmentName,
-    health = "/health",
-    dbHealth = "/health/db",
-    timestamp = DateTime.UtcNow
-})).WithName("GetRoot");
+    context.Response.Headers.Append("X-Build-Hash", buildHash);
+    context.Response.Headers.Append("X-Commit-Hash", buildHash);
+    return Results.Ok(new
+    {
+        service = "Photo Aevum Studio API",
+        status = "Online",
+        environment = app.Environment.EnvironmentName,
+        buildHash = buildHash,
+        commitHash = buildHash,
+        health = "/health",
+        dbHealth = "/health/db",
+        timestamp = DateTime.UtcNow
+    });
+}).WithName("GetRoot");
+
+app.MapGet("/version", (HttpContext context) =>
+{
+    context.Response.Headers.Append("X-Build-Hash", buildHash);
+    context.Response.Headers.Append("X-Commit-Hash", buildHash);
+    return Results.Ok(new
+    {
+        service = "Photo Aevum Studio API",
+        version = informationalVersion,
+        buildHash = buildHash,
+        commitHash = buildHash,
+        timestamp = DateTime.UtcNow
+    });
+}).WithName("GetVersion");
 
 app.MapGet("/health", () => Results.Ok(new { Status = "Healthy", Timestamp = DateTime.UtcNow }))
    .WithName("GetHealth")

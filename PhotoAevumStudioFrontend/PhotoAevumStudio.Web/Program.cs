@@ -1,3 +1,4 @@
+using System.Reflection;
 using InfisicalConfiguration;
 using Microsoft.AspNetCore.Components.Authorization;
 using PhotoAevumStudio.Web.Components;
@@ -95,6 +96,27 @@ app.UseStatusCodePagesWithReExecute("/not-found", createScopeForStatusCodePages:
 app.UseHttpsRedirection();
 app.UseAntiforgery();
 app.MapStaticAssets();
+var informationalVersion = System.Reflection.Assembly.GetExecutingAssembly()
+    .GetCustomAttribute<System.Reflection.AssemblyInformationalVersionAttribute>()?
+    .InformationalVersion;
+var buildHash = informationalVersion?.Contains('+') == true 
+    ? informationalVersion.Split('+')[1] 
+    : (informationalVersion ?? "unknown");
+
+app.MapGet("/version", (HttpContext context) =>
+{
+    context.Response.Headers.Append("X-Build-Hash", buildHash);
+    context.Response.Headers.Append("X-Commit-Hash", buildHash);
+    return Results.Ok(new
+    {
+        service = "Photo Aevum Studio Web",
+        version = informationalVersion,
+        buildHash = buildHash,
+        commitHash = buildHash,
+        timestamp = DateTime.UtcNow
+    });
+});
+
 app.MapRazorComponents<App>()
     .AddInteractiveServerRenderMode();
 

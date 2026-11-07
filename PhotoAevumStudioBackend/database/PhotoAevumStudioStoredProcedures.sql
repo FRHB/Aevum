@@ -2091,15 +2091,15 @@ BEGIN
     WHERE (e.EmployeeStatus = 'Active' OR e.Status = 'Active')
       AND (
           EXISTS (
-              SELECT 1 FROM dbo.EmployeeSpecialization es
-              JOIN dbo.Specialization s ON es.SpecializationID = s.SpecializationID
-              WHERE es.EmployeeID = e.EmployeeID
-                AND (s.SpecializationName LIKE '%Clerk%' OR s.SpecializationName LIKE '%Front Desk%' OR s.SpecializationName LIKE '%Office%')
+              SELECT 1 FROM dbo.EmployeeJointSpecialization ejs
+              JOIN dbo.EmployeeSpecialization es ON ejs.SpecializationID = es.SpecializationID
+              WHERE ejs.EmployeeID = e.EmployeeID
+                AND (es.SpecializationName LIKE '%Clerk%' OR es.SpecializationName LIKE '%Front Desk%' OR es.SpecializationName LIKE '%Office%')
           )
           OR NOT EXISTS (
-              SELECT 1 FROM dbo.EmployeeSpecialization es2
-              JOIN dbo.Specialization s2 ON es2.SpecializationID = s2.SpecializationID
-              WHERE s2.SpecializationName LIKE '%Clerk%' OR s2.SpecializationName LIKE '%Front Desk%' OR s2.SpecializationName LIKE '%Office%'
+              SELECT 1 FROM dbo.EmployeeJointSpecialization ejs2
+              JOIN dbo.EmployeeSpecialization es2 ON ejs2.SpecializationID = es2.SpecializationID
+              WHERE es2.SpecializationName LIKE '%Clerk%' OR es2.SpecializationName LIKE '%Front Desk%' OR es2.SpecializationName LIKE '%Office%'
           )
       )
     ORDER BY COALESCE(bn.LastAssignedAt, '1900-01-01') ASC, e.EmployeeID ASC;

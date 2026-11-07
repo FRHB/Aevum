@@ -112,7 +112,6 @@
                 <table class="compact-matrix-table">
                     <thead>
                         <tr>
-                            <th class="col-space-header">Studio Space</th>
                             @foreach (var day in WeekDays)
                             {
                                 var isToday = day.Date == DateTime.Today;
@@ -128,54 +127,43 @@
                         </tr>
                     </thead>
                     <tbody>
-                        @foreach (var space in FilteredStudioSpaces)
-                        {
-                            <tr>
-                                @* Space Name Column *@
-                                <td class="col-space-info">
-                                    <div class="space-title-row">
-                                        <span class="space-dot @GetSpaceDotColor(space.Id)"></span>
-                                        <span class="space-name">@space.Name</span>
-                                    </div>
-                                    <div class="space-sub-meta">
-                                        <span>@space.Dimensions</span> &bull; <span>Cap @space.MaxCapacity</span>
+                        <tr>
+                            @foreach (var day in WeekDays)
+                            {
+                                var dayBookings = FilteredBookings
+                                    .Where(b => b.Date.Date == day.Date)
+                                    .OrderBy(b => b.StartTime)
+                                    .ToList();
+
+                                <td class="col-day-cell">
+                                    <div class="cell-events-stack">
+                                        @foreach (var booking in dayBookings)
+                                        {
+                                            <div @onclick="() => OpenDetailDrawer(booking)"
+                                                 title="@booking.ClientName (@booking.ServiceType) with @booking.AssignedPhotographer"
+                                                 class="compact-event-chip @(booking.IsConsultation ? "is-consultation-chip" : "") @(booking.HasConflict ? "conflict-chip" : "") @(booking.Status.ToLowerInvariant())">
+                                                <div class="chip-top-row">
+                                                    <span class="chip-time">@(booking.IsConsultation ? "💬 " : "")@booking.StartTime.ToString(@"hh\:mm")</span>
+                                                    <span class="chip-status-dot"></span>
+                                                </div>
+                                                <div class="chip-client">@booking.ClientName</div>
+                                                <div class="chip-photog">@(booking.IsConsultation ? "Clerk: " : "📷 ")@booking.AssignedPhotographer</div>
+                                                @if (!string.IsNullOrWhiteSpace(booking.StudioSpaceName))
+                                                {
+                                                    <div class="text-[10px] text-slate-500 font-medium truncate mt-0.5">@booking.StudioSpaceName</div>
+                                                }
+                                            </div>
+                                        }
+                                        @if (!_isPhotographerOrCreative)
+                                        {
+                                            <button type="button"
+                                                    @onclick='() => OpenCreateModalForSlot(FilteredStudioSpaces.FirstOrDefault()?.Id ?? "1", day)'
+                                                    class="cell-add-btn" title="Add event in this slot">+</button>
+                                        }
                                     </div>
                                 </td>
-
-                                @* 7 Days Columns *@
-                                @foreach (var day in WeekDays)
-                                {
-                                    var dayBookings = FilteredBookings
-                                        .Where(b => b.StudioSpaceId == space.Id && b.Date.Date == day.Date)
-                                        .OrderBy(b => b.StartTime)
-                                        .ToList();
-
-                                    <td class="col-day-cell">
-                                        <div class="cell-events-stack">
-                                            @foreach (var booking in dayBookings)
-                                            {
-                                                <div @onclick="() => OpenDetailDrawer(booking)"
-                                                     title="@booking.ClientName (@booking.ServiceType) with @booking.AssignedPhotographer"
-                                                     class="compact-event-chip @(booking.IsConsultation ? "is-consultation-chip" : "") @(booking.HasConflict ? "conflict-chip" : "") @(booking.Status.ToLowerInvariant())">
-                                                    <div class="chip-top-row">
-                                                        <span class="chip-time">@(booking.IsConsultation ? "💬 " : "")@booking.StartTime.ToString(@"hh\:mm")</span>
-                                                        <span class="chip-status-dot"></span>
-                                                    </div>
-                                                    <div class="chip-client">@booking.ClientName</div>
-                                                    <div class="chip-photog">@(booking.IsConsultation ? "Clerk: " : "📷 ")@booking.AssignedPhotographer</div>
-                                                </div>
-                                            }
-                                            @if (!_isPhotographerOrCreative)
-                                            {
-                                                <button type="button"
-                                                        @onclick="() => OpenCreateModalForSlot(space.Id, day)"
-                                                        class="cell-add-btn" title="Add event in this slot">+</button>
-                                            }
-                                        </div>
-                                    </td>
-                                }
-                            </tr>
-                        }
+                            }
+                        </tr>
                     </tbody>
                 </table>
             </div>

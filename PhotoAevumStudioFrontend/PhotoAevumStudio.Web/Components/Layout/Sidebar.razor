@@ -478,7 +478,7 @@
                         Timesheet
                     </NavLink>
                 </li>
-                @if (isClerk)
+                @if (isClerk || IsPhotographerOrCreative || _currentUser?.IsInRole("Employee") == true || _currentUser?.IsInRole("Staff") == true || (!string.IsNullOrEmpty(EmployeeRoleHelper.GetCurrentEmployeeId(_currentUser)) && EmployeeRoleHelper.GetCurrentEmployeeId(_currentUser).StartsWith("EMP-", StringComparison.OrdinalIgnoreCase)))
                 {
                     <li>
                         <NavLink href="/staff/negotiations" class="aev-sidebar__link" ActiveClass="aev-sidebar__link--active">

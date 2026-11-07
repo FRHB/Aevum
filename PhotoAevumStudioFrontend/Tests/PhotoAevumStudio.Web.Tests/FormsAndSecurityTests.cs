@@ -712,4 +712,50 @@ public class FormsAndSecurityTests
         // Login.razor.css defines styling for login-success-alert
         Assert.Contains(".login-success-alert", loginCssContent);
     }
+
+    [Fact]
+    public void EmployeeQueries_InSchedulingAndConsultationServices_UseEmployeeFirstNameAndLastName()
+    {
+        var scheduleServicePath = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "..", "..", "..", "PhotoAevumStudioBackend", "PhotoAevumStudio.Infrastructure", "Scheduling", "ScheduleBookingService.cs"));
+        if (!File.Exists(scheduleServicePath)) scheduleServicePath = @"C:\Aevum\PhotoAevumStudioBackend\PhotoAevumStudio.Infrastructure\Scheduling\ScheduleBookingService.cs";
+        Assert.True(File.Exists(scheduleServicePath), $"Expected file at {scheduleServicePath}");
+
+        var scheduleContent = File.ReadAllText(scheduleServicePath);
+        Assert.Contains("ISNULL(e.EmployeeFirstName, '')", scheduleContent);
+        Assert.Contains("ISNULL(e.EmployeeLastName, '')", scheduleContent);
+        Assert.Contains("ISNULL(EmployeeFirstName, '')", scheduleContent);
+        Assert.Contains("ISNULL(EmployeeLastName, '')", scheduleContent);
+        Assert.DoesNotContain("CONCAT(e.FirstName", scheduleContent);
+        Assert.DoesNotContain("CONCAT(FirstName", scheduleContent);
+
+        var consultServicePath = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "..", "..", "..", "PhotoAevumStudioBackend", "PhotoAevumStudio.Infrastructure", "Services", "ConsultationNegotiationService.cs"));
+        if (!File.Exists(consultServicePath)) consultServicePath = @"C:\Aevum\PhotoAevumStudioBackend\PhotoAevumStudio.Infrastructure\Services\ConsultationNegotiationService.cs";
+        Assert.True(File.Exists(consultServicePath), $"Expected file at {consultServicePath}");
+
+        var consultContent = File.ReadAllText(consultServicePath);
+        Assert.Contains("CONCAT(ISNULL(EmployeeFirstName, ''), ' ', ISNULL(EmployeeLastName, ''))", consultContent);
+        Assert.DoesNotContain("CONCAT(FirstName, ' ', LastName)", consultContent);
+    }
+    [Fact]
+    public void EmployeeSpecialization_Queries_DoNotReference_InvalidEmployeeID_Or_DboSpecialization()
+    {
+        var consultServicePath = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "..", "..", "..", "PhotoAevumStudioBackend", "PhotoAevumStudio.Infrastructure", "Services", "ConsultationNegotiationService.cs"));
+        if (!File.Exists(consultServicePath)) consultServicePath = @"C:\Aevum\PhotoAevumStudioBackend\PhotoAevumStudio.Infrastructure\Services\ConsultationNegotiationService.cs";
+        Assert.True(File.Exists(consultServicePath));
+
+        var consultContent = File.ReadAllText(consultServicePath);
+        Assert.DoesNotContain("es.EmployeeID", consultContent);
+        Assert.DoesNotContain("dbo.Specialization s", consultContent);
+        Assert.Contains("ejs.EmployeeID = ee.EmployeeID", consultContent);
+        Assert.Contains("es.SpecializationID = ejs.SpecializationID", consultContent);
+
+        var spPath = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "..", "..", "..", "PhotoAevumStudioBackend", "database", "PhotoAevumStudioStoredProcedures.sql"));
+        if (!File.Exists(spPath)) spPath = @"C:\Aevum\PhotoAevumStudioBackend\database\PhotoAevumStudioStoredProcedures.sql";
+        Assert.True(File.Exists(spPath));
+
+        var spContent = File.ReadAllText(spPath);
+        Assert.DoesNotContain("es.EmployeeID", spContent);
+        Assert.DoesNotContain("JOIN dbo.Specialization s", spContent);
+    }
 }
+

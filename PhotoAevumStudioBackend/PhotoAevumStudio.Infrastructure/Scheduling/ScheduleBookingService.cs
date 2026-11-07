@@ -394,7 +394,7 @@ public sealed class ScheduleBookingService(
         {
             // Specifically query active Office Clerks
             cmd.CommandText = @"
-                SELECT DISTINCT e.EmployeeID, ISNULL(e.DaysOff, 'Sunday'), LTRIM(RTRIM(CONCAT(e.FirstName, ' ', e.LastName)))
+                SELECT DISTINCT e.EmployeeID, ISNULL(e.DaysOff, 'Sunday'), LTRIM(RTRIM(CONCAT(ISNULL(e.EmployeeFirstName, ''), ' ', ISNULL(e.EmployeeLastName, ''))))
                 FROM dbo.Employees e
                 LEFT JOIN dbo.EmployeeJointSpecialization ejs ON e.EmployeeID = ejs.EmployeeID
                 LEFT JOIN dbo.EmployeeSpecialization es ON ejs.SpecializationID = es.SpecializationID
@@ -419,7 +419,7 @@ public sealed class ScheduleBookingService(
         if (list.Count == 0)
         {
             await using var fallbackCmd = conn.CreateCommand();
-            fallbackCmd.CommandText = "SELECT DISTINCT EmployeeID, ISNULL(DaysOff, 'Sunday'), LTRIM(RTRIM(CONCAT(FirstName, ' ', LastName))) FROM dbo.Employees WHERE EmployeeStatus = 'Active' OR Status = 'Active';";
+            fallbackCmd.CommandText = "SELECT DISTINCT EmployeeID, ISNULL(DaysOff, 'Sunday'), LTRIM(RTRIM(CONCAT(ISNULL(EmployeeFirstName, ''), ' ', ISNULL(EmployeeLastName, '')))) FROM dbo.Employees WHERE EmployeeStatus = 'Active' OR Status = 'Active';";
             await using var fallbackReader = await fallbackCmd.ExecuteReaderAsync(ct);
             while (await fallbackReader.ReadAsync(ct))
             {

@@ -202,6 +202,26 @@
 
 
 
+        <div class="bg-white rounded-xl border border-amber-200 bg-amber-50/30 p-4 shadow-xs">
+
+
+
+            <div class="text-[11px] font-bold uppercase tracking-wider text-amber-700">Pending Payment</div>
+
+
+
+            <div class="text-2xl font-black text-amber-800 mt-1">@_negotiations.Count(n => n.NegotiationStatus == "Pending Payment")</div>
+
+
+
+            <div class="text-[11px] text-amber-600 mt-0.5">Awaiting reservation deposit</div>
+
+
+
+        </div>
+
+
+
         <div class="bg-white rounded-xl border border-emerald-200 bg-emerald-50/30 p-4 shadow-xs">
 
 
@@ -262,7 +282,7 @@
 
 
 
-            @foreach (var filter in new[] { "All", "Pending_Call", "Deal_Won", "Deal_Lost", "Rescheduled" })
+            @foreach (var filter in new[] { "All", "Pending_Call", "Pending Payment", "Deal_Won", "Deal_Lost", "Rescheduled" })
 
 
 
@@ -1234,6 +1254,106 @@
 
 
 
+                else if (_selectedNegotiation.NegotiationStatus == "Pending Payment")
+
+
+
+                {
+
+
+
+                    <div class="space-y-3">
+
+
+
+                        <div class="p-3.5 bg-amber-50 border border-amber-200 rounded-xl text-xs text-amber-900 flex items-start justify-between gap-3">
+
+
+
+                            <div>
+
+
+
+                                <div class="font-bold text-amber-950 flex items-center gap-1.5">
+
+
+
+                                    <span>⏳ Deal Outcome: Pending Payment</span>
+
+
+
+                                </div>
+
+
+
+                                <div class="text-[11px] text-amber-800 mt-1">
+
+
+
+                                    Deal succeeded! The slot is held under 1-hour reservation lock. Awaiting 15% reservation fee payment.
+
+
+
+                                </div>
+
+
+
+                            </div>
+
+
+
+                            <span class="px-2 py-0.5 rounded text-[10px] font-bold bg-amber-200 text-amber-900 shrink-0">Pending Payment</span>
+
+
+
+                        </div>
+
+
+
+                        @if (!string.IsNullOrWhiteSpace(_selectedNegotiation.EventAppointmentId))
+
+
+
+                        {
+
+
+
+                            <div class="flex items-center gap-2">
+
+
+
+                                <a href="/payments/@_selectedNegotiation.EventAppointmentId" target="_blank"
+
+
+
+                                   class="px-3.5 py-2 bg-emerald-700 hover:bg-emerald-800 text-white rounded-lg text-xs font-bold transition-all shadow-xs inline-flex items-center gap-1.5">
+
+
+
+                                    <span>📱 View QR Payment / Settle Fee ↗</span>
+
+
+
+                                </a>
+
+
+
+                            </div>
+
+
+
+                        }
+
+
+
+                    </div>
+
+
+
+                }
+
+
+
                 else
 
 
@@ -1318,7 +1438,7 @@
 
 
 
-                    <span class="text-[11px] font-bold text-teal-700 uppercase tracking-wider">Office Clerk Booking Wizard (5 Steps)</span>
+                    <span class="text-[11px] font-bold text-teal-700 uppercase tracking-wider">Event Photoshoot Booking Wizard (5 Steps)</span>
 
 
 
@@ -1378,7 +1498,7 @@
 
 
 
-                    <span>Payment &amp; Email</span>
+                    <span>Reservation Fee</span>
 
 
 
@@ -2633,11 +2753,31 @@
 
 
 
-                        <button type="button" @onclick="NextWizardStep" class="px-5 py-2 bg-slate-900 hover:bg-black text-white rounded-lg text-xs font-bold shadow-xs transition-colors">
+                        var hasChosenDateTime = _wizardEventDate > DateTime.MinValue && _wizardEventTime != default;
 
 
 
-                            Continue to Payment &rarr;
+                        <button type="button"
+
+
+
+                                @onclick="Step1ProceedToReservationPaymentAsync"
+
+
+
+                                disabled="@_submittingWizard"
+
+
+
+                                class="inline-flex items-center gap-2 px-6 py-2.5 @(hasChosenDateTime ? "bg-emerald-700 hover:bg-emerald-800 cursor-pointer" : "bg-slate-400 cursor-not-allowed") text-white rounded-lg text-xs font-bold shadow-sm transition-all">
+
+
+
+                            <span>@(_submittingWizard ? "Dispatching Email..." : (hasChosenDateTime ? "Reservation Fee Payment" : "Choose Date & Time"))</span>
+
+
+
+                            <span>&rarr;</span>
 
 
 
@@ -2661,23 +2801,15 @@
 
 
 
-                                @onclick="Step2ProceedAndSendEmailAsync"
+                                @onclick="() => _wizardStep = 3"
 
 
 
-                                disabled="@_submittingWizard"
+                                class="inline-flex items-center gap-2 px-6 py-2.5 bg-slate-900 hover:bg-black text-white rounded-lg text-xs font-bold shadow-sm transition-all">
 
 
 
-                                class="inline-flex items-center gap-2 px-6 py-2.5 bg-emerald-700 hover:bg-emerald-800 text-white rounded-lg text-xs font-bold shadow-sm transition-all">
-
-
-
-                            <span>@(_submittingWizard ? "Dispatching Email..." : "Proceed & Send Payment Email")</span>
-
-
-
-                            <span>&rarr;</span>
+                            <span>Continue to Staff &amp; Leader &rarr;</span>
 
 
 
@@ -3285,11 +3417,31 @@
 
 
 
+            bool isEmployee = user.IsInRole(AppRoles.Employee) || 
+
+
+
+                              user.IsInRole("Employee") || 
+
+
+
+                              user.IsInRole("Staff") ||
+
+
+
+                              EmployeeRoleHelper.IsPhotographerOrCreative(user, UserService) ||
+
+
+
+                              (!string.IsNullOrEmpty(EmployeeRoleHelper.GetCurrentEmployeeId(user)) && EmployeeRoleHelper.GetCurrentEmployeeId(user).StartsWith("EMP-", StringComparison.OrdinalIgnoreCase));
 
 
 
 
-            if (!isAdmin && !isClerk)
+
+
+
+            if (!isAdmin && !isClerk && !isEmployee)
 
 
 
@@ -4318,6 +4470,318 @@
 
 
 
+    private async Task Step1ProceedToReservationPaymentAsync()
+
+
+
+    {
+
+
+
+        if (_selectedNegotiation == null) return;
+
+
+
+        _wizardError = null;
+
+
+
+
+
+
+
+        if (_selectedServiceIds.Count == 0)
+
+
+
+        {
+
+
+
+            _wizardError = "Please select at least one service package.";
+
+
+
+            return;
+
+
+
+        }
+
+
+
+
+
+
+
+        if (string.IsNullOrWhiteSpace(_wizardEventName))
+
+
+
+        {
+
+
+
+            _wizardError = "Please enter an event photoshoot name.";
+
+
+
+            return;
+
+
+
+        }
+
+
+
+
+
+
+
+        if (_wizardEventDate == DateTime.MinValue || _wizardEventTime == default)
+
+
+
+        {
+
+
+
+            _wizardError = "Please select a shoot date and time.";
+
+
+
+            return;
+
+
+
+        }
+
+
+
+
+
+
+
+        if (string.IsNullOrWhiteSpace(_wizardEventLocation))
+
+
+
+        {
+
+
+
+            _wizardError = "Please specify the venue or location.";
+
+
+
+            return;
+
+
+
+        }
+
+
+
+
+
+
+
+        if (!string.IsNullOrWhiteSpace(_wizardCreatedAppointmentId))
+
+
+
+        {
+
+
+
+            _wizardStep = 2;
+
+
+
+            return;
+
+
+
+        }
+
+
+
+
+
+
+
+        _submittingWizard = true;
+
+
+
+        try
+
+
+
+        {
+
+
+
+            var req = new CreateEventAppointmentFromNegotiationRequest
+
+
+
+            {
+
+
+
+                NegotiationId = _selectedNegotiation.NegotiationId,
+
+
+
+                CustomerId = _selectedNegotiation.CustomerId,
+
+
+
+                EventName = _wizardEventName,
+
+
+
+                EventDescription = _wizardEventDescription,
+
+
+
+                EventDate = DateOnly.FromDateTime(_wizardEventDate),
+
+
+
+                EventTime = TimeOnly.FromDateTime(_wizardEventTime),
+
+
+
+                EventLocation = _wizardEventLocation,
+
+
+
+                ServiceIds = _selectedServiceIds.ToList(),
+
+
+
+                EmployeeIds = _selectedEmployeeIds.ToList(),
+
+
+
+                TeamLeaderEmployeeId = _teamLeaderId,
+
+
+
+                EquipmentIds = _selectedEquipmentIds.ToList()
+
+
+
+            };
+
+
+
+
+
+
+
+            var res = await ConsultationApi.CreateEventAppointmentAsync(_selectedNegotiation.NegotiationId, req);
+
+
+
+            if (res.IsSuccess && res.Value != null)
+
+
+
+            {
+
+
+
+                _wizardCreatedAppointmentId = res.Value.EventAppointmentId;
+
+
+
+                _wizardInvoiceUrl = res.Value.XenditInvoiceUrl;
+
+
+
+                _wizardHoldExpiresAt = res.Value.LockExpiresAt ?? res.Value.HoldExpiresAt ?? DateTime.UtcNow.AddMinutes(60);
+
+
+
+                _wizardPaymentStatus = res.Value.DownpaymentStatus;
+
+
+
+                await DisplayToast("Reservation fee invoice generated & payment email dispatched to customer.");
+
+
+
+                _wizardStep = 2;
+
+
+
+            }
+
+
+
+            else
+
+
+
+            {
+
+
+
+                _wizardError = res.Error?.Message ?? "Failed to create appointment & send payment email.";
+
+
+
+            }
+
+
+
+        }
+
+
+
+        catch (Exception ex)
+
+
+
+        {
+
+
+
+            _wizardError = ex.Message;
+
+
+
+        }
+
+
+
+        finally
+
+
+
+        {
+
+
+
+            _submittingWizard = false;
+
+
+
+        }
+
+
+
+    }
+
+
+
+
+
+
+
     private async Task Step2ProceedAndSendEmailAsync()
 
 
@@ -5233,6 +5697,10 @@
 
 
         "Pending_Call" => "bg-amber-100 text-amber-800",
+
+
+
+        "Pending Payment" or "Pending_Payment" => "bg-amber-100 text-amber-800 font-bold border border-amber-200",
 
 
 

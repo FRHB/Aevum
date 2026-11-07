@@ -260,7 +260,7 @@
 .col-day-header {
     background: #f9fafb;
     text-align: center;
-    width: calc((100% - 170px) / 7);
+    width: calc(100% / 7);
 }
 
     .col-day-header.is-today {
