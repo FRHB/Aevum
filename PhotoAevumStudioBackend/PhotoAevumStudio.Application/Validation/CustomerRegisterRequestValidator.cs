@@ -12,6 +12,10 @@ public class CustomerRegisterRequestValidator : AbstractValidator<CustomerRegist
         RuleFor(x => x.Email).NotEmpty().EmailAddress();
         RuleFor(x => x.Password).MeetsPasswordPolicy();
         RuleFor(x => x.VerificationCode).NotEmpty().Length(6);
-        RuleFor(x => x.PhoneNumber).MaximumLength(30).When(x => !string.IsNullOrEmpty(x.PhoneNumber));
+        RuleFor(x => x.PhoneNumber)
+            .NotEmpty()
+            .WithMessage("Cellphone number is required.")
+            .Matches(@"^09\d{9}$")
+            .WithMessage("Cellphone number must be exactly 11 digits starting with 09.");
     }
 }

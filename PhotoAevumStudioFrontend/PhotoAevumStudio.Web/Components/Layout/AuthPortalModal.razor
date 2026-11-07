@@ -96,8 +96,24 @@
                                    placeholder="••••••••" autocomplete="current-password" />
                         <button type="button" class="apm-pw-toggle"
                                 @onclick='() => _showLoginPw = !_showLoginPw'
-                                aria-label="@(_showLoginPw ? "Hide password" : "Show password")">
-                            @(_showLoginPw ? "🙈" : "👁")
+                                aria-label="@(_showLoginPw ? "Hide password" : "Show password")"
+                                title="@(_showLoginPw ? "Hide password" : "Show password")">
+                            @if (_showLoginPw)
+                            {
+                                <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                                    <path d="M9.88 9.88a3 3 0 1 0 4.24 4.24"/>
+                                    <path d="M10.73 5.08A10.43 10.43 0 0 1 12 5c7 0 10 7 10 7a13.16 13.16 0 0 1-1.67 2.68"/>
+                                    <path d="M6.61 6.61A13.526 13.526 0 0 0 2 12s3 7 10 7a9.74 9.74 0 0 0 5.39-1.61"/>
+                                    <line x1="2" x2="22" y1="2" y2="22"/>
+                                </svg>
+                            }
+                            else
+                            {
+                                <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                                    <path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7Z"/>
+                                    <circle cx="12" cy="12" r="3"/>
+                                </svg>
+                            }
                         </button>
                     </div>
                     <div class="flex justify-end mt-1">
@@ -227,12 +243,11 @@
                     </div>
 
                     <div class="apm-field">
-                        <label for="su-phone">
-                            Cellphone No.
-                            <span class="apm-optional">(optional)</span>
-                        </label>
+                        <label for="su-phone">Cellphone No. <span class="apm-required">*</span></label>
                         <InputText id="su-phone" class="apm-input" @bind-Value="_suDetails.PhoneNumber"
-                                   placeholder="e.g. 09123456789 or +63 912 345 6789" autocomplete="tel" />
+                                   placeholder="e.g. 09123456789" autocomplete="tel"
+                                   maxlength="11" inputmode="numeric"
+                                   @oninput="OnPhoneInput" />
                         <ValidationMessage For="() => _suDetails.PhoneNumber" class="apm-validation" />
                     </div>
 
@@ -348,8 +363,24 @@
                                        placeholder="Min. 8 characters" autocomplete="new-password" />
                             <button type="button" class="apm-pw-toggle"
                                     @onclick='() => _showSignUpPw = !_showSignUpPw'
-                                    aria-label="Toggle password visibility">
-                                @(_showSignUpPw ? "🙈" : "👁")
+                                    aria-label="@(_showSignUpPw ? "Hide password" : "Show password")"
+                                    title="@(_showSignUpPw ? "Hide password" : "Show password")">
+                                @if (_showSignUpPw)
+                                {
+                                    <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                                        <path d="M9.88 9.88a3 3 0 1 0 4.24 4.24"/>
+                                        <path d="M10.73 5.08A10.43 10.43 0 0 1 12 5c7 0 10 7 10 7a13.16 13.16 0 0 1-1.67 2.68"/>
+                                        <path d="M6.61 6.61A13.526 13.526 0 0 0 2 12s3 7 10 7a9.74 9.74 0 0 0 5.39-1.61"/>
+                                        <line x1="2" x2="22" y1="2" y2="22"/>
+                                    </svg>
+                                }
+                                else
+                                {
+                                    <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                                        <path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7Z"/>
+                                        <circle cx="12" cy="12" r="3"/>
+                                    </svg>
+                                }
                             </button>
                         </div>
                         <ValidationMessage For="() => _suPassword.Password" class="apm-validation" />
@@ -358,9 +389,30 @@
                     <div class="apm-field">
                         <label for="su-pw2">Confirm Password <span class="apm-required">*</span></label>
                         <div class="apm-input-wrap">
-                            <InputText id="su-pw2" type="@(_showSignUpPw ? "text" : "password")"
+                            <InputText id="su-pw2" type="@(_showSignUpConfirmPw ? "text" : "password")"
                                        class="apm-input" @bind-Value="_suPassword.ConfirmPassword"
                                        placeholder="Repeat your password" autocomplete="new-password" />
+                            <button type="button" class="apm-pw-toggle"
+                                    @onclick='() => _showSignUpConfirmPw = !_showSignUpConfirmPw'
+                                    aria-label="@(_showSignUpConfirmPw ? "Hide password" : "Show password")"
+                                    title="@(_showSignUpConfirmPw ? "Hide password" : "Show password")">
+                                @if (_showSignUpConfirmPw)
+                                {
+                                    <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                                        <path d="M9.88 9.88a3 3 0 1 0 4.24 4.24"/>
+                                        <path d="M10.73 5.08A10.43 10.43 0 0 1 12 5c7 0 10 7 10 7a13.16 13.16 0 0 1-1.67 2.68"/>
+                                        <path d="M6.61 6.61A13.526 13.526 0 0 0 2 12s3 7 10 7a9.74 9.74 0 0 0 5.39-1.61"/>
+                                        <line x1="2" x2="22" y1="2" y2="22"/>
+                                    </svg>
+                                }
+                                else
+                                {
+                                    <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                                        <path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7Z"/>
+                                        <circle cx="12" cy="12" r="3"/>
+                                    </svg>
+                                }
+                            </button>
                         </div>
                         <ValidationMessage For="() => _suPassword.ConfirmPassword" class="apm-validation" />
                     </div>
@@ -395,6 +447,7 @@
     private bool _isBusy       = false;
     private bool _showLoginPw  = false;
     private bool _showSignUpPw = false;
+    private bool _showSignUpConfirmPw = false;
     private bool _showTermsModal = false;
     private bool _showPrivacyModal = false;
     private string _loginSuccessNotice = string.Empty;
@@ -667,6 +720,16 @@
             return;
         }
 
+        if (string.IsNullOrWhiteSpace(_suPassword.Password) ||
+            _suPassword.Password.Length < 8 ||
+            !_suPassword.Password.Any(char.IsDigit) ||
+            !System.Text.RegularExpressions.Regex.IsMatch(_suPassword.Password, @"[^a-zA-Z0-9]"))
+        {
+            _suSignUpError = "Password must be at least 8 characters long and contain at least one number (0–9) and one special character (e.g., @, #, $, !, %, etc.).";
+            _isBusy = false;
+            return;
+        }
+
         if (_suPassword.Password != _suPassword.ConfirmPassword)
         {
             _suSignUpError = "Passwords do not match.";
@@ -679,7 +742,7 @@
             FirstName = _suDetails.FirstName.Trim(),
             LastName = _suDetails.LastName.Trim(),
             MiddleName = string.IsNullOrWhiteSpace(_suDetails.MiddleName) ? null : _suDetails.MiddleName.Trim(),
-            PhoneNumber = string.IsNullOrWhiteSpace(_suDetails.PhoneNumber) ? null : _suDetails.PhoneNumber.Trim(),
+            PhoneNumber = _suDetails.PhoneNumber.Trim(),
             Email = _suDetails.Email.Trim().ToLowerInvariant(),
             Password = _suPassword.Password,
             VerificationCode = _suVerify.Code.Trim()
@@ -717,8 +780,16 @@
         _isBusy = false;
     }
 
-    // ── Helpers ─────────────────────────────────────────────────────────────
+    // ── Phone input masking ─────────────────────────────────────────────────
+    private void OnPhoneInput(ChangeEventArgs e)
+    {
+        var raw = e.Value?.ToString() ?? string.Empty;
+        var digits = new string(raw.Where(char.IsDigit).Take(11).ToArray());
+        _suDetails.PhoneNumber = digits;
+    }
+
     // ACID: rollback all in-memory wizard state atomically on reset.
+    // ── Helpers ─────────────────────────────────────────────────────────────
     private void ResetSignUpForms()
     {
         _suDetails         = new();
@@ -730,6 +801,7 @@
         _step1TermsError   = string.Empty;
         _step1PrivacyError = string.Empty;
         _showSignUpPw      = false;
+        _showSignUpConfirmPw = false;
     }
 
     // ── Form models with DataAnnotations ────────────────────────────────────
@@ -763,8 +835,17 @@
         [StringLength(50, ErrorMessage = "Maximum 50 characters.")]
         public string? MiddleName { get; set; }
 
-        [StringLength(30, ErrorMessage = "Maximum 30 characters.")]
-        public string? PhoneNumber { get; set; }
+        private string _phoneNumber = string.Empty;
+        [Required(ErrorMessage = "Cellphone number is required.")]
+        [RegularExpression(@"^09\d{9}$",
+            ErrorMessage = "Cellphone number must be exactly 11 digits starting with 09.")]
+        public string PhoneNumber
+        {
+            get => _phoneNumber;
+            set => _phoneNumber = string.IsNullOrWhiteSpace(value)
+                ? string.Empty
+                : new string(value.Where(char.IsDigit).Take(11).ToArray());
+        }
 
         [Required(ErrorMessage = "Email is required.")]
         [EmailAddress(ErrorMessage = "Enter a valid email address.")]
@@ -785,12 +866,13 @@
     private sealed class SignUpPwForm
     {
         [Required(ErrorMessage = "Password is required.")]
-        [MinLength(8, ErrorMessage = "Use at least 8 characters.")]
-        [RegularExpression(@"^(?=.*[A-Za-z])(?=.*\d).+$",
-            ErrorMessage = "Password must contain at least one letter and one number.")]
+        [MinLength(8, ErrorMessage = "Password must be at least 8 characters long.")]
+        [RegularExpression(@"^(?=.*[0-9])(?=.*[^a-zA-Z0-9]).{8,}$",
+            ErrorMessage = "Password must be at least 8 characters long and contain at least one number (0–9) and one special character (e.g., @, #, $, !, %, etc.).")]
         public string Password { get; set; } = string.Empty;
 
         [Required(ErrorMessage = "Please confirm your password.")]
+        [Compare(nameof(Password), ErrorMessage = "Passwords do not match.")]
         public string ConfirmPassword { get; set; } = string.Empty;
     }
 }

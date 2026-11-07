@@ -39,9 +39,18 @@
                                            @(active ? "bg-black text-white border-black"
                                              : done ? "bg-white text-gray-900 border-gray-300 hover:border-black"
                                              : "bg-gray-100 text-gray-400 border-transparent cursor-not-allowed")">
-                                <span class="w-5 h-5 rounded-full flex items-center justify-center text-[11px] font-bold shrink-0
+                                <span class="w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold shrink-0 aspect-square
                                              @(active ? "bg-white text-black" : done ? "bg-emerald-600 text-white" : "bg-gray-200 text-gray-500")">
-                                    @(done ? "✓" : s.Number.ToString())
+                                    @if (done)
+                                    {
+                                        <svg class="w-3.5 h-3.5 shrink-0" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" preserveAspectRatio="xMidYMid meet" aria-hidden="true">
+                                            <path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clip-rule="evenodd" />
+                                        </svg>
+                                    }
+                                    else
+                                    {
+                                        <span>@s.Number</span>
+                                    }
                                 </span>
                                 <span class="truncate">@s.Label</span>
                             </button>
@@ -75,7 +84,11 @@
                 {
                     @* Post-confirmation screen (still Step 5 context) *@
                     <div class="py-6 text-center space-y-4" data-testid="booking-confirmed">
-                        <div class="w-12 h-12 rounded-full bg-emerald-100 text-emerald-700 mx-auto flex items-center justify-center text-xl font-bold">✓</div>
+                        <div class="w-12 h-12 rounded-full bg-emerald-100 text-emerald-700 mx-auto flex items-center justify-center shrink-0 aspect-square">
+                            <svg class="w-6 h-6 shrink-0" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" preserveAspectRatio="xMidYMid meet" aria-hidden="true">
+                                <path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clip-rule="evenodd" />
+                            </svg>
+                        </div>
                         <div>
                             <h3 class="text-lg font-bold text-gray-900">Appointment Confirmed</h3>
                             <p class="text-sm text-gray-600 mt-1">

@@ -757,5 +757,167 @@ public class FormsAndSecurityTests
         Assert.DoesNotContain("es.EmployeeID", spContent);
         Assert.DoesNotContain("JOIN dbo.Specialization s", spContent);
     }
-}
 
+    [Fact]
+    public void AuthPortalModal_CellphoneField_IsRequired_WithAsteriskAndValidation()
+    {
+        var root = GetRepositoryRoot();
+        var modalPath = Path.Combine(root, "PhotoAevumStudioFrontend", "PhotoAevumStudio.Web", "Components", "Layout", "AuthPortalModal.razor");
+        Assert.True(File.Exists(modalPath), $"File not found: {modalPath}");
+
+        var content = File.ReadAllText(modalPath);
+
+        // Required label with red asterisk and no (optional) tag
+        Assert.Contains(@"<label for=""su-phone"">Cellphone No. <span class=""apm-required"">*</span></label>", content);
+        Assert.DoesNotContain("(optional)", content.Substring(content.IndexOf("su-phone"), 200));
+        Assert.Contains(@"<ValidationMessage For=""() => _suDetails.PhoneNumber"" class=""apm-validation"" />", content);
+    }
+
+    [Theory]
+    [InlineData("", false, "Cellphone number is required.")]
+    [InlineData("   ", false, "Cellphone number is required.")]
+    [InlineData("0912345", false, "Cellphone number must be exactly 11 digits starting with 09.")]
+    [InlineData("091234567890", false, "Cellphone number must be exactly 11 digits starting with 09.")]
+    [InlineData("08123456789", false, "Cellphone number must be exactly 11 digits starting with 09.")]
+    [InlineData("09abc456789", false, "Cellphone number must be exactly 11 digits starting with 09.")]
+    [InlineData("09123456789", true, null)]
+    public void CustomerRegisterRequestValidator_ValidatesPhoneNumber_Strict11Digits(string phone, bool expectedValid, string? expectedErrorMessage)
+    {
+        var validator = new PhotoAevumStudio.Application.Validation.CustomerRegisterRequestValidator();
+        var request = new PhotoAevumStudio.Application.DTOs.CustomerRegisterRequest(
+            FirstName: "Maria",
+            LastName: "Santos",
+            MiddleName: null,
+            Email: "maria@example.com",
+            Password: "Password123!",
+            VerificationCode: "123456",
+            PhoneNumber: phone
+        );
+
+        var result = validator.Validate(request);
+        if (expectedValid)
+        {
+            Assert.True(result.IsValid, string.Join("; ", result.Errors.Select(e => e.ErrorMessage)));
+        }
+        else
+        {
+            Assert.False(result.IsValid);
+            Assert.Contains(result.Errors, e => e.PropertyName == nameof(request.PhoneNumber) && e.ErrorMessage.Contains(expectedErrorMessage!));
+        }
+    }
+
+    // ══════════════════════════════════════════════════════════════════════════
+    // Customer Account Creation Password Input & Complexity Tests
+    // ══════════════════════════════════════════════════════════════════════════
+
+    [Theory]
+    [InlineData("", false, "Password is required.")]
+    [InlineData("Abc1!", false, "Password must be at least 8 characters long.")]
+    [InlineData("PassWordWithoutNumber!", false, "Password must contain at least one number (0–9).")]
+    [InlineData("PasswordWithoutSpecial123", false, "Password must contain at least one special character (e.g., @, #, $, !, %, etc.).")]
+    [InlineData("Pass123!", true, null)]
+    [InlineData("PhotoAevum#2026", true, null)]
+    [InlineData("user@password99", true, null)]
+    public void CustomerRegisterRequestValidator_EnforcesStrictPasswordComplexity(string password, bool expectedValid, string? expectedErrorPart)
+    {
+        var validator = new PhotoAevumStudio.Application.Validation.CustomerRegisterRequestValidator();
+        var request = new PhotoAevumStudio.Application.DTOs.CustomerRegisterRequest(
+            FirstName: "Maria",
+            LastName: "Santos",
+            MiddleName: null,
+            Email: "maria@example.com",
+            Password: password,
+            VerificationCode: "123456",
+            PhoneNumber: "09123456789"
+        );
+
+        var result = validator.Validate(request);
+        if (expectedValid)
+        {
+            Assert.True(result.IsValid, string.Join("; ", result.Errors.Select(e => e.ErrorMessage)));
+        }
+        else
+        {
+            Assert.False(result.IsValid);
+            Assert.Contains(result.Errors, e => e.PropertyName == nameof(request.Password) && e.ErrorMessage.Contains(expectedErrorPart!));
+        }
+    }
+
+    [Theory]
+    [InlineData("", false, "Password is required.")]
+    [InlineData("Short1@", false, "Password must be at least 8 characters long.")]
+    [InlineData("NoNumberPassword!", false, "Password must contain at least one number (0–9).")]
+    [InlineData("NoSpecialCharPassword1", false, "Password must contain at least one special character (e.g., @, #, $, !, %, etc.).")]
+    [InlineData("AdminPass123#", true, null)]
+    public void RegisterRequestValidator_EnforcesStrictPasswordComplexity(string password, bool expectedValid, string? expectedErrorPart)
+    {
+        var validator = new PhotoAevumStudio.Application.Validation.RegisterRequestValidator();
+        var request = new PhotoAevumStudio.Application.Auth.RegisterRequest(
+            FirstName: "Juan",
+            LastName: "Dela Cruz",
+            MiddleName: null,
+            Email: "juan@photoaevum.com",
+            Password: password,
+            Role: PhotoAevumStudio.Application.Auth.AppRoles.Customer
+        );
+
+        var result = validator.Validate(request);
+        if (expectedValid)
+        {
+            Assert.True(result.IsValid, string.Join("; ", result.Errors.Select(e => e.ErrorMessage)));
+        }
+        else
+        {
+            Assert.False(result.IsValid);
+            Assert.Contains(result.Errors, e => e.PropertyName == nameof(request.Password) && e.ErrorMessage.Contains(expectedErrorPart!));
+        }
+    }
+
+    [Theory]
+    [InlineData("short1!", false)]
+    [InlineData("NoNumberHere!", false)]
+    [InlineData("NoSpecialChar123", false)]
+    [InlineData("ValidPass123!", true)]
+    public void CustomerRegisterRequest_Model_DataAnnotations_EnforcePasswordComplexity(string password, bool expectedValid)
+    {
+        var model = new PhotoAevumStudio.Web.Models.CustomerRegisterRequest(
+            FirstName: "Maria",
+            LastName: "Santos",
+            MiddleName: null,
+            Email: "maria@example.com",
+            Password: password,
+            VerificationCode: "123456",
+            PhoneNumber: "09123456789"
+        );
+
+        var validationResults = new List<System.ComponentModel.DataAnnotations.ValidationResult>();
+        var context = new System.ComponentModel.DataAnnotations.ValidationContext(model);
+        bool isValid = System.ComponentModel.DataAnnotations.Validator.TryValidateObject(model, context, validationResults, validateAllProperties: true);
+
+        Assert.Equal(expectedValid, isValid);
+    }
+
+    [Fact]
+    public void AuthPortalModal_PasswordInput_UsesCleanEyeSvgIcons_AndNoEmojis()
+    {
+        var root = GetRepositoryRoot();
+        var modalPath = Path.Combine(root, "PhotoAevumStudioFrontend", "PhotoAevumStudio.Web", "Components", "Layout", "AuthPortalModal.razor");
+        Assert.True(File.Exists(modalPath), $"File not found: {modalPath}");
+
+        var content = File.ReadAllText(modalPath);
+
+        // Ensure emoji toggle icons are completely removed from password input fields
+        Assert.DoesNotContain("🙈", content);
+        Assert.DoesNotContain("👁", content);
+
+        // Ensure clean SVG eye icons are present
+        Assert.Contains(@"<svg xmlns=""http://www.w3.org/2000/svg""", content);
+        Assert.Contains(@"d=""M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7Z""", content);
+        Assert.Contains(@"<circle cx=""12"" cy=""12"" r=""3""", content);
+
+        // Ensure Step 3 password form enforces min length 8, number, and special character
+        Assert.Contains("MinLength(8", content);
+        Assert.Contains("(?=.*[0-9])", content);
+        Assert.Contains("(?=.*[^a-zA-Z0-9])", content);
+    }
+}

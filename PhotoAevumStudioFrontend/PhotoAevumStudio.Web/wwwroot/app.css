@@ -1206,19 +1206,37 @@ details > summary {
 }
 
 /* ── Input with toggle button ──────────────────────────────────────────── */
-.apm-input-wrap  { position: relative; }
+.apm-input-wrap  {
+    position: relative;
+    display: flex;
+    align-items: center;
+    width: 100%;
+}
+.apm-input-wrap .apm-input {
+    padding-right: 2.75rem;
+}
 .apm-pw-toggle {
     position: absolute;
-    right: .6rem;
+    right: 0.75rem;
     top: 50%;
     transform: translateY(-50%);
-    background: none;
+    background: transparent;
     border: none;
     cursor: pointer;
-    font-size: 1rem;
-    padding: .2rem;
-    color: var(--muted);
-    line-height: 1;
+    padding: 0.25rem;
+    color: var(--muted, #6b7280);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: color 0.2s ease;
+    z-index: 2;
+}
+.apm-pw-toggle:hover {
+    color: var(--ink, #111827);
+}
+.apm-pw-toggle:focus-visible {
+    outline: 2px solid var(--ink, #111827);
+    border-radius: 4px;
 }
 
 /* ── Standard Password Toggle ────────────────────────────────────────── */
