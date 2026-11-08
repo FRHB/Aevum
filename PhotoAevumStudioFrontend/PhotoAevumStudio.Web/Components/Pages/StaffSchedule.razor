@@ -219,24 +219,207 @@ else
             </div>
         </div>
     }
-    else
+    else if (_currentView == ScheduleViewMode.Month)
     {
-        @* Day/Month/Agenda fallback view *@
-        <div class="bg-white p-4 rounded-lg border border-gray-200">
-            <h3 class="font-bold text-sm mb-3">Lineup for @FormattedDateRangeHeader</h3>
-            <div class="space-y-2">
-                @foreach (var shift in FilteredShifts.Where(s => s.Date.Date == _selectedDate.Date))
+        @* ── COMPACT MONTH CALENDAR FOR STAFF ROSTER ─────────────────── *@
+        <div class="bg-white rounded-lg border border-gray-200 shadow-2xs overflow-hidden w-full">
+            <div class="grid grid-cols-7 bg-gray-50 border-b border-gray-200 py-2.5 text-center text-xs font-bold text-gray-600 uppercase tracking-wider">
+                <div>Mon</div>
+                <div>Tue</div>
+                <div>Wed</div>
+                <div>Thu</div>
+                <div>Fri</div>
+                <div>Sat</div>
+                <div>Sun</div>
+            </div>
+            <div class="grid grid-cols-7 divide-x divide-y divide-gray-200">
+                @foreach (var day in MonthCalendarDays)
                 {
-                    <div @onclick="() => OpenDetailDrawer(shift)" class="p-2 border rounded flex items-center justify-between cursor-pointer hover:bg-gray-50">
-                        <div class="flex items-center gap-3">
-                            <span class="font-bold text-xs">@shift.FormattedTimeRange</span>
-                            <span class="font-bold text-xs">@(shift.StaffName ?? "Open Shift")</span>
-                            <span class="text-xs text-gray-500">@shift.Role &bull; @shift.Location</span>
+                    var isCurrentMonth = day.Month == _selectedDate.Month;
+                    var isToday = day.Date == DateTime.Today;
+                    var dayShifts = GetShiftsForDay(day).OrderBy(s => s.StartTime).ToList();
+                    var totalShifts = dayShifts.Count;
+                    var visibleShifts = dayShifts.Take(3).ToList();
+
+                    <div class="min-h-[110px] p-2 flex flex-col justify-between transition-colors cursor-pointer group @(isCurrentMonth ? "bg-white hover:bg-gray-50/70" : "bg-gray-50/60 opacity-50") @(isToday ? "!bg-amber-50/40 ring-1 ring-inset ring-amber-300" : "")"
+                         @onclick="() => { _selectedDate = day; SetViewMode(ScheduleViewMode.Day); }">
+                        <div>
+                            <div class="flex items-center justify-between mb-1.5">
+                                <span class="inline-flex items-center justify-center text-xs font-bold @(isToday ? "w-6 h-6 rounded-full bg-gray-900 text-white" : isCurrentMonth ? "text-gray-900" : "text-gray-400")">
+                                    @day.Day
+                                </span>
+                                @if (totalShifts > 0)
+                                {
+                                    <span class="text-[10px] font-semibold text-gray-500">
+                                        @totalShifts @(totalShifts == 1 ? "shift" : "shifts")
+                                    </span>
+                                }
+                            </div>
+
+                            <div class="space-y-1">
+                                @foreach (var shift in visibleShifts)
+                                {
+                                    <div @onclick="() => OpenDetailDrawer(shift)"
+                                         @onclick:stopPropagation="true"
+                                         title="@shift.FormattedTimeRange: @(shift.IsOpenShift ? "Open Shift" : shift.StaffName) (@shift.Role - @shift.Location)"
+                                         class="p-1 px-1.5 rounded border text-[11px] leading-tight truncate transition-all cursor-pointer @GetShiftBadgeStyle(shift)">
+                                        <div class="flex items-center justify-between gap-1">
+                                            <span class="font-bold truncate">
+                                                @shift.StartTime.ToString(@"hh\:mm") @(shift.IsOpenShift ? "📢 Open" : shift.StaffName)
+                                            </span>
+                                            @if (shift.HasConflict)
+                                            {
+                                                <span class="text-rose-600 font-extrabold text-[10px]" title="@shift.ConflictMessage">⚠️</span>
+                                            }
+                                        </div>
+                                        <div class="text-[9px] opacity-75 truncate">
+                                            @shift.Role &bull; @shift.Location
+                                        </div>
+                                    </div>
+                                }
+
+                                @if (totalShifts > 3)
+                                {
+                                    <div class="text-[10px] font-bold text-gray-500 px-1">
+                                        +@(totalShifts - 3) more
+                                    </div>
+                                }
+                            </div>
                         </div>
-                        <span class="text-xs px-2 py-0.5 rounded bg-emerald-50 text-emerald-800 font-semibold">✓ Confirmed</span>
+
+                        <div class="pt-1 flex justify-end">
+                            <button type="button"
+                                    @onclick="() => OpenCreateModalForDate(day)"
+                                    @onclick:stopPropagation="true"
+                                    class="text-[11px] font-bold text-gray-400 hover:text-gray-900 hover:bg-gray-100 px-1 rounded transition-colors"
+                                    title="Assign shift on @day.ToString("MMM d")">
+                                +
+                            </button>
+                        </div>
                     </div>
                 }
             </div>
+        </div>
+    }
+    else if (_currentView == ScheduleViewMode.Day)
+    {
+        @* ── HIGH-DENSITY DAY VIEW ───────────────────────────────────── *@
+        var dayShifts = FilteredShifts.Where(s => s.Date.Date == _selectedDate.Date).OrderBy(s => s.StartTime).ToList();
+        var totalHrs = dayShifts.Sum(s => s.DurationHours);
+
+        <div class="bg-white p-5 rounded-lg border border-gray-200 shadow-2xs space-y-4">
+            <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 border-b pb-3">
+                <div>
+                    <h3 class="font-extrabold text-base text-gray-900">Lineup for @_selectedDate.ToString("dddd, MMMM d, yyyy")</h3>
+                    <p class="text-xs text-gray-500">@dayShifts.Count shift(s) rostered &bull; @totalHrs.ToString("0.#") total hours</p>
+                </div>
+                <button type="button" @onclick="() => OpenCreateModalForDate(_selectedDate)" class="px-3 py-1.5 bg-gray-900 hover:bg-black text-white text-xs font-semibold rounded-lg shadow-xs">
+                    + Assign Shift for Today
+                </button>
+            </div>
+
+            @if (!dayShifts.Any())
+            {
+                <div class="p-8 text-center text-gray-400 text-xs">
+                    No staff shifts rostered for this day.
+                </div>
+            }
+            else
+            {
+                <div class="space-y-2">
+                    @foreach (var shift in dayShifts)
+                    {
+                        <div @onclick="() => OpenDetailDrawer(shift)"
+                             class="p-3 border rounded-lg flex items-center justify-between cursor-pointer transition-all hover:shadow-xs @GetShiftCardStyle(shift)">
+                            <div class="flex items-center gap-4">
+                                <span class="font-bold text-xs font-mono px-2 py-1 bg-white/80 rounded border border-gray-200 shadow-2xs">
+                                    @shift.FormattedTimeRange
+                                </span>
+                                <div>
+                                    <div class="font-bold text-sm text-gray-900 flex items-center gap-2">
+                                        <span>@(shift.IsOpenShift ? "📢 Open Shift" : shift.StaffName)</span>
+                                        @if (shift.HasConflict)
+                                        {
+                                            <span class="text-xs px-2 py-0.5 rounded bg-rose-100 text-rose-800 font-bold">⚠️ Conflict</span>
+                                        }
+                                        else if (shift.ShiftType.Contains("Leave"))
+                                        {
+                                            <span class="text-xs px-2 py-0.5 rounded bg-amber-200 text-amber-900 font-semibold">@shift.ShiftType</span>
+                                        }
+                                        else
+                                        {
+                                            <span class="text-xs px-2 py-0.5 rounded bg-emerald-100 text-emerald-800 font-semibold">✓ Confirmed</span>
+                                        }
+                                    </div>
+                                    <div class="text-xs text-gray-600 mt-0.5">
+                                        @shift.Role &bull; <strong class="text-gray-700">@shift.Location</strong> &bull; @shift.ShiftType
+                                        @if (!string.IsNullOrEmpty(shift.Notes))
+                                        {
+                                            <span class="text-gray-400 ml-1">(@shift.Notes)</span>
+                                        }
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="text-right">
+                                <span class="text-xs font-bold text-gray-700">@shift.DurationHours.ToString("0.#") hrs</span>
+                            </div>
+                        </div>
+                    }
+                </div>
+            }
+        </div>
+    }
+    else if (_currentView == ScheduleViewMode.Agenda)
+    {
+        @* ── COMPACT AGENDA VIEW ─────────────────────────────────────── *@
+        var agendaShifts = FilteredShifts
+            .Where(s => s.Date.Date >= _selectedDate.Date && s.Date.Date <= _selectedDate.Date.AddDays(14))
+            .OrderBy(s => s.Date)
+            .ThenBy(s => s.StartTime)
+            .GroupBy(s => s.Date.Date)
+            .ToList();
+
+        <div class="bg-white p-5 rounded-lg border border-gray-200 shadow-2xs">
+            @if (!agendaShifts.Any())
+            {
+                <div class="p-8 text-center text-gray-400 text-xs">
+                    No shifts rostered in this 14-day date window matching your filters.
+                </div>
+            }
+            else
+            {
+                <div class="space-y-4">
+                    @foreach (var group in agendaShifts)
+                    {
+                        <div>
+                            <div class="flex items-center justify-between bg-gray-50 px-3 py-1.5 rounded font-bold text-xs text-gray-700 mb-2 border border-gray-100">
+                                <span>@group.Key.ToString("dddd, MMMM d, yyyy")</span>
+                                <span class="text-gray-500">@group.Count() shift(s) &bull; @group.Sum(s => s.DurationHours).ToString("0.#") hrs</span>
+                            </div>
+                            <div class="space-y-1.5 pl-2">
+                                @foreach (var shift in group)
+                                {
+                                    <div @onclick="() => OpenDetailDrawer(shift)"
+                                         class="p-2 border rounded-md flex items-center justify-between cursor-pointer hover:bg-gray-50 text-xs transition-colors @GetShiftBadgeStyle(shift)">
+                                        <div class="flex items-center gap-3">
+                                            <span class="font-bold font-mono">@shift.FormattedTimeRange</span>
+                                            <span class="font-bold">@(shift.IsOpenShift ? "📢 Open Shift" : shift.StaffName)</span>
+                                            <span class="text-gray-500">@shift.Role &bull; @shift.Location</span>
+                                        </div>
+                                        <div class="flex items-center gap-2">
+                                            @if (shift.HasConflict)
+                                            {
+                                                <span class="text-[10px] px-1.5 py-0.5 rounded bg-rose-200 text-rose-900 font-bold">⚠️ Conflict</span>
+                                            }
+                                            <span class="font-semibold text-gray-600">@shift.DurationHours.ToString("0.#")h</span>
+                                        </div>
+                                    </div>
+                                }
+                            </div>
+                        </div>
+                    }
+                </div>
+            }
         </div>
     }
 
@@ -443,6 +626,21 @@ else
 
     private void SetViewMode(ScheduleViewMode mode) => _currentView = mode;
 
+    private List<DateTime> MonthCalendarDays
+    {
+        get
+        {
+            var firstOfMonth = new DateTime(_selectedDate.Year, _selectedDate.Month, 1);
+            int diff = (7 + (firstOfMonth.DayOfWeek - DayOfWeek.Monday)) % 7;
+            var start = firstOfMonth.AddDays(-1 * diff);
+            var lastOfMonth = firstOfMonth.AddMonths(1).AddDays(-1);
+            int daysNeeded = (lastOfMonth - start).Days + 1;
+            int totalDays = (int)Math.Ceiling(daysNeeded / 7.0) * 7;
+            if (totalDays < 35) totalDays = 35;
+            return Enumerable.Range(0, totalDays).Select(i => start.AddDays(i)).ToList();
+        }
+    }
+
     private void NavigatePrevious()
     {
         _selectedDate = _currentView switch
@@ -450,6 +648,7 @@ else
             ScheduleViewMode.Day => _selectedDate.AddDays(-1),
             ScheduleViewMode.Week => _selectedDate.AddDays(-7),
             ScheduleViewMode.Month => _selectedDate.AddMonths(-1),
+            ScheduleViewMode.Agenda => _selectedDate.AddDays(-14),
             _ => _selectedDate.AddDays(-7)
         };
     }
@@ -461,8 +660,35 @@ else
             ScheduleViewMode.Day => _selectedDate.AddDays(1),
             ScheduleViewMode.Week => _selectedDate.AddDays(7),
             ScheduleViewMode.Month => _selectedDate.AddMonths(1),
+            ScheduleViewMode.Agenda => _selectedDate.AddDays(14),
             _ => _selectedDate.AddDays(7)
         };
+    }
+
+    private void OpenCreateModalForDate(DateTime date)
+    {
+        _newShift = new StaffShiftModel
+        {
+            StaffId = StaffMembers.FirstOrDefault()?.Id,
+            ShiftType = "Full Day",
+            Location = "Studio A"
+        };
+        _newShiftDate = date;
+        _newStartTime = new TimeOnly(9, 0);
+        _newEndTime = new TimeOnly(17, 0);
+        _modalErrorMessage = null;
+        _isCreateModalOpen = true;
+    }
+
+    private string GetShiftBadgeStyle(StaffShiftModel shift)
+    {
+        if (shift.HasConflict)
+            return "bg-rose-50 border-rose-300 text-rose-950 hover:bg-rose-100";
+        if (shift.ShiftType.Contains("Leave") || shift.ShiftType == "Sick Leave")
+            return "bg-amber-100/90 border-amber-300 text-amber-950 hover:bg-amber-200/80";
+        if (shift.IsOpenShift)
+            return "bg-amber-50 border-dashed border-amber-300 text-amber-950 hover:bg-amber-100";
+        return "bg-emerald-50 border-emerald-200 text-emerald-950 hover:bg-emerald-100/70";
     }
 
     private void JumpToToday() => _selectedDate = DateTime.Today;

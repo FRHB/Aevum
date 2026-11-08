@@ -245,11 +245,20 @@
 
                     <div class="month-day-cell @(isCurrentMonth ? "" : "other-month") @(isToday ? "is-today" : "")"
                          @onclick="() => { _selectedDate = day; SetViewMode(ScheduleViewMode.Day); }">
-                        <span class="month-day-num">@day.Day</span>
+                        <div class="month-cell-header">
+                            <span class="month-day-num">@day.Day</span>
+                            @if (totalEvts > 0)
+                            {
+                                <span class="month-day-count">@totalEvts @(totalEvts == 1 ? "evt" : "evts")</span>
+                            }
+                        </div>
                         <div class="month-events-mini">
                             @foreach (var ev in dayEvents)
                             {
-                                <div class="mini-event-pill @(ev.IsConsultation ? "bg-teal-50 text-teal-800 border border-teal-200" : "") @(ev.HasConflict ? "conflict" : "")">
+                                <div class="mini-event-pill @GetMiniEventBadgeClass(ev)"
+                                     title="@ev.FormattedTimeRange: @ev.ClientName (@ev.ServiceType) with @ev.AssignedPhotographer"
+                                     @onclick="() => OpenDetailDrawer(ev)"
+                                     @onclick:stopPropagation="true">
                                     @(ev.IsConsultation ? "💬 " : "")@ev.StartTime.ToString(@"hh\:mm") @ev.ClientName
                                 </div>
                             }
@@ -558,8 +567,25 @@
             var firstOfMonth = new DateTime(_selectedDate.Year, _selectedDate.Month, 1);
             int diff = (7 + (firstOfMonth.DayOfWeek - DayOfWeek.Monday)) % 7;
             var start = firstOfMonth.AddDays(-1 * diff);
-            return Enumerable.Range(0, 35).Select(i => start.AddDays(i)).ToList();
+            var lastOfMonth = firstOfMonth.AddMonths(1).AddDays(-1);
+            int daysNeeded = (lastOfMonth - start).Days + 1;
+            int totalDays = (int)Math.Ceiling(daysNeeded / 7.0) * 7;
+            if (totalDays < 35) totalDays = 35;
+            return Enumerable.Range(0, totalDays).Select(i => start.AddDays(i)).ToList();
         }
+    }
+
+    private string GetMiniEventBadgeClass(EventBookingModel ev)
+    {
+        if (ev.HasConflict) return "conflict";
+        if (ev.IsConsultation) return "consultation";
+        return ev.Status.ToLowerInvariant() switch
+        {
+            "confirmed" => "confirmed",
+            "pending" => "pending",
+            "completed" => "completed",
+            _ => ""
+        };
     }
 
     private string FormattedDateRangeHeader => _currentView switch
