@@ -24,10 +24,40 @@ public record LoginResponse(
     bool IsFirstLogin = false);
 
 public record InitialPasswordChangeRequest(
+    [property: Required(ErrorMessage = "User ID is required.")]
     string UserId,
+
+    [property: Required(ErrorMessage = "Current password is required.")]
     string CurrentPassword,
+
+    [property: Required(ErrorMessage = "New password is required.")]
+    [property: MinLength(8, ErrorMessage = "Password must be at least 8 characters long.")]
+    [property: RegularExpression(@"^(?=.*[A-Za-z])(?=.*[0-9])(?=.*[^a-zA-Z0-9]).{8,}$",
+        ErrorMessage = "Password must be at least 8 characters long and contain at least one letter, one number (0–9), and one special character (e.g., @, #, $, !, %, etc.).")]
     string NewPassword,
+
+    [property: Required(ErrorMessage = "Confirm password is required.")]
+    [property: Compare("NewPassword", ErrorMessage = "Passwords do not match.")]
     string ConfirmPassword);
+
+public class ChangePasswordModel
+{
+    [Required(ErrorMessage = "User ID or Email is required.")]
+    public string UserId { get; set; } = string.Empty;
+
+    [Required(ErrorMessage = "Current password is required.")]
+    public string CurrentPassword { get; set; } = string.Empty;
+
+    [Required(ErrorMessage = "New password is required.")]
+    [MinLength(8, ErrorMessage = "Password must be at least 8 characters long.")]
+    [RegularExpression(@"^(?=.*[A-Za-z])(?=.*[0-9])(?=.*[^a-zA-Z0-9]).{8,}$",
+        ErrorMessage = "Password must be at least 8 characters long and contain at least one letter, one number (0–9), and one special character (e.g., @, #, $, !, %, etc.).")]
+    public string NewPassword { get; set; } = string.Empty;
+
+    [Required(ErrorMessage = "Confirm password is required.")]
+    [Compare(nameof(NewPassword), ErrorMessage = "Passwords do not match.")]
+    public string ConfirmPassword { get; set; } = string.Empty;
+}
 
 public record CustomerRegisterRequest(
     [property: Required(ErrorMessage = "First name is required.")]
@@ -48,8 +78,8 @@ public record CustomerRegisterRequest(
 
     [property: Required(ErrorMessage = "Password is required.")]
     [property: MinLength(8, ErrorMessage = "Password must be at least 8 characters long.")]
-    [property: RegularExpression(@"^(?=.*[0-9])(?=.*[^a-zA-Z0-9]).{8,}$",
-        ErrorMessage = "Password must be at least 8 characters long and contain at least one number (0–9) and one special character (e.g., @, #, $, !, %, etc.).")]
+    [property: RegularExpression(@"^(?=.*[A-Za-z])(?=.*[0-9])(?=.*[^a-zA-Z0-9]).{8,}$",
+        ErrorMessage = "Password must be at least 8 characters long and contain at least one letter, one number (0–9), and one special character (e.g., @, #, $, !, %, etc.).")]
     string Password,
 
     [property: Required(ErrorMessage = "Verification code is required.")]

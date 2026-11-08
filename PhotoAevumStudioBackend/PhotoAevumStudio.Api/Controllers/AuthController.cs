@@ -283,6 +283,15 @@ public class AuthController : ControllerBase
         if (request.NewPassword.Length < 8)
             return BadRequest(new ProblemDetails { Title = "Validation Error", Detail = "Password must be at least 8 characters long.", Status = 400 });
 
+        if (!System.Text.RegularExpressions.Regex.IsMatch(request.NewPassword, @"[A-Za-z]"))
+            return BadRequest(new ProblemDetails { Title = "Validation Error", Detail = "Password must contain at least one letter.", Status = 400 });
+
+        if (!System.Text.RegularExpressions.Regex.IsMatch(request.NewPassword, @"[0-9]"))
+            return BadRequest(new ProblemDetails { Title = "Validation Error", Detail = "Password must contain at least one number (0-9).", Status = 400 });
+
+        if (!System.Text.RegularExpressions.Regex.IsMatch(request.NewPassword, @"[^a-zA-Z0-9]"))
+            return BadRequest(new ProblemDetails { Title = "Validation Error", Detail = "Password must contain at least one special character (e.g., @, #, $, !, %, etc.).", Status = 400 });
+
         if (!string.IsNullOrEmpty(request.ConfirmPassword) && request.NewPassword != request.ConfirmPassword)
             return BadRequest(new ProblemDetails { Title = "Validation Error", Detail = "Passwords do not match.", Status = 400 });
 
@@ -474,3 +483,4 @@ public class AuthController : ControllerBase
         return Ok(new { Success = true, Message = message });
     }
 }
+

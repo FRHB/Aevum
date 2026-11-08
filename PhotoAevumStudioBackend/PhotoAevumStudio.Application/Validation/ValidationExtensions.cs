@@ -7,6 +7,7 @@ public static class ValidationExtensions
     /// <summary>
     /// Enforces the studio password policy:
     /// - Minimum 8 characters
+    /// - At least one letter
     /// - At least one number (0–9)
     /// - At least one special character (e.g., @, #, $, !, %, etc.)
     /// </summary>
@@ -15,6 +16,7 @@ public static class ValidationExtensions
         return ruleBuilder
             .NotEmpty().WithMessage("Password is required.")
             .MinimumLength(8).WithMessage("Password must be at least 8 characters long.")
+            .Matches(@"[A-Za-z]").WithMessage("Password must contain at least one letter.")
             .Matches(@"[0-9]").WithMessage("Password must contain at least one number (0–9).")
             .Matches(@"[^a-zA-Z0-9]").WithMessage("Password must contain at least one special character (e.g., @, #, $, !, %, etc.).");
     }

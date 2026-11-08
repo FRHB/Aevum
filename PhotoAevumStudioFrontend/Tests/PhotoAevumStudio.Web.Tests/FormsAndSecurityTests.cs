@@ -1,4 +1,4 @@
-using System.Security.Claims;
+﻿using System.Security.Claims;
 using InfisicalConfiguration;
 using PhotoAevumStudio.Web.Components.Pages;
 using PhotoAevumStudio.Web.Components.Shared;
@@ -63,23 +63,46 @@ public class FormsAndSecurityTests
     }
 
     [Theory]
-    [InlineData("12345678", false)] // No letter
-    [InlineData("abcdefgh", false)] // No digit
-    [InlineData("Valid1Pass", true)] // Has letter & digit
-    public void ChangePassword_RequiresLetterAndDigit(string password, bool expectedValid)
+    [InlineData("12345678", false)]          // No letter, no special char
+    [InlineData("abcdefgh", false)]          // No digit, no special char
+    [InlineData("Valid1Pass", false)]        // Has letter & digit but no special char
+    [InlineData("ValidPass!", false)]        // Has letter & special char but no digit
+    [InlineData("12345678!", false)]         // Has digit & special char but no letter
+    [InlineData("Valid1Pass!", true)]        // Has letter, digit & special char – should pass
+    [InlineData("MyP@ssw0rd", true)]        // Has letter, digit & special char – should pass
+    public void ChangePassword_RequiresNumberAndSpecialCharacter(string password, bool expectedValid)
     {
-        bool hasLetter = System.Text.RegularExpressions.Regex.IsMatch(password, @"[A-Za-z]");
         bool hasDigit = System.Text.RegularExpressions.Regex.IsMatch(password, @"[0-9]");
-        bool isValid = hasLetter && hasDigit && password.Length >= 8;
+        bool hasSpecial = System.Text.RegularExpressions.Regex.IsMatch(password, @"[^a-zA-Z0-9]");
+        bool hasLetter = System.Text.RegularExpressions.Regex.IsMatch(password, @"[A-Za-z]");
+        bool isValid = hasLetter && hasDigit && hasSpecial && password.Length >= 8;
 
         Assert.Equal(expectedValid, isValid);
     }
 
     [Fact]
+    public void ChangePassword_RejectsPasswordWithoutSpecialCharacter()
+    {
+        // A password with letter+digit but no special character must be invalid
+        var password = "Password1";
+        bool hasSpecial = System.Text.RegularExpressions.Regex.IsMatch(password, @"[^a-zA-Z0-9]");
+        Assert.False(hasSpecial, "Password without a special character should fail the special-character check.");
+    }
+
+    [Fact]
+    public void ChangePassword_RejectsPasswordWithoutNumber()
+    {
+        // A password with letter+special but no digit must be invalid
+        var password = "Password!";
+        bool hasDigit = System.Text.RegularExpressions.Regex.IsMatch(password, @"[0-9]");
+        Assert.False(hasDigit, "Password without a number should fail the digit check.");
+    }
+
+    [Fact]
     public void ChangePassword_RejectsMismatchingConfirmPassword()
     {
-        string newPw = "SecretPassword1";
-        string confirmPw = "SecretPassword2";
+        string newPw = "S3cr3t@Pass1";
+        string confirmPw = "S3cr3t@Pass2";
 
         Assert.NotEqual(newPw, confirmPw);
     }
@@ -87,8 +110,8 @@ public class FormsAndSecurityTests
     [Fact]
     public void ChangePassword_RejectsSameCurrentAndNewPassword()
     {
-        string currentPw = "OldSecret123";
-        string newPw = "OldSecret123";
+        string currentPw = "OldS3cr3t@1";
+        string newPw = "OldS3cr3t@1";
 
         Assert.Equal(currentPw, newPw);
     }

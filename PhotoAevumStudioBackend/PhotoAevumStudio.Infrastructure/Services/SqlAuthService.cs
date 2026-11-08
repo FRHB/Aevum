@@ -1,4 +1,4 @@
-using System.Data;
+﻿using System.Data;
 using Microsoft.Data.SqlClient;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
@@ -303,6 +303,15 @@ public class SqlAuthService : ISqlAuthService
 
         if (newPassword.Length < 8)
             return (false, "Password must be at least 8 characters long.");
+
+        if (!System.Text.RegularExpressions.Regex.IsMatch(newPassword, @"[A-Za-z]"))
+            return (false, "Password must contain at least one letter.");
+
+        if (!System.Text.RegularExpressions.Regex.IsMatch(newPassword, @"[0-9]"))
+            return (false, "Password must contain at least one number (0-9).");
+
+        if (!System.Text.RegularExpressions.Regex.IsMatch(newPassword, @"[^a-zA-Z0-9]"))
+            return (false, "Password must contain at least one special character (e.g., @, #, $, !, %, etc.).");
 
         var trimmedId = userIdOrEmail.Trim();
         var atIndex = trimmedId.IndexOf('@');
