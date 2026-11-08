@@ -1,11 +1,11 @@
-@page "/admin/history-log"
+﻿@page "/admin/history-log"
 @page "/admin/history-logs"
 @page "/admin/history"
 @page "/history-log"
 @page "/history-logs"
 @layout AdminLayout
 @rendermode InteractiveServer
-@attribute [Authorize(Roles = "Admin,SystemAdmin,System Admin,Super Admin")]
+@attribute [Authorize(Roles = "Admin,SystemAdmin,System Admin,Super Admin,Employee,Office Clerk,Staff")]
 @using System.Security.Claims
 @using PhotoAevumStudio.Web.Models
 @using PhotoAevumStudio.Web.Services
@@ -42,6 +42,23 @@
         </div>
     </div>
 
+    <!-- Role-Scoped Access Banner (hidden for System Admin) -->
+    @if (!_isSystemAdmin)
+    {
+        <div class="flex items-start gap-3 px-4 py-3 bg-amber-50 border border-amber-200 rounded-xl text-xs text-amber-800">
+            <svg class="w-4 h-4 mt-0.5 flex-shrink-0 text-amber-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M12 2a10 10 0 100 20A10 10 0 0012 2z" />
+            </svg>
+            <div>
+                <p class="font-semibold">Filtered View</p>
+                <p class="mt-0.5 text-amber-700">
+                    You are viewing audit records relevant to your role
+                    (@(_isEmployee ? "Employee" : "Administrator") — <span class="font-mono">@_requestingUserId</span>).
+                    Contact a System Administrator for unrestricted access.
+                </p>
+            </div>
+        </div>
+    }
     <!-- Quick Stats Cards -->
     <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
         <div class="p-4 bg-white rounded-xl border border-slate-200 shadow-2xs flex items-center justify-between">
@@ -224,6 +241,10 @@
     private string _actionFilter = string.Empty;
     private string _entityFilter = string.Empty;
     private string _requestingUserId = "SADM-001";
+    // True when the logged-in user is a System Admin (SADM-xxx) - unrestricted access.
+    private bool _isSystemAdmin = false;
+    // True when the logged-in user is an Employee or Office Clerk (EMP-xxx / CLK-xxx).
+    private bool _isEmployee = false;
 
     private IEnumerable<AuditLogRowDto> FilteredLogs
     {
@@ -265,6 +286,15 @@
             ?? user.FindFirst(ClaimTypes.Name)?.Value
             ?? "SADM-001";
 
+        // Determine role flags so the UI can render contextual information.
+        // Detection logic mirrors EmployeeRoleHelper and sp_GetHistoryLogs.
+        _isSystemAdmin = EmployeeRoleHelper.IsSystemAdmin(user);
+        _isEmployee    = !_isSystemAdmin &&
+                         (EmployeeRoleHelper.IsOfficeClerk(user, UserService) ||
+                          EmployeeRoleHelper.IsPhotographerOrCreative(user, UserService) ||
+                          _requestingUserId.StartsWith("EMP-", StringComparison.OrdinalIgnoreCase) ||
+                          _requestingUserId.StartsWith("CLK-", StringComparison.OrdinalIgnoreCase));
+
         await LoadLogsAsync();
     }
 
@@ -276,7 +306,8 @@
         try
         {
             var logs = UserService.GetHistoryLogs(_requestingUserId, 200);
-            _allLogs = logs?.ToList() ?? new List<AuditLogRowDto>();
+            var rawList = logs?.ToList() ?? new List<AuditLogRowDto>();
+            _allLogs = FilterLogsForUser(rawList, _requestingUserId, _isSystemAdmin, _isEmployee);
         }
         catch
         {
@@ -286,6 +317,50 @@
         {
             _isLoading = false;
         }
+    }
+
+    private static List<AuditLogRowDto> FilterLogsForUser(
+        List<AuditLogRowDto> logs,
+        string requestingUserId,
+        bool isSystemAdmin,
+        bool isEmployee)
+    {
+        if (logs == null || logs.Count == 0)
+            return new List<AuditLogRowDto>();
+
+        // Requirement 2: System Admin Exception - full unrestricted access across all roles
+        if (isSystemAdmin || requestingUserId.StartsWith("SADM-", StringComparison.OrdinalIgnoreCase))
+        {
+            return logs;
+        }
+
+        // Requirement 1: Employee - only audit log records and actions relevant to their role
+        if (isEmployee || requestingUserId.StartsWith("EMP-", StringComparison.OrdinalIgnoreCase) || requestingUserId.StartsWith("CLK-", StringComparison.OrdinalIgnoreCase))
+        {
+            string empId = requestingUserId.Trim();
+            return logs.Where(l =>
+                !(l.UserId?.StartsWith("SADM-", StringComparison.OrdinalIgnoreCase) ?? false) &&
+                !(l.UserId?.StartsWith("ADM-", StringComparison.OrdinalIgnoreCase) ?? false) &&
+                !string.Equals(l.EntityType, "Admin", StringComparison.OrdinalIgnoreCase) &&
+                !string.Equals(l.EntityType, "SystemAdmin", StringComparison.OrdinalIgnoreCase) &&
+                !string.Equals(l.EntityType, "Specialization", StringComparison.OrdinalIgnoreCase) &&
+                !((l.UserId?.StartsWith("EMP-", StringComparison.OrdinalIgnoreCase) ?? false) && !string.Equals(l.UserId, empId, StringComparison.OrdinalIgnoreCase)) &&
+                !((l.UserId?.StartsWith("CLK-", StringComparison.OrdinalIgnoreCase) ?? false) && !string.Equals(l.UserId, empId, StringComparison.OrdinalIgnoreCase)) &&
+                !(l.UserId?.StartsWith("CUST-", StringComparison.OrdinalIgnoreCase) ?? false) &&
+                (string.Equals(l.UserId, empId, StringComparison.OrdinalIgnoreCase) ||
+                 string.Equals(l.EntityId, empId, StringComparison.OrdinalIgnoreCase) ||
+                 (l.ActionDetails?.Contains(empId, StringComparison.OrdinalIgnoreCase) ?? false))
+            ).ToList();
+        }
+
+        // Requirement 1: Administrator - only logs relevant to Admin role, exclude SADM and customer private sessions
+        return logs.Where(l =>
+            !(l.UserId?.StartsWith("SADM-", StringComparison.OrdinalIgnoreCase) ?? false) &&
+            !(l.EntityId?.StartsWith("SADM-", StringComparison.OrdinalIgnoreCase) ?? false) &&
+            !string.Equals(l.EntityType, "SystemAdmin", StringComparison.OrdinalIgnoreCase) &&
+            !(string.Equals(l.EntityType, "Session", StringComparison.OrdinalIgnoreCase) && (l.EntityId?.StartsWith("CUST-", StringComparison.OrdinalIgnoreCase) ?? false)) &&
+            !(string.Equals(l.EntityType, "Session", StringComparison.OrdinalIgnoreCase) && (l.UserId?.StartsWith("CUST-", StringComparison.OrdinalIgnoreCase) ?? false))
+        ).ToList();
     }
 
     private static string GetActionBadgeClass(string action)

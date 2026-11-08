@@ -1,4 +1,4 @@
-using System.Data;
+﻿using System.Data;
 using Microsoft.Data.SqlClient;
 using Microsoft.EntityFrameworkCore;
 using PhotoAevumStudio.Application.DTOs;
@@ -861,14 +861,44 @@ public class StudioManagementService : IStudioManagementService
         }
         catch (SqlException)
         {
-            // Direct query fallback
-            const string fallbackSql = @"
-                SELECT TOP (@TopCount) HistoryLogID, ActionType, EntityName, EntityID, ActionDetails,
-                       EventAppointmentID, CustomerID, EmployeeID, ChangedByType, ChangedBy, LoggedAt
-                FROM dbo.HistoryLog
-                ORDER BY LoggedAt DESC;";
+            // Direct query fallback with role-based filtering
+            bool isSadm = requestingUserId.StartsWith("SADM-", StringComparison.OrdinalIgnoreCase);
+            bool isEmp = !isSadm && (requestingUserId.StartsWith("EMP-", StringComparison.OrdinalIgnoreCase) || requestingUserId.StartsWith("CLK-", StringComparison.OrdinalIgnoreCase));
+
+            string fallbackSql;
+            if (isSadm)
+            {
+                fallbackSql = @"
+                    SELECT TOP (@TopCount) HistoryLogID, ActionType, EntityName, EntityID, ActionDetails,
+                           EventAppointmentID, CustomerID, EmployeeID, ChangedByType, ChangedBy, LoggedAt
+                    FROM dbo.HistoryLog
+                    ORDER BY LoggedAt DESC;";
+            }
+            else if (isEmp)
+            {
+                fallbackSql = @"
+                    SELECT TOP (@TopCount) HistoryLogID, ActionType, EntityName, EntityID, ActionDetails,
+                           EventAppointmentID, CustomerID, EmployeeID, ChangedByType, ChangedBy, LoggedAt
+                    FROM dbo.HistoryLog
+                    WHERE ChangedByEmployeeID = @RequestingUserID
+                       OR EmployeeID = @RequestingUserID
+                       OR EntityName IN ('Equipment', 'EventAppointment', 'Session')
+                    ORDER BY LoggedAt DESC;";
+            }
+            else
+            {
+                fallbackSql = @"
+                    SELECT TOP (@TopCount) HistoryLogID, ActionType, EntityName, EntityID, ActionDetails,
+                           EventAppointmentID, CustomerID, EmployeeID, ChangedByType, ChangedBy, LoggedAt
+                    FROM dbo.HistoryLog
+                    WHERE ChangedByAdminID = @RequestingUserID
+                       OR EntityName IN ('Services', 'AdditionalServices', 'ComboPackage', 'Equipment', 'EventAppointment')
+                    ORDER BY LoggedAt DESC;";
+            }
+
             await using var fbCmd = new SqlCommand(fallbackSql, conn);
             fbCmd.Parameters.AddWithValue("@TopCount", topCount);
+            fbCmd.Parameters.AddWithValue("@RequestingUserID", requestingUserId.Trim());
             await using var reader = await fbCmd.ExecuteReaderAsync(cancellationToken);
             while (await reader.ReadAsync(cancellationToken))
             {

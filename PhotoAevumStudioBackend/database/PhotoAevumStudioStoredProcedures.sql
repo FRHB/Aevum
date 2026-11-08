@@ -1,4 +1,4 @@
-SET ANSI_NULLS ON;
+﻿SET ANSI_NULLS ON;
 GO
 SET QUOTED_IDENTIFIER ON;
 GO
@@ -1732,35 +1732,86 @@ END;
 GO
 
 CREATE OR ALTER PROCEDURE dbo.sp_GetHistoryLogs
+
     @RequestingUserID nvarchar(30),
+
     @TopCount         int = 100
+
 AS
+
 BEGIN
+
     SET NOCOUNT ON;
+
     DECLARE @IsSystemAdmin bit = 0;
-    
-    IF (@RequestingUserID LIKE 'SADM-%' 
+    DECLARE @IsEmployee    bit = 0;
+
+    -- Detect System Admin (SADM-xxx prefix, SystemAdmin/Super Admin role, or SystemAdmin table)
+    IF (@RequestingUserID LIKE 'SADM-%'
         OR EXISTS (SELECT 1 FROM dbo.Admin WHERE AdminID = @RequestingUserID AND AdminRole IN ('SystemAdmin', 'Super Admin'))
         OR EXISTS (SELECT 1 FROM dbo.SystemAdmin WHERE SystemAdminID = @RequestingUserID))
     BEGIN
         SET @IsSystemAdmin = 1;
     END
 
+    -- Detect Employee or Office Clerk (EMP-xxx / CLK-xxx prefix)
+    IF (@IsSystemAdmin = 0 AND (@RequestingUserID LIKE 'EMP-%' OR @RequestingUserID LIKE 'CLK-%'))
+    BEGIN
+        SET @IsEmployee = 1;
+    END
+
+    -- System Admin: unrestricted full access to all logs
     IF @IsSystemAdmin = 1
+
     BEGIN
+
         SELECT TOP (@TopCount)
+
             HistoryLogID, ActionType, EntityName, EntityID, ActionDetails, EventAppointmentID, NegotiationID, CustomerID, EmployeeID, ChangedByType, ChangedBy, LoggedAt
+
         FROM dbo.HistoryLog
+
         ORDER BY LoggedAt DESC;
+
     END
+
+    -- Employee / Office Clerk: logs they performed + logs about their assignments
+    ELSE IF @IsEmployee = 1
+
+    BEGIN
+
+        SELECT TOP (@TopCount)
+
+            HistoryLogID, ActionType, EntityName, EntityID, ActionDetails, EventAppointmentID, NegotiationID, CustomerID, EmployeeID, ChangedByType, ChangedBy, LoggedAt
+
+        FROM dbo.HistoryLog
+
+        WHERE
+            ChangedByEmployeeID = @RequestingUserID
+            OR EmployeeID        = @RequestingUserID
+            OR EntityName IN ('Equipment', 'EventAppointment', 'Session')
+
+        ORDER BY LoggedAt DESC;
+
+    END
+
+    -- Administrator: logs they performed + admin-relevant entity types
     ELSE
+
     BEGIN
+
         SELECT TOP (@TopCount)
+
             HistoryLogID, ActionType, EntityName, EntityID, ActionDetails, EventAppointmentID, NegotiationID, CustomerID, EmployeeID, ChangedByType, ChangedBy, LoggedAt
+
         FROM dbo.HistoryLog
+
         WHERE ChangedByAdminID = @RequestingUserID OR EntityName IN ('Services', 'AdditionalServices', 'ComboPackage', 'Equipment', 'EventAppointment')
+
         ORDER BY LoggedAt DESC;
+
     END
+
 END;
 GO
 

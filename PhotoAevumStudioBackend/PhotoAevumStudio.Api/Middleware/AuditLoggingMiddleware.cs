@@ -1,4 +1,4 @@
-using System.Security.Claims;
+﻿using System.Security.Claims;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Logging;
 using PhotoAevumStudio.Application.Entities;
@@ -35,29 +35,36 @@ public class AuditLoggingMiddleware
         }
         finally
         {
-            if (context.Request.Path.StartsWithSegments("/api/bookings", StringComparison.OrdinalIgnoreCase) &&
-                AuditedMethods.Contains(context.Request.Method, StringComparer.OrdinalIgnoreCase))
+            if (AuditedMethods.Contains(context.Request.Method, StringComparer.OrdinalIgnoreCase) &&
+                (context.Request.Path.StartsWithSegments("/api/bookings", StringComparison.OrdinalIgnoreCase) ||
+                 context.Request.Path.StartsWithSegments("/api/equipments", StringComparison.OrdinalIgnoreCase) ||
+                 context.Request.Path.StartsWithSegments("/api/services", StringComparison.OrdinalIgnoreCase) ||
+                 context.Request.Path.StartsWithSegments("/api/management", StringComparison.OrdinalIgnoreCase)))
             {
                 try
                 {
-                    // Only metadata is recorded: user identity, method and path.
-                    // Deliberately NOT recorded: request body, query string, any headers
-                    // (especially Authorization), cookies.
-                    //
-                    // If a future change needs the body, you MUST do this BEFORE _next():
-                    //   context.Request.EnableBuffering();
-                    //   ...read it...
-                    //   context.Request.Body.Position = 0;
-                    // so controllers still receive the body. Never do this for /api/auth/*.
+                    string userId = context.User.FindFirstValue("studio_id")
+                        ?? context.User.FindFirstValue(ClaimTypes.NameIdentifier)
+                        ?? "Anonymous";
+                    string userEmail = context.User.FindFirstValue(ClaimTypes.Email) ?? "Anonymous";
+                    string? userRole = context.User.FindFirstValue(ClaimTypes.Role) ?? context.User.FindFirstValue("role");
+
+                    string resource = "Booking";
+                    if (context.Request.Path.StartsWithSegments("/api/equipments", StringComparison.OrdinalIgnoreCase))
+                        resource = "Equipment";
+                    else if (context.Request.Path.StartsWithSegments("/api/services", StringComparison.OrdinalIgnoreCase))
+                        resource = "Services";
+                    else if (context.Request.Path.StartsWithSegments("/api/management", StringComparison.OrdinalIgnoreCase))
+                        resource = "Management";
+
                     var auditLog = new AuditLog
                     {
-                        UserId = context.User.FindFirstValue(ClaimTypes.NameIdentifier) ?? "Anonymous",
-                        UserEmail = context.User.FindFirstValue(ClaimTypes.Email) ?? "Anonymous",
-                        Action = $"{context.Request.Method} Booking",
-                        Resource = "Booking",
-                        Details = $"Endpoint: {context.Request.Path}",
-                        Timestamp = DateTime.UtcNow,
-                        //StatusCode = context.Response.StatusCode
+                        UserId = userId,
+                        UserEmail = userEmail,
+                        Action = $"{context.Request.Method} {resource}",
+                        Resource = resource,
+                        Details = $"Role: {userRole ?? "Unknown"}; Endpoint: {context.Request.Path}",
+                        Timestamp = DateTime.UtcNow
                     };
                     dbContext.AuditLogs.Add(auditLog);
                     await dbContext.SaveChangesAsync();

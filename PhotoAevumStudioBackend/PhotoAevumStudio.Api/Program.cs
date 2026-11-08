@@ -246,6 +246,7 @@ builder.Services.AddResponseCompression(options =>
 builder.Services.AddScoped<IBookingService, BookingService>();
 builder.Services.AddScoped<IPhotoService,   PhotoService>();
 builder.Services.AddScoped<IStudioManagementService, StudioManagementService>();
+builder.Services.AddScoped<PhotoAevumStudio.Application.Interfaces.IAuditLogService, PhotoAevumStudio.Infrastructure.Services.AuditLogService>();
 builder.Services.AddScoped<IAdminManagementService, AdminManagementService>();
 builder.Services.AddScoped<IStorageProvider, LocalStorageProvider>();
 builder.Services.AddScoped<IEquipmentTypeService, EquipmentTypeService>();

@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 
 using System.Collections.Generic;
 
@@ -5634,7 +5634,7 @@ public class UserService : IUserService
 
 
 
-	public IReadOnlyList<AuditLogRowDto> GetHistoryLogs(string requestingUserId, int topCount = 100)
+		public IReadOnlyList<AuditLogRowDto> GetHistoryLogs(string requestingUserId, int topCount = 100)
 
 	{
 
@@ -5648,21 +5648,15 @@ public class UserService : IUserService
 
 			sqlConnection.Open();
 
-			string cmdText = @"
+			// Route through sp_GetHistoryLogs so the database enforces role-scoped filtering:
+			//   SADM-xxx  → all logs (unrestricted)
+			//   ADM-xxx   → logs the admin performed + admin-relevant entity types
+			//   EMP-xxx / CLK-xxx → logs the employee performed + their assignments
+			using SqlCommand sqlCommand = new SqlCommand("dbo.sp_GetHistoryLogs", sqlConnection);
 
-                IF OBJECT_ID(N'dbo.HistoryLog', N'U') IS NOT NULL
+			sqlCommand.CommandType = System.Data.CommandType.StoredProcedure;
 
-                BEGIN
-
-                    SELECT TOP (@TopCount) HistoryLogID, ActionType, EntityName, EntityID, ChangedBy, ActionDetails, LoggedAt
-
-                    FROM dbo.HistoryLog
-
-                    ORDER BY LoggedAt DESC;
-
-                END";
-
-			using SqlCommand sqlCommand = new SqlCommand(cmdText, sqlConnection);
+			sqlCommand.Parameters.AddWithValue("@RequestingUserID", requestingUserId.Trim());
 
 			sqlCommand.Parameters.AddWithValue("@TopCount", topCount);
 
@@ -5672,7 +5666,15 @@ public class UserService : IUserService
 
 			{
 
-				list.Add(new AuditLogRowDto(sqlDataReader.GetInt64(0), sqlDataReader.IsDBNull(1) ? "Action" : sqlDataReader.GetString(1), sqlDataReader.IsDBNull(2) ? "General" : sqlDataReader.GetString(2), sqlDataReader.IsDBNull(3) ? null : sqlDataReader.GetString(3), sqlDataReader.IsDBNull(4) ? null : sqlDataReader.GetString(4), sqlDataReader.IsDBNull(5) ? null : sqlDataReader.GetString(5), sqlDataReader.IsDBNull(6) ? DateTime.UtcNow : sqlDataReader.GetDateTime(6)));
+				list.Add(new AuditLogRowDto(
+					sqlDataReader.GetInt64(sqlDataReader.GetOrdinal("HistoryLogID")),
+					sqlDataReader.IsDBNull(sqlDataReader.GetOrdinal("ActionType")) ? "Action"    : sqlDataReader.GetString(sqlDataReader.GetOrdinal("ActionType")),
+					sqlDataReader.IsDBNull(sqlDataReader.GetOrdinal("EntityName")) ? "General"   : sqlDataReader.GetString(sqlDataReader.GetOrdinal("EntityName")),
+					sqlDataReader.IsDBNull(sqlDataReader.GetOrdinal("EntityID"))   ? null        : sqlDataReader.GetString(sqlDataReader.GetOrdinal("EntityID")),
+					sqlDataReader.IsDBNull(sqlDataReader.GetOrdinal("ChangedBy"))  ? null        : sqlDataReader.GetString(sqlDataReader.GetOrdinal("ChangedBy")),
+					sqlDataReader.IsDBNull(sqlDataReader.GetOrdinal("ActionDetails")) ? null      : sqlDataReader.GetString(sqlDataReader.GetOrdinal("ActionDetails")),
+					sqlDataReader.IsDBNull(sqlDataReader.GetOrdinal("LoggedAt"))   ? DateTime.UtcNow : sqlDataReader.GetDateTime(sqlDataReader.GetOrdinal("LoggedAt"))
+				));
 
 			}
 
