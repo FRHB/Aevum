@@ -66,7 +66,8 @@ public class RoutingAndLayoutTests
             typeof(Profile),
             typeof(AdminManagement),
             typeof(Clients),
-            typeof(HistoryLog)
+            typeof(HistoryLog),
+            typeof(FaqManagement)
         };
 
         foreach (var page in adminPages)
@@ -152,6 +153,8 @@ public class RoutingAndLayoutTests
     [InlineData("/equipment-types")]
     [InlineData("/admin/history-log")]
     [InlineData("/profile")]
+    [InlineData("/admin/faqs")]
+    [InlineData("/admin/faq")]
     public void RequiredNewRoutes_AreProperlyRegistered(string expectedRoute)
     {
         var component = FindComponentByRoute(expectedRoute);
@@ -216,6 +219,7 @@ public class RoutingAndLayoutTests
     [InlineData("/admin/equipment/types", typeof(EquipmentTypes))]
     [InlineData("/admin/history-log", typeof(HistoryLog))]
     [InlineData("/profile", typeof(Profile))]
+    [InlineData("/admin/faqs", typeof(FaqManagement))]
     public void SidebarLinks_WireUpToDedicatedPlaceholderComponents(string route, Type expectedComponent)
     {
         var component = FindComponentByRoute(route);

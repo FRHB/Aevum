@@ -48,12 +48,10 @@ public class AdminDashboardAndFaqTests
         Assert.Contains("Cash to Reconcile", content);
         Assert.Contains("Booked Deposits", content);
 
-        // 4. Dynamic FAQ Management Section & Modal
-        Assert.Contains("Frequently Asked Questions (FAQ) Management", content);
-        Assert.Contains("OpenAddFaqModal", content);
-        Assert.Contains("HandleSaveFaq", content);
-        Assert.Contains("HandleToggleFaqStatus", content);
-        Assert.Contains("HandleDeleteFaq", content);
+        // 4. FAQ Management moved to dedicated page — verify quick-action link exists
+        Assert.Contains("/admin/faqs", content);
+        Assert.DoesNotContain("_isFaqModalOpen", content);
+        Assert.DoesNotContain("OpenAddFaqModal", content);
 
         // 5. Equipment Placeholders removed
         Assert.DoesNotContain("Equipment In Use", content);
@@ -135,5 +133,22 @@ public class AdminDashboardAndFaqTests
 
         Assert.DoesNotContain("_selectedSpaceFilter", content);
         Assert.DoesNotContain("Studio Bay", content);
+    }
+
+    [Fact]
+    public void FaqManagement_DedicatedPage_ContainsFullFaqCrud()
+    {
+        var root = GetRepositoryRoot();
+        var path = Path.Combine(root, "PhotoAevumStudioFrontend", "PhotoAevumStudio.Web", "Components", "Pages", "FaqManagement.razor");
+        Assert.True(File.Exists(path), $"File not found: {path}");
+        var content = File.ReadAllText(path);
+
+        Assert.Contains("Frequently Asked Questions (FAQ) Management", content);
+        Assert.Contains("OpenAddFaqModal", content);
+        Assert.Contains("HandleSaveFaq", content);
+        Assert.Contains("HandleToggleFaqStatus", content);
+        Assert.Contains("HandleDeleteFaq", content);
+        Assert.Contains("/admin/faqs", content);
+        Assert.Contains("/admin/faq", content);
     }
 }

@@ -408,99 +408,6 @@
     }
 </section>
 
-@* ── Dynamic FAQ Management (Add/Edit directly from Dashboard) ─────────────── *@
-<section class="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden mb-6" aria-label="FAQ Management">
-    <div class="px-6 py-4 border-b border-gray-200 bg-gradient-to-r from-teal-50/50 to-white flex items-center justify-between">
-        <div>
-            <h2 class="text-base font-bold text-gray-900 flex items-center gap-2">
-                <span>❓</span> Frequently Asked Questions (FAQ) Management
-            </h2>
-            <p class="text-xs text-gray-500 mt-0.5">
-                Dynamically add, edit, reorder, and publish FAQs displayed to clients on the landing page.
-            </p>
-        </div>
-        <button type="button"
-                @onclick="OpenAddFaqModal"
-                class="inline-flex items-center gap-1.5 px-3 py-1.5 bg-teal-700 hover:bg-teal-800 text-white text-xs font-bold rounded-lg shadow-xs transition-colors">
-            <span>+ Add FAQ</span>
-        </button>
-    </div>
-
-    @if (!_faqs.Any())
-    {
-        <div class="p-8 text-center text-xs text-gray-400 bg-gray-50/50">
-            No FAQs defined yet. Click "+ Add FAQ" above to create your first published question.
-        </div>
-    }
-    else
-    {
-        <div class="overflow-x-auto">
-            <table class="w-full text-left text-xs">
-                <thead class="bg-gray-50 border-b border-gray-200 text-gray-500 uppercase font-semibold text-[10px]">
-                    <tr>
-                        <th class="py-3 px-4 w-12 text-center">#</th>
-                        <th class="py-3 px-4 w-28">Category</th>
-                        <th class="py-3 px-4">Question &amp; Answer</th>
-                        <th class="py-3 px-4 w-24">Status</th>
-                        <th class="py-3 px-4 w-32 text-right">Actions</th>
-                    </tr>
-                </thead>
-                <tbody class="divide-y divide-gray-100">
-                    @foreach (var faq in _faqs)
-                    {
-                        <tr class="hover:bg-slate-50/50 transition-colors">
-                            <td class="py-3 px-4 text-center font-mono font-bold text-gray-500">
-                                @faq.DisplayOrder
-                            </td>
-                            <td class="py-3 px-4">
-                                <span class="bg-slate-100 text-slate-700 px-2 py-0.5 rounded text-[10px] font-semibold">
-                                    @faq.Category
-                                </span>
-                            </td>
-                            <td class="py-3 px-4">
-                                <p class="font-bold text-gray-900 text-xs">@faq.Question</p>
-                                <p class="text-gray-500 text-[11px] line-clamp-1 mt-0.5 font-light">@faq.Answer</p>
-                            </td>
-                            <td class="py-3 px-4">
-                                @if (faq.IsActive)
-                                {
-                                    <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-800">
-                                        ✓ Active
-                                    </span>
-                                }
-                                else
-                                {
-                                    <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-medium bg-gray-100 text-gray-500">
-                                        Hidden
-                                    </span>
-                                }
-                            </td>
-                            <td class="py-3 px-4 text-right space-x-1">
-                                <button type="button"
-                                        @onclick="() => OpenEditFaqModal(faq)"
-                                        class="px-2 py-1 rounded bg-slate-100 hover:bg-slate-200 text-slate-700 text-[11px] font-bold transition-colors">
-                                    Edit
-                                </button>
-                                <button type="button"
-                                        @onclick="() => HandleToggleFaqStatus(faq)"
-                                        title="@(faq.IsActive ? "Hide FAQ" : "Show FAQ")"
-                                        class="px-2 py-1 rounded bg-slate-100 hover:bg-slate-200 text-slate-700 text-[11px] font-medium transition-colors">
-                                    @(faq.IsActive ? "Hide" : "Show")
-                                </button>
-                                <button type="button"
-                                        @onclick="() => HandleDeleteFaq(faq.Id)"
-                                        class="px-2 py-1 rounded bg-rose-50 hover:bg-rose-100 text-rose-700 text-[11px] font-bold transition-colors">
-                                    Delete
-                                </button>
-                            </td>
-                        </tr>
-                    }
-                </tbody>
-            </table>
-        </div>
-    }
-</section>
-
 @* ── Recent Bookings & Quick Actions ───────────────────────────────────────── *@
 <div class="aev-content-row">
     <section class="aev-card aev-card--wide" aria-label="Recent bookings">
@@ -585,90 +492,14 @@
                 <span>Client Inquiries &amp; Calls</span>
                 <span class="aev-quick-action__arrow" aria-hidden="true">›</span>
             </a>
+            <a href="/admin/faqs" class="aev-quick-action">
+                <span class="aev-quick-action__icon" aria-hidden="true">❓</span>
+                <span>FAQ Management</span>
+                <span class="aev-quick-action__arrow" aria-hidden="true">›</span>
+            </a>
         </div>
     </section>
 </div>
-
-@* ── FAQ Add/Edit Modal ────────────────────────────────────────────────────── *@
-@if (_isFaqModalOpen)
-{
-    <div class="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4 animate-in fade-in duration-150">
-        <div class="bg-white rounded-2xl shadow-2xl max-w-lg w-full overflow-hidden border border-gray-200">
-            <div class="px-6 py-4 border-b border-gray-200 bg-slate-50 flex items-center justify-between">
-                <div>
-                    <h3 class="text-base font-bold text-gray-900">
-                        @(_editingFaq.Id == 0 ? "Add New FAQ" : $"Edit FAQ #{_editingFaq.Id}")
-                    </h3>
-                    <p class="text-xs text-gray-500 mt-0.5">Define questions and answers for the client landing page.</p>
-                </div>
-                <button type="button" @onclick="() => _isFaqModalOpen = false" class="text-gray-400 hover:text-gray-600 font-bold text-lg">×</button>
-            </div>
-
-            <div class="p-6 space-y-4">
-                @if (!string.IsNullOrWhiteSpace(_faqModalError))
-                {
-                    <div class="p-3 bg-rose-50 border border-rose-200 text-rose-700 text-xs rounded-lg font-medium">
-                        @_faqModalError
-                    </div>
-                }
-
-                <div>
-                    <label class="block text-xs font-bold text-gray-700 uppercase tracking-wider mb-1">Question</label>
-                    <input type="text"
-                           @bind="_editingFaq.Question"
-                           placeholder="e.g., What should I wear to my studio portrait session?"
-                           class="w-full px-3 py-2 text-xs border border-gray-300 rounded-lg focus:ring-2 focus:ring-teal-500 focus:outline-none" />
-                </div>
-
-                <div class="grid grid-cols-2 gap-4">
-                    <div>
-                        <label class="block text-xs font-bold text-gray-700 uppercase tracking-wider mb-1">Category</label>
-                        <input type="text"
-                               @bind="_editingFaq.Category"
-                               placeholder="e.g. Booking, Pricing, Bay Policies"
-                               class="w-full px-3 py-2 text-xs border border-gray-300 rounded-lg focus:ring-2 focus:ring-teal-500 focus:outline-none" />
-                    </div>
-                    <div>
-                        <label class="block text-xs font-bold text-gray-700 uppercase tracking-wider mb-1">Display Order</label>
-                        <input type="number"
-                               @bind="_editingFaq.DisplayOrder"
-                               min="1"
-                               class="w-full px-3 py-2 text-xs border border-gray-300 rounded-lg focus:ring-2 focus:ring-teal-500 focus:outline-none" />
-                    </div>
-                </div>
-
-                <div>
-                    <label class="block text-xs font-bold text-gray-700 uppercase tracking-wider mb-1">Answer</label>
-                    <textarea rows="4"
-                              @bind="_editingFaq.Answer"
-                              placeholder="Provide clear, concise guidance for clients visiting your website..."
-                              class="w-full px-3 py-2 text-xs border border-gray-300 rounded-lg focus:ring-2 focus:ring-teal-500 focus:outline-none"></textarea>
-                </div>
-
-                <div class="flex items-center gap-2 pt-1">
-                    <input type="checkbox" id="faqIsActive" @bind="_editingFaq.IsActive" class="rounded text-teal-600 focus:ring-teal-500" />
-                    <label for="faqIsActive" class="text-xs text-gray-700 font-medium">
-                        Publish immediately to client website landing page
-                    </label>
-                </div>
-            </div>
-
-            <div class="px-6 py-4 bg-gray-50 border-t border-gray-200 flex items-center justify-end gap-2">
-                <button type="button"
-                        @onclick="() => _isFaqModalOpen = false"
-                        class="px-4 py-2 text-xs font-semibold text-gray-600 hover:text-gray-800 rounded-lg">
-                    Cancel
-                </button>
-                <button type="button"
-                        @onclick="HandleSaveFaq"
-                        disabled="@_isSavingFaq"
-                        class="px-4 py-2 bg-teal-700 hover:bg-teal-800 text-white text-xs font-bold rounded-lg shadow-xs transition-colors">
-                    @(_isSavingFaq ? "Saving..." : "Save FAQ")
-                </button>
-            </div>
-        </div>
-    </div>
-}
 
 @code {
     private int _appointmentsToday;
@@ -689,11 +520,6 @@
     private List<PaymentSummaryModel> _pendingRemittances = new();
     private decimal _pendingRemittancesSum => _pendingRemittances.Sum(r => r.Amount);
 
-    private List<FaqItem> _faqs = new();
-    private bool _isFaqModalOpen = false;
-    private FaqItem _editingFaq = new();
-    private string? _faqModalError;
-    private bool _isSavingFaq = false;
 
     private bool _isApproving = false;
     private string? _actionSuccessMessage;
@@ -766,10 +592,7 @@
             _upcomingEvents = new();
         }
 
-        // 4. Dynamic FAQs
-        LoadFaqs();
-
-        // 5. Await parallel async tasks
+        // 4. Await parallel async tasks
         await Task.WhenAll(statsTask, attendanceTask, remittancesTask);
     }
 
@@ -803,117 +626,6 @@
             _todayAttendance = Array.Empty<TodayAttendanceSummaryDto>();
             _clockedInStaffCount = 0;
             _onLeaveStaffCount = 0;
-        }
-    }
-
-    private void LoadFaqs()
-    {
-        try
-        {
-            _faqs = UserService.GetFaqs(includeInactive: true).OrderBy(f => f.DisplayOrder).ToList();
-        }
-        catch
-        {
-            _faqs = new();
-        }
-    }
-
-    private void OpenAddFaqModal()
-    {
-        _editingFaq = new FaqItem
-        {
-            Id = 0,
-            Category = "General",
-            DisplayOrder = _faqs.Count + 1,
-            IsActive = true
-        };
-        _faqModalError = null;
-        _isFaqModalOpen = true;
-    }
-
-    private void OpenEditFaqModal(FaqItem faq)
-    {
-        _editingFaq = new FaqItem
-        {
-            Id = faq.Id,
-            Question = faq.Question,
-            Answer = faq.Answer,
-            Category = faq.Category,
-            DisplayOrder = faq.DisplayOrder,
-            IsActive = faq.IsActive
-        };
-        _faqModalError = null;
-        _isFaqModalOpen = true;
-    }
-
-    private void HandleSaveFaq()
-    {
-        if (string.IsNullOrWhiteSpace(_editingFaq.Question))
-        {
-            _faqModalError = "Please enter a question.";
-            return;
-        }
-
-        if (string.IsNullOrWhiteSpace(_editingFaq.Answer))
-        {
-            _faqModalError = "Please enter an answer.";
-            return;
-        }
-
-        _isSavingFaq = true;
-        try
-        {
-            var success = UserService.SaveFaq(_editingFaq);
-            if (success)
-            {
-                _actionSuccessMessage = $"FAQ \"{_editingFaq.Question}\" saved successfully.";
-                _isFaqModalOpen = false;
-                LoadFaqs();
-            }
-            else
-            {
-                _faqModalError = "Failed to save FAQ. Please try again.";
-            }
-        }
-        catch (Exception ex)
-        {
-            _faqModalError = $"Error saving FAQ: {ex.Message}";
-        }
-        finally
-        {
-            _isSavingFaq = false;
-        }
-    }
-
-    private void HandleToggleFaqStatus(FaqItem faq)
-    {
-        try
-        {
-            faq.IsActive = !faq.IsActive;
-            UserService.SaveFaq(faq);
-            _actionSuccessMessage = $"FAQ #{faq.Id} is now {(faq.IsActive ? "active on the landing page" : "hidden")}.";
-            LoadFaqs();
-        }
-        catch (Exception ex)
-        {
-            _actionSuccessMessage = $"Error updating status: {ex.Message}";
-        }
-    }
-
-    private void HandleDeleteFaq(int id)
-    {
-        try
-        {
-            var success = UserService.DeleteFaq(id);
-            if (success)
-            {
-                _actionSuccessMessage = $"FAQ #{id} deleted successfully.";
-                LoadFaqs();
-            }
-        }
-        catch (Exception ex)
-        {
-            _actionSuccessMessage = $"Error deleting FAQ: {ex.Message}";
         }
     }
 
