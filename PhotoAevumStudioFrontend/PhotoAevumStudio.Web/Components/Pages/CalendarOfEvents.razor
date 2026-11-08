@@ -378,17 +378,7 @@
                         </div>
                     }
 
-                    @if (!_isPhotographerOrCreative)
-                    {
-                        <div class="drawer-actions-section mt-4 pt-4 border-t">
-                            <span class="text-xs font-bold text-gray-600 block mb-2">Update Status</span>
-                            <div class="flex gap-2">
-                                <button type="button" @onclick='() => UpdateBookingStatus("Confirmed")' class="btn-status-toggle">Confirm</button>
-                                <button type="button" @onclick='() => UpdateBookingStatus("Completed")' class="btn-status-toggle">Complete</button>
-                                <button type="button" @onclick="DeleteSelectedBooking" class="btn-status-danger">Cancel Event</button>
-                            </div>
-                        </div>
-                    }
+            
                 </div>
             </div>
         </div>

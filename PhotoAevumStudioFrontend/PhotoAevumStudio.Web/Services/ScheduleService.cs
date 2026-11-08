@@ -42,16 +42,7 @@ public class ScheduleService : IScheduleService
             BadgeColor = "bg-indigo-100 text-indigo-800 border-indigo-200",
             Description = "Daylight windows and multiple backdrop rollers."
         },
-        new()
-        {
-            Id = "SP-03",
-            Name = "Outdoor / On-Location Shoot",
-            Dimensions = "Open Area",
-            MaxCapacity = 50,
-            IconType = "outdoor",
-            BadgeColor = "bg-emerald-100 text-emerald-800 border-emerald-200",
-            Description = "Field shoots and on-site client assignments."
-        },
+        
         new()
         {
             Id = "SP-04",
