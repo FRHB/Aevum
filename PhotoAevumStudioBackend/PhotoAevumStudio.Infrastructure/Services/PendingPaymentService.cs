@@ -68,6 +68,11 @@ public class PendingPaymentService : IPendingPaymentService
               DELETE ee FROM dbo.EventEmployee ee JOIN @Released r ON r.EventAppointmentID = ee.EventAppointmentID;
               DELETE eq FROM dbo.EventEquipment eq JOIN @Released r ON r.EventAppointmentID = eq.EventAppointmentID;
 
+              IF OBJECT_ID(N'dbo.BookingNegotiation', N'U') IS NOT NULL
+                  UPDATE bn
+                  SET NegotiationStatus = 'Deal_Lost'
+                  FROM dbo.BookingNegotiation bn JOIN @Released r ON r.EventAppointmentID = bn.EventAppointmentID;
+
               IF OBJECT_ID(N'dbo.HistoryLog', N'U') IS NOT NULL
                   INSERT INTO dbo.HistoryLog (ActionType, EntityName, EntityID, ActionDetails, EventAppointmentID, ChangedByType, LoggedAt)
                   SELECT 'STATUS_CHANGE', 'EventAppointment', r.EventAppointmentID,
@@ -87,12 +92,17 @@ public class PendingPaymentService : IPendingPaymentService
     public async Task EnsureSchemaAsync(CancellationToken ct = default)
     {
         if (_schemaEnsured) return;
+        await using var conn = await SqlResilienceHelper.OpenConnectionAsync(_db.Database.GetConnectionString(), ct);
+        await EnsureSchemaOnConnectionAsync(conn, ct, _logger);
+    }
+
+    internal static async Task EnsureSchemaOnConnectionAsync(SqlConnection conn, CancellationToken ct = default, ILogger? logger = null)
+    {
+        if (_schemaEnsured) return;
         await SchemaLock.WaitAsync(ct);
         try
         {
             if (_schemaEnsured) return;
-            await using var conn = new SqlConnection(_db.Database.GetConnectionString());
-            await conn.OpenAsync(ct);
             foreach (var batch in SchemaBatches)
             {
                 await using var cmd = new SqlCommand(batch, conn);
@@ -102,7 +112,7 @@ public class PendingPaymentService : IPendingPaymentService
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Failed to reconcile Pending Payment schema (LockExpiresAt / QrString / release proc).");
+            logger?.LogError(ex, "Failed to reconcile Pending Payment schema (LockExpiresAt / QrString / release proc).");
             throw;
         }
         finally
@@ -113,9 +123,8 @@ public class PendingPaymentService : IPendingPaymentService
 
     private async Task<SqlConnection> OpenAsync(CancellationToken ct)
     {
-        await EnsureSchemaAsync(ct);
-        var conn = new SqlConnection(_db.Database.GetConnectionString());
-        await conn.OpenAsync(ct);
+        var conn = await SqlResilienceHelper.OpenConnectionAsync(_db.Database.GetConnectionString(), ct);
+        await EnsureSchemaOnConnectionAsync(conn, ct, _logger);
         return conn;
     }
 

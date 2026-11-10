@@ -257,7 +257,7 @@ public class EmployeeService : IEmployeeService
         // Persist full profile details, specializations, and days off in SQL
         try
         {
-            await using var conn = new SqlConnection(_connectionString);
+            await using var conn = SqlResilienceHelper.CreateConnection(_connectionString);
             await conn.OpenAsync(cancellationToken);
             await EnsureEmployeeSchemaAsync(conn, cancellationToken);
 
@@ -326,7 +326,7 @@ public class EmployeeService : IEmployeeService
 
         try
         {
-            await using var conn = new SqlConnection(_connectionString);
+            await using var conn = SqlResilienceHelper.CreateConnection(_connectionString);
             await conn.OpenAsync(cancellationToken);
             await EnsureEmployeeSchemaAsync(conn, cancellationToken);
 
@@ -423,7 +423,7 @@ public class EmployeeService : IEmployeeService
         if (string.IsNullOrWhiteSpace(daysOff)) return;
         try
         {
-            await using var conn = new SqlConnection(_connectionString);
+            await using var conn = SqlResilienceHelper.CreateConnection(_connectionString);
             await conn.OpenAsync(cancellationToken);
             const string sql = @"
                 IF COL_LENGTH(N'dbo.Employees', N'DaysOff') IS NOT NULL
@@ -449,7 +449,7 @@ public class EmployeeService : IEmployeeService
         if (string.IsNullOrWhiteSpace(employeeId))
             return;
 
-        await using var conn = new SqlConnection(_connectionString);
+        await using var conn = SqlResilienceHelper.CreateConnection(_connectionString);
         await conn.OpenAsync(cancellationToken);
 
         // Delete existing joints for this employee before adding updated specializations

@@ -67,7 +67,7 @@ public class ScheduleService : IScheduleService
         }
     }
 
-    private SqlConnection CreateConnection() => new SqlConnection(_connectionString);
+    private SqlConnection CreateConnection() => SqlResilienceHelper.CreateConnection(_connectionString);
 
     private void SeedInMemoryData()
     {
@@ -469,8 +469,8 @@ public class ScheduleService : IScheduleService
             const string logSql = @"
                 IF OBJECT_ID(N'dbo.HistoryLog', N'U') IS NOT NULL
                 BEGIN
-                    INSERT INTO dbo.HistoryLog (ActionType, EntityName, EntityID, ChangedBy, ChangedByType, ActionDetails, LoggedAt)
-                    VALUES ('Create', 'EventAppointment', @Id, 'Staff', 'Staff', @Details, SYSUTCDATETIME());
+                    INSERT INTO dbo.HistoryLog (ActionType, EntityName, EntityID, ChangedByType, ActionDetails, LoggedAt)
+                    VALUES ('CREATE', 'EventAppointment', @Id, 'System', @Details, SYSUTCDATETIME());
                 END";
 
             using var logCmd = new SqlCommand(logSql, conn);
@@ -551,8 +551,8 @@ public class ScheduleService : IScheduleService
             const string logSql = @"
                 IF OBJECT_ID(N'dbo.HistoryLog', N'U') IS NOT NULL
                 BEGIN
-                    INSERT INTO dbo.HistoryLog (ActionType, EntityName, EntityID, ChangedBy, ChangedByType, ActionDetails, LoggedAt)
-                    VALUES ('Update', 'EventAppointment', @Id, 'Staff', 'Staff', @Details, SYSUTCDATETIME());
+                    INSERT INTO dbo.HistoryLog (ActionType, EntityName, EntityID, ChangedByType, ActionDetails, LoggedAt)
+                    VALUES ('UPDATE', 'EventAppointment', @Id, 'System', @Details, SYSUTCDATETIME());
                 END";
 
             using var logCmd = new SqlCommand(logSql, conn);
@@ -595,8 +595,8 @@ public class ScheduleService : IScheduleService
             const string logSql = @"
                 IF OBJECT_ID(N'dbo.HistoryLog', N'U') IS NOT NULL
                 BEGIN
-                    INSERT INTO dbo.HistoryLog (ActionType, EntityName, EntityID, ChangedBy, ChangedByType, ActionDetails, LoggedAt)
-                    VALUES ('Delete', 'EventAppointment', @Id, 'Staff', 'Staff', @Details, SYSUTCDATETIME());
+                    INSERT INTO dbo.HistoryLog (ActionType, EntityName, EntityID, ChangedByType, ActionDetails, LoggedAt)
+                    VALUES ('DELETE', 'EventAppointment', @Id, 'System', @Details, SYSUTCDATETIME());
                 END";
 
             using var logCmd = new SqlCommand(logSql, conn);
@@ -1067,8 +1067,8 @@ public class ScheduleService : IScheduleService
             const string logSql = @"
                 IF OBJECT_ID(N'dbo.HistoryLog', N'U') IS NOT NULL
                 BEGIN
-                    INSERT INTO dbo.HistoryLog (ActionType, EntityName, EntityID, ChangedBy, ChangedByType, ActionDetails, LoggedAt)
-                    VALUES ('Create', 'EventEquipment', @EqId, 'Staff', 'Staff', @Details, SYSUTCDATETIME());
+                    INSERT INTO dbo.HistoryLog (ActionType, EntityName, EntityID, ChangedByType, ActionDetails, LoggedAt)
+                    VALUES ('CREATE', 'EventEquipment', @EqId, 'System', @Details, SYSUTCDATETIME());
                 END";
 
             using var logCmd = new SqlCommand(logSql, conn);
@@ -1123,8 +1123,8 @@ public class ScheduleService : IScheduleService
                 const string logSql = @"
                     IF OBJECT_ID(N'dbo.HistoryLog', N'U') IS NOT NULL
                     BEGIN
-                        INSERT INTO dbo.HistoryLog (ActionType, EntityName, EntityID, ChangedBy, ChangedByType, ActionDetails, LoggedAt)
-                        VALUES ('Delete', 'EventEquipment', @EqId, 'Staff', 'Staff', @Details, SYSUTCDATETIME());
+                        INSERT INTO dbo.HistoryLog (ActionType, EntityName, EntityID, ChangedByType, ActionDetails, LoggedAt)
+                        VALUES ('DELETE', 'EventEquipment', @EqId, 'System', @Details, SYSUTCDATETIME());
                     END";
 
                 using var logCmd = new SqlCommand(logSql, conn);

@@ -48,8 +48,7 @@ public class EquipmentsController : ControllerBase
     {
         try
         {
-            await using var conn = new SqlConnection(GetConnectionString());
-            await conn.OpenAsync(ct);
+            await using var conn = await SqlResilienceHelper.OpenConnectionAsync(GetConnectionString(), ct);
 
             // 1. Try calling the dedicated stored procedure
             await using var cmd = new SqlCommand("dbo.sp_GetNextEquipmentIdPreview", conn)
@@ -121,8 +120,7 @@ public class EquipmentsController : ControllerBase
         var list = new List<EquipmentResponseDto>();
         try
         {
-            await using var conn = new SqlConnection(GetConnectionString());
-            await conn.OpenAsync(ct);
+            await using var conn = await SqlResilienceHelper.OpenConnectionAsync(GetConnectionString(), ct);
 
             const string sql = @"
                 IF OBJECT_ID(N'dbo.Equipment', N'U') IS NOT NULL
@@ -175,8 +173,7 @@ public class EquipmentsController : ControllerBase
     {
         try
         {
-            await using var conn = new SqlConnection(GetConnectionString());
-            await conn.OpenAsync(ct);
+            await using var conn = await SqlResilienceHelper.OpenConnectionAsync(GetConnectionString(), ct);
 
             const string sql = @"
                 SELECT 
@@ -290,8 +287,7 @@ public class EquipmentsController : ControllerBase
         // 2. Atomic Database Insertion with Concurrency-Safe ID Generation
         try
         {
-            await using var conn = new SqlConnection(GetConnectionString());
-            await conn.OpenAsync(ct);
+            await using var conn = await SqlResilienceHelper.OpenConnectionAsync(GetConnectionString(), ct);
 
             // Execute stored procedure dbo.sp_CreateEquipmentWithCustomId
             await using var cmd = new SqlCommand("dbo.sp_CreateEquipmentWithCustomId", conn)

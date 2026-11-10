@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 
 using System.Collections.Generic;
 
@@ -288,7 +288,7 @@ public class UserService : IUserService
 
 	{
 
-		return new SqlConnection(_connectionString);
+		return SqlResilienceHelper.CreateConnection(_connectionString);
 
 	}
 

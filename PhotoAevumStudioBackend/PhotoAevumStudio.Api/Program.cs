@@ -56,10 +56,10 @@ builder.Services.AddValidatorsFromAssemblyContaining<PhotoAevumStudio.Applicatio
 
 // ── Database ─────────────────────────────────────────────────────────────────
 
-var connectionString = builder.Configuration.GetConnectionString("DefaultConnection");
+var connectionString = SqlResilienceHelper.NormalizeConnectionString(builder.Configuration.GetConnectionString("DefaultConnection"));
 if (string.IsNullOrWhiteSpace(connectionString))
 {
-    connectionString = "Server=db77602.public.databaseasp.net; Database=db77602; User Id=db77602; Password=G!r7cB8#Z5_d; Encrypt=True; TrustServerCertificate=True; MultipleActiveResultSets=True;";
+    connectionString = SqlResilienceHelper.NormalizeConnectionString("Server=db77602.public.databaseasp.net; Database=db77602; User Id=db77602; Password=G!r7cB8#Z5_d; Encrypt=True; TrustServerCertificate=True; MultipleActiveResultSets=True;");
     builder.Configuration["ConnectionStrings:DefaultConnection"] = connectionString;
 }
 
@@ -69,7 +69,7 @@ builder.Services.AddDbContext<ApplicationDbContext>(options =>
         connectionString,
         sql => sql.MigrationsAssembly("PhotoAevumStudio.Infrastructure")
                   .CommandTimeout(60)
-                  .EnableRetryOnFailure());
+                  .EnableRetryOnFailure(maxRetryCount: 5, maxRetryDelay: TimeSpan.FromSeconds(10), errorNumbersToAdd: [-2, -1, 0, 2, 19, 20, 53, 64, 121, 233, 1205, 10053, 10054, 10060]));
     options.ConfigureWarnings(w => w.Ignore(Microsoft.EntityFrameworkCore.Diagnostics.RelationalEventId.PendingModelChangesWarning));
 });
 // ── Identity ──────────────────────────────────────────────────────────────────
@@ -327,7 +327,7 @@ builder.Services.AddScoped<PhotoAevumStudio.Application.Interfaces.IDataArchiveS
 // Book Schedule wizard (separate context; tables created by SchedulingSchema.sql at startup)
 builder.Services.AddDbContext<PhotoAevumStudio.Infrastructure.Scheduling.SchedulingDbContext>(options =>
 {
-    options.UseSqlServer(connectionString, sql => sql.EnableRetryOnFailure());
+    options.UseSqlServer(connectionString, sql => sql.CommandTimeout(60).EnableRetryOnFailure(maxRetryCount: 5, maxRetryDelay: TimeSpan.FromSeconds(10), errorNumbersToAdd: [-2, -1, 0, 2, 19, 20, 53, 64, 121, 233, 1205, 10053, 10054, 10060]));
     options.ConfigureWarnings(w => w.Ignore(Microsoft.EntityFrameworkCore.Diagnostics.RelationalEventId.PendingModelChangesWarning));
 });
 builder.Services.Configure<PhotoAevumStudio.Infrastructure.Scheduling.SchedulingOptions>(builder.Configuration.GetSection("Scheduling"));
@@ -365,6 +365,7 @@ app.UseExceptionHandler(errorApp =>
         var feature = context.Features
             .Get<Microsoft.AspNetCore.Diagnostics.IExceptionHandlerFeature>();
 
+        if (feature?.Error is OperationCanceledException) { if (!context.Response.HasStarted) context.Response.StatusCode = 499; return; }
         if (feature?.Error is BookingRuleException bre)
         {
             context.Response.StatusCode  = StatusCodes.Status409Conflict;

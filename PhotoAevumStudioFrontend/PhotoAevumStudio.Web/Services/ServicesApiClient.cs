@@ -153,7 +153,7 @@ public class ServicesApiClient : IServicesApiClient
         // Direct SQL query fallback
         try
         {
-            await using var conn = new SqlConnection(_connectionString);
+            await using var conn = SqlResilienceHelper.CreateConnection(_connectionString);
             await conn.OpenAsync(cancellationToken);
 
             const string sql = @"
@@ -191,7 +191,7 @@ public class ServicesApiClient : IServicesApiClient
 
         try
         {
-            await using var conn = new SqlConnection(_connectionString);
+            await using var conn = SqlResilienceHelper.CreateConnection(_connectionString);
             await conn.OpenAsync(cancellationToken);
 
             const string sql = @"
@@ -228,7 +228,7 @@ public class ServicesApiClient : IServicesApiClient
         var list = new List<CategoryLookupItem>();
         try
         {
-            await using var conn = new SqlConnection(_connectionString);
+            await using var conn = SqlResilienceHelper.CreateConnection(_connectionString);
             await conn.OpenAsync(cancellationToken);
 
             const string sql = @"
@@ -304,7 +304,7 @@ public class ServicesApiClient : IServicesApiClient
         // Direct SQL fallback
         try
         {
-            await using var conn = new SqlConnection(_connectionString);
+            await using var conn = SqlResilienceHelper.CreateConnection(_connectionString);
             await conn.OpenAsync(cancellationToken);
             await using var trans = (SqlTransaction)await conn.BeginTransactionAsync(cancellationToken);
 
@@ -424,7 +424,7 @@ public class ServicesApiClient : IServicesApiClient
         // Direct SQL fallback
         try
         {
-            await using var conn = new SqlConnection(_connectionString);
+            await using var conn = SqlResilienceHelper.CreateConnection(_connectionString);
             await conn.OpenAsync(cancellationToken);
             await using var trans = (SqlTransaction)await conn.BeginTransactionAsync(cancellationToken);
 
@@ -475,7 +475,7 @@ public class ServicesApiClient : IServicesApiClient
 
         try
         {
-            await using var conn = new SqlConnection(_connectionString);
+            await using var conn = SqlResilienceHelper.CreateConnection(_connectionString);
             await conn.OpenAsync(cancellationToken);
             const string sql = @"
                 UPDATE dbo.ServiceCategory
@@ -519,7 +519,7 @@ public class ServicesApiClient : IServicesApiClient
         // Direct SQL query fallback
         try
         {
-            await using var conn = new SqlConnection(_connectionString);
+            await using var conn = SqlResilienceHelper.CreateConnection(_connectionString);
             await conn.OpenAsync(cancellationToken);
 
             const string sql = @"
@@ -568,7 +568,7 @@ public class ServicesApiClient : IServicesApiClient
 
         try
         {
-            await using var conn = new SqlConnection(_connectionString);
+            await using var conn = SqlResilienceHelper.CreateConnection(_connectionString);
             await conn.OpenAsync(cancellationToken);
 
             const string sql = @"
@@ -647,7 +647,7 @@ public class ServicesApiClient : IServicesApiClient
         // Direct database fallback with atomic sequence stored procedure
         try
         {
-            await using var conn = new SqlConnection(_connectionString);
+            await using var conn = SqlResilienceHelper.CreateConnection(_connectionString);
             await conn.OpenAsync(cancellationToken);
 
             const string ensureColsSql = @"
@@ -786,7 +786,7 @@ public class ServicesApiClient : IServicesApiClient
         var codes = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         try
         {
-            await using var conn = new SqlConnection(_connectionString);
+            await using var conn = SqlResilienceHelper.CreateConnection(_connectionString);
             await conn.OpenAsync(cancellationToken);
             await EnsureFeaturedSchemaAsync(conn, cancellationToken);
 
@@ -812,7 +812,7 @@ public class ServicesApiClient : IServicesApiClient
 
         try
         {
-            await using var conn = new SqlConnection(_connectionString);
+            await using var conn = SqlResilienceHelper.CreateConnection(_connectionString);
             await conn.OpenAsync(cancellationToken);
             await EnsureFeaturedSchemaAsync(conn, cancellationToken);
 
@@ -847,7 +847,7 @@ public class ServicesApiClient : IServicesApiClient
         var map = new Dictionary<string, PortfolioCategoryDto>(StringComparer.OrdinalIgnoreCase);
         try
         {
-            await using var conn = new SqlConnection(_connectionString);
+            await using var conn = SqlResilienceHelper.CreateConnection(_connectionString);
             await conn.OpenAsync(cancellationToken);
             await EnsureFeaturedSchemaAsync(conn, cancellationToken);
 
@@ -905,7 +905,7 @@ public class ServicesApiClient : IServicesApiClient
 
         try
         {
-            await using var conn = new SqlConnection(_connectionString);
+            await using var conn = SqlResilienceHelper.CreateConnection(_connectionString);
             await conn.OpenAsync(cancellationToken);
             await EnsureFeaturedSchemaAsync(conn, cancellationToken);
             await using var trans = (SqlTransaction)await conn.BeginTransactionAsync(cancellationToken);

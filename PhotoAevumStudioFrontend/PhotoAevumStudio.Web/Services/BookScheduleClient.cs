@@ -89,7 +89,7 @@ public sealed class BookScheduleClient(IHttpClientFactory httpClientFactory, ITo
         }
         catch (OperationCanceledException) when (ct.IsCancellationRequested)
         {
-            throw; // caller cancelled; let it bubble
+            return ApiResult<T>.Fail(ApiErrorKind.Network, "The request was canceled.");
         }
         catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or System.Text.Json.JsonException)
         {

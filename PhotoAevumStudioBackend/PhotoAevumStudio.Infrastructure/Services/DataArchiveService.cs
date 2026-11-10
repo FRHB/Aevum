@@ -126,7 +126,7 @@ public class DataArchiveService : IDataArchiveService
 
     private async Task<string?> ArchiveHistoryLogsAsync(string archiveBucket, DateTime cutoff, CancellationToken ct)
     {
-        await using var conn = new SqlConnection(GetConnectionString());
+        await using var conn = SqlResilienceHelper.CreateConnection(GetConnectionString());
         await conn.OpenAsync(ct);
 
         if (!await TableExistsAsync(conn, "HistoryLog", ct))
@@ -186,7 +186,7 @@ public class DataArchiveService : IDataArchiveService
 
     private async Task<string?> ArchiveAuditLogsAsync(string archiveBucket, DateTime cutoff, CancellationToken ct)
     {
-        await using var conn = new SqlConnection(GetConnectionString());
+        await using var conn = SqlResilienceHelper.CreateConnection(GetConnectionString());
         await conn.OpenAsync(ct);
 
         if (!await TableExistsAsync(conn, "AuditLogs", ct))
@@ -224,7 +224,7 @@ public class DataArchiveService : IDataArchiveService
 
     private async Task<string?> ArchiveEventAppointmentsAsync(string archiveBucket, DateTime cutoff, CancellationToken ct)
     {
-        await using var conn = new SqlConnection(GetConnectionString());
+        await using var conn = SqlResilienceHelper.CreateConnection(GetConnectionString());
         await conn.OpenAsync(ct);
 
         if (!await TableExistsAsync(conn, "EventAppointment", ct))
@@ -289,7 +289,7 @@ public class DataArchiveService : IDataArchiveService
 
     private async Task<string?> ArchiveBookingsAsync(string archiveBucket, DateTime cutoff, CancellationToken ct)
     {
-        await using var conn = new SqlConnection(GetConnectionString());
+        await using var conn = SqlResilienceHelper.CreateConnection(GetConnectionString());
         await conn.OpenAsync(ct);
 
         if (!await TableExistsAsync(conn, "Bookings", ct))
@@ -328,7 +328,7 @@ public class DataArchiveService : IDataArchiveService
 
     private async Task<string?> ArchiveInactiveEmployeesAsync(string archiveBucket, DateTime cutoff, CancellationToken ct)
     {
-        await using var conn = new SqlConnection(GetConnectionString());
+        await using var conn = SqlResilienceHelper.CreateConnection(GetConnectionString());
         await conn.OpenAsync(ct);
 
         if (!await TableExistsAsync(conn, "Employees", ct))
@@ -395,7 +395,7 @@ public class DataArchiveService : IDataArchiveService
 
     private async Task<string?> ArchiveInactiveCustomersAsync(string archiveBucket, DateTime cutoff, CancellationToken ct)
     {
-        await using var conn = new SqlConnection(GetConnectionString());
+        await using var conn = SqlResilienceHelper.CreateConnection(GetConnectionString());
         await conn.OpenAsync(ct);
 
         if (!await TableExistsAsync(conn, "Customer", ct))
@@ -469,7 +469,7 @@ public class DataArchiveService : IDataArchiveService
 
     private async Task<string?> ArchiveInactiveAdminsAsync(string archiveBucket, DateTime cutoff, CancellationToken ct)
     {
-        await using var conn = new SqlConnection(GetConnectionString());
+        await using var conn = SqlResilienceHelper.CreateConnection(GetConnectionString());
         await conn.OpenAsync(ct);
 
         if (!await TableExistsAsync(conn, "Admin", ct))
@@ -604,7 +604,7 @@ public class DataArchiveService : IDataArchiveService
             IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = N'IX_ArchiveIndex_Entity_ArchivedAt' AND object_id = OBJECT_ID(N'dbo.ArchiveIndex'))
                 CREATE INDEX IX_ArchiveIndex_Entity_ArchivedAt ON dbo.ArchiveIndex (EntityName, ArchivedAt DESC);";
 
-        await using var conn = new SqlConnection(GetConnectionString());
+        await using var conn = SqlResilienceHelper.CreateConnection(GetConnectionString());
         await conn.OpenAsync(ct);
         await using var cmd = new SqlCommand(sql, conn);
         await cmd.ExecuteNonQueryAsync(ct);

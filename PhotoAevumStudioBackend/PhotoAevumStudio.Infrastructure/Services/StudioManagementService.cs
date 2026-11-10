@@ -1,4 +1,4 @@
-﻿using System.Data;
+using System.Data;
 using Microsoft.Data.SqlClient;
 using Microsoft.EntityFrameworkCore;
 using PhotoAevumStudio.Application.DTOs;
@@ -43,7 +43,7 @@ public class StudioManagementService : IStudioManagementService
 
     public async Task<IReadOnlyList<Employee>> GetEmployeesAsync(bool includeArchived = false, CancellationToken cancellationToken = default)
     {
-        await using var conn = new SqlConnection(GetConnectionString());
+        await using var conn = SqlResilienceHelper.CreateConnection(GetConnectionString());
         await conn.OpenAsync(cancellationToken);
         await EnsureServicesRateTypeSchemaAsync(conn, cancellationToken);
 
@@ -204,7 +204,7 @@ public class StudioManagementService : IStudioManagementService
 
     public async Task<IReadOnlyList<string>> GetSpecializationsAsync(CancellationToken cancellationToken = default)
     {
-        await using var conn = new SqlConnection(GetConnectionString());
+        await using var conn = SqlResilienceHelper.CreateConnection(GetConnectionString());
         await conn.OpenAsync(cancellationToken);
         await EnsureServicesRateTypeSchemaAsync(conn, cancellationToken);
 
@@ -235,7 +235,7 @@ public class StudioManagementService : IStudioManagementService
 
     public async Task<IReadOnlyList<StudioService>> GetServicesAsync(CancellationToken cancellationToken = default)
     {
-        await using var conn = new SqlConnection(GetConnectionString());
+        await using var conn = SqlResilienceHelper.CreateConnection(GetConnectionString());
         await conn.OpenAsync(cancellationToken);
         await EnsureServicesRateTypeSchemaAsync(conn, cancellationToken);
 
@@ -270,7 +270,7 @@ public class StudioManagementService : IStudioManagementService
 
     public async Task<IReadOnlyList<Equipment>> GetEquipmentAsync(CancellationToken cancellationToken = default)
     {
-        await using var conn = new SqlConnection(GetConnectionString());
+        await using var conn = SqlResilienceHelper.CreateConnection(GetConnectionString());
         await conn.OpenAsync(cancellationToken);
         await EnsureServicesRateTypeSchemaAsync(conn, cancellationToken);
 
@@ -361,7 +361,7 @@ public class StudioManagementService : IStudioManagementService
 
     public async Task<IReadOnlyList<ServiceSummaryDto>> GetServicesSummaryAsync(CancellationToken cancellationToken = default)
     {
-        await using var conn = new SqlConnection(GetConnectionString());
+        await using var conn = SqlResilienceHelper.CreateConnection(GetConnectionString());
         await conn.OpenAsync(cancellationToken);
         await EnsureServicesRateTypeSchemaAsync(conn, cancellationToken);
 
@@ -444,7 +444,7 @@ public class StudioManagementService : IStudioManagementService
 
     public async Task<ServiceDetailDto?> GetServiceDetailWithImageAsync(string serviceId, CancellationToken cancellationToken = default)
     {
-        await using var conn = new SqlConnection(GetConnectionString());
+        await using var conn = SqlResilienceHelper.CreateConnection(GetConnectionString());
         await conn.OpenAsync(cancellationToken);
         await EnsureServicesRateTypeSchemaAsync(conn, cancellationToken);
 
@@ -523,7 +523,7 @@ public class StudioManagementService : IStudioManagementService
 
     public async Task<bool> UpdateServiceImageAsync(string serviceId, byte[] imageBytes, string mimeType, string? requestingAdminId, CancellationToken cancellationToken = default)
     {
-        await using var conn = new SqlConnection(GetConnectionString());
+        await using var conn = SqlResilienceHelper.CreateConnection(GetConnectionString());
         await conn.OpenAsync(cancellationToken);
         await EnsureServicesRateTypeSchemaAsync(conn, cancellationToken);
 
@@ -548,7 +548,7 @@ public class StudioManagementService : IStudioManagementService
 
     public async Task<IReadOnlyList<ServiceSummaryDto>> GetAdditionalServicesSummaryAsync(CancellationToken cancellationToken = default)
     {
-        await using var conn = new SqlConnection(GetConnectionString());
+        await using var conn = SqlResilienceHelper.CreateConnection(GetConnectionString());
         await conn.OpenAsync(cancellationToken);
         await EnsureServicesRateTypeSchemaAsync(conn, cancellationToken);
 
@@ -619,7 +619,7 @@ public class StudioManagementService : IStudioManagementService
 
     public async Task<ServiceDetailDto?> GetAdditionalServiceDetailWithImageAsync(string addOnId, CancellationToken cancellationToken = default)
     {
-        await using var conn = new SqlConnection(GetConnectionString());
+        await using var conn = SqlResilienceHelper.CreateConnection(GetConnectionString());
         await conn.OpenAsync(cancellationToken);
         await EnsureServicesRateTypeSchemaAsync(conn, cancellationToken);
 
@@ -662,7 +662,7 @@ public class StudioManagementService : IStudioManagementService
 
     public async Task<bool> UpdateAdditionalServiceImageAsync(string addOnId, byte[] imageBytes, string mimeType, string? requestingAdminId, CancellationToken cancellationToken = default)
     {
-        await using var conn = new SqlConnection(GetConnectionString());
+        await using var conn = SqlResilienceHelper.CreateConnection(GetConnectionString());
         await conn.OpenAsync(cancellationToken);
         await EnsureServicesRateTypeSchemaAsync(conn, cancellationToken);
 
@@ -687,7 +687,7 @@ public class StudioManagementService : IStudioManagementService
 
     public async Task<IReadOnlyList<ServiceSummaryDto>> GetComboPackagesSummaryAsync(CancellationToken cancellationToken = default)
     {
-        await using var conn = new SqlConnection(GetConnectionString());
+        await using var conn = SqlResilienceHelper.CreateConnection(GetConnectionString());
         await conn.OpenAsync(cancellationToken);
         await EnsureServicesRateTypeSchemaAsync(conn, cancellationToken);
 
@@ -759,7 +759,7 @@ public class StudioManagementService : IStudioManagementService
 
     public async Task<ServiceDetailDto?> GetComboPackageDetailWithImageAsync(string packageId, CancellationToken cancellationToken = default)
     {
-        await using var conn = new SqlConnection(GetConnectionString());
+        await using var conn = SqlResilienceHelper.CreateConnection(GetConnectionString());
         await conn.OpenAsync(cancellationToken);
         await EnsureServicesRateTypeSchemaAsync(conn, cancellationToken);
 
@@ -802,7 +802,7 @@ public class StudioManagementService : IStudioManagementService
 
     public async Task<bool> UpdateComboPackageImageAsync(string packageId, byte[] imageBytes, string mimeType, string? requestingAdminId, CancellationToken cancellationToken = default)
     {
-        await using var conn = new SqlConnection(GetConnectionString());
+        await using var conn = SqlResilienceHelper.CreateConnection(GetConnectionString());
         await conn.OpenAsync(cancellationToken);
         await EnsureServicesRateTypeSchemaAsync(conn, cancellationToken);
 
@@ -827,7 +827,7 @@ public class StudioManagementService : IStudioManagementService
 
     public async Task<IReadOnlyList<HistoryLogDto>> GetHistoryLogsAsync(string requestingUserId, int topCount = 100, CancellationToken cancellationToken = default)
     {
-        await using var conn = new SqlConnection(GetConnectionString());
+        await using var conn = SqlResilienceHelper.CreateConnection(GetConnectionString());
         await conn.OpenAsync(cancellationToken);
         await EnsureServicesRateTypeSchemaAsync(conn, cancellationToken);
 
@@ -925,7 +925,7 @@ public class StudioManagementService : IStudioManagementService
 
     public async Task<string> GetNextServiceIdAsync(CancellationToken cancellationToken = default)
     {
-        await using var conn = new SqlConnection(GetConnectionString());
+        await using var conn = SqlResilienceHelper.CreateConnection(GetConnectionString());
         await conn.OpenAsync(cancellationToken);
         await EnsureServicesRateTypeSchemaAsync(conn, cancellationToken);
 
@@ -966,7 +966,7 @@ public class StudioManagementService : IStudioManagementService
 
     public async Task<string> GetNextCategoryIdAsync(CancellationToken cancellationToken = default)
     {
-        await using var conn = new SqlConnection(GetConnectionString());
+        await using var conn = SqlResilienceHelper.CreateConnection(GetConnectionString());
         await conn.OpenAsync(cancellationToken);
         await EnsureServicesRateTypeSchemaAsync(conn, cancellationToken);
 
@@ -1007,7 +1007,7 @@ public class StudioManagementService : IStudioManagementService
 
     public async Task<IReadOnlyList<CategoryDto>> GetCategoriesAsync(CancellationToken cancellationToken = default)
     {
-        await using var conn = new SqlConnection(GetConnectionString());
+        await using var conn = SqlResilienceHelper.CreateConnection(GetConnectionString());
         await conn.OpenAsync(cancellationToken);
         await EnsureServicesRateTypeSchemaAsync(conn, cancellationToken);
 
@@ -1156,7 +1156,7 @@ public class StudioManagementService : IStudioManagementService
         var effectiveFileName = r2FileName ?? dto.ImageFileName;
         var effectiveUrl = r2Url ?? dto.ImageUrl;
 
-        await using var conn = new SqlConnection(GetConnectionString());
+        await using var conn = SqlResilienceHelper.CreateConnection(GetConnectionString());
         await conn.OpenAsync(cancellationToken);
         await EnsureServicesRateTypeSchemaAsync(conn, cancellationToken);
 
@@ -1342,7 +1342,7 @@ public class StudioManagementService : IStudioManagementService
         CancellationToken ct)
     {
         var joins = new List<ServiceCategoryJoin>();
-        await using var conn = new SqlConnection(GetConnectionString());
+        await using var conn = SqlResilienceHelper.CreateConnection(GetConnectionString());
         await conn.OpenAsync(ct);
 
         // 1. Check explicitly provided associations
@@ -1639,7 +1639,7 @@ public class StudioManagementService : IStudioManagementService
         string? requestingAdminId,
         CancellationToken ct)
     {
-        await using var conn = new SqlConnection(GetConnectionString());
+        await using var conn = SqlResilienceHelper.CreateConnection(GetConnectionString());
         await conn.OpenAsync(ct);
         await using var trans = (SqlTransaction)await conn.BeginTransactionAsync(ct);
 
@@ -1704,7 +1704,7 @@ public class StudioManagementService : IStudioManagementService
         var names = new List<string>();
         if (joins.Count == 0) return names;
 
-        await using var conn = new SqlConnection(GetConnectionString());
+        await using var conn = SqlResilienceHelper.CreateConnection(GetConnectionString());
         await conn.OpenAsync(ct);
 
         foreach (var j in joins)
@@ -1745,7 +1745,7 @@ public class StudioManagementService : IStudioManagementService
     {
         try
         {
-            await using var conn = new SqlConnection(GetConnectionString());
+            await using var conn = SqlResilienceHelper.CreateConnection(GetConnectionString());
             await conn.OpenAsync(ct);
             const string sql = @"
                 IF OBJECT_ID(N'dbo.sp_AddHistoryLog', N'P') IS NOT NULL
@@ -1773,7 +1773,7 @@ public class StudioManagementService : IStudioManagementService
 
     public async Task<string> GetNextAdditionalServiceIdAsync(CancellationToken cancellationToken = default)
     {
-        await using var conn = new SqlConnection(GetConnectionString());
+        await using var conn = SqlResilienceHelper.CreateConnection(GetConnectionString());
         await conn.OpenAsync(cancellationToken);
         await EnsureServicesRateTypeSchemaAsync(conn, cancellationToken);
 
@@ -1824,7 +1824,7 @@ public class StudioManagementService : IStudioManagementService
         var (imageFileName, imageUrl) = await UploadServiceAssetToR2Async(
             dto.ImageBytes, dto.ImageFileName, dto.ImageMimeType, "services/addons", cancellationToken);
 
-        await using var conn = new SqlConnection(GetConnectionString());
+        await using var conn = SqlResilienceHelper.CreateConnection(GetConnectionString());
         await conn.OpenAsync(cancellationToken);
         await EnsureServicesRateTypeSchemaAsync(conn, cancellationToken);
 
@@ -1936,7 +1936,7 @@ public class StudioManagementService : IStudioManagementService
 
     public async Task<string> GetNextComboPackageIdAsync(CancellationToken cancellationToken = default)
     {
-        await using var conn = new SqlConnection(GetConnectionString());
+        await using var conn = SqlResilienceHelper.CreateConnection(GetConnectionString());
         await conn.OpenAsync(cancellationToken);
         await EnsureServicesRateTypeSchemaAsync(conn, cancellationToken);
 
@@ -1996,7 +1996,7 @@ public class StudioManagementService : IStudioManagementService
 
     public async Task<IReadOnlyList<BundledServiceSelectionItem>> GetAvailableServicesForBundlingAsync(CancellationToken cancellationToken = default)
     {
-        await using var conn = new SqlConnection(GetConnectionString());
+        await using var conn = SqlResilienceHelper.CreateConnection(GetConnectionString());
         await conn.OpenAsync(cancellationToken);
         await EnsureServicesRateTypeSchemaAsync(conn, cancellationToken);
 
@@ -2077,7 +2077,7 @@ public class StudioManagementService : IStudioManagementService
         var (imageFileName, imageUrl) = await UploadServiceAssetToR2Async(
             imageBytes, null, imageMimeType, "services/packages", cancellationToken);
 
-        await using var conn = new SqlConnection(GetConnectionString());
+        await using var conn = SqlResilienceHelper.CreateConnection(GetConnectionString());
         await conn.OpenAsync(cancellationToken);
         await EnsureServicesRateTypeSchemaAsync(conn, cancellationToken);
 
@@ -2281,7 +2281,7 @@ public class StudioManagementService : IStudioManagementService
 
     public async Task<IReadOnlyList<RateTypeDto>> GetRateTypesAsync(CancellationToken cancellationToken = default)
     {
-        await using var conn = new SqlConnection(GetConnectionString());
+        await using var conn = SqlResilienceHelper.CreateConnection(GetConnectionString());
         await conn.OpenAsync(cancellationToken);
         await EnsureServicesRateTypeSchemaAsync(conn, cancellationToken);
 
@@ -2336,7 +2336,7 @@ public class StudioManagementService : IStudioManagementService
 
     public async Task<IReadOnlyList<ServiceRateDto>> GetServiceRatesAsync(string serviceId, CancellationToken cancellationToken = default)
     {
-        await using var conn = new SqlConnection(GetConnectionString());
+        await using var conn = SqlResilienceHelper.CreateConnection(GetConnectionString());
         await conn.OpenAsync(cancellationToken);
         await EnsureServicesRateTypeSchemaAsync(conn, cancellationToken);
 
@@ -2396,7 +2396,7 @@ public class StudioManagementService : IStudioManagementService
 
     public async Task<bool> AddOrUpdateServiceRateAsync(string serviceId, string rateTypeId, decimal rateAmount, CancellationToken cancellationToken = default)
     {
-        await using var conn = new SqlConnection(GetConnectionString());
+        await using var conn = SqlResilienceHelper.CreateConnection(GetConnectionString());
         await conn.OpenAsync(cancellationToken);
         await EnsureServicesRateTypeSchemaAsync(conn, cancellationToken);
 
@@ -2445,7 +2445,7 @@ public class StudioManagementService : IStudioManagementService
 
     public async Task<IReadOnlyList<DepartmentDto>> GetDepartmentsAsync(CancellationToken cancellationToken = default)
     {
-        await using var conn = new SqlConnection(GetConnectionString());
+        await using var conn = SqlResilienceHelper.CreateConnection(GetConnectionString());
         await conn.OpenAsync(cancellationToken);
         await EnsureServicesRateTypeSchemaAsync(conn, cancellationToken);
 
@@ -2475,7 +2475,7 @@ public class StudioManagementService : IStudioManagementService
 
     public async Task<string> GetNextDepartmentIdAsync(CancellationToken cancellationToken = default)
     {
-        await using var conn = new SqlConnection(GetConnectionString());
+        await using var conn = SqlResilienceHelper.CreateConnection(GetConnectionString());
         await conn.OpenAsync(cancellationToken);
         await EnsureServicesRateTypeSchemaAsync(conn, cancellationToken);
 
@@ -2498,7 +2498,7 @@ public class StudioManagementService : IStudioManagementService
         if (string.IsNullOrWhiteSpace(dto.DepartmentName))
             throw new ArgumentException("Department name is required.", nameof(dto));
 
-        await using var conn = new SqlConnection(GetConnectionString());
+        await using var conn = SqlResilienceHelper.CreateConnection(GetConnectionString());
         await conn.OpenAsync(cancellationToken);
         await EnsureServicesRateTypeSchemaAsync(conn, cancellationToken);
 

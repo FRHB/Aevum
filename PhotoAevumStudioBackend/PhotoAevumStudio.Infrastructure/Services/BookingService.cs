@@ -22,7 +22,7 @@ public class BookingService : IBookingService
     {
         var connectionString = _db.Database.GetConnectionString();
 
-        await using var conn = new SqlConnection(connectionString);
+        await using var conn = SqlResilienceHelper.CreateConnection(connectionString);
         await using var cmd = new SqlCommand("dbo.usp_CreateEventAppointment", conn)
         {
             CommandType = CommandType.StoredProcedure

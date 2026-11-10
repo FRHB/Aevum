@@ -1,4 +1,4 @@
-﻿using PhotoAevumStudio.Application.Interfaces;
+using PhotoAevumStudio.Application.Interfaces;
 using PhotoAevumStudio.Infrastructure.Services;
 
 namespace PhotoAevumStudio.Api.BackgroundServices;
@@ -22,6 +22,15 @@ public class PendingPaymentExpiryService : BackgroundService
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
+        try
+        {
+            await Task.Delay(TimeSpan.FromSeconds(10), stoppingToken);
+        }
+        catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
+        {
+            return;
+        }
+
         using var timer = new PeriodicTimer(Interval);
         do
         {

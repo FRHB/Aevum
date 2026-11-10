@@ -1,9 +1,10 @@
-﻿using System.Data;
+using System.Data;
 using Microsoft.Data.SqlClient;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
 using PhotoAevumStudio.Application.Auth;
-using PhotoAevumStudio.Application.Interfaces;
+using PhotoAevumStudio.Application.Interfaces;
+using PhotoAevumStudio.Infrastructure.Data;
 
 namespace PhotoAevumStudio.Infrastructure.Services;
 
@@ -19,7 +20,7 @@ public class SqlAuthService : ISqlAuthService
         _logger = logger;
     }
 
-    private SqlConnection CreateConnection() => new(_connectionString);
+    private SqlConnection CreateConnection() => SqlResilienceHelper.CreateConnection(_connectionString);
 
     public async Task<AuthValidationResult> AuthenticateAsync(
         string userIdOrEmail,

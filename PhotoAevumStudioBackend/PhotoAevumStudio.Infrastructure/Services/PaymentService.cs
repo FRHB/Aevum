@@ -295,8 +295,7 @@ public class PaymentService : IPaymentService
             var connStr = _db.Database.GetConnectionString();
             if (!string.IsNullOrWhiteSpace(connStr))
             {
-                await using var conn = new SqlConnection(connStr);
-                await conn.OpenAsync(ct);
+                await using var conn = await SqlResilienceHelper.OpenConnectionAsync(connStr, ct);
 
                 const string createTableSql = @"
                     IF OBJECT_ID(N'dbo.Payments', N'U') IS NULL

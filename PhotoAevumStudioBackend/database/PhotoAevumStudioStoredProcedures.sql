@@ -2323,6 +2323,12 @@ BEGIN
     DELETE ee FROM dbo.EventEmployee ee JOIN @Released r ON r.EventAppointmentID = ee.EventAppointmentID;
     DELETE eq FROM dbo.EventEquipment eq JOIN @Released r ON r.EventAppointmentID = eq.EventAppointmentID;
 
+    IF OBJECT_ID(N'dbo.BookingNegotiation', N'U') IS NOT NULL
+        UPDATE bn
+        SET NegotiationStatus = 'Deal_Lost'
+        FROM dbo.BookingNegotiation bn
+        JOIN @Released r ON r.EventAppointmentID = bn.EventAppointmentID;
+
     IF OBJECT_ID(N'dbo.HistoryLog', N'U') IS NOT NULL
         INSERT INTO dbo.HistoryLog (ActionType, EntityName, EntityID, ActionDetails, EventAppointmentID, ChangedByType, LoggedAt)
         SELECT 'STATUS_CHANGE', 'EventAppointment', r.EventAppointmentID,

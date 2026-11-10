@@ -10,12 +10,13 @@ using PhotoAevumStudio.Infrastructure.Data;
 public class EquipmentTypeService(ApplicationDbContext db) : IEquipmentTypeService
 {
     private string ConnectionString =>
-        db.Database.GetConnectionString()
-        ?? throw new InvalidOperationException("Connection string 'DefaultConnection' is not configured.");
+        SqlResilienceHelper.NormalizeConnectionString(
+            db.Database.GetConnectionString()
+            ?? throw new InvalidOperationException("Connection string 'DefaultConnection' is not configured."));
 
     public async Task<string> GetNextEquipmentTypeIdAsync(CancellationToken cancellationToken = default)
     {
-        await using var conn = new SqlConnection(ConnectionString);
+        await using var conn = await SqlResilienceHelper.OpenConnectionAsync(ConnectionString, cancellationToken);
         await using var cmd = new SqlCommand("dbo.sp_GetNextEquipmentTypeID", conn)
         {
             CommandType = CommandType.StoredProcedure
@@ -27,7 +28,6 @@ public class EquipmentTypeService(ApplicationDbContext db) : IEquipmentTypeServi
         };
         cmd.Parameters.Add(outputParam);
 
-        await conn.OpenAsync(cancellationToken);
         await cmd.ExecuteNonQueryAsync(cancellationToken);
 
         return outputParam.Value?.ToString()
@@ -39,7 +39,7 @@ public class EquipmentTypeService(ApplicationDbContext db) : IEquipmentTypeServi
         string? adminId, 
         CancellationToken cancellationToken = default)
     {
-        await using var conn = new SqlConnection(ConnectionString);
+        await using var conn = await SqlResilienceHelper.OpenConnectionAsync(ConnectionString, cancellationToken);
         await using var cmd = new SqlCommand("dbo.sp_CreateEquipmentType", conn)
         {
             CommandType = CommandType.StoredProcedure
@@ -49,7 +49,6 @@ public class EquipmentTypeService(ApplicationDbContext db) : IEquipmentTypeServi
         cmd.Parameters.Add(new SqlParameter("@EquipmentTypeID", SqlDbType.NVarChar, 30) { Value = request.EquipmentTypeId.Trim() });
         cmd.Parameters.Add(new SqlParameter("@CreatedByAdminID", SqlDbType.NVarChar, 30) { Value = (object?)adminId ?? DBNull.Value });
 
-        await conn.OpenAsync(cancellationToken);
         await using var reader = await cmd.ExecuteReaderAsync(cancellationToken);
 
         if (await reader.ReadAsync(cancellationToken))
@@ -65,8 +64,7 @@ public class EquipmentTypeService(ApplicationDbContext db) : IEquipmentTypeServi
 
     public async Task<IReadOnlyList<EquipmentTypeResponse>> GetAllEquipmentTypesAsync(CancellationToken cancellationToken = default)
     {
-        await using var conn = new SqlConnection(ConnectionString);
-        await conn.OpenAsync(cancellationToken);
+        await using var conn = await SqlResilienceHelper.OpenConnectionAsync(ConnectionString, cancellationToken);
 
         var list = new List<EquipmentTypeResponse>();
         try

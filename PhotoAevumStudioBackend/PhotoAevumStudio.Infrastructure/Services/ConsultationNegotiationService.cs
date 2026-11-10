@@ -475,17 +475,9 @@ public class ConsultationNegotiationService : IConsultationNegotiationService
 
 
         await cmd.ExecuteNonQueryAsync(cancellationToken);
-
-
-
-
-
-
+        await conn.CloseAsync();
 
         _logger.LogInformation("Consultation {NegotiationId} booked by customer {CustomerId}. Assigned clerk: {ClerkId} ({ClerkName})",
-
-
-
             negotiationId, request.CustomerId, clerkId, clerkName);
 
 
@@ -1131,29 +1123,11 @@ public class ConsultationNegotiationService : IConsultationNegotiationService
 
 
         if (dto != null && !string.IsNullOrWhiteSpace(dto.EventAppointmentId))
-
-
-
         {
-
-
-
-            dto.Appointment = await GetAppointmentByIdAsync(dto.EventAppointmentId, cancellationToken);
-
-
-
+            dto.Appointment = await GetAppointmentByIdOnConnectionAsync(conn, dto.EventAppointmentId, cancellationToken);
         }
 
-
-
-
-
-
-
         return dto;
-
-
-
     }
 
 
@@ -1331,12 +1305,7 @@ public class ConsultationNegotiationService : IConsultationNegotiationService
 
 
         var rows = await cmd.ExecuteNonQueryAsync(cancellationToken);
-
-
-
-
-
-
+        await conn.CloseAsync();
 
         if (rows > 0 && request.NegotiationStatus.Equals("Rescheduled", StringComparison.OrdinalIgnoreCase))
 
@@ -2177,226 +2146,71 @@ public class ConsultationNegotiationService : IConsultationNegotiationService
 
 
 
+        var createdAppointment = await GetAppointmentByIdOnConnectionAsync(conn, appointmentId, cancellationToken);
+        await conn.CloseAsync();
+
         // 6. Send transactional notification email to customer
-
-
-
         try
-
-
-
         {
-
-
-
             var emailBody = StudioEmailTemplates.ReservationPaymentRequired(
-
-
-
                 custName,
-
-
-
                 appointmentId,
-
-
-
                 request.EventName,
-
-
-
                 request.EventDate,
-
-
-
                 request.EventTime,
-
-
-
                 string.IsNullOrWhiteSpace(request.EventLocation) ? "Studio Main Hall" : request.EventLocation,
-
-
-
                 totalAmount,
-
-
-
                 downpaymentAmount,
-
-
-
                 holdExpiresAt,
-
-
-
                 $"{_xenditSettings.CustomerPortalBaseUrl.TrimEnd('/')}/payments/{appointmentId}",
-
-
-
                 "QR Ph / E-Wallet"
-
-
-
             );
 
-
-
-
-
-
-
             if (!string.IsNullOrWhiteSpace(custEmail))
-
-
-
             {
-
-
-
                 await _emailService.SendEmailAsync(custEmail, $"Payment Required: 15% Deposit for {request.EventName} (#{appointmentId})", emailBody);
-
-
-
             }
-
-
-
         }
-
-
-
         catch (Exception ex)
-
-
-
         {
-
-
-
             _logger.LogError(ex, "Failed to send downpayment email for {AppointmentId}", appointmentId);
-
-
-
         }
 
-
-
-
-
-
-
-        return (await GetAppointmentByIdAsync(appointmentId, cancellationToken))!;
-
-
-
+        return createdAppointment ?? (await GetAppointmentByIdAsync(appointmentId, cancellationToken))!;
     }
 
-
-
-
-
-
-
     public async Task<EventAppointmentDto?> GetAppointmentByIdAsync(
-
-
-
         string appointmentId,
-
-
-
         CancellationToken cancellationToken = default)
-
-
-
     {
-
-
-
         await using var conn = await OpenConnectionAsync(cancellationToken);
+        return await GetAppointmentByIdOnConnectionAsync(conn, appointmentId, cancellationToken);
+    }
 
-
-
-
-
-
-
+    private async Task<EventAppointmentDto?> GetAppointmentByIdOnConnectionAsync(
+        SqlConnection conn,
+        string appointmentId,
+        CancellationToken cancellationToken = default)
+    {
         const string sql = @"
-
-
-
             SELECT 
-
-
-
                 ea.EventAppointmentID,
-
-
-
                 bn.NegotiationID,
-
-
-
                 ea.CustomerID,
-
-
-
                 COALESCE(c.CustomerFirstName + ' ' + c.CustomerLastName, ea.CustomerID) AS CustomerName,
-
-
-
                 ISNULL(c.CustomerEmail, '') AS CustomerEmail,
-
-
-
                 ea.EventName,
-
-
-
                 ISNULL(ea.EventDescription, '') AS EventDescription,
-
-
-
                 ea.EventDate,
-
-
-
                 ea.EventTime,
-
-
-
                 ea.EventStatus,
-
-
-
                 ea.TotalAmount,
-
-
-
                 ea.DownpaymentAmount,
-
-
-
                 ea.FinalBalanceAmount,
-
-
-
                 ea.DownpaymentStatus,
-
-
-
                 ea.HoldExpiresAt,
-
-
-
                 ea.XenditInvoiceId,
-
-
-
                 ea.XenditExternalId,
-
-
-
                 ea.XenditInvoiceUrl,
                 ea.CreatedAt,
                 ea.LockExpiresAt,
@@ -2404,721 +2218,183 @@ public class ConsultationNegotiationService : IConsultationNegotiationService
             FROM dbo.EventAppointment ea
             LEFT JOIN dbo.Customer c ON c.CustomerID = ea.CustomerID
             LEFT JOIN dbo.BookingNegotiation bn ON bn.EventAppointmentID = ea.EventAppointmentID
-            WHERE ea.EventAppointmentID = @EvtId;";
+            WHERE ea.EventAppointmentID = @EvtId;
 
+            SELECT ee.EmployeeID, 
+                   COALESCE(e.EmployeeFirstName + ' ' + e.EmployeeLastName, ee.EmployeeID) AS EmployeeName,
+                   ISNULL(es.SpecializationName, 'Staff') AS Specialization,
+                   ee.IsTeamLeader
+            FROM dbo.EventEmployee ee
+            LEFT JOIN dbo.Employees e ON e.EmployeeID = ee.EmployeeID
+            LEFT JOIN dbo.EmployeeJointSpecialization ejs ON ejs.EmployeeID = ee.EmployeeID
+            LEFT JOIN dbo.EmployeeSpecialization es ON es.SpecializationID = ejs.SpecializationID
+            WHERE ee.EventAppointmentID = @EvtId;
 
+            SELECT eq.EquipmentID, 
+                   ISNULL(e.EquipmentName, eq.EquipmentID) AS EquipmentName,
+                   COALESCE(et.EquipmentTypeName, e.EquipmentTypeID, 'Equipment') AS EquipmentType
+            FROM dbo.EventEquipment eq
+            LEFT JOIN dbo.Equipment e ON e.EquipmentID = eq.EquipmentID
+            LEFT JOIN dbo.EquipmentType et ON et.EquipmentTypeID = e.EquipmentTypeID
+            WHERE eq.EventAppointmentID = @EvtId;
 
+            SELECT CAST($IDENTITY AS int) AS OvertimeID, EventAppointmentID, ExtraHours, HourlyRate, SurchargeAmount, Notes, LoggedByEmployeeID, CreatedAt
+            FROM dbo.EventOvertimeCharges
+            WHERE EventAppointmentID = @EvtId;
 
-
-
+            SELECT PaymentTransactionID, EventAppointmentID, PaymentType, PaymentMethod, Amount, Status, ExternalReference, ReceivedByEmployeeID, CreatedAt
+            FROM dbo.PaymentTransactions
+            WHERE EventAppointmentID = @EvtId
+            ORDER BY CreatedAt DESC;";
 
         await using var cmd = new SqlCommand(sql, conn);
-
-
-
         cmd.Parameters.AddWithValue("@EvtId", appointmentId);
 
-
-
-
-
-
-
         EventAppointmentDto? dto = null;
-
-
-
         await using var reader = await cmd.ExecuteReaderAsync(cancellationToken);
-
-
-
         if (await reader.ReadAsync(cancellationToken))
-
-
-
         {
-
-
-
             var invoiceId = reader.IsDBNull(15) ? null : reader.GetString(15);
-
-
-
             var externalId = reader.IsDBNull(16) ? null : reader.GetString(16);
-
-
-
             var invoiceUrl = reader.IsDBNull(17) ? null : reader.GetString(17);
-
-
-
             if (string.IsNullOrWhiteSpace(invoiceUrl) && !string.IsNullOrWhiteSpace(invoiceId))
-
-
-
             {
-
-
-
                 invoiceUrl = $"{_xenditSettings.InvoiceBaseUrl.TrimEnd('/')}/{invoiceId}";
-
-
-
             }
 
-
-
-
-
-
-
             dto = new EventAppointmentDto
-
-
-
             {
-
-
-
                 EventAppointmentId = reader.GetString(0),
-
-
-
                 NegotiationId = reader.IsDBNull(1) ? null : reader.GetString(1),
-
-
-
                 CustomerId = reader.GetString(2),
-
-
-
                 CustomerName = reader.GetString(3),
-
-
-
                 CustomerEmail = reader.GetString(4),
-
-
-
                 EventName = reader.GetString(5),
-
-
-
                 EventDescription = reader.GetString(6),
-
-
-
                 EventDate = DateOnly.FromDateTime(reader.GetDateTime(7)),
-
-
-
                 EventTime = TimeOnly.FromTimeSpan(reader.GetFieldValue<TimeSpan>(8)),
-
-
-
                 EventStatus = reader.GetString(9),
-
-
-
                 TotalAmount = reader.GetDecimal(10),
-
-
-
                 DownpaymentAmount = reader.GetDecimal(11),
-
-
-
                 FinalBalanceAmount = reader.GetDecimal(12),
-
-
-
                 DownpaymentStatus = reader.GetString(13),
-
-
-
                 HoldExpiresAt = reader.IsDBNull(14) ? null : reader.GetDateTime(14),
-
-
-
                 XenditInvoiceId = invoiceId,
-
-
-
                 XenditExternalId = externalId,
-
-
-
                 XenditInvoiceUrl = invoiceUrl,
                 CreatedAt = reader.GetDateTime(18),
                 LockExpiresAt = reader.IsDBNull(19) ? null : reader.GetDateTime(19),
                 QrString = reader.IsDBNull(20) ? null : reader.GetString(20)
-
-
-
             };
-
-
-
         }
-
-
-
-        await reader.CloseAsync();
-
-
-
-
-
-
 
         if (dto == null) return null;
 
-
-
-
-
-
-
-        // Staff
-
-
-
-        const string empSql = @"
-
-
-
-            SELECT ee.EmployeeID, 
-
-
-
-                   COALESCE(e.EmployeeFirstName + ' ' + e.EmployeeLastName, ee.EmployeeID) AS EmployeeName,
-
-
-
-                   ISNULL(es.SpecializationName, 'Staff') AS Specialization,
-
-
-
-                   ee.IsTeamLeader
-
-
-
-            FROM dbo.EventEmployee ee
-
-
-
-            LEFT JOIN dbo.Employees e ON e.EmployeeID = ee.EmployeeID
-
-
-
-            LEFT JOIN dbo.EmployeeJointSpecialization ejs ON ejs.EmployeeID = ee.EmployeeID
-
-
-
-            LEFT JOIN dbo.EmployeeSpecialization es ON es.SpecializationID = ejs.SpecializationID
-
-
-
-            WHERE ee.EventAppointmentID = @EvtId;";
-
-
-
-        await using var empCmd = new SqlCommand(empSql, conn);
-
-
-
-        empCmd.Parameters.AddWithValue("@EvtId", appointmentId);
-
-
-
-        await using var empReader = await empCmd.ExecuteReaderAsync(cancellationToken);
-
-
-
-        while (await empReader.ReadAsync(cancellationToken))
-
-
-
+        // Result set 2: Staff
+        if (await reader.NextResultAsync(cancellationToken))
         {
-
-
-
-            dto.AssignedEmployees.Add(new AssignedEmployeeDto
-
-
-
+            while (await reader.ReadAsync(cancellationToken))
             {
-
-
-
-                EmployeeId = empReader.GetString(0),
-
-
-
-                EmployeeName = empReader.GetString(1),
-
-
-
-                Specialization = empReader.GetString(2),
-
-
-
-                IsTeamLeader = empReader.GetBoolean(3)
-
-
-
-            });
-
-
-
+                dto.AssignedEmployees.Add(new AssignedEmployeeDto
+                {
+                    EmployeeId = reader.GetString(0),
+                    EmployeeName = reader.GetString(1),
+                    Specialization = reader.GetString(2),
+                    IsTeamLeader = reader.GetBoolean(3)
+                });
+            }
         }
 
-
-
-        await empReader.CloseAsync();
-
-
-
-
-
-
-
-        // Equipment
-
-
-
-        const string eqSql = @"
-
-
-
-            SELECT eq.EquipmentID, 
-
-
-
-                   ISNULL(e.EquipmentName, eq.EquipmentID) AS EquipmentName,
-
-
-
-                   ISNULL(et.TypeName, 'Equipment') AS EquipmentType
-
-
-
-            FROM dbo.EventEquipment eq
-
-
-
-            LEFT JOIN dbo.Equipment e ON e.EquipmentID = eq.EquipmentID
-
-
-
-            LEFT JOIN dbo.EquipmentType et ON et.EquipmentTypeID = e.EquipmentTypeID
-
-
-
-            WHERE eq.EventAppointmentID = @EvtId;";
-
-
-
-        await using var eqCmd = new SqlCommand(eqSql, conn);
-
-
-
-        eqCmd.Parameters.AddWithValue("@EvtId", appointmentId);
-
-
-
-        await using var eqReader = await eqCmd.ExecuteReaderAsync(cancellationToken);
-
-
-
-        while (await eqReader.ReadAsync(cancellationToken))
-
-
-
+        // Result set 3: Equipment
+        if (await reader.NextResultAsync(cancellationToken))
         {
-
-
-
-            dto.AssignedEquipment.Add(new AssignedEquipmentDto
-
-
-
+            while (await reader.ReadAsync(cancellationToken))
             {
-
-
-
-                EquipmentId = eqReader.GetString(0),
-
-
-
-                EquipmentName = eqReader.GetString(1),
-
-
-
-                EquipmentType = eqReader.GetString(2)
-
-
-
-            });
-
-
-
+                dto.AssignedEquipment.Add(new AssignedEquipmentDto
+                {
+                    EquipmentId = reader.GetString(0),
+                    EquipmentName = reader.GetString(1),
+                    EquipmentType = reader.GetString(2)
+                });
+            }
         }
 
-
-
-        await eqReader.CloseAsync();
-
-
-
-
-
-
-
-        // Overtime charges
-
-
-
-        const string otSql = @"
-
-
-
-            SELECT OvertimeID, EventAppointmentID, ExtraHours, HourlyRate, SurchargeAmount, Notes, LoggedByEmployeeID, CreatedAt
-
-
-
-            FROM dbo.EventOvertimeCharges
-
-
-
-            WHERE EventAppointmentID = @EvtId;";
-
-
-
-        await using var otCmd = new SqlCommand(otSql, conn);
-
-
-
-        otCmd.Parameters.AddWithValue("@EvtId", appointmentId);
-
-
-
-        await using var otReader = await otCmd.ExecuteReaderAsync(cancellationToken);
-
-
-
-        while (await otReader.ReadAsync(cancellationToken))
-
-
-
+        // Result set 4: Overtime charges
+        if (await reader.NextResultAsync(cancellationToken))
         {
-
-
-
-            dto.OvertimeCharges.Add(new EventOvertimeDto
-
-
-
+            while (await reader.ReadAsync(cancellationToken))
             {
-
-
-
-                OvertimeId = otReader.GetInt32(0),
-
-
-
-                EventAppointmentId = otReader.GetString(1),
-
-
-
-                ExtraHours = otReader.GetDecimal(2),
-
-
-
-                HourlyRate = otReader.GetDecimal(3),
-
-
-
-                SurchargeAmount = otReader.GetDecimal(4),
-
-
-
-                Notes = otReader.IsDBNull(5) ? null : otReader.GetString(5),
-
-
-
-                LoggedByEmployeeId = otReader.GetString(6),
-
-
-
-                CreatedAt = otReader.GetDateTime(7)
-
-
-
-            });
-
-
-
+                dto.OvertimeCharges.Add(new EventOvertimeDto
+                {
+                    OvertimeId = reader.GetInt32(0),
+                    EventAppointmentId = reader.GetString(1),
+                    ExtraHours = reader.GetDecimal(2),
+                    HourlyRate = reader.GetDecimal(3),
+                    SurchargeAmount = reader.GetDecimal(4),
+                    Notes = reader.IsDBNull(5) ? null : reader.GetString(5),
+                    LoggedByEmployeeId = reader.GetString(6),
+                    CreatedAt = reader.GetDateTime(7)
+                });
+            }
         }
 
-
-
-        await otReader.CloseAsync();
-
-
-
-
-
-
-
-        // Transactions
-
-
-
-        const string txSql = @"
-
-
-
-            SELECT PaymentTransactionID, EventAppointmentID, PaymentType, PaymentMethod, Amount, Status, ExternalReference, ReceivedByEmployeeID, CreatedAt
-
-
-
-            FROM dbo.PaymentTransactions
-
-
-
-            WHERE EventAppointmentID = @EvtId
-
-
-
-            ORDER BY CreatedAt DESC;";
-
-
-
-        await using var txCmd = new SqlCommand(txSql, conn);
-
-
-
-        txCmd.Parameters.AddWithValue("@EvtId", appointmentId);
-
-
-
-        await using var txReader = await txCmd.ExecuteReaderAsync(cancellationToken);
-
-
-
-        while (await txReader.ReadAsync(cancellationToken))
-
-
-
+        // Result set 5: Transactions
+        if (await reader.NextResultAsync(cancellationToken))
         {
-
-
-
-            dto.Transactions.Add(new PaymentTransactionDto
-
-
-
+            while (await reader.ReadAsync(cancellationToken))
             {
-
-
-
-                TransactionId = txReader.GetString(0),
-
-
-
-                EventAppointmentId = txReader.GetString(1),
-
-
-
-                PaymentType = txReader.GetString(2),
-
-
-
-                PaymentMethod = txReader.GetString(3),
-
-
-
-                Amount = txReader.GetDecimal(4),
-
-
-
-                Status = txReader.GetString(5),
-
-
-
-                ExternalReference = txReader.IsDBNull(6) ? null : txReader.GetString(6),
-
-
-
-                ReceivedByEmployeeId = txReader.IsDBNull(7) ? null : txReader.GetString(7),
-
-
-
-                CreatedAt = txReader.GetDateTime(8)
-
-
-
-            });
-
-
-
+                dto.Transactions.Add(new PaymentTransactionDto
+                {
+                    TransactionId = reader.GetString(0),
+                    EventAppointmentId = reader.GetString(1),
+                    PaymentType = reader.GetString(2),
+                    PaymentMethod = reader.GetString(3),
+                    Amount = reader.GetDecimal(4),
+                    Status = reader.GetString(5),
+                    ExternalReference = reader.IsDBNull(6) ? null : reader.GetString(6),
+                    ReceivedByEmployeeId = reader.IsDBNull(7) ? null : reader.GetString(7),
+                    CreatedAt = reader.GetDateTime(8)
+                });
+            }
         }
-
-
-
-
-
-
 
         return dto;
-
-
-
     }
 
-
-
-
-
-
-
     public async Task<IReadOnlyList<EventAppointmentDto>> GetAppointmentsAsync(
-
-
-
         string? customerId = null,
-
-
-
         string? status = null,
-
-
-
         CancellationToken cancellationToken = default)
-
-
-
     {
-
-
-
         var list = new List<EventAppointmentDto>();
-
-
-
         await using var conn = await OpenConnectionAsync(cancellationToken);
 
-
-
-
-
-
-
         const string sql = @"
-
-
-
             SELECT ea.EventAppointmentID
-
-
-
             FROM dbo.EventAppointment ea
-
-
-
             WHERE (@CustId IS NULL OR ea.CustomerID = @CustId)
-
-
-
               AND (@Status IS NULL OR ea.EventStatus = @Status)
-
-
-
             ORDER BY ea.EventDate DESC, ea.EventTime DESC;";
 
-
-
-
-
-
-
         await using var cmd = new SqlCommand(sql, conn);
-
-
-
         cmd.Parameters.AddWithValue("@CustId", (object?)customerId ?? DBNull.Value);
-
-
-
         cmd.Parameters.AddWithValue("@Status", (object?)status ?? DBNull.Value);
 
-
-
-
-
-
-
         var ids = new List<string>();
-
-
-
         await using var reader = await cmd.ExecuteReaderAsync(cancellationToken);
-
-
-
         while (await reader.ReadAsync(cancellationToken))
-
-
-
         {
-
-
-
             ids.Add(reader.GetString(0));
-
-
-
         }
-
-
-
         await reader.CloseAsync();
 
-
-
-
-
-
-
         foreach (var id in ids)
-
-
-
         {
-
-
-
-            var appt = await GetAppointmentByIdAsync(id, cancellationToken);
-
-
-
+            var appt = await GetAppointmentByIdOnConnectionAsync(conn, id, cancellationToken);
             if (appt != null) list.Add(appt);
-
-
-
         }
 
-
-
-
-
-
-
         return list;
-
-
-
     }
 
 
@@ -3396,361 +2672,100 @@ var invId = invoiceId ?? appt.XenditInvoiceId ?? $"inv_mock_{appointmentId}";
 
 
                 await cmd.ExecuteNonQueryAsync(cancellationToken);
-
-
-
                 await tx.CommitAsync(cancellationToken);
-
-
-
             }
-
-
-
             catch
-
-
-
             {
-
-
-
                 await tx.RollbackAsync(cancellationToken);
-
-
-
                 throw;
-
-
-
             }
 
-
-
-
-
-
+            appt = await GetAppointmentByIdOnConnectionAsync(conn, appointmentId, cancellationToken) ?? appt;
+            await conn.CloseAsync();
 
             // Sync with assigned employee calendars and notify customer
-
-
-
             try
-
-
-
             {
-
-
-
                 var body = $"""
-
-
-
                     <div style="font-family:Arial,sans-serif;color:#1e293b;max-width:600px;margin:0 auto;padding:24px;border:1px solid #e2e8f0;border-radius:12px">
-
-
-
                         <h2 style="color:#047857;margin-top:0">&#10004; Downpayment Confirmed - You're Booked!</h2>
-
-
-
                         <p>Dear {appt.CustomerName},</p>
-
-
-
                         <p>We have successfully received your 15% downpayment of <strong>₱{appt.DownpaymentAmount:N2}</strong> for <strong>{appt.EventName}</strong> (#{appointmentId}).</p>
-
-
-
                         <div style="background:#f0fdf4;padding:16px;border-radius:8px;margin:20px 0;border:1px solid #bbf7d0">
-
-
-
                             <p style="margin:4px 0"><strong>Date:</strong> {appt.EventDate:dddd, MMMM d, yyyy}</p>
-
-
-
                             <p style="margin:4px 0"><strong>Time:</strong> {appt.EventTime:h:mm tt}</p>
-
-
-
                             <p style="margin:4px 0"><strong>Status:</strong> <span style="color:#047857;font-weight:bold">Confirmed &amp; Calendar Locked</span></p>
-
-
-
                             <p style="margin:4px 0"><strong>Total Package:</strong> ₱{appt.TotalAmount:N2}</p>
-
-
-
                             <p style="margin:4px 0"><strong>Remaining Balance (85% Due on event day):</strong> ₱{appt.FinalBalanceAmount:N2}</p>
-
-
-
                         </div>
-
-
-
                         <p>Our creative team will prepare the necessary equipment and reach out prior to the shoot date.</p>
-
-
-
                     </div>
-
-
-
                     """;
 
-
-
-
-
-
-
                 if (!string.IsNullOrWhiteSpace(appt.CustomerEmail))
-
-
-
                 {
-
-
-
                     await _emailService.SendEmailAsync(appt.CustomerEmail, $"Downpayment Confirmed: #{appointmentId} - Photo Aevum Studio", body);
-
-
-
                 }
-
-
-
             }
-
-
-
             catch (Exception ex)
-
-
-
             {
-
-
-
                 _logger.LogError(ex, "Failed to send downpayment confirmation email for {AppointmentId}", appointmentId);
-
-
-
             }
 
-
-
+            return appt;
         }
 
-
-
-
-
-
-
         return (await GetAppointmentByIdAsync(appointmentId, cancellationToken))!;
-
-
-
     }
 
-
-
-
-
-
-
     public async Task<bool> RequestExtensionAsync(
-
-
-
         string appointmentId,
-
-
-
         CancellationToken cancellationToken = default)
-
-
-
     {
-
-
-
         await using var conn = await OpenConnectionAsync(cancellationToken);
 
-
-
-
-
-
-
         const string sql = @"
-
-
-
             UPDATE dbo.EventAppointment
-
-
-
             SET HoldExpiresAt = DATEADD(minute, 30, SYSUTCDATETIME())
-
-
-
             WHERE EventAppointmentID = @EvtId AND DownpaymentStatus = 'Pending' AND EventStatus <> 'Pending Payment';";
 
-
-
-
-
-
-
         await using var cmd = new SqlCommand(sql, conn);
-
-
-
         cmd.Parameters.AddWithValue("@EvtId", appointmentId);
-
-
-
         var rows = await cmd.ExecuteNonQueryAsync(cancellationToken);
-
-
-
-
-
-
+        EventAppointmentDto? appt = rows > 0 ? await GetAppointmentByIdOnConnectionAsync(conn, appointmentId, cancellationToken) : null;
+        await conn.CloseAsync();
 
         _logger.LogInformation("30-minute extension requested and granted for appointment {AppointmentId}", appointmentId);
 
-
-
-
-
-
-
         if (rows > 0)
-
-
-
         {
-
-
-
             try
-
-
-
             {
-
-
-
-                var appt = await GetAppointmentByIdAsync(appointmentId, cancellationToken);
-
-
-
                 if (appt != null && !string.IsNullOrWhiteSpace(appt.CustomerEmail))
-
-
-
                 {
-
-
-
                     var emailBody = StudioEmailTemplates.ReservationPaymentRequired(
-
-
-
                         appt.CustomerName,
-
-
-
                         appt.EventAppointmentId,
-
-
-
                         appt.EventName,
-
-
-
                         appt.EventDate,
-
-
-
                         appt.EventTime,
-
-
-
                         "Studio A (Main Hall)",
-
-
-
                         appt.TotalAmount,
-
-
-
                         appt.DownpaymentAmount,
-
-
-
                         appt.HoldExpiresAt ?? DateTime.UtcNow.AddMinutes(30),
-
-
-
                         appt.XenditInvoiceUrl ?? "https://checkout.xendit.co",
-
-
-
                         "QR Ph / E-Wallet");
 
-
-
-
-
-
-
                     await _emailService.SendEmailAsync(appt.CustomerEmail, $"Payment Reminder: Reservation Fee for {appt.EventName} (#{appointmentId})", emailBody);
-
-
-
                 }
-
-
-
             }
-
-
-
             catch (Exception ex)
-
-
-
             {
-
-
-
                 _logger.LogWarning(ex, "Failed to send reminder payment email for appointment {AppointmentId}", appointmentId);
-
-
-
             }
-
-
-
         }
 
-
-
-
-
-
-
         return rows > 0;
-
-
-
     }
 
 
@@ -3908,136 +2923,42 @@ var invId = invoiceId ?? appt.XenditInvoiceId ?? $"inv_mock_{appointmentId}";
 
 
     private async Task<SqlConnection> OpenConnectionAsync(CancellationToken ct)
-
-
-
     {
-
-
-
         var connStr = _db.Database.GetConnectionString();
-
-
-
-        var conn = new SqlConnection(connStr);
-
-
-
-        await conn.OpenAsync(ct);
-
-
-
+        var conn = await SqlResilienceHelper.OpenConnectionAsync(connStr, ct);
         await EnsureSchemaOnceAsync(conn, ct);
-
-
-
         return conn;
-
-
-
     }
 
-
-
-
-
-
-
     private static async Task EnsureSchemaOnceAsync(SqlConnection conn, CancellationToken ct)
-
-
-
     {
-
-
-
         if (_schemaEnsured) return;
-
-
-
         await _schemaLock.WaitAsync(ct);
-
-
-
         try
-
-
-
         {
-
-
-
             if (_schemaEnsured) return;
-
-
-
             await EnsureSchemaAsync(conn, ct);
             try
             {
-                foreach (var batch in PendingPaymentService.SchemaBatches)
-                {
-                    await using var pcmd = new SqlCommand(batch, conn);
-                    await pcmd.ExecuteNonQueryAsync(ct);
-                }
+                await PendingPaymentService.EnsureSchemaOnConnectionAsync(conn, ct);
             }
             catch { /* Best effort schema reconciliation (LockExpiresAt / QrString / Pending Payment status) */ }
             _schemaEnsured = true;
-
-
-
         }
-
-
-
         finally
-
-
-
         {
-
-
-
             _schemaLock.Release();
-
-
-
         }
-
-
-
     }
 
-
-
-
-
-
-
     private static async Task EnsureSchemaAsync(SqlConnection conn, CancellationToken ct)
-
-
-
     {
-
-
-
         const string schemaSql = @"
-
-
-
             -- 1. Ensure dbo.BookingNegotiation table & columns
-
-
-
             IF OBJECT_ID(N'dbo.BookingNegotiation', N'U') IS NOT NULL
-
-
-
             BEGIN
-
-
-
-                ALTER TABLE dbo.BookingNegotiation ALTER COLUMN EventAppointmentID nvarchar(30) NULL;
+                IF EXISTS (SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID(N'dbo.BookingNegotiation') AND name = N'EventAppointmentID' AND is_nullable = 0)
+                    ALTER TABLE dbo.BookingNegotiation ALTER COLUMN EventAppointmentID nvarchar(30) NULL;
 
 
 
@@ -5374,21 +4295,9 @@ var invId = invoiceId ?? appt.XenditInvoiceId ?? $"inv_mock_{appointmentId}";
 
 
         _logger.LogInformation("Event appointment {AppointmentId} completed by Team Leader {TeamLeaderId}. Final settlement of ₱{Amount:N2} via {Method}",
-
-
-
             request.EventAppointmentId, request.TeamLeaderEmployeeId, finalBalance, request.PaymentMethod);
 
-
-
-
-
-
-
-        return (await GetAppointmentByIdAsync(request.EventAppointmentId, cancellationToken))!;
-
-
-
+        return (await GetAppointmentByIdOnConnectionAsync(conn, request.EventAppointmentId, cancellationToken))!;
     }
 
 
@@ -5802,14 +4711,13 @@ var invId = invoiceId ?? appt.XenditInvoiceId ?? $"inv_mock_{appointmentId}";
         if (appt == null)
             throw new KeyNotFoundException($"Event appointment {appointmentId} not found.");
 
-        await using var conn = await OpenConnectionAsync(cancellationToken);
-
         if (string.Equals(request.Status, "Deal_Won", StringComparison.OrdinalIgnoreCase))
         {
             var invoiceId = appt.XenditInvoiceId ?? $"inv_sim_{appointmentId}_{Guid.NewGuid():N[..6]}";
             var updated = await VerifyDownpaymentAsync(appointmentId, invoiceId, request.PaymentMethod ?? "QR Ph", cancellationToken);
 
-            await using var cmdWon = conn.CreateCommand();
+            await using var connWon = await OpenConnectionAsync(cancellationToken);
+            await using var cmdWon = connWon.CreateCommand();
             cmdWon.CommandText = @"
                 IF OBJECT_ID(N'dbo.BookingNegotiation', N'U') IS NOT NULL
                 BEGIN
@@ -5823,7 +4731,10 @@ var invId = invoiceId ?? appt.XenditInvoiceId ?? $"inv_mock_{appointmentId}";
 
             return updated;
         }
-        else if (string.Equals(request.Status, "Deal_Lost", StringComparison.OrdinalIgnoreCase))
+
+        await using var conn = await OpenConnectionAsync(cancellationToken);
+
+        if (string.Equals(request.Status, "Deal_Lost", StringComparison.OrdinalIgnoreCase))
         {
             await using var cmdLost = conn.CreateCommand();
             cmdLost.CommandText = @"

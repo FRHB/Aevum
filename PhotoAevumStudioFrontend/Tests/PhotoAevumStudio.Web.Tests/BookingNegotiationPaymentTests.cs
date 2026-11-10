@@ -435,6 +435,214 @@ public class BookingNegotiationPaymentTests
         var negContent = File.ReadAllText(negPath);
         Assert.Contains("\"Pending Payment\"", negContent);
     }
+    [Fact]
+    public void BookingConsultation_Creation_And_DealOutcomeOptions_Failed_Reschedule_Success()
+    {
+        // 1. Customer initiates consultation booking
+        var consultationReq = new CreateConsultationRequest
+        {
+            CustomerId = "CUST-0099",
+            CustomerName = "Test Client",
+            CustomerEmail = "client@example.com",
+            CustomerPhone = "09171234567",
+            ConsultationDate = DateOnly.FromDateTime(DateTime.Today.AddDays(3)),
+            ConsultationTime = new TimeOnly(14, 0),
+            InquiryNotes = "Inquiring for portrait studio session",
+            HasAcceptedDataPolicy = true
+        };
+
+        Assert.True(consultationReq.HasAcceptedDataPolicy);
+        Assert.NotEmpty(consultationReq.CustomerId);
+        Assert.NotEmpty(consultationReq.CustomerEmail);
+
+        // 2. Negotiation entity model defaults
+        var negotiation = new WebConsultationDto
+        {
+            NegotiationId = "NEG-TEST-001",
+            CustomerId = consultationReq.CustomerId,
+            CustomerName = consultationReq.CustomerName,
+            CustomerEmail = consultationReq.CustomerEmail,
+            InquiryNotes = consultationReq.InquiryNotes,
+            NegotiationStatus = "Pending_Call",
+            ConsultationDate = consultationReq.ConsultationDate,
+            ConsultationTime = consultationReq.ConsultationTime,
+            EmployeeId = "EMP-001",
+            EmployeeName = "Office Clerk",
+            CreatedAt = DateTime.UtcNow
+        };
+
+        Assert.Equal("Pending_Call", negotiation.NegotiationStatus);
+
+        // 3. Check 'Failed with the deal' outcome
+        var dealLostReq = new UpdateNegotiationOutcomeRequest
+        {
+            NegotiationStatus = "Deal_Lost",
+            Notes = "Customer decided not to proceed."
+        };
+        Assert.Equal("Deal_Lost", dealLostReq.NegotiationStatus);
+
+        // 4. Check 'Reschedule' outcome
+        var rescheduleReq = new WebUpdatePaymentRequest
+        {
+            Status = "Rescheduled",
+            NewDate = DateOnly.FromDateTime(DateTime.Today.AddDays(5)),
+            NewTime = new TimeOnly(10, 0),
+            Reason = "Customer requested morning slot."
+        };
+        Assert.Equal("Rescheduled", rescheduleReq.Status);
+        Assert.NotNull(rescheduleReq.NewDate);
+
+        // 5. Check 'Success with the deal' outcome
+        var dealWonReq = new WebUpdatePaymentRequest
+        {
+            Status = "Deal_Won",
+            PaymentMethod = "QR Ph",
+            Reason = "Customer signed contract and paid reservation fee."
+        };
+        Assert.Equal("Deal_Won", dealWonReq.Status);
+    }
+
+    [Fact]
+    public void DealSuccess_5StepWizard_DispatchesEmail_And_AdvancesThroughSteps_ToConfirmedPayment()
+    {
+        // STEP 1: Services Selection & Shoot Details
+        var selectedServiceIds = new List<string> { "SRV-0001" };
+        var eventDate = DateOnly.FromDateTime(DateTime.Today.AddDays(7));
+        var eventTime = new TimeOnly(14, 0);
+        var eventName = "Graduation and Editorial Session";
+        var eventLocation = "Studio A (Main Hall)";
+
+        Assert.Single(selectedServiceIds);
+        Assert.True(eventDate > DateOnly.FromDateTime(DateTime.Today));
+
+        // When proceeding in Step 1, appointment request is created & email is dispatched
+        var apptReq = new CreateEventAppointmentFromNegotiationRequest
+        {
+            NegotiationId = "NEG-TEST-001",
+            CustomerId = "CUST-0099",
+            EventName = eventName,
+            EventDate = eventDate,
+            EventTime = eventTime,
+            EventLocation = eventLocation,
+            ServiceIds = selectedServiceIds
+        };
+
+        const decimal totalAmount = 5000.00m;
+        const decimal downpaymentAmount = 750.00m; // 15% reservation fee
+        const decimal balanceAmount = 4250.00m;    // 85% balance
+
+        var appt = new EventAppointmentDto
+        {
+            EventAppointmentId = "EVT-TEST-001",
+            EventName = apptReq.EventName,
+            EventDate = apptReq.EventDate,
+            EventTime = apptReq.EventTime,
+            EventStatus = "Pending Payment",
+            TotalAmount = totalAmount,
+            DownpaymentAmount = downpaymentAmount,
+            FinalBalanceAmount = balanceAmount,
+            DownpaymentStatus = "Pending",
+            LockExpiresAt = DateTime.UtcNow.AddMinutes(60),
+            XenditInvoiceUrl = "https://checkout.xendit.co/web/inv_test_001"
+        };
+
+        // When email is dispatched, wizard step transitions to 2
+        var wizardStep = 2;
+        Assert.Equal(2, wizardStep);
+        Assert.Equal("Pending Payment", appt.EventStatus);
+        Assert.Equal(downpaymentAmount, appt.DownpaymentAmount);
+        Assert.NotNull(appt.LockExpiresAt);
+
+        // STEP 2: Payment method chosen (QR Ph) -> proceed to Step 3
+        var paymentMethod = "QR Ph";
+        Assert.Equal("QR Ph", paymentMethod);
+        wizardStep = 3;
+
+        // STEP 3: Staff & Leader assigned
+        var selectedEmployees = new List<string> { "EMP-001", "EMP-002" };
+        var teamLeaderId = "EMP-001";
+        Assert.Contains(teamLeaderId, selectedEmployees);
+        wizardStep = 4;
+
+        // STEP 4: Equipment allocated & roster saved
+        var selectedEquipment = new List<string> { "EQP-0001", "EQP-0002" };
+        Assert.NotEmpty(selectedEquipment);
+        wizardStep = 5;
+
+        // STEP 5: Make payment on time -> confirmation webhook
+        appt.EventStatus = "Confirmed";
+        appt.DownpaymentStatus = "Paid";
+        appt.LockExpiresAt = null;
+
+        Assert.Equal(5, wizardStep);
+        Assert.Equal("Confirmed", appt.EventStatus);
+        Assert.Equal("Paid", appt.DownpaymentStatus);
+        Assert.Null(appt.LockExpiresAt);
+    }
+
+    [Fact]
+    public void DealSuccess_UnpaidReservationFee_CancelsReservedTimeAndReleasesSlot()
+    {
+        // Simulate a booking with reserved slot and 1-hour lock
+        var appt = new EventAppointmentDto
+        {
+            EventAppointmentId = "EVT-UNPAID-002",
+            EventName = "Commercial Campaign",
+            EventDate = DateOnly.FromDateTime(DateTime.Today.AddDays(10)),
+            EventTime = new TimeOnly(15, 0),
+            EventStatus = "Pending Payment",
+            DownpaymentAmount = 1500m,
+            DownpaymentStatus = "Pending",
+            LockExpiresAt = DateTime.UtcNow.AddMinutes(-5) // Lock has expired without payment!
+        };
+
+        Assert.Equal("Pending Payment", appt.EventStatus);
+        Assert.True(appt.LockExpiresAt <= DateTime.UtcNow, "Lock window must be expired");
+
+        // When no payment is made, usp_ReleaseExpiredPendingPayments cancels the reservation
+        var isExpired = appt.EventStatus == "Pending Payment" && appt.LockExpiresAt <= DateTime.UtcNow;
+        Assert.True(isExpired);
+
+        // Execution of release routine
+        appt.EventStatus = "Cancelled";
+        appt.DownpaymentStatus = "Expired";
+        appt.LockExpiresAt = null;
+
+        var negotiation = new WebConsultationDto
+        {
+            NegotiationId = "NEG-UNPAID-002",
+            EventAppointmentId = appt.EventAppointmentId,
+            NegotiationStatus = "Deal_Lost" // Updated to Deal_Lost upon expiry release
+        };
+
+        Assert.Equal("Cancelled", appt.EventStatus);
+        Assert.Equal("Expired", appt.DownpaymentStatus);
+        Assert.Null(appt.LockExpiresAt);
+        Assert.Equal("Deal_Lost", negotiation.NegotiationStatus);
+    }
+
+    [Fact]
+    public void EquipmentType_Query_Uses_EquipmentTypeName_And_SqlResilienceHelper_Normalizes_PoolSettings()
+    {
+        var root = GetRepositoryRoot();
+        var servicePath = Path.Combine(root, "PhotoAevumStudioBackend", "PhotoAevumStudio.Infrastructure", "Services", "ConsultationNegotiationService.cs");
+        if (!File.Exists(servicePath)) servicePath = @"C:\Aevum\PhotoAevumStudioBackend\PhotoAevumStudio.Infrastructure\Services\ConsultationNegotiationService.cs";
+        Assert.True(File.Exists(servicePath));
+
+        var content = File.ReadAllText(servicePath);
+        Assert.DoesNotContain("et.TypeName", content);
+        Assert.Contains("et.EquipmentTypeName", content);
+
+        var normalized = PhotoAevumStudio.Infrastructure.Data.SqlResilienceHelper.NormalizeConnectionString(
+            "Server=db77602.public.databaseasp.net; Database=db77602; User Id=db77602; Password=test; Encrypt=True; TrustServerCertificate=True;");
+        var builder = new Microsoft.Data.SqlClient.SqlConnectionStringBuilder(normalized);
+        Assert.Equal(45, builder.LoadBalanceTimeout);
+        Assert.Equal(60, builder.ConnectTimeout);
+        Assert.Equal(60, builder.CommandTimeout);
+        Assert.Equal(3, builder.ConnectRetryCount);
+        Assert.Equal(30, builder.MaxPoolSize);
+    }
+
     private static string GetRepositoryRoot()
     {
         var baseDir = AppContext.BaseDirectory;

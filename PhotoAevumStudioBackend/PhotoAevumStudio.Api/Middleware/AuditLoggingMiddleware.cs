@@ -1,4 +1,4 @@
-﻿using System.Security.Claims;
+using System.Security.Claims;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Logging;
 using PhotoAevumStudio.Application.Entities;
@@ -35,7 +35,7 @@ public class AuditLoggingMiddleware
         }
         finally
         {
-            if (AuditedMethods.Contains(context.Request.Method, StringComparer.OrdinalIgnoreCase) &&
+            if (!context.RequestAborted.IsCancellationRequested && AuditedMethods.Contains(context.Request.Method, StringComparer.OrdinalIgnoreCase) &&
                 (context.Request.Path.StartsWithSegments("/api/bookings", StringComparison.OrdinalIgnoreCase) ||
                  context.Request.Path.StartsWithSegments("/api/equipments", StringComparison.OrdinalIgnoreCase) ||
                  context.Request.Path.StartsWithSegments("/api/services", StringComparison.OrdinalIgnoreCase) ||

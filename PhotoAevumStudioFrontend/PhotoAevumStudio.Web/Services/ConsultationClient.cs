@@ -256,11 +256,8 @@ public sealed class ConsultationClient(
         }
 
         catch (OperationCanceledException) when (ct.IsCancellationRequested)
-
         {
-
-            throw;
-
+            return ApiResult<T>.Fail(ApiErrorKind.Network, "The request was canceled.");
         }
 
         catch (Exception ex)

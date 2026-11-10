@@ -41,7 +41,7 @@ public class AdminManagementService : IAdminManagementService
         _db.Database.GetConnectionString()
         ?? throw new InvalidOperationException("Connection string is not configured.");
 
-    private SqlConnection CreateConnection() => new(GetConnectionString());
+    private SqlConnection CreateConnection() => SqlResilienceHelper.CreateConnection(GetConnectionString());
 
     public async Task<IReadOnlyList<AdminDto>> GetAdminsAsync(
         string requestingUserId,

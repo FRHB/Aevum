@@ -464,7 +464,8 @@ public static class DatabaseSeeder
             xenditSchemaCmd.CommandText = @"
                 IF OBJECT_ID(N'dbo.BookingNegotiation', N'U') IS NOT NULL
                 BEGIN
-                    ALTER TABLE dbo.BookingNegotiation ALTER COLUMN EventAppointmentID nvarchar(30) NULL;
+                    IF EXISTS (SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID(N'dbo.BookingNegotiation') AND name = N'EventAppointmentID' AND is_nullable = 0)
+                        ALTER TABLE dbo.BookingNegotiation ALTER COLUMN EventAppointmentID nvarchar(30) NULL;
 
                     IF COL_LENGTH(N'dbo.BookingNegotiation', N'ConsultationDate') IS NULL
                         ALTER TABLE dbo.BookingNegotiation ADD ConsultationDate date NULL;

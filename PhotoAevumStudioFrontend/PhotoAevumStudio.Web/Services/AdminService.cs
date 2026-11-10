@@ -73,6 +73,7 @@ public class AdminService : IAdminService
         }
         catch (Exception ex)
         {
+            if (cancellationToken.IsCancellationRequested) return Array.Empty<AdminViewModel>();
             _logger.LogWarning(ex, "API call to get admins failed. Falling back to direct database service.");
         }
 
@@ -184,6 +185,7 @@ public class AdminService : IAdminService
         }
         catch (Exception ex)
         {
+            if (cancellationToken.IsCancellationRequested) return new SaveAdminResult(false, "Operation was canceled.");
             _logger.LogWarning(ex, "API call to create admin failed. Falling back to direct database service.");
             try
             {
@@ -260,6 +262,7 @@ public class AdminService : IAdminService
         }
         catch (Exception ex)
         {
+            if (cancellationToken.IsCancellationRequested) return new SaveAdminResult(false, "Operation was canceled.");
             _logger.LogError(ex, "API call to update admin failed.");
             return new SaveAdminResult(false, ex.Message);
         }
@@ -276,6 +279,7 @@ public class AdminService : IAdminService
         }
         catch (Exception ex)
         {
+            if (cancellationToken.IsCancellationRequested) return false;
             _logger.LogError(ex, "API call to delete admin failed.");
             return false;
         }
@@ -298,6 +302,7 @@ public class AdminService : IAdminService
         }
         catch (Exception ex)
         {
+            if (cancellationToken.IsCancellationRequested) return new SaveAdminResult(false, "Operation was canceled.");
             _logger.LogError(ex, "Failed to call API to resend admin credentials for {AdminId}.", id);
             return new SaveAdminResult(false, ex.Message);
         }

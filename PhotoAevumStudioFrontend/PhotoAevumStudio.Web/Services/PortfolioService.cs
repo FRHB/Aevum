@@ -116,8 +116,12 @@ public class PortfolioService : IPortfolioService
         return (key, fallbackUrl, false);
     }
 
+    private static volatile bool _portfolioSchemaEnsured;
+    private static volatile bool _highlightsSchemaEnsured;
+
     private static async Task EnsurePortfolioSchemaAsync(SqlConnection conn, CancellationToken ct)
     {
+        if (_portfolioSchemaEnsured) return;
         const string sql = @"
             IF OBJECT_ID(N'dbo.PortfolioImages', N'U') IS NOT NULL
             BEGIN
@@ -130,6 +134,7 @@ public class PortfolioService : IPortfolioService
             END;";
         using var cmd = new SqlCommand(sql, conn);
         await cmd.ExecuteNonQueryAsync(ct);
+        _portfolioSchemaEnsured = true;
     }
 
     private async Task DeleteFromR2Async(string fileName, CancellationToken ct)
@@ -158,7 +163,7 @@ public class PortfolioService : IPortfolioService
         }
     }
 
-    private SqlConnection CreateConnection() => new SqlConnection(_connectionString);
+    private SqlConnection CreateConnection() => SqlResilienceHelper.CreateConnection(_connectionString);
 
     public async Task<List<PortfolioCategoryModel>> GetCategoriesAsync(CancellationToken ct = default)
     {
@@ -928,6 +933,7 @@ public class PortfolioService : IPortfolioService
 
     private static async Task EnsureHomeHighlightsSchemaAsync(SqlConnection conn, CancellationToken ct)
     {
+        if (_highlightsSchemaEnsured) return;
         const string sql = @"
             IF OBJECT_ID(N'dbo.HomeHighlights', N'U') IS NULL
             BEGIN
@@ -957,6 +963,7 @@ public class PortfolioService : IPortfolioService
 
         using var cmd = new SqlCommand(sql, conn);
         await cmd.ExecuteNonQueryAsync(ct);
+        _highlightsSchemaEnsured = true;
     }
 
     public async Task<List<HomeHighlightModel>> GetHomeHighlightsAsync(bool activeOnly = true, CancellationToken ct = default)
@@ -964,7 +971,7 @@ public class PortfolioService : IPortfolioService
         var list = new List<HomeHighlightModel>();
         try
         {
-            await using var conn = new SqlConnection(_connectionString);
+            await using var conn = SqlResilienceHelper.CreateConnection(_connectionString);
             await conn.OpenAsync(ct);
             await EnsureHomeHighlightsSchemaAsync(conn, ct);
 
@@ -1047,7 +1054,7 @@ public class PortfolioService : IPortfolioService
     {
         try
         {
-            await using var conn = new SqlConnection(_connectionString);
+            await using var conn = SqlResilienceHelper.CreateConnection(_connectionString);
             await conn.OpenAsync(ct);
             await EnsureHomeHighlightsSchemaAsync(conn, ct);
 
@@ -1159,7 +1166,7 @@ public class PortfolioService : IPortfolioService
         if (string.IsNullOrWhiteSpace(highlightId)) return false;
         try
         {
-            await using var conn = new SqlConnection(_connectionString);
+            await using var conn = SqlResilienceHelper.CreateConnection(_connectionString);
             await conn.OpenAsync(ct);
             await using var cmd = new SqlCommand("DELETE FROM dbo.HomeHighlights WHERE HighlightID = @ID;", conn);
             cmd.Parameters.AddWithValue("@ID", highlightId.Trim());
@@ -1178,7 +1185,7 @@ public class PortfolioService : IPortfolioService
         if (string.IsNullOrWhiteSpace(highlightId)) return false;
         try
         {
-            await using var conn = new SqlConnection(_connectionString);
+            await using var conn = SqlResilienceHelper.CreateConnection(_connectionString);
             await conn.OpenAsync(ct);
             await using var cmd = new SqlCommand("UPDATE dbo.HomeHighlights SET IsActive = ~IsActive, UpdatedAt = SYSUTCDATETIME() WHERE HighlightID = @ID;", conn);
             cmd.Parameters.AddWithValue("@ID", highlightId.Trim());
