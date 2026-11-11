@@ -4749,12 +4749,17 @@ var invId = invoiceId ?? appt.XenditInvoiceId ?? $"inv_mock_{appointmentId}";
 
         if (string.Equals(request.Status, "Deal_Won", StringComparison.OrdinalIgnoreCase))
         {
-            var invoiceId = appt.XenditInvoiceId ?? $"inv_sim_{appointmentId}_{Guid.NewGuid():N[..6]}";
-            var updated = await VerifyDownpaymentAsync(appointmentId, invoiceId, request.PaymentMethod ?? "QR Ph", cancellationToken);
-
             await using var connWon = await OpenConnectionAsync(cancellationToken);
             await using var cmdWon = connWon.CreateCommand();
             cmdWon.CommandText = @"
+                UPDATE dbo.EventAppointment
+                SET EventStatus = 'Confirmed',
+                    DownpaymentStatus = 'Paid',
+                    DownpaymentPaidAt = ISNULL(DownpaymentPaidAt, SYSUTCDATETIME()),
+                    LockExpiresAt = NULL,
+                    HoldExpiresAt = NULL
+                WHERE EventAppointmentID = @EvtId;
+
                 IF OBJECT_ID(N'dbo.BookingNegotiation', N'U') IS NOT NULL
                 BEGIN
                     UPDATE dbo.BookingNegotiation
@@ -4765,6 +4770,8 @@ var invId = invoiceId ?? appt.XenditInvoiceId ?? $"inv_mock_{appointmentId}";
             cmdWon.Parameters.AddWithValue("@NegId", (object?)appt.NegotiationId ?? DBNull.Value);
             await cmdWon.ExecuteNonQueryAsync(cancellationToken);
 
+            var invoiceId = appt.XenditInvoiceId ?? $"inv_sim_{appointmentId}_{Guid.NewGuid():N[..6]}";
+            var updated = await VerifyDownpaymentAsync(appointmentId, invoiceId, request.PaymentMethod ?? "QR Ph", cancellationToken);
             return updated;
         }
 

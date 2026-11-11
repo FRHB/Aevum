@@ -728,13 +728,27 @@ public class PaymentsController : ControllerBase
             _logger.LogInformation("Xendit QR simulate (2022-07-31 fallback {QrId}) for {ExternalId} returned {StatusCode}", resolvedQrId, externalId, finalStatus);
 
             if (retryRes.IsSuccessStatusCode)
+            {
+                await TryConfirmSimulatedQrLocallyAsync(externalId, resolvedQrId, effectiveAmount, cancellationToken);
                 return Ok(new { status = "SIMULATED", externalId, qrId = resolvedQrId, xenditStatus = finalStatus });
+            }
         }
         else
         {
             _logger.LogInformation("Xendit QR simulate for {ExternalId} returned {StatusCode}", externalId, finalStatus);
             if (response.IsSuccessStatusCode)
+            {
+                await TryConfirmSimulatedQrLocallyAsync(externalId, resolvedQrId, effectiveAmount, cancellationToken);
                 return Ok(new { status = "SIMULATED", externalId, xenditStatus = finalStatus });
+            }
+        }
+
+        // If Xendit returns 410 INACTIVE_QR_CODE (the dynamic QR was already simulated once on Xendit's side)
+        // or the booking is still awaiting payment in test mode, finalize the booking confirmation directly.
+        if (await TryConfirmSimulatedQrLocallyAsync(externalId, resolvedQrId, effectiveAmount, cancellationToken))
+        {
+            _logger.LogInformation("Confirmed QR simulation locally for {ExternalId} after Xendit status {StatusCode}", externalId, finalStatus);
+            return Ok(new { status = "SIMULATED", externalId, qrId = resolvedQrId, xenditStatus = finalStatus });
         }
 
         return StatusCode(StatusCodes.Status502BadGateway, new
@@ -743,6 +757,34 @@ public class PaymentsController : ControllerBase
             xenditStatus = finalStatus,
             detail = responseBody
         });
+    }
+
+    private async Task<bool> TryConfirmSimulatedQrLocallyAsync(
+        string externalId,
+        string? qrId,
+        decimal? amount,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            var confirmed = await _pendingPayments.ConfirmByReferenceAsync(externalId, qrId, amount, "QRPH", cancellationToken);
+            if (confirmed != null)
+            {
+                try { await _notifier.PaymentCompletedAsync(confirmed.AppointmentId, cancellationToken); } catch { }
+                return true;
+            }
+
+            var appt = await _consultationService.GetAppointmentByIdAsync(externalId, cancellationToken);
+            if (appt != null && string.Equals(appt.EventStatus, "Confirmed", StringComparison.OrdinalIgnoreCase))
+            {
+                return true;
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Local fallback confirmation after QR simulation failed for {ExternalId}", externalId);
+        }
+        return false;
     }
     private bool IsMockXendit() =>
         string.IsNullOrWhiteSpace(_xenditSettings.SecretKey) ||
