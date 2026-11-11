@@ -1,0 +1,150 @@
+@page "/admin/reports"
+@page "/reports"
+@layout AdminLayout
+@rendermode InteractiveServer
+@attribute [Authorize(Roles = "Admin,SystemAdmin,System Admin,Super Admin,Office Clerk")]
+@using Microsoft.AspNetCore.Components.Authorization
+@inject NavigationManager Nav
+
+<PageTitle>Reports &amp; Analytics | Photo Aevum Studio</PageTitle>
+
+<div class="space-y-6">
+    @* ── Page header ─────────────────────────────────────────────────── *@
+    <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 pb-2 border-b border-slate-200">
+        <div>
+            <div class="flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-slate-500 mb-1">
+                <span>General</span>
+                <span>/</span>
+                <span class="text-slate-900 font-bold">Reports</span>
+            </div>
+            <h1 class="text-2xl sm:text-3xl font-extrabold text-slate-900 tracking-tight">Reports &amp; Analytics</h1>
+            <p class="text-xs sm:text-sm text-slate-500 mt-1">Review studio operational metrics, revenue breakdowns, attendance logs, and equipment performance.</p>
+        </div>
+        <div class="flex items-center gap-2">
+            <select @bind="SelectedDateRange" class="text-xs px-3 py-2 border border-slate-300 rounded-lg bg-white font-medium text-slate-700 focus:outline-none focus:ring-1 focus:ring-teal-500">
+                <option value="month">This Month (November 2026)</option>
+                <option value="quarter">Fourth Quarter (Q4 2026)</option>
+                <option value="year">Year to Date (2026)</option>
+                <option value="all">All-Time Performance</option>
+            </select>
+            <button type="button" @onclick="GenerateSummaryReport" class="inline-flex items-center gap-1.5 px-3.5 py-2 bg-teal-700 hover:bg-teal-800 text-white text-xs font-bold rounded-lg shadow-2xs transition-colors">
+                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                    <polyline points="7 10 12 15 17 10"></polyline>
+                    <line x1="12" y1="15" x2="12" y2="3"></line>
+                </svg>
+                <span>Generate PDF Report</span>
+            </button>
+        </div>
+    </div>
+
+    @* ── Analytics Performance Metrics ─────────────────────────────────── *@
+    <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+        <div class="bg-white p-5 rounded-xl border border-slate-200 shadow-2xs">
+            <div class="flex items-center justify-between text-slate-500 mb-2">
+                <span class="text-xs font-medium uppercase tracking-wider">Gross Booking Value</span>
+                <span class="text-emerald-600 text-xs font-bold">↑ 22.4%</span>
+            </div>
+            <h3 class="text-2xl font-extrabold text-slate-900">₱385,400</h3>
+            <p class="text-[11px] text-slate-400 mt-1">Across 48 scheduled photo sessions</p>
+        </div>
+
+        <div class="bg-white p-5 rounded-xl border border-slate-200 shadow-2xs">
+            <div class="flex items-center justify-between text-slate-500 mb-2">
+                <span class="text-xs font-medium uppercase tracking-wider">Studio Capacity Utilization</span>
+                <span class="text-blue-600 text-xs font-bold">Optimal</span>
+            </div>
+            <h3 class="text-2xl font-extrabold text-slate-900">86.2%</h3>
+            <p class="text-[11px] text-slate-400 mt-1">Peak bookings between 1:00 PM – 5:00 PM</p>
+        </div>
+
+        <div class="bg-white p-5 rounded-xl border border-slate-200 shadow-2xs">
+            <div class="flex items-center justify-between text-slate-500 mb-2">
+                <span class="text-xs font-medium uppercase tracking-wider">Staff Efficiency &amp; Hours</span>
+                <span class="text-slate-600 text-xs font-semibold">98.1% on-time</span>
+            </div>
+            <h3 class="text-2xl font-extrabold text-slate-900">342.5 hrs</h3>
+            <p class="text-[11px] text-slate-400 mt-1">Logged by active photographers &amp; clerks</p>
+        </div>
+
+        <div class="bg-white p-5 rounded-xl border border-slate-200 shadow-2xs">
+            <div class="flex items-center justify-between text-slate-500 mb-2">
+                <span class="text-xs font-medium uppercase tracking-wider">Client Retention &amp; Referral</span>
+                <span class="text-emerald-600 text-xs font-bold">4.9 / 5.0 ★</span>
+            </div>
+            <h3 class="text-2xl font-extrabold text-slate-900">91.8%</h3>
+            <p class="text-[11px] text-slate-400 mt-1">Repeat clients &amp; positive survey scores</p>
+        </div>
+    </div>
+
+    @* ── Report Categories / Cards ─────────────────────────────────────── *@
+    <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+        <div class="bg-white p-5 rounded-xl border border-slate-200 shadow-2xs flex flex-col justify-between hover:border-slate-300 transition-colors">
+            <div>
+                <div class="w-10 h-10 rounded-lg bg-emerald-50 text-emerald-700 flex items-center justify-center mb-3">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <line x1="12" y1="1" x2="12" y2="23"></line>
+                        <path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"></path>
+                    </svg>
+                </div>
+                <h4 class="text-sm font-bold text-slate-900">Financial &amp; Revenue Breakdown</h4>
+                <p class="text-xs text-slate-500 mt-1 leading-relaxed">
+                    Detailed revenue per service category, deposit collection rates, and reconciliation logs for bookkeeping.
+                </p>
+            </div>
+            <div class="mt-4 pt-3 border-t border-slate-100 flex items-center justify-between text-xs font-semibold">
+                <span class="text-slate-400">Monthly format</span>
+                <button type="button" class="text-teal-700 hover:text-teal-900">View Breakdown →</button>
+            </div>
+        </div>
+
+        <div class="bg-white p-5 rounded-xl border border-slate-200 shadow-2xs flex flex-col justify-between hover:border-slate-300 transition-colors">
+            <div>
+                <div class="w-10 h-10 rounded-lg bg-blue-50 text-blue-700 flex items-center justify-center mb-3">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect>
+                        <line x1="16" y1="2" x2="16" y2="6"></line>
+                        <line x1="8" y1="2" x2="8" y2="6"></line>
+                        <line x1="3" y1="10" x2="21" y2="10"></line>
+                    </svg>
+                </div>
+                <h4 class="text-sm font-bold text-slate-900">Appointments &amp; Booking Trends</h4>
+                <p class="text-xs text-slate-500 mt-1 leading-relaxed">
+                    Peak booking days, popular photo shoot tiers, consultation conversion rates, and studio session completion counts.
+                </p>
+            </div>
+            <div class="mt-4 pt-3 border-t border-slate-100 flex items-center justify-between text-xs font-semibold">
+                <span class="text-slate-400">Weekly analytics</span>
+                <button type="button" class="text-teal-700 hover:text-teal-900">View Trends →</button>
+            </div>
+        </div>
+
+        <div class="bg-white p-5 rounded-xl border border-slate-200 shadow-2xs flex flex-col justify-between hover:border-slate-300 transition-colors">
+            <div>
+                <div class="w-10 h-10 rounded-lg bg-purple-50 text-purple-700 flex items-center justify-center mb-3">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"></path>
+                        <circle cx="12" cy="13" r="4"></circle>
+                    </svg>
+                </div>
+                <h4 class="text-sm font-bold text-slate-900">Equipment Usage &amp; Maintenance</h4>
+                <p class="text-xs text-slate-500 mt-1 leading-relaxed">
+                    Utilization rate per camera body, lighting kits, and lens inventory, with dispatch logs and scheduled maintenance alerts.
+                </p>
+            </div>
+            <div class="mt-4 pt-3 border-t border-slate-100 flex items-center justify-between text-xs font-semibold">
+                <span class="text-slate-400">Inventory status</span>
+                <button type="button" class="text-teal-700 hover:text-teal-900">View Equipment Report →</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+@code {
+    private string SelectedDateRange = "month";
+
+    private void GenerateSummaryReport()
+    {
+        // Placeholder report generation logic
+    }
+}

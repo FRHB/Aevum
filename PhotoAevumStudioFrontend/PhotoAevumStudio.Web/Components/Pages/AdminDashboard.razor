@@ -8,6 +8,7 @@
 @using Microsoft.AspNetCore.Components.Authorization
 @inject IUserService UserService
 @inject IEmployeeService EmployeeService
+@inject ITimesheetService TimesheetService
 @inject IScheduleService ScheduleService
 @inject IConsultationClient ConsultationApi
 @inject AuthenticationStateProvider AuthStateProvider
@@ -18,6 +19,47 @@
     <div>
         <h1 class="aev-page-header__title">Dashboard Overview</h1>
         <p class="aev-page-header__subtitle">@DateTime.Today.ToString("dddd, MMMM d, yyyy")</p>
+    </div>
+    @* ── Admin Clock In / Clock Out Widget ─────────────────────────────── *@
+    <div class="flex items-center gap-3 shrink-0">
+        @if (_adminClockStatus.IsClockedIn)
+        {
+            <div class="hidden sm:flex items-center gap-2 text-xs text-slate-500 font-medium">
+                <span class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-bold bg-emerald-100 text-emerald-800 border border-emerald-200">
+                    <span class="w-2 h-2 rounded-full bg-emerald-500 animate-ping"></span>
+                    ON DUTY
+                </span>
+                <span>Since @(_adminClockStatus.ClockIn?.ToString("hh:mm tt") ?? "—")</span>
+                <span class="text-slate-400">•</span>
+                <span>@_adminClockStatus.ElapsedHours.ToString("0.#")h elapsed</span>
+            </div>
+            <button type="button"
+                    @onclick="HandleAdminClockOut"
+                    disabled="@_adminIsPunching"
+                    class="inline-flex items-center gap-2 px-4 py-2 bg-rose-600 hover:bg-rose-700 disabled:opacity-60 text-white rounded-lg text-xs font-bold uppercase tracking-wider shadow-sm transition-all active:scale-95">
+                <span>⏹</span>
+                <span>@(_adminIsPunching ? "Recording…" : "Clock Out")</span>
+            </button>
+        }
+        else
+        {
+            <div class="hidden sm:flex items-center gap-2 text-xs text-slate-500 font-medium">
+                <span class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-semibold bg-slate-100 text-slate-500 border border-slate-200">
+                    ⚪ OFF DUTY
+                </span>
+            </div>
+            <button type="button"
+                    @onclick="HandleAdminClockIn"
+                    disabled="@_adminIsPunching"
+                    class="inline-flex items-center gap-2 px-4 py-2 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-60 text-white rounded-lg text-xs font-bold uppercase tracking-wider shadow-sm transition-all active:scale-95">
+                <span>▶</span>
+                <span>@(_adminIsPunching ? "Recording…" : "Clock In")</span>
+            </button>
+        }
+        @if (!string.IsNullOrWhiteSpace(_adminClockError))
+        {
+            <span class="text-xs text-rose-600 font-medium">@_adminClockError</span>
+        }
     </div>
 </header>
 
@@ -58,24 +100,6 @@
             <p class="aev-stat-card__label">Active Consultations</p>
             <h2 class="aev-stat-card__value">@_activeConsultations</h2>
             <p class="text-[11px] text-slate-400 mt-0.5">Inquiries in negotiation</p>
-        </div>
-    </article>
-
-    <article class="aev-stat-card">
-        <div class="aev-stat-card__icon aev-stat-card__icon--amber" aria-hidden="true">💵</div>
-        <div>
-            <p class="aev-stat-card__label">Cash to Reconcile</p>
-            <h2 class="aev-stat-card__value text-amber-600">@_pendingRemittances.Count</h2>
-            <p class="text-[11px] text-slate-400 mt-0.5">₱@_pendingRemittancesSum.ToString("N0") awaiting review</p>
-        </div>
-    </article>
-
-    <article class="aev-stat-card">
-        <div class="aev-stat-card__icon aev-stat-card__icon--teal" aria-hidden="true">💰</div>
-        <div>
-            <p class="aev-stat-card__label">Booked Deposits</p>
-            <h2 class="aev-stat-card__value text-emerald-700">₱@_totalBookedDeposits.ToString("N0")</h2>
-            <p class="text-[11px] text-slate-400 mt-0.5">@_totalActiveBookings confirmed sessions</p>
         </div>
     </article>
 </section>
@@ -238,176 +262,6 @@
     </div>
 </section>
 
-@* ── Timesheet & Today's Attendance View ───────────────────────────────────── *@
-<section class="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden mb-6" aria-label="Staff timesheet and attendance">
-    <div class="px-6 py-4 border-b border-gray-200 bg-gradient-to-r from-blue-50/50 to-white flex items-center justify-between">
-        <div>
-            <h2 class="text-base font-bold text-gray-900 flex items-center gap-2">
-                <span>⏱️</span> Staff Timesheet &amp; Attendance (Today)
-            </h2>
-            <p class="text-xs text-gray-500 mt-0.5">
-                Real-time employee clock-in punches, duty hours logged, and active leave status.
-            </p>
-        </div>
-        <div class="flex items-center gap-3">
-            <span class="hidden sm:inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-bold bg-emerald-50 text-emerald-800 border border-emerald-200">
-                <span class="w-2 h-2 rounded-full bg-emerald-500"></span> @_clockedInStaffCount On Duty Now
-            </span>
-            <a href="/admin/timesheet" class="text-xs font-semibold text-teal-700 hover:text-teal-900 hover:underline">
-                Open Full Timesheets Portal &rarr;
-            </a>
-        </div>
-    </div>
-
-    @if (!_todayAttendance.Any())
-    {
-        <div class="p-8 text-center text-xs text-gray-400 bg-gray-50/50">
-            ✨ No employee punch logs recorded for today yet.
-        </div>
-    }
-    else
-    {
-        <div class="overflow-x-auto">
-            <table class="w-full text-left text-xs">
-                <thead class="bg-gray-50 border-b border-gray-200 text-gray-500 uppercase font-semibold text-[10px]">
-                    <tr>
-                        <th class="py-3 px-4">Employee</th>
-                        <th class="py-3 px-4">Studio ID</th>
-                        <th class="py-3 px-4">Attendance Status</th>
-                        <th class="py-3 px-4">Clock-In Time</th>
-                        <th class="py-3 px-4">Hours Logged</th>
-                        <th class="py-3 px-4 text-right">Action</th>
-                    </tr>
-                </thead>
-                <tbody class="divide-y divide-gray-100">
-                    @foreach (var att in _todayAttendance)
-                    {
-                        <tr class="hover:bg-blue-50/20 transition-colors">
-                            <td class="py-3 px-4 font-semibold text-gray-900">
-                                @att.EmployeeName
-                            </td>
-                            <td class="py-3 px-4 font-mono text-[11px] text-gray-500">
-                                @att.EmployeeStudioId
-                            </td>
-                            <td class="py-3 px-4">
-                                @if (att.IsClockedIn)
-                                {
-                                    <span class="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-800 border border-emerald-200">
-                                        <span class="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span> On Duty
-                                    </span>
-                                }
-                                else if (att.IsOnLeaveToday)
-                                {
-                                    <span class="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-amber-100 text-amber-800 border border-amber-200">
-                                        🏖️ On Leave (@(att.ActiveLeaveType ?? "Approved"))
-                                    </span>
-                                }
-                                else if (att.IsDayOffToday)
-                                {
-                                    <span class="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-medium bg-slate-100 text-slate-600">
-                                        🗓️ Scheduled Day Off
-                                    </span>
-                                }
-                                else
-                                {
-                                    <span class="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-medium bg-gray-100 text-gray-500">
-                                        ⚪ Off Duty / Not Clocked In
-                                    </span>
-                                }
-                            </td>
-                            <td class="py-3 px-4 text-gray-700">
-                                @(att.ClockIn.HasValue ? att.ClockIn.Value.ToString("hh:mm tt") : "--")
-                            </td>
-                            <td class="py-3 px-4 font-bold text-gray-900">
-                                @(att.TotalHours > 0 ? $"{att.TotalHours:0.1} hrs" : (att.IsClockedIn ? "Active" : "--"))
-                            </td>
-                            <td class="py-3 px-4 text-right">
-                                <a href="/admin/timesheet" class="text-teal-700 hover:text-teal-900 font-semibold hover:underline">
-                                    Manage Punch &rarr;
-                                </a>
-                            </td>
-                        </tr>
-                    }
-                </tbody>
-            </table>
-        </div>
-    }
-</section>
-
-@* ── Admin Action Panel: Cash Remittance Approvals ─────────────────── *@
-<section class="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden mb-6">
-    <div class="px-6 py-4 border-b border-gray-200 bg-gradient-to-r from-amber-50/50 to-white flex items-center justify-between">
-        <div>
-            <h2 class="text-base font-bold text-gray-900 flex items-center gap-2">
-                <span>💵</span> Cash Remittance Verification &amp; Approval Action Panel
-            </h2>
-            <p class="text-xs text-gray-500 mt-0.5">
-                Inspect cash payments collected by employees on-site. Approving updates employee ledger to Cleared and logs audit verification.
-            </p>
-        </div>
-        <a href="/admin/approvals" class="text-xs font-semibold text-teal-700 hover:text-teal-900 hover:underline">
-            View Approvals Portal &rarr;
-        </a>
-    </div>
-
-    @if (!_pendingRemittances.Any())
-    {
-        <div class="p-8 text-center text-xs text-gray-400 bg-gray-50/50">
-            ✨ No employee cash collections currently require approval. All balances are reconciled.
-        </div>
-    }
-    else
-    {
-        <div class="overflow-x-auto">
-            <table class="w-full text-left text-xs">
-                <thead class="bg-gray-50 border-b border-gray-200 text-gray-500 uppercase font-semibold text-[10px]">
-                    <tr>
-                        <th class="py-3 px-4">Payment ID</th>
-                        <th class="py-3 px-4">Employee (Collector)</th>
-                        <th class="py-3 px-4">Event / Client</th>
-                        <th class="py-3 px-4">Amount</th>
-                        <th class="py-3 px-4">Customer Status</th>
-                        <th class="py-3 px-4">Remittance Status</th>
-                        <th class="py-3 px-4 text-right">Action</th>
-                    </tr>
-                </thead>
-                <tbody class="divide-y divide-gray-100">
-                    @foreach (var rem in _pendingRemittances)
-                    {
-                        <tr class="hover:bg-amber-50/30 transition-colors">
-                            <td class="py-3 px-4 font-mono font-medium text-gray-900">#@rem.Id</td>
-                            <td class="py-3 px-4">
-                                <span class="font-bold text-gray-900 block">@(rem.EmployeeName ?? rem.EmployeeId ?? "Staff")</span>
-                                <span class="text-[10px] text-gray-400">ID: @(rem.EmployeeId ?? "N/A")</span>
-                            </td>
-                            <td class="py-3 px-4 text-gray-600">@(rem.EventAppointmentId ?? $"Booking #{rem.BookingId}")</td>
-                            <td class="py-3 px-4 font-bold text-gray-900">₱@rem.Amount.ToString("N2")</td>
-                            <td class="py-3 px-4">
-                                <span class="bg-green-100 text-green-800 text-[10px] font-bold px-2 py-0.5 rounded-full">
-                                    ✓ Cleared
-                                </span>
-                            </td>
-                            <td class="py-3 px-4">
-                                <span class="bg-amber-100 text-amber-900 border border-amber-300 text-[10px] font-bold px-2 py-0.5 rounded-full">
-                                    ⏳ Pending Admin Approval
-                                </span>
-                            </td>
-                            <td class="py-3 px-4 text-right">
-                                <button type="button"
-                                        @onclick="() => HandleApproveRemittance(rem)"
-                                        disabled="@_isApproving"
-                                        class="bg-emerald-600 hover:bg-emerald-700 text-white px-3 py-1.5 rounded-lg text-xs font-bold shadow-xs transition-colors">
-                                    Approve Cash Remittance
-                                </button>
-                            </td>
-                        </tr>
-                    }
-                </tbody>
-            </table>
-        </div>
-    }
-</section>
-
 @* ── Recent Bookings & Quick Actions ───────────────────────────────────────── *@
 <div class="aev-content-row">
     <section class="aev-card aev-card--wide" aria-label="Recent bookings">
@@ -526,6 +380,11 @@
     private string _adminId = "Admin";
     private string _adminName = "System Administrator";
 
+    // ── Admin Clock In/Out State ─────────────────────────────────────────
+    private ClockStatusViewModel _adminClockStatus = new();
+    private bool _adminIsPunching = false;
+    private string? _adminClockError;
+
     protected override async Task OnInitializedAsync()
     {
         try
@@ -593,7 +452,8 @@
         }
 
         // 4. Await parallel async tasks
-        await Task.WhenAll(statsTask, attendanceTask, remittancesTask);
+        var adminClockTask = SafeGetAdminClockStatusAsync();
+        await Task.WhenAll(statsTask, attendanceTask, remittancesTask, adminClockTask);
     }
 
     private async Task SafeGetStatsAsync()
@@ -676,6 +536,73 @@
         finally
         {
             _isApproving = false;
+        }
+    }
+
+    // ── Admin Clock In/Out ───────────────────────────────────────────────
+    private async Task SafeGetAdminClockStatusAsync()
+    {
+        try
+        {
+            _adminClockStatus = await TimesheetService.GetClockStatusAsync(_adminId);
+        }
+        catch
+        {
+            _adminClockStatus = new ClockStatusViewModel { EmployeeStudioId = _adminId };
+        }
+    }
+
+    private async Task HandleAdminClockIn()
+    {
+        _adminIsPunching = true;
+        _adminClockError = null;
+        try
+        {
+            var ok = await TimesheetService.ClockInAsync(_adminId, notes: null, employeeName: _adminName);
+            if (ok)
+            {
+                await SafeGetAdminClockStatusAsync();
+                StateHasChanged();
+            }
+            else
+            {
+                _adminClockError = "Clock-in failed. You may already be clocked in.";
+            }
+        }
+        catch (Exception ex)
+        {
+            _adminClockError = ex.Message;
+        }
+        finally
+        {
+            _adminIsPunching = false;
+        }
+    }
+
+    private async Task HandleAdminClockOut()
+    {
+        _adminIsPunching = true;
+        _adminClockError = null;
+        try
+        {
+            var ok = await TimesheetService.ClockOutAsync(_adminId, notes: null, employeeName: _adminName);
+            if (ok)
+            {
+                await SafeGetAdminClockStatusAsync();
+                StateHasChanged();
+            }
+            else
+            {
+                _adminClockError = "Clock-out failed. No active shift found.";
+            }
+        }
+        catch (Exception ex)
+        {
+            _adminClockError = ex.Message;
+        }
+        finally
+        {
+            _adminIsPunching = false;
         }
     }
 }

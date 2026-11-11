@@ -1,0 +1,266 @@
+@using PhotoAevumStudio.Web.Models
+@using PhotoAevumStudio.Web.Services
+@inject IEmployeeService Employees
+@inject IUserService UserService
+@implements IDisposable
+
+@if (IsOpen)
+{
+    <div class="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 transition-opacity animate-in fade-in duration-150"
+         @onclick="CloseModal">
+        <div class="bg-white rounded-2xl shadow-2xl border border-slate-200 max-w-4xl w-full max-h-[90vh] flex flex-col overflow-hidden animate-in zoom-in-95 duration-150"
+             @onclick:stopPropagation="true">
+            
+            <!-- Modal Header -->
+            <div class="px-6 py-4 border-b border-slate-200 flex items-center justify-between bg-slate-50/50">
+                <div class="flex items-center gap-3">
+                    <div class="w-10 h-10 rounded-xl bg-amber-50 text-amber-600 border border-amber-200 flex items-center justify-center font-bold text-lg">
+                        📁
+                    </div>
+                    <div>
+                        <h2 class="text-lg font-bold text-slate-900 tracking-tight">Archived Staff Directory</h2>
+                        <p class="text-xs text-slate-500">View and manage inactive or archived employees. Restore records or permanently purge.</p>
+                    </div>
+                </div>
+                <button type="button" 
+                        @onclick="CloseModal"
+                        class="p-2 text-slate-400 hover:text-slate-600 rounded-lg hover:bg-slate-100 transition-colors cursor-pointer"
+                        aria-label="Close modal">
+                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+                    </svg>
+                </button>
+            </div>
+
+            <!-- Modal Body Content -->
+            <div class="p-6 overflow-y-auto space-y-4 flex-1">
+                @if (!string.IsNullOrEmpty(statusMessage))
+                {
+                    <div class="p-3 text-xs rounded-lg border @(isError ? "bg-rose-50 border-rose-200 text-rose-800" : "bg-emerald-50 border-emerald-200 text-emerald-800") flex items-center justify-between">
+                        <span>@statusMessage</span>
+                        <button type="button" @onclick="() => statusMessage = null" class="font-bold opacity-60 hover:opacity-100 cursor-pointer">✕</button>
+                    </div>
+                }
+
+                <div class="relative">
+                    <input type="text"
+                           @bind="modalSearchQuery"
+                           @bind:event="oninput"
+                           placeholder="Filter archived employees by name or ID..."
+                           class="w-full pl-9 pr-4 py-2 text-xs rounded-lg border border-slate-300 focus:outline-none focus:ring-1 focus:ring-slate-900 focus:border-slate-900" />
+                    <svg class="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                    </svg>
+                </div>
+
+                <div class="border border-slate-200 rounded-xl overflow-hidden shadow-2xs">
+                    <table class="w-full text-left border-collapse text-xs">
+                        <thead>
+                            <tr class="bg-slate-50 border-b border-slate-200 text-slate-600 font-semibold uppercase tracking-wider">
+                                <th class="px-4 py-3">Employee</th>
+                                <th class="px-4 py-3">Employee ID</th>
+                                <th class="px-4 py-3">Department</th>
+                                <th class="px-4 py-3">Status</th>
+                                <th class="px-4 py-3 text-right">Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody class="divide-y divide-slate-100">
+                            @if (isLoading)
+                            {
+                                <tr>
+                                    <td colspan="5" class="px-4 py-8 text-center text-slate-400">
+                                        <span class="inline-block w-4 h-4 border-2 border-slate-400/30 border-t-slate-600 rounded-full animate-spin mr-2"></span>
+                                        Loading archived staff...
+                                    </td>
+                                </tr>
+                            }
+                            else if (!FilteredArchivedEmployees.Any())
+                            {
+                                <tr>
+                                    <td colspan="5" class="px-4 py-8 text-center text-slate-400">
+                                        No archived employee records found.
+                                    </td>
+                                </tr>
+                            }
+                            else
+                            {
+                                @foreach (var emp in FilteredArchivedEmployees)
+                                {
+                                    <tr @key="emp.EmployeeId" class="hover:bg-slate-50/60 transition-colors">
+                                        <td class="px-4 py-3">
+                                            <div class="flex items-center gap-2.5">
+                                                <div class="w-7 h-7 rounded-full bg-slate-800 text-white flex items-center justify-center font-bold text-xs uppercase shrink-0">
+                                                    @emp.Initials
+                                                </div>
+                                                <div>
+                                                    <p class="font-semibold text-slate-900">@emp.FullName</p>
+                                                    <p class="text-slate-500 text-[11px]">@emp.Email</p>
+                                                </div>
+                                            </div>
+                                        </td>
+                                        <td class="px-4 py-3 font-mono text-[11px] text-slate-700">
+                                            @emp.EmployeeId
+                                        </td>
+                                        <td class="px-4 py-3 text-slate-600">
+                                            @(string.IsNullOrWhiteSpace(emp.Department) ? "General" : emp.Department)
+                                        </td>
+                                        <td class="px-4 py-3">
+                                            <span class="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-medium bg-amber-50 text-amber-800 border border-amber-200">
+                                                @emp.Status
+                                            </span>
+                                        </td>
+                                        <td class="px-4 py-3 text-right whitespace-nowrap">
+                                            <div class="inline-flex items-center justify-end gap-1.5">
+                                                <!-- Restore Icon Button -->
+                                                <button type="button" 
+                                                        class="inline-flex items-center justify-center w-7 h-7 rounded-lg border border-emerald-200 text-emerald-600 bg-emerald-50/70 hover:bg-emerald-100 hover:text-emerald-800 transition-colors cursor-pointer"
+                                                        @onclick="() => RestoreEmployeeAsync(emp)"
+                                                        title="Restore employee"
+                                                        aria-label="Restore employee">
+                                                    <svg class="w-3.5 h-3.5 text-emerald-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                                                    </svg>
+                                                </button>
+
+                                                <!-- Delete Icon Button -->
+                                                <button type="button" 
+                                                        class="inline-flex items-center justify-center w-7 h-7 rounded-lg border border-rose-200 text-rose-600 bg-rose-50/70 hover:bg-rose-100 hover:text-rose-800 transition-colors cursor-pointer"
+                                                        @onclick="() => DeleteEmployeeAsync(emp)"
+                                                        title="Permanently delete employee"
+                                                        aria-label="Delete employee permanently">
+                                                    <svg class="w-3.5 h-3.5 text-rose-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                                                    </svg>
+                                                </button>
+                                            </div>
+                                        </td>
+                                    </tr>
+                                }
+                            }
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
+            <!-- Modal Footer -->
+            <div class="px-6 py-3 border-t border-slate-200 bg-slate-50 flex items-center justify-between">
+                <span class="text-xs text-slate-500">
+                    Total archived records: @archivedList.Count
+                </span>
+                <button type="button" 
+                        @onclick="CloseModal"
+                        class="px-4 py-2 text-xs font-semibold rounded-lg bg-slate-900 text-white hover:bg-black transition-colors cursor-pointer">
+                    Done
+                </button>
+            </div>
+        </div>
+    </div>
+}
+
+@code {
+    [Parameter] public bool IsOpen { get; set; }
+    [Parameter] public EventCallback<bool> IsOpenChanged { get; set; }
+    [Parameter] public EventCallback OnStaffModified { get; set; }
+
+    private bool isLoading = true;
+    private string modalSearchQuery = string.Empty;
+    private List<EmployeeViewModel> archivedList = new();
+    private string? statusMessage;
+    private bool isError;
+    private CancellationTokenSource? _cts;
+
+    private IEnumerable<EmployeeViewModel> FilteredArchivedEmployees => archivedList
+        .Where(e => string.IsNullOrWhiteSpace(modalSearchQuery) ||
+                    e.FullName.Contains(modalSearchQuery, StringComparison.OrdinalIgnoreCase) ||
+                    e.EmployeeId.Contains(modalSearchQuery, StringComparison.OrdinalIgnoreCase));
+
+    protected override async Task OnParametersSetAsync()
+    {
+        if (IsOpen)
+        {
+            await LoadArchivedStaffAsync();
+        }
+    }
+
+    private async Task LoadArchivedStaffAsync()
+    {
+        isLoading = true;
+        try
+        {
+            _cts?.Cancel();
+            _cts = new CancellationTokenSource();
+            var data = await Employees.GetArchivedEmployeesAsync(_cts.Token);
+            archivedList = data?.ToList() ?? new List<EmployeeViewModel>();
+        }
+        catch
+        {
+            archivedList = new List<EmployeeViewModel>();
+        }
+        finally
+        {
+            isLoading = false;
+        }
+    }
+
+    private async Task RestoreEmployeeAsync(EmployeeViewModel emp)
+    {
+        try
+        {
+            var res = await Employees.RestoreEmployeeAsync(emp.EmployeeId);
+            if (res)
+            {
+                statusMessage = $"Restored '{emp.FullName}' to active staff.";
+                isError = false;
+                await LoadArchivedStaffAsync();
+                await OnStaffModified.InvokeAsync();
+            }
+            else
+            {
+                statusMessage = $"Failed to restore '{emp.FullName}'.";
+                isError = true;
+            }
+        }
+        catch (Exception ex)
+        {
+            statusMessage = $"Error: {ex.Message}";
+            isError = true;
+        }
+    }
+
+    private async Task DeleteEmployeeAsync(EmployeeViewModel emp)
+    {
+        try
+        {
+            var res = await Employees.DeleteEmployeeAsync(emp.EmployeeId);
+            if (res)
+            {
+                statusMessage = $"Permanently deleted '{emp.FullName}'.";
+                isError = false;
+                await LoadArchivedStaffAsync();
+                await OnStaffModified.InvokeAsync();
+            }
+            else
+            {
+                statusMessage = $"Failed to delete '{emp.FullName}'.";
+                isError = true;
+            }
+        }
+        catch (Exception ex)
+        {
+            statusMessage = $"Error: {ex.Message}";
+            isError = true;
+        }
+    }
+
+    private async Task CloseModal()
+    {
+        IsOpen = false;
+        await IsOpenChanged.InvokeAsync(false);
+    }
+
+    public void Dispose()
+    {
+        try { _cts?.Cancel(); _cts?.Dispose(); } catch { }
+        _cts = null;
+    }
+}

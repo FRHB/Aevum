@@ -67,7 +67,9 @@ public class RoutingAndLayoutTests
             typeof(AdminManagement),
             typeof(Clients),
             typeof(HistoryLog),
-            typeof(FaqManagement)
+            typeof(FaqManagement),
+            typeof(Sales),
+            typeof(Reports)
         };
 
         foreach (var page in adminPages)
@@ -155,6 +157,10 @@ public class RoutingAndLayoutTests
     [InlineData("/profile")]
     [InlineData("/admin/faqs")]
     [InlineData("/admin/faq")]
+    [InlineData("/admin/sales")]
+    [InlineData("/sales")]
+    [InlineData("/admin/reports")]
+    [InlineData("/reports")]
     public void RequiredNewRoutes_AreProperlyRegistered(string expectedRoute)
     {
         var component = FindComponentByRoute(expectedRoute);
@@ -220,6 +226,8 @@ public class RoutingAndLayoutTests
     [InlineData("/admin/history-log", typeof(HistoryLog))]
     [InlineData("/profile", typeof(Profile))]
     [InlineData("/admin/faqs", typeof(FaqManagement))]
+    [InlineData("/admin/sales", typeof(Sales))]
+    [InlineData("/admin/reports", typeof(Reports))]
     public void SidebarLinks_WireUpToDedicatedPlaceholderComponents(string route, Type expectedComponent)
     {
         var component = FindComponentByRoute(route);
@@ -326,5 +334,30 @@ public class RoutingAndLayoutTests
 
         var permitted = allowedRoles.Contains(role);
         Assert.Equal(isAllowed, permitted);
+    }
+
+    [Fact]
+    public void Sidebar_SalesAndReports_MenuMarkupAndStyling_MatchExistingPattern()
+    {
+        var currentDir = new DirectoryInfo(AppContext.BaseDirectory);
+        string? sidebarPath = null;
+        while (currentDir != null)
+        {
+            var candidate = Path.Combine(currentDir.FullName, "PhotoAevumStudio.Web", "Components", "Layout", "Sidebar.razor");
+            if (File.Exists(candidate))
+            {
+                sidebarPath = candidate;
+                break;
+            }
+            currentDir = currentDir.Parent;
+        }
+
+        Assert.True(sidebarPath != null && File.Exists(sidebarPath), $"Sidebar.razor was not found starting from {AppContext.BaseDirectory}");
+        var content = File.ReadAllText(sidebarPath!);
+
+        Assert.Contains("href=\"/admin/sales\"", content);
+        Assert.Contains("href=\"/admin/reports\"", content);
+        Assert.Contains("Sales", content);
+        Assert.Contains("Reports", content);
     }
 }

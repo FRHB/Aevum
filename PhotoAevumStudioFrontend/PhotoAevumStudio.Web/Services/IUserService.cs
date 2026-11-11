@@ -120,6 +120,8 @@ public interface IUserService
     IReadOnlyList<Employee> GetArchivedEmployees();
     Employee? GetEmployeeById(string id);
     void AddEmployee(Employee employee);
+    bool ArchiveEmployee(string id);
+    bool RestoreEmployee(string id);
     bool DeleteEmployee(string id);
 
     // ── Departments ─────────────────────────────────────────────────────────

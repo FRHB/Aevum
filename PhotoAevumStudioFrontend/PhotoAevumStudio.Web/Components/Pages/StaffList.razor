@@ -1,0 +1,566 @@
+@page "/admin/staff-list"
+@layout AdminLayout
+@rendermode InteractiveServer
+@attribute [Authorize(Roles = "Admin, SystemAdmin, Super Admin, Office Clerk")]
+@using PhotoAevumStudio.Web.Models
+@using PhotoAevumStudio.Web.Services
+@using Microsoft.AspNetCore.Components.Authorization
+@using System.Security.Claims
+@inject IEmployeeService Employees
+@inject IUserService UserService
+@inject AuthenticationStateProvider AuthStateProvider
+@implements IDisposable
+
+<div class="space-y-6">
+    <!-- Header Section with Add Button -->
+    <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 pb-2 border-b border-slate-200">
+        <div>
+            <h1 class="text-2xl font-bold text-slate-900 tracking-tight">Staff List</h1>
+            <p class="text-sm text-slate-500 mt-0.5">Manage photo studio employees, active specializations, and system credentials.</p>
+        </div>
+
+        @if (!EffectiveReadOnly)
+        {
+            <button type="button" 
+                    @onclick="() => isWizardOpen = true"
+                    class="inline-flex items-center justify-center gap-2 px-5 py-2.5 bg-slate-900 hover:bg-black text-white text-xs font-semibold uppercase tracking-wider rounded-lg shadow-sm transition-all focus:ring-2 focus:ring-slate-900 focus:ring-offset-2 cursor-pointer">
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M18 9v3m0 0v3m0-3h3m-3 0h-3m-2-5a4 4 0 11-8 0 4 4 0 018 0zM3 20a6 6 0 0112 0v1H3v-1z" />
+                </svg>
+                Add Employee
+            </button>
+        }
+    </div>
+
+    <!-- Notification / Status Banner -->
+    @if (!string.IsNullOrEmpty(feedbackMessage))
+    {
+        <div class="p-4 rounded-xl border flex items-center justify-between transition-all duration-200 @(feedbackType == "success" ? "bg-emerald-50 border-emerald-200 text-emerald-800" : (feedbackType == "error" ? "bg-rose-50 border-rose-200 text-rose-800" : "bg-amber-50 border-amber-200 text-amber-800"))">
+            <div class="flex items-center gap-2.5 text-xs font-medium">
+                @if (feedbackType == "success")
+                {
+                    <svg class="w-4 h-4 text-emerald-600 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7" />
+                    </svg>
+                }
+                else if (feedbackType == "error")
+                {
+                    <svg class="w-4 h-4 text-rose-600 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                    </svg>
+                }
+                else
+                {
+                    <svg class="w-4 h-4 text-amber-600 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                    </svg>
+                }
+                <span>@feedbackMessage</span>
+            </div>
+            <button type="button" 
+                    @onclick="() => feedbackMessage = null"
+                    class="text-xs font-bold opacity-60 hover:opacity-100 cursor-pointer">
+                ✕
+            </button>
+        </div>
+    }
+
+    <!-- Quick Stats Cards -->
+    <div class="grid grid-cols-1 sm:grid-cols-3 gap-4">
+        <div class="bg-white p-4 rounded-xl border border-slate-200 shadow-sm flex items-center gap-4">
+            <div class="w-10 h-10 rounded-lg bg-slate-100 flex items-center justify-center text-slate-800 text-lg font-bold">
+                👥
+            </div>
+            <div>
+                <p class="text-xs text-slate-500 font-medium">Total Staff</p>
+                <p class="text-xl font-bold text-slate-900">@(totalActiveCount + totalArchivedCount)</p>
+            </div>
+        </div>
+        <div class="bg-white p-4 rounded-xl border border-slate-200 shadow-sm flex items-center gap-4">
+            <div class="w-10 h-10 rounded-lg bg-emerald-50 flex items-center justify-center text-emerald-600 text-lg font-bold">
+                ✓
+            </div>
+            <div>
+                <p class="text-xs text-slate-500 font-medium">Active Personnel</p>
+                <p class="text-xl font-bold text-slate-900">@totalActiveCount</p>
+            </div>
+        </div>
+        <div class="bg-white p-4 rounded-xl border border-slate-200 shadow-sm flex items-center gap-4">
+            <div class="w-10 h-10 rounded-lg bg-amber-50 flex items-center justify-center text-amber-600 text-lg font-bold">
+                📁
+            </div>
+            <div>
+                <p class="text-xs text-slate-500 font-medium">Archived Personnel</p>
+                <p class="text-xl font-bold text-slate-900">@totalArchivedCount</p>
+            </div>
+        </div>
+    </div>
+
+    <!-- Filter & Search Toolbar -->
+    <div class="bg-white p-4 rounded-xl border border-slate-200 shadow-sm flex flex-col sm:flex-row gap-3 items-center justify-between">
+        <div class="relative w-full sm:w-80">
+            <input type="text" 
+                   @bind="searchQuery" 
+                   @bind:event="oninput"
+                   placeholder="Search by name, ID, or skill..." 
+                   class="w-full pl-9 pr-4 py-2 text-xs rounded-lg border border-slate-300 focus:outline-none focus:ring-1 focus:ring-slate-900 focus:border-slate-900" />
+            <svg class="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+            </svg>
+        </div>
+        <div class="flex items-center gap-3 self-end sm:self-center">
+            <button type="button" 
+                    @onclick="ToggleArchivedView"
+                    class="inline-flex items-center gap-1.5 px-3 py-2 text-xs font-semibold rounded-lg border transition-all cursor-pointer @(showArchivedOnly ? "bg-amber-100 text-amber-900 border-amber-300 font-bold shadow-xs" : "bg-white text-slate-700 hover:bg-slate-100 border-slate-200")">
+                <svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 8h14M5 8a2 2 0 110-4h14a2 2 0 110 4M5 8v10a2 2 0 002 2h10a2 2 0 002-2V8m-9 4h4" />
+                </svg>
+                <span>@(showArchivedOnly ? "Viewing Archived Staff" : "View Archived Staff")</span>
+            </button>
+            <span class="text-xs text-slate-500">
+                Showing @FilteredEmployees.Count of @employees.Count @(showArchivedOnly ? "archived staff" : "active staff")
+            </span>
+        </div>
+    </div>
+
+    <!-- Active vs Archived Context Banner -->
+    @if (showArchivedOnly)
+    {
+        <div class="bg-amber-50 border border-amber-200 rounded-xl p-3 px-4 flex items-center justify-between text-xs text-amber-800">
+            <div class="flex items-center gap-2">
+                <span class="w-2 h-2 rounded-full bg-amber-500 animate-pulse"></span>
+                <span class="font-semibold">Archived Directory View:</span>
+                <span>Displaying inactive and archived team members. You can restore them to active duty or permanently delete records.</span>
+            </div>
+            <button type="button" 
+                    @onclick="ToggleArchivedView"
+                    class="text-xs font-semibold text-amber-900 underline hover:text-black cursor-pointer ml-3 shrink-0">
+                &larr; Return to Active Staff
+            </button>
+        </div>
+    }
+
+    <!-- Staff Table View -->
+    <div class="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
+        <div class="overflow-x-auto">
+            <table class="w-full text-left border-collapse text-xs">
+                <thead>
+                    <tr class="bg-slate-50/75 border-b border-slate-200 text-slate-600 font-semibold uppercase tracking-wider">
+                        <th class="px-5 py-3.5">Employee</th>
+                        <th class="px-5 py-3.5">Employee ID</th>
+                        <th class="px-5 py-3.5">Department</th>
+                        <th class="px-5 py-3.5">Specializations</th>
+                        <th class="px-5 py-3.5">Status</th>
+                        @if (!EffectiveReadOnly)
+                        {
+                            <th class="px-5 py-3.5 text-right">Actions</th>
+                        }
+                    </tr>
+                </thead>
+                <tbody class="divide-y divide-slate-100">
+                    @if (isLoading)
+                    {
+                        <tr>
+                            <td colspan="@(EffectiveReadOnly ? 5 : 6)" class="px-5 py-10 text-center text-slate-400">
+                                <span class="inline-block w-4 h-4 border-2 border-slate-400/30 border-t-slate-600 rounded-full animate-spin mr-2"></span>
+                                Loading staff directory...
+                            </td>
+                        </tr>
+                    }
+                    else if (FilteredEmployees.Count == 0)
+                    {
+                        <tr>
+                            <td colspan="@(EffectiveReadOnly ? 5 : 6)" class="px-5 py-10 text-center text-slate-400">
+                                @(employees.Count == 0 ? (showArchivedOnly ? "No archived employees found in the database." : "No active employees found in the database.") : "No employees found matching your search.")
+                            </td>
+                        </tr>
+                    }
+                    else
+                    {
+                        @foreach (var emp in FilteredEmployees)
+                        {
+                            <tr @key="emp.EmployeeId" class="hover:bg-slate-50/60 transition-colors">
+                                <td class="px-5 py-3.5">
+                                    <div class="flex items-center gap-3">
+                                        <div class="w-8 h-8 rounded-full bg-slate-900 text-white flex items-center justify-center font-bold text-xs uppercase shrink-0">
+                                            @emp.Initials
+                                        </div>
+                                        <div>
+                                            <p class="font-semibold text-slate-900">@emp.FullName</p>
+                                            <p class="text-slate-500 text-[11px]">@emp.Email</p>
+                                            @if (!string.IsNullOrWhiteSpace(emp.Address) || emp.BirthDate != null || emp.BirthYear != null)
+                                            {
+                                                <p class="text-slate-400 text-[10px] truncate max-w-xs mt-0.5" title="@emp.Address">
+                                                    @(emp.BirthDate != null ? $"{emp.BirthDate.Value:MMM dd, yyyy} • " : (emp.BirthYear != null ? $"b. {emp.BirthYear} • " : ""))@(string.IsNullOrWhiteSpace(emp.Address) ? "No address recorded" : emp.Address)
+                                                </p>
+                                            }
+                                        </div>
+                                    </div>
+                                </td>
+                                <td class="px-5 py-3.5">
+                                    <span class="font-mono text-slate-700 bg-slate-100 px-2 py-0.5 rounded text-[11px] font-medium">
+                                        @emp.EmployeeId
+                                    </span>
+                                </td>
+                                <td class="px-5 py-3.5">
+                                    <span class="inline-flex items-center px-2.5 py-1 rounded-md text-[11px] font-semibold @(string.IsNullOrWhiteSpace(emp.Department) || emp.Department == "General" ? "bg-slate-100 text-slate-600 border border-slate-200" : "bg-indigo-50 text-indigo-700 border border-indigo-200/70")">
+                                        @(string.IsNullOrWhiteSpace(emp.Department) ? "General" : emp.Department)
+                                    </span>
+                                </td>
+                                <td class="px-5 py-3.5">
+                                    @if (emp.Specializations != null && emp.Specializations.Any())
+                                    {
+                                        <div class="flex flex-wrap gap-1">
+                                            @foreach (var spec in emp.Specializations)
+                                            {
+                                                <span class="inline-block bg-slate-100 text-slate-800 text-[11px] font-medium px-2 py-0.5 rounded border border-slate-200">
+                                                    @spec
+                                                </span>
+                                            }
+                                        </div>
+                                    }
+                                    else
+                                    {
+                                        <span class="inline-flex items-center text-slate-400 italic text-[11px]">
+                                            No specialization
+                                        </span>
+                                    }
+                                </td>
+                                <td class="px-5 py-3.5">
+                                    <span class="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-medium border @GetStatusBadgeClasses(emp.Status)">
+                                        <span class="w-1.5 h-1.5 rounded-full @GetStatusDotClasses(emp.Status)"></span>
+                                        @emp.Status
+                                    </span>
+                                </td>
+                                @if (!EffectiveReadOnly)
+                                {
+                                    <td class="px-5 py-3.5 text-right whitespace-nowrap">
+                                        <div class="inline-flex items-center justify-end gap-1.5">
+                                            @if (!showArchivedOnly)
+                                            {
+                                                <!-- Active Record Actions: Clean Pencil Icon Button (No Text) & Archive Icon Button -->
+                                                <button type="button" 
+                                                        class="inline-flex items-center justify-center w-8 h-8 rounded-lg border border-slate-300 text-slate-600 bg-white hover:bg-slate-100 hover:text-slate-900 transition-colors shadow-2xs cursor-pointer focus:outline-none focus:ring-2 focus:ring-slate-900/10"
+                                                        @onclick="() => OpenEditWizard(emp)"
+                                                        title="Edit employee"
+                                                        aria-label="Edit employee">
+                                                    <svg class="w-4 h-4 text-slate-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
+                                                    </svg>
+                                                </button>
+
+                                                <button type="button" 
+                                                        class="inline-flex items-center justify-center w-8 h-8 rounded-lg border border-amber-200 text-amber-600 bg-amber-50/70 hover:bg-amber-100 hover:text-amber-800 transition-colors shadow-2xs cursor-pointer focus:outline-none focus:ring-2 focus:ring-amber-500/20"
+                                                        @onclick="() => PromptArchive(emp)"
+                                                        title="Archive employee"
+                                                        aria-label="Archive employee">
+                                                    <svg class="w-4 h-4 text-amber-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 8h14M5 8a2 2 0 110-4h14a2 2 0 110 4M5 8v10a2 2 0 002 2h10a2 2 0 002-2V8m-9 4h4" />
+                                                    </svg>
+                                                </button>
+                                            }
+                                            else
+                                            {
+                                                <!-- Archived Record Actions: Restore Icon Button & Permanent Delete Icon Button -->
+                                                <button type="button" 
+                                                        class="inline-flex items-center justify-center w-8 h-8 rounded-lg border border-emerald-200 text-emerald-600 bg-emerald-50/70 hover:bg-emerald-100 hover:text-emerald-800 transition-colors shadow-2xs cursor-pointer focus:outline-none focus:ring-2 focus:ring-emerald-500/20"
+                                                        @onclick="() => PromptRestore(emp)"
+                                                        title="Restore employee to active directory"
+                                                        aria-label="Restore employee">
+                                                    <svg class="w-4 h-4 text-emerald-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                                                    </svg>
+                                                </button>
+
+                                                <button type="button" 
+                                                        class="inline-flex items-center justify-center w-8 h-8 rounded-lg border border-rose-200 text-rose-600 bg-rose-50/70 hover:bg-rose-100 hover:text-rose-800 transition-colors shadow-2xs cursor-pointer focus:outline-none focus:ring-2 focus:ring-rose-500/20"
+                                                        @onclick="() => PromptDelete(emp)"
+                                                        title="Permanently delete employee"
+                                                        aria-label="Delete employee permanently">
+                                                    <svg class="w-4 h-4 text-rose-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                                                    </svg>
+                                                </button>
+                                            }
+                                        </div>
+                                    </td>
+                                }
+                            </tr>
+                        }
+                    }
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+<!-- Add / Edit Employee Wizard Modal -->
+@if (!EffectiveReadOnly)
+{
+    <AddEmployeeWizard @bind-IsOpen="isWizardOpen" OnSaved="HandleEmployeeSaved" />
+    <AddEmployeeWizard @bind-IsOpen="isEditWizardOpen" IsEditMode="true" EditEmployee="selectedEmployeeForEdit" OnSaved="HandleEmployeeSaved" />
+    
+    <!-- Action Confirmation Modal for Archive, Restore, and Delete -->
+    <StaffActionConfirmationModal @bind-IsOpen="isActionModalOpen"
+                                  ActionType="@currentActionType"
+                                  TargetEmployee="@actionTargetEmployee"
+                                  IsProcessing="@isProcessingAction"
+                                  OnConfirmed="ExecuteEmployeeActionAsync" />
+}
+
+@code {
+    [Parameter] public bool IsReadOnly { get; set; }
+    [CascadingParameter] Task<AuthenticationState>? AuthState { get; set; }
+    private ClaimsPrincipal? _currentUser;
+    private bool _isOfficeClerk;
+    public bool EffectiveReadOnly => IsReadOnly || _isOfficeClerk;
+
+    private bool isWizardOpen = false;
+    private bool isEditWizardOpen = false;
+    private bool showArchivedOnly = false;
+    private EmployeeViewModel? selectedEmployeeForEdit;
+    private bool isLoading = true;
+    private string searchQuery = string.Empty;
+    private List<EmployeeViewModel> employees = new();
+    private int totalActiveCount = 0;
+    private int totalArchivedCount = 0;
+
+    // Action confirmation modal state
+    private bool isActionModalOpen = false;
+    private string currentActionType = "Archive"; // "Archive", "Restore", "Delete"
+    private EmployeeViewModel? actionTargetEmployee;
+    private bool isProcessingAction = false;
+    private string? feedbackMessage;
+    private string feedbackType = "success"; // "success", "error", "info"
+
+    private CancellationTokenSource? _cts;
+
+    private List<EmployeeViewModel> FilteredEmployees => employees
+        .Where(e => string.IsNullOrWhiteSpace(searchQuery) ||
+                    e.FullName.Contains(searchQuery, StringComparison.OrdinalIgnoreCase) ||
+                    e.EmployeeId.Contains(searchQuery, StringComparison.OrdinalIgnoreCase) ||
+                    (e.Department != null && e.Department.Contains(searchQuery, StringComparison.OrdinalIgnoreCase)) ||
+                    (e.Address != null && e.Address.Contains(searchQuery, StringComparison.OrdinalIgnoreCase)) ||
+                    e.Specializations.Any(s => s.Contains(searchQuery, StringComparison.OrdinalIgnoreCase)))
+        .ToList();
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            if (AuthState != null)
+            {
+                var state = await AuthState;
+                _currentUser = state.User;
+            }
+            else if (AuthStateProvider != null)
+            {
+                var state = await AuthStateProvider.GetAuthenticationStateAsync();
+                _currentUser = state.User;
+            }
+            _isOfficeClerk = EmployeeRoleHelper.IsOfficeClerk(_currentUser, UserService);
+
+            _cts = new CancellationTokenSource();
+            await RefreshCountsAsync();
+            await LoadEmployeesAsync();
+        }
+        catch (OperationCanceledException)
+        {
+            // Circuit navigation / disposal cancellation
+        }
+    }
+
+    private async Task RefreshCountsAsync()
+    {
+        try
+        {
+            var activeData = await Employees.GetEmployeesAsync(includeArchived: false, _cts?.Token ?? CancellationToken.None);
+            totalActiveCount = activeData?.Count ?? 0;
+
+            var archivedData = await Employees.GetArchivedEmployeesAsync(_cts?.Token ?? CancellationToken.None);
+            totalArchivedCount = archivedData?.Count ?? 0;
+        }
+        catch
+        {
+            // Fallback counts
+            totalActiveCount = employees.Count;
+        }
+    }
+
+    private async Task ToggleArchivedView()
+    {
+        showArchivedOnly = !showArchivedOnly;
+        feedbackMessage = null;
+        await LoadEmployeesAsync();
+    }
+
+    private async Task LoadEmployeesAsync()
+    {
+        isLoading = true;
+        try
+        {
+            var data = showArchivedOnly
+                ? await Employees.GetArchivedEmployeesAsync(_cts?.Token ?? CancellationToken.None)
+                : await Employees.GetEmployeesAsync(includeArchived: false, _cts?.Token ?? CancellationToken.None);
+            employees = data?.ToList() ?? new List<EmployeeViewModel>();
+        }
+        catch (OperationCanceledException)
+        {
+            // Expected on circuit cancellation
+        }
+        catch
+        {
+            employees = new List<EmployeeViewModel>();
+        }
+        finally
+        {
+            isLoading = false;
+        }
+    }
+
+    private string GetStatusBadgeClasses(string status)
+    {
+        return status switch
+        {
+            "Clock-In (Duty)" => "bg-emerald-50 text-emerald-700 border-emerald-200",
+            "Clock-Out (Off Duty)" => "bg-blue-50 text-blue-700 border-blue-200",
+            "Archive" or "Archived" => "bg-amber-50 text-amber-800 border-amber-200",
+            "Inactive" or "Deleted" => "bg-rose-50 text-rose-700 border-rose-200",
+            _ => "bg-emerald-50 text-emerald-700 border-emerald-200"
+        };
+    }
+
+    private string GetStatusDotClasses(string status)
+    {
+        return status switch
+        {
+            "Clock-In (Duty)" => "bg-emerald-500 animate-pulse",
+            "Clock-Out (Off Duty)" => "bg-blue-500",
+            "Archive" or "Archived" => "bg-amber-500",
+            "Inactive" or "Deleted" => "bg-rose-500",
+            _ => "bg-emerald-500"
+        };
+    }
+
+    private void OpenEditWizard(EmployeeViewModel emp)
+    {
+        selectedEmployeeForEdit = emp;
+        isEditWizardOpen = true;
+    }
+
+    private void PromptArchive(EmployeeViewModel emp)
+    {
+        actionTargetEmployee = emp;
+        currentActionType = "Archive";
+        isActionModalOpen = true;
+    }
+
+    private void PromptRestore(EmployeeViewModel emp)
+    {
+        actionTargetEmployee = emp;
+        currentActionType = "Restore";
+        isActionModalOpen = true;
+    }
+
+    private void PromptDelete(EmployeeViewModel emp)
+    {
+        actionTargetEmployee = emp;
+        currentActionType = "Delete";
+        isActionModalOpen = true;
+    }
+
+    private async Task ExecuteEmployeeActionAsync()
+    {
+        if (actionTargetEmployee == null) return;
+        isProcessingAction = true;
+        var empName = actionTargetEmployee.FullName;
+        var empId = actionTargetEmployee.EmployeeId;
+
+        try
+        {
+            bool success = false;
+            if (currentActionType == "Archive")
+            {
+                success = await Employees.ArchiveEmployeeAsync(empId, _cts?.Token ?? CancellationToken.None);
+                if (success)
+                {
+                    feedbackType = "success";
+                    feedbackMessage = $"Employee '{empName}' ({empId}) has been successfully archived.";
+                }
+                else
+                {
+                    feedbackType = "error";
+                    feedbackMessage = $"Failed to archive employee '{empName}'.";
+                }
+            }
+            else if (currentActionType == "Restore")
+            {
+                success = await Employees.RestoreEmployeeAsync(empId, _cts?.Token ?? CancellationToken.None);
+                if (success)
+                {
+                    feedbackType = "success";
+                    feedbackMessage = $"Employee '{empName}' ({empId}) has been restored to Active status.";
+                }
+                else
+                {
+                    feedbackType = "error";
+                    feedbackMessage = $"Failed to restore employee '{empName}'.";
+                }
+            }
+            else if (currentActionType == "Delete")
+            {
+                success = await Employees.DeleteEmployeeAsync(empId, _cts?.Token ?? CancellationToken.None);
+                if (success)
+                {
+                    feedbackType = "success";
+                    feedbackMessage = $"Employee '{empName}' ({empId}) has been permanently deleted.";
+                }
+                else
+                {
+                    feedbackType = "error";
+                    feedbackMessage = $"Failed to delete employee '{empName}'.";
+                }
+            }
+
+            isActionModalOpen = false;
+            await RefreshCountsAsync();
+            await LoadEmployeesAsync();
+        }
+        catch (Exception ex)
+        {
+            feedbackType = "error";
+            feedbackMessage = $"Error executing {currentActionType.ToLowerInvariant()}: {ex.Message}";
+            isActionModalOpen = false;
+        }
+        finally
+        {
+            isProcessingAction = false;
+            StateHasChanged();
+        }
+    }
+
+    private async Task HandleEmployeeSaved()
+    {
+        await RefreshCountsAsync();
+        await LoadEmployeesAsync();
+        feedbackType = "success";
+        feedbackMessage = "Staff directory updated successfully.";
+        StateHasChanged();
+    }
+
+    public void Dispose()
+    {
+        try
+        {
+            _cts?.Cancel();
+        }
+        catch
+        {
+        }
+        finally
+        {
+            try { _cts?.Dispose(); } catch { }
+            _cts = null;
+        }
+    }
+}

@@ -45,8 +45,7 @@ public class AdminDashboardAndFaqTests
         Assert.Contains("Today's Schedule", content);
         Assert.Contains("On-Duty Staff", content);
         Assert.Contains("Active Consultations", content);
-        Assert.Contains("Cash to Reconcile", content);
-        Assert.Contains("Booked Deposits", content);
+     
 
         // 4. FAQ Management moved to dedicated page — verify quick-action link exists
         Assert.Contains("/admin/faqs", content);

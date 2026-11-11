@@ -11,14 +11,17 @@ public interface IEmployeeService
     Task<IReadOnlyList<SpecializationLookupItem>> GetSpecializationLookupsAsync(CancellationToken cancellationToken = default);
     Task<SaveEmployeeResult> CreateEmployeeAsync(NewEmployeeRequest request, CancellationToken cancellationToken = default);
     Task<SaveEmployeeResult> UpdateEmployeeAsync(NewEmployeeRequest request, CancellationToken cancellationToken = default);
+    Task<bool> ArchiveEmployeeAsync(string employeeId, CancellationToken cancellationToken = default);
+    Task<bool> RestoreEmployeeAsync(string employeeId, CancellationToken cancellationToken = default);
+    Task<bool> DeleteEmployeeAsync(string employeeId, CancellationToken cancellationToken = default);
     Task<DashboardStatsViewModel> GetDashboardStatsAsync(CancellationToken cancellationToken = default);
     Task<IReadOnlyList<DayAvailabilityViewModel>> GetAvailabilityAsync(int days, CancellationToken cancellationToken = default);
 
     // ── Timesheet & Clock In/Out ─────────────────────────────────────────────
     Task<IReadOnlyList<TodayAttendanceSummaryDto>> GetTodayAttendanceAsync(CancellationToken cancellationToken = default);
     Task<ClockStatusViewModel> GetClockStatusAsync(string? employeeId = null, CancellationToken cancellationToken = default);
-    Task<bool> ClockInAsync(string? employeeId = null, string? notes = null, CancellationToken cancellationToken = default);
-    Task<bool> ClockOutAsync(string? employeeId = null, string? notes = null, CancellationToken cancellationToken = default);
+    Task<bool> ClockInAsync(string? employeeId = null, string? notes = null, string? employeeName = null, CancellationToken cancellationToken = default);
+    Task<bool> ClockOutAsync(string? employeeId = null, string? notes = null, string? employeeName = null, CancellationToken cancellationToken = default);
     Task<IReadOnlyList<EmployeeTimesheetHistoryDto>> GetTimesheetHistoryAsync(string? employeeId = null, CancellationToken cancellationToken = default);
     Task<bool> AdjustTimesheetPunchAsync(int id, DateTime? clockIn, DateTime? clockOut, string? reason, CancellationToken cancellationToken = default);
 

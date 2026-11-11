@@ -1358,6 +1358,52 @@ public class UserService : IUserService
 
 
 
+	public bool ArchiveEmployee(string id)
+	{
+		if (string.IsNullOrWhiteSpace(id)) return false;
+		using SqlConnection sqlConnection = CreateConnection();
+		sqlConnection.Open();
+		using SqlCommand sqlCommand = new SqlCommand(@"
+            IF OBJECT_ID(N'dbo.Employees', N'U') IS NOT NULL
+            BEGIN
+                UPDATE dbo.Employees
+                SET EmployeeStatus = 'Archive',
+                    Status = 'Archive'
+                WHERE UPPER(EmployeeID) = @Id;
+
+                IF OBJECT_ID(N'dbo.HistoryLog', N'U') IS NOT NULL
+                BEGIN
+                    INSERT INTO dbo.HistoryLog (ActionType, EntityName, EntityID, ActionDetails, LoggedAt)
+                    VALUES ('Archive', 'Employee', @Id, 'Archived employee record', SYSUTCDATETIME());
+                END
+            END", sqlConnection);
+		sqlCommand.Parameters.AddWithValue("@Id", id.Trim().ToUpperInvariant());
+		return sqlCommand.ExecuteNonQuery() > 0;
+	}
+
+	public bool RestoreEmployee(string id)
+	{
+		if (string.IsNullOrWhiteSpace(id)) return false;
+		using SqlConnection sqlConnection = CreateConnection();
+		sqlConnection.Open();
+		using SqlCommand sqlCommand = new SqlCommand(@"
+            IF OBJECT_ID(N'dbo.Employees', N'U') IS NOT NULL
+            BEGIN
+                UPDATE dbo.Employees
+                SET EmployeeStatus = 'Active',
+                    Status = 'Active'
+                WHERE UPPER(EmployeeID) = @Id;
+
+                IF OBJECT_ID(N'dbo.HistoryLog', N'U') IS NOT NULL
+                BEGIN
+                    INSERT INTO dbo.HistoryLog (ActionType, EntityName, EntityID, ActionDetails, LoggedAt)
+                    VALUES ('Restore', 'Employee', @Id, 'Restored employee to Active', SYSUTCDATETIME());
+                END
+            END", sqlConnection);
+		sqlCommand.Parameters.AddWithValue("@Id", id.Trim().ToUpperInvariant());
+		return sqlCommand.ExecuteNonQuery() > 0;
+	}
+
 	public bool DeleteEmployee(string id)
 
 	{

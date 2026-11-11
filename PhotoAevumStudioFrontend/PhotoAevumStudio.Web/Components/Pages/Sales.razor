@@ -1,0 +1,239 @@
+@page "/admin/sales"
+@page "/sales"
+@layout AdminLayout
+@rendermode InteractiveServer
+@attribute [Authorize(Roles = "Admin,SystemAdmin,System Admin,Super Admin,Office Clerk")]
+@using Microsoft.AspNetCore.Components.Authorization
+@inject NavigationManager Nav
+
+<PageTitle>Sales &amp; Transactions | Photo Aevum Studio</PageTitle>
+
+<div class="space-y-6">
+    @* ── Page header ─────────────────────────────────────────────────── *@
+    <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 pb-2 border-b border-slate-200">
+        <div>
+            <div class="flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-slate-500 mb-1">
+                <span>General</span>
+                <span>/</span>
+                <span class="text-slate-900 font-bold">Sales</span>
+            </div>
+            <h1 class="text-2xl sm:text-3xl font-extrabold text-slate-900 tracking-tight">Sales &amp; Transactions</h1>
+            <p class="text-xs sm:text-sm text-slate-500 mt-1">Manage studio revenue, booking payments, invoice remittances, and package sales.</p>
+        </div>
+        <div class="flex items-center gap-2">
+            <button type="button" @onclick="ExportSales" class="inline-flex items-center gap-1.5 px-3.5 py-2 bg-white border border-slate-300 hover:bg-slate-50 text-slate-700 text-xs font-semibold rounded-lg shadow-2xs transition-colors">
+                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                    <polyline points="7 10 12 15 17 10"></polyline>
+                    <line x1="12" y1="15" x2="12" y2="3"></line>
+                </svg>
+                <span>Export CSV</span>
+            </button>
+            <button type="button" @onclick="OpenNewSaleModal" class="inline-flex items-center gap-1.5 px-3.5 py-2 bg-teal-700 hover:bg-teal-800 text-white text-xs font-bold rounded-lg shadow-2xs transition-colors">
+                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <line x1="12" y1="5" x2="12" y2="19"></line>
+                    <line x1="5" y1="12" x2="19" y2="12"></line>
+                </svg>
+                <span>Record New Sale</span>
+            </button>
+        </div>
+    </div>
+
+    @* ── KPI Summary Cards ─────────────────────────────────────────────── *@
+    <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+        <div class="bg-white p-5 rounded-xl border border-slate-200 shadow-2xs flex items-center gap-4">
+            <div class="w-12 h-12 rounded-xl bg-emerald-50 text-emerald-600 flex items-center justify-center font-bold text-xl shrink-0">
+                ₱
+            </div>
+            <div>
+                <p class="text-xs font-medium text-slate-500 uppercase tracking-wider">Total Revenue</p>
+                <h3 class="text-xl font-extrabold text-slate-900 mt-0.5">₱@TotalRevenue.ToString("N2")</h3>
+                <p class="text-[11px] text-emerald-600 font-semibold mt-0.5 flex items-center gap-1">
+                    <span>↑ 14.8%</span>
+                    <span class="text-slate-400 font-normal">vs last month</span>
+                </p>
+            </div>
+        </div>
+
+        <div class="bg-white p-5 rounded-xl border border-slate-200 shadow-2xs flex items-center gap-4">
+            <div class="w-12 h-12 rounded-xl bg-blue-50 text-blue-600 flex items-center justify-center shrink-0">
+                <svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <rect x="2" y="5" width="20" height="14" rx="2"></rect>
+                    <line x1="2" y1="10" x2="22" y2="10"></line>
+                </svg>
+            </div>
+            <div>
+                <p class="text-xs font-medium text-slate-500 uppercase tracking-wider">Completed Transactions</p>
+                <h3 class="text-xl font-extrabold text-slate-900 mt-0.5">@CompletedCount</h3>
+                <p class="text-[11px] text-slate-400 font-normal mt-0.5">@FilteredSales.Count total records</p>
+            </div>
+        </div>
+
+        <div class="bg-white p-5 rounded-xl border border-slate-200 shadow-2xs flex items-center gap-4">
+            <div class="w-12 h-12 rounded-xl bg-amber-50 text-amber-600 flex items-center justify-center shrink-0">
+                <svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <circle cx="12" cy="12" r="10"></circle>
+                    <polyline points="12 6 12 12 16 14"></polyline>
+                </svg>
+            </div>
+            <div>
+                <p class="text-xs font-medium text-slate-500 uppercase tracking-wider">Pending Remittances</p>
+                <h3 class="text-xl font-extrabold text-amber-600 mt-0.5">₱@PendingSum.ToString("N2")</h3>
+                <p class="text-[11px] text-slate-400 font-normal mt-0.5">@PendingCount awaiting clearance</p>
+            </div>
+        </div>
+
+        <div class="bg-white p-5 rounded-xl border border-slate-200 shadow-2xs flex items-center gap-4">
+            <div class="w-12 h-12 rounded-xl bg-purple-50 text-purple-600 flex items-center justify-center shrink-0">
+                <svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <line x1="18" y1="20" x2="18" y2="10"></line>
+                    <line x1="12" y1="20" x2="12" y2="4"></line>
+                    <line x1="6" y1="20" x2="6" y2="14"></line>
+                </svg>
+            </div>
+            <div>
+                <p class="text-xs font-medium text-slate-500 uppercase tracking-wider">Average Sale Value</p>
+                <h3 class="text-xl font-extrabold text-slate-900 mt-0.5">₱@AvgSaleValue.ToString("N2")</h3>
+                <p class="text-[11px] text-emerald-600 font-semibold mt-0.5">Per booking session</p>
+            </div>
+        </div>
+    </div>
+
+    @* ── Sales Transactions Table Card ─────────────────────────────────── *@
+    <div class="bg-white rounded-xl shadow-2xs border border-slate-200 overflow-hidden">
+        <div class="p-4 border-b border-slate-200 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+            <div class="flex items-center gap-2">
+                <input type="text"
+                       @bind="SearchQuery"
+                       @bind:event="oninput"
+                       placeholder="Search transactions, clients, or IDs..."
+                       class="text-xs px-3 py-2 border border-slate-300 rounded-lg w-64 focus:outline-none focus:ring-1 focus:ring-teal-500" />
+                <select @bind="StatusFilter" class="text-xs px-3 py-2 border border-slate-300 rounded-lg bg-white focus:outline-none focus:ring-1 focus:ring-teal-500">
+                    <option value="All">All Statuses</option>
+                    <option value="Completed">Completed</option>
+                    <option value="Deposit Paid">Deposit Paid</option>
+                    <option value="Pending">Pending</option>
+                </select>
+            </div>
+            <div class="text-xs text-slate-500">
+                Showing <span class="font-semibold text-slate-800">@FilteredSales.Count</span> sales records
+            </div>
+        </div>
+
+        <div class="overflow-x-auto">
+            <table class="w-full text-left border-collapse text-xs">
+                <thead>
+                    <tr class="bg-slate-50 border-b border-slate-200 font-semibold uppercase tracking-wider text-slate-500">
+                        <th class="px-5 py-3.5">Invoice #</th>
+                        <th class="px-5 py-3.5">Date</th>
+                        <th class="px-5 py-3.5">Client</th>
+                        <th class="px-5 py-3.5">Package / Service</th>
+                        <th class="px-5 py-3.5">Payment Method</th>
+                        <th class="px-5 py-3.5 text-right">Amount</th>
+                        <th class="px-5 py-3.5 text-center">Status</th>
+                    </tr>
+                </thead>
+                <tbody class="divide-y divide-slate-100">
+                    @if (FilteredSales.Count == 0)
+                    {
+                        <tr>
+                            <td colspan="7" class="py-12 text-center text-slate-400 italic">
+                                No sales records match the selected criteria.
+                            </td>
+                        </tr>
+                    }
+                    else
+                    {
+                        @foreach (var sale in FilteredSales)
+                        {
+                            <tr class="hover:bg-slate-50 transition-colors">
+                                <td class="px-5 py-3.5 font-mono font-medium text-slate-900">@sale.InvoiceNo</td>
+                                <td class="px-5 py-3.5 text-slate-600">@sale.Date.ToString("MMM dd, yyyy")</td>
+                                <td class="px-5 py-3.5 font-semibold text-slate-900">@sale.ClientName</td>
+                                <td class="px-5 py-3.5 text-slate-700">@sale.ServiceName</td>
+                                <td class="px-5 py-3.5 text-slate-600">
+                                    <span class="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md bg-slate-100 text-[11px] font-medium text-slate-700">
+                                        @sale.PaymentMethod
+                                    </span>
+                                </td>
+                                <td class="px-5 py-3.5 text-right font-bold text-slate-900">
+                                    ₱@sale.Amount.ToString("N2")
+                                </td>
+                                <td class="px-5 py-3.5 text-center">
+                                    @if (sale.Status == "Completed")
+                                    {
+                                        <span class="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-800">
+                                            Completed
+                                        </span>
+                                    }
+                                    else if (sale.Status == "Deposit Paid")
+                                    {
+                                        <span class="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold bg-blue-100 text-blue-800">
+                                            Deposit (15%)
+                                        </span>
+                                    }
+                                    else
+                                    {
+                                        <span class="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-100 text-amber-800">
+                                            Pending
+                                        </span>
+                                    }
+                                </td>
+                            </tr>
+                        }
+                    }
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+@code {
+    private string SearchQuery = "";
+    private string StatusFilter = "All";
+
+    private class SaleRecord
+    {
+        public string InvoiceNo { get; set; } = "";
+        public DateTime Date { get; set; }
+        public string ClientName { get; set; } = "";
+        public string ServiceName { get; set; } = "";
+        public string PaymentMethod { get; set; } = "";
+        public decimal Amount { get; set; }
+        public string Status { get; set; } = "Completed";
+    }
+
+    private List<SaleRecord> AllSales = new()
+    {
+        new() { InvoiceNo = "INV-2026-0081", Date = DateTime.Today.AddDays(-1), ClientName = "Rumon Baclig", ServiceName = "Graduation Prestige Package", PaymentMethod = "GCash", Amount = 4500.00m, Status = "Completed" },
+        new() { InvoiceNo = "INV-2026-0082", Date = DateTime.Today.AddDays(-2), ClientName = "Jared Lim", ServiceName = "Commercial Headshot Studio Tier", PaymentMethod = "Bank Transfer", Amount = 7200.00m, Status = "Completed" },
+        new() { InvoiceNo = "INV-2026-0083", Date = DateTime.Today.AddDays(-3), ClientName = "Alyssa Gomez", ServiceName = "Studio Maternity & Family Suite", PaymentMethod = "Cash", Amount = 8500.00m, Status = "Completed" },
+        new() { InvoiceNo = "INV-2026-0084", Date = DateTime.Today.AddDays(-4), ClientName = "Marcus Raymundo", ServiceName = "Creative Portrait Showcase Session", PaymentMethod = "Credit Card", Amount = 5000.00m, Status = "Deposit Paid" },
+        new() { InvoiceNo = "INV-2026-0085", Date = DateTime.Today.AddDays(-5), ClientName = "Elena Rustia", ServiceName = "Corporate Executive Branding", PaymentMethod = "Bank Transfer", Amount = 12000.00m, Status = "Completed" },
+        new() { InvoiceNo = "INV-2026-0086", Date = DateTime.Today.AddDays(-6), ClientName = "Carlos Mendoza", ServiceName = "Standard Studio Portrait", PaymentMethod = "GCash", Amount = 3500.00m, Status = "Pending" },
+    };
+
+    private List<SaleRecord> FilteredSales => AllSales
+        .Where(s => string.IsNullOrWhiteSpace(SearchQuery) ||
+                    s.InvoiceNo.Contains(SearchQuery, StringComparison.OrdinalIgnoreCase) ||
+                    s.ClientName.Contains(SearchQuery, StringComparison.OrdinalIgnoreCase) ||
+                    s.ServiceName.Contains(SearchQuery, StringComparison.OrdinalIgnoreCase))
+        .Where(s => StatusFilter == "All" || s.Status == StatusFilter)
+        .ToList();
+
+    private decimal TotalRevenue => AllSales.Where(s => s.Status == "Completed" || s.Status == "Deposit Paid").Sum(s => s.Amount);
+    private int CompletedCount => AllSales.Count(s => s.Status == "Completed");
+    private decimal PendingSum => AllSales.Where(s => s.Status == "Pending").Sum(s => s.Amount);
+    private int PendingCount => AllSales.Count(s => s.Status == "Pending");
+    private decimal AvgSaleValue => AllSales.Count > 0 ? AllSales.Average(s => s.Amount) : 0;
+
+    private void ExportSales()
+    {
+        // Placeholder export logic
+    }
+
+    private void OpenNewSaleModal()
+    {
+        // Placeholder record new sale logic
+    }
+}
