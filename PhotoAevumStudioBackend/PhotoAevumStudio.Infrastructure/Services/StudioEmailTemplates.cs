@@ -494,7 +494,7 @@ public static class StudioEmailTemplates
 
         var baseUri = Uri.TryCreate(invoiceUrl, UriKind.Absolute, out var parsedUri)
             ? parsedUri.GetLeftPart(UriPartial.Authority).TrimEnd('/')
-            : "https://photoaevumstudio.com";
+            : "http://photoaevum.tryasp.net";
         var qrConfirmUrl = $"{baseUri}/checkout/confirm/{Uri.EscapeDataString(appointmentId)}";
         var qrImgSrc = $"https://api.qrserver.com/v1/create-qr-code/?size=200x200&data={Uri.EscapeDataString(qrConfirmUrl)}";
 
@@ -1237,7 +1237,7 @@ public static class StudioEmailTemplates
 
     {
 
-        var portalUrl = string.IsNullOrWhiteSpace(portalBaseUrl) ? "https://photoaevumstudio.com" : portalBaseUrl.TrimEnd('/');
+        var portalUrl = string.IsNullOrWhiteSpace(portalBaseUrl) ? "http://photoaevum.tryasp.net" : portalBaseUrl.TrimEnd('/');
 
         var preview = $"Confirmed: 15% Reservation Deposit Received for {eventName} (#{appointmentId})";
 

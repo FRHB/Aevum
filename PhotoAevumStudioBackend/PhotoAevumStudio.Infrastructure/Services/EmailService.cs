@@ -55,7 +55,6 @@ public class EmailService : IEmailService, IBookingNotificationService
         var configured = _emailConfig.BaseUrl?.Trim();
         var ctx = _httpContextAccessor?.HttpContext;
 
-        // If BaseUrl is explicitly set to a non-localhost domain, prefer it.
         if (!string.IsNullOrWhiteSpace(configured) &&
             !configured.Contains("localhost", StringComparison.OrdinalIgnoreCase) &&
             !configured.Contains("127.0.0.1", StringComparison.OrdinalIgnoreCase))
@@ -63,7 +62,6 @@ public class EmailService : IEmailService, IBookingNotificationService
             return configured.TrimEnd('/');
         }
 
-        // Otherwise, if an active HTTP request has a Host header (or Origin/Referer), resolve dynamically.
         if (ctx?.Request.Headers.TryGetValue("Origin", out var origin) == true &&
             Uri.TryCreate(origin.ToString(), UriKind.Absolute, out var originUri) &&
             !originUri.Host.Equals("localhost", StringComparison.OrdinalIgnoreCase) &&
@@ -74,7 +72,8 @@ public class EmailService : IEmailService, IBookingNotificationService
 
         if (ctx?.Request.Host.HasValue == true &&
             !ctx.Request.Host.Host.Equals("localhost", StringComparison.OrdinalIgnoreCase) &&
-            !ctx.Request.Host.Host.Equals("127.0.0.1", StringComparison.OrdinalIgnoreCase))
+            !ctx.Request.Host.Host.Equals("127.0.0.1", StringComparison.OrdinalIgnoreCase) &&
+            !ctx.Request.Host.Host.StartsWith("api-", StringComparison.OrdinalIgnoreCase))
         {
             return $"{ctx.Request.Scheme}://{ctx.Request.Host.Value}".TrimEnd('/');
         }
@@ -82,10 +81,7 @@ public class EmailService : IEmailService, IBookingNotificationService
         if (!string.IsNullOrWhiteSpace(configured))
             return configured.TrimEnd('/');
 
-        if (ctx?.Request.Host.HasValue == true)
-            return $"{ctx.Request.Scheme}://{ctx.Request.Host.Value}".TrimEnd('/');
-
-        return "https://photoaevumstudio.com";
+        return "http://photoaevum.tryasp.net";
     }
 
     private string ReplaceLocalhostUrls(string body)

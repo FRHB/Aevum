@@ -50,7 +50,8 @@ public class XenditPaymentService : IXenditPaymentService
 
         if (ctx?.Request.Host.HasValue == true &&
             !ctx.Request.Host.Host.Equals("localhost", StringComparison.OrdinalIgnoreCase) &&
-            !ctx.Request.Host.Host.Equals("127.0.0.1", StringComparison.OrdinalIgnoreCase))
+            !ctx.Request.Host.Host.Equals("127.0.0.1", StringComparison.OrdinalIgnoreCase) &&
+            !ctx.Request.Host.Host.StartsWith("api-", StringComparison.OrdinalIgnoreCase))
         {
             return $"{ctx.Request.Scheme}://{ctx.Request.Host.Value}".TrimEnd('/');
         }
@@ -58,10 +59,7 @@ public class XenditPaymentService : IXenditPaymentService
         if (!string.IsNullOrWhiteSpace(configured))
             return configured.TrimEnd('/');
 
-        if (ctx?.Request.Host.HasValue == true)
-            return $"{ctx.Request.Scheme}://{ctx.Request.Host.Value}".TrimEnd('/');
-
-        return "https://photoaevumstudio.com";
+        return "http://photoaevum.tryasp.net";
     }
 
     public async Task<XenditInvoiceResult> CreateInvoiceAsync(

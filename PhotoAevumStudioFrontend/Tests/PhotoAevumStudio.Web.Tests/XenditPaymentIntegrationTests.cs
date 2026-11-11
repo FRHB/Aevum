@@ -162,8 +162,8 @@ public class XenditPaymentIntegrationTests
     public void QrPaymentLinks_BuildsAndParsesFullConfirmUrls_ForLocalNgrokAndLiveDomains()
     {
         var liveUrl = PhotoAevumStudio.Web.Services.QrPaymentLinks.BuildConfirmUrl(
-            "https://photoaevumstudio.com", "https://localhost:7128/", "EVT-0006");
-        Assert.Equal("https://photoaevumstudio.com/checkout/confirm/EVT-0006", liveUrl);
+            "http://photoaevum.tryasp.net", "https://localhost:7128/", "EVT-0006");
+        Assert.Equal("http://photoaevum.tryasp.net/checkout/confirm/EVT-0006", liveUrl);
 
         Assert.True(PhotoAevumStudio.Web.Services.QrPaymentLinks.TryGetConfirmPath(
             "https://livetest.com/checkout/confirm/EVT-0006", out var apptId, out var relPath));
