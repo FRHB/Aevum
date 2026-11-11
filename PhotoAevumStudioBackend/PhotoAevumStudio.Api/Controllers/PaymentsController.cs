@@ -649,7 +649,25 @@ public class PaymentsController : ControllerBase
                 ?? key;
 
         if (string.IsNullOrWhiteSpace(key) || key.Contains("mock", StringComparison.OrdinalIgnoreCase))
+        {
+            var confirmed = await _pendingPayments.ConfirmByReferenceAsync(externalId, null, amount, "QRPH", cancellationToken);
+            if (confirmed != null)
+            {
+                try { await _notifier.PaymentCompletedAsync(confirmed.AppointmentId, cancellationToken); } catch { }
+                return Ok(new { status = "SIMULATED", externalId, xenditStatus = 200 });
+            }
+
+            var mockAppt = await _consultationService.GetAppointmentByIdAsync(externalId, cancellationToken);
+            if (mockAppt != null)
+            {
+                var simInvoiceId = mockAppt.XenditInvoiceId ?? $"inv_sim_{externalId}_{Guid.NewGuid():N[..6]}";
+                await _consultationService.VerifyDownpaymentAsync(externalId, simInvoiceId, "QR Ph", cancellationToken);
+                try { await _notifier.PaymentCompletedAsync(externalId, cancellationToken); } catch { }
+                return Ok(new { status = "SIMULATED", externalId, xenditStatus = 200 });
+            }
+
             return Conflict(new { message = "A Xendit test secret key (xnd_development_...) is required to simulate QR payments." });
+        }
 
         // Simulation is a test-mode feature; refuse to run with a live key.
         if (!key.StartsWith("xnd_development", StringComparison.Ordinal))
@@ -753,6 +771,28 @@ public class PaymentsController : ControllerBase
         // Only an unpaid, still-locked booking exposes its QR.
         if (info.EventStatus != "Pending Payment") info.QrString = null;
         return Ok(info);
+    }
+
+    // GET api/payments/qr/{appointmentId}/public
+    // Anonymous, minimal reservation-fee summary for the /checkout/confirm/{id} page opened by scanning the QR on a phone
+    // (the phone has no login session). Exposes no customer id, QR payload or contact details.
+    [HttpGet("qr/{appointmentId}/public")]
+    [AllowAnonymous]
+    public async Task<IActionResult> GetPublicQrPayment(string appointmentId, CancellationToken cancellationToken)
+    {
+        var info = await _pendingPayments.GetQrPaymentAsync(appointmentId, cancellationToken);
+        if (info == null) return NotFound(new { message = "Booking not found." });
+
+        return Ok(new
+        {
+            info.AppointmentId,
+            info.EventName,
+            info.EventDate,
+            info.EventTime,
+            info.EventStatus,
+            info.Amount,
+            info.LockExpiresAt
+        });
     }
 
     // POST api/payments/xendit-qr-webhook

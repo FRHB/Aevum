@@ -492,11 +492,11 @@ public static class StudioEmailTemplates
 
         var expiresText = holdExpiresAt.ToLocalTime().ToString("h:mm tt");
 
-
-
-
-
-
+        var baseUri = Uri.TryCreate(invoiceUrl, UriKind.Absolute, out var parsedUri)
+            ? parsedUri.GetLeftPart(UriPartial.Authority).TrimEnd('/')
+            : "https://photoaevumstudio.com";
+        var qrConfirmUrl = $"{baseUri}/checkout/confirm/{Uri.EscapeDataString(appointmentId)}";
+        var qrImgSrc = $"https://api.qrserver.com/v1/create-qr-code/?size=200x200&data={Uri.EscapeDataString(qrConfirmUrl)}";
 
         var content = $@"
 
@@ -678,30 +678,18 @@ public static class StudioEmailTemplates
 
 
 
-<!-- CTA Button -->
-
-
-
-<div style=""text-align:center;margin:32px 0 24px;"">
-
-
-
-  <a href=""{invoiceUrl}"" target=""_blank""
-
-
-
-     style=""display:inline-block;background-color:{AccentEmerald};color:#ffffff;padding:16px 36px;border-radius:10px;text-decoration:none;font-weight:800;font-size:15px;letter-spacing:0.3px;box-shadow:0 4px 12px rgba(5,150,105,0.25);"">
-
-
-
-    Pay Reservation Fee Now &rarr;
-
-
-
-  </a>
-
-
-
+<!-- QR Code & CTA Button -->
+<div style=""text-align:center;margin:28px 0 20px;"">
+  <div style=""display:inline-block;padding:12px;background-color:#ffffff;border:1px solid {BorderColor};border-radius:12px;margin-bottom:16px;"">
+    <img src=""{qrImgSrc}"" width=""180"" height=""180"" alt=""Scan QR to Confirm Payment"" style=""display:block;margin:0 auto;"" />
+    <div style=""font-size:11px;color:#64748b;margin-top:6px;word-break:break-all;"">{WebUtility.HtmlEncode(qrConfirmUrl)}</div>
+  </div>
+  <div>
+    <a href=""{invoiceUrl}"" target=""_blank""
+       style=""display:inline-block;background-color:{AccentEmerald};color:#ffffff;padding:16px 36px;border-radius:10px;text-decoration:none;font-weight:800;font-size:15px;letter-spacing:0.3px;box-shadow:0 4px 12px rgba(5,150,105,0.25);"">
+      Pay Reservation Fee Now &rarr;
+    </a>
+  </div>
 </div>
 
 
@@ -1244,9 +1232,12 @@ public static class StudioEmailTemplates
 
         decimal balanceAmount,
 
-        string? venue = null)
+        string? venue = null,
+        string? portalBaseUrl = null)
 
     {
+
+        var portalUrl = string.IsNullOrWhiteSpace(portalBaseUrl) ? "https://photoaevumstudio.com" : portalBaseUrl.TrimEnd('/');
 
         var preview = $"Confirmed: 15% Reservation Deposit Received for {eventName} (#{appointmentId})";
 
@@ -1338,7 +1329,7 @@ public static class StudioEmailTemplates
 
 <div style=""text-align:center;margin:28px 0 20px;"">
 
-  <a href=""https://localhost:7128/my/bookings""
+  <a href=""{portalUrl}/my/bookings""
 
      style=""display:inline-block;background-color:#0f172a;color:#ffffff;padding:14px 28px;border-radius:10px;text-decoration:none;font-weight:700;font-size:14px;"">
 

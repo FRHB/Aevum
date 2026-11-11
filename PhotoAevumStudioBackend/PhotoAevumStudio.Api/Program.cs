@@ -1,4 +1,4 @@
-﻿using System.Reflection;
+using System.Reflection;
 using FluentValidation;
 using Hangfire;
 using Serilog;
@@ -62,6 +62,7 @@ builder.Host.UseSerilog((ctx, services, lc) =>
 // ── Services ─────────────────────────────────────────────────────────────────
 
 builder.Services.AddControllers();
+builder.Services.AddHttpContextAccessor();
 builder.Services.AddHttpClient();
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddOpenApi();
@@ -208,7 +209,12 @@ builder.Services.AddCors(options =>
             "https://localhost:5001"
         };
 
-        var allOrigins = configuredOrigins.Concat(defaultOrigins).Distinct(StringComparer.OrdinalIgnoreCase).ToArray();
+        // The configured public BaseUrl (live domain / ngrok tunnel) is always an allowed origin.
+        var baseUrlOrigin = Uri.TryCreate(builder.Configuration["BaseUrl"], UriKind.Absolute, out var baseUri)
+            ? new[] { baseUri.GetLeftPart(UriPartial.Authority) }
+            : Array.Empty<string>();
+
+        var allOrigins = configuredOrigins.Concat(defaultOrigins).Concat(baseUrlOrigin).Distinct(StringComparer.OrdinalIgnoreCase).ToArray();
 
         policy.WithOrigins(allOrigins)
               .AllowAnyHeader()
@@ -230,7 +236,11 @@ builder.Services.AddCors(options =>
                           return true;
 
                       if (builder.Environment.IsDevelopment() &&
-                          (uri.Host.StartsWith("192.168.", StringComparison.OrdinalIgnoreCase)
+                          (uri.Host.EndsWith(".ngrok-free.app", StringComparison.OrdinalIgnoreCase)
+                            || uri.Host.EndsWith(".ngrok-free.dev", StringComparison.OrdinalIgnoreCase)
+                            || uri.Host.EndsWith(".ngrok.app", StringComparison.OrdinalIgnoreCase)
+                            || uri.Host.EndsWith(".ngrok.io", StringComparison.OrdinalIgnoreCase)
+                            || uri.Host.StartsWith("192.168.", StringComparison.OrdinalIgnoreCase)
                            || uri.Host.StartsWith("10.", StringComparison.OrdinalIgnoreCase)
                            || uri.Host.StartsWith("172.", StringComparison.OrdinalIgnoreCase)))
                           return true;
@@ -267,6 +277,13 @@ builder.Services.AddScoped<IStorageProvider, LocalStorageProvider>();
 builder.Services.AddScoped<IEquipmentTypeService, EquipmentTypeService>();
 builder.Services.Configure<PhotoAevumStudio.Application.Models.GoogleMeetSettings>(builder.Configuration.GetSection("GoogleMeetSettings"));
 builder.Services.Configure<PhotoAevumStudio.Application.Models.XenditSettings>(builder.Configuration.GetSection("XenditSettings"));
+// Public base URL of the customer portal (live domain, LAN IP or ngrok tunnel). Used for emails and QR links so they never point at localhost on a live server.
+builder.Services.PostConfigure<PhotoAevumStudio.Application.Models.XenditSettings>(s =>
+{
+    var baseUrl = builder.Configuration["BaseUrl"]?.Trim();
+    if (!string.IsNullOrWhiteSpace(baseUrl))
+        s.CustomerPortalBaseUrl = baseUrl.TrimEnd('/');
+});
 builder.Services.AddScoped<PhotoAevumStudio.Application.Interfaces.IGoogleMeetAdapter, PhotoAevumStudio.Infrastructure.Services.GoogleMeetAdapter>();
 builder.Services.AddHttpClient<PhotoAevumStudio.Application.Interfaces.IXenditPaymentService, PhotoAevumStudio.Infrastructure.Services.XenditPaymentService>(c =>
 {
@@ -281,6 +298,8 @@ builder.Services.AddHostedService<PhotoAevumStudio.Api.BackgroundServices.Pendin
 builder.Services.Configure<PhotoAevumStudio.Application.Models.EmailConfig>(options =>
 {
     builder.Configuration.GetSection("EmailConfig").Bind(options);
+    var configuredBaseUrl = builder.Configuration["BaseUrl"]?.Trim() ?? builder.Configuration["BASE_URL"]?.Trim() ?? builder.Configuration["EmailConfig:BaseUrl"]?.Trim() ?? builder.Configuration["XenditSettings:CustomerPortalBaseUrl"]?.Trim();
+    if (!string.IsNullOrWhiteSpace(configuredBaseUrl)) options.BaseUrl = configuredBaseUrl.TrimEnd('/');
 
     // Dynamic Infisical / Environment Variable Resolution for Primary SMTP (Gmail)
     var primaryHost = builder.Configuration["EMAIL_CONFIG__PRIMARY__HOST"] ?? builder.Configuration["EMAIL_CONFIG:PRIMARY:HOST"] ?? builder.Configuration["EmailConfig:Primary:Host"] ?? builder.Configuration["GMAIL_SMTP_HOST"] ?? builder.Configuration["SMTP_HOST"];

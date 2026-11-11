@@ -1,6 +1,7 @@
 using System.Net.Http.Headers;
 using System.Text;
 using System.Text.Json;
+using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using PhotoAevumStudio.Application.Interfaces;
@@ -13,15 +14,54 @@ public class XenditPaymentService : IXenditPaymentService
     private readonly XenditSettings _settings;
     private readonly HttpClient _httpClient;
     private readonly ILogger<XenditPaymentService> _logger;
+    private readonly IHttpContextAccessor? _httpContextAccessor;
 
     public XenditPaymentService(
         IOptions<XenditSettings> options,
         HttpClient httpClient,
-        ILogger<XenditPaymentService> logger)
+        ILogger<XenditPaymentService> logger,
+        IHttpContextAccessor? httpContextAccessor = null)
     {
         _settings = options.Value;
         _httpClient = httpClient;
         _logger = logger;
+        _httpContextAccessor = httpContextAccessor;
+    }
+
+    private string ResolveBaseUrl()
+    {
+        var configured = _settings.CustomerPortalBaseUrl?.Trim();
+        var ctx = _httpContextAccessor?.HttpContext;
+
+        if (!string.IsNullOrWhiteSpace(configured) &&
+            !configured.Contains("localhost", StringComparison.OrdinalIgnoreCase) &&
+            !configured.Contains("127.0.0.1", StringComparison.OrdinalIgnoreCase))
+        {
+            return configured.TrimEnd('/');
+        }
+
+        if (ctx?.Request.Headers.TryGetValue("Origin", out var origin) == true &&
+            Uri.TryCreate(origin.ToString(), UriKind.Absolute, out var originUri) &&
+            !originUri.Host.Equals("localhost", StringComparison.OrdinalIgnoreCase) &&
+            !originUri.Host.Equals("127.0.0.1", StringComparison.OrdinalIgnoreCase))
+        {
+            return originUri.GetLeftPart(UriPartial.Authority).TrimEnd('/');
+        }
+
+        if (ctx?.Request.Host.HasValue == true &&
+            !ctx.Request.Host.Host.Equals("localhost", StringComparison.OrdinalIgnoreCase) &&
+            !ctx.Request.Host.Host.Equals("127.0.0.1", StringComparison.OrdinalIgnoreCase))
+        {
+            return $"{ctx.Request.Scheme}://{ctx.Request.Host.Value}".TrimEnd('/');
+        }
+
+        if (!string.IsNullOrWhiteSpace(configured))
+            return configured.TrimEnd('/');
+
+        if (ctx?.Request.Host.HasValue == true)
+            return $"{ctx.Request.Scheme}://{ctx.Request.Host.Value}".TrimEnd('/');
+
+        return "https://photoaevumstudio.com";
     }
 
     public async Task<XenditInvoiceResult> CreateInvoiceAsync(
@@ -252,13 +292,14 @@ public class XenditPaymentService : IXenditPaymentService
 
         if (isMock)
         {
-            // Development only: no live key configured. Payment can be completed via the simulate-webhook endpoint.
-            _logger.LogWarning("Xendit SecretKey is not configured; generated MOCK QR for {ReferenceId}.", referenceId);
+            // Development only: no live key configured. Encodes the full confirmation URL so mobile / webcam scanners open ConfirmPayment.razor.
+            var confirmUrl = $"{ResolveBaseUrl()}/checkout/confirm/{Uri.EscapeDataString(referenceId)}";
+            _logger.LogWarning("Xendit SecretKey is not configured; generated MOCK QR URL {ConfirmUrl} for {ReferenceId}.", confirmUrl, referenceId);
             return new XenditQrResult
             {
                 QrId = $"qr_mock_{Guid.NewGuid():N}",
                 ReferenceId = referenceId,
-                QrString = $"MOCK-QRPH|{referenceId}|{amount:0.00}",
+                QrString = confirmUrl,
                 Status = "ACTIVE",
                 Amount = amount
             };

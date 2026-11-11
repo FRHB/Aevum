@@ -1,6 +1,7 @@
 using System.Net;
 using MailKit.Net.Smtp;
 using MailKit.Security;
+using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -17,32 +18,88 @@ public class EmailService : IEmailService, IBookingNotificationService
     private readonly EmailConfig _emailConfig;
     private readonly ILogger<EmailService> _logger;
     private readonly Func<ISmtpClient> _smtpClientFactory;
+    private readonly IHttpContextAccessor? _httpContextAccessor;
 
     public EmailServerSettings Primary => _emailConfig.Primary;
     public EmailServerSettings Fallback => _emailConfig.Fallback;
+    public string BaseUrl => ResolveBaseUrl();
 
     // Primary constructor used by Dependency Injection
     [ActivatorUtilitiesConstructor]
-    public EmailService(IOptions<EmailConfig> emailConfig, ILogger<EmailService> logger)
-        : this(emailConfig, logger, () => new SmtpClient())
+    public EmailService(IOptions<EmailConfig> emailConfig, ILogger<EmailService> logger, IHttpContextAccessor? httpContextAccessor = null)
+        : this(emailConfig, logger, () => new SmtpClient(), httpContextAccessor)
     {
     }
 
     // Factory-injected constructor for testing EmailConfig & failover behavior
-    public EmailService(IOptions<EmailConfig> emailConfig, ILogger<EmailService> logger, Func<ISmtpClient> smtpClientFactory)
+    public EmailService(IOptions<EmailConfig> emailConfig, ILogger<EmailService> logger, Func<ISmtpClient> smtpClientFactory, IHttpContextAccessor? httpContextAccessor = null)
     {
         ArgumentNullException.ThrowIfNull(emailConfig);
         _logger = logger ?? NullLogger<EmailService>.Instance;
         _smtpClientFactory = smtpClientFactory ?? (() => new SmtpClient());
+        _httpContextAccessor = httpContextAccessor;
 
         var config = emailConfig.Value ?? new EmailConfig();
         _emailConfig = new EmailConfig
         {
+            BaseUrl = config.BaseUrl ?? string.Empty,
             Primary = CloneSettings(config.Primary),
             Fallback = CloneSettings(config.Fallback)
         };
 
         ApplyEnvironmentVariables(_emailConfig);
+    }
+
+    public string ResolveBaseUrl()
+    {
+        var configured = _emailConfig.BaseUrl?.Trim();
+        var ctx = _httpContextAccessor?.HttpContext;
+
+        // If BaseUrl is explicitly set to a non-localhost domain, prefer it.
+        if (!string.IsNullOrWhiteSpace(configured) &&
+            !configured.Contains("localhost", StringComparison.OrdinalIgnoreCase) &&
+            !configured.Contains("127.0.0.1", StringComparison.OrdinalIgnoreCase))
+        {
+            return configured.TrimEnd('/');
+        }
+
+        // Otherwise, if an active HTTP request has a Host header (or Origin/Referer), resolve dynamically.
+        if (ctx?.Request.Headers.TryGetValue("Origin", out var origin) == true &&
+            Uri.TryCreate(origin.ToString(), UriKind.Absolute, out var originUri) &&
+            !originUri.Host.Equals("localhost", StringComparison.OrdinalIgnoreCase) &&
+            !originUri.Host.Equals("127.0.0.1", StringComparison.OrdinalIgnoreCase))
+        {
+            return originUri.GetLeftPart(UriPartial.Authority).TrimEnd('/');
+        }
+
+        if (ctx?.Request.Host.HasValue == true &&
+            !ctx.Request.Host.Host.Equals("localhost", StringComparison.OrdinalIgnoreCase) &&
+            !ctx.Request.Host.Host.Equals("127.0.0.1", StringComparison.OrdinalIgnoreCase))
+        {
+            return $"{ctx.Request.Scheme}://{ctx.Request.Host.Value}".TrimEnd('/');
+        }
+
+        if (!string.IsNullOrWhiteSpace(configured))
+            return configured.TrimEnd('/');
+
+        if (ctx?.Request.Host.HasValue == true)
+            return $"{ctx.Request.Scheme}://{ctx.Request.Host.Value}".TrimEnd('/');
+
+        return "https://photoaevumstudio.com";
+    }
+
+    private string ReplaceLocalhostUrls(string body)
+    {
+        if (string.IsNullOrEmpty(body)) return body;
+        var baseUrl = ResolveBaseUrl();
+        if (string.IsNullOrWhiteSpace(baseUrl) || baseUrl.Contains("localhost", StringComparison.OrdinalIgnoreCase))
+            return body;
+
+        return System.Text.RegularExpressions.Regex.Replace(
+            body,
+            @"https?://(?:localhost|127\.0\.0\.1)(?::\d+)?",
+            baseUrl.TrimEnd('/'),
+            System.Text.RegularExpressions.RegexOptions.IgnoreCase);
     }
 
     private static EmailServerSettings CloneSettings(EmailServerSettings? source)
@@ -87,6 +144,10 @@ public class EmailService : IEmailService, IBookingNotificationService
     {
         config.Primary ??= new EmailServerSettings();
         config.Fallback ??= new EmailServerSettings();
+
+        var envBaseUrl = GetEnv("BASE_URL", "BaseUrl", "EMAIL_CONFIG__BASE_URL", "EmailConfig__BaseUrl");
+        if (!string.IsNullOrWhiteSpace(envBaseUrl))
+            config.BaseUrl = envBaseUrl.TrimEnd('/');
 
         // 1. Primary SMTP (Gmail)
         var primaryHost = GetEnv(
@@ -276,6 +337,7 @@ public class EmailService : IEmailService, IBookingNotificationService
 
     private async Task<SendOutcome> DeliverAsync(string toEmail, string subject, string body, bool isHtml, CancellationToken ct)
     {
+        body = ReplaceLocalhostUrls(body);
         var primary = _emailConfig.Primary;
         var fallback = _emailConfig.Fallback;
 

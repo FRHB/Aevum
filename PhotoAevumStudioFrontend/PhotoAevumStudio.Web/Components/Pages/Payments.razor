@@ -8,6 +8,8 @@
 @inject IConsultationClient ConsultationApi
 @inject PaymentHubClient PaymentHub
 @inject IWebHostEnvironment Env
+@inject IConfiguration Config
+@inject NavigationManager Nav
 @rendermode InteractiveServer
 @attribute [Authorize(Roles = "Customer,Admin,SystemAdmin,System Admin,Super Admin,Employee,Office Clerk")]
 
@@ -109,7 +111,7 @@
                     @if (_showScanner)
                     {
                         <div class="mt-4 mx-auto max-w-sm overflow-hidden rounded-xl border border-slate-200 bg-slate-900 p-2">
-                            <BarcodeReader ScanResult="OnQrScannedAsync" Title="Scan the QR code" />
+                            <BarcodeReader ScanResult="OnScanResult" Title="Scan the QR code" />
                         </div>
                     }
 
@@ -137,6 +139,7 @@
 
     private QrPaymentInfoDto? _info;
     private string? _qrSvg;
+    private string? _qrConfirmUrl;
     private bool _loading = true;
     private bool _paid;
     private bool _expired;
@@ -176,14 +179,30 @@
         var res = await ConsultationApi.GetQrPaymentAsync(AppointmentId);
         _info = res.IsSuccess ? res.Value : null;
         _qrSvg = null;
+        _qrConfirmUrl = null;
         _isMockQr = false;
 
-        if (_info is { EventStatus: "Pending Payment", QrString: { Length: > 0 } qr })
+        if (_info is { EventStatus: "Pending Payment" })
         {
+            var configuredBase = Config["BaseUrl"]?.Trim();
+            // When the page is currently opened on a non-localhost domain/tunnel (e.g. ngrok or live domain),
+            // prefer the current browser host if BaseUrl is still pointing at localhost.
+            var effectiveBase = (!string.IsNullOrWhiteSpace(configuredBase) &&
+                                 !configuredBase.Contains("localhost", StringComparison.OrdinalIgnoreCase) &&
+                                 !configuredBase.Contains("127.0.0.1", StringComparison.OrdinalIgnoreCase))
+                ? configuredBase
+                : (Nav.BaseUri.Contains("localhost", StringComparison.OrdinalIgnoreCase) || Nav.BaseUri.Contains("127.0.0.1", StringComparison.OrdinalIgnoreCase)
+                    ? (string.IsNullOrWhiteSpace(configuredBase) ? Nav.BaseUri : configuredBase)
+                    : Nav.BaseUri);
+
+            _qrConfirmUrl = QrPaymentLinks.BuildConfirmUrl(effectiveBase, Nav.BaseUri, AppointmentId);
+
             using var generator = new QRCodeGenerator();
-            using var data = generator.CreateQrCode(qr, QRCodeGenerator.ECCLevel.M);
+            using var data = generator.CreateQrCode(_qrConfirmUrl, QRCodeGenerator.ECCLevel.M);
             _qrSvg = new SvgQRCode(data).GetGraphic(6);
-            _isMockQr = qr.StartsWith("MOCK-QRPH", StringComparison.Ordinal);
+            _isMockQr = _info.QrString is null ||
+                        _info.QrString.StartsWith("MOCK-QRPH", StringComparison.Ordinal) ||
+                        _info.QrString.Contains("/checkout/confirm/", StringComparison.OrdinalIgnoreCase);
             StartCountdown();
         }
         else
@@ -235,9 +254,20 @@
     private string? _scanMessage;
 
     // Dev-only: invoked by the ZXing webcam reader when a QR code is decoded.
+    private Task OnScanResult(string result) => OnQrScannedAsync(result);
+
     private async Task OnQrScannedAsync(string scanned)
     {
         if (_scanBusy || string.IsNullOrWhiteSpace(scanned)) return;
+
+        // If the scanned QR encodes a /checkout/confirm/{AppointmentId} URL, redirect directly to the confirmation page.
+        if (QrPaymentLinks.TryGetConfirmPath(scanned, out var confirmApptId, out var relativeConfirmPath))
+        {
+            _showScanner = false;
+            Nav.NavigateTo("/" + relativeConfirmPath.TrimStart('/'));
+            return;
+        }
+
         _scanBusy = true;
         _scanFailed = false;
         _scanMessage = null;
@@ -264,11 +294,18 @@
         }
     }
 
-    // Accepts a MOCK-QRPH|{ref}|{amount} string, a JSON payload, or a bare reference id.
+    // Accepts a /checkout/confirm/{id} URL, a MOCK-QRPH|{ref}|{amount} string, a JSON payload, or a bare reference id.
     // A real Xendit EMV QR string carries no reference, so fall back to this page's booking reference.
     private string ExtractExternalId(string scanned)
     {
         var data = scanned.Trim();
+        if (QrPaymentLinks.TryGetConfirmPath(data, out var confirmId, out _))
+            return confirmId;
+        if (Uri.TryCreate(data, UriKind.Absolute, out var scannedUri))
+        {
+            var lastSegment = Uri.UnescapeDataString(scannedUri.AbsolutePath.Trim('/').Split('/').LastOrDefault() ?? string.Empty);
+            if (!string.IsNullOrWhiteSpace(lastSegment)) return lastSegment;
+        }
         if (data.StartsWith("MOCK-QRPH|", StringComparison.Ordinal))
         {
             var parts = data.Split('|');

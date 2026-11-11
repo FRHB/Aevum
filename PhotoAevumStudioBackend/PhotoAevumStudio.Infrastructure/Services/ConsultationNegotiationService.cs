@@ -6,6 +6,7 @@ using System.Data;
 
 
 
+using Microsoft.AspNetCore.Http;
 using Microsoft.Data.SqlClient;
 
 
@@ -79,69 +80,60 @@ public class ConsultationNegotiationService : IConsultationNegotiationService
 
 
     private readonly ILogger<ConsultationNegotiationService> _logger;
-
-
-
-
-
-
+    private readonly IHttpContextAccessor? _httpContextAccessor;
 
     public ConsultationNegotiationService(
-
-
-
         ApplicationDbContext db,
-
-
-
         IGoogleMeetAdapter meetAdapter,
-
-
-
         IXenditPaymentService xenditPaymentService,
-
-
-
         IEmailService emailService,
-
-
-
         IOptions<XenditSettings> xenditOptions,
-
-
-
-        ILogger<ConsultationNegotiationService> logger)
-
-
-
+        ILogger<ConsultationNegotiationService> logger,
+        IHttpContextAccessor? httpContextAccessor = null)
     {
-
-
-
         _db = db;
-
-
-
         _meetAdapter = meetAdapter;
-
-
-
         _xenditPaymentService = xenditPaymentService;
-
-
-
         _emailService = emailService;
-
-
-
         _xenditSettings = xenditOptions.Value;
-
-
-
         _logger = logger;
+        _httpContextAccessor = httpContextAccessor;
+    }
 
+    private string ResolvePortalBaseUrl()
+    {
+        var configured = _xenditSettings.CustomerPortalBaseUrl?.Trim();
+        var ctx = _httpContextAccessor?.HttpContext;
 
+        if (!string.IsNullOrWhiteSpace(configured) &&
+            !configured.Contains("localhost", StringComparison.OrdinalIgnoreCase) &&
+            !configured.Contains("127.0.0.1", StringComparison.OrdinalIgnoreCase))
+        {
+            return configured.TrimEnd('/');
+        }
 
+        if (ctx?.Request.Headers.TryGetValue("Origin", out var origin) == true &&
+            Uri.TryCreate(origin.ToString(), UriKind.Absolute, out var originUri) &&
+            !originUri.Host.Equals("localhost", StringComparison.OrdinalIgnoreCase) &&
+            !originUri.Host.Equals("127.0.0.1", StringComparison.OrdinalIgnoreCase))
+        {
+            return originUri.GetLeftPart(UriPartial.Authority).TrimEnd('/');
+        }
+
+        if (ctx?.Request.Host.HasValue == true &&
+            !ctx.Request.Host.Host.Equals("localhost", StringComparison.OrdinalIgnoreCase) &&
+            !ctx.Request.Host.Host.Equals("127.0.0.1", StringComparison.OrdinalIgnoreCase))
+        {
+            return $"{ctx.Request.Scheme}://{ctx.Request.Host.Value}".TrimEnd('/');
+        }
+
+        if (!string.IsNullOrWhiteSpace(configured))
+            return configured.TrimEnd('/');
+
+        if (ctx?.Request.Host.HasValue == true)
+            return $"{ctx.Request.Scheme}://{ctx.Request.Host.Value}".TrimEnd('/');
+
+        return "https://photoaevumstudio.com";
     }
 
 
@@ -2159,7 +2151,7 @@ public class ConsultationNegotiationService : IConsultationNegotiationService
                 totalAmount,
                 downpaymentAmount,
                 holdExpiresAt,
-                $"{_xenditSettings.CustomerPortalBaseUrl.TrimEnd('/')}/payments/{appointmentId}",
+                $"{ResolvePortalBaseUrl()}/checkout/confirm/{Uri.EscapeDataString(appointmentId)}",
                 "QR Ph / E-Wallet"
             );
 
@@ -2755,7 +2747,7 @@ var invId = invoiceId ?? appt.XenditInvoiceId ?? $"inv_mock_{appointmentId}";
                         appt.HoldExpiresAt ?? DateTime.UtcNow.AddMinutes(30),
                         (!string.IsNullOrWhiteSpace(appt.XenditInvoiceUrl) && !appt.XenditInvoiceUrl.Contains("/qr_") && !appt.XenditInvoiceUrl.Contains("qr_"))
                             ? appt.XenditInvoiceUrl
-                            : $"{_xenditSettings.CustomerPortalBaseUrl.TrimEnd('/')}/payments/{appointmentId}",
+                            : $"{ResolvePortalBaseUrl()}/checkout/confirm/{Uri.EscapeDataString(appointmentId)}",
                         "QR Ph / E-Wallet");
 
                     await _emailService.SendEmailAsync(appt.CustomerEmail, $"Payment Reminder: Reservation Fee for {appt.EventName} (#{appointmentId})", emailBody);

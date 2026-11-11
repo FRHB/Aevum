@@ -17,6 +17,7 @@ public class XenditSettings
     /// <summary>Minutes a 'Pending Payment' booking keeps its time slot locked (LockExpiresAt).</summary>
     public int LockDurationMinutes { get; set; } = 60;
     /// <summary>Base URL of the Blazor customer portal, used for the /payments/{id} link in emails.</summary>
+    /// <remarks>Overridden at startup by the top-level <c>BaseUrl</c> setting when present.</remarks>
     public string CustomerPortalBaseUrl { get; set; } = "https://localhost:7128";
     public string InvoiceBaseUrl { get; set; } = "https://checkout.xendit.co/web/";
 }

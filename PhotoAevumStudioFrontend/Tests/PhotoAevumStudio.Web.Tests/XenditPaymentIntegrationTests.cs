@@ -155,6 +155,24 @@ public class XenditPaymentIntegrationTests
         Assert.Equal("EVT-104", qr.ReferenceId);
         Assert.Equal(1500m, qr.Amount);
         Assert.Contains("EVT-104", qr.QrString);
+        Assert.EndsWith("/checkout/confirm/EVT-104", qr.QrString);
+    }
+
+    [Fact]
+    public void QrPaymentLinks_BuildsAndParsesFullConfirmUrls_ForLocalNgrokAndLiveDomains()
+    {
+        var liveUrl = PhotoAevumStudio.Web.Services.QrPaymentLinks.BuildConfirmUrl(
+            "https://photoaevumstudio.com", "https://localhost:7128/", "EVT-0006");
+        Assert.Equal("https://photoaevumstudio.com/checkout/confirm/EVT-0006", liveUrl);
+
+        Assert.True(PhotoAevumStudio.Web.Services.QrPaymentLinks.TryGetConfirmPath(
+            "https://livetest.com/checkout/confirm/EVT-0006", out var apptId, out var relPath));
+        Assert.Equal("EVT-0006", apptId);
+        Assert.Equal("checkout/confirm/EVT-0006", relPath);
+
+        Assert.True(PhotoAevumStudio.Web.Services.QrPaymentLinks.TryGetConfirmPath(
+            "https://demo-tunnel.ngrok-free.app/checkout/confirm/EVT-104", out var ngrokId, out _));
+        Assert.Equal("EVT-104", ngrokId);
     }
 
     [Fact]

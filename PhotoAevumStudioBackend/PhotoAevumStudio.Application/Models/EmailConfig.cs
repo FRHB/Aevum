@@ -2,6 +2,7 @@ namespace PhotoAevumStudio.Application.Models;
 
 public class EmailConfig
 {
+    public string BaseUrl { get; set; } = string.Empty;
     public EmailServerSettings Primary { get; set; } = new();
     public EmailServerSettings Fallback { get; set; } = new();
 }
