@@ -37,7 +37,14 @@ builder.Services.AddRazorComponents()
 builder.Services.AddScoped<ITokenStore, ProtectedSessionTokenStore>();
 builder.Services.AddScoped<AevumAuthenticationStateProvider>();
 builder.Services.AddScoped<AuthenticationStateProvider>(sp => sp.GetRequiredService<AevumAuthenticationStateProvider>());
-builder.Services.AddAuthentication();
+builder.Services.AddAuthentication(options =>
+{
+    options.DefaultScheme = Microsoft.AspNetCore.Authentication.Cookies.CookieAuthenticationDefaults.AuthenticationScheme;
+})
+.AddCookie(options =>
+{
+    options.LoginPath = "/login";
+});
 builder.Services.AddCascadingAuthenticationState();
 builder.Services.AddAuthorizationCore();
 
@@ -119,6 +126,7 @@ app.MapGet("/version", (HttpContext context) =>
 });
 
 app.MapRazorComponents<App>()
-    .AddInteractiveServerRenderMode();
+    .AddInteractiveServerRenderMode()
+    .AllowAnonymous();
 
 app.Run();
