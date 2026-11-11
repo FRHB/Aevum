@@ -20,6 +20,10 @@ public class ScheduleService : IScheduleService
     private readonly List<EquipmentItemResource> _inMemoryEquipment = new();
     private readonly List<EquipmentReservationModel> _inMemoryReservations = new();
 
+    private readonly object _eventLock = new();
+    private (DateTime? start, DateTime? end, DateTime fetchedAt, List<EventBookingModel> bookings)? _cachedEventBookings;
+    private readonly TimeSpan _eventCacheDuration = TimeSpan.FromSeconds(30);
+
     private readonly List<StudioSpaceResource> _defaultStudioSpaces = new()
     {
         new()
@@ -272,12 +276,49 @@ public class ScheduleService : IScheduleService
 
     public List<StudioSpaceResource> GetStudioSpaces() => _useInMemory ? _inMemorySpaces : _defaultStudioSpaces;
 
-    public List<EventBookingModel> GetEventBookings()
+    public List<EventBookingModel> GetEventBookings(DateTime? startDate = null, DateTime? endDate = null)
     {
         if (_useInMemory)
         {
             RecalculateEventConflicts(_inMemoryBookings);
-            return _inMemoryBookings;
+            var inMemQuery = _inMemoryBookings.AsEnumerable();
+            if (startDate.HasValue)
+                inMemQuery = inMemQuery.Where(b => b.Date.Date >= startDate.Value.Date);
+            if (endDate.HasValue)
+                inMemQuery = inMemQuery.Where(b => b.Date.Date <= endDate.Value.Date);
+
+            return inMemQuery.ToList();
+        }
+
+        lock (_eventLock)
+        {
+            if (_cachedEventBookings.HasValue &&
+                _cachedEventBookings.Value.start == startDate &&
+                _cachedEventBookings.Value.end == endDate &&
+                (DateTime.UtcNow - _cachedEventBookings.Value.fetchedAt) < _eventCacheDuration)
+            {
+                return _cachedEventBookings.Value.bookings.Select(b => new EventBookingModel
+                {
+                    Id = b.Id,
+                    StudioSpaceId = b.StudioSpaceId,
+                    StudioSpaceName = b.StudioSpaceName,
+                    ClientName = b.ClientName,
+                    ClientEmail = b.ClientEmail,
+                    ClientPhone = b.ClientPhone,
+                    ServiceType = b.ServiceType,
+                    Date = b.Date,
+                    StartTime = b.StartTime,
+                    EndTime = b.EndTime,
+                    Status = b.Status,
+                    AssignedPhotographer = b.AssignedPhotographer,
+                    Notes = b.Notes,
+                    EstimatedPrice = b.EstimatedPrice,
+                    HasConflict = b.HasConflict,
+                    ConflictMessage = b.ConflictMessage,
+                    IsConsultation = b.IsConsultation,
+                    MeetingLink = b.MeetingLink
+                }).ToList();
+            }
         }
 
         var bookings = new List<EventBookingModel>();
@@ -317,6 +358,8 @@ public class ScheduleService : IScheduleService
                     FROM dbo.BookingNegotiation
                     WHERE NegotiationStatus IN ('Pending_Call', 'Rescheduled', 'Deal_Lost', 'Cancelled')
                 )
+                AND (@StartDate IS NULL OR CAST(ea.EventDate AS date) >= @StartDate)
+                AND (@EndDate IS NULL OR CAST(ea.EventDate AS date) <= @EndDate)
 
                 UNION ALL
 
@@ -338,9 +381,13 @@ public class ScheduleService : IScheduleService
                 LEFT JOIN dbo.Customer c ON c.CustomerID = bn.CustomerID
                 LEFT JOIN dbo.Employees emp ON emp.EmployeeID = bn.EmployeeID
                 WHERE bn.NegotiationStatus IN ('Pending_Call', 'Rescheduled')
+                  AND (@StartDate IS NULL OR CAST(bn.ConsultationDate AS date) >= @StartDate)
+                  AND (@EndDate IS NULL OR CAST(bn.ConsultationDate AS date) <= @EndDate)
                 ORDER BY EventDate DESC, EventTime DESC;";
 
             using var cmd = new SqlCommand(sql, conn);
+            cmd.Parameters.AddWithValue("@StartDate", (object?)startDate?.Date ?? DBNull.Value);
+            cmd.Parameters.AddWithValue("@EndDate", (object?)endDate?.Date ?? DBNull.Value);
             using var reader = cmd.ExecuteReader();
 
             while (reader.Read())
@@ -396,11 +443,22 @@ public class ScheduleService : IScheduleService
         }
 
         RecalculateEventConflicts(bookings);
+
+        lock (_eventLock)
+        {
+            _cachedEventBookings = (startDate, endDate, DateTime.UtcNow, bookings);
+        }
+
         return bookings;
     }
 
     public void AddEventBooking(EventBookingModel booking)
     {
+        lock (_eventLock)
+        {
+            _cachedEventBookings = null;
+        }
+
         if (string.IsNullOrWhiteSpace(booking.Id))
             booking.Id = "EVT-" + DateTime.UtcNow.ToString("yyyyMMdd") + "-" + Guid.NewGuid().ToString("N")[..4].ToUpperInvariant();
 
@@ -485,6 +543,11 @@ public class ScheduleService : IScheduleService
 
     public void UpdateEventBooking(EventBookingModel booking)
     {
+        lock (_eventLock)
+        {
+            _cachedEventBookings = null;
+        }
+
         if (string.IsNullOrWhiteSpace(booking.Id)) return;
 
         if (_useInMemory)
@@ -567,6 +630,11 @@ public class ScheduleService : IScheduleService
 
     public void DeleteEventBooking(string id)
     {
+        lock (_eventLock)
+        {
+            _cachedEventBookings = null;
+        }
+
         if (string.IsNullOrWhiteSpace(id)) return;
 
         if (_useInMemory)
@@ -609,9 +677,9 @@ public class ScheduleService : IScheduleService
         }
     }
 
-    public int GetEventConflictCount()
+    public int GetEventConflictCount(DateTime? startDate = null, DateTime? endDate = null)
     {
-        var bookings = GetEventBookings();
+        var bookings = GetEventBookings(startDate, endDate);
         return bookings.Count(b => b.HasConflict);
     }
 
@@ -623,20 +691,28 @@ public class ScheduleService : IScheduleService
             b.ConflictMessage = null;
         }
 
-        for (int i = 0; i < bookings.Count; i++)
+        var spaceGroups = bookings
+            .Where(b => !b.IsConsultation && !string.IsNullOrEmpty(b.StudioSpaceId))
+            .GroupBy(b => (b.Date.Date, b.StudioSpaceId));
+
+        foreach (var group in spaceGroups)
         {
-            for (int j = i + 1; j < bookings.Count; j++)
+            var list = group.ToList();
+            for (int i = 0; i < list.Count; i++)
             {
-                var b1 = bookings[i];
-                var b2 = bookings[j];
-
-                if (b1.OverlapsWith(b2))
+                for (int j = i + 1; j < list.Count; j++)
                 {
-                    b1.HasConflict = true;
-                    b1.ConflictMessage = $"Double-booked with '{b2.ClientName}' ({b2.FormattedTimeRange})";
+                    var b1 = list[i];
+                    var b2 = list[j];
 
-                    b2.HasConflict = true;
-                    b2.ConflictMessage = $"Double-booked with '{b1.ClientName}' ({b1.FormattedTimeRange})";
+                    if (b1.OverlapsWith(b2))
+                    {
+                        b1.HasConflict = true;
+                        b1.ConflictMessage = $"Double-booked with '{b2.ClientName}' ({b2.FormattedTimeRange})";
+
+                        b2.HasConflict = true;
+                        b2.ConflictMessage = $"Double-booked with '{b1.ClientName}' ({b1.FormattedTimeRange})";
+                    }
                 }
             }
         }

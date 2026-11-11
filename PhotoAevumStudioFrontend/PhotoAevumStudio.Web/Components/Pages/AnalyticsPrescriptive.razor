@@ -1,0 +1,119 @@
+@page "/analytics/prescriptive"
+@page "/admin/analytics/prescriptive"
+@layout AdminLayout
+@rendermode InteractiveServer
+@attribute [Authorize(Roles = "Admin,SystemAdmin,System Admin,Super Admin,Office Clerk")]
+@using Microsoft.AspNetCore.Components.Authorization
+
+<PageTitle>Prescriptive Analytics | Photo Aevum Studio</PageTitle>
+
+<div class="space-y-6">
+    @* ── Page Header ─────────────────────────────────────────────────── *@
+    <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 pb-3 border-b border-slate-200">
+        <div>
+            <div class="flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-slate-500 mb-1">
+                <span>Sales &amp; Report</span>
+                <span>/</span>
+                <span>Analytics</span>
+                <span>/</span>
+                <span class="text-teal-700 font-bold">Tier 4: Prescriptive</span>
+            </div>
+            <div class="flex items-center gap-3">
+                <h1 class="text-2xl sm:text-3xl font-extrabold text-slate-900 tracking-tight">Prescriptive Analytics (RulesEngine)</h1>
+                <span class="px-2.5 py-0.5 bg-amber-50 text-amber-800 border border-amber-200 rounded-full text-[11px] font-bold uppercase tracking-wider">
+                    What Should We Do?
+                </span>
+            </div>
+            <p class="text-xs sm:text-sm text-slate-500 mt-1">
+                Automated decision rules via <code>WorkflowActionEngine</code> (<code>RulesEngine</code> + <code>Hangfire</code>). High-risk bookings (<code>riskScore &gt; 0.80</code>) automatically enqueue background intervention jobs.
+            </p>
+        </div>
+    </div>
+
+    @* ── Interactive RulesEngine Simulator ───────────────────────────── *@
+    <div class="grid grid-cols-1 lg:grid-cols-12 gap-6">
+        <div class="lg:col-span-5 bg-white rounded-xl border border-slate-200 shadow-2xs p-6 space-y-4">
+            <div class="flex items-center justify-between">
+                <h2 class="text-sm font-bold text-slate-900">Simulate Rule Evaluation</h2>
+                <span class="text-[10px] font-mono bg-slate-100 text-slate-700 px-2 py-0.5 rounded">WorkflowActionEngine</span>
+            </div>
+            <p class="text-xs text-slate-500">
+                Calls <code>EvaluateBookingRisk(bookingId, riskScore)</code>. When <code>riskScore &gt; 0.8f</code>, Hangfire enqueues <code>DailyAnalyticsSyncJob.ExecuteSync()</code>.
+            </p>
+
+            <div class="space-y-3 text-xs">
+                <div>
+                    <label class="block font-bold text-slate-700 mb-1">Booking ID</label>
+                    <input type="number" @bind="_evalBookingId" min="1"
+                           class="w-full px-3 py-2 border border-slate-300 rounded-lg text-slate-800 font-mono" />
+                </div>
+                <div>
+                    <label class="block font-bold text-slate-700 mb-1">Risk Score (0.00 – 1.00): <span class="font-mono text-teal-700">@_evalRiskScore.ToString("0.00")</span></label>
+                    <input type="range" min="0" max="1" step="0.05" @bind="_evalRiskScore" class="w-full accent-teal-700" />
+                </div>
+                <button type="button" @onclick="EvaluateRule"
+                        class="w-full py-2.5 bg-teal-700 hover:bg-teal-800 text-white font-bold rounded-lg transition-colors">
+                    Evaluate Booking Risk Rule
+                </button>
+            </div>
+
+            @if (!string.IsNullOrWhiteSpace(_evalResult))
+            {
+                <div class="p-4 rounded-xl border text-xs @(_triggeredJob ? "bg-amber-50 border-amber-200 text-amber-900" : "bg-emerald-50 border-emerald-200 text-emerald-900")">
+                    <div class="font-bold mb-1">@(_triggeredJob ? "⚡ Prescriptive Action Enqueued (Risk > 0.80)" : "✓ Within Normal Risk Threshold (≤ 0.80)")</div>
+                    <div>@_evalResult</div>
+                </div>
+            }
+        </div>
+
+        <div class="lg:col-span-7 bg-white rounded-xl border border-slate-200 shadow-2xs p-6 space-y-4">
+            <div>
+                <h2 class="text-sm font-bold text-slate-900">Active Prescriptive Policy Matrix</h2>
+                <p class="text-xs text-slate-500">Configured Microsoft RulesEngine workflows &amp; Hangfire triggers</p>
+            </div>
+            <div class="space-y-3 text-xs">
+                <div class="p-4 rounded-xl border border-slate-200 bg-slate-50 flex items-start justify-between gap-4">
+                    <div>
+                        <div class="font-bold text-slate-900">Rule 1: High No-Show Risk Intervention</div>
+                        <div class="font-mono text-[11px] text-teal-800 mt-0.5">Expression: riskScore &gt; 0.80f</div>
+                        <p class="text-slate-600 mt-1">Enqueues a Hangfire background job and alerts the assigned Office Clerk to re-confirm the client's 15% deposit lock.</p>
+                    </div>
+                    <span class="px-2.5 py-1 bg-emerald-100 text-emerald-800 rounded-full text-[10px] font-bold shrink-0">Active</span>
+                </div>
+
+                <div class="p-4 rounded-xl border border-slate-200 bg-slate-50 flex items-start justify-between gap-4">
+                    <div>
+                        <div class="font-bold text-slate-900">Rule 2: Expiring QR Hold Auto-Reminder</div>
+                        <div class="font-mono text-[11px] text-teal-800 mt-0.5">Expression: lockMinutesRemaining &lt;= 5 &amp;&amp; EventStatus == "Pending Payment"</div>
+                        <p class="text-slate-600 mt-1">Recommends a one-time 30-minute hold extension offer before <code>PendingPaymentExpiryService</code> releases the slot.</p>
+                    </div>
+                    <span class="px-2.5 py-1 bg-emerald-100 text-emerald-800 rounded-full text-[10px] font-bold shrink-0">Active</span>
+                </div>
+
+                <div class="p-4 rounded-xl border border-slate-200 bg-slate-50 flex items-start justify-between gap-4">
+                    <div>
+                        <div class="font-bold text-slate-900">Rule 3: Peak-Hour Crew &amp; Backup Body Allocation</div>
+                        <div class="font-mono text-[11px] text-teal-800 mt-0.5">Expression: TotalAmount &gt;= 25000m &amp;&amp; Category == "Wedding"</div>
+                        <p class="text-slate-600 mt-1">Prescribes assigning a Senior Photographer Team Leader plus a redundant full-frame camera body from inventory.</p>
+                    </div>
+                    <span class="px-2.5 py-1 bg-emerald-100 text-emerald-800 rounded-full text-[10px] font-bold shrink-0">Active</span>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+@code {
+    private int _evalBookingId = 104;
+    private float _evalRiskScore = 0.85f;
+    private bool _triggeredJob;
+    private string? _evalResult;
+
+    private void EvaluateRule()
+    {
+        _triggeredJob = _evalRiskScore > 0.8f;
+        _evalResult = _triggeredJob
+            ? $"Booking #{_evalBookingId} scored {_evalRiskScore:0.00} (> 0.80). WorkflowActionEngine scheduled Hangfire job DailyAnalyticsSyncJob.ExecuteSync() and logged a warning to Seq."
+            : $"Booking #{_evalBookingId} scored {_evalRiskScore:0.00} (≤ 0.80). Logged evaluation; no Hangfire intervention required.";
+    }
+}

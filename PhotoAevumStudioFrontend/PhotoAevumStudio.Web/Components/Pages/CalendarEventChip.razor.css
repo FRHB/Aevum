@@ -1,0 +1,97 @@
+.compact-event-chip {
+    padding: 0.4rem 0.55rem;
+    border-radius: 6px;
+    background: #ffffff;
+    border: 1px solid #e5e7eb;
+    border-left: 3px solid #6366f1;
+    font-size: 0.75rem;
+    cursor: pointer;
+    transition: transform 0.15s ease, box-shadow 0.15s ease;
+    display: flex;
+    flex-direction: column;
+    gap: 0.15rem;
+}
+
+.compact-event-chip:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+}
+
+.week-event-chip {
+    min-width: 140px;
+    max-width: 200px;
+    flex: 0 0 auto;
+}
+
+.chip-top-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.chip-time {
+    font-size: 0.68rem;
+    font-weight: 600;
+    color: #4b5563;
+}
+
+.chip-status-dot {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: #9ca3af;
+}
+
+.compact-event-chip.confirmed .chip-status-dot {
+    background: #10b981;
+}
+
+.compact-event-chip.pending .chip-status-dot {
+    background: #f59e0b;
+}
+
+.compact-event-chip.completed .chip-status-dot {
+    background: #6b7280;
+}
+
+.compact-event-chip.conflict-chip {
+    border-left-color: #ef4444;
+    background: #fef2f2;
+}
+
+.compact-event-chip.is-consultation-chip {
+    border-left-color: #0d9488;
+    background: #f0fdfa;
+}
+
+.chip-client {
+    font-weight: 700;
+    color: #111827;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.chip-photog {
+    font-size: 0.68rem;
+    color: #6b7280;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.chip-space-name {
+    font-size: 0.65rem;
+    color: #9ca3af;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+@media (max-width: 640px) {
+    .week-event-chip {
+        min-width: 100%;
+        max-width: 100%;
+        flex: 1 1 100%;
+    }
+}

@@ -42,6 +42,7 @@ public class PaymentsController : ControllerBase
     private readonly IPendingPaymentService _pendingPayments;
     private readonly IPaymentNotifier _notifier;
     private readonly IConfiguration _configuration;
+    private readonly IHttpClientFactory _httpClientFactory;
 
 
 
@@ -56,7 +57,8 @@ public class PaymentsController : ControllerBase
         ILogger<PaymentsController> logger,
         IPendingPaymentService pendingPayments,
         IPaymentNotifier notifier,
-        IConfiguration configuration)
+        IConfiguration configuration,
+        IHttpClientFactory httpClientFactory)
 
     {
 
@@ -70,6 +72,7 @@ public class PaymentsController : ControllerBase
         _pendingPayments = pendingPayments;
         _notifier = notifier;
         _configuration = configuration;
+        _httpClientFactory = httpClientFactory;
 
     }
 
@@ -624,6 +627,105 @@ public class PaymentsController : ControllerBase
 
     }
 
+    // POST api/payments/simulate-qr/{externalId}
+    // POST api/payment/simulate-qr/{externalId}
+    // Dev/test only: asks Xendit to simulate a QR payment. The secret key stays server-side.
+    [HttpPost("simulate-qr/{externalId}")]
+    [HttpPost("/api/payment/simulate-qr/{externalId}")]
+    [AllowAnonymous]
+    public async Task<IActionResult> SimulateQrPayment(
+        string externalId,
+        [FromQuery] decimal? amount,
+        CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrWhiteSpace(externalId))
+            return BadRequest(new { message = "externalId is required." });
+
+        var key = _xenditSettings.SecretKey;
+        if (string.IsNullOrWhiteSpace(key) || key.Contains("mock", StringComparison.OrdinalIgnoreCase))
+            key = _configuration["XenditSettings:SecretKey"]
+                ?? _configuration["XenditSettings__SecretKey"]
+                ?? _configuration["XENDIT_SECRET_KEY"]
+                ?? key;
+
+        if (string.IsNullOrWhiteSpace(key) || key.Contains("mock", StringComparison.OrdinalIgnoreCase))
+            return Conflict(new { message = "A Xendit test secret key (xnd_development_...) is required to simulate QR payments." });
+
+        // Simulation is a test-mode feature; refuse to run with a live key.
+        if (!key.StartsWith("xnd_development", StringComparison.Ordinal))
+            return StatusCode(StatusCodes.Status403Forbidden, new { message = "QR simulation is only available with a Xendit test key." });
+
+        decimal? effectiveAmount = amount;
+        string? resolvedQrId = externalId.StartsWith("qr_", StringComparison.OrdinalIgnoreCase) ? externalId : null;
+        if (resolvedQrId is null || !effectiveAmount.HasValue)
+        {
+            var appt = await _consultationService.GetAppointmentByIdAsync(externalId, cancellationToken);
+            if (appt != null)
+            {
+                if (!effectiveAmount.HasValue && appt.DownpaymentAmount > 0)
+                    effectiveAmount = appt.DownpaymentAmount;
+                if (resolvedQrId is null && !string.IsNullOrWhiteSpace(appt.XenditInvoiceId) &&
+                    appt.XenditInvoiceId.StartsWith("qr_", StringComparison.OrdinalIgnoreCase))
+                    resolvedQrId = appt.XenditInvoiceId;
+            }
+
+            if (!effectiveAmount.HasValue)
+            {
+                var qrBooking = await _pendingPayments.GetQrPaymentAsync(externalId, cancellationToken);
+                if (qrBooking is { Amount: > 0 })
+                    effectiveAmount = qrBooking.Amount;
+            }
+        }
+
+        var client = _httpClientFactory.CreateClient();
+        var authHeader = new System.Net.Http.Headers.AuthenticationHeaderValue(
+            "Basic", Convert.ToBase64String(System.Text.Encoding.UTF8.GetBytes($"{key}:")));
+        var payloadObj = effectiveAmount.HasValue ? new { amount = effectiveAmount.Value } : (object)new { };
+
+        using var request = new HttpRequestMessage(
+            HttpMethod.Post,
+            $"https://api.xendit.co/qr_codes/{Uri.EscapeDataString(externalId)}/payments/simulate");
+        request.Headers.Authorization = authHeader;
+        if (externalId.StartsWith("qr_", StringComparison.OrdinalIgnoreCase))
+            request.Headers.Add("api-version", "2022-07-31");
+        request.Content = JsonContent.Create(payloadObj);
+
+        using var response = await client.SendAsync(request, cancellationToken);
+        var responseBody = await response.Content.ReadAsStringAsync(cancellationToken);
+        var finalStatus = (int)response.StatusCode;
+
+        // If the QR code was created under api-version 2022-07-31, Xendit keys /simulate by qr_id rather than external_id.
+        if (!response.IsSuccessStatusCode && resolvedQrId != null && !string.Equals(resolvedQrId, externalId, StringComparison.OrdinalIgnoreCase))
+        {
+            using var retryReq = new HttpRequestMessage(
+                HttpMethod.Post,
+                $"https://api.xendit.co/qr_codes/{Uri.EscapeDataString(resolvedQrId)}/payments/simulate");
+            retryReq.Headers.Authorization = authHeader;
+            retryReq.Headers.Add("api-version", "2022-07-31");
+            retryReq.Content = JsonContent.Create(payloadObj);
+
+            using var retryRes = await client.SendAsync(retryReq, cancellationToken);
+            responseBody = await retryRes.Content.ReadAsStringAsync(cancellationToken);
+            finalStatus = (int)retryRes.StatusCode;
+            _logger.LogInformation("Xendit QR simulate (2022-07-31 fallback {QrId}) for {ExternalId} returned {StatusCode}", resolvedQrId, externalId, finalStatus);
+
+            if (retryRes.IsSuccessStatusCode)
+                return Ok(new { status = "SIMULATED", externalId, qrId = resolvedQrId, xenditStatus = finalStatus });
+        }
+        else
+        {
+            _logger.LogInformation("Xendit QR simulate for {ExternalId} returned {StatusCode}", externalId, finalStatus);
+            if (response.IsSuccessStatusCode)
+                return Ok(new { status = "SIMULATED", externalId, xenditStatus = finalStatus });
+        }
+
+        return StatusCode(StatusCodes.Status502BadGateway, new
+        {
+            message = "Xendit rejected the QR payment simulation.",
+            xenditStatus = finalStatus,
+            detail = responseBody
+        });
+    }
     private bool IsMockXendit() =>
         string.IsNullOrWhiteSpace(_xenditSettings.SecretKey) ||
         _xenditSettings.SecretKey.Contains("mock", StringComparison.OrdinalIgnoreCase);
@@ -662,7 +764,9 @@ public class PaymentsController : ControllerBase
         [FromBody] System.Text.Json.JsonElement payload,
         CancellationToken cancellationToken)
     {
-        var expected = _configuration["XENDIT_CALLBACK_TOKEN"];
+        var expected = _configuration["XENDIT_CALLBACK_TOKEN"]
+            ?? _xenditSettings.WebhookToken
+            ?? _configuration["XenditSettings:WebhookToken"];
         if (string.IsNullOrWhiteSpace(expected))
         {
             _logger.LogError("XENDIT_CALLBACK_TOKEN is not configured; rejecting QR webhook.");
@@ -694,6 +798,8 @@ public class PaymentsController : ControllerBase
 
         if (string.IsNullOrWhiteSpace(referenceId))
             return BadRequest(new { message = "reference_id is required." });
+
+        _logger.LogInformation("ASP.NET Core API successfully received qr.payment webhook and validated x-callback-token for reference {ReferenceId}.", referenceId);
 
         var status = Str(data, "status") ?? string.Empty;
         var succeeded = status.Equals("SUCCEEDED", StringComparison.OrdinalIgnoreCase) ||
@@ -733,8 +839,15 @@ public class PaymentsController : ControllerBase
             return Ok(new { status = "NOT_APPLIED" });
         }
 
-        try { await _notifier.PaymentCompletedAsync(confirmation.AppointmentId, cancellationToken); }
-        catch (Exception ex) { _logger.LogWarning(ex, "SignalR push failed for {Reference}; payment already confirmed.", referenceId); }
+        try
+        {
+            await _notifier.PaymentCompletedAsync(confirmation.AppointmentId, cancellationToken);
+            _logger.LogInformation("SignalR hub successfully broadcasted status change event (PaymentCompleted) for appointment {AppointmentId}.", confirmation.AppointmentId);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "SignalR push failed for {Reference}; payment already confirmed.", referenceId);
+        }
 
         return Ok(new { status = "SUCCESS", reference_id = referenceId });
     }

@@ -1,5 +1,7 @@
-using System.Reflection;
+﻿using System.Reflection;
 using FluentValidation;
+using Hangfire;
+using Serilog;
 using FluentValidation.AspNetCore;
 using InfisicalConfiguration;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
@@ -45,9 +47,22 @@ if (!string.IsNullOrEmpty(infisicalClientId) && !string.IsNullOrEmpty(infisicalC
     }
 }
 
+// ── Serilog (diagnostic analytics → Seq) ─────────────────────────────────────
+
+builder.Host.UseSerilog((ctx, services, lc) =>
+{
+    var seqUrl = ctx.Configuration["Seq:ServerUrl"];
+    lc.MinimumLevel.Information()
+      .MinimumLevel.Override("Microsoft.AspNetCore", Serilog.Events.LogEventLevel.Warning)
+      .Enrich.FromLogContext()
+      .WriteTo.Console();
+    if (!string.IsNullOrWhiteSpace(seqUrl))
+        lc.WriteTo.Seq(seqUrl, apiKey: ctx.Configuration["Seq:ApiKey"]);
+});
 // ── Services ─────────────────────────────────────────────────────────────────
 
 builder.Services.AddControllers();
+builder.Services.AddHttpClient();
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddOpenApi();
 
@@ -324,6 +339,26 @@ builder.Services.AddScoped<PhotoAevumStudio.Application.Interfaces.ISqlAuthServi
 builder.Services.AddScoped<PhotoAevumStudio.Application.Interfaces.IR2StorageService, PhotoAevumStudio.Infrastructure.Services.R2StorageService>();
 builder.Services.AddScoped<PhotoAevumStudio.Application.Interfaces.IDataArchiveService, PhotoAevumStudio.Infrastructure.Services.DataArchiveService>();
 
+// ── Analytics: Hangfire (ETL), ML.NET (predictive), RulesEngine (prescriptive) ──
+builder.Services.AddHangfire(cfg => cfg
+    .SetDataCompatibilityLevel(CompatibilityLevel.Version_180)
+    .UseSimpleAssemblyNameTypeSerializer()
+    .UseRecommendedSerializerSettings()
+    .UseSqlServerStorage(connectionString, new Hangfire.SqlServer.SqlServerStorageOptions
+    {
+        CommandBatchMaxTimeout = TimeSpan.FromMinutes(5),
+        SlidingInvisibilityTimeout = TimeSpan.FromMinutes(5),
+        QueuePollInterval = TimeSpan.Zero,
+        UseRecommendedIsolationLevel = true,
+        DisableGlobalLocks = true,
+        PrepareSchemaIfNecessary = true
+    }));
+builder.Services.AddHangfireServer();
+builder.Services.AddScoped<PhotoAevumStudio.Api.Analytics.ETL.DailyAnalyticsSyncJob>();
+builder.Services.AddScoped<PhotoAevumStudio.Api.Analytics.Predictive.BookingPredictionService>();
+builder.Services.AddSingleton(new RulesEngine.RulesEngine(Array.Empty<RulesEngine.Models.Workflow>()));
+builder.Services.AddScoped<PhotoAevumStudio.Api.Analytics.Prescriptive.WorkflowActionEngine>();
+
 // Book Schedule wizard (separate context; tables created by SchedulingSchema.sql at startup)
 builder.Services.AddDbContext<PhotoAevumStudio.Infrastructure.Scheduling.SchedulingDbContext>(options =>
 {
@@ -429,6 +464,8 @@ app.Use(async (ctx, next) =>
 app.UseAuthorization();
 app.UseMiddleware<PhotoAevumStudio.Api.Middleware.AuditLoggingMiddleware>();
 app.MapControllers();
+// Hangfire dashboard: default filter restricts access to local requests only.
+app.MapHangfireDashboard("/hangfire");
 app.MapHub<PhotoAevumStudio.Api.Hubs.PaymentHub>(PhotoAevumStudio.Api.Hubs.PaymentHub.Route);
 
 var informationalVersion = System.Reflection.Assembly.GetExecutingAssembly()

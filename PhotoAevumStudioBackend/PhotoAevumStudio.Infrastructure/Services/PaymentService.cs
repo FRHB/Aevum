@@ -333,6 +333,8 @@ public class PaymentService : IPaymentService
                             ALTER TABLE dbo.Payments ADD DepositAmount decimal(18,2) NOT NULL DEFAULT 0.00;
                         IF COL_LENGTH(N'dbo.Payments', N'RemainingBalance') IS NULL
                             ALTER TABLE dbo.Payments ADD RemainingBalance decimal(18,2) NOT NULL DEFAULT 0.00;
+                        IF COL_LENGTH(N'dbo.Payments', N'Notes') IS NULL
+                            ALTER TABLE dbo.Payments ADD Notes nvarchar(1000) NULL;
                     END;
 
                     IF OBJECT_ID(N'dbo.PaymentTransactions', N'U') IS NOT NULL
@@ -345,6 +347,8 @@ public class PaymentService : IPaymentService
                             ALTER TABLE dbo.PaymentTransactions ADD AdminApproverID nvarchar(100) NULL;
                         IF COL_LENGTH(N'dbo.PaymentTransactions', N'ApprovalTimestamp') IS NULL
                             ALTER TABLE dbo.PaymentTransactions ADD ApprovalTimestamp datetime2 NULL;
+                        IF COL_LENGTH(N'dbo.PaymentTransactions', N'Notes') IS NULL
+                            ALTER TABLE dbo.PaymentTransactions ADD Notes nvarchar(1000) NULL;
                     END;";
 
                 await using var cmd = new SqlCommand(createTableSql, conn);

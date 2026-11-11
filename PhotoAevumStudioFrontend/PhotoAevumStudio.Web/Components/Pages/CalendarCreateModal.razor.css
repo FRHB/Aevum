@@ -1,0 +1,133 @@
+.drawer-backdrop {
+    position: fixed;
+    inset: 0;
+    background: rgba(15, 23, 42, 0.6);
+    backdrop-filter: blur(4px);
+    z-index: 50;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 1rem;
+}
+
+.compact-modal {
+    margin: auto;
+    width: 440px;
+    max-width: 95vw;
+    max-height: 90vh;
+    overflow-y: auto;
+    background: #ffffff;
+    border-radius: 12px;
+    padding: 1.5rem;
+    box-shadow: 0 20px 40px -8px rgba(15, 23, 42, 0.25), 0 4px 12px rgba(15, 23, 42, 0.08);
+}
+
+.modal-title {
+    margin: 0 0 1rem;
+    font-size: 1.05rem;
+    font-weight: 700;
+    color: #111827;
+    text-align: left;
+}
+
+.modal-error {
+    padding: 0.5rem 0.65rem;
+    margin-bottom: 0.85rem;
+    background: #fff1f2;
+    color: #9f1239;
+    font-size: 0.75rem;
+    border: 1px solid #fecdd3;
+    border-radius: 6px;
+}
+
+.modal-form-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 0.85rem 0.75rem;
+}
+
+.modal-field {
+    display: flex;
+    flex-direction: column;
+    gap: 0.35rem;
+    min-width: 0;
+}
+
+.modal-field-full {
+    grid-column: 1 / -1;
+}
+
+.modal-label {
+    font-size: 0.85rem;
+    font-weight: 600;
+    color: #111827;
+    margin: 0;
+}
+
+.modal-input {
+    width: 100%;
+    box-sizing: border-box;
+    padding: 0.55rem 0.7rem;
+    font-size: 0.875rem;
+    color: #111827;
+    background: #ffffff;
+    border: 1px solid #d1d5db;
+    border-radius: 6px;
+    outline: none;
+    transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.modal-input::placeholder {
+    color: #9ca3af;
+}
+
+.modal-input:focus {
+    border-color: #0f172a;
+    box-shadow: 0 0 0 3px rgba(15, 23, 42, 0.12);
+}
+
+.modal-input[type="date"],
+.modal-input[type="time"] {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    min-height: 2.4rem;
+}
+
+.modal-footer {
+    display: flex;
+    justify-content: flex-end;
+    gap: 0.5rem;
+    margin-top: 1.25rem;
+    padding-top: 1rem;
+    border-top: 1px solid #e5e7eb;
+}
+
+.modal-btn {
+    padding: 0.45rem 0.95rem;
+    font-size: 0.85rem;
+    font-weight: 600;
+    border-radius: 6px;
+    cursor: pointer;
+    transition: background-color 0.15s ease, border-color 0.15s ease;
+}
+
+.modal-btn-cancel {
+    background: #ffffff;
+    color: #111827;
+    border: 1px solid #d1d5db;
+}
+
+.modal-btn-cancel:hover {
+    background: #f3f4f6;
+}
+
+.modal-btn-primary {
+    background: #0f172a;
+    color: #ffffff;
+    border: 1px solid #0f172a;
+}
+
+.modal-btn-primary:hover {
+    background: #1e293b;
+}

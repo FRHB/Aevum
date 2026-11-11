@@ -14,6 +14,7 @@ public interface IConsultationClient
     Task<ApiResult<IReadOnlyList<EventAppointmentDto>>> GetCustomerAppointmentsAsync(string? status = null, CancellationToken ct = default);
     Task<ApiResult<EventAppointmentDto>> VerifyDownpaymentAsync(string appointmentId, string? invoiceId = null, CancellationToken ct = default);
     Task<ApiResult<EventAppointmentDto>> SimulateWebhookPaymentAsync(string appointmentId, string? paymentMethod = null, CancellationToken ct = default);
+    Task<ApiResult<SimulateQrResultDto>> SimulateQrPaymentAsync(string externalId, CancellationToken ct = default);
     Task<ApiResult<bool>> RequestExtensionAsync(string appointmentId, CancellationToken ct = default);
     Task<ApiResult<EventAppointmentDto>> CompleteEventAsync(string appointmentId, CompleteEventRequest request, CancellationToken ct = default);
     Task<ApiResult<PaymentBreakdownModel>> CalculateReservationFeeAsync(decimal total, CancellationToken ct = default);

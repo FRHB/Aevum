@@ -117,6 +117,9 @@
                  InitialView="SignUp" />
 
 @code {
+    [SupplyParameterFromQuery]
+    public string? returnUrl { get; set; }
+
     private LoginCredentials loginModel = new LoginCredentials();
     private string errorMessage = "";
     private string successMessage = "";
@@ -166,6 +169,15 @@
                 user.IsInRole("Office Clerk") ||
                 (!string.IsNullOrEmpty(result.Role) && (result.Role.Contains("Employee", StringComparison.OrdinalIgnoreCase) || result.Role.Contains("Staff", StringComparison.OrdinalIgnoreCase) || result.Role.Contains("Clerk", StringComparison.OrdinalIgnoreCase))) ||
                 (!string.IsNullOrEmpty(loginModel.UserId) && (loginModel.UserId.StartsWith("EMP-", StringComparison.OrdinalIgnoreCase) || loginModel.UserId.StartsWith("CLK-", StringComparison.OrdinalIgnoreCase)));
+
+            if (!string.IsNullOrWhiteSpace(returnUrl) &&
+                !returnUrl.StartsWith("http://", StringComparison.OrdinalIgnoreCase) &&
+                !returnUrl.StartsWith("https://", StringComparison.OrdinalIgnoreCase) &&
+                !returnUrl.StartsWith("//", StringComparison.Ordinal))
+            {
+                NavManager.NavigateTo("/" + returnUrl.TrimStart('/'));
+                return;
+            }
 
             if (isAdmin)
                 NavManager.NavigateTo("/admin");

@@ -206,11 +206,8 @@ public class ConsultationNegotiationService : IConsultationNegotiationService
 
 
 
-        // 2. Select Office Clerk via least-recently-assigned round robin
-
-
-
-        var (clerkId, clerkName, clerkEmail) = await AssignOfficeClerkAsync(conn, request.ConsultationDate, cancellationToken);
+        // 2. Select Office Clerk via least-recently-assigned round robin with schedule buffer verification
+        var (clerkId, clerkName, clerkEmail) = await AssignOfficeClerkAsync(conn, request.ConsultationDate, request.ConsultationTime, cancellationToken);
 
 
 
@@ -2259,7 +2256,10 @@ public class ConsultationNegotiationService : IConsultationNegotiationService
             var invoiceUrl = reader.IsDBNull(17) ? null : reader.GetString(17);
             if (string.IsNullOrWhiteSpace(invoiceUrl) && !string.IsNullOrWhiteSpace(invoiceId))
             {
-                invoiceUrl = $"{_xenditSettings.InvoiceBaseUrl.TrimEnd('/')}/{invoiceId}";
+                if (!invoiceId.StartsWith("qr_", StringComparison.OrdinalIgnoreCase))
+                {
+                    invoiceUrl = $"{_xenditSettings.InvoiceBaseUrl.TrimEnd('/')}/{invoiceId}";
+                }
             }
 
             dto = new EventAppointmentDto
@@ -2753,7 +2753,9 @@ var invId = invoiceId ?? appt.XenditInvoiceId ?? $"inv_mock_{appointmentId}";
                         appt.TotalAmount,
                         appt.DownpaymentAmount,
                         appt.HoldExpiresAt ?? DateTime.UtcNow.AddMinutes(30),
-                        appt.XenditInvoiceUrl ?? "https://checkout.xendit.co",
+                        (!string.IsNullOrWhiteSpace(appt.XenditInvoiceUrl) && !appt.XenditInvoiceUrl.Contains("/qr_") && !appt.XenditInvoiceUrl.Contains("qr_"))
+                            ? appt.XenditInvoiceUrl
+                            : $"{_xenditSettings.CustomerPortalBaseUrl.TrimEnd('/')}/payments/{appointmentId}",
                         "QR Ph / E-Wallet");
 
                     await _emailService.SendEmailAsync(appt.CustomerEmail, $"Payment Reminder: Reservation Fee for {appt.EventName} (#{appointmentId})", emailBody);
@@ -3442,6 +3444,18 @@ var invId = invoiceId ?? appt.XenditInvoiceId ?? $"inv_mock_{appointmentId}";
 
 
 
+            END;
+
+            IF OBJECT_ID(N'dbo.EventOvertimeCharges', N'U') IS NOT NULL
+            BEGIN
+                IF COL_LENGTH(N'dbo.EventOvertimeCharges', N'Notes') IS NULL
+                BEGIN
+                    ALTER TABLE dbo.EventOvertimeCharges ADD Notes nvarchar(500) NULL;
+                    IF COL_LENGTH(N'dbo.EventOvertimeCharges', N'ReasonNotes') IS NOT NULL
+                    BEGIN
+                        EXEC(N'UPDATE dbo.EventOvertimeCharges SET Notes = ReasonNotes WHERE Notes IS NULL AND ReasonNotes IS NOT NULL;');
+                    END;
+                END;
             END;
 
 
@@ -4393,9 +4407,11 @@ var invId = invoiceId ?? appt.XenditInvoiceId ?? $"inv_mock_{appointmentId}";
         private static async Task<(string EmployeeId, string EmployeeName, string EmployeeEmail)> AssignOfficeClerkAsync(
         SqlConnection conn,
         DateOnly? consultationDate,
+        TimeOnly? consultationTime,
         CancellationToken ct)
     {
-        // Query active employees who strictly have the verified 'Office Clerk' specialization and are not on Day Off
+        // Query active employees who strictly have the verified 'Office Clerk' specialization and are not on Day Off,
+        // and are not restricted by existing bookings with 2 hours advance preparation and 1 hour post-event buffer.
         const string clerkSql = @"
             SELECT TOP 1 
                 e.EmployeeID, 
@@ -4416,10 +4432,35 @@ var invId = invoiceId ?? appt.XenditInvoiceId ?? $"inv_mock_{appointmentId}";
                   OR COL_LENGTH(N'dbo.Employees', N'DaysOff') IS NULL
                   OR CHARINDEX(DATENAME(dw, @EvtDate), ISNULL(e.DaysOff, 'Sunday')) = 0
               )
+              AND (
+                  @EvtTime IS NULL
+                  OR NOT EXISTS (
+                      SELECT 1 FROM dbo.BookingNegotiation bn2
+                      WHERE bn2.EmployeeID = e.EmployeeID
+                        AND bn2.ConsultationDate = @EvtDate
+                        AND bn2.NegotiationStatus NOT IN ('Cancelled', 'Deal_Lost')
+                        AND bn2.ConsultationTime IS NOT NULL
+                        AND @EvtTime < DATEADD(hour, 2, bn2.ConsultationTime)
+                        AND DATEADD(hour, -2, bn2.ConsultationTime) < DATEADD(hour, 1, @EvtTime)
+                  )
+              )
+              AND (
+                  @EvtTime IS NULL
+                  OR NOT EXISTS (
+                      SELECT 1 FROM dbo.EventEmployee ee2
+                      JOIN dbo.EventAppointment ea2 ON ee2.EventAppointmentID = ea2.EventAppointmentID
+                      WHERE ee2.EmployeeID = e.EmployeeID
+                        AND ea2.EventDate = @EvtDate
+                        AND ea2.EventStatus <> 'Cancelled'
+                        AND @EvtTime < DATEADD(hour, 2, ea2.EventTime)
+                        AND DATEADD(hour, -2, ea2.EventTime) < DATEADD(hour, 1, @EvtTime)
+                  )
+              )
             ORDER BY COALESCE(bn.LastAssignedAt, '1900-01-01') ASC, e.EmployeeID ASC;";
 
         await using var cmd = new SqlCommand(clerkSql, conn);
         cmd.Parameters.AddWithValue("@EvtDate", consultationDate.HasValue ? (object)consultationDate.Value.ToDateTime(TimeOnly.MinValue) : DBNull.Value);
+        cmd.Parameters.AddWithValue("@EvtTime", consultationTime.HasValue ? (object)consultationTime.Value.ToTimeSpan() : DBNull.Value);
         await using var reader = await cmd.ExecuteReaderAsync(ct);
         if (await reader.ReadAsync(ct))
         {
@@ -4430,6 +4471,11 @@ var invId = invoiceId ?? appt.XenditInvoiceId ?? $"inv_mock_{appointmentId}";
         }
 
         await reader.CloseAsync();
+
+        if (consultationDate.HasValue && consultationTime.HasValue)
+        {
+            throw new InvalidOperationException($"Cannot schedule consultation: The assigned Office Clerk is unavailable at {consultationTime.Value:h:mm tt} on {consultationDate.Value:dddd, MMMM dd, yyyy} due to another booking or required buffer time.");
+        }
 
         if (consultationDate.HasValue)
         {

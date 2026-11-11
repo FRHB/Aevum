@@ -4,6 +4,7 @@
 @page "/calendar/events"
 @layout AdminLayout
 @rendermode InteractiveServer
+@implements IDisposable
 @using PhotoAevumStudio.Web.Services
 @using Microsoft.AspNetCore.Components.Authorization
 @using System.Security.Claims
@@ -20,17 +21,17 @@
             <h1 class="header-title">Calendar of Events</h1>
             <div class="metrics-pill-group">
                 <span class="metric-pill">
-                    <strong>@TotalBookingsCount</strong> total bookings
+                    <strong>@_totalBookingsCount</strong> total bookings
                 </span>
                 <span class="metric-pill highlight">
-                    <strong>@ThisWeekBookingsCount</strong> this week (@ThisWeekHoursCount.ToString("0.#")h)
+                    <strong>@_thisWeekBookingsCount</strong> this week (@_thisWeekHoursCount.ToString("0.#")h)
                 </span>
-                @if (ConflictCount > 0)
+                @if (_conflictCount > 0)
                 {
                     <button type="button"
                             @onclick="ToggleConflictFilter"
                             class="metric-pill conflict-pill @(_filterOnlyConflicts ? "active" : "")">
-                        ⚠️ <strong>@ConflictCount</strong> conflict@(ConflictCount == 1 ? "" : "s")
+                        ⚠️ <strong>@_conflictCount</strong> conflict@(_conflictCount == 1 ? "" : "s")
                     </button>
                 }
                 else
@@ -76,23 +77,23 @@
 
         <div class="toolbar-right">
             @* Dropdown Filters *@
-            <select @bind="_selectedStatusFilter" class="toolbar-select">
+            <select value="@_selectedStatusFilter" @onchange="OnStatusFilterChanged" class="toolbar-select">
                 <option value="">All Statuses</option>
                 <option value="Confirmed">Confirmed</option>
                 <option value="Pending">Pending</option>
                 <option value="Completed">Completed</option>
             </select>
 
-            @* Quick Search *@
+            @* Quick Search with Debounce *@
             <div class="search-box">
                 <input type="text"
-                       @bind="_searchQuery"
-                       @bind:event="oninput"
+                       value="@_searchQuery"
+                       @oninput="OnSearchInput"
                        placeholder="Filter events..."
                        class="toolbar-search-input" />
                 @if (!string.IsNullOrEmpty(_searchQuery))
                 {
-                    <button type="button" @onclick="() => _searchQuery = string.Empty" class="search-clear-btn">✕</button>
+                    <button type="button" @onclick="ClearSearch" class="search-clear-btn">✕</button>
                 }
             </div>
 
@@ -111,10 +112,7 @@
             @foreach (var day in WeekDays)
             {
                 var isToday = day.Date == DateTime.Today;
-                var dayBookings = FilteredBookings
-                    .Where(b => b.Date.Date == day.Date)
-                    .OrderBy(b => b.StartTime)
-                    .ToList();
+                var dayBookings = GetBookingsForDate(day.Date);
                 var dayEventsCount = dayBookings.Count;
 
                 <div class="week-day-row @(isToday ? "is-today" : "")">
@@ -137,27 +135,14 @@
                         {
                             @foreach (var booking in dayBookings)
                             {
-                                <div @onclick="() => OpenDetailDrawer(booking)"
-                                     title="@booking.ClientName (@booking.ServiceType) with @booking.AssignedPhotographer"
-                                     class="compact-event-chip week-event-chip @(booking.IsConsultation ? "is-consultation-chip" : "") @(booking.HasConflict ? "conflict-chip" : "") @(booking.Status.ToLowerInvariant())">
-                                    <div class="chip-top-row">
-                                        <span class="chip-time">@(booking.IsConsultation ? "💬 " : "")@booking.StartTime.ToString(@"hh\:mm") - @booking.EndTime.ToString(@"hh\:mm")</span>
-                                        <span class="chip-status-dot"></span>
-                                    </div>
-                                    <div class="chip-client">@booking.ClientName</div>
-                                    <div class="chip-photog">@(booking.IsConsultation ? "Clerk: " : "📷 ")@booking.AssignedPhotographer</div>
-                                    @if (!string.IsNullOrWhiteSpace(booking.StudioSpaceName))
-                                    {
-                                        <div class="chip-space-name">@booking.StudioSpaceName</div>
-                                    }
-                                </div>
+                                <CalendarEventChip Booking="booking" OnClick="() => OpenDetailDrawer(booking)" />
                             }
                         }
 
                         @if (!_isPhotographerOrCreative)
                         {
                             <button type="button"
-                                    @onclick='() => OpenCreateModalForSlot(FilteredStudioSpaces.FirstOrDefault()?.Id ?? "1", day)'
+                                    @onclick='() => OpenCreateModalForSlot(FilteredStudioSpaces.FirstOrDefault()?.Id ?? "studio-a", day)'
                                     class="week-add-event-btn"
                                     title='Add event for @day.ToString("ddd, MMM d")'>
                                 <span class="plus-icon-sm">+</span>
@@ -172,10 +157,7 @@
     else if (_currentView == ScheduleViewMode.Day)
     {
         @* ── DAY VIEW — Agenda-style chronological list ───────────────── *@
-        var dayBookings = FilteredBookings
-            .Where(b => b.Date.Date == _selectedDate.Date)
-            .OrderBy(b => b.StartTime)
-            .ToList();
+        var dayBookings = GetBookingsForDate(_selectedDate.Date);
 
         <div class="compact-agenda-card">
             @* Date header row *@
@@ -194,7 +176,7 @@
                     {
                         <div class="day-empty-action">
                             <button type="button"
-                                    @onclick='() => OpenCreateModalForSlot(FilteredStudioSpaces.FirstOrDefault()?.Id ?? "1", _selectedDate)'
+                                    @onclick='() => OpenCreateModalForSlot(FilteredStudioSpaces.FirstOrDefault()?.Id ?? "studio-a", _selectedDate)'
                                     class="day-quick-add-link">
                                 + Book a Session
                             </button>
@@ -236,7 +218,7 @@
                 {
                     <div class="pt-2 pb-1 px-1 border-t border-dashed border-gray-200 mt-2">
                         <button type="button"
-                                @onclick='() => OpenCreateModalForSlot(FilteredStudioSpaces.FirstOrDefault()?.Id ?? "1", _selectedDate)'
+                                @onclick='() => OpenCreateModalForSlot(FilteredStudioSpaces.FirstOrDefault()?.Id ?? "studio-a", _selectedDate)'
                                 class="day-quick-add-link">
                             + Add Another Session
                         </button>
@@ -257,11 +239,11 @@
                 {
                     var isCurrentMonth = day.Month == _selectedDate.Month;
                     var isToday = day.Date == DateTime.Today;
-                    var dayEvents = GetEventsForDay(day).Take(3).ToList();
-                    var totalEvts = GetEventsForDay(day).Count();
+                    var dayEvents = GetBookingsForDate(day.Date).Take(3).ToList();
+                    var totalEvts = GetBookingsForDate(day.Date).Count;
 
                     <div class="month-day-cell @(isCurrentMonth ? "" : "other-month") @(isToday ? "is-today" : "")"
-                         @onclick="() => { _selectedDate = day; SetViewMode(ScheduleViewMode.Day); }">
+                         @onclick="async () => { _selectedDate = day; await SetViewMode(ScheduleViewMode.Day); }">
                         <div class="month-cell-header">
                             <span class="month-day-num">@day.Day</span>
                             @if (totalEvts > 0)
@@ -335,153 +317,22 @@
         </div>
     }
 
-    @* ── DETAIL DRAWER (Slide-over for compact details) ───────────────── *@
-    @if (_selectedBooking != null)
-    {
-        <div class="drawer-backdrop" @onclick="CloseDetailDrawer">
-            <div class="compact-detail-drawer" @onclick:stopPropagation="true">
-                <div class="drawer-header">
-                    <div>
-                        <div class="flex items-center gap-2">
-                            <span class="status-pill text-xs">@_selectedBooking.Status</span>
-                            @if (_selectedBooking.HasConflict)
-                            {
-                                <span class="badge-conflict">⚠️ Conflict</span>
-                            }
-                        </div>
-                        <h3 class="text-lg font-bold text-gray-900 mt-1">@_selectedBooking.ClientName</h3>
-                    </div>
-                    <button type="button" @onclick="CloseDetailDrawer" class="drawer-close-btn">✕</button>
-                </div>
+    @* ── MODULAR DETAIL DRAWER ────────────────────────────────────────── *@
+    <CalendarDetailDrawer Booking="_selectedBooking" OnClose="CloseDetailDrawer" />
 
-                <div class="drawer-body">
-                    @if (_selectedBooking.IsConsultation)
-                    {
-                        <div class="drawer-field">
-                            <span class="drawer-field-label">Type</span>
-                            <span class="drawer-field-val inline-flex items-center gap-1 font-bold text-teal-700 bg-teal-50 px-2 py-0.5 rounded border border-teal-200">
-                                <span>💬</span> Consultation &amp; Inquiry Call
-                            </span>
-                        </div>
-                        @if (!string.IsNullOrWhiteSpace(_selectedBooking.MeetingLink))
-                        {
-                            <div class="drawer-field">
-                                <span class="drawer-field-label">Meeting Room</span>
-                                <div class="drawer-field-val">
-                                    <a href="@_selectedBooking.MeetingLink" target="_blank"
-                                       class="inline-flex items-center gap-1.5 px-3 py-1.5 bg-teal-700 hover:bg-teal-800 text-white text-xs font-bold rounded-lg transition-colors shadow-xs">
-                                        <span>📹</span> Join Video Call
-                                    </a>
-                                </div>
-                            </div>
-                        }
-                    }
-                    <div class="drawer-field">
-                        <span class="drawer-field-label">Service</span>
-                        <span class="drawer-field-val">@_selectedBooking.ServiceType</span>
-                    </div>
-                    <div class="drawer-field">
-                        <span class="drawer-field-label">Schedule</span>
-                        <span class="drawer-field-val">@_selectedBooking.Date.ToString("ddd, MMM d, yyyy") (@_selectedBooking.FormattedTimeRange)</span>
-                    </div>
-                    <div class="drawer-field">
-                        <span class="drawer-field-label">Photographer</span>
-                        <span class="drawer-field-val">@_selectedBooking.AssignedPhotographer</span>
-                    </div>
-                    @if (!_selectedBooking.IsConsultation)
-                    {
-                        <div class="drawer-field">
-                            <span class="drawer-field-label">Price</span>
-                            <span class="drawer-field-val font-bold">₱@_selectedBooking.EstimatedPrice.ToString("N2")</span>
-                        </div>
-                    }
-
-                    @if (!string.IsNullOrWhiteSpace(_selectedBooking.Notes))
-                    {
-                        <div class="drawer-field">
-                            <span class="drawer-field-label">Notes</span>
-                            <span class="drawer-field-val italic text-xs">@_selectedBooking.Notes</span>
-                        </div>
-                    }
-
-            
-                </div>
-            </div>
-        </div>
-    }
-
-    @* ── CREATE NEW EVENT MODAL ───────────────────────────────────────── *@
-    @if (_isCreateModalOpen)
-    {
-        <div class="drawer-backdrop" @onclick="CloseCreateModal">
-            <div class="compact-modal" role="dialog" aria-modal="true" aria-labelledby="create-event-title" @onclick:stopPropagation="true">
-                <h3 id="create-event-title" class="modal-title">Schedule New Event</h3>
-
-                @if (!string.IsNullOrEmpty(_modalErrorMessage))
-                {
-                    <div class="modal-error" role="alert">@_modalErrorMessage</div>
-                }
-
-                <div class="modal-form-grid">
-                    <div class="modal-field modal-field-full">
-                        <label for="ev-client" class="modal-label">Client / Production Name</label>
-                        <input id="ev-client" type="text" @bind="_newEvent.ClientName" @bind:event="oninput" class="modal-input" placeholder="e.g. Acme Corp Shoot" />
-                    </div>
-
-                    <div class="modal-field">
-                        <label for="ev-space" class="modal-label">Studio Space</label>
-                        <select id="ev-space" @bind="_newEvent.StudioSpaceId" class="modal-input">
-                            @foreach (var s in StudioSpaces)
-                            {
-                                <option value="@s.Id">@s.Name</option>
-                            }
-                        </select>
-                    </div>
-                    <div class="modal-field">
-                        <label for="ev-service" class="modal-label">Service Type</label>
-                        <select id="ev-service" value="@_newEvent.ServiceType" @onchange="OnServiceTypeSelected" class="modal-input">
-                            @if (AvailableServices.Any())
-                            {
-                                @foreach (var svc in AvailableServices)
-                                {
-                                    <option value="@svc.Title">@svc.Title</option>
-                                }
-                            }
-                            else
-                            {
-                                <option value="" disabled selected>No services currently available</option>
-                            }
-                        </select>
-                    </div>
-
-                    <div class="modal-field">
-                        <label for="ev-date" class="modal-label">Date</label>
-                        <input id="ev-date" type="date" @bind="_newEventDate" class="modal-input" />
-                    </div>
-                    <div class="modal-field">
-                        <label for="ev-start" class="modal-label">Start Time</label>
-                        <input id="ev-start" type="time" @bind="_newStartTime" class="modal-input" />
-                    </div>
-
-                    <div class="modal-field">
-                        <label for="ev-end" class="modal-label">End Time</label>
-                        <input id="ev-end" type="time" @bind="_newEndTime" class="modal-input" />
-                    </div>
-                    <div class="modal-field" aria-hidden="true"></div>
-
-                    <div class="modal-field modal-field-full">
-                        <label for="ev-notes" class="modal-label">Notes / Details</label>
-                        <input id="ev-notes" type="text" @bind="_newEvent.Notes" @bind:event="oninput" class="modal-input" placeholder="Reason or assignment notes..." />
-                    </div>
-                </div>
-
-                <div class="modal-footer">
-                    <button type="button" @onclick="CloseCreateModal" class="modal-btn modal-btn-cancel">Cancel</button>
-                    <button type="button" @onclick="SaveNewEvent" class="modal-btn modal-btn-primary">Save Event</button>
-                </div>
-            </div>
-        </div>
-    }
+    @* ── MODULAR CREATE NEW EVENT MODAL ───────────────────────────────── *@
+    @* Fallback state for services: No services currently available *@
+    <CalendarCreateModal IsOpen="_isCreateModalOpen"
+                         NewEvent="_newEvent"
+                         @bind-EventDate="_newEventDate"
+                         @bind-StartTime="_newStartTime"
+                         @bind-EndTime="_newEndTime"
+                         StudioSpaces="StudioSpaces"
+                         AvailableServices="AvailableServices"
+                         ErrorMessage="@_modalErrorMessage"
+                         OnClose="CloseCreateModal"
+                         OnSave="SaveNewEvent"
+                         OnServiceSelected="OnServiceTypeSelected" />
 </div>
 
 @code {
@@ -509,6 +360,22 @@
     private TimeOnly _newEndTime = new(13, 0);
 
     private List<MainServiceItem> AvailableServices = new();
+    private List<StudioSpaceResource> StudioSpaces = new();
+
+    // In-memory window cache and indexed lookups for $O(1)$ fast rendering
+    private List<EventBookingModel> _loadedBookings = new();
+    private List<EventBookingModel> _filteredBookings = new();
+    private ILookup<DateTime, EventBookingModel> _bookingsByDateLookup = Enumerable.Empty<EventBookingModel>().ToLookup(b => b.Date.Date);
+
+    private DateTime? _loadedWindowStart;
+    private DateTime? _loadedWindowEnd;
+
+    private int _totalBookingsCount;
+    private int _thisWeekBookingsCount;
+    private double _thisWeekHoursCount;
+    private int _conflictCount;
+
+    private System.Threading.Timer? _debounceTimer;
 
     protected override async Task OnInitializedAsync()
     {
@@ -536,6 +403,154 @@
         {
             AvailableServices = new();
         }
+
+        StudioSpaces = ScheduleService.GetStudioSpaces();
+
+        await LoadBookingsForCurrentViewAsync();
+    }
+
+    private void CalculateCurrentRange(out DateTime rangeStart, out DateTime rangeEnd)
+    {
+        var today = DateTime.Today;
+        int diffToMon = (7 + (today.DayOfWeek - DayOfWeek.Monday)) % 7;
+        var curWeekMonday = today.AddDays(-diffToMon);
+        var curWeekSunday = curWeekMonday.AddDays(6);
+
+        DateTime viewStart;
+        DateTime viewEnd;
+
+        switch (_currentView)
+        {
+            case ScheduleViewMode.Day:
+                viewStart = _selectedDate.Date;
+                viewEnd = _selectedDate.Date;
+                break;
+            case ScheduleViewMode.Week:
+                viewStart = WeekDays.First().Date;
+                viewEnd = WeekDays.Last().Date;
+                break;
+            case ScheduleViewMode.Month:
+                viewStart = MonthCalendarDays.First().Date;
+                viewEnd = MonthCalendarDays.Last().Date;
+                break;
+            case ScheduleViewMode.Agenda:
+                viewStart = _selectedDate.Date;
+                viewEnd = _selectedDate.Date.AddDays(14);
+                break;
+            default:
+                viewStart = _selectedDate.Date;
+                viewEnd = _selectedDate.Date;
+                break;
+        }
+
+        // Expand bounds to also encompass the current week for dashboard metric accuracy
+        rangeStart = viewStart < curWeekMonday ? viewStart : curWeekMonday;
+        rangeEnd = viewEnd > curWeekSunday ? viewEnd : curWeekSunday;
+    }
+
+    private Task LoadBookingsForCurrentViewAsync(bool forceReload = false)
+    {
+        CalculateCurrentRange(out var rangeStart, out var rangeEnd);
+
+        // Check if current view is already covered by the loaded window
+        if (!forceReload && _loadedWindowStart.HasValue && _loadedWindowEnd.HasValue &&
+            rangeStart >= _loadedWindowStart.Value && rangeEnd <= _loadedWindowEnd.Value)
+        {
+            ApplyFilters();
+            return Task.CompletedTask;
+        }
+
+        // Add 7 days buffer padding on each side to avoid refetching on minor adjacent date navigation
+        var queryStart = rangeStart.AddDays(-7);
+        var queryEnd = rangeEnd.AddDays(7);
+
+        var rawBookings = ScheduleService.GetEventBookings(queryStart, queryEnd);
+
+        if (_isPhotographerOrCreative)
+        {
+            _loadedBookings = rawBookings
+                .Where(b => EmployeeRoleHelper.IsEventAssignedToEmployee(b, _currentEmployeeName, _currentEmployeeId))
+                .ToList();
+        }
+        else
+        {
+            _loadedBookings = rawBookings;
+        }
+
+        _loadedWindowStart = queryStart;
+        _loadedWindowEnd = queryEnd;
+
+        ApplyFilters();
+        return Task.CompletedTask;
+    }
+
+    private void ApplyFilters()
+    {
+        var query = _loadedBookings.AsEnumerable();
+
+        if (!string.IsNullOrWhiteSpace(_searchQuery))
+        {
+            var q = _searchQuery.Trim().ToLowerInvariant();
+            query = query.Where(b =>
+                (b.ClientName != null && b.ClientName.ToLowerInvariant().Contains(q)) ||
+                (b.ServiceType != null && b.ServiceType.ToLowerInvariant().Contains(q)) ||
+                (b.StudioSpaceName != null && b.StudioSpaceName.ToLowerInvariant().Contains(q)) ||
+                (b.AssignedPhotographer != null && b.AssignedPhotographer.ToLowerInvariant().Contains(q)) ||
+                (b.Notes != null && b.Notes.ToLowerInvariant().Contains(q)));
+        }
+
+        if (!string.IsNullOrEmpty(_selectedStatusFilter))
+            query = query.Where(b => b.Status.Equals(_selectedStatusFilter, StringComparison.OrdinalIgnoreCase));
+
+        if (!string.IsNullOrEmpty(_selectedServiceTypeFilter))
+            query = query.Where(b => b.ServiceType.Equals(_selectedServiceTypeFilter, StringComparison.OrdinalIgnoreCase));
+
+        if (_filterOnlyConflicts)
+            query = query.Where(b => b.HasConflict);
+
+        _filteredBookings = query.ToList();
+        _bookingsByDateLookup = _filteredBookings.ToLookup(b => b.Date.Date);
+
+        // Calculate metrics once
+        var today = DateTime.Today;
+        int diff = (7 + (today.DayOfWeek - DayOfWeek.Monday)) % 7;
+        var monday = today.AddDays(-diff);
+        var sunday = monday.AddDays(6);
+
+        _totalBookingsCount = _loadedBookings.Count;
+        var thisWeekList = _loadedBookings.Where(b => b.Date.Date >= monday && b.Date.Date <= sunday).ToList();
+        _thisWeekBookingsCount = thisWeekList.Count;
+        _thisWeekHoursCount = thisWeekList.Sum(b => b.DurationHours);
+        _conflictCount = _loadedBookings.Count(b => b.HasConflict);
+    }
+
+    private List<EventBookingModel> GetBookingsForDate(DateTime date) =>
+        _bookingsByDateLookup[date.Date].OrderBy(b => b.StartTime).ToList();
+
+    private void OnSearchInput(ChangeEventArgs e)
+    {
+        _searchQuery = e.Value?.ToString() ?? string.Empty;
+        _debounceTimer?.Dispose();
+        _debounceTimer = new System.Threading.Timer(_ =>
+        {
+            InvokeAsync(() =>
+            {
+                ApplyFilters();
+                StateHasChanged();
+            });
+        }, null, 180, Timeout.Infinite);
+    }
+
+    private void ClearSearch()
+    {
+        _searchQuery = string.Empty;
+        ApplyFilters();
+    }
+
+    private void OnStatusFilterChanged(ChangeEventArgs e)
+    {
+        _selectedStatusFilter = e.Value?.ToString() ?? string.Empty;
+        ApplyFilters();
     }
 
     private void OnServiceTypeSelected(ChangeEventArgs e)
@@ -549,21 +564,9 @@
         }
     }
 
-    private List<StudioSpaceResource> StudioSpaces => ScheduleService.GetStudioSpaces();
-    private List<EventBookingModel> AllBookings => _isPhotographerOrCreative
-        ? ScheduleService.GetEventBookings().Where(b => EmployeeRoleHelper.IsEventAssignedToEmployee(b, _currentEmployeeName, _currentEmployeeId)).ToList()
-        : ScheduleService.GetEventBookings();
-
-    private int ConflictCount => _isPhotographerOrCreative
-        ? AllBookings.Count(b => b.HasConflict)
-        : ScheduleService.GetEventConflictCount();
-    private int TotalBookingsCount => AllBookings.Count;
-    private int ThisWeekBookingsCount => AllBookings.Count(b => WeekDays.Any(w => w.Date == b.Date.Date));
-    private double ThisWeekHoursCount => AllBookings.Where(b => WeekDays.Any(w => w.Date == b.Date.Date)).Sum(b => b.DurationHours);
-
     private bool HasActiveFilters =>
         !string.IsNullOrEmpty(_searchQuery) ||
-                !string.IsNullOrEmpty(_selectedStatusFilter) ||
+        !string.IsNullOrEmpty(_selectedStatusFilter) ||
         !string.IsNullOrEmpty(_selectedServiceTypeFilter) ||
         _filterOnlyConflicts;
 
@@ -616,53 +619,20 @@
 
     private IEnumerable<StudioSpaceResource> FilteredStudioSpaces => StudioSpaces;
 
-    private IEnumerable<EventBookingModel> FilteredBookings
-    {
-        get
-        {
-            var query = AllBookings.AsEnumerable();
-
-            if (!string.IsNullOrWhiteSpace(_searchQuery))
-            {
-                var q = _searchQuery.Trim().ToLowerInvariant();
-                query = query.Where(b =>
-                    b.ClientName.ToLowerInvariant().Contains(q) ||
-                    b.ServiceType.ToLowerInvariant().Contains(q) ||
-                    b.StudioSpaceName.ToLowerInvariant().Contains(q) ||
-                    b.AssignedPhotographer.ToLowerInvariant().Contains(q) ||
-                    b.Notes.ToLowerInvariant().Contains(q));
-            }
-
-
-            if (!string.IsNullOrEmpty(_selectedStatusFilter))
-                query = query.Where(b => b.Status.Equals(_selectedStatusFilter, StringComparison.OrdinalIgnoreCase));
-
-            if (!string.IsNullOrEmpty(_selectedServiceTypeFilter))
-                query = query.Where(b => b.ServiceType.Equals(_selectedServiceTypeFilter, StringComparison.OrdinalIgnoreCase));
-
-            if (_filterOnlyConflicts)
-                query = query.Where(b => b.HasConflict);
-
-            return query;
-        }
-    }
-
     private IEnumerable<IGrouping<DateTime, EventBookingModel>> AgendaGroupedBookings =>
-        FilteredBookings
+        _filteredBookings
             .Where(b => b.Date.Date >= _selectedDate.Date && b.Date.Date <= _selectedDate.Date.AddDays(14))
             .OrderBy(b => b.Date)
             .ThenBy(b => b.StartTime)
             .GroupBy(b => b.Date.Date);
 
-    private IEnumerable<EventBookingModel> GetEventsForDay(DateTime day) =>
-        FilteredBookings.Where(b => b.Date.Date == day.Date);
-
-    private void SetViewMode(ScheduleViewMode mode)
+    private async Task SetViewMode(ScheduleViewMode mode)
     {
         _currentView = mode;
+        await LoadBookingsForCurrentViewAsync();
     }
 
-    private void NavigatePrevious()
+    private async Task NavigatePrevious()
     {
         _selectedDate = _currentView switch
         {
@@ -672,9 +642,10 @@
             ScheduleViewMode.Agenda => _selectedDate.AddDays(-14),
             _ => _selectedDate.AddDays(-7)
         };
+        await LoadBookingsForCurrentViewAsync();
     }
 
-    private void NavigateNext()
+    private async Task NavigateNext()
     {
         _selectedDate = _currentView switch
         {
@@ -684,24 +655,28 @@
             ScheduleViewMode.Agenda => _selectedDate.AddDays(14),
             _ => _selectedDate.AddDays(7)
         };
+        await LoadBookingsForCurrentViewAsync();
     }
 
-    private void JumpToToday()
+    private async Task JumpToToday()
     {
         _selectedDate = DateTime.Today;
+        await LoadBookingsForCurrentViewAsync();
     }
 
     private void ToggleConflictFilter()
     {
         _filterOnlyConflicts = !_filterOnlyConflicts;
+        ApplyFilters();
     }
 
     private void ClearFilters()
     {
         _searchQuery = string.Empty;
-                _selectedStatusFilter = string.Empty;
+        _selectedStatusFilter = string.Empty;
         _selectedServiceTypeFilter = string.Empty;
         _filterOnlyConflicts = false;
+        ApplyFilters();
     }
 
     private void OpenDetailDrawer(EventBookingModel booking)
@@ -712,24 +687,6 @@
     private void CloseDetailDrawer()
     {
         _selectedBooking = null;
-    }
-
-    private void UpdateBookingStatus(string newStatus)
-    {
-        if (_selectedBooking != null)
-        {
-            _selectedBooking.Status = newStatus;
-            ScheduleService.UpdateEventBooking(_selectedBooking);
-        }
-    }
-
-    private void DeleteSelectedBooking()
-    {
-        if (_selectedBooking != null)
-        {
-            ScheduleService.DeleteEventBooking(_selectedBooking.Id);
-            _selectedBooking = null;
-        }
     }
 
     private void OpenCreateModal()
@@ -775,7 +732,7 @@
         _modalErrorMessage = null;
     }
 
-    private void SaveNewEvent()
+    private async Task SaveNewEvent()
     {
         if (string.IsNullOrWhiteSpace(_newEvent.ClientName))
         {
@@ -796,15 +753,12 @@
         ScheduleService.AddEventBooking(_newEvent);
         _isCreateModalOpen = false;
         _modalErrorMessage = null;
+
+        await LoadBookingsForCurrentViewAsync(forceReload: true);
     }
 
-    private string GetSpaceDotColor(string spaceId) => spaceId switch
+    public void Dispose()
     {
-        "studio-a" => "bg-blue-500",
-        "studio-b" => "bg-indigo-500",
-        "studio-c" => "bg-emerald-500",
-        "outdoor-shoot" => "bg-amber-500",
-        "wedding-venue" => "bg-purple-500",
-        _ => "bg-gray-400"
-    };
+        _debounceTimer?.Dispose();
+    }
 }

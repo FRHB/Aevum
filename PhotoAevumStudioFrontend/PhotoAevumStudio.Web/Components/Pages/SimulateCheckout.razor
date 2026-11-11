@@ -4,7 +4,9 @@
 @layout MainLayout
 @using PhotoAevumStudio.Web.Models
 @using PhotoAevumStudio.Web.Services
+@using ZXingBlazor.Components
 @inject IConsultationClient ConsultationApi
+@inject IWebHostEnvironment Env
 @inject NavigationManager Nav
 @implements IDisposable
 @rendermode InteractiveServer
@@ -357,6 +359,40 @@
                             <p class="text-[11px] text-slate-500 text-center">
                                 Simulates a customer scanning the QR code with their mobile banking or e-wallet app, settling the 15% deposit, and automatically transitioning the deal outcome to <strong>Deal Won</strong>.
                             </p>
+
+                            @if (Env.IsDevelopment())
+                            {
+                                <div class="pt-3 border-t border-slate-100 text-center space-y-3">
+                                    <button type="button"
+                                            class="w-full py-2.5 px-4 rounded-xl bg-teal-700 hover:bg-teal-800 disabled:opacity-50 text-white text-xs font-bold shadow-xs transition-colors"
+                                            @onclick="() => _showWebcamScanner = !_showWebcamScanner"
+                                            disabled="@_webcamScanBusy">
+                                        @(_showWebcamScanner ? "Hide Laptop Webcam Scanner" : "Test Scan via Laptop Webcam")
+                                    </button>
+
+                                    @if (_showWebcamScanner)
+                                    {
+                                        <div class="mx-auto max-w-sm overflow-hidden rounded-xl border border-slate-200 bg-slate-900 p-2">
+                                            <BarcodeReader ScanResult="OnWebcamQrScannedAsync" Title="Scan the QR code" />
+                                        </div>
+                                    }
+
+                                    @if (_webcamScanBusy)
+                                    {
+                                        <div class="flex items-center justify-center gap-2 text-xs text-slate-600" role="status">
+                                            <span class="inline-block animate-spin rounded-full h-4 w-4 border-2 border-teal-600 border-t-transparent"></span>
+                                            Simulating QR payment with Xendit&hellip;
+                                        </div>
+                                    }
+
+                                    @if (!string.IsNullOrWhiteSpace(_webcamScanMessage))
+                                    {
+                                        <p class="text-xs rounded-lg px-3 py-2 @(_webcamScanFailed ? "bg-red-50 text-red-700 border border-red-200" : "bg-emerald-50 text-emerald-800 border border-emerald-200")" role="status">
+                                            @_webcamScanMessage
+                                        </p>
+                                    }
+                                </div>
+                            }
                         </div>
 
                         <!-- Secondary Actions: Reschedule & Deal Lost -->
@@ -902,6 +938,62 @@
             _isExpired = false;
             _countdownDisplay = $"{(int)diff.TotalMinutes:D2}:{diff.Seconds:D2}";
         }
+    }
+
+    private bool _showWebcamScanner;
+    private bool _webcamScanBusy;
+    private bool _webcamScanFailed;
+    private string? _webcamScanMessage;
+
+    private async Task OnWebcamQrScannedAsync(string scanned)
+    {
+        if (_webcamScanBusy || string.IsNullOrWhiteSpace(scanned)) return;
+        _webcamScanBusy = true;
+        _webcamScanFailed = false;
+        _webcamScanMessage = null;
+        StateHasChanged();
+        try
+        {
+            var externalId = ExtractWebcamExternalId(scanned);
+            var res = await ConsultationApi.SimulateQrPaymentAsync(externalId);
+            _webcamScanFailed = !res.IsSuccess;
+            _webcamScanMessage = res.IsSuccess
+                ? "QR scanned and payment simulated. Please wait for the ngrok webhook to confirm this reservation."
+                : "Xendit simulation failed. Check the API log for details.";
+            if (res.IsSuccess) _showWebcamScanner = false;
+        }
+        catch (Exception ex)
+        {
+            _webcamScanFailed = true;
+            _webcamScanMessage = "Simulation request failed: " + ex.Message;
+        }
+        finally
+        {
+            _webcamScanBusy = false;
+            StateHasChanged();
+        }
+    }
+
+    private string ExtractWebcamExternalId(string scanned)
+    {
+        var data = scanned.Trim();
+        if (data.StartsWith("MOCK-QRPH|", StringComparison.Ordinal))
+        {
+            var parts = data.Split('|');
+            if (parts.Length > 1 && !string.IsNullOrWhiteSpace(parts[1])) return parts[1];
+        }
+        if (data.StartsWith('{'))
+        {
+            try
+            {
+                using var doc = System.Text.Json.JsonDocument.Parse(data);
+                foreach (var name in new[] { "reference_id", "external_id" })
+                    if (doc.RootElement.TryGetProperty(name, out var v) && v.ValueKind == System.Text.Json.JsonValueKind.String)
+                        return v.GetString()!;
+            }
+            catch (System.Text.Json.JsonException) { }
+        }
+        return data.StartsWith("000201", StringComparison.Ordinal) ? AppointmentId : data;
     }
 
     public void Dispose()

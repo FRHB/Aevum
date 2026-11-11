@@ -584,6 +584,18 @@ public static class DatabaseSeeder
                     );
                 END;
 
+                IF OBJECT_ID(N'dbo.EventOvertimeCharges', N'U') IS NOT NULL
+                BEGIN
+                    IF COL_LENGTH(N'dbo.EventOvertimeCharges', N'Notes') IS NULL
+                    BEGIN
+                        ALTER TABLE dbo.EventOvertimeCharges ADD Notes nvarchar(500) NULL;
+                        IF COL_LENGTH(N'dbo.EventOvertimeCharges', N'ReasonNotes') IS NOT NULL
+                        BEGIN
+                            EXEC(N'UPDATE dbo.EventOvertimeCharges SET Notes = ReasonNotes WHERE Notes IS NULL AND ReasonNotes IS NOT NULL;');
+                        END;
+                    END;
+                END;
+
                 IF OBJECT_ID(N'dbo.PaymentTransactions', N'U') IS NOT NULL
                 BEGIN
                     IF COL_LENGTH(N'dbo.PaymentTransactions', N'PaymentType') IS NULL
@@ -616,6 +628,8 @@ public static class DatabaseSeeder
                         ALTER TABLE dbo.PaymentTransactions ADD ApprovalTimestamp datetime2 NULL;
                     IF COL_LENGTH(N'dbo.PaymentTransactions', N'CreatedAt') IS NULL
                         ALTER TABLE dbo.PaymentTransactions ADD CreatedAt datetime2 NOT NULL CONSTRAINT DF_PaymentTransactions_CreatedAt DEFAULT SYSUTCDATETIME();
+                    IF COL_LENGTH(N'dbo.PaymentTransactions', N'Notes') IS NULL
+                        ALTER TABLE dbo.PaymentTransactions ADD Notes nvarchar(1000) NULL;
                 END
                 ELSE
                 BEGIN
@@ -636,8 +650,15 @@ public static class DatabaseSeeder
                         ExternalReference nvarchar(100) NULL,
                         ReceivedByEmployeeID nvarchar(30) NULL,
                         PaidAt datetime2 NULL,
-                        CreatedAt datetime2 NOT NULL CONSTRAINT DF_PaymentTransactions_CreatedAt DEFAULT SYSUTCDATETIME()
+                        CreatedAt datetime2 NOT NULL CONSTRAINT DF_PaymentTransactions_CreatedAt DEFAULT SYSUTCDATETIME(),
+                        Notes nvarchar(1000) NULL
                     );
+                END;
+
+                IF OBJECT_ID(N'dbo.Payments', N'U') IS NOT NULL
+                BEGIN
+                    IF COL_LENGTH(N'dbo.Payments', N'Notes') IS NULL
+                        ALTER TABLE dbo.Payments ADD Notes nvarchar(1000) NULL;
                 END;
 
                 IF OBJECT_ID(N'dbo.HistoryLog', N'U') IS NULL

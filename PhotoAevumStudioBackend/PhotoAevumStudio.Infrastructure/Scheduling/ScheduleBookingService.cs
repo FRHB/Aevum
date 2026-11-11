@@ -290,28 +290,38 @@ public sealed class ScheduleBookingService(
                             IF NOT EXISTS (SELECT 1 FROM dbo.BookingNegotiation WHERE NegotiationID = @NegId)
                             BEGIN
                                 DECLARE @ClerkId nvarchar(30);
-                                SELECT TOP 1 @ClerkId = e.EmployeeID
-                                FROM dbo.Employees e
-                                LEFT JOIN dbo.EmployeeJointSpecialization ejs ON e.EmployeeID = ejs.EmployeeID
-                                LEFT JOIN dbo.EmployeeSpecialization es ON ejs.SpecializationID = es.SpecializationID
-                                LEFT JOIN (
-                                    SELECT EmployeeID, MAX(CreatedAt) AS LastAssignedAt
-                                    FROM dbo.BookingNegotiation
-                                    GROUP BY EmployeeID
-                                ) bn ON e.EmployeeID = bn.EmployeeID
-                                WHERE (e.EmployeeStatus = 'Active' OR e.Status = 'Active')
-                                  AND (
-                                      UPPER(LTRIM(RTRIM(COALESCE(NULLIF(es.SpecializationName, ''), es.Specialization, '')))) = 'OFFICE CLERK'
-                                      OR e.Specializations LIKE '%Office Clerk%'
-                                  )
-                                  AND (
-                                      COL_LENGTH(N'dbo.Employees', N'DaysOff') IS NULL
-                                      OR CHARINDEX(DATENAME(dw, @EvtDate), ISNULL(e.DaysOff, 'Sunday')) = 0
-                                  )
-                                ORDER BY COALESCE(bn.LastAssignedAt, '1900-01-01') ASC, e.EmployeeID ASC;
-
+                                SET @ClerkId = @EmpId;
                                 IF @ClerkId IS NULL
-                                    SET @ClerkId = @EmpId;
+                                BEGIN
+                                    SELECT TOP 1 @ClerkId = e.EmployeeID
+                                    FROM dbo.Employees e
+                                    LEFT JOIN dbo.EmployeeJointSpecialization ejs ON e.EmployeeID = ejs.EmployeeID
+                                    LEFT JOIN dbo.EmployeeSpecialization es ON ejs.SpecializationID = es.SpecializationID
+                                    LEFT JOIN (
+                                        SELECT EmployeeID, MAX(CreatedAt) AS LastAssignedAt
+                                        FROM dbo.BookingNegotiation
+                                        GROUP BY EmployeeID
+                                    ) bn ON e.EmployeeID = bn.EmployeeID
+                                    WHERE (e.EmployeeStatus = 'Active' OR e.Status = 'Active')
+                                      AND (
+                                          UPPER(LTRIM(RTRIM(COALESCE(NULLIF(es.SpecializationName, ''), es.Specialization, '')))) = 'OFFICE CLERK'
+                                          OR e.Specializations LIKE '%Office Clerk%'
+                                      )
+                                      AND (
+                                          COL_LENGTH(N'dbo.Employees', N'DaysOff') IS NULL
+                                          OR CHARINDEX(DATENAME(dw, @EvtDate), ISNULL(e.DaysOff, 'Sunday')) = 0
+                                      )
+                                      AND NOT EXISTS (
+                                          SELECT 1 FROM dbo.BookingNegotiation bn2
+                                          WHERE bn2.EmployeeID = e.EmployeeID
+                                            AND bn2.ConsultationDate = @EvtDate
+                                            AND bn2.NegotiationStatus NOT IN ('Cancelled', 'Deal_Lost')
+                                            AND bn2.ConsultationTime IS NOT NULL
+                                            AND @EvtTime < DATEADD(hour, 2, bn2.ConsultationTime)
+                                            AND DATEADD(hour, -2, bn2.ConsultationTime) < DATEADD(hour, 1, @EvtTime)
+                                      )
+                                    ORDER BY COALESCE(bn.LastAssignedAt, '1900-01-01') ASC, e.EmployeeID ASC;
+                                END
 
                                 INSERT INTO dbo.BookingNegotiation (NegotiationID, EventAppointmentID, CustomerID, EmployeeID, ConsultationDate, ConsultationTime, MeetingLink, InquiryNotes, NegotiationStatus, CreatedAt)
                                 VALUES (@NegId, NULL, @CustId, @ClerkId, @EvtDate, @EvtTime, @MeetingLink, @InquiryNotes, 'Pending_Call', SYSUTCDATETIME());
@@ -542,6 +552,23 @@ public sealed class ScheduleBookingService(
         return list;
     }
 
+    public static bool DoesSlotOverlapWithBufferedBooking(TimeOnly slotStart, TimeOnly slotEnd, TimeOnly bookingStart, TimeOnly bookingEnd)
+    {
+        if (bookingEnd <= bookingStart)
+        {
+            bookingEnd = bookingStart.AddHours(1);
+        }
+
+        // 2 hours advance preparation buffer before bookingStart
+        var bufferStart = bookingStart.Hour >= 2 ? bookingStart.AddHours(-2) : TimeOnly.MinValue;
+
+        // 1 hour buffer after bookingEnd
+        var bufferEnd = bookingEnd.Hour < 23 ? bookingEnd.AddHours(1) : TimeOnly.MaxValue;
+
+        // Slot [slotStart, slotEnd) overlaps with [bufferStart, bufferEnd) if slotStart < bufferEnd and bufferStart < slotEnd
+        return slotStart < bufferEnd && bufferStart < slotEnd;
+    }
+
     private static bool HasAnyAvailableClerk(
         List<ClerkSummary> clerks,
         List<LeaveSummary> leaves,
@@ -551,6 +578,7 @@ public sealed class ScheduleBookingService(
         TimeOnly slotStart)
     {
         var dayName = date.DayOfWeek.ToString();
+        var slotEnd = StudioSlots.Find(slotStart)?.End ?? slotStart.AddHours(1);
 
         foreach (var clerk in clerks)
         {
@@ -562,10 +590,16 @@ public sealed class ScheduleBookingService(
             if (leaves.Any(l => string.Equals(l.EmployeeStudioId, clerk.EmployeeId, StringComparison.OrdinalIgnoreCase) && date >= l.StartDate && date <= l.EndDate))
                 continue;
 
-            if (assignedEvents.Any(ev => string.Equals(ev.EmployeeId, clerk.EmployeeId, StringComparison.OrdinalIgnoreCase) && ev.EventDate == date && ev.EventTime == slotStart))
+            // 2 hours advance preparation buffer and 1 hour post-event buffer
+            if (assignedEvents.Any(ev => string.Equals(ev.EmployeeId, clerk.EmployeeId, StringComparison.OrdinalIgnoreCase) 
+                && ev.EventDate == date 
+                && DoesSlotOverlapWithBufferedBooking(slotStart, slotEnd, ev.EventTime, ev.EventTime.AddHours(1))))
                 continue;
 
-            if (bookedConsultations.Any(c => string.Equals(c.EmployeeId, clerk.EmployeeId, StringComparison.OrdinalIgnoreCase) && c.ConsultationDate == date && c.ConsultationTime == slotStart))
+            // 2 hours advance preparation buffer and 1 hour post-consultation buffer
+            if (bookedConsultations.Any(c => string.Equals(c.EmployeeId, clerk.EmployeeId, StringComparison.OrdinalIgnoreCase) 
+                && c.ConsultationDate == date 
+                && DoesSlotOverlapWithBufferedBooking(slotStart, slotEnd, c.ConsultationTime, c.ConsultationTime.AddHours(1))))
                 continue;
 
             return true;
@@ -583,6 +617,7 @@ public sealed class ScheduleBookingService(
         TimeOnly slotStart)
     {
         var dayName = date.DayOfWeek.ToString();
+        var slotEnd = StudioSlots.Find(slotStart)?.End ?? slotStart.AddHours(1);
 
         foreach (var clerk in clerks)
         {
@@ -594,10 +629,16 @@ public sealed class ScheduleBookingService(
             if (leaves.Any(l => string.Equals(l.EmployeeStudioId, clerk.EmployeeId, StringComparison.OrdinalIgnoreCase) && date >= l.StartDate && date <= l.EndDate))
                 continue;
 
-            if (assignedEvents.Any(ev => string.Equals(ev.EmployeeId, clerk.EmployeeId, StringComparison.OrdinalIgnoreCase) && ev.EventDate == date && ev.EventTime == slotStart))
+            // 2 hours advance preparation buffer and 1 hour post-event buffer
+            if (assignedEvents.Any(ev => string.Equals(ev.EmployeeId, clerk.EmployeeId, StringComparison.OrdinalIgnoreCase) 
+                && ev.EventDate == date 
+                && DoesSlotOverlapWithBufferedBooking(slotStart, slotEnd, ev.EventTime, ev.EventTime.AddHours(1))))
                 continue;
 
-            if (bookedConsultations.Any(c => string.Equals(c.EmployeeId, clerk.EmployeeId, StringComparison.OrdinalIgnoreCase) && c.ConsultationDate == date && c.ConsultationTime == slotStart))
+            // 2 hours advance preparation buffer and 1 hour post-consultation buffer
+            if (bookedConsultations.Any(c => string.Equals(c.EmployeeId, clerk.EmployeeId, StringComparison.OrdinalIgnoreCase) 
+                && c.ConsultationDate == date 
+                && DoesSlotOverlapWithBufferedBooking(slotStart, slotEnd, c.ConsultationTime, c.ConsultationTime.AddHours(1))))
                 continue;
 
             return clerk.EmployeeId;

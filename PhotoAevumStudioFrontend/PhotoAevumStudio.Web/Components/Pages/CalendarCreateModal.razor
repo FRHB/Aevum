@@ -1,0 +1,94 @@
+@using PhotoAevumStudio.Web.Models
+
+@if (IsOpen)
+{
+    <div class="drawer-backdrop" @onclick="CloseAsync">
+        <div class="compact-modal" role="dialog" aria-modal="true" aria-labelledby="create-event-title" @onclick:stopPropagation="true">
+            <h3 id="create-event-title" class="modal-title">Schedule New Event</h3>
+
+            @if (!string.IsNullOrEmpty(ErrorMessage))
+            {
+                <div class="modal-error" role="alert">@ErrorMessage</div>
+            }
+
+            <div class="modal-form-grid">
+                <div class="modal-field modal-field-full">
+                    <label for="ev-client" class="modal-label">Client / Production Name</label>
+                    <input id="ev-client" type="text" @bind="NewEvent.ClientName" class="modal-input" placeholder="e.g. Acme Corp Shoot" />
+                </div>
+
+                <div class="modal-field">
+                    <label for="ev-space" class="modal-label">Studio Space</label>
+                    <select id="ev-space" @bind="NewEvent.StudioSpaceId" class="modal-input">
+                        @foreach (var s in StudioSpaces)
+                        {
+                            <option value="@s.Id">@s.Name</option>
+                        }
+                    </select>
+                </div>
+                <div class="modal-field">
+                    <label for="ev-service" class="modal-label">Service Type</label>
+                    <select id="ev-service" value="@NewEvent.ServiceType" @onchange="OnServiceChange" class="modal-input">
+                        @if (AvailableServices.Any())
+                        {
+                            @foreach (var svc in AvailableServices)
+                            {
+                                <option value="@svc.Title">@svc.Title</option>
+                            }
+                        }
+                        else
+                        {
+                            <option value="" disabled selected>No services currently available</option>
+                        }
+                    </select>
+                </div>
+
+                <div class="modal-field">
+                    <label for="ev-date" class="modal-label">Date</label>
+                    <input id="ev-date" type="date" @bind="EventDate" class="modal-input" />
+                </div>
+                <div class="modal-field">
+                    <label for="ev-start" class="modal-label">Start Time</label>
+                    <input id="ev-start" type="time" @bind="StartTime" class="modal-input" />
+                </div>
+
+                <div class="modal-field">
+                    <label for="ev-end" class="modal-label">End Time</label>
+                    <input id="ev-end" type="time" @bind="EndTime" class="modal-input" />
+                </div>
+                <div class="modal-field" aria-hidden="true"></div>
+
+                <div class="modal-field modal-field-full">
+                    <label for="ev-notes" class="modal-label">Notes / Details</label>
+                    <input id="ev-notes" type="text" @bind="NewEvent.Notes" class="modal-input" placeholder="Reason or assignment notes..." />
+                </div>
+            </div>
+
+            <div class="modal-footer">
+                <button type="button" @onclick="CloseAsync" class="modal-btn modal-btn-cancel">Cancel</button>
+                <button type="button" @onclick="SaveAsync" class="modal-btn modal-btn-primary">Save Event</button>
+            </div>
+        </div>
+    </div>
+}
+
+@code {
+    [Parameter] public bool IsOpen { get; set; }
+    [Parameter, EditorRequired] public EventBookingModel NewEvent { get; set; } = default!;
+    [Parameter] public DateTime EventDate { get; set; }
+    [Parameter] public EventCallback<DateTime> EventDateChanged { get; set; }
+    [Parameter] public TimeOnly StartTime { get; set; }
+    [Parameter] public EventCallback<TimeOnly> StartTimeChanged { get; set; }
+    [Parameter] public TimeOnly EndTime { get; set; }
+    [Parameter] public EventCallback<TimeOnly> EndTimeChanged { get; set; }
+    [Parameter] public List<StudioSpaceResource> StudioSpaces { get; set; } = new();
+    [Parameter] public List<MainServiceItem> AvailableServices { get; set; } = new();
+    [Parameter] public string? ErrorMessage { get; set; }
+    [Parameter] public EventCallback OnClose { get; set; }
+    [Parameter] public EventCallback OnSave { get; set; }
+    [Parameter] public EventCallback<ChangeEventArgs> OnServiceSelected { get; set; }
+
+    private Task CloseAsync() => OnClose.InvokeAsync();
+    private Task SaveAsync() => OnSave.InvokeAsync();
+    private Task OnServiceChange(ChangeEventArgs e) => OnServiceSelected.InvokeAsync(e);
+}

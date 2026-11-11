@@ -3,11 +3,13 @@
 @using Microsoft.AspNetCore.Authorization
 @using PhotoAevumStudio.Web.Services
 @using QRCoder
+@using ZXingBlazor.Components
 @implements IAsyncDisposable
 @inject IConsultationClient ConsultationApi
 @inject PaymentHubClient PaymentHub
+@inject IWebHostEnvironment Env
 @rendermode InteractiveServer
-@attribute [Authorize(Roles = "Customer")]
+@attribute [Authorize(Roles = "Customer,Admin,SystemAdmin,System Admin,Super Admin,Employee,Office Clerk")]
 
 <PageTitle>Reservation Payment - Photo Aevum Studio</PageTitle>
 
@@ -94,7 +96,39 @@
                     </button>
                 </div>
             }
-        </div>
+
+            @if (Env.IsDevelopment())
+            {
+                <div class="mt-5 border-t border-slate-100 pt-4">
+                    <button type="button"
+                            class="px-4 py-2 rounded-xl bg-teal-700 hover:bg-teal-800 disabled:opacity-50 text-white text-xs font-bold shadow-sm transition-colors"
+                            @onclick="() => _showScanner = !_showScanner" disabled="@_scanBusy">
+                        @(_showScanner ? "Hide Laptop Webcam Scanner" : "Test Scan via Laptop Webcam")
+                    </button>
+
+                    @if (_showScanner)
+                    {
+                        <div class="mt-4 mx-auto max-w-sm overflow-hidden rounded-xl border border-slate-200 bg-slate-900 p-2">
+                            <BarcodeReader ScanResult="OnQrScannedAsync" Title="Scan the QR code" />
+                        </div>
+                    }
+
+                    @if (_scanBusy)
+                    {
+                        <div class="mt-3 flex items-center justify-center gap-2 text-xs text-slate-600" role="status">
+                            <span class="inline-block animate-spin rounded-full h-4 w-4 border-2 border-teal-600 border-t-transparent"></span>
+                            Simulating QR payment with Xendit&hellip;
+                        </div>
+                    }
+
+                    @if (!string.IsNullOrWhiteSpace(_scanMessage))
+                    {
+                        <p class="mt-3 text-xs rounded-lg px-3 py-2 @(_scanFailed ? "bg-red-50 text-red-700 border border-red-200" : "bg-emerald-50 text-emerald-800 border border-emerald-200")" role="status">
+                            @_scanMessage
+                        </p>
+                    }
+                </div>
+            }        </div>
     }
 </div>
 
@@ -195,6 +229,64 @@
         finally { _busy = false; }
     }
 
+    private bool _showScanner;
+    private bool _scanBusy;
+    private bool _scanFailed;
+    private string? _scanMessage;
+
+    // Dev-only: invoked by the ZXing webcam reader when a QR code is decoded.
+    private async Task OnQrScannedAsync(string scanned)
+    {
+        if (_scanBusy || string.IsNullOrWhiteSpace(scanned)) return;
+        _scanBusy = true;
+        _scanFailed = false;
+        _scanMessage = null;
+        StateHasChanged();
+        try
+        {
+            var externalId = ExtractExternalId(scanned);
+            var res = await ConsultationApi.SimulateQrPaymentAsync(externalId);
+            _scanFailed = !res.IsSuccess;
+            _scanMessage = res.IsSuccess
+                ? "QR scanned and payment simulated. Please wait for the ngrok webhook to confirm this reservation."
+                : "Xendit simulation failed. Check the API log for details.";
+            if (res.IsSuccess) _showScanner = false;
+        }
+        catch (Exception ex)
+        {
+            _scanFailed = true;
+            _scanMessage = "Simulation request failed: " + ex.Message;
+        }
+        finally
+        {
+            _scanBusy = false;
+            StateHasChanged();
+        }
+    }
+
+    // Accepts a MOCK-QRPH|{ref}|{amount} string, a JSON payload, or a bare reference id.
+    // A real Xendit EMV QR string carries no reference, so fall back to this page's booking reference.
+    private string ExtractExternalId(string scanned)
+    {
+        var data = scanned.Trim();
+        if (data.StartsWith("MOCK-QRPH|", StringComparison.Ordinal))
+        {
+            var parts = data.Split('|');
+            if (parts.Length > 1 && !string.IsNullOrWhiteSpace(parts[1])) return parts[1];
+        }
+        if (data.StartsWith('{'))
+        {
+            try
+            {
+                using var doc = System.Text.Json.JsonDocument.Parse(data);
+                foreach (var name in new[] { "reference_id", "external_id" })
+                    if (doc.RootElement.TryGetProperty(name, out var v) && v.ValueKind == System.Text.Json.JsonValueKind.String)
+                        return v.GetString()!;
+            }
+            catch (System.Text.Json.JsonException) { /* not JSON: fall through */ }
+        }
+        return data.StartsWith("000201", StringComparison.Ordinal) ? AppointmentId : data;
+    }
     public async ValueTask DisposeAsync()
     {
         _timer?.Dispose();

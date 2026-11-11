@@ -1,0 +1,21 @@
+@using PhotoAevumStudio.Web.Models
+
+<div @onclick="OnClick"
+     title="@Booking.ClientName (@Booking.ServiceType) with @Booking.AssignedPhotographer"
+     class="compact-event-chip week-event-chip @(Booking.IsConsultation ? "is-consultation-chip" : "") @(Booking.HasConflict ? "conflict-chip" : "") @(Booking.Status.ToLowerInvariant())">
+    <div class="chip-top-row">
+        <span class="chip-time">@(Booking.IsConsultation ? "💬 " : "")@Booking.StartTime.ToString(@"hh\:mm") - @Booking.EndTime.ToString(@"hh\:mm")</span>
+        <span class="chip-status-dot"></span>
+    </div>
+    <div class="chip-client">@Booking.ClientName</div>
+    <div class="chip-photog">@(Booking.IsConsultation ? "Clerk: " : "📷 ")@Booking.AssignedPhotographer</div>
+    @if (!string.IsNullOrWhiteSpace(Booking.StudioSpaceName))
+    {
+        <div class="chip-space-name">@Booking.StudioSpaceName</div>
+    }
+</div>
+
+@code {
+    [Parameter, EditorRequired] public EventBookingModel Booking { get; set; } = default!;
+    [Parameter] public EventCallback OnClick { get; set; }
+}

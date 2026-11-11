@@ -239,10 +239,12 @@
 
     private string GetCheckoutUrl(EventAppointmentDto appt)
     {
-        if (string.IsNullOrWhiteSpace(appt.XenditInvoiceUrl))
-            return $"/payments/{appt.EventAppointmentId}";
-        if (appt.XenditInvoiceUrl.Contains("mock", StringComparison.OrdinalIgnoreCase) ||
-            appt.XenditInvoiceUrl.Contains("inv_mock_", StringComparison.OrdinalIgnoreCase))
+        if (string.IsNullOrWhiteSpace(appt.XenditInvoiceUrl) ||
+            appt.XenditInvoiceUrl.Contains("/qr_", StringComparison.OrdinalIgnoreCase) ||
+            appt.XenditInvoiceUrl.Contains("qr_", StringComparison.OrdinalIgnoreCase) ||
+            appt.XenditInvoiceUrl.Contains("mock", StringComparison.OrdinalIgnoreCase) ||
+            appt.XenditInvoiceUrl.Contains("inv_mock_", StringComparison.OrdinalIgnoreCase) ||
+            !string.IsNullOrWhiteSpace(appt.QrString))
         {
             return $"/payments/{appt.EventAppointmentId}";
         }

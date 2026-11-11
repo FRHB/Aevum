@@ -3,6 +3,14 @@
 @code {
     protected override void OnInitialized()
     {
-        NavManager.NavigateTo("/login");
+        var relativeUri = NavManager.ToBaseRelativePath(NavManager.Uri);
+        if (string.IsNullOrWhiteSpace(relativeUri) || relativeUri.StartsWith("login", StringComparison.OrdinalIgnoreCase))
+        {
+            NavManager.NavigateTo("/login");
+        }
+        else
+        {
+            NavManager.NavigateTo($"/login?returnUrl={Uri.EscapeDataString(relativeUri)}");
+        }
     }
 }

@@ -1,0 +1,80 @@
+@using PhotoAevumStudio.Web.Models
+
+@if (Booking != null)
+{
+    <div class="drawer-backdrop" @onclick="CloseAsync">
+        <div class="compact-detail-drawer" @onclick:stopPropagation="true">
+            <div class="drawer-header">
+                <div>
+                    <div class="flex items-center gap-2">
+                        <span class="status-pill text-xs">@Booking.Status</span>
+                        @if (Booking.HasConflict)
+                        {
+                            <span class="badge-conflict">⚠️ Conflict</span>
+                        }
+                    </div>
+                    <h3 class="text-lg font-bold text-gray-900 mt-1">@Booking.ClientName</h3>
+                </div>
+                <button type="button" @onclick="CloseAsync" class="drawer-close-btn" aria-label="Close details">✕</button>
+            </div>
+
+            <div class="drawer-body">
+                @if (Booking.IsConsultation)
+                {
+                    <div class="drawer-field">
+                        <span class="drawer-field-label">Type</span>
+                        <span class="drawer-field-val inline-flex items-center gap-1 font-bold text-teal-700 bg-teal-50 px-2 py-0.5 rounded border border-teal-200">
+                            <span>💬</span> Consultation &amp; Inquiry Call
+                        </span>
+                    </div>
+                    @if (!string.IsNullOrWhiteSpace(Booking.MeetingLink))
+                    {
+                        <div class="drawer-field">
+                            <span class="drawer-field-label">Meeting Room</span>
+                            <div class="drawer-field-val">
+                                <a href="@Booking.MeetingLink" target="_blank"
+                                   class="inline-flex items-center gap-1.5 px-3 py-1.5 bg-teal-700 hover:bg-teal-800 text-white text-xs font-bold rounded-lg transition-colors shadow-xs">
+                                    <span>📹</span> Join Video Call
+                                </a>
+                            </div>
+                        </div>
+                    }
+                }
+                <div class="drawer-field">
+                    <span class="drawer-field-label">Service</span>
+                    <span class="drawer-field-val">@Booking.ServiceType</span>
+                </div>
+                <div class="drawer-field">
+                    <span class="drawer-field-label">Schedule</span>
+                    <span class="drawer-field-val">@Booking.Date.ToString("ddd, MMM d, yyyy") (@Booking.FormattedTimeRange)</span>
+                </div>
+                <div class="drawer-field">
+                    <span class="drawer-field-label">Photographer</span>
+                    <span class="drawer-field-val">@Booking.AssignedPhotographer</span>
+                </div>
+                @if (!Booking.IsConsultation)
+                {
+                    <div class="drawer-field">
+                        <span class="drawer-field-label">Price</span>
+                        <span class="drawer-field-val font-bold">₱@Booking.EstimatedPrice.ToString("N2")</span>
+                    </div>
+                }
+
+                @if (!string.IsNullOrWhiteSpace(Booking.Notes))
+                {
+                    <div class="drawer-field">
+                        <span class="drawer-field-label">Notes</span>
+                        <span class="drawer-field-val italic text-xs">@Booking.Notes</span>
+                    </div>
+                }
+            </div>
+        </div>
+    </div>
+}
+
+@code {
+    [Parameter] public EventBookingModel? Booking { get; set; }
+    [Parameter] public EventCallback OnClose { get; set; }
+
+    private Task CloseAsync() => OnClose.InvokeAsync();
+}

@@ -173,4 +173,88 @@ public class XenditPaymentIntegrationTests
         Assert.Equal(exp, dto.LockExpiresAt);
         Assert.Equal("00020101021226...", dto.QrString);
     }
+
+    [Fact]
+    public async Task PaymentsController_SimulateQrPayment_CallsXenditSimulateEndpoint_WithBasicAuth()
+    {
+        HttpRequestMessage? capturedRequest = null;
+        string? capturedBody = null;
+
+        var handler = new DelegatingHandlerStub(async (req, ct) =>
+        {
+            capturedRequest = req;
+            capturedBody = req.Content != null ? await req.Content.ReadAsStringAsync(ct) : null;
+            return new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new StringContent("""{"id":"qrpy_test_01","status":"SUCCEEDED","amount":600}""", System.Text.Encoding.UTF8, "application/json")
+            };
+        });
+
+        var factoryMock = new Moq.Mock<IHttpClientFactory>();
+        factoryMock.Setup(f => f.CreateClient(Moq.It.IsAny<string>())).Returns(new HttpClient(handler));
+
+        var consultationMock = new Moq.Mock<PhotoAevumStudio.Application.Interfaces.IConsultationNegotiationService>();
+        var paymentServiceMock = new Moq.Mock<PhotoAevumStudio.Application.Interfaces.IPaymentService>();
+        var pendingMock = new Moq.Mock<PhotoAevumStudio.Application.Interfaces.IPendingPaymentService>();
+        var notifierMock = new Moq.Mock<PhotoAevumStudio.Application.Interfaces.IPaymentNotifier>();
+        var config = new Microsoft.Extensions.Configuration.ConfigurationBuilder().Build();
+
+        var options = Options.Create(new XenditSettings
+        {
+            SecretKey = "xnd_development_live_test_key_999"
+        });
+
+        var controller = new PhotoAevumStudio.Api.Controllers.PaymentsController(
+            consultationMock.Object,
+            paymentServiceMock.Object,
+            options,
+            NullLogger<PhotoAevumStudio.Api.Controllers.PaymentsController>.Instance,
+            pendingMock.Object,
+            notifierMock.Object,
+            config,
+            factoryMock.Object);
+
+        var actionResult = await controller.SimulateQrPayment("EVT-0006", 600m, CancellationToken.None);
+
+        var okResult = Assert.IsType<Microsoft.AspNetCore.Mvc.OkObjectResult>(actionResult);
+        Assert.NotNull(capturedRequest);
+        Assert.Equal(HttpMethod.Post, capturedRequest!.Method);
+        Assert.Equal("https://api.xendit.co/qr_codes/EVT-0006/payments/simulate", capturedRequest.RequestUri!.ToString());
+        Assert.Equal("Basic", capturedRequest.Headers.Authorization?.Scheme);
+        var expectedAuth = Convert.ToBase64String(System.Text.Encoding.UTF8.GetBytes("xnd_development_live_test_key_999:"));
+        Assert.Equal(expectedAuth, capturedRequest.Headers.Authorization?.Parameter);
+        Assert.NotNull(capturedBody);
+        Assert.Contains("600", capturedBody);
+    }
+
+    [Fact]
+    public void FourTierAnalytics_ServicesAndPages_AreRegisteredAndPresent()
+    {
+        var job = new PhotoAevumStudio.Api.Analytics.ETL.DailyAnalyticsSyncJob();
+        job.ExecuteSync();
+
+        var predictor = new PhotoAevumStudio.Api.Analytics.Predictive.BookingPredictionService(
+            NullLogger<PhotoAevumStudio.Api.Analytics.Predictive.BookingPredictionService>.Instance);
+        var prob = predictor.PredictNoShowProbability(101);
+        Assert.Equal(0.15f, prob);
+
+        var hangfireClientMock = new Moq.Mock<Hangfire.IBackgroundJobClient>();
+        var engine = new PhotoAevumStudio.Api.Analytics.Prescriptive.WorkflowActionEngine(
+            new RulesEngine.RulesEngine(Array.Empty<RulesEngine.Models.Workflow>()),
+            hangfireClientMock.Object,
+            NullLogger<PhotoAevumStudio.Api.Analytics.Prescriptive.WorkflowActionEngine>.Instance);
+
+        engine.EvaluateBookingRisk(101, 0.85f);
+        hangfireClientMock.Verify(x => x.Create(
+            Moq.It.Is<Hangfire.Common.Job>(j => j.Type == typeof(PhotoAevumStudio.Api.Analytics.ETL.DailyAnalyticsSyncJob)),
+            Moq.It.IsAny<Hangfire.States.IState>()), Moq.Times.Once);
+    }
+
+    private sealed class DelegatingHandlerStub : HttpMessageHandler
+    {
+        private readonly Func<HttpRequestMessage, CancellationToken, Task<HttpResponseMessage>> _send;
+        public DelegatingHandlerStub(Func<HttpRequestMessage, CancellationToken, Task<HttpResponseMessage>> send) => _send = send;
+        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken) =>
+            _send(request, cancellationToken);
+    }
 }

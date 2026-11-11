@@ -1,0 +1,11 @@
+services:
+  seq:
+    image: datalust/seq
+    environment:
+      - ACCEPT_EULA=Y
+    ports:
+      - "5341:80"
+  metabase:
+    image: metabase/metabase
+    ports:
+      - "3000:3000"

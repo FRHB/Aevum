@@ -8,11 +8,11 @@ public interface IScheduleService
 {
     // Studio Spaces & Events
     List<StudioSpaceResource> GetStudioSpaces();
-    List<EventBookingModel> GetEventBookings();
+    List<EventBookingModel> GetEventBookings(DateTime? startDate = null, DateTime? endDate = null);
     void AddEventBooking(EventBookingModel booking);
     void UpdateEventBooking(EventBookingModel booking);
     void DeleteEventBooking(string id);
-    int GetEventConflictCount();
+    int GetEventConflictCount(DateTime? startDate = null, DateTime? endDate = null);
 
     // Staff Resources & Shifts
     List<StaffMemberResource> GetStaffMembers();

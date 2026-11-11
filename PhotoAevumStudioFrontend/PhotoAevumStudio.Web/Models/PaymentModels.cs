@@ -73,3 +73,9 @@ public class PaymentSummaryModel
     public string? ExternalReference { get; set; }
     public string? Notes { get; set; }
 }
+
+public class SimulateQrResultDto
+{
+    public string? Status { get; set; }
+    public string? ExternalId { get; set; }
+}

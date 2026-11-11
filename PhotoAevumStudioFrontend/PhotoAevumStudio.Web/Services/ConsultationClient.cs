@@ -111,6 +111,9 @@ public sealed class ConsultationClient(
 
 
 
+    public Task<ApiResult<SimulateQrResultDto>> SimulateQrPaymentAsync(string externalId, CancellationToken ct = default) =>
+        SendAsync<SimulateQrResultDto>(() => _http.PostAsync($"api/payments/simulate-qr/{Uri.EscapeDataString(externalId)}", null, ct), ct);
+
     public Task<ApiResult<EventAppointmentDto>> SimulateWebhookPaymentAsync(string appointmentId, string? paymentMethod = null, CancellationToken ct = default)
 
     {

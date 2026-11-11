@@ -262,6 +262,57 @@
     </div>
 </section>
 
+@* ── Staff Timesheet & Attendance (Today) ────────────────────────────────── *@
+<section class="aev-card mb-6" aria-label="Staff timesheet and attendance today">
+    <header class="aev-card__header">
+        <div>
+            <h2 class="aev-card__heading">Staff Timesheet &amp; Attendance (Today)</h2>
+            <p class="text-xs text-slate-400 mt-0.5">Live clock-in status and duty hours for active photographers &amp; clerks</p>
+        </div>
+        <a href="/admin/timesheet" class="aev-card__action-link">Open Full Timesheets Portal &rarr;</a>
+    </header>
+    <div class="aev-table-wrap">
+        <table class="aev-table">
+            <thead>
+                <tr>
+                    <th>Staff Member</th>
+                    <th>Role / Department</th>
+                    <th>Attendance Status</th>
+                    <th>Clock In</th>
+                    <th>Hours Logged</th>
+                </tr>
+            </thead>
+            <tbody>
+                @if (_todayAttendance.Count == 0)
+                {
+                    <tr>
+                        <td colspan="5" class="text-center py-5 text-slate-400 text-xs">
+                            No staff attendance records logged for today yet.
+                        </td>
+                    </tr>
+                }
+                else
+                {
+                    @foreach (var att in _todayAttendance)
+                    {
+                        <tr>
+                            <td class="font-semibold text-slate-800">@att.EmployeeName</td>
+                            <td class="text-xs text-slate-500">@att.EmployeeStudioId</td>
+                            <td>
+                                <span class="aev-badge @(att.IsOnLeaveToday ? "aev-badge--amber" : att.IsClockedIn ? "aev-badge--green" : "aev-badge--gray")">
+                                    @(att.IsOnLeaveToday ? "On Leave" : att.IsClockedIn ? "On Duty" : "Off Duty")
+                                </span>
+                            </td>
+                            <td class="font-mono text-xs text-slate-600">@(att.ClockIn?.ToString("hh:mm tt") ?? "—")</td>
+                            <td class="font-mono text-xs font-semibold text-teal-700">@att.TotalHours.ToString("0.0") hrs</td>
+                        </tr>
+                    }
+                }
+            </tbody>
+        </table>
+    </div>
+</section>
+
 @* ── Recent Bookings & Quick Actions ───────────────────────────────────────── *@
 <div class="aev-content-row">
     <section class="aev-card aev-card--wide" aria-label="Recent bookings">

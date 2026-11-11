@@ -51,6 +51,7 @@
 
 
 @inject IBookScheduleClient ScheduleApi
+@inject IScheduleService ScheduleService
 
 
 
@@ -1418,7 +1419,7 @@
 
 
 
-        <div class="bg-white rounded-2xl shadow-2xl border border-slate-200 w-full max-w-3xl max-h-[90vh] flex flex-col overflow-hidden">
+        <div class="bg-white rounded-2xl shadow-2xl border border-slate-200 w-full max-w-4xl lg:max-w-5xl max-h-[92vh] flex flex-col overflow-hidden">
 
 
 
@@ -1774,42 +1775,136 @@
 
 
 
-                                <div>
+                                <div class="sm:col-span-2 space-y-3">
+                                    <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-1 pb-1 border-b border-slate-200">
+                                        <div>
+                                            <label class="block text-xs font-bold text-slate-800">Choose Shoot Schedule &amp; Available Time *</label>
+                                            <p class="text-[11px] text-slate-500">Select a date on the calendar. Booked events and required buffer times (2 hours prep prior, 1 hour post-event) are shown automatically.</p>
+                                        </div>
+                                        @if (_wizardEventDate > DateTime.MinValue && _wizardEventTime != default)
+                                        {
+                                            <div class="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-emerald-50 border border-emerald-200 text-emerald-800 text-xs font-bold shadow-xs">
+                                                <span>🗓️ Selected: @_wizardEventDate.ToString("MMM d, yyyy") at @_wizardEventTime.ToString("h:mm tt")</span>
+                                            </div>
+                                        }
+                                    </div>
 
+                                    <!-- 2-Column Responsive Layout: Calendar (Left) & Available Times (Right) -->
+                                    <div class="grid grid-cols-1 lg:grid-cols-12 gap-4 bg-slate-50/80 p-3.5 rounded-2xl border border-slate-200">
+                                        <!-- Calendar (Left Column) -->
+                                        <div class="lg:col-span-5 bg-white p-3.5 rounded-xl border border-slate-200 shadow-xs flex flex-col justify-between">
+                                            <div>
+                                                <!-- Calendar Month Navigation -->
+                                                <div class="flex items-center justify-between mb-3 pb-2 border-b border-slate-100">
+                                                    <button type="button" @onclick="PrevWizardMonth" class="px-2 py-1 hover:bg-slate-100 rounded-lg text-slate-600 transition-colors font-bold text-xs">
+                                                        ‹
+                                                    </button>
+                                                    <span class="text-xs font-bold text-slate-900">@_wizardCalendarMonth.ToString("MMMM yyyy")</span>
+                                                    <button type="button" @onclick="NextWizardMonth" class="px-2 py-1 hover:bg-slate-100 rounded-lg text-slate-600 transition-colors font-bold text-xs">
+                                                        ›
+                                                    </button>
+                                                </div>
 
+                                                <!-- Calendar Weekdays -->
+                                                <div class="grid grid-cols-7 gap-1 text-center text-[10px] font-bold text-slate-400 mb-1.5">
+                                                    <span>Su</span><span>Mo</span><span>Tu</span><span>We</span><span>Th</span><span>Fr</span><span>Sa</span>
+                                                </div>
 
-                                    <label class="block text-[11px] font-bold text-slate-600 mb-1">Shoot Date *</label>
+                                                <!-- Calendar Days Grid -->
+                                                <div class="grid grid-cols-7 gap-1 text-center">
+                                                    @for (int b = 0; b < (int)_wizardCalendarMonth.DayOfWeek; b++)
+                                                    {
+                                                        <div class="h-8"></div>
+                                                    }
+                                                    @for (int day = 1; day <= DateTime.DaysInMonth(_wizardCalendarMonth.Year, _wizardCalendarMonth.Month); day++)
+                                                    {
+                                                        var dayDate = new DateTime(_wizardCalendarMonth.Year, _wizardCalendarMonth.Month, day);
+                                                        var isSelected = _wizardEventDate.Date == dayDate.Date;
+                                                        var isPast = dayDate.Date < DateTime.Today;
+                                                        var hasEvents = HasBookedEventsOnDate(dayDate);
 
+                                                        <button type="button"
+                                                                disabled="@isPast"
+                                                                @onclick="() => SelectWizardDate(dayDate)"
+                                                                class="h-8 w-full rounded-lg text-xs flex flex-col items-center justify-center relative transition-all @(isSelected ? "bg-slate-900 text-white font-bold shadow-xs scale-105" : (isPast ? "text-slate-300 cursor-not-allowed" : "hover:bg-slate-100 text-slate-700 font-medium"))">
+                                                            <span>@day</span>
+                                                            @if (hasEvents && !isSelected)
+                                                            {
+                                                                <span class="w-1.5 h-1.5 rounded-full bg-rose-500 absolute bottom-0.5"></span>
+                                                            }
+                                                        </button>
+                                                    }
+                                                </div>
+                                            </div>
 
+                                            <!-- Calendar Footer / Legend -->
+                                            <div class="pt-3 border-t border-slate-100 mt-3 flex items-center justify-between text-[10px] text-slate-500">
+                                                <span class="flex items-center gap-1"><span class="w-2 h-2 rounded-full bg-rose-500 inline-block"></span> Has Bookings</span>
+                                                <span class="flex items-center gap-1"><span class="w-2 h-2 rounded-full bg-slate-900 inline-block"></span> Selected</span>
+                                            </div>
+                                        </div>
 
-                                    <input type="date" @bind="_wizardEventDate"
+                                        <!-- Available Times beside the Calendar (Right Column) -->
+                                        <div class="lg:col-span-7 bg-white p-3.5 rounded-xl border border-slate-200 shadow-xs flex flex-col">
+                                            <div class="flex items-center justify-between pb-2 mb-2 border-b border-slate-100">
+                                                <div>
+                                                    <span class="text-xs font-bold text-slate-800">Times on @_wizardEventDate.ToString("ddd, MMMM d, yyyy")</span>
+                                                    <p class="text-[10px] text-slate-500">Booked events include 2h prep before and 1h buffer after.</p>
+                                                </div>
+                                                <!-- Mini Legend -->
+                                                <div class="hidden sm:flex items-center gap-2 text-[10px]">
+                                                    <span class="flex items-center gap-1"><span class="w-2 h-2 rounded bg-emerald-500 inline-block"></span> Available</span>
+                                                    <span class="flex items-center gap-1"><span class="w-2 h-2 rounded bg-amber-400 inline-block"></span> 2h Prep</span>
+                                                    <span class="flex items-center gap-1"><span class="w-2 h-2 rounded bg-rose-500 inline-block"></span> Booked</span>
+                                                    <span class="flex items-center gap-1"><span class="w-2 h-2 rounded bg-orange-400 inline-block"></span> 1h Buffer</span>
+                                                </div>
+                                            </div>
 
+                                            <!-- Time Slots Grid -->
+                                            <div class="grid grid-cols-1 sm:grid-cols-2 gap-2 max-h-64 overflow-y-auto pr-1 flex-1">
+                                                @foreach (var slot in GetWizardDaySlots(_wizardEventDate))
+                                                {
+                                                    var isChosen = _wizardEventTime.Hour == slot.Start.Hours && _wizardEventTime.Minute == slot.Start.Minutes;
+                                                    if (slot.IsAvailable)
+                                                    {
+                                                        <button type="button"
+                                                                @onclick="() => SelectWizardTimeSlot(slot.Start)"
+                                                                class="p-2.5 rounded-xl border text-left transition-all flex items-center justify-between @(isChosen ? "border-emerald-600 bg-emerald-50 text-emerald-950 ring-1 ring-emerald-500 shadow-xs font-bold" : "border-slate-200 hover:border-emerald-400 hover:bg-slate-50/80 text-slate-800 font-medium")">
+                                                            <div>
+                                                                <div class="text-xs">@FormatTimeSpan(slot.Start) – @FormatTimeSpan(slot.End)</div>
+                                                                <span class="text-[10px] text-emerald-600 font-semibold">Available</span>
+                                                            </div>
+                                                            @if (isChosen)
+                                                            {
+                                                                <span class="text-emerald-700 text-xs">✓</span>
+                                                            }
+                                                        </button>
+                                                    }
+                                                    else
+                                                    {
+                                                        <div class="p-2.5 rounded-xl border text-left transition-all flex flex-col justify-center opacity-85 @(slot.Status == SlotStatusType.Booked ? "bg-rose-50/70 border-rose-200 text-rose-900" : (slot.Status == SlotStatusType.PrepBuffer ? "bg-amber-50/70 border-amber-200 text-amber-900" : "bg-orange-50/70 border-orange-200 text-orange-900"))">
+                                                            <div class="flex items-center justify-between text-xs font-semibold">
+                                                                <span>@FormatTimeSpan(slot.Start) – @FormatTimeSpan(slot.End)</span>
+                                                                <span class="text-[9px] uppercase px-1.5 py-0.5 rounded font-bold @(slot.Status == SlotStatusType.Booked ? "bg-rose-200 text-rose-800" : (slot.Status == SlotStatusType.PrepBuffer ? "bg-amber-200 text-amber-800" : "bg-orange-200 text-orange-800"))">
+                                                                    @(slot.Status == SlotStatusType.Booked ? "Booked" : (slot.Status == SlotStatusType.PrepBuffer ? "2h Prep" : "1h Buffer"))
+                                                                </span>
+                                                            </div>
+                                                            <div class="text-[10px] truncate text-slate-500 mt-0.5">
+                                                                @slot.Reason
+                                                            </div>
+                                                        </div>
+                                                    }
+                                                }
+                                            </div>
 
-
-                                           class="w-full px-3 py-1.5 bg-slate-50 border border-slate-200 rounded-lg text-xs font-medium focus:outline-none focus:ring-1 focus:ring-slate-900" />
-
-
-
-                                </div>
-
-
-
-                                <div>
-
-
-
-                                    <label class="block text-[11px] font-bold text-slate-600 mb-1">Shoot Time *</label>
-
-
-
-                                    <input type="time" @bind="_wizardEventTime"
-
-
-
-                                           class="w-full px-3 py-1.5 bg-slate-50 border border-slate-200 rounded-lg text-xs font-medium focus:outline-none focus:ring-1 focus:ring-slate-900" />
-
-
-
+                                            <!-- Manual / Custom Time Adjustment Field -->
+                                            <div class="pt-2 border-t border-slate-100 mt-2 flex items-center justify-between gap-3">
+                                                <span class="text-[11px] text-slate-500">Custom exact time:</span>
+                                                <input type="time" @bind="_wizardEventTime"
+                                                       class="px-2 py-1 bg-slate-50 border border-slate-200 rounded text-xs font-semibold focus:outline-none focus:ring-1 focus:ring-slate-900" />
+                                            </div>
+                                        </div>
+                                    </div>
                                 </div>
 
 
@@ -3326,10 +3421,195 @@
 
 
     private DateTime _wizardEventDate = DateTime.Today.AddDays(7);
-
-
-
     private DateTime _wizardEventTime = DateTime.Today.AddHours(14);
+    private DateTime _wizardCalendarMonth = new DateTime(DateTime.Today.Year, DateTime.Today.Month, 1);
+    private List<EventBookingModel> _studioBookings = new();
+
+    public enum SlotStatusType
+    {
+        Available,
+        Booked,
+        PrepBuffer,
+        PostBuffer
+    }
+
+    public class WizardDaySlotInfo
+    {
+        public TimeSpan Start { get; set; }
+        public TimeSpan End { get; set; }
+        public bool IsAvailable { get; set; }
+        public SlotStatusType Status { get; set; }
+        public string Reason { get; set; } = string.Empty;
+    }
+
+    private static readonly List<(TimeSpan Start, TimeSpan End)> StandardDaySlots = new()
+    {
+        (new TimeSpan(8, 0, 0), new TimeSpan(9, 0, 0)),
+        (new TimeSpan(9, 0, 0), new TimeSpan(10, 0, 0)),
+        (new TimeSpan(10, 0, 0), new TimeSpan(11, 0, 0)),
+        (new TimeSpan(11, 0, 0), new TimeSpan(12, 0, 0)),
+        (new TimeSpan(12, 0, 0), new TimeSpan(13, 0, 0)),
+        (new TimeSpan(13, 0, 0), new TimeSpan(14, 0, 0)),
+        (new TimeSpan(14, 0, 0), new TimeSpan(15, 0, 0)),
+        (new TimeSpan(15, 0, 0), new TimeSpan(16, 0, 0)),
+        (new TimeSpan(16, 0, 0), new TimeSpan(17, 0, 0)),
+        (new TimeSpan(17, 0, 0), new TimeSpan(18, 0, 0)),
+        (new TimeSpan(18, 0, 0), new TimeSpan(19, 0, 0)),
+        (new TimeSpan(19, 0, 0), new TimeSpan(20, 0, 0))
+    };
+
+    public List<WizardDaySlotInfo> GetWizardDaySlots(DateTime date)
+    {
+        var result = new List<WizardDaySlotInfo>();
+        var dayEvents = new List<(TimeSpan Start, TimeSpan End, string Name)>();
+
+        if (_studioBookings != null)
+        {
+            foreach (var b in _studioBookings)
+            {
+                if (b.Date.Date == date.Date && !string.Equals(b.Status, "Cancelled", StringComparison.OrdinalIgnoreCase) && !string.Equals(b.Status, "Deal_Lost", StringComparison.OrdinalIgnoreCase))
+                {
+                    var start = b.StartTime;
+                    var end = b.EndTime > b.StartTime ? b.EndTime : start.Add(TimeSpan.FromHours(1));
+                    var name = !string.IsNullOrWhiteSpace(b.ServiceType) ? b.ServiceType : (!string.IsNullOrWhiteSpace(b.ClientName) ? b.ClientName : "Booked Event");
+                    dayEvents.Add((start, end, name));
+                }
+            }
+        }
+
+        if (_negotiations != null)
+        {
+            foreach (var neg in _negotiations)
+            {
+                if (neg.Appointment != null && neg.Appointment.EventDate.ToDateTime(TimeOnly.MinValue).Date == date.Date && !string.Equals(neg.Appointment.EventStatus, "Cancelled", StringComparison.OrdinalIgnoreCase))
+                {
+                    var start = neg.Appointment.EventTime.ToTimeSpan();
+                    var end = start.Add(TimeSpan.FromHours(1));
+                    var name = string.IsNullOrWhiteSpace(neg.Appointment.EventName) ? "Booked Photoshoot" : neg.Appointment.EventName;
+                    if (!dayEvents.Any(e => e.Start == start))
+                        dayEvents.Add((start, end, name));
+                }
+                else if (neg.ConsultationDate.ToDateTime(TimeOnly.MinValue).Date == date.Date && !string.Equals(neg.NegotiationStatus, "Cancelled", StringComparison.OrdinalIgnoreCase) && !string.Equals(neg.NegotiationStatus, "Deal_Lost", StringComparison.OrdinalIgnoreCase))
+                {
+                    var start = neg.ConsultationTime.ToTimeSpan();
+                    var end = start.Add(TimeSpan.FromHours(1));
+                    var name = $"Consultation: {neg.CustomerName}";
+                    if (!dayEvents.Any(e => e.Start == start))
+                        dayEvents.Add((start, end, name));
+                }
+            }
+        }
+
+        foreach (var (slotStart, slotEnd) in StandardDaySlots)
+        {
+            var slotInfo = new WizardDaySlotInfo
+            {
+                Start = slotStart,
+                End = slotEnd,
+                IsAvailable = true,
+                Status = SlotStatusType.Available,
+                Reason = "Available"
+            };
+
+            foreach (var ev in dayEvents)
+            {
+                var evStart = ev.Start;
+                var evEnd = ev.End;
+
+                // 2 hours advance preparation buffer: [evStart - 2h, evStart)
+                var prepStart = evStart >= TimeSpan.FromHours(2) ? evStart.Subtract(TimeSpan.FromHours(2)) : TimeSpan.Zero;
+                var prepEnd = evStart;
+
+                // 1 hour after events buffer: [evEnd, evEnd + 1h)
+                var postStart = evEnd;
+                var postEnd = evEnd <= TimeSpan.FromHours(23) ? evEnd.Add(TimeSpan.FromHours(1)) : TimeSpan.FromHours(24);
+
+                // 1. Overlaps with booked event itself
+                if (slotStart < evEnd && evStart < slotEnd)
+                {
+                    slotInfo.IsAvailable = false;
+                    slotInfo.Status = SlotStatusType.Booked;
+                    slotInfo.Reason = $"Booked: {ev.Name}";
+                    break;
+                }
+
+                // 2. Overlaps with 2-hour advance preparation buffer
+                if (slotStart < prepEnd && prepStart < slotEnd)
+                {
+                    slotInfo.IsAvailable = false;
+                    slotInfo.Status = SlotStatusType.PrepBuffer;
+                    slotInfo.Reason = $"2h Prep Buffer ({ev.Name})";
+                }
+                // 3. Overlaps with 1-hour post-event buffer (if not already prep buffer)
+                else if (slotStart < postEnd && postStart < slotEnd && slotInfo.Status != SlotStatusType.PrepBuffer)
+                {
+                    slotInfo.IsAvailable = false;
+                    slotInfo.Status = SlotStatusType.PostBuffer;
+                    slotInfo.Reason = $"1h Buffer after {ev.Name}";
+                }
+            }
+
+            result.Add(slotInfo);
+        }
+
+        return result;
+    }
+
+    private bool HasBookedEventsOnDate(DateTime date)
+    {
+        if (_studioBookings != null && _studioBookings.Any(b => b.Date.Date == date.Date && !string.Equals(b.Status, "Cancelled", StringComparison.OrdinalIgnoreCase) && !string.Equals(b.Status, "Deal_Lost", StringComparison.OrdinalIgnoreCase)))
+            return true;
+
+        if (_negotiations != null && _negotiations.Any(n => (n.Appointment != null && n.Appointment.EventDate.ToDateTime(TimeOnly.MinValue).Date == date.Date && !string.Equals(n.Appointment.EventStatus, "Cancelled", StringComparison.OrdinalIgnoreCase)) || (n.ConsultationDate.ToDateTime(TimeOnly.MinValue).Date == date.Date && !string.Equals(n.NegotiationStatus, "Cancelled", StringComparison.OrdinalIgnoreCase) && !string.Equals(n.NegotiationStatus, "Deal_Lost", StringComparison.OrdinalIgnoreCase))))
+            return true;
+
+        return false;
+    }
+
+    private void SelectWizardDate(DateTime date)
+    {
+        _wizardEventDate = date;
+        var slots = GetWizardDaySlots(date);
+        var firstAvail = slots.FirstOrDefault(s => s.IsAvailable);
+        if (firstAvail != null)
+        {
+            _wizardEventTime = date.Date.Add(firstAvail.Start);
+        }
+        StateHasChanged();
+    }
+
+    private void SelectWizardTimeSlot(TimeSpan time)
+    {
+        _wizardEventTime = _wizardEventDate.Date.Add(time);
+        StateHasChanged();
+    }
+
+    private void PrevWizardMonth()
+    {
+        _wizardCalendarMonth = _wizardCalendarMonth.AddMonths(-1);
+    }
+
+    private void NextWizardMonth()
+    {
+        _wizardCalendarMonth = _wizardCalendarMonth.AddMonths(1);
+    }
+
+    private static string FormatTimeSpan(TimeSpan ts)
+    {
+        var dt = DateTime.Today.Add(ts);
+        return dt.ToString("h:mm tt");
+    }
+
+    private string? GetWizardSlotConflict(DateTime date, TimeSpan time)
+    {
+        var slots = GetWizardDaySlots(date);
+        var matchingSlot = slots.FirstOrDefault(s => time >= s.Start && time < s.End);
+        if (matchingSlot != null && !matchingSlot.IsAvailable)
+        {
+            return $"Selected time ({FormatTimeSpan(time)}) is not available: {matchingSlot.Reason}. Booked events require 2 hours preparation in advance and 1 hour buffer after.";
+        }
+        return null;
+    }
 
 
 
@@ -3474,10 +3754,8 @@
 
 
         await LoadNegotiationsAsync();
-
-
-
         await LoadCatalogDataAsync();
+        try { if (ScheduleService != null) _studioBookings = ScheduleService.GetEventBookings(); } catch { }
 
 
 
@@ -4195,10 +4473,18 @@
 
 
         _wizardEventDate = DateTime.Today.AddDays(7);
-
-
-
+        _wizardCalendarMonth = new DateTime(_wizardEventDate.Year, _wizardEventDate.Month, 1);
         _wizardEventTime = DateTime.Today.AddHours(14);
+        if (ScheduleService != null)
+        {
+            try { _studioBookings = ScheduleService.GetEventBookings(); } catch { }
+        }
+        var initSlots = GetWizardDaySlots(_wizardEventDate);
+        var firstAvail = initSlots.FirstOrDefault(s => s.IsAvailable);
+        if (firstAvail != null)
+        {
+            _wizardEventTime = _wizardEventDate.Date.Add(firstAvail.Start);
+        }
 
 
 
@@ -4539,21 +4825,16 @@
 
 
         if (_wizardEventDate == DateTime.MinValue || _wizardEventTime == default)
-
-
-
         {
-
-
-
             _wizardError = "Please select a shoot date and time.";
-
-
-
             return;
+        }
 
-
-
+        var conflict = GetWizardSlotConflict(_wizardEventDate, _wizardEventTime.TimeOfDay);
+        if (conflict != null)
+        {
+            _wizardError = conflict;
+            return;
         }
 
 
