@@ -142,11 +142,12 @@ else
                                        Name="newPassword"
                                        Autocomplete="new-password"
                                        @bind-Value="passwordForm.NewPassword"
-                                       Placeholder="Min. 8 chars, include a number &amp; special character"
+                                       MaxLength="30"
+                                       Placeholder="8–30 chars, number &amp; special character (@@#$%&amp;)"
                                        Disabled="@isUpdatingPassword" />
                     </div>
 
-                    <p class="text-xs text-gray-500 mb-2 password-hint">Must be at least 8 characters long and include letters, at least one number (0&#8211;9), and one special character (e.g., @@, #, $, !, %, etc.).</p>
+                    <PasswordRequirementsChecklist Password="@passwordForm.NewPassword" />
 
                     <div class="input-group">
                         <label for="staff-confirm-password">Confirm Password</label>
@@ -261,30 +262,10 @@ else
             return;
         }
 
-        if (passwordForm.NewPassword.Length < 8)
+        var policyError = PasswordPolicyHelper.GetValidationError(passwordForm.NewPassword);
+        if (policyError != null)
         {
-            passwordErrorMessage = "New password must be at least 8 characters long.";
-            isUpdatingPassword = false;
-            return;
-        }
-
-        if (!System.Text.RegularExpressions.Regex.IsMatch(passwordForm.NewPassword, @"[A-Za-z]"))
-        {
-            passwordErrorMessage = "Password must contain at least one letter.";
-            isUpdatingPassword = false;
-            return;
-        }
-
-        if (!System.Text.RegularExpressions.Regex.IsMatch(passwordForm.NewPassword, @"[0-9]"))
-        {
-            passwordErrorMessage = "Password must contain at least one number (0–9).";
-            isUpdatingPassword = false;
-            return;
-        }
-
-        if (!System.Text.RegularExpressions.Regex.IsMatch(passwordForm.NewPassword, @"[^a-zA-Z0-9]"))
-        {
-            passwordErrorMessage = "Password must contain at least one special character (e.g., @, #, $, !, %, etc.).";
+            passwordErrorMessage = policyError;
             isUpdatingPassword = false;
             return;
         }

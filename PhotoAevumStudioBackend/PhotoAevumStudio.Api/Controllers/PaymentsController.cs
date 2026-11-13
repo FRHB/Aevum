@@ -438,6 +438,57 @@ public class PaymentsController : ControllerBase
 
     }
 
+    // GET api/payments/team-leader-events
+    // Returns ongoing/active events assigned to the authenticated employee as Team Leader (or all if admin queries)
+    [HttpGet("team-leader-events")]
+    [Authorize(Roles = $"{AppRoles.Employee},{AppRoles.OfficeClerk},{AppRoles.Admin},{AppRoles.SystemAdmin}")]
+    public async Task<IActionResult> GetTeamLeaderEvents(
+        [FromQuery] string? employeeId,
+        CancellationToken cancellationToken)
+    {
+        var isAdmin = User.IsInRole(AppRoles.Admin) || User.IsInRole(AppRoles.SystemAdmin);
+        var claimEmpId = User.FindFirstValue("studio_id")
+            ?? User.FindFirstValue(ClaimTypes.NameIdentifier)
+            ?? User.FindFirstValue("sub");
+        var effectiveEmployeeId = isAdmin && !string.IsNullOrWhiteSpace(employeeId)
+            ? employeeId
+            : (!string.IsNullOrWhiteSpace(claimEmpId) ? claimEmpId : employeeId);
+
+        var items = await _consultationService.GetTeamLeaderEventsAsync(effectiveEmployeeId, cancellationToken);
+        return Ok(items);
+    }
+
+    // POST api/payments/team-leader-events/{appointmentId}/status
+    // Updates the Team Leader's Ongoing Event stage: Preparing, On Going, Post Event, Pending Payment
+    [HttpPost("team-leader-events/{appointmentId}/status")]
+    [Authorize(Roles = $"{AppRoles.Employee},{AppRoles.OfficeClerk},{AppRoles.Admin},{AppRoles.SystemAdmin}")]
+    public async Task<IActionResult> UpdateTeamLeaderEventStatus(
+        string appointmentId,
+        [FromBody] UpdateTeamLeaderStatusRequest request,
+        CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrWhiteSpace(request.EmployeeId))
+        {
+            request.EmployeeId = User.FindFirstValue("studio_id")
+                ?? User.FindFirstValue(ClaimTypes.NameIdentifier)
+                ?? User.FindFirstValue("sub");
+        }
+
+        try
+        {
+            var updated = await _consultationService.UpdateTeamLeaderEventStatusAsync(appointmentId, request, cancellationToken);
+            return Ok(updated);
+        }
+        catch (KeyNotFoundException ex)
+        {
+            return NotFound(new { message = ex.Message });
+        }
+        catch (ArgumentException ex)
+        {
+            return BadRequest(new { message = ex.Message });
+        }
+    }
+
 
 
     // POST api/payments/simulate-webhook/{appointmentId}
@@ -457,6 +508,18 @@ public class PaymentsController : ControllerBase
         // Dev-only shortcut: never available once a real Xendit secret key is configured.
         if (!IsMockXendit())
             return NotFound();
+
+        if (appointmentId.EndsWith("-FINAL", StringComparison.OrdinalIgnoreCase))
+        {
+            var finalConf = await _pendingPayments.ConfirmByReferenceAsync(appointmentId, null, null, "QRPH", cancellationToken);
+            if (finalConf != null)
+            {
+                await HandlePostPaymentConfirmationAsync(finalConf, appointmentId, "QRPH", cancellationToken);
+                return Ok(await _consultationService.GetAppointmentByIdAsync(finalConf.AppointmentId, cancellationToken));
+            }
+            return NotFound(new { message = $"Final settlement reference {appointmentId} not found or already paid." });
+        }
+
         var appt = await _consultationService.GetAppointmentByIdAsync(appointmentId, cancellationToken);
         if (appt == null)
             return NotFound(new { message = $"Appointment {appointmentId} not found." });
@@ -464,7 +527,7 @@ public class PaymentsController : ControllerBase
         {
             var confirmation = await _pendingPayments.ConfirmByReferenceAsync(appointmentId, null, null, "QRPH", cancellationToken);
             if (confirmation != null)
-                await _notifier.PaymentCompletedAsync(appointmentId, cancellationToken);
+                await HandlePostPaymentConfirmationAsync(confirmation, appointmentId, "QRPH", cancellationToken);
             return Ok(await _consultationService.GetAppointmentByIdAsync(appointmentId, cancellationToken));
         }
 
@@ -653,7 +716,7 @@ public class PaymentsController : ControllerBase
             var confirmed = await _pendingPayments.ConfirmByReferenceAsync(externalId, null, amount, "QRPH", cancellationToken);
             if (confirmed != null)
             {
-                try { await _notifier.PaymentCompletedAsync(confirmed.AppointmentId, cancellationToken); } catch { }
+                await HandlePostPaymentConfirmationAsync(confirmed, externalId, "QRPH", cancellationToken);
                 return Ok(new { status = "SIMULATED", externalId, xenditStatus = 200 });
             }
 
@@ -770,12 +833,19 @@ public class PaymentsController : ControllerBase
             var confirmed = await _pendingPayments.ConfirmByReferenceAsync(externalId, qrId, amount, "QRPH", cancellationToken);
             if (confirmed != null)
             {
-                try { await _notifier.PaymentCompletedAsync(confirmed.AppointmentId, cancellationToken); } catch { }
+                await HandlePostPaymentConfirmationAsync(confirmed, externalId, "QRPH", cancellationToken);
                 return true;
             }
 
             var appt = await _consultationService.GetAppointmentByIdAsync(externalId, cancellationToken);
-            if (appt != null && string.Equals(appt.EventStatus, "Confirmed", StringComparison.OrdinalIgnoreCase))
+            if (appt != null && (string.Equals(appt.EventStatus, "Confirmed", StringComparison.OrdinalIgnoreCase)
+                                  || string.Equals(appt.EventStatus, "Shot", StringComparison.OrdinalIgnoreCase)))
+            {
+                return true;
+            }
+
+            var qrInfo = await _pendingPayments.GetQrPaymentAsync(externalId, cancellationToken);
+            if (qrInfo != null && string.Equals(qrInfo.EventStatus, "Shot", StringComparison.OrdinalIgnoreCase))
             {
                 return true;
             }
@@ -785,6 +855,43 @@ public class PaymentsController : ControllerBase
             _logger.LogWarning(ex, "Local fallback confirmation after QR simulation failed for {ExternalId}", externalId);
         }
         return false;
+    }
+
+    private async Task HandlePostPaymentConfirmationAsync(
+        PaymentConfirmation confirmation,
+        string referenceId,
+        string? channel,
+        CancellationToken cancellationToken)
+    {
+        if (confirmation.IsFinalPayment)
+        {
+            try
+            {
+                await _consultationService.NotifyTeamLeaderFinalQrPaidAsync(
+                    confirmation.AppointmentId,
+                    confirmation.Amount,
+                    channel ?? "QRPH",
+                    cancellationToken);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Team Leader QR paid email notification failed for {AppointmentId}", confirmation.AppointmentId);
+            }
+        }
+
+        try
+        {
+            await _notifier.PaymentCompletedAsync(confirmation.AppointmentId, cancellationToken);
+            if (!string.Equals(referenceId, confirmation.AppointmentId, StringComparison.OrdinalIgnoreCase))
+            {
+                await _notifier.PaymentCompletedAsync(referenceId, cancellationToken);
+            }
+            _logger.LogInformation("SignalR hub successfully broadcasted status change event (PaymentCompleted) for appointment {AppointmentId}.", confirmation.AppointmentId);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "SignalR push failed for {Reference}; payment already confirmed.", referenceId);
+        }
     }
     private bool IsMockXendit() =>
         string.IsNullOrWhiteSpace(_xenditSettings.SecretKey) ||
@@ -911,8 +1018,9 @@ public class PaymentsController : ControllerBase
             return Ok(new { status = "AMOUNT_MISMATCH" });
         }
 
+        var channelCode = Str(data, "channel_code") ?? "QRPH";
         var confirmation = await _pendingPayments.ConfirmByReferenceAsync(
-            referenceId, Str(data, "qr_id") ?? Str(data, "id"), paid, Str(data, "channel_code") ?? "QRPH", cancellationToken);
+            referenceId, Str(data, "qr_id") ?? Str(data, "id"), paid, channelCode, cancellationToken);
 
         if (confirmation == null)
         {
@@ -921,15 +1029,7 @@ public class PaymentsController : ControllerBase
             return Ok(new { status = "NOT_APPLIED" });
         }
 
-        try
-        {
-            await _notifier.PaymentCompletedAsync(confirmation.AppointmentId, cancellationToken);
-            _logger.LogInformation("SignalR hub successfully broadcasted status change event (PaymentCompleted) for appointment {AppointmentId}.", confirmation.AppointmentId);
-        }
-        catch (Exception ex)
-        {
-            _logger.LogWarning(ex, "SignalR push failed for {Reference}; payment already confirmed.", referenceId);
-        }
+        await HandlePostPaymentConfirmationAsync(confirmation, referenceId, channelCode, cancellationToken);
 
         return Ok(new { status = "SUCCESS", reference_id = referenceId });
     }

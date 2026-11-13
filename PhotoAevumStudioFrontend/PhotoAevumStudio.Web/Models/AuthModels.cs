@@ -32,8 +32,9 @@ public record InitialPasswordChangeRequest(
 
     [property: Required(ErrorMessage = "New password is required.")]
     [property: MinLength(8, ErrorMessage = "Password must be at least 8 characters long.")]
-    [property: RegularExpression(@"^(?=.*[A-Za-z])(?=.*[0-9])(?=.*[^a-zA-Z0-9]).{8,}$",
-        ErrorMessage = "Password must be at least 8 characters long and contain at least one letter, one number (0–9), and one special character (e.g., @, #, $, !, %, etc.).")]
+    [property: MaxLength(30, ErrorMessage = "Password must not exceed 30 characters.")]
+    [property: RegularExpression(@"^(?=.*[0-9])(?=.*[@#$%&]).{8,30}$",
+        ErrorMessage = "Password must be 8–30 characters long and contain at least one number (0–9) and one special character (@, #, $, %, &).")]
     string NewPassword,
 
     [property: Required(ErrorMessage = "Confirm password is required.")]
@@ -50,8 +51,9 @@ public class ChangePasswordModel
 
     [Required(ErrorMessage = "New password is required.")]
     [MinLength(8, ErrorMessage = "Password must be at least 8 characters long.")]
-    [RegularExpression(@"^(?=.*[A-Za-z])(?=.*[0-9])(?=.*[^a-zA-Z0-9]).{8,}$",
-        ErrorMessage = "Password must be at least 8 characters long and contain at least one letter, one number (0–9), and one special character (e.g., @, #, $, !, %, etc.).")]
+    [MaxLength(30, ErrorMessage = "Password must not exceed 30 characters.")]
+    [RegularExpression(@"^(?=.*[0-9])(?=.*[@#$%&]).{8,30}$",
+        ErrorMessage = "Password must be 8–30 characters long and contain at least one number (0–9) and one special character (@, #, $, %, &).")]
     public string NewPassword { get; set; } = string.Empty;
 
     [Required(ErrorMessage = "Confirm password is required.")]
@@ -78,8 +80,9 @@ public record CustomerRegisterRequest(
 
     [property: Required(ErrorMessage = "Password is required.")]
     [property: MinLength(8, ErrorMessage = "Password must be at least 8 characters long.")]
-    [property: RegularExpression(@"^(?=.*[A-Za-z])(?=.*[0-9])(?=.*[^a-zA-Z0-9]).{8,}$",
-        ErrorMessage = "Password must be at least 8 characters long and contain at least one letter, one number (0–9), and one special character (e.g., @, #, $, !, %, etc.).")]
+    [property: MaxLength(30, ErrorMessage = "Password must not exceed 30 characters.")]
+    [property: RegularExpression(@"^(?=.*[0-9])(?=.*[@#$%&]).{8,30}$",
+        ErrorMessage = "Password must be 8–30 characters long and contain at least one number (0–9) and one special character (@, #, $, %, &).")]
     string Password,
 
     [property: Required(ErrorMessage = "Verification code is required.")]

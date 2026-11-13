@@ -22,6 +22,9 @@ public interface IScheduleService
     void DeleteStaffShift(string id);
     int GetShiftConflictCount();
 
+    // Cache control
+    void InvalidateCache();
+
     // Equipment Resources & Reservations
     List<EquipmentItemResource> GetEquipmentResources();
     List<EquipmentReservationModel> GetEquipmentReservations();

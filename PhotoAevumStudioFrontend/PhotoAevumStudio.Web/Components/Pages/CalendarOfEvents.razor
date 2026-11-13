@@ -16,6 +16,10 @@
 
 <div class="calendar-compact-container">
     @* ── 1. COMPACT PAGE HEADER & METRICS STRIP ───────────────────────── *@
+    @if (_isLoadingBookings)
+    {
+        <div class="text-xs text-gray-500 px-1 py-1">Loading events schedule...</div>
+    }
     <div class="calendar-header-strip">
         <div class="header-left">
             <h1 class="header-title">Calendar of Events</h1>
@@ -62,8 +66,6 @@
                         @onclick="() => SetViewMode(ScheduleViewMode.Week)">Week</button>
                 <button type="button" class="tab-btn @(_currentView == ScheduleViewMode.Month ? "active" : "")"
                         @onclick="() => SetViewMode(ScheduleViewMode.Month)">Month</button>
-                <button type="button" class="tab-btn @(_currentView == ScheduleViewMode.Agenda ? "active" : "")"
-                        @onclick="() => SetViewMode(ScheduleViewMode.Agenda)">Agenda</button>
             </div>
 
             @* Date Range Navigator *@
@@ -271,51 +273,6 @@
             </div>
         </div>
     }
-    else if (_currentView == ScheduleViewMode.Agenda)
-    {
-        @* ── COMPACT AGENDA VIEW ─────────────────────────────────────── *@
-        <div class="compact-agenda-card">
-            @if (!AgendaGroupedBookings.Any())
-            {
-                <div class="p-8 text-center text-gray-500 text-sm">
-                    No scheduled sessions in this date window matching your filters.
-                </div>
-            }
-            else
-            {
-                <div class="agenda-list">
-                    @foreach (var group in AgendaGroupedBookings)
-                    {
-                        <div class="agenda-group">
-                            <div class="agenda-date-divider">
-                                <span>@group.Key.ToString("dddd, MMMM d, yyyy")</span>
-                                <span class="badge-count">@group.Count() session(s)</span>
-                            </div>
-                            <div class="agenda-items-stack">
-                                @foreach (var b in group)
-                                {
-                                    <div @onclick="() => OpenDetailDrawer(b)" class="agenda-item-row cursor-pointer hover:bg-gray-50">
-                                        <div class="agenda-time">@b.FormattedTimeRange</div>
-                                        <div class="agenda-details">
-                                            <div class="font-bold text-sm">@b.ClientName</div>
-                                            <div class="text-xs text-gray-500">@b.ServiceType &bull; 📷 @b.AssignedPhotographer</div>
-                                        </div>
-                                        <div class="agenda-actions">
-                                            <span class="status-pill text-xs">@b.Status</span>
-                                            @if (!b.IsConsultation)
-                                            {
-                                                <span class="text-xs font-bold text-gray-900">₱@b.EstimatedPrice.ToString("F0")</span>
-                                            }
-                                        </div>
-                                    </div>
-                                }
-                            </div>
-                        </div>
-                    }
-                </div>
-            }
-        </div>
-    }
 
     @* ── MODULAR DETAIL DRAWER ────────────────────────────────────────── *@
     <CalendarDetailDrawer Booking="_selectedBooking" OnClose="CloseDetailDrawer" />
@@ -377,6 +334,9 @@
 
     private System.Threading.Timer? _debounceTimer;
 
+    private bool _isLoadingBookings = true;
+    private bool _hasLoadedInitialData;
+
     protected override async Task OnInitializedAsync()
     {
         if (AuthState != null)
@@ -395,18 +355,28 @@
         _currentEmployeeName = EmployeeRoleHelper.GetCurrentEmployeeName(_currentUser, UserService);
         _currentEmployeeId = EmployeeRoleHelper.GetCurrentEmployeeId(_currentUser);
 
-        try
-        {
-            AvailableServices = UserService.GetMainServices().Where(s => s.IsActive).ToList();
-        }
-        catch
-        {
-            AvailableServices = new();
-        }
-
         StudioSpaces = ScheduleService.GetStudioSpaces();
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender || _hasLoadedInitialData) return;
+        _hasLoadedInitialData = true;
+
+        await Task.Run(() =>
+        {
+            try
+            {
+                AvailableServices = UserService.GetMainServices().Where(s => s.IsActive).ToList();
+            }
+            catch
+            {
+                AvailableServices = new();
+            }
+        });
 
         await LoadBookingsForCurrentViewAsync();
+        await InvokeAsync(StateHasChanged);
     }
 
     private void CalculateCurrentRange(out DateTime rangeStart, out DateTime rangeEnd)
@@ -433,10 +403,6 @@
                 viewStart = MonthCalendarDays.First().Date;
                 viewEnd = MonthCalendarDays.Last().Date;
                 break;
-            case ScheduleViewMode.Agenda:
-                viewStart = _selectedDate.Date;
-                viewEnd = _selectedDate.Date.AddDays(14);
-                break;
             default:
                 viewStart = _selectedDate.Date;
                 viewEnd = _selectedDate.Date;
@@ -448,7 +414,7 @@
         rangeEnd = viewEnd > curWeekSunday ? viewEnd : curWeekSunday;
     }
 
-    private Task LoadBookingsForCurrentViewAsync(bool forceReload = false)
+    private async Task LoadBookingsForCurrentViewAsync(bool forceReload = false)
     {
         CalculateCurrentRange(out var rangeStart, out var rangeEnd);
 
@@ -456,15 +422,17 @@
         if (!forceReload && _loadedWindowStart.HasValue && _loadedWindowEnd.HasValue &&
             rangeStart >= _loadedWindowStart.Value && rangeEnd <= _loadedWindowEnd.Value)
         {
+            _isLoadingBookings = false;
             ApplyFilters();
-            return Task.CompletedTask;
+            return;
         }
 
+        _isLoadingBookings = true;
         // Add 7 days buffer padding on each side to avoid refetching on minor adjacent date navigation
         var queryStart = rangeStart.AddDays(-7);
         var queryEnd = rangeEnd.AddDays(7);
 
-        var rawBookings = ScheduleService.GetEventBookings(queryStart, queryEnd);
+        var rawBookings = await Task.Run(() => ScheduleService.GetEventBookings(queryStart, queryEnd));
 
         if (_isPhotographerOrCreative)
         {
@@ -479,9 +447,9 @@
 
         _loadedWindowStart = queryStart;
         _loadedWindowEnd = queryEnd;
+        _isLoadingBookings = false;
 
         ApplyFilters();
-        return Task.CompletedTask;
     }
 
     private void ApplyFilters()
@@ -613,18 +581,10 @@
         ScheduleViewMode.Day => _selectedDate.ToString("MMMM d, yyyy"),
         ScheduleViewMode.Week => $"{WeekDays.First():MMM d} – {WeekDays.Last():MMM d, yyyy}",
         ScheduleViewMode.Month => _selectedDate.ToString("MMMM yyyy"),
-        ScheduleViewMode.Agenda => $"{_selectedDate:MMM d} – {_selectedDate.AddDays(14):MMM d, yyyy}",
         _ => _selectedDate.ToString("MMMM yyyy")
     };
 
     private IEnumerable<StudioSpaceResource> FilteredStudioSpaces => StudioSpaces;
-
-    private IEnumerable<IGrouping<DateTime, EventBookingModel>> AgendaGroupedBookings =>
-        _filteredBookings
-            .Where(b => b.Date.Date >= _selectedDate.Date && b.Date.Date <= _selectedDate.Date.AddDays(14))
-            .OrderBy(b => b.Date)
-            .ThenBy(b => b.StartTime)
-            .GroupBy(b => b.Date.Date);
 
     private async Task SetViewMode(ScheduleViewMode mode)
     {
@@ -639,7 +599,6 @@
             ScheduleViewMode.Day => _selectedDate.AddDays(-1),
             ScheduleViewMode.Week => _selectedDate.AddDays(-7),
             ScheduleViewMode.Month => _selectedDate.AddMonths(-1),
-            ScheduleViewMode.Agenda => _selectedDate.AddDays(-14),
             _ => _selectedDate.AddDays(-7)
         };
         await LoadBookingsForCurrentViewAsync();
@@ -652,7 +611,6 @@
             ScheduleViewMode.Day => _selectedDate.AddDays(1),
             ScheduleViewMode.Week => _selectedDate.AddDays(7),
             ScheduleViewMode.Month => _selectedDate.AddMonths(1),
-            ScheduleViewMode.Agenda => _selectedDate.AddDays(14),
             _ => _selectedDate.AddDays(7)
         };
         await LoadBookingsForCurrentViewAsync();

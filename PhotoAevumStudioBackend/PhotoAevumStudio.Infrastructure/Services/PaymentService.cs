@@ -450,11 +450,22 @@ public class PaymentService : IPaymentService
                 BEGIN
                     UPDATE dbo.PaymentTransactions
                     SET EmployeeRemittanceStatus = 'Cleared',
+                        Status = 'Paid',
                         AdminApproverID = @AdminId,
                         ApprovalTimestamp = SYSUTCDATETIME()
                     WHERE (EventAppointmentID = @EvtId OR @EvtId IS NULL)
-                      AND ReceivedByEmployeeID = @EmpId
+                      AND (ReceivedByEmployeeID = @EmpId OR @EmpId IS NULL)
                       AND (EmployeeRemittanceStatus = 'PendingAdminApproval' OR EmployeeRemittanceStatus IS NULL);
+                END;
+
+                IF OBJECT_ID(N'dbo.EventAppointment', N'U') IS NOT NULL AND @EvtId IS NOT NULL
+                BEGIN
+                    UPDATE dbo.EventAppointment
+                    SET EventStatus = 'Shot',
+                        FinalPaymentStatus = 'Paid',
+                        FinalPaymentPaidAt = SYSUTCDATETIME()
+                    WHERE EventAppointmentID = @EvtId
+                      AND EventStatus = 'Pending Verification';
                 END;
 
                 IF OBJECT_ID(N'dbo.HistoryLog', N'U') IS NOT NULL

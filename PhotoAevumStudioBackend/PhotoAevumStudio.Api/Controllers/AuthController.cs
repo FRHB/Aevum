@@ -6,6 +6,7 @@ using Microsoft.IdentityModel.Tokens;
 using PhotoAevumStudio.Application.Auth;
 using PhotoAevumStudio.Application.DTOs;
 using PhotoAevumStudio.Application.Interfaces;
+using PhotoAevumStudio.Application.Validation;
 using System.IdentityModel.Tokens.Jwt;
 using System.Security.Claims;
 using System.Security.Cryptography;
@@ -120,22 +121,46 @@ public class AuthController : ControllerBase
     [EnableRateLimiting("LoginPolicy")]
     public async Task<IActionResult> ForgotPassword([FromBody] SendVerificationRequest request)
     {
-        if (string.IsNullOrWhiteSpace(request.Email)) return BadRequest("Email is required.");
+        var normalizedEmail = request.Email?.Trim().ToLowerInvariant() ?? string.Empty;
+        if (string.IsNullOrWhiteSpace(normalizedEmail) || !System.Net.Mail.MailAddress.TryCreate(normalizedEmail, out _))
+        {
+            return BadRequest(new ProblemDetails
+            {
+                Title = "Invalid email address",
+                Detail = "Please enter a valid customer email address.",
+                Status = StatusCodes.Status400BadRequest
+            });
+        }
 
+        var (isEligible, canonicalEmail, errorMessage, statusCode) =
+            await _sqlAuthService.CheckCustomerForgotPasswordEligibilityAsync(normalizedEmail, HttpContext.RequestAborted);
+
+        if (!isEligible)
+        {
+            return StatusCode(statusCode, new ProblemDetails
+            {
+                Title = "Password recovery unavailable",
+                Detail = errorMessage ?? "Password recovery is only available for customer accounts.",
+                Status = statusCode
+            });
+        }
+
+        var targetEmail = string.IsNullOrWhiteSpace(canonicalEmail) ? normalizedEmail : canonicalEmail.Trim();
         var code = RandomNumberGenerator.GetInt32(100000, 1000000).ToString();
-        _cache.Set($"ResetCode_{request.Email}", code, TimeSpan.FromMinutes(10));
-        _logger.LogInformation("Password reset code for {Email}: {Code}", request.Email, code);
+        _cache.Set($"ResetCode_{normalizedEmail}", code, TimeSpan.FromMinutes(10));
+        _logger.LogInformation("Customer password reset code generated for {Email}", normalizedEmail);
 
-        var htmlBody = PhotoAevumStudio.Infrastructure.Services.StudioEmailTemplates.PasswordResetCode(request.Email, code, 10);
+        var htmlBody = PhotoAevumStudio.Infrastructure.Services.StudioEmailTemplates.PasswordResetCode(targetEmail, code, 10);
         var sent = await _emailService.TrySendEmailAsync(
-            request.Email,
+            targetEmail,
             "Photo Aevum Studio – Password Reset Code",
             htmlBody,
             isHtml: true);
 
         if (!sent)
         {
-            _logger.LogWarning("Email delivery failed for password reset code to {Email}", request.Email);
+            _cache.Remove($"ResetCode_{normalizedEmail}");
+            _logger.LogWarning("Email delivery failed for password reset code to {Email}", normalizedEmail);
             return StatusCode(StatusCodes.Status503ServiceUnavailable, new ProblemDetails
             {
                 Title = "Email delivery service unavailable",
@@ -144,7 +169,53 @@ public class AuthController : ControllerBase
             });
         }
 
-        return Ok(new { Message = "If an account with that email exists, a reset code was sent." });
+        return Ok(new { Message = "A 6-digit verification code has been sent to your email address." });
+    }
+
+    [HttpPost("verify-reset-code")]
+    [AllowAnonymous]
+    [EnableRateLimiting("LoginPolicy")]
+    public async Task<IActionResult> VerifyResetCode([FromBody] VerifyCodeRequest request)
+    {
+        var normalizedEmail = request.Email?.Trim().ToLowerInvariant() ?? string.Empty;
+        var code = request.VerificationCode?.Trim() ?? string.Empty;
+
+        if (string.IsNullOrWhiteSpace(normalizedEmail) || string.IsNullOrWhiteSpace(code))
+        {
+            return BadRequest(new ProblemDetails
+            {
+                Title = "Validation error",
+                Detail = "Email and verification code are required.",
+                Status = StatusCodes.Status400BadRequest
+            });
+        }
+
+        if (!_cache.TryGetValue($"ResetCode_{normalizedEmail}", out string? storedCode) ||
+            !string.Equals(storedCode, code, StringComparison.Ordinal))
+        {
+            return BadRequest(new ProblemDetails
+            {
+                Title = "Invalid or expired verification code",
+                Detail = "That verification code doesn't match or has expired. Please try again or request a new one.",
+                Status = StatusCodes.Status400BadRequest
+            });
+        }
+
+        var (isEligible, _, errorMessage, statusCode) =
+            await _sqlAuthService.CheckCustomerForgotPasswordEligibilityAsync(normalizedEmail, HttpContext.RequestAborted);
+
+        if (!isEligible)
+        {
+            _cache.Remove($"ResetCode_{normalizedEmail}");
+            return StatusCode(statusCode, new ProblemDetails
+            {
+                Title = "Password recovery unavailable",
+                Detail = errorMessage ?? "Forgot Password is only available for customer accounts.",
+                Status = statusCode
+            });
+        }
+
+        return Ok(new { Message = "Verification code is valid." });
     }
 
     [HttpPost("reset-password")]
@@ -152,21 +223,30 @@ public class AuthController : ControllerBase
     [EnableRateLimiting("LoginPolicy")]
     public async Task<IActionResult> ResetPassword([FromBody] ResetPasswordRequest request)
     {
-        if (!_cache.TryGetValue($"ResetCode_{request.Email}", out string? storedCode) || storedCode != request.VerificationCode)
+        var normalizedEmail = request.Email?.Trim().ToLowerInvariant() ?? string.Empty;
+        var code = request.VerificationCode?.Trim() ?? string.Empty;
+
+        if (!_cache.TryGetValue($"ResetCode_{normalizedEmail}", out string? storedCode) ||
+            !string.Equals(storedCode, code, StringComparison.Ordinal))
         {
-            return BadRequest(new ProblemDetails { Title = "Invalid or expired reset code", Status = 400 });
+            return BadRequest(new ProblemDetails
+            {
+                Title = "Invalid or expired reset code",
+                Detail = "Your verification code is invalid or has expired. Please request a new one.",
+                Status = StatusCodes.Status400BadRequest
+            });
         }
 
-        var (success, message) = await _sqlAuthService.ResetPasswordAsync(request.Email, request.NewPassword);
+        var (success, message) = await _sqlAuthService.ResetPasswordAsync(normalizedEmail, request.NewPassword, HttpContext.RequestAborted);
         if (!success)
             return BadRequest(new ProblemDetails
             {
                 Title = "Password reset failed",
                 Detail = message,
-                Status = 400
+                Status = StatusCodes.Status400BadRequest
             });
 
-        _cache.Remove($"ResetCode_{request.Email}");
+        _cache.Remove($"ResetCode_{normalizedEmail}");
         return Ok(new { Message = "Password has been successfully reset." });
     }
 
@@ -280,17 +360,8 @@ public class AuthController : ControllerBase
         if (string.IsNullOrWhiteSpace(request.UserId) || string.IsNullOrWhiteSpace(request.CurrentPassword) || string.IsNullOrWhiteSpace(request.NewPassword))
             return BadRequest(new ProblemDetails { Title = "Validation Error", Detail = "All fields are required.", Status = 400 });
 
-        if (request.NewPassword.Length < 8)
-            return BadRequest(new ProblemDetails { Title = "Validation Error", Detail = "Password must be at least 8 characters long.", Status = 400 });
-
-        if (!System.Text.RegularExpressions.Regex.IsMatch(request.NewPassword, @"[A-Za-z]"))
-            return BadRequest(new ProblemDetails { Title = "Validation Error", Detail = "Password must contain at least one letter.", Status = 400 });
-
-        if (!System.Text.RegularExpressions.Regex.IsMatch(request.NewPassword, @"[0-9]"))
-            return BadRequest(new ProblemDetails { Title = "Validation Error", Detail = "Password must contain at least one number (0-9).", Status = 400 });
-
-        if (!System.Text.RegularExpressions.Regex.IsMatch(request.NewPassword, @"[^a-zA-Z0-9]"))
-            return BadRequest(new ProblemDetails { Title = "Validation Error", Detail = "Password must contain at least one special character (e.g., @, #, $, !, %, etc.).", Status = 400 });
+        if (PasswordPolicy.Validate(request.NewPassword) is { } pwdError)
+            return BadRequest(new ProblemDetails { Title = "Validation Error", Detail = pwdError, Status = 400 });
 
         if (!string.IsNullOrEmpty(request.ConfirmPassword) && request.NewPassword != request.ConfirmPassword)
             return BadRequest(new ProblemDetails { Title = "Validation Error", Detail = "Passwords do not match.", Status = 400 });

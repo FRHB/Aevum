@@ -280,9 +280,14 @@ CREATE TABLE dbo.EventAppointment (
     XenditInvoiceId nvarchar(100) NULL,
     XenditExternalId nvarchar(100) NULL,
     XenditInvoiceUrl nvarchar(500) NULL,
+    FinalPaymentMethod nvarchar(30) NULL,
+    FinalPaymentStatus nvarchar(30) NULL,
+    FinalQrString nvarchar(1000) NULL,
+    FinalPaymentReferenceId nvarchar(100) NULL,
+    FinalPaymentPaidAt datetime2 NULL,
     CreatedAt datetime2 NOT NULL CONSTRAINT DF_EventAppointment_Created DEFAULT SYSUTCDATETIME(),
     RowVer rowversion, 
-    CONSTRAINT CK_EventAppointment_Status CHECK (EventStatus IN ('Pending','Awaiting_Downpayment','Pending Payment','Confirmed','Shot','Editing','Delivered','Cancelled','Expired'))
+    CONSTRAINT CK_EventAppointment_Status CHECK (EventStatus IN ('Pending','Awaiting_Downpayment','Pending Payment','Preparing','On Going','Post Event','Pending Verification','Confirmed','Shot','Editing','Delivered','Cancelled','Expired'))
 );
 
 CREATE TABLE dbo.BookingNegotiation (
@@ -825,18 +830,28 @@ IF OBJECT_ID(N'dbo.EventAppointment', N'U') IS NOT NULL
 BEGIN
     IF COL_LENGTH(N'dbo.EventAppointment', N'QrString') IS NULL
         ALTER TABLE dbo.EventAppointment ADD QrString nvarchar(1000) NULL;
+    IF COL_LENGTH(N'dbo.EventAppointment', N'FinalPaymentMethod') IS NULL
+        ALTER TABLE dbo.EventAppointment ADD FinalPaymentMethod nvarchar(30) NULL;
+    IF COL_LENGTH(N'dbo.EventAppointment', N'FinalPaymentStatus') IS NULL
+        ALTER TABLE dbo.EventAppointment ADD FinalPaymentStatus nvarchar(30) NULL;
+    IF COL_LENGTH(N'dbo.EventAppointment', N'FinalQrString') IS NULL
+        ALTER TABLE dbo.EventAppointment ADD FinalQrString nvarchar(1000) NULL;
+    IF COL_LENGTH(N'dbo.EventAppointment', N'FinalPaymentReferenceId') IS NULL
+        ALTER TABLE dbo.EventAppointment ADD FinalPaymentReferenceId nvarchar(100) NULL;
+    IF COL_LENGTH(N'dbo.EventAppointment', N'FinalPaymentPaidAt') IS NULL
+        ALTER TABLE dbo.EventAppointment ADD FinalPaymentPaidAt datetime2 NULL;
 END;
 GO
 
 IF OBJECT_ID(N'dbo.EventAppointment', N'U') IS NOT NULL
    AND NOT EXISTS (SELECT 1 FROM sys.check_constraints
-                   WHERE name = N'CK_EventAppointment_Status' AND definition LIKE N'%Pending Payment%')
+                   WHERE name = N'CK_EventAppointment_Status' AND definition LIKE N'%Pending Verification%')
 BEGIN
     IF EXISTS (SELECT 1 FROM sys.check_constraints WHERE name = N'CK_EventAppointment_Status')
         ALTER TABLE dbo.EventAppointment DROP CONSTRAINT CK_EventAppointment_Status;
 
     ALTER TABLE dbo.EventAppointment ADD CONSTRAINT CK_EventAppointment_Status
-        CHECK (EventStatus IN ('Pending','Awaiting_Downpayment','Pending Payment','Confirmed','Shot','Editing','Delivered','Cancelled','Expired'));
+        CHECK (EventStatus IN ('Pending','Awaiting_Downpayment','Pending Payment','Preparing','On Going','Post Event','Pending Verification','Confirmed','Shot','Editing','Delivered','Cancelled','Expired'));
 END;
 GO
 

@@ -17,6 +17,8 @@ public interface IConsultationClient
     Task<ApiResult<SimulateQrResultDto>> SimulateQrPaymentAsync(string externalId, CancellationToken ct = default);
     Task<ApiResult<bool>> RequestExtensionAsync(string appointmentId, CancellationToken ct = default);
     Task<ApiResult<EventAppointmentDto>> CompleteEventAsync(string appointmentId, CompleteEventRequest request, CancellationToken ct = default);
+    Task<ApiResult<IReadOnlyList<TeamLeaderEventDto>>> GetTeamLeaderEventsAsync(string? employeeId = null, CancellationToken ct = default);
+    Task<ApiResult<EventAppointmentDto>> UpdateTeamLeaderEventStatusAsync(string appointmentId, UpdateTeamLeaderStatusRequest request, CancellationToken ct = default);
     Task<ApiResult<PaymentBreakdownModel>> CalculateReservationFeeAsync(decimal total, CancellationToken ct = default);
     Task<ApiResult<PaymentSummaryModel>> SubmitCustomerPaymentAsync(CustomerSubmitPaymentModel request, CancellationToken ct = default);
     Task<ApiResult<PaymentSummaryModel>> LogEmployeeCashAsync(EmployeeLogCashModel request, CancellationToken ct = default);

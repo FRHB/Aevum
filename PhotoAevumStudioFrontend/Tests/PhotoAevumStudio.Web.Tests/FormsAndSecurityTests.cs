@@ -63,19 +63,21 @@ public class FormsAndSecurityTests
     }
 
     [Theory]
-    [InlineData("12345678", false)]          // No letter, no special char
+    [InlineData("12345678", false)]          // No special char
     [InlineData("abcdefgh", false)]          // No digit, no special char
     [InlineData("Valid1Pass", false)]        // Has letter & digit but no special char
-    [InlineData("ValidPass!", false)]        // Has letter & special char but no digit
-    [InlineData("12345678!", false)]         // Has digit & special char but no letter
-    [InlineData("Valid1Pass!", true)]        // Has letter, digit & special char – should pass
-    [InlineData("MyP@ssw0rd", true)]        // Has letter, digit & special char – should pass
+    [InlineData("ValidPass@", false)]        // Has special char but no digit
+    [InlineData("Valid1Pass!", false)]       // '!' is not in allowed specials (@, #, $, %, &)
+    [InlineData("123456@", false)]           // Only 7 chars
+    [InlineData("12345678@", true)]          // 8 chars, digit & allowed special – should pass
+    [InlineData("Valid1Pass@", true)]        // Has digit & @ – should pass
+    [InlineData("MyP@ssw0rd", true)]         // Has digit & @ – should pass
+    [InlineData("Pass#123$%&", true)]        // Has digit & #, $, %, & – should pass
+    [InlineData("12345678901234567890123456789@", true)]  // Exactly 30 chars – should pass
+    [InlineData("123456789012345678901234567890@", false)] // 31 chars – exceeds max 30
     public void ChangePassword_RequiresNumberAndSpecialCharacter(string password, bool expectedValid)
     {
-        bool hasDigit = System.Text.RegularExpressions.Regex.IsMatch(password, @"[0-9]");
-        bool hasSpecial = System.Text.RegularExpressions.Regex.IsMatch(password, @"[^a-zA-Z0-9]");
-        bool hasLetter = System.Text.RegularExpressions.Regex.IsMatch(password, @"[A-Za-z]");
-        bool isValid = hasLetter && hasDigit && hasSpecial && password.Length >= 8;
+        bool isValid = PhotoAevumStudio.Web.Models.PasswordPolicyHelper.IsCompliant(password);
 
         Assert.Equal(expectedValid, isValid);
     }
@@ -83,19 +85,17 @@ public class FormsAndSecurityTests
     [Fact]
     public void ChangePassword_RejectsPasswordWithoutSpecialCharacter()
     {
-        // A password with letter+digit but no special character must be invalid
         var password = "Password1";
-        bool hasSpecial = System.Text.RegularExpressions.Regex.IsMatch(password, @"[^a-zA-Z0-9]");
-        Assert.False(hasSpecial, "Password without a special character should fail the special-character check.");
+        Assert.False(PhotoAevumStudio.Web.Models.PasswordPolicyHelper.HasSpecialCharacter(password),
+            "Password without an allowed special character (@, #, $, %, &) should fail.");
     }
 
     [Fact]
     public void ChangePassword_RejectsPasswordWithoutNumber()
     {
-        // A password with letter+special but no digit must be invalid
-        var password = "Password!";
-        bool hasDigit = System.Text.RegularExpressions.Regex.IsMatch(password, @"[0-9]");
-        Assert.False(hasDigit, "Password without a number should fail the digit check.");
+        var password = "Password@";
+        Assert.False(PhotoAevumStudio.Web.Models.PasswordPolicyHelper.HasNumber(password),
+            "Password without a number should fail the digit check.");
     }
 
     [Fact]
@@ -723,7 +723,11 @@ public class FormsAndSecurityTests
         Assert.Contains("EventCallback<string> OnRegistered", modalContent);
         Assert.Contains("OnRegistered.InvokeAsync(registeredEmail)", modalContent);
         Assert.Contains("Nav.NavigateTo(\"/login\")", modalContent);
-        Assert.Contains("_view = ModalView.Chooser;", modalContent);
+        Assert.Contains("_signUpStep = 1;", modalContent);
+        Assert.DoesNotContain("ModalView.Chooser", modalContent);
+        Assert.DoesNotContain("ModalView.CustomerLogin", modalContent);
+        Assert.DoesNotContain("How would you like to sign in?", modalContent);
+        Assert.Contains("@if (_signUpStep > 1)", modalContent);
 
         // Login.razor wires OnRegistered, pre-fills UserId with newly registered email, and shows success alert
         Assert.Contains("OnRegistered=\"HandleCustomerRegistered\"", loginContent);
@@ -812,7 +816,7 @@ public class FormsAndSecurityTests
             LastName: "Santos",
             MiddleName: null,
             Email: "maria@example.com",
-            Password: "Password123!",
+            Password: "Password123@",
             VerificationCode: "123456",
             PhoneNumber: phone
         );
@@ -837,8 +841,9 @@ public class FormsAndSecurityTests
     [InlineData("", false, "Password is required.")]
     [InlineData("Abc1!", false, "Password must be at least 8 characters long.")]
     [InlineData("PassWordWithoutNumber!", false, "Password must contain at least one number (0–9).")]
-    [InlineData("PasswordWithoutSpecial123", false, "Password must contain at least one special character (e.g., @, #, $, !, %, etc.).")]
-    [InlineData("Pass123!", true, null)]
+    [InlineData("PasswordWithoutSpecial123", false, "Password must contain at least one special character (@, #, $, %, &).")]
+    [InlineData("Pass123!", false, "Password must contain at least one special character (@, #, $, %, &).")]
+    [InlineData("Pass123@", true, null)]
     [InlineData("PhotoAevum#2026", true, null)]
     [InlineData("user@password99", true, null)]
     public void CustomerRegisterRequestValidator_EnforcesStrictPasswordComplexity(string password, bool expectedValid, string? expectedErrorPart)
@@ -870,7 +875,8 @@ public class FormsAndSecurityTests
     [InlineData("", false, "Password is required.")]
     [InlineData("Short1@", false, "Password must be at least 8 characters long.")]
     [InlineData("NoNumberPassword!", false, "Password must contain at least one number (0–9).")]
-    [InlineData("NoSpecialCharPassword1", false, "Password must contain at least one special character (e.g., @, #, $, !, %, etc.).")]
+    [InlineData("NoSpecialCharPassword1", false, "Password must contain at least one special character (@, #, $, %, &).")]
+    [InlineData("Pass123!", false, "Password must contain at least one special character (@, #, $, %, &).")]
     [InlineData("AdminPass123#", true, null)]
     public void RegisterRequestValidator_EnforcesStrictPasswordComplexity(string password, bool expectedValid, string? expectedErrorPart)
     {
@@ -900,7 +906,8 @@ public class FormsAndSecurityTests
     [InlineData("short1!", false)]
     [InlineData("NoNumberHere!", false)]
     [InlineData("NoSpecialChar123", false)]
-    [InlineData("ValidPass123!", true)]
+    [InlineData("ValidPass123!", false)]
+    [InlineData("ValidPass123@", true)]
     public void CustomerRegisterRequest_Model_DataAnnotations_EnforcePasswordComplexity(string password, bool expectedValid)
     {
         var model = new PhotoAevumStudio.Web.Models.CustomerRegisterRequest(
@@ -938,9 +945,9 @@ public class FormsAndSecurityTests
         Assert.Contains(@"d=""M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7Z""", content);
         Assert.Contains(@"<circle cx=""12"" cy=""12"" r=""3""", content);
 
-        // Ensure Step 3 password form enforces min length 8, number, and special character
+        // Ensure Step 3 password form enforces min length 8, max length 30, number, and allowed special characters (@#$%&)
         Assert.Contains("MinLength(8", content);
-        Assert.Contains("(?=.*[0-9])", content);
-        Assert.Contains("(?=.*[^a-zA-Z0-9])", content);
+        Assert.Contains("MaxLength(30", content);
+        Assert.Contains("PasswordPolicyHelper.PolicyRegexPattern", content);
     }
 }

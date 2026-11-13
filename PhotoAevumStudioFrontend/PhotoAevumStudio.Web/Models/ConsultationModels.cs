@@ -88,6 +88,11 @@ public class EventAppointmentDto
     public string? XenditInvoiceUrl { get; set; }
     public string? XenditInvoiceId { get; set; }
     public string? XenditExternalId { get; set; }
+    public string? FinalPaymentMethod { get; set; }
+    public string? FinalPaymentStatus { get; set; }
+    public string? FinalQrString { get; set; }
+    public string? FinalPaymentReferenceId { get; set; }
+    public DateTime? FinalPaymentPaidAt { get; set; }
     public List<AssignedEmployeeDto> AssignedEmployees { get; set; } = new();
     public List<AssignedEquipmentDto> AssignedEquipment { get; set; } = new();
     public List<EventServiceLineDto> SelectedServices { get; set; } = new();
@@ -186,4 +191,17 @@ public class QrPaymentInfoDto
     public decimal Amount { get; set; }
     public string? QrString { get; set; }
     public DateTime? LockExpiresAt { get; set; }
+    public bool IsFinalPayment { get; set; }
+}
+
+public class TeamLeaderEventDto : EventAppointmentDto
+{
+    public bool IsTeamLeader { get; set; } = true;
+    public string? CustomerPhone { get; set; }
+}
+
+public class UpdateTeamLeaderStatusRequest
+{
+    public string Status { get; set; } = string.Empty;
+    public string? EmployeeId { get; set; }
 }

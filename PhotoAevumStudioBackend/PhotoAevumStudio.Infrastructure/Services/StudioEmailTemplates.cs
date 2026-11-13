@@ -1419,4 +1419,97 @@ public static class StudioEmailTemplates
         return WrapLayout(preview, badge, "#dc2626", title, content);
     }
 
+    /// <summary>
+    /// Transactional customer email requesting final balance QR settlement when a Team Leader selects QR Payment.
+    /// </summary>
+    public static string FinalPaymentRequired(
+        string customerName,
+        string referenceId,
+        string appointmentId,
+        string eventName,
+        DateOnly eventDate,
+        TimeOnly eventTime,
+        decimal finalBalanceAmount,
+        string checkoutConfirmUrl)
+    {
+        var preview = $"Final Balance Payment Required ({finalBalanceAmount:N2} PHP) for {eventName} (#{appointmentId})";
+        var badge = "Final Balance Settlement";
+        var title = $"Complete Final Payment for {eventName}";
+        var qrImgSrc = $"https://api.qrserver.com/v1/create-qr-code/?size=200x200&data={Uri.EscapeDataString(checkoutConfirmUrl)}";
+
+        var content = $@"
+<p style=""margin:0 0 16px;color:{TextSecondary};font-size:14px;line-height:1.6;"">
+  Dear <strong>{WebUtility.HtmlEncode(customerName)}</strong>,
+</p>
+<p style=""margin:0 0 20px;color:{TextSecondary};font-size:14px;line-height:1.6;"">
+  Your session for <strong>{WebUtility.HtmlEncode(eventName)}</strong> is ready for final balance settlement. Please scan the QR code below or click the payment button to complete your remaining balance.
+</p>
+<table width=""100%"" cellpadding=""0"" cellspacing=""0"" style=""background-color:#f8fafc;border:1px solid #e2e8f0;border-radius:10px;margin:0 0 20px;"">
+  <tr>
+    <td style=""padding:14px 16px;font-size:13px;color:#334155;"">
+      <div><strong>Appointment ID:</strong> {WebUtility.HtmlEncode(appointmentId)} (Ref: {WebUtility.HtmlEncode(referenceId)})</div>
+      <div style=""margin-top:4px;""><strong>Event Date:</strong> {eventDate:MMMM d, yyyy} at {eventTime:hh\\:mm tt}</div>
+      <div style=""margin-top:6px;font-size:15px;color:#0f172a;""><strong>Final Balance Due:</strong> PHP {finalBalanceAmount:N2}</div>
+    </td>
+  </tr>
+</table>
+<div style=""text-align:center;margin:20px 0;"">
+  <img src=""{qrImgSrc}"" alt=""Final Balance Payment QR"" width=""180"" height=""180"" style=""border-radius:12px;border:1px solid #cbd5e1;padding:8px;background:#ffffff;"" />
+</div>
+<div style=""text-align:center;margin:22px 0;"">
+  <a href=""{WebUtility.HtmlEncode(checkoutConfirmUrl)}""
+     style=""display:inline-block;background-color:#0f172a;color:#ffffff;padding:14px 28px;border-radius:10px;text-decoration:none;font-weight:700;font-size:14px;"">
+    Pay Final Balance Now &rarr;
+  </a>
+</div>";
+
+        return WrapLayout(preview, badge, "#0284c7", title, content);
+    }
+
+    /// <summary>
+    /// Transactional notification sent to the assigned Team Leader once the customer's final QR payment clears.
+    /// </summary>
+    public static string TeamLeaderQrPaymentPaidNotification(
+        string teamLeaderName,
+        string appointmentId,
+        string referenceId,
+        string eventName,
+        string customerName,
+        DateOnly eventDate,
+        decimal amountPaid,
+        string paymentChannel,
+        string staffDashboardUrl)
+    {
+        var preview = $"QR Final Payment Paid ({amountPaid:N2} PHP) for {eventName} (#{appointmentId})";
+        var badge = "QR Payment Verified";
+        var title = "Customer Final QR Payment Paid";
+
+        var content = $@"
+<p style=""margin:0 0 16px;color:{TextSecondary};font-size:14px;line-height:1.6;"">
+  Hi <strong>{WebUtility.HtmlEncode(teamLeaderName)}</strong>,
+</p>
+<p style=""margin:0 0 20px;color:{TextSecondary};font-size:14px;line-height:1.6;"">
+  The customer has completed their <strong>QR final balance payment</strong> for your assigned event. The event is now marked as settled and completed.
+</p>
+<table width=""100%"" cellpadding=""0"" cellspacing=""0"" style=""background-color:#ecfdf5;border:1px solid #a7f3d0;border-radius:10px;margin:0 0 20px;"">
+  <tr>
+    <td style=""padding:14px 16px;font-size:13px;color:#065f46;"">
+      <div><strong>Event:</strong> {WebUtility.HtmlEncode(eventName)} (#{WebUtility.HtmlEncode(appointmentId)})</div>
+      <div style=""margin-top:4px;""><strong>Customer:</strong> {WebUtility.HtmlEncode(customerName)}</div>
+      <div style=""margin-top:4px;""><strong>Event Date:</strong> {eventDate:MMMM d, yyyy}</div>
+      <div style=""margin-top:4px;""><strong>Amount Paid:</strong> PHP {amountPaid:N2} ({WebUtility.HtmlEncode(paymentChannel)})</div>
+      <div style=""margin-top:4px;""><strong>Reference:</strong> {WebUtility.HtmlEncode(referenceId)}</div>
+    </td>
+  </tr>
+</table>
+<div style=""text-align:center;margin:24px 0 12px;"">
+  <a href=""{WebUtility.HtmlEncode(staffDashboardUrl)}""
+     style=""display:inline-block;background-color:#059669;color:#ffffff;padding:12px 24px;border-radius:10px;text-decoration:none;font-weight:700;font-size:14px;"">
+    Open Staff Dashboard &rarr;
+  </a>
+</div>";
+
+        return WrapLayout(preview, badge, "#059669", title, content);
+    }
+
 }

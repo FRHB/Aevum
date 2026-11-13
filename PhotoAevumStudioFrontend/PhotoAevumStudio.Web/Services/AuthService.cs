@@ -214,27 +214,70 @@ public sealed class AuthService : IAuthService
 
     public async Task<bool> ForgotPasswordAsync(string email, CancellationToken cancellationToken = default)
     {
-        try
-        {
-            var response = await _http.PostAsJsonAsync("api/auth/forgot-password", new { Email = email }, cancellationToken);
-            return response.IsSuccessStatusCode;
-        }
-        catch
-        {
-            return false;
-        }
+        var (success, _) = await RequestPasswordResetCodeAsync(email, cancellationToken);
+        return success;
     }
+
+    public Task<(bool Success, string? Error)> RequestPasswordResetCodeAsync(string email, CancellationToken cancellationToken = default)
+        => PostWithProblemAsync(
+            "api/auth/forgot-password",
+            new { Email = email },
+            "Could not send password reset verification code. Please check your email address.",
+            cancellationToken);
+
+    public Task<(bool Success, string? Error)> VerifyPasswordResetCodeAsync(string email, string code, CancellationToken cancellationToken = default)
+        => PostWithProblemAsync(
+            "api/auth/verify-reset-code",
+            new { Email = email, VerificationCode = code },
+            "Invalid or expired verification code. Please check and try again.",
+            cancellationToken);
+
+    public Task<(bool Success, string? Error)> ResetCustomerPasswordAsync(string email, string code, string newPassword, CancellationToken cancellationToken = default)
+        => PostWithProblemAsync(
+            "api/auth/reset-password",
+            new { Email = email, VerificationCode = code, NewPassword = newPassword },
+            "Password reset failed. Please verify your code and password requirements.",
+            cancellationToken);
 
     public async Task<bool> ResetPasswordAsync(string email, string verificationCode, string newPassword, CancellationToken cancellationToken = default)
     {
+        var (success, _) = await ResetCustomerPasswordAsync(email, verificationCode, newPassword, cancellationToken);
+        return success;
+    }
+
+    private async Task<(bool Success, string? Error)> PostWithProblemAsync(
+        string url,
+        object payload,
+        string fallbackError,
+        CancellationToken cancellationToken)
+    {
         try
         {
-            var response = await _http.PostAsJsonAsync("api/auth/reset-password", new { Email = email, VerificationCode = verificationCode, NewPassword = newPassword }, cancellationToken);
-            return response.IsSuccessStatusCode;
+            var response = await _http.PostAsJsonAsync(url, payload, cancellationToken);
+            if (response.IsSuccessStatusCode)
+            {
+                return (true, null);
+            }
+
+            ProblemDetails? problem = null;
+            try
+            {
+                problem = await response.Content.ReadFromJsonAsync<ProblemDetails>(cancellationToken: cancellationToken);
+            }
+            catch
+            {
+                // Ignore JSON parse errors on non-ProblemDetails responses
+            }
+
+            return (false, problem?.GetErrorMessage(fallbackError) ?? fallbackError);
+        }
+        catch (HttpRequestException ex)
+        {
+            return (false, $"Cannot reach the API server: {ex.Message}");
         }
         catch
         {
-            return false;
+            return (false, fallbackError);
         }
     }
 

@@ -179,9 +179,11 @@ else
                         <PasswordInput Id="cust-new-password"
                                        Name="newPassword"
                                        Autocomplete="new-password"
+                                       MaxLength="30"
                                        @bind-Value="passwordForm.NewPassword"
-                                       Placeholder="Enter new password (min. 8 characters)"
+                                       Placeholder="8–30 chars, number &amp; special character"
                                        Disabled="@isUpdatingPassword" />
+                        <PasswordRequirementsChecklist Password="@passwordForm.NewPassword" CssClass="mt-2" />
                     </div>
 
                     <div class="form-group mb-4">
@@ -189,6 +191,7 @@ else
                         <PasswordInput Id="cust-confirm-password"
                                        Name="confirmPassword"
                                        Autocomplete="new-password"
+                                       MaxLength="30"
                                        @bind-Value="passwordForm.ConfirmPassword"
                                        Placeholder="Re-enter your new password"
                                        Disabled="@isUpdatingPassword" />
@@ -302,23 +305,10 @@ else
             return;
         }
 
-        if (passwordForm.NewPassword.Length < 8)
+        var policyError = PasswordPolicyHelper.GetValidationError(passwordForm.NewPassword);
+        if (policyError is not null)
         {
-            passwordErrorMessage = "New password must be at least 8 characters long.";
-            isUpdatingPassword = false;
-            return;
-        }
-
-        if (!System.Text.RegularExpressions.Regex.IsMatch(passwordForm.NewPassword, @"[A-Za-z]"))
-        {
-            passwordErrorMessage = "Password must contain at least one letter.";
-            isUpdatingPassword = false;
-            return;
-        }
-
-        if (!System.Text.RegularExpressions.Regex.IsMatch(passwordForm.NewPassword, @"[0-9]"))
-        {
-            passwordErrorMessage = "Password must contain at least one digit.";
+            passwordErrorMessage = policyError;
             isUpdatingPassword = false;
             return;
         }

@@ -36,7 +36,7 @@ public class CustomIdentityErrorDescriber : IdentityErrorDescriber
         return new IdentityError
         {
             Code = nameof(PasswordRequiresNonAlphanumeric),
-            Description = "Password must contain at least one special character (e.g., @, #, $, !, %, etc.)."
+            Description = "Password must contain at least one special character (@, #, $, %, &)."
         };
     }
 }

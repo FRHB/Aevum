@@ -25,12 +25,24 @@
     <div class="aev-sidebar__backdrop" @onclick="() => _isMobileOpen = false" aria-hidden="true"></div>
 }
 
-<nav class="aev-sidebar @(_isMobileOpen ? "is-open" : "")" aria-label="Primary navigation">
+<nav class="aev-sidebar @(_isMobileOpen ? "is-open" : "") @(_isMinimized ? "is-minimized" : "")" aria-label="Primary navigation">
 
     @* ── Brand ─────────────────────────────────────────────────────────── *@
     <div class="aev-sidebar__brand">
         <img src="images/AevumLogo.jpg" alt="Photo Aevum" class="aev-sidebar__logo" />
         <span class="aev-sidebar__brand-text">Aevum Studio</span>
+        <button type="button"
+                class="aev-sidebar__minimize-btn"
+                @onclick="ToggleMinimize"
+                aria-label="@(_isMinimized ? "Expand sidebar" : "Minimize sidebar")"
+                aria-expanded="@(!_isMinimized)"
+                title="@(_isMinimized ? "Expand sidebar" : "Minimize sidebar")">
+            <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <line x1="3" y1="6" x2="21" y2="6"></line>
+                <line x1="3" y1="12" x2="21" y2="12"></line>
+                <line x1="3" y1="18" x2="21" y2="18"></line>
+            </svg>
+        </button>
         <button type="button"
                 class="aev-sidebar__mobile-close"
                 @onclick="() => _isMobileOpen = false"
@@ -43,11 +55,28 @@
 
 </nav>
 
+@if (_showLogoutConfirm)
+{
+    <div class="aev-logout-backdrop" @onclick="CancelLogout" role="dialog" aria-modal="true" aria-labelledby="logoutConfirmTitle">
+        <div class="aev-logout-modal" @onclick:stopPropagation="true">
+            <h3 id="logoutConfirmTitle" class="aev-logout-modal__title">Log Out</h3>
+            <p class="aev-logout-modal__message">Are you sure you want to logout?</p>
+            <div class="aev-logout-modal__actions">
+                <button type="button" class="aev-logout-btn aev-logout-btn--no" @onclick="CancelLogout" disabled="@_isLoggingOut">No</button>
+                <button type="button" class="aev-logout-btn aev-logout-btn--yes" @onclick="HandleLogoutAsync" disabled="@_isLoggingOut">Yes</button>
+            </div>
+        </div>
+    </div>
+}
+
 @code {
     [CascadingParameter] Task<AuthenticationState> AuthState { get; set; } = default!;
     [Parameter] public string UserRole { get; set; } = string.Empty;
 
     private bool _isMobileOpen;
+    private bool _isMinimized;
+    private bool _showLogoutConfirm;
+    private bool _isLoggingOut;
     private readonly HashSet<string> _openAccordions = new();
 
     protected override void OnInitialized()
@@ -168,14 +197,41 @@
 
     private bool IsOpen(string key) => _openAccordions.Contains(key);
 
+    private void ToggleMinimize()
+    {
+        _isMinimized = !_isMinimized;
+    }
+
     private void Toggle(string key)
     {
+        if (_isMinimized)
+        {
+            _isMinimized = false;
+            _openAccordions.Add(key);
+            return;
+        }
+
         if (!_openAccordions.Remove(key))
             _openAccordions.Add(key);
     }
 
+    private void RequestLogout()
+    {
+        _isMobileOpen = false;
+        _showLogoutConfirm = true;
+    }
+
+    private void CancelLogout()
+    {
+        if (!_isLoggingOut)
+            _showLogoutConfirm = false;
+    }
+
     private async Task HandleLogoutAsync()
     {
+        if (_isLoggingOut) return;
+        _isLoggingOut = true;
+        _showLogoutConfirm = false;
         await AuthService.LogoutAsync();
         Nav.NavigateTo("/", forceLoad: true);
     }
@@ -521,7 +577,7 @@
                     </NavLink>
                 </li>
                 <li>
-                    <button type="button" @onclick="HandleLogoutAsync" class="aev-sidebar__link text-rose-600 hover:text-rose-800" style="background:none;border:none;width:100%;text-align:left;cursor:pointer;">
+                    <button type="button" @onclick="RequestLogout" class="aev-sidebar__link text-rose-600 hover:text-rose-800" style="background:none;border:none;width:100%;text-align:left;cursor:pointer;" title="Log Out">
                         <span class="aev-sidebar__icon" aria-hidden="true">🚪</span>
                         Log Out
                     </button>
@@ -734,7 +790,7 @@
                     </NavLink>
                 </li>
                 <li>
-                    <button type="button" @onclick="HandleLogoutAsync" class="aev-sidebar__link text-rose-600 hover:text-rose-800" style="background:none;border:none;width:100%;text-align:left;cursor:pointer;">
+                    <button type="button" @onclick="RequestLogout" class="aev-sidebar__link text-rose-600 hover:text-rose-800" style="background:none;border:none;width:100%;text-align:left;cursor:pointer;" title="Log Out">
                         <span class="aev-sidebar__icon" aria-hidden="true">🚪</span>
                         Log Out
                     </button>
@@ -818,7 +874,7 @@
                     </NavLink>
                 </li>
                 <li>
-                    <button type="button" @onclick="HandleLogoutAsync" class="aev-sidebar__link text-rose-600 hover:text-rose-800" style="background:none;border:none;width:100%;text-align:left;cursor:pointer;">
+                    <button type="button" @onclick="RequestLogout" class="aev-sidebar__link text-rose-600 hover:text-rose-800" style="background:none;border:none;width:100%;text-align:left;cursor:pointer;" title="Log Out">
                         <span class="aev-sidebar__icon" aria-hidden="true">🚪</span>
                         Log Out
                     </button>

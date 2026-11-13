@@ -31,15 +31,25 @@ public class PendingPaymentService : IPendingPaymentService
         @"IF COL_LENGTH(N'dbo.EventAppointment', N'LockExpiresAt') IS NULL
               ALTER TABLE dbo.EventAppointment ADD LockExpiresAt datetime2 NULL;
           IF COL_LENGTH(N'dbo.EventAppointment', N'QrString') IS NULL
-              ALTER TABLE dbo.EventAppointment ADD QrString nvarchar(1000) NULL;",
+              ALTER TABLE dbo.EventAppointment ADD QrString nvarchar(1000) NULL;
+          IF COL_LENGTH(N'dbo.EventAppointment', N'FinalPaymentMethod') IS NULL
+              ALTER TABLE dbo.EventAppointment ADD FinalPaymentMethod nvarchar(30) NULL;
+          IF COL_LENGTH(N'dbo.EventAppointment', N'FinalPaymentStatus') IS NULL
+              ALTER TABLE dbo.EventAppointment ADD FinalPaymentStatus nvarchar(30) NULL;
+          IF COL_LENGTH(N'dbo.EventAppointment', N'FinalQrString') IS NULL
+              ALTER TABLE dbo.EventAppointment ADD FinalQrString nvarchar(1000) NULL;
+          IF COL_LENGTH(N'dbo.EventAppointment', N'FinalPaymentReferenceId') IS NULL
+              ALTER TABLE dbo.EventAppointment ADD FinalPaymentReferenceId nvarchar(100) NULL;
+          IF COL_LENGTH(N'dbo.EventAppointment', N'FinalPaymentPaidAt') IS NULL
+              ALTER TABLE dbo.EventAppointment ADD FinalPaymentPaidAt datetime2 NULL;",
 
         @"IF NOT EXISTS (SELECT 1 FROM sys.check_constraints
-                         WHERE name = N'CK_EventAppointment_Status' AND definition LIKE N'%Pending Payment%')
+                         WHERE name = N'CK_EventAppointment_Status' AND definition LIKE N'%Pending Verification%')
           BEGIN
               IF EXISTS (SELECT 1 FROM sys.check_constraints WHERE name = N'CK_EventAppointment_Status')
                   ALTER TABLE dbo.EventAppointment DROP CONSTRAINT CK_EventAppointment_Status;
               ALTER TABLE dbo.EventAppointment ADD CONSTRAINT CK_EventAppointment_Status
-                  CHECK (EventStatus IN ('Pending','Awaiting_Downpayment','Pending Payment','Confirmed','Shot','Editing','Delivered','Cancelled','Expired'));
+                  CHECK (EventStatus IN ('Pending','Awaiting_Downpayment','Pending Payment','Preparing','On Going','Post Event','Pending Verification','Confirmed','Shot','Editing','Delivered','Cancelled','Expired'));
           END;
           IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = N'IX_EventAppointment_Status_LockExpiresAt' AND object_id = OBJECT_ID(N'dbo.EventAppointment'))
               CREATE INDEX IX_EventAppointment_Status_LockExpiresAt ON dbo.EventAppointment (EventStatus, LockExpiresAt);",
@@ -61,6 +71,7 @@ public class PendingPaymentService : IPendingPaymentService
               OUTPUT inserted.EventAppointmentID, inserted.CustomerID, inserted.EventName, inserted.EventDate, inserted.EventTime
               INTO @Released
               WHERE EventStatus = 'Pending Payment'
+                AND ISNULL(DownpaymentStatus, 'Pending') <> 'Paid'
                 AND LockExpiresAt IS NOT NULL
                 AND LockExpiresAt <= SYSUTCDATETIME();
 
@@ -128,14 +139,125 @@ public class PendingPaymentService : IPendingPaymentService
         return conn;
     }
 
+    private static (string BaseAppointmentId, bool IsFinalRef) ParseReference(string referenceId)
+    {
+        const string suffix = "-FINAL";
+        if (!string.IsNullOrWhiteSpace(referenceId) &&
+            referenceId.EndsWith(suffix, StringComparison.OrdinalIgnoreCase))
+        {
+            return (referenceId[..^suffix.Length], true);
+        }
+        return (referenceId, false);
+    }
+
     public async Task<PaymentConfirmation?> ConfirmByReferenceAsync(
         string referenceId, string? qrId, decimal? amount, string? channel, CancellationToken ct = default)
     {
+        var (baseApptId, isFinalBySuffix) = ParseReference(referenceId);
         await using var conn = await OpenAsync(ct);
         await using var tx = (SqlTransaction)await conn.BeginTransactionAsync(ct);
         try
         {
-            // Only a booking that is still 'Pending Payment' can be confirmed (idempotent against duplicate callbacks).
+            // Check whether referenceId targets a Final Balance QR settlement ({id}-FINAL / FinalPaymentReferenceId)
+            var isFinal = isFinalBySuffix;
+            if (!isFinal)
+            {
+                const string checkFinalSql = @"
+                    SELECT TOP 1 EventAppointmentID
+                    FROM dbo.EventAppointment
+                    WHERE FinalPaymentReferenceId = @Ref;";
+                await using var cfCmd = new SqlCommand(checkFinalSql, conn, tx);
+                cfCmd.Parameters.AddWithValue("@Ref", referenceId);
+                var matchedBase = await cfCmd.ExecuteScalarAsync(ct) as string;
+                if (!string.IsNullOrWhiteSpace(matchedBase))
+                {
+                    baseApptId = matchedBase;
+                    isFinal = true;
+                }
+            }
+
+            if (isFinal)
+            {
+                const string confirmFinalSql = @"
+                    UPDATE dbo.EventAppointment
+                    SET EventStatus = 'Shot',
+                        FinalPaymentStatus = 'Paid',
+                        FinalPaymentPaidAt = SYSUTCDATETIME(),
+                        LockExpiresAt = NULL,
+                        HoldExpiresAt = NULL
+                    OUTPUT inserted.EventAppointmentID, inserted.CustomerID, inserted.FinalBalanceAmount
+                    WHERE (EventAppointmentID = @BaseId OR FinalPaymentReferenceId = @Ref)
+                      AND ISNULL(FinalPaymentStatus, 'Pending') <> 'Paid'
+                      AND EventStatus IN ('Pending Payment', 'Post Event', 'Pending Verification', 'On Going', 'Preparing', 'Confirmed');";
+
+                string? finalApptId = null, finalCustId = null;
+                decimal finalBal = 0m;
+                await using (var cmd = new SqlCommand(confirmFinalSql, conn, tx))
+                {
+                    cmd.Parameters.AddWithValue("@BaseId", baseApptId);
+                    cmd.Parameters.AddWithValue("@Ref", referenceId);
+                    await using var r = await cmd.ExecuteReaderAsync(ct);
+                    if (await r.ReadAsync(ct))
+                    {
+                        finalApptId = r.GetString(0);
+                        finalCustId = r.GetString(1);
+                        finalBal = r.GetDecimal(2);
+                    }
+                }
+
+                if (finalApptId is null)
+                {
+                    await tx.RollbackAsync(ct);
+                    return null;
+                }
+
+                var effectivePaid = amount ?? finalBal;
+                const string finalFollowUpSql = @"
+                    IF OBJECT_ID(N'dbo.PaymentTransactions', N'U') IS NOT NULL
+                    BEGIN
+                        UPDATE dbo.PaymentTransactions
+                        SET Status = 'Paid',
+                            XenditPaymentId = COALESCE(@QrId, XenditPaymentId),
+                            XenditPaymentChannel = COALESCE(@Channel, XenditPaymentChannel),
+                            Amount = @Amount
+                        WHERE EventAppointmentID = @ApptId
+                          AND (ExternalReference = @Ref OR PaymentType = 'BalanceSettlement_85')
+                          AND Status <> 'Paid';
+
+                        IF @@ROWCOUNT = 0
+                        BEGIN
+                            DECLARE @nf INT = ISNULL((SELECT MAX(TRY_CAST(SUBSTRING(PaymentTransactionID, 5, 20) AS INT))
+                                                      FROM dbo.PaymentTransactions WITH (UPDLOCK, HOLDLOCK)), 0) + 1;
+                            INSERT INTO dbo.PaymentTransactions (
+                                PaymentTransactionID, EventAppointmentID, PaymentType, PaymentMethod, Amount, Status,
+                                ExternalReference, XenditInvoiceId, XenditPaymentId, XenditPaymentChannel, CustomerPaymentStatus, EmployeeRemittanceStatus, CreatedAt)
+                            VALUES (
+                                'TXN-' + RIGHT('0000' + CAST(@nf AS varchar(10)), 4), @ApptId, 'BalanceSettlement_85', 'QR Ph', @Amount, 'Paid',
+                                @Ref, NULL, @QrId, @Channel, 'Cleared', 'NotApplicable', SYSUTCDATETIME());
+                        END
+                    END;
+
+                    IF OBJECT_ID(N'dbo.HistoryLog', N'U') IS NOT NULL
+                        INSERT INTO dbo.HistoryLog (ActionType, EntityName, EntityID, ActionDetails, EventAppointmentID, ChangedByType, LoggedAt)
+                        VALUES ('STATUS_CHANGE', 'EventAppointment', @ApptId,
+                                'Final balance QR payment received via Xendit webhook. Event marked Shot / Paid.',
+                                @ApptId, 'System', SYSUTCDATETIME());";
+
+                await using (var cmd = new SqlCommand(finalFollowUpSql, conn, tx))
+                {
+                    cmd.Parameters.AddWithValue("@ApptId", finalApptId);
+                    cmd.Parameters.AddWithValue("@Ref", referenceId);
+                    cmd.Parameters.AddWithValue("@Amount", effectivePaid);
+                    cmd.Parameters.AddWithValue("@QrId", (object?)qrId ?? DBNull.Value);
+                    cmd.Parameters.AddWithValue("@Channel", (object?)channel ?? DBNull.Value);
+                    await cmd.ExecuteNonQueryAsync(ct);
+                }
+
+                await tx.CommitAsync(ct);
+                return new PaymentConfirmation(finalApptId, finalCustId!, effectivePaid, IsFinalPayment: true);
+            }
+
+            // Downpayment QR confirmation: only a booking still 'Pending Payment' with unpaid downpayment can confirm
             const string confirmSql = @"
                 UPDATE dbo.EventAppointment
                 SET EventStatus = 'Confirmed',
@@ -144,7 +266,9 @@ public class PendingPaymentService : IPendingPaymentService
                     LockExpiresAt = NULL,
                     HoldExpiresAt = NULL
                 OUTPUT inserted.EventAppointmentID, inserted.CustomerID, inserted.DownpaymentAmount
-                WHERE EventAppointmentID = @Ref AND EventStatus = 'Pending Payment';";
+                WHERE EventAppointmentID = @Ref
+                  AND EventStatus = 'Pending Payment'
+                  AND ISNULL(DownpaymentStatus, 'Pending') <> 'Paid';";
 
             string? apptId = null, custId = null;
             decimal fee = 0m;
@@ -227,15 +351,45 @@ public class PendingPaymentService : IPendingPaymentService
 
     public async Task<QrPaymentInfoDto?> GetQrPaymentAsync(string appointmentId, CancellationToken ct = default)
     {
+        var (baseApptId, isFinalBySuffix) = ParseReference(appointmentId);
         await using var conn = await OpenAsync(ct);
         const string sql = @"
-            SELECT EventAppointmentID, CustomerID, EventName, EventDate, EventTime, EventStatus,
-                   DownpaymentAmount, QrString, LockExpiresAt
-            FROM dbo.EventAppointment WHERE EventAppointmentID = @Id;";
+            SELECT TOP 1 EventAppointmentID, CustomerID, EventName, EventDate, EventTime, EventStatus,
+                   DownpaymentAmount, QrString, LockExpiresAt,
+                   FinalBalanceAmount, FinalQrString, FinalPaymentStatus, FinalPaymentReferenceId
+            FROM dbo.EventAppointment
+            WHERE FinalPaymentReferenceId = @Id OR EventAppointmentID = @BaseId;";
         await using var cmd = new SqlCommand(sql, conn);
         cmd.Parameters.AddWithValue("@Id", appointmentId);
+        cmd.Parameters.AddWithValue("@BaseId", baseApptId);
         await using var r = await cmd.ExecuteReaderAsync(ct);
         if (!await r.ReadAsync(ct)) return null;
+
+        var dbFinalRef = r.IsDBNull(12) ? null : r.GetString(12);
+        var isFinal = isFinalBySuffix || (!string.IsNullOrWhiteSpace(dbFinalRef) && string.Equals(dbFinalRef, appointmentId, StringComparison.OrdinalIgnoreCase));
+        var eventStatus = r.GetString(5);
+
+        if (isFinal)
+        {
+            var finalStatus = r.IsDBNull(11) ? null : r.GetString(11);
+            var effectiveStatus = string.Equals(finalStatus, "Paid", StringComparison.OrdinalIgnoreCase)
+                ? "Shot"
+                : eventStatus;
+            return new QrPaymentInfoDto
+            {
+                AppointmentId = string.IsNullOrWhiteSpace(dbFinalRef) ? appointmentId : dbFinalRef,
+                CustomerId = r.GetString(1),
+                EventName = $"{r.GetString(2)} (Final Balance)",
+                EventDate = r.GetDateTime(3),
+                EventTime = r.GetFieldValue<TimeSpan>(4),
+                EventStatus = effectiveStatus,
+                Amount = r.GetDecimal(9),
+                QrString = r.IsDBNull(10) ? null : r.GetString(10),
+                LockExpiresAt = null,
+                IsFinalPayment = true
+            };
+        }
+
         return new QrPaymentInfoDto
         {
             AppointmentId = r.GetString(0),
@@ -243,10 +397,11 @@ public class PendingPaymentService : IPendingPaymentService
             EventName = r.GetString(2),
             EventDate = r.GetDateTime(3),
             EventTime = r.GetFieldValue<TimeSpan>(4),
-            EventStatus = r.GetString(5),
+            EventStatus = eventStatus,
             Amount = r.GetDecimal(6),
             QrString = r.IsDBNull(7) ? null : r.GetString(7),
-            LockExpiresAt = r.IsDBNull(8) ? null : r.GetDateTime(8)
+            LockExpiresAt = r.IsDBNull(8) ? null : r.GetDateTime(8),
+            IsFinalPayment = false
         };
     }
 }

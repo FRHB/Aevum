@@ -4,6 +4,7 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
 using PhotoAevumStudio.Application.Auth;
 using PhotoAevumStudio.Application.Interfaces;
+using PhotoAevumStudio.Application.Validation;
 using PhotoAevumStudio.Infrastructure.Data;
 
 namespace PhotoAevumStudio.Infrastructure.Services;
@@ -302,17 +303,8 @@ public class SqlAuthService : ISqlAuthService
         if (currentPassword == newPassword)
             return (false, "New password cannot be the same as current password.");
 
-        if (newPassword.Length < 8)
-            return (false, "Password must be at least 8 characters long.");
-
-        if (!System.Text.RegularExpressions.Regex.IsMatch(newPassword, @"[A-Za-z]"))
-            return (false, "Password must contain at least one letter.");
-
-        if (!System.Text.RegularExpressions.Regex.IsMatch(newPassword, @"[0-9]"))
-            return (false, "Password must contain at least one number (0-9).");
-
-        if (!System.Text.RegularExpressions.Regex.IsMatch(newPassword, @"[^a-zA-Z0-9]"))
-            return (false, "Password must contain at least one special character (e.g., @, #, $, !, %, etc.).");
+        if (PasswordPolicy.Validate(newPassword) is { } pwdError)
+            return (false, pwdError);
 
         var trimmedId = userIdOrEmail.Trim();
         var atIndex = trimmedId.IndexOf('@');
@@ -765,86 +757,190 @@ public class SqlAuthService : ISqlAuthService
         return (true, "Admin account registered successfully.");
     }
 
+    public async Task<(bool IsEligibleCustomer, string? CanonicalEmail, string? ErrorMessage, int StatusCode)> CheckCustomerForgotPasswordEligibilityAsync(
+        string email,
+        CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrWhiteSpace(email))
+            return (false, null, "Email is required.", 400);
+
+        var trimmedEmail = email.Trim();
+
+        await using var conn = CreateConnection();
+        await conn.OpenAsync(cancellationToken);
+
+        const string custSql = @"
+            IF OBJECT_ID(N'dbo.Customer', N'U') IS NOT NULL
+            BEGIN
+                SELECT TOP 1 CustomerID, CustomerEmail, CustomerStatus
+                FROM dbo.Customer
+                WHERE UPPER(LTRIM(RTRIM(CustomerEmail))) = UPPER(@Email);
+            END";
+
+        await using (var custCmd = new SqlCommand(custSql, conn))
+        {
+            custCmd.Parameters.AddWithValue("@Email", trimmedEmail);
+            await using var reader = await custCmd.ExecuteReaderAsync(cancellationToken);
+            if (await reader.ReadAsync(cancellationToken))
+            {
+                var custEmail = reader.IsDBNull(reader.GetOrdinal("CustomerEmail"))
+                    ? trimmedEmail
+                    : reader.GetString(reader.GetOrdinal("CustomerEmail")).Trim();
+                var custStatus = reader.IsDBNull(reader.GetOrdinal("CustomerStatus"))
+                    ? "Active"
+                    : reader.GetString(reader.GetOrdinal("CustomerStatus")).Trim();
+
+                if (!string.IsNullOrWhiteSpace(custStatus) &&
+                    !string.Equals(custStatus, "Active", StringComparison.OrdinalIgnoreCase))
+                {
+                    return (false, null, "This customer account is inactive. Please contact Photo Aevum Studio for assistance.", 403);
+                }
+
+                return (true, custEmail, null, 200);
+            }
+        }
+
+        if (await IsNonCustomerEmailAsync(conn, trimmedEmail, cancellationToken))
+        {
+            return (false, null, "Forgot Password is only available for customer accounts.", 403);
+        }
+
+        return (false, null, "No customer account found with that email address.", 404);
+    }
+
+    private static async Task<bool> IsNonCustomerEmailAsync(SqlConnection conn, string trimmedEmail, CancellationToken cancellationToken)
+    {
+        if (trimmedEmail.EndsWith("@photoaevum.studio", StringComparison.OrdinalIgnoreCase) ||
+            System.Text.RegularExpressions.Regex.IsMatch(trimmedEmail, @"^(SADM|ADM|EMP|CLK)-\d+$", System.Text.RegularExpressions.RegexOptions.IgnoreCase))
+        {
+            return true;
+        }
+
+        var atIndex = trimmedEmail.IndexOf('@');
+        var candidateId = atIndex > 0 ? trimmedEmail[..atIndex] : trimmedEmail;
+
+        const string staffCheckSql = @"
+            DECLARE @IsStaff bit = 0;
+
+            IF OBJECT_ID(N'dbo.SystemAdmin', N'U') IS NOT NULL AND @IsStaff = 0
+            BEGIN
+                IF EXISTS (
+                    SELECT 1 FROM dbo.SystemAdmin
+                    WHERE UPPER(LTRIM(RTRIM(SystemAdminID))) = UPPER(@Email)
+                       OR UPPER(LTRIM(RTRIM(SystemAdminID))) = UPPER(@CandidateId)
+                       OR UPPER(LTRIM(RTRIM(CONCAT(LOWER(SystemAdminID), '@photoaevum.studio')))) = UPPER(@Email)
+                ) SET @IsStaff = 1;
+            END
+
+            IF OBJECT_ID(N'dbo.Admin', N'U') IS NOT NULL AND @IsStaff = 0
+            BEGIN
+                IF EXISTS (
+                    SELECT 1 FROM dbo.Admin
+                    WHERE UPPER(LTRIM(RTRIM(AdminID))) = UPPER(@Email)
+                       OR UPPER(LTRIM(RTRIM(AdminID))) = UPPER(@CandidateId)
+                       OR (COL_LENGTH(N'dbo.Admin', N'Email') IS NOT NULL AND UPPER(LTRIM(RTRIM(Email))) = UPPER(@Email))
+                ) SET @IsStaff = 1;
+            END
+
+            IF OBJECT_ID(N'dbo.Employees', N'U') IS NOT NULL AND @IsStaff = 0
+            BEGIN
+                IF EXISTS (
+                    SELECT 1 FROM dbo.Employees
+                    WHERE UPPER(LTRIM(RTRIM(EmployeeEmail))) = UPPER(@Email)
+                       OR UPPER(LTRIM(RTRIM(EmployeeID))) = UPPER(@Email)
+                       OR UPPER(LTRIM(RTRIM(EmployeeID))) = UPPER(@CandidateId)
+                ) SET @IsStaff = 1;
+            END
+
+            SELECT @IsStaff;";
+
+        await using var cmd = new SqlCommand(staffCheckSql, conn);
+        cmd.Parameters.AddWithValue("@Email", trimmedEmail);
+        cmd.Parameters.AddWithValue("@CandidateId", candidateId);
+        var result = await cmd.ExecuteScalarAsync(cancellationToken);
+        return result is bool b && b || result is int i && i == 1;
+    }
+
     public async Task<(bool Success, string Message)> ResetPasswordAsync(
         string email,
         string newPassword,
         CancellationToken cancellationToken = default)
     {
+        if (string.IsNullOrWhiteSpace(email) || string.IsNullOrWhiteSpace(newPassword))
+            return (false, "Email and new password are required.");
+
         await using var conn = CreateConnection();
         await conn.OpenAsync(cancellationToken);
 
+        var trimmedEmail = email.Trim();
+
+        // Forgot Password / Reset Password is strictly restricted to Customer accounts
+        const string findCustSql = @"
+            SELECT TOP 1 CustomerID, CustomerEmail, CustomerStatus
+            FROM dbo.Customer
+            WHERE UPPER(LTRIM(RTRIM(CustomerEmail))) = UPPER(@Email);";
+
+        string? customerId = null;
+        string? customerEmail = null;
+        string? customerStatus = null;
+
+        await using (var findCmd = new SqlCommand(findCustSql, conn))
+        {
+            findCmd.Parameters.AddWithValue("@Email", trimmedEmail);
+            await using var reader = await findCmd.ExecuteReaderAsync(cancellationToken);
+            if (await reader.ReadAsync(cancellationToken))
+            {
+                customerId = reader.GetString(reader.GetOrdinal("CustomerID")).Trim();
+                customerEmail = reader.IsDBNull(reader.GetOrdinal("CustomerEmail"))
+                    ? trimmedEmail
+                    : reader.GetString(reader.GetOrdinal("CustomerEmail")).Trim();
+                customerStatus = reader.IsDBNull(reader.GetOrdinal("CustomerStatus"))
+                    ? "Active"
+                    : reader.GetString(reader.GetOrdinal("CustomerStatus")).Trim();
+            }
+        }
+
+        if (string.IsNullOrWhiteSpace(customerId))
+        {
+            if (await IsNonCustomerEmailAsync(conn, trimmedEmail, cancellationToken))
+            {
+                return (false, "Forgot Password is only available for customer accounts.");
+            }
+
+            return (false, "No customer account found with that email address.");
+        }
+
+        if (!string.IsNullOrWhiteSpace(customerStatus) &&
+            !string.Equals(customerStatus, "Active", StringComparison.OrdinalIgnoreCase))
+        {
+            return (false, "This customer account is inactive. Please contact Photo Aevum Studio for assistance.");
+        }
+
         string hashedPassword = BCrypt.Net.BCrypt.HashPassword(newPassword);
 
-        var trimmedEmail = email.Trim();
-        var atIndex = trimmedEmail.IndexOf('@');
-        var candidateAdminId = atIndex > 0 ? trimmedEmail[..atIndex] : trimmedEmail;
-
-        // Try Admin
-        const string updateAdmin = @"
-            UPDATE dbo.Admin 
-            SET AdminPassword = @Hash, isFirstLogin = 0 
-            WHERE AdminID = @Email 
-               OR (COL_LENGTH(N'dbo.Admin', N'Email') IS NOT NULL AND Email = @Email)
-               OR AdminID = @CandidateAdminId 
-               OR UPPER(AdminID) = UPPER(@CandidateAdminId) 
-               OR UPPER(AdminID) = UPPER(@Email);";
-        await using (var cmd = new SqlCommand(updateAdmin, conn))
-        {
-            cmd.Parameters.AddWithValue("@Hash", hashedPassword);
-            cmd.Parameters.AddWithValue("@Email", trimmedEmail);
-            cmd.Parameters.AddWithValue("@CandidateAdminId", candidateAdminId);
-            if (await cmd.ExecuteNonQueryAsync(cancellationToken) > 0)
-            {
-                await TrySyncAspNetUsersAsync(conn, trimmedEmail, hashedPassword, cancellationToken);
-                await LogActivityAsync("PASSWORD_RESET", "Admin", candidateAdminId, "Password reset with verification code", "Admin", candidateAdminId, cancellationToken);
-                return (true, "Password has been successfully reset.");
-            }
-        }
-
-        // Try Employee
-        const string updateEmp = @"
-            UPDATE dbo.Employees 
-            SET EmployeePassword = @Hash, isFirstLogin = 0 
-            WHERE EmployeeEmail = @Email 
-               OR EmployeeID = @Email 
-               OR EmployeeID = @CandidateAdminId 
-               OR UPPER(EmployeeID) = UPPER(@CandidateAdminId) 
-               OR UPPER(EmployeeID) = UPPER(@Email) 
-               OR UPPER(EmployeeEmail) = UPPER(@Email);";
-        await using (var cmd = new SqlCommand(updateEmp, conn))
-        {
-            cmd.Parameters.AddWithValue("@Hash", hashedPassword);
-            cmd.Parameters.AddWithValue("@Email", trimmedEmail);
-            cmd.Parameters.AddWithValue("@CandidateAdminId", candidateAdminId);
-            if (await cmd.ExecuteNonQueryAsync(cancellationToken) > 0)
-            {
-                await TrySyncAspNetUsersAsync(conn, trimmedEmail, hashedPassword, cancellationToken);
-                await LogActivityAsync("PASSWORD_RESET", "Employee", candidateAdminId, "Password reset with verification code", "Employee", candidateAdminId, cancellationToken);
-                return (true, "Password has been successfully reset.");
-            }
-        }
-
-        // Try Customer
         const string updateCust = @"
-            UPDATE dbo.Customer 
-            SET CustomerPassword = @Hash 
-            WHERE CustomerEmail = @Email 
-               OR CustomerID = @Email 
-               OR UPPER(CustomerEmail) = UPPER(@Email) 
-               OR UPPER(CustomerID) = UPPER(@Email);";
+            UPDATE dbo.Customer
+            SET CustomerPassword = @Hash
+            WHERE CustomerID = @CustomerID;";
+
         await using (var cmd = new SqlCommand(updateCust, conn))
         {
             cmd.Parameters.AddWithValue("@Hash", hashedPassword);
-            cmd.Parameters.AddWithValue("@Email", trimmedEmail);
+            cmd.Parameters.AddWithValue("@CustomerID", customerId);
             if (await cmd.ExecuteNonQueryAsync(cancellationToken) > 0)
             {
-                await TrySyncAspNetUsersAsync(conn, trimmedEmail, hashedPassword, cancellationToken);
-                await LogActivityAsync("PASSWORD_RESET", "Customer", trimmedEmail, "Password reset with verification code", "Customer", trimmedEmail, cancellationToken);
+                await TrySyncAspNetUsersAsync(conn, customerId, hashedPassword, cancellationToken);
+                if (!string.IsNullOrWhiteSpace(customerEmail))
+                {
+                    await TrySyncAspNetUsersAsync(conn, customerEmail, hashedPassword, cancellationToken);
+                }
+                await LogActivityAsync("PASSWORD_RESET", "Customer", customerId, "Customer password reset with verification code", "Customer", customerId, cancellationToken);
+                _logger.LogInformation("Customer {CustomerId} password reset successfully.", customerId);
                 return (true, "Password has been successfully reset.");
             }
         }
 
-        return (false, "Account not found.");
+        return (false, "Customer account not found.");
     }
 
     public async Task LogActivityAsync(

@@ -13,8 +13,9 @@ public record CustomerRegisterRequest(
     string Email,
     [property: Required(ErrorMessage = "Password is required.")]
     [property: MinLength(8, ErrorMessage = "Password must be at least 8 characters long.")]
-    [property: RegularExpression(@"^(?=.*[0-9])(?=.*[^a-zA-Z0-9]).{8,}$",
-        ErrorMessage = "Password must be at least 8 characters long and contain at least one number (0–9) and one special character (e.g., @, #, $, !, %, etc.).")]
+    [property: MaxLength(30, ErrorMessage = "Password must not exceed 30 characters.")]
+    [property: RegularExpression(@"^(?=.*[0-9])(?=.*[@#$%&]).{8,30}$",
+        ErrorMessage = "Password must be 8–30 characters long and contain at least one number (0–9) and one special character (@, #, $, %, &).")]
     string Password,
     string VerificationCode,
     [property: Required(ErrorMessage = "Cellphone number is required.")]

@@ -1,4 +1,4 @@
-﻿SET ANSI_NULLS ON;
+SET ANSI_NULLS ON;
 GO
 SET QUOTED_IDENTIFIER ON;
 GO
@@ -2316,6 +2316,7 @@ BEGIN
     OUTPUT inserted.EventAppointmentID, inserted.CustomerID, inserted.EventName, inserted.EventDate, inserted.EventTime
     INTO @Released
     WHERE EventStatus = 'Pending Payment'
+      AND ISNULL(DownpaymentStatus, 'Pending') <> 'Paid'
       AND LockExpiresAt IS NOT NULL
       AND LockExpiresAt <= SYSUTCDATETIME();
 

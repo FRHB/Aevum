@@ -54,7 +54,7 @@ public class CrossRoleEmailUniquenessTests
             LastName: "Santos",
             MiddleName: null,
             Email: "employee@photoaevum.com",
-            Password: "Password123!",
+            Password: "Password123@",
             VerificationCode: "123456",
             PhoneNumber: "09123456789"
         );
@@ -77,7 +77,7 @@ public class CrossRoleEmailUniquenessTests
             LastName: "Santos",
             MiddleName: null,
             Email: "unique.customer@photoaevum.com",
-            Password: "Password123!",
+            Password: "Password123@",
             VerificationCode: "123456",
             PhoneNumber: "09123456789"
         );
@@ -99,7 +99,7 @@ public class CrossRoleEmailUniquenessTests
             LastName: "Dela Cruz",
             MiddleName: null,
             Email: "admin@photoaevum.com",
-            Password: "Password123!",
+            Password: "Password123@",
             Role: AppRoles.Customer
         );
 
@@ -121,7 +121,7 @@ public class CrossRoleEmailUniquenessTests
             LastName: "Dela Cruz",
             MiddleName: null,
             Email: "newadmin@photoaevum.com",
-            Password: "Password123!",
+            Password: "Password123@",
             Role: AppRoles.Admin
         );
 

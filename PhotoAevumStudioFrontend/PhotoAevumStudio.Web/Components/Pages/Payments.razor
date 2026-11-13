@@ -28,14 +28,15 @@
             We couldn't find that booking.
         </div>
     }
-    else if (_info.EventStatus == "Confirmed" || _paid)
+    else if (_info.EventStatus == "Confirmed" || _info.EventStatus == "Shot" || _paid)
     {
         <div class="mt-8 rounded-2xl border border-emerald-200 bg-emerald-50 p-8 text-center shadow-sm" role="status">
             <div class="text-5xl mb-3">&#10003;</div>
             <h1 class="text-2xl font-black text-emerald-900">Payment Completed</h1>
             <p class="mt-2 text-sm text-emerald-800">
-                Your reservation fee for <strong>@_info.EventName</strong> (#@_info.AppointmentId) has been received.
-                Your date and time are now locked in.
+                @(_info.IsFinalPayment
+                    ? $"Your final balance payment for {_info.EventName} (#{_info.AppointmentId}) has been received and verified."
+                    : $"Your reservation fee for {_info.EventName} (#{_info.AppointmentId}) has been received. Your date and time are now locked in.")
             </p>
             <p class="mt-3 text-xs text-slate-600">
                 @_info.EventDate.ToString("MMMM dd, yyyy") at @DateTime.Today.Add(_info.EventTime).ToString("h:mm tt")
@@ -56,7 +57,7 @@
     else
     {
         <div class="mt-8 rounded-2xl border border-slate-200 bg-white p-8 shadow-sm text-center">
-            <h1 class="text-2xl font-black text-slate-900">Pay Your Reservation Fee</h1>
+            <h1 class="text-2xl font-black text-slate-900">@(_info.IsFinalPayment ? "Pay Your Final Balance" : "Pay Your Reservation Fee")</h1>
             <p class="mt-1 text-xs text-slate-500">@_info.EventName &bull; #@_info.AppointmentId</p>
             <p class="mt-1 text-xs text-slate-500">
                 @_info.EventDate.ToString("MMMM dd, yyyy") at @DateTime.Today.Add(_info.EventTime).ToString("h:mm tt")
@@ -79,10 +80,13 @@
                 Open GCash, Maya or any QR&nbsp;Ph-enabled e-wallet and scan this code. This page updates automatically once the payment is received.
             </p>
 
-            <div class="mt-4 inline-block px-4 py-2 rounded-xl bg-amber-50 border border-amber-200 text-amber-900">
-                <div class="text-[10px] uppercase font-bold tracking-wider text-amber-700">Time slot held for</div>
-                <div class="font-mono text-lg font-black" aria-live="off">@_countdown</div>
-            </div>
+            @if (!_info.IsFinalPayment && _info.LockExpiresAt != null)
+            {
+                <div class="mt-4 inline-block px-4 py-2 rounded-xl bg-amber-50 border border-amber-200 text-amber-900">
+                    <div class="text-[10px] uppercase font-bold tracking-wider text-amber-700">Time slot held for</div>
+                    <div class="font-mono text-lg font-black" aria-live="off">@_countdown</div>
+                </div>
+            }
 
             @if (!_hubConnected)
             {

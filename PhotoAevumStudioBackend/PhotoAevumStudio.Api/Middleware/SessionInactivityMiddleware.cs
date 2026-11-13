@@ -26,6 +26,7 @@ public class SessionInactivityMiddleware
         "/api/auth/register-customer",
         "/api/auth/send-verification",
         "/api/auth/verify-code",
+        "/api/auth/verify-reset-code",
         "/api/auth/forgot-password",
         "/api/auth/reset-password",
         "/api/auth/initial-password-change",

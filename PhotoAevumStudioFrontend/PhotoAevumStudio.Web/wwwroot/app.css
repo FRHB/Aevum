@@ -482,6 +482,11 @@ details > summary {
     margin-left: var(--sidebar-w);
     padding: 2rem 2.5rem;
     overflow-x: hidden;
+    transition: margin-left .2s ease;
+}
+
+.aev-shell:has(.aev-sidebar.is-minimized) {
+    --sidebar-w: 76px;
 }
 
 /* ── Sidebar ───────────────────────────────────────────────────────────── */
@@ -500,6 +505,7 @@ details > summary {
     z-index: 100;
     scrollbar-width: thin;
     scrollbar-color: var(--line) transparent;
+    transition: width .2s ease;
 }
 
 /* ── Sidebar brand ─────────────────────────────────────────────────────── */
@@ -526,6 +532,136 @@ details > summary {
     color: var(--ink);
     letter-spacing: -0.01em;
     white-space: nowrap;
+}
+
+.aev-sidebar__minimize-btn {
+    margin-left: auto;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 30px;
+    height: 30px;
+    padding: 0;
+    border-radius: var(--radius-sm);
+    border: 1px solid transparent;
+    background: transparent;
+    color: var(--muted);
+    cursor: pointer;
+    flex-shrink: 0;
+    transition: background .15s, color .15s;
+}
+
+.aev-sidebar__minimize-btn:hover {
+    background: var(--sidebar-hover);
+    color: var(--ink);
+}
+
+/* ── Sidebar Minimized State (keeps logo + 3-line toggle visible) ─────── */
+.aev-sidebar.is-minimized .aev-sidebar__brand {
+    flex-direction: column;
+    justify-content: center;
+    gap: .5rem;
+    padding: .9rem .5rem;
+}
+
+.aev-sidebar.is-minimized .aev-sidebar__brand-text,
+.aev-sidebar.is-minimized .aev-sidebar__section-label,
+.aev-sidebar.is-minimized .aev-sidebar__chevron,
+.aev-sidebar.is-minimized .aev-sidebar__sub {
+    display: none;
+}
+
+.aev-sidebar.is-minimized .aev-sidebar__minimize-btn {
+    margin-left: 0;
+}
+
+.aev-sidebar.is-minimized .aev-sidebar__link {
+    justify-content: center;
+    gap: 0;
+    padding: .65rem .5rem;
+    font-size: 0;
+    line-height: 0;
+}
+
+.aev-sidebar.is-minimized .aev-sidebar__icon {
+    font-size: 1.05rem;
+    line-height: 1;
+    width: 1.5rem;
+    height: 1.5rem;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+}
+
+/* ── Logout Confirmation Dialog ────────────────────────────────────────── */
+.aev-logout-backdrop {
+    position: fixed;
+    inset: 0;
+    background: rgba(17, 17, 17, 0.45);
+    backdrop-filter: blur(2px);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 1rem;
+    z-index: 300;
+}
+
+.aev-logout-modal {
+    background: var(--white, #ffffff);
+    border: 1px solid var(--line, #e4e4e4);
+    border-radius: 12px;
+    padding: 1.5rem;
+    width: 100%;
+    max-width: 360px;
+    box-shadow: 0 20px 40px rgba(0, 0, 0, 0.16);
+}
+
+.aev-logout-modal__title {
+    margin: 0 0 .4rem;
+    font-size: 1.05rem;
+    font-weight: 700;
+    color: var(--ink, #111111);
+}
+
+.aev-logout-modal__message {
+    margin: 0 0 1.25rem;
+    font-size: .9rem;
+    color: var(--muted, #555555);
+}
+
+.aev-logout-modal__actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: .625rem;
+}
+
+.aev-logout-btn {
+    padding: .5rem 1.15rem;
+    border-radius: 8px;
+    font-size: .875rem;
+    font-weight: 600;
+    cursor: pointer;
+    border: 1px solid transparent;
+    transition: background .15s, border-color .15s, opacity .15s;
+}
+
+.aev-logout-btn--no {
+    background: var(--white, #ffffff);
+    border-color: var(--line, #d4d4d8);
+    color: var(--ink, #111111);
+}
+
+.aev-logout-btn--no:hover:not(:disabled) {
+    background: var(--sidebar-hover, #f4f4f5);
+}
+
+.aev-logout-btn--yes {
+    background: #dc2626;
+    color: #ffffff;
+}
+
+.aev-logout-btn--yes:hover:not(:disabled) {
+    background: #b91c1c;
 }
 
 /* ── Sidebar sections (category labels) ────────────────────────────────── */
@@ -1038,6 +1174,42 @@ details > summary {
 
     .aev-sidebar__mobile-close {
         display: block;
+    }
+
+    .aev-sidebar__minimize-btn {
+        display: none;
+    }
+
+    .aev-sidebar.is-minimized {
+        width: var(--sidebar-w);
+    }
+
+    .aev-sidebar.is-minimized .aev-sidebar__brand {
+        flex-direction: row;
+        justify-content: flex-start;
+        padding: 1.25rem 1rem 1rem;
+    }
+
+    .aev-sidebar.is-minimized .aev-sidebar__brand-text,
+    .aev-sidebar.is-minimized .aev-sidebar__section-label,
+    .aev-sidebar.is-minimized .aev-sidebar__chevron {
+        display: initial;
+    }
+
+    .aev-sidebar.is-minimized .aev-sidebar__sub {
+        display: none;
+    }
+
+    .aev-sidebar.is-minimized .aev-sidebar__sub.is-expanded {
+        display: block;
+    }
+
+    .aev-sidebar.is-minimized .aev-sidebar__link {
+        justify-content: flex-start;
+        gap: .625rem;
+        padding: .55rem 1rem;
+        font-size: .875rem;
+        line-height: normal;
     }
 
     .aev-sidebar__backdrop {

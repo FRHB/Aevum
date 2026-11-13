@@ -607,13 +607,20 @@
 
     private static string GenerateTemporaryPassword(int length = 12)
     {
-        const string validChars = "abcdefghijkmnopqrstuvwxyzABCDEFGHJKLMNOPQRSTUVWXYZ23456789!@#$%^&*";
-        var res = new char[length];
-        var bytes = System.Security.Cryptography.RandomNumberGenerator.GetBytes(length);
-        for (int i = 0; i < length; i++)
+        int clampedLength = Math.Clamp(length, PasswordPolicyHelper.MinLength, PasswordPolicyHelper.MaxLength);
+        const string letters = "abcdefghijkmnopqrstuvwxyzABCDEFGHJKLMNOPQRSTUVWXYZ";
+        const string digits = "23456789";
+        const string specials = PasswordPolicyHelper.AllowedSpecialCharacters;
+        const string allChars = letters + digits + specials;
+
+        var res = new char[clampedLength];
+        res[0] = digits[System.Security.Cryptography.RandomNumberGenerator.GetInt32(digits.Length)];
+        res[1] = specials[System.Security.Cryptography.RandomNumberGenerator.GetInt32(specials.Length)];
+        for (int i = 2; i < clampedLength; i++)
         {
-            res[i] = validChars[bytes[i] % validChars.Length];
+            res[i] = allChars[System.Security.Cryptography.RandomNumberGenerator.GetInt32(allChars.Length)];
         }
+        System.Security.Cryptography.RandomNumberGenerator.Shuffle(res.AsSpan());
         return new string(res);
     }
 

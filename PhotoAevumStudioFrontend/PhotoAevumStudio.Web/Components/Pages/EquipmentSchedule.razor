@@ -32,6 +32,10 @@
 else
 {
 <div class="space-y-4 pb-10">
+    @if (_isLoadingSchedule)
+    {
+        <div class="text-xs text-gray-500 py-1">Loading equipments schedule...</div>
+    }
     @* ── 1. COMPACT PAGE HEADER & STATUS STRIP ────────────────────────── *@
     <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 border-b border-gray-200 pb-3">
         <div>
@@ -292,6 +296,8 @@ else
     [CascadingParameter] Task<AuthenticationState>? AuthState { get; set; }
     private ClaimsPrincipal? _currentUser;
     private bool _isUnauthorized;
+    private bool _isLoadingSchedule = true;
+    private bool _hasLoadedInitialData;
 
     protected override async Task OnInitializedAsync()
     {
@@ -307,6 +313,30 @@ else
         }
 
         _isUnauthorized = EmployeeRoleHelper.IsPhotographerOrCreative(_currentUser, UserService);
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender || _hasLoadedInitialData) return;
+        _hasLoadedInitialData = true;
+        await RefreshEquipmentDataAsync();
+        await InvokeAsync(StateHasChanged);
+    }
+
+    private async Task RefreshEquipmentDataAsync()
+    {
+        if (_isUnauthorized)
+        {
+            _isLoadingSchedule = false;
+            return;
+        }
+
+        _isLoadingSchedule = true;
+        var (equipment, reservations) = await Task.Run(() =>
+            (ScheduleService.GetEquipmentResources(), ScheduleService.GetEquipmentReservations()));
+        EquipmentResources = equipment;
+        AllReservations = reservations;
+        _isLoadingSchedule = false;
     }
 
     private ScheduleViewMode _currentView = ScheduleViewMode.Week;
@@ -325,10 +355,10 @@ else
     private TimeOnly _newStartTime = new(9, 0);
     private TimeOnly _newEndTime = new(14, 0);
 
-    private List<EquipmentItemResource> EquipmentResources => ScheduleService.GetEquipmentResources();
-    private List<EquipmentReservationModel> AllReservations => ScheduleService.GetEquipmentReservations();
+    private List<EquipmentItemResource> EquipmentResources = new();
+    private List<EquipmentReservationModel> AllReservations = new();
 
-    private int ConflictCount => ScheduleService.GetEquipmentConflictCount();
+    private int ConflictCount => AllReservations.Count(r => r.HasConflict);
     private int InMaintenanceCount => EquipmentResources.Count(e => e.Status == "In-Maintenance" || e.Status == "Calibration Due");
     private int ThisWeekReservationsCount => AllReservations.Count(r => WeekDays.Any(w => w.Date == r.Date.Date));
     private double ThisWeekHoursCount => AllReservations.Where(r => WeekDays.Any(w => w.Date == r.Date.Date)).Sum(r => r.DurationHours);
@@ -428,12 +458,13 @@ else
     private void OpenDetailDrawer(EquipmentReservationModel res) => _selectedReservation = res;
     private void CloseDetailDrawer() => _selectedReservation = null;
 
-    private void DeleteSelectedReservation()
+    private async Task DeleteSelectedReservation()
     {
         if (_selectedReservation != null)
         {
             ScheduleService.DeleteEquipmentReservation(_selectedReservation.Id);
             _selectedReservation = null;
+            await RefreshEquipmentDataAsync();
         }
     }
 
@@ -459,7 +490,7 @@ else
         _modalErrorMessage = null;
     }
 
-    private void SaveNewReservation()
+    private async Task SaveNewReservation()
     {
         if (_newEndTime <= _newStartTime)
         {
@@ -474,6 +505,7 @@ else
         ScheduleService.AddEquipmentReservation(_newReservation);
         _isCreateModalOpen = false;
         _modalErrorMessage = null;
+        await RefreshEquipmentDataAsync();
     }
 
     private string GetReservationCardStyle(EquipmentReservationModel res)

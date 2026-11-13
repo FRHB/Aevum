@@ -21,8 +21,105 @@ public class ScheduleService : IScheduleService
     private readonly List<EquipmentReservationModel> _inMemoryReservations = new();
 
     private readonly object _eventLock = new();
-    private (DateTime? start, DateTime? end, DateTime fetchedAt, List<EventBookingModel> bookings)? _cachedEventBookings;
-    private readonly TimeSpan _eventCacheDuration = TimeSpan.FromSeconds(30);
+    private static readonly object _sqlCacheLock = new();
+    private static (DateTime? start, DateTime? end, DateTime fetchedAt, List<EventBookingModel> bookings)? _sqlCachedEventBookings;
+    private static (DateTime fetchedAt, List<StaffMemberResource> staff)? _sqlCachedStaffMembers;
+    private static (DateTime fetchedAt, List<StaffShiftModel> shifts)? _sqlCachedStaffShifts;
+    private static (DateTime fetchedAt, List<EquipmentItemResource> equipment)? _sqlCachedEquipmentResources;
+    private static (DateTime fetchedAt, List<EquipmentReservationModel> reservations)? _sqlCachedEquipmentReservations;
+    private static readonly TimeSpan _cacheDuration = TimeSpan.FromSeconds(30);
+
+    public void InvalidateCache()
+    {
+        lock (_sqlCacheLock)
+        {
+            _sqlCachedEventBookings = null;
+            _sqlCachedStaffMembers = null;
+            _sqlCachedStaffShifts = null;
+            _sqlCachedEquipmentResources = null;
+            _sqlCachedEquipmentReservations = null;
+        }
+    }
+
+    private static EventBookingModel CloneBooking(EventBookingModel b) => new()
+    {
+        Id = b.Id,
+        StudioSpaceId = b.StudioSpaceId,
+        StudioSpaceName = b.StudioSpaceName,
+        ClientName = b.ClientName,
+        ClientEmail = b.ClientEmail,
+        ClientPhone = b.ClientPhone,
+        ServiceType = b.ServiceType,
+        Date = b.Date,
+        StartTime = b.StartTime,
+        EndTime = b.EndTime,
+        Status = b.Status,
+        AssignedPhotographer = b.AssignedPhotographer,
+        Notes = b.Notes,
+        EstimatedPrice = b.EstimatedPrice,
+        HasConflict = b.HasConflict,
+        ConflictMessage = b.ConflictMessage,
+        IsConsultation = b.IsConsultation,
+        MeetingLink = b.MeetingLink
+    };
+
+    private static StaffMemberResource CloneStaffMember(StaffMemberResource s) => new()
+    {
+        Id = s.Id,
+        StaffCode = s.StaffCode,
+        FullName = s.FullName,
+        Role = s.Role,
+        Email = s.Email,
+        Status = s.Status,
+        AvatarInitials = s.AvatarInitials,
+        AvatarColor = s.AvatarColor,
+        TargetHoursPerWeek = s.TargetHoursPerWeek
+    };
+
+    private static StaffShiftModel CloneShift(StaffShiftModel s) => new()
+    {
+        Id = s.Id,
+        StaffId = s.StaffId,
+        StaffName = s.StaffName,
+        Role = s.Role,
+        Date = s.Date,
+        StartTime = s.StartTime,
+        EndTime = s.EndTime,
+        Location = s.Location,
+        ShiftType = s.ShiftType,
+        Notes = s.Notes,
+        HasConflict = s.HasConflict,
+        ConflictMessage = s.ConflictMessage
+    };
+
+    private static EquipmentItemResource CloneEquipment(EquipmentItemResource e) => new()
+    {
+        Id = e.Id,
+        Name = e.Name,
+        SerialNumber = e.SerialNumber,
+        Category = e.Category,
+        Status = e.Status,
+        StorageBay = e.StorageBay,
+        BadgeColor = e.BadgeColor
+    };
+
+    private static EquipmentReservationModel CloneReservation(EquipmentReservationModel r) => new()
+    {
+        Id = r.Id,
+        EquipmentId = r.EquipmentId,
+        EquipmentName = r.EquipmentName,
+        Category = r.Category,
+        Date = r.Date,
+        StartTime = r.StartTime,
+        EndTime = r.EndTime,
+        ProjectOrClient = r.ProjectOrClient,
+        TechnicianInCharge = r.TechnicianInCharge,
+        Location = r.Location,
+        MaintenanceStatus = r.MaintenanceStatus,
+        Notes = r.Notes,
+        HasConflict = r.HasConflict,
+        ConflictMessage = r.ConflictMessage
+    };
 
     private readonly List<StudioSpaceResource> _defaultStudioSpaces = new()
     {
@@ -290,34 +387,25 @@ public class ScheduleService : IScheduleService
             return inMemQuery.ToList();
         }
 
-        lock (_eventLock)
+        lock (_sqlCacheLock)
         {
-            if (_cachedEventBookings.HasValue &&
-                _cachedEventBookings.Value.start == startDate &&
-                _cachedEventBookings.Value.end == endDate &&
-                (DateTime.UtcNow - _cachedEventBookings.Value.fetchedAt) < _eventCacheDuration)
+            if (_sqlCachedEventBookings.HasValue &&
+                (DateTime.UtcNow - _sqlCachedEventBookings.Value.fetchedAt) < _cacheDuration)
             {
-                return _cachedEventBookings.Value.bookings.Select(b => new EventBookingModel
+                var cached = _sqlCachedEventBookings.Value;
+                bool coversRange =
+                    (cached.start == null || (startDate.HasValue && startDate.Value.Date >= cached.start.Value.Date)) &&
+                    (cached.end == null || (endDate.HasValue && endDate.Value.Date <= cached.end.Value.Date));
+
+                if (coversRange)
                 {
-                    Id = b.Id,
-                    StudioSpaceId = b.StudioSpaceId,
-                    StudioSpaceName = b.StudioSpaceName,
-                    ClientName = b.ClientName,
-                    ClientEmail = b.ClientEmail,
-                    ClientPhone = b.ClientPhone,
-                    ServiceType = b.ServiceType,
-                    Date = b.Date,
-                    StartTime = b.StartTime,
-                    EndTime = b.EndTime,
-                    Status = b.Status,
-                    AssignedPhotographer = b.AssignedPhotographer,
-                    Notes = b.Notes,
-                    EstimatedPrice = b.EstimatedPrice,
-                    HasConflict = b.HasConflict,
-                    ConflictMessage = b.ConflictMessage,
-                    IsConsultation = b.IsConsultation,
-                    MeetingLink = b.MeetingLink
-                }).ToList();
+                    var cachedQuery = cached.bookings.AsEnumerable();
+                    if (startDate.HasValue)
+                        cachedQuery = cachedQuery.Where(b => b.Date.Date >= startDate.Value.Date);
+                    if (endDate.HasValue)
+                        cachedQuery = cachedQuery.Where(b => b.Date.Date <= endDate.Value.Date);
+                    return cachedQuery.Select(CloneBooking).ToList();
+                }
             }
         }
 
@@ -339,15 +427,22 @@ public class ScheduleService : IScheduleService
                        CAST(ea.EventDate AS datetime2) AS EventDate,
                        ea.EventTime,
                        ea.EventStatus,
-                       emp.EmployeeID,
-                       COALESCE(NULLIF(LTRIM(RTRIM(emp.EmployeeFirstName + ' ' + ISNULL(emp.EmployeeLastName, ''))), ''), emp.EmployeeID, 'Unassigned') AS EmployeeName,
+                       leadEmp.EmployeeID,
+                       COALESCE(leadEmp.EmployeeName, 'Unassigned') AS EmployeeName,
                        CAST(0 AS bit) AS IsConsultation,
                        NULL AS MeetingLink
                 FROM dbo.EventAppointment ea
                 LEFT JOIN dbo.Customer c ON c.CustomerID = ea.CustomerID
-                LEFT JOIN dbo.EventEmployee ee ON ee.EventAppointmentID = ea.EventAppointmentID
-                LEFT JOIN dbo.Employees emp ON emp.EmployeeID = ee.EmployeeID
-                WHERE ea.EventAppointmentID NOT IN (
+                OUTER APPLY (
+                    SELECT TOP 1 ee.EmployeeID,
+                           COALESCE(NULLIF(LTRIM(RTRIM(emp.EmployeeFirstName + ' ' + ISNULL(emp.EmployeeLastName, ''))), ''), emp.EmployeeID, 'Unassigned') AS EmployeeName
+                    FROM dbo.EventEmployee ee
+                    LEFT JOIN dbo.Employees emp ON emp.EmployeeID = ee.EmployeeID
+                    WHERE ee.EventAppointmentID = ea.EventAppointmentID
+                    ORDER BY ISNULL(ee.IsTeamLeader, 0) DESC, ee.EmployeeID
+                ) leadEmp
+                WHERE ISNULL(ea.EventStatus, '') NOT IN ('Cancelled', 'Expired')
+                AND ea.EventAppointmentID NOT IN (
                     SELECT EventAppointmentID 
                     FROM dbo.BookingNegotiation 
                     WHERE EventAppointmentID IS NOT NULL 
@@ -356,7 +451,8 @@ public class ScheduleService : IScheduleService
                 AND ea.EventAppointmentID NOT IN (
                     SELECT 'EVT-' + RIGHT(NegotiationID, 4)
                     FROM dbo.BookingNegotiation
-                    WHERE NegotiationStatus IN ('Pending_Call', 'Rescheduled', 'Deal_Lost', 'Cancelled')
+                    WHERE EventAppointmentID IS NULL
+                      AND NegotiationStatus IN ('Pending_Call', 'Rescheduled', 'Deal_Lost', 'Cancelled')
                 )
                 AND (@StartDate IS NULL OR CAST(ea.EventDate AS date) >= @StartDate)
                 AND (@EndDate IS NULL OR CAST(ea.EventDate AS date) <= @EndDate)
@@ -444,9 +540,9 @@ public class ScheduleService : IScheduleService
 
         RecalculateEventConflicts(bookings);
 
-        lock (_eventLock)
+        lock (_sqlCacheLock)
         {
-            _cachedEventBookings = (startDate, endDate, DateTime.UtcNow, bookings);
+            _sqlCachedEventBookings = (startDate, endDate, DateTime.UtcNow, bookings.Select(CloneBooking).ToList());
         }
 
         return bookings;
@@ -454,10 +550,7 @@ public class ScheduleService : IScheduleService
 
     public void AddEventBooking(EventBookingModel booking)
     {
-        lock (_eventLock)
-        {
-            _cachedEventBookings = null;
-        }
+        InvalidateCache();
 
         if (string.IsNullOrWhiteSpace(booking.Id))
             booking.Id = "EVT-" + DateTime.UtcNow.ToString("yyyyMMdd") + "-" + Guid.NewGuid().ToString("N")[..4].ToUpperInvariant();
@@ -543,10 +636,7 @@ public class ScheduleService : IScheduleService
 
     public void UpdateEventBooking(EventBookingModel booking)
     {
-        lock (_eventLock)
-        {
-            _cachedEventBookings = null;
-        }
+        InvalidateCache();
 
         if (string.IsNullOrWhiteSpace(booking.Id)) return;
 
@@ -630,10 +720,7 @@ public class ScheduleService : IScheduleService
 
     public void DeleteEventBooking(string id)
     {
-        lock (_eventLock)
-        {
-            _cachedEventBookings = null;
-        }
+        InvalidateCache();
 
         if (string.IsNullOrWhiteSpace(id)) return;
 
@@ -729,6 +816,15 @@ public class ScheduleService : IScheduleService
             return _inMemoryStaff;
         }
 
+        lock (_sqlCacheLock)
+        {
+            if (_sqlCachedStaffMembers.HasValue &&
+                (DateTime.UtcNow - _sqlCachedStaffMembers.Value.fetchedAt) < _cacheDuration)
+            {
+                return _sqlCachedStaffMembers.Value.staff.Select(CloneStaffMember).ToList();
+            }
+        }
+
         var staff = new List<StaffMemberResource>();
 
         try
@@ -745,6 +841,7 @@ public class ScheduleService : IScheduleService
                 FROM dbo.Employees emp
                 LEFT JOIN dbo.EmployeeJointSpecialization ejs ON ejs.EmployeeID = emp.EmployeeID
                 LEFT JOIN dbo.EmployeeSpecialization es ON es.SpecializationID = ejs.SpecializationID
+                WHERE ISNULL(emp.EmployeeStatus, 'Active') NOT IN ('Archive', 'Inactive')
                 GROUP BY emp.EmployeeID, emp.EmployeeFirstName, emp.EmployeeLastName, emp.EmployeeEmail, emp.EmployeeStatus
                 ORDER BY emp.EmployeeID;";
 
@@ -779,6 +876,11 @@ public class ScheduleService : IScheduleService
                     TargetHoursPerWeek = 40
                 });
             }
+
+            lock (_sqlCacheLock)
+            {
+                _sqlCachedStaffMembers = (DateTime.UtcNow, staff.Select(CloneStaffMember).ToList());
+            }
         }
         catch
         {
@@ -795,6 +897,15 @@ public class ScheduleService : IScheduleService
             return _inMemoryShifts;
         }
 
+        lock (_sqlCacheLock)
+        {
+            if (_sqlCachedStaffShifts.HasValue &&
+                (DateTime.UtcNow - _sqlCachedStaffShifts.Value.fetchedAt) < _cacheDuration)
+            {
+                return _sqlCachedStaffShifts.Value.shifts.Select(CloneShift).ToList();
+            }
+        }
+
         var shifts = new List<StaffShiftModel>();
 
         try
@@ -809,12 +920,24 @@ public class ScheduleService : IScheduleService
                        ea.EventDate,
                        ea.EventTime,
                        ea.EventName,
-                       COALESCE(es.SpecializationName, 'Photographer') AS Role
+                       COALESCE(spec.SpecializationName, 'Photographer') AS Role
                 FROM dbo.EventEmployee ee
                 INNER JOIN dbo.EventAppointment ea ON ea.EventAppointmentID = ee.EventAppointmentID
                 INNER JOIN dbo.Employees emp ON emp.EmployeeID = ee.EmployeeID
-                LEFT JOIN dbo.EmployeeJointSpecialization ejs ON ejs.EmployeeID = emp.EmployeeID
-                LEFT JOIN dbo.EmployeeSpecialization es ON es.SpecializationID = ejs.SpecializationID
+                OUTER APPLY (
+                    SELECT TOP 1 es.SpecializationName
+                    FROM dbo.EmployeeJointSpecialization ejs
+                    INNER JOIN dbo.EmployeeSpecialization es ON es.SpecializationID = ejs.SpecializationID
+                    WHERE ejs.EmployeeID = emp.EmployeeID
+                    ORDER BY es.SpecializationID
+                ) spec
+                WHERE ISNULL(ea.EventStatus, '') NOT IN ('Cancelled', 'Expired')
+                  AND ea.EventAppointmentID NOT IN (
+                      SELECT EventAppointmentID
+                      FROM dbo.BookingNegotiation
+                      WHERE EventAppointmentID IS NOT NULL
+                        AND NegotiationStatus IN ('Pending_Call', 'Rescheduled', 'Deal_Lost', 'Cancelled')
+                  )
                 ORDER BY ea.EventDate DESC, ea.EventTime DESC;";
 
             using var cmd = new SqlCommand(sql, conn);
@@ -855,11 +978,18 @@ public class ScheduleService : IScheduleService
 
         shifts.AddRange(_inMemoryShifts);
         RecalculateShiftConflicts(shifts);
+
+        lock (_sqlCacheLock)
+        {
+            _sqlCachedStaffShifts = (DateTime.UtcNow, shifts.Select(CloneShift).ToList());
+        }
+
         return shifts;
     }
 
     public void AddStaffShift(StaffShiftModel shift)
     {
+        InvalidateCache();
         if (string.IsNullOrWhiteSpace(shift.Id))
             shift.Id = Guid.NewGuid().ToString("N")[..8];
 
@@ -894,6 +1024,7 @@ public class ScheduleService : IScheduleService
     public void DeleteStaffShift(string id)
     {
         if (string.IsNullOrWhiteSpace(id)) return;
+        InvalidateCache();
 
         if (_inMemoryShifts.RemoveAll(s => s.Id == id) > 0)
         {
@@ -966,6 +1097,15 @@ public class ScheduleService : IScheduleService
             return _inMemoryEquipment;
         }
 
+        lock (_sqlCacheLock)
+        {
+            if (_sqlCachedEquipmentResources.HasValue &&
+                (DateTime.UtcNow - _sqlCachedEquipmentResources.Value.fetchedAt) < _cacheDuration)
+            {
+                return _sqlCachedEquipmentResources.Value.equipment.Select(CloneEquipment).ToList();
+            }
+        }
+
         var list = new List<EquipmentItemResource>();
 
         try
@@ -999,6 +1139,11 @@ public class ScheduleService : IScheduleService
                     BadgeColor = "bg-emerald-50 text-emerald-700 border-emerald-200"
                 });
             }
+
+            lock (_sqlCacheLock)
+            {
+                _sqlCachedEquipmentResources = (DateTime.UtcNow, list.Select(CloneEquipment).ToList());
+            }
         }
         catch
         {
@@ -1013,6 +1158,15 @@ public class ScheduleService : IScheduleService
         {
             RecalculateEquipmentConflicts(_inMemoryReservations);
             return _inMemoryReservations;
+        }
+
+        lock (_sqlCacheLock)
+        {
+            if (_sqlCachedEquipmentReservations.HasValue &&
+                (DateTime.UtcNow - _sqlCachedEquipmentReservations.Value.fetchedAt) < _cacheDuration)
+            {
+                return _sqlCachedEquipmentReservations.Value.reservations.Select(CloneReservation).ToList();
+            }
         }
 
         var reservations = new List<EquipmentReservationModel>();
@@ -1030,13 +1184,25 @@ public class ScheduleService : IScheduleService
                        ea.EventDate,
                        ea.EventTime,
                        ea.EventName,
-                       COALESCE(NULLIF(LTRIM(RTRIM(emp.EmployeeFirstName + ' ' + ISNULL(emp.EmployeeLastName, ''))), ''), emp.EmployeeID, 'Lead Technician') AS Technician
+                       COALESCE(leadEmp.EmployeeName, 'Lead Technician') AS Technician
                 FROM dbo.EventEquipment eeq
                 INNER JOIN dbo.EventAppointment ea ON ea.EventAppointmentID = eeq.EventAppointmentID
                 INNER JOIN dbo.Equipment eq ON eq.EquipmentID = eeq.EquipmentID
                 LEFT JOIN dbo.EquipmentType et ON et.EquipmentTypeID = eq.EquipmentTypeID
-                LEFT JOIN dbo.EventEmployee ee ON ee.EventAppointmentID = ea.EventAppointmentID
-                LEFT JOIN dbo.Employees emp ON emp.EmployeeID = ee.EmployeeID
+                OUTER APPLY (
+                    SELECT TOP 1 COALESCE(NULLIF(LTRIM(RTRIM(emp.EmployeeFirstName + ' ' + ISNULL(emp.EmployeeLastName, ''))), ''), emp.EmployeeID) AS EmployeeName
+                    FROM dbo.EventEmployee ee
+                    INNER JOIN dbo.Employees emp ON emp.EmployeeID = ee.EmployeeID
+                    WHERE ee.EventAppointmentID = ea.EventAppointmentID
+                    ORDER BY ISNULL(ee.IsTeamLeader, 0) DESC, ee.EmployeeID
+                ) leadEmp
+                WHERE ISNULL(ea.EventStatus, '') NOT IN ('Cancelled', 'Expired')
+                  AND ea.EventAppointmentID NOT IN (
+                      SELECT EventAppointmentID
+                      FROM dbo.BookingNegotiation
+                      WHERE EventAppointmentID IS NOT NULL
+                        AND NegotiationStatus IN ('Pending_Call', 'Rescheduled', 'Deal_Lost', 'Cancelled')
+                  )
                 ORDER BY ea.EventDate DESC, ea.EventTime DESC;";
 
             using var cmd = new SqlCommand(sql, conn);
@@ -1079,12 +1245,19 @@ public class ScheduleService : IScheduleService
         }
 
         RecalculateEquipmentConflicts(reservations);
+
+        lock (_sqlCacheLock)
+        {
+            _sqlCachedEquipmentReservations = (DateTime.UtcNow, reservations.Select(CloneReservation).ToList());
+        }
+
         return reservations;
     }
 
     public void AddEquipmentReservation(EquipmentReservationModel reservation)
     {
         if (string.IsNullOrWhiteSpace(reservation.EquipmentId)) return;
+        InvalidateCache();
 
         if (_useInMemory)
         {
@@ -1173,6 +1346,7 @@ public class ScheduleService : IScheduleService
     public void DeleteEquipmentReservation(string id)
     {
         if (string.IsNullOrWhiteSpace(id)) return;
+        InvalidateCache();
 
         if (_useInMemory)
         {

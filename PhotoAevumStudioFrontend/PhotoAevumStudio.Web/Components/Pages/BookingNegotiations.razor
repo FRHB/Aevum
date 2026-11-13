@@ -4011,7 +4011,7 @@
 
 
         {
-
+            RefreshStudioScheduleCache();
 
 
             await LoadNegotiationsAsync();
@@ -4265,6 +4265,7 @@
 
             if (res.IsSuccess)
             {
+                RefreshStudioScheduleCache();
                 _isRescheduleModalOpen = false;
                 await LoadNegotiationsAsync();
                 _selectedNegotiation = _negotiations.FirstOrDefault(n => n.NegotiationId == _selectedNegotiation.NegotiationId);
@@ -4452,7 +4453,7 @@
         _wizardEventTime = DateTime.Today.AddHours(14);
         if (ScheduleService != null)
         {
-            try { _studioBookings = ScheduleService.GetEventBookings(); } catch { }
+            RefreshStudioScheduleCache();
         }
         var initSlots = GetWizardDaySlots(_wizardEventDate);
         var firstAvail = initSlots.FirstOrDefault(s => s.IsAvailable);
@@ -4842,30 +4843,6 @@
 
 
 
-        if (!string.IsNullOrWhiteSpace(_wizardCreatedAppointmentId))
-
-
-
-        {
-
-
-
-            _wizardStep = 2;
-
-
-
-            return;
-
-
-
-        }
-
-
-
-
-
-
-
         _submittingWizard = true;
 
 
@@ -4964,7 +4941,7 @@
 
                 _wizardPaymentStatus = res.Value.DownpaymentStatus;
 
-
+                RefreshStudioScheduleCache();
 
                 await DisplayToast("Reservation fee invoice generated & payment email dispatched to customer.");
 
@@ -5180,7 +5157,7 @@
 
                 _wizardPaymentStatus = res.Value.DownpaymentStatus;
 
-
+                RefreshStudioScheduleCache();
 
                 await DisplayToast("Reservation invoice generated & payment email dispatched to customer.");
 
@@ -5319,11 +5296,7 @@
 
 
                 await ConsultationApi.UpdateAppointmentRosterAsync(_wizardCreatedAppointmentId, rosterReq);
-
-
-
-
-
+                RefreshStudioScheduleCache();
 
 
                 // Check live payment status
@@ -5441,6 +5414,7 @@
             {
 
                 _wizardPaymentStatus = res.Value.DownpaymentStatus;
+                RefreshStudioScheduleCache();
 
                 await DisplayToast("✓ Simulated Xendit Webhook received! Reservation deposit verified & email sent to customer.");
 
@@ -5521,7 +5495,7 @@
 
 
                 {
-
+                    RefreshStudioScheduleCache();
 
 
                     await DisplayToast("Payment verified! Reservation fee is marked as PAID.");
@@ -5720,54 +5694,46 @@
 
 
 
-    private async Task FinalizeBookingAsync()
-
-
-
+    private void RefreshStudioScheduleCache()
     {
+        if (ScheduleService == null) return;
+        try
+        {
+            ScheduleService.InvalidateCache();
+            _studioBookings = ScheduleService.GetEventBookings();
+        }
+        catch { }
+    }
 
+    private async Task FinalizeBookingAsync()
+    {
+        if (!string.IsNullOrWhiteSpace(_wizardCreatedAppointmentId) && (_selectedEmployeeIds.Count > 0 || _selectedEquipmentIds.Count > 0))
+        {
+            try
+            {
+                await ConsultationApi.UpdateAppointmentRosterAsync(_wizardCreatedAppointmentId, new UpdateAppointmentRosterRequest
+                {
+                    EmployeeIds = _selectedEmployeeIds.ToList(),
+                    TeamLeaderEmployeeId = _teamLeaderId,
+                    EquipmentIds = _selectedEquipmentIds.ToList()
+                });
+            }
+            catch { }
+        }
 
-
-        
-
-
-
-
-
-
+        RefreshStudioScheduleCache();
 
         _isWizardOpen = false;
-
-
-
         _countdownTimer?.Dispose();
-
-
 
         await LoadNegotiationsAsync();
 
-
-
         if (_selectedNegotiation != null)
-
-
-
         {
-
-
-
             _selectedNegotiation = _negotiations.FirstOrDefault(n => n.NegotiationId == _selectedNegotiation.NegotiationId);
-
-
-
         }
 
-
-
         await DisplayToast(_wizardPaymentStatus == "Paid" || _wizardPaymentStatus == "Confirmed" ? "Event photoshoot confirmed and booked successfully!" : "Slot reserved as Pending Payment (1-hour lock active).");
-
-
-
     }
 
 

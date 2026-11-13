@@ -29,6 +29,10 @@
 else
 {
 <div class="space-y-4 pb-10">
+    @if (_isLoadingSchedule)
+    {
+        <div class="text-xs text-gray-500 py-1">Loading staff schedule...</div>
+    }
     @* ── 1. COMPACT PAGE HEADER & STATUS STRIP ────────────────────────── *@
     <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 border-b border-gray-200 pb-3">
         <div>
@@ -518,6 +522,8 @@ else
     [CascadingParameter] Task<AuthenticationState>? AuthState { get; set; }
     private ClaimsPrincipal? _currentUser;
     private bool _isUnauthorized;
+    private bool _isLoadingSchedule = true;
+    private bool _hasLoadedInitialData;
 
     protected override async Task OnInitializedAsync()
     {
@@ -533,6 +539,30 @@ else
         }
 
         _isUnauthorized = EmployeeRoleHelper.IsPhotographerOrCreative(_currentUser, UserService);
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender || _hasLoadedInitialData) return;
+        _hasLoadedInitialData = true;
+        await RefreshScheduleDataAsync();
+        await InvokeAsync(StateHasChanged);
+    }
+
+    private async Task RefreshScheduleDataAsync()
+    {
+        if (_isUnauthorized)
+        {
+            _isLoadingSchedule = false;
+            return;
+        }
+
+        _isLoadingSchedule = true;
+        var (staff, shifts) = await Task.Run(() =>
+            (ScheduleService.GetStaffMembers(), ScheduleService.GetStaffShifts()));
+        StaffMembers = staff;
+        AllShifts = shifts;
+        _isLoadingSchedule = false;
     }
 
     private ScheduleViewMode _currentView = ScheduleViewMode.Week;
@@ -552,10 +582,10 @@ else
     private TimeOnly _newStartTime = new(9, 0);
     private TimeOnly _newEndTime = new(17, 0);
 
-    private List<StaffMemberResource> StaffMembers => ScheduleService.GetStaffMembers();
-    private List<StaffShiftModel> AllShifts => ScheduleService.GetStaffShifts();
+    private List<StaffMemberResource> StaffMembers = new();
+    private List<StaffShiftModel> AllShifts = new();
 
-    private int ConflictCount => ScheduleService.GetShiftConflictCount();
+    private int ConflictCount => AllShifts.Count(s => s.HasConflict);
     private int OpenShiftsCount => AllShifts.Count(s => s.IsOpenShift);
     private int ThisWeekShiftsCount => AllShifts.Count(s => WeekDays.Any(w => w.Date == s.Date.Date));
     private double TotalScheduledHoursThisWeek => AllShifts.Where(s => WeekDays.Any(w => w.Date == s.Date.Date)).Sum(s => s.DurationHours);
@@ -707,12 +737,13 @@ else
     private void OpenDetailDrawer(StaffShiftModel shift) => _selectedShift = shift;
     private void CloseDetailDrawer() => _selectedShift = null;
 
-    private void DeleteSelectedShift()
+    private async Task DeleteSelectedShift()
     {
         if (_selectedShift != null)
         {
             ScheduleService.DeleteStaffShift(_selectedShift.Id);
             _selectedShift = null;
+            await RefreshScheduleDataAsync();
         }
     }
 
@@ -737,7 +768,7 @@ else
         _modalErrorMessage = null;
     }
 
-    private void SaveNewShift()
+    private async Task SaveNewShift()
     {
         if (_newEndTime <= _newStartTime)
         {
@@ -758,6 +789,7 @@ else
         ScheduleService.AddStaffShift(_newShift);
         _isCreateModalOpen = false;
         _modalErrorMessage = null;
+        await RefreshScheduleDataAsync();
     }
 
     private string GetShiftCardStyle(StaffShiftModel shift)

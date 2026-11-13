@@ -142,6 +142,16 @@ public sealed class ConsultationClient(
 
         SendAsync<EventAppointmentDto>(() => _http.PostAsJsonAsync($"api/payments/complete-event/{appointmentId}", request, ct), ct);
 
+    public async Task<ApiResult<IReadOnlyList<TeamLeaderEventDto>>> GetTeamLeaderEventsAsync(string? employeeId = null, CancellationToken ct = default)
+    {
+        var url = "api/payments/team-leader-events" + (!string.IsNullOrWhiteSpace(employeeId) ? $"?employeeId={Uri.EscapeDataString(employeeId)}" : "");
+        var result = await SendAsync<List<TeamLeaderEventDto>>(() => _http.GetAsync(url, ct), ct);
+        return result.IsSuccess ? ApiResult<IReadOnlyList<TeamLeaderEventDto>>.Ok(result.Value!) : new(null, result.Error);
+    }
+
+    public Task<ApiResult<EventAppointmentDto>> UpdateTeamLeaderEventStatusAsync(string appointmentId, UpdateTeamLeaderStatusRequest request, CancellationToken ct = default) =>
+        SendAsync<EventAppointmentDto>(() => _http.PostAsJsonAsync($"api/payments/team-leader-events/{Uri.EscapeDataString(appointmentId)}/status", request, ct), ct);
+
 
 
     public Task<ApiResult<PaymentBreakdownModel>> CalculateReservationFeeAsync(decimal total, CancellationToken ct = default) =>

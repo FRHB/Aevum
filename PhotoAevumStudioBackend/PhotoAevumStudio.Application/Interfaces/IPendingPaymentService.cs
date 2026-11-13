@@ -1,7 +1,7 @@
 namespace PhotoAevumStudio.Application.Interfaces;
 
 /// <summary>Result of a validated Xendit QR payment confirmation.</summary>
-public record PaymentConfirmation(string AppointmentId, string CustomerId, decimal Amount);
+public record PaymentConfirmation(string AppointmentId, string CustomerId, decimal Amount, bool IsFinalPayment = false);
 
 /// <summary>A 'Pending Payment' booking whose LockExpiresAt elapsed and whose slot was released.</summary>
 public record ExpiredBooking(
@@ -25,6 +25,7 @@ public class QrPaymentInfoDto
     public decimal Amount { get; set; }
     public string? QrString { get; set; }
     public DateTime? LockExpiresAt { get; set; }
+    public bool IsFinalPayment { get; set; }
 }
 
 public interface IPendingPaymentService

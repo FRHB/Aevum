@@ -5996,16 +5996,37 @@ public class UserService : IUserService
 
 
 					UPDATE dbo.PaymentTransactions
-
 					SET EmployeeRemittanceStatus = 'Cleared',
-
+					    Status = 'Paid',
 					    AdminApproverID = @AdminId,
-
 					    ApprovalTimestamp = SYSUTCDATETIME()
-
 					WHERE CAST(ABS(CHECKSUM(PaymentTransactionID)) % 100000 AS int) = @PaymentId
-
 					   OR PaymentTransactionID = CAST(@PaymentId AS nvarchar(50));
+
+					IF OBJECT_ID(N'dbo.EventAppointment', N'U') IS NOT NULL
+					BEGIN
+						UPDATE ea
+						SET ea.EventStatus = 'Shot',
+						    ea.FinalPaymentStatus = 'Paid',
+						    ea.FinalPaymentPaidAt = SYSUTCDATETIME()
+						FROM dbo.EventAppointment ea
+						INNER JOIN dbo.PaymentTransactions pt ON pt.EventAppointmentID = ea.EventAppointmentID
+						WHERE (CAST(ABS(CHECKSUM(pt.PaymentTransactionID)) % 100000 AS int) = @PaymentId
+						    OR pt.PaymentTransactionID = CAST(@PaymentId AS nvarchar(50)))
+						  AND ea.EventStatus = 'Pending Verification';
+
+						IF OBJECT_ID(N'dbo.Payments', N'U') IS NOT NULL
+						BEGIN
+							UPDATE ea
+							SET ea.EventStatus = 'Shot',
+							    ea.FinalPaymentStatus = 'Paid',
+							    ea.FinalPaymentPaidAt = SYSUTCDATETIME()
+							FROM dbo.EventAppointment ea
+							INNER JOIN dbo.Payments p ON p.EventAppointmentId = ea.EventAppointmentID
+							WHERE p.Id = @PaymentId
+							  AND ea.EventStatus = 'Pending Verification';
+						END;
+					END;
 
 				END;
 

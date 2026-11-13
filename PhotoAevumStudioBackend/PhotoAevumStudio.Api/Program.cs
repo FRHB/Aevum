@@ -106,6 +106,7 @@ builder.Services.AddIdentity<ApplicationUser, IdentityRole>(options =>
 {
     options.Password.RequiredLength         = 8;
     options.Password.RequireDigit           = true;
+    options.Password.RequireLowercase       = false; // Policy requires length 8-30, digit, and special char
     options.Password.RequireUppercase       = false; // Relaxed for studio staff
     options.Password.RequireNonAlphanumeric = true;  // Special character required (@, #, $, !, %, etc.)
     options.User.RequireUniqueEmail         = true;

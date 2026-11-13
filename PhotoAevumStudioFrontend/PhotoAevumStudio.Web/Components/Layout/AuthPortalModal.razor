@@ -1,30 +1,28 @@
 @* =====================================================================
-   AuthPortalModal.razor  –  Shared inline auth modal
+   AuthPortalModal.razor  –  Customer Account Creation Modal
    
-   Manages the full auth flow:
-   - View.Chooser        → "Customer Login" / "Admin Login"
-   - View.CustomerLogin  → email + password form
-   - View.ForgotPassword → email → "code sent" confirmation
-   - View.SignUp         → 4-step wizard (Name → Email → Verify → Password)
+   Manages the 3-step customer registration wizard:
+   - Step 1: Account Info (Name, Phone, Email) & Terms + Privacy
+   - Step 2: Email Verification Code
+   - Step 3: Password  →  commits registration & returns to /login
 
    ACID Compliance Notes:
    ──────────────────────
    Atomicity   – Each wizard step is individually validated; the final
-                 RegisterAsync call is the single atomic commit. No partial
-                 records are written until all four pages are complete.
+                 RegisterCustomerWithResultAsync call is the single atomic
+                 commit. No partial records are written until all steps complete.
    Consistency – DataAnnotation validators on every field prevent invalid
                  state from advancing to the next step.
    Isolation   – All state is scoped to this component instance; concurrent
                  sessions cannot observe in-progress registration.
-   Durability  – Durability is guaranteed by the backend API (the JWT +
-                 HTTP POST to /api/auth/register). The UI side clears all
-                 in-memory state on success so a crash cannot re-submit.
+   Durability  – Durability is guaranteed by the backend API (HTTP POST to
+                 /api/auth/register). The UI side clears all in-memory state
+                 on success so a crash cannot re-submit.
    ===================================================================== *@
 
 @using System.ComponentModel.DataAnnotations
 @inject IAuthService AuthService
 @inject NavigationManager Nav
-@inject AuthenticationStateProvider AuthStateProvider
 
 @if (IsVisible)
 {
@@ -44,173 +42,35 @@
         </div>
 
         @* ════════════════════════════════════════════════════════════
-           VIEW: Chooser
-           ═══════════════════════════════════════════════════════════ *@
-        @if (_view == ModalView.Chooser)
-        {
-            <h2 id="apm-title" class="apm-title">Welcome Back</h2>
-            <p class="apm-subtitle">How would you like to sign in?</p>
-
-            <div class="apm-chooser-grid">
-                <button class="apm-chooser-card" @onclick="GoCustomerLogin">
-                    <span class="apm-chooser-icon" aria-hidden="true">👤</span>
-                    <span class="apm-chooser-label">Customer Login</span>
-                    <span class="apm-chooser-desc">Access your bookings &amp; gallery</span>
-                </button>
-                <button class="apm-chooser-card" @onclick="GoAdminLogin">
-                    <span class="apm-chooser-icon" aria-hidden="true">🔐</span>
-                    <span class="apm-chooser-label">Admin / Staff Login</span>
-                    <span class="apm-chooser-desc">Studio management portal</span>
-                </button>
-            </div>
-        }
-
-        @* ════════════════════════════════════════════════════════════
-           VIEW: Customer Login
-           ═══════════════════════════════════════════════════════════ *@
-        @if (_view == ModalView.CustomerLogin)
-        {
-            <button class="apm-back" @onclick="() => _view = ModalView.Chooser" aria-label="Back">‹ Back</button>
-            <h2 id="apm-title" class="apm-title">Sign In</h2>
-
-            @if (!string.IsNullOrEmpty(_loginError))
-            {
-                <div class="apm-error" role="alert">@_loginError</div>
-            }
-
-            <EditForm Model="_loginForm" OnValidSubmit="HandleCustomerLogin">
-                <DataAnnotationsValidator />
-
-                <div class="apm-field">
-                    <label for="cl-email">Account ID or Email</label>
-                    <InputText id="cl-email" type="text" class="apm-input" @bind-Value="_loginForm.Email"
-                               placeholder="e.g. client email or Staff ID (ADM-001, EMP-001)" autocomplete="username" />
-                    <ValidationMessage For="() => _loginForm.Email" class="apm-validation" />
-                </div>
-
-                <div class="apm-field">
-                    <label for="cl-password">Password</label>
-                    <div class="apm-input-wrap">
-                        <InputText id="cl-password" type="@(_showLoginPw ? "text" : "password")"
-                                   class="apm-input" @bind-Value="_loginForm.Password"
-                                   placeholder="••••••••" autocomplete="current-password" />
-                        <button type="button" class="apm-pw-toggle"
-                                @onclick='() => _showLoginPw = !_showLoginPw'
-                                aria-label="@(_showLoginPw ? "Hide password" : "Show password")"
-                                title="@(_showLoginPw ? "Hide password" : "Show password")">
-                            @if (_showLoginPw)
-                            {
-                                <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-                                    <path d="M9.88 9.88a3 3 0 1 0 4.24 4.24"/>
-                                    <path d="M10.73 5.08A10.43 10.43 0 0 1 12 5c7 0 10 7 10 7a13.16 13.16 0 0 1-1.67 2.68"/>
-                                    <path d="M6.61 6.61A13.526 13.526 0 0 0 2 12s3 7 10 7a9.74 9.74 0 0 0 5.39-1.61"/>
-                                    <line x1="2" x2="22" y1="2" y2="22"/>
-                                </svg>
-                            }
-                            else
-                            {
-                                <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-                                    <path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7Z"/>
-                                    <circle cx="12" cy="12" r="3"/>
-                                </svg>
-                            }
-                        </button>
-                    </div>
-                    <div class="flex justify-end mt-1">
-                        <button type="button" class="apm-link text-xs" @onclick="() => _view = ModalView.ForgotPassword">
-                            Forgot password?
-                        </button>
-                    </div>
-                    <ValidationMessage For="() => _loginForm.Password" class="apm-validation" />
-                </div>
-
-                <button type="submit" class="apm-btn apm-btn--primary" disabled="@_isBusy">
-                    @if (_isBusy) { <span>Signing in…</span> } else { <span>Sign In</span> }
-                </button>
-            </EditForm>
-
-            <div class="apm-divider"><span>New here?</span></div>
-            <button class="apm-btn apm-btn--ghost" @onclick="StartSignUp">
-                Create an account
-            </button>
-        }
-
-        @* ════════════════════════════════════════════════════════════
-           VIEW: Forgot Password
-           ═══════════════════════════════════════════════════════════ *@
-        @if (_view == ModalView.ForgotPassword)
-        {
-            <button class="apm-back" @onclick="() => _view = ModalView.CustomerLogin" aria-label="Back">‹ Back</button>
-            <h2 id="apm-title" class="apm-title">Reset Password</h2>
-
-            @if (_fpSent)
-            {
-                <div class="apm-success" role="status">
-                    <svg class="w-5 h-5 text-emerald-600 shrink-0 inline-block mr-1.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
-                    </svg>
-                    A reset link has been sent to <strong>@_fpForm.Email</strong>.
-                    Please check your inbox and follow the instructions.
-                </div>
-                <button class="apm-btn apm-btn--ghost" @onclick="() => _view = ModalView.CustomerLogin">
-                    Back to Login
-                </button>
-            }
-            else
-            {
-                <p class="apm-subtitle">Enter the email address associated with your account and we'll send you a link to reset your password.</p>
-
-                @if (!string.IsNullOrEmpty(_fpError))
-                {
-                    <div class="apm-error" role="alert">@_fpError</div>
-                }
-
-                <EditForm Model="_fpForm" OnValidSubmit="HandleForgotPassword">
-                    <DataAnnotationsValidator />
-
-                    <div class="apm-field">
-                        <label for="fp-email">Email address</label>
-                        <InputText id="fp-email" type="email" class="apm-input" @bind-Value="_fpForm.Email"
-                                   placeholder="you@example.com" autocomplete="email" />
-                        <ValidationMessage For="() => _fpForm.Email" class="apm-validation" />
-                    </div>
-
-                    <button type="submit" class="apm-btn apm-btn--primary" disabled="@_isBusy">
-                        @if (_isBusy) { <span>Sending…</span> } else { <span>Send Reset Link</span> }
-                    </button>
-                </EditForm>
-            }
-        }
-
-        @* ════════════════════════════════════════════════════════════
-           VIEW: Sign-Up Wizard  (3 steps)
+           Sign-Up Wizard  (3 steps)
            Step 1 – Account Info (First, Last, Middle Name, Phone, Email) & Terms + Privacy
            Step 2 – Email Verification Code
-           Step 3 – Password  →  commits registration & transitions to Sign In
+           Step 3 – Password  →  commits registration & returns to /login
            ═══════════════════════════════════════════════════════════ *@
-        @if (_view == ModalView.SignUp)
+        @if (_signUpStep > 1)
         {
             <button class="apm-back" @onclick="SignUpBack" aria-label="Back">‹ Back</button>
-            <h2 id="apm-title" class="apm-title">Create Account</h2>
+        }
+        <h2 id="apm-title" class="apm-title">Create Account</h2>
 
-            @* ── Stepper ─────────────────────────────────────────── *@
-            <ol class="apm-stepper" aria-label="Registration steps">
-                @for (int i = 1; i <= 3; i++)
-                {
-                    var step = i; // capture for closure
-                    <li class="apm-stepper__item @(step == _signUpStep ? "is-current" : step < _signUpStep ? "is-done" : "")">
-                        <span class="apm-stepper__dot">@(step < _signUpStep ? "✓" : step.ToString())</span>
-                        <span class="apm-stepper__label">
-                            @switch (step)
-                            {
-                                case 1: <text>Account</text> break;
-                                case 2: <text>Verify</text> break;
-                                case 3: <text>Password</text> break;
-                            }
-                        </span>
-                    </li>
-                }
-            </ol>
+        @* ── Stepper ─────────────────────────────────────────── *@
+        <ol class="apm-stepper" aria-label="Registration steps">
+            @for (int i = 1; i <= 3; i++)
+            {
+                var step = i; // capture for closure
+                <li class="apm-stepper__item @(step == _signUpStep ? "is-current" : step < _signUpStep ? "is-done" : "")">
+                    <span class="apm-stepper__dot">@(step < _signUpStep ? "✓" : step.ToString())</span>
+                    <span class="apm-stepper__label">
+                        @switch (step)
+                        {
+                            case 1: <text>Account</text> break;
+                            case 2: <text>Verify</text> break;
+                            case 3: <text>Password</text> break;
+                        }
+                    </span>
+                </li>
+            }
+        </ol>
 
             @* ── Step 1: Personal Info, Contact, Email & Legal Agreements ───────────────────── *@
             @if (_signUpStep == 1)
@@ -360,7 +220,9 @@
                         <div class="apm-input-wrap">
                             <InputText id="su-pw" type="@(_showSignUpPw ? "text" : "password")"
                                        class="apm-input" @bind-Value="_suPassword.Password"
-                                       placeholder="Min. 8 characters" autocomplete="new-password" />
+                                       @oninput='e => _suPassword.Password = e.Value?.ToString() ?? string.Empty'
+                                       maxlength="30"
+                                       placeholder="8–30 characters" autocomplete="new-password" />
                             <button type="button" class="apm-pw-toggle"
                                     @onclick='() => _showSignUpPw = !_showSignUpPw'
                                     aria-label="@(_showSignUpPw ? "Hide password" : "Show password")"
@@ -383,6 +245,7 @@
                                 }
                             </button>
                         </div>
+                        <PasswordRequirementsChecklist Password="@_suPassword.Password" CssClass="mt-2" />
                         <ValidationMessage For="() => _suPassword.Password" class="apm-validation" />
                     </div>
 
@@ -391,6 +254,7 @@
                         <div class="apm-input-wrap">
                             <InputText id="su-pw2" type="@(_showSignUpConfirmPw ? "text" : "password")"
                                        class="apm-input" @bind-Value="_suPassword.ConfirmPassword"
+                                       maxlength="30"
                                        placeholder="Repeat your password" autocomplete="new-password" />
                             <button type="button" class="apm-pw-toggle"
                                     @onclick='() => _showSignUpConfirmPw = !_showSignUpConfirmPw'
@@ -422,7 +286,6 @@
                     </button>
                 </EditForm>
             }
-        }
 
     </div>
 
@@ -438,27 +301,22 @@
     [Parameter] public bool IsVisible     { get; set; }
     [Parameter] public EventCallback OnClose { get; set; }
     [Parameter] public EventCallback<string> OnRegistered { get; set; }
-    [Parameter] public string? InitialView { get; set; }
 
-    // ── Modal state ─────────────────────────────────────────────────────────
-    private enum ModalView { Chooser, CustomerLogin, ForgotPassword, SignUp }
-    private ModalView _view = ModalView.Chooser;
-
-    private bool _isBusy       = false;
-    private bool _showLoginPw  = false;
+    private bool _wasVisible = false;
+    private bool _isBusy     = false;
     private bool _showSignUpPw = false;
     private bool _showSignUpConfirmPw = false;
     private bool _showTermsModal = false;
     private bool _showPrivacyModal = false;
-    private string _loginSuccessNotice = string.Empty;
 
     protected override void OnParametersSet()
     {
-        if (string.Equals(InitialView, "SignUp", StringComparison.OrdinalIgnoreCase))
+        if (IsVisible && !_wasVisible)
         {
-            _view = ModalView.SignUp;
+            ResetSignUpForms();
             _signUpStep = 1;
         }
+        _wasVisible = IsVisible;
     }
 
     private void OpenTermsModal() => _showTermsModal = true;
@@ -480,15 +338,6 @@
         StateHasChanged();
     }
 
-    // ── Customer Login form ─────────────────────────────────────────────────
-    private CustomerLoginForm  _loginForm  = new();
-    private string             _loginError = string.Empty;
-
-    // ── Forgot Password form ────────────────────────────────────────────────
-    private ForgotPasswordForm _fpForm  = new();
-    private string             _fpError = string.Empty;
-    private bool               _fpSent  = false;
-
     // ── Sign-Up wizard state  (ACID: all in-memory until final commit) ───────
     private int                _signUpStep        = 1;
     private SignUpDetailsForm  _suDetails         = new();
@@ -499,23 +348,6 @@
     private string             _suSignUpError     = string.Empty;
     private string             _step1TermsError   = string.Empty;
     private string             _step1PrivacyError = string.Empty;
-
-    // ── Navigation helpers ──────────────────────────────────────────────────
-    private void GoCustomerLogin() => _view = ModalView.CustomerLogin;
-
-    private void GoAdminLogin()
-    {
-        // Admin login always uses the dedicated /login page
-        Nav.NavigateTo("/login");
-        _ = OnClose.InvokeAsync();
-    }
-
-    private void StartSignUp()
-    {
-        ResetSignUpForms();
-        _signUpStep = 1;
-        _view = ModalView.SignUp;
-    }
 
     private async Task HandleStep1Submit()
     {
@@ -572,91 +404,13 @@
     {
         if (_signUpStep > 1)
             _signUpStep--;
-        else
-            _view = ModalView.CustomerLogin;
     }
 
     private void Close()
     {
-        _view = ModalView.Chooser;
+        ResetSignUpForms();
+        _signUpStep = 1;
         _ = OnClose.InvokeAsync();
-    }
-
-    // ── Customer Login ──────────────────────────────────────────────────────
-    private async Task HandleCustomerLogin()
-    {
-        _loginError = string.Empty;
-        _isBusy = true;
-        StateHasChanged();
-
-        // ACID Atomicity: single AuthService.LoginAsync call — all-or-nothing.
-        // If it fails, no state is mutated; the user stays on the login view.
-        var result = await AuthService.LoginAsync(_loginForm.Email, _loginForm.Password, CancellationToken.None);
-
-        if (result.RequiresPasswordChange)
-        {
-            Close();
-            Nav.NavigateTo($"/change-password?userId={Uri.EscapeDataString(result.UserId ?? _loginForm.Email)}");
-            return;
-        }
-
-        if (result.Success)
-        {
-            // ACID Durability: token is persisted by AevumAuthenticationStateProvider.
-            var state = await AuthStateProvider.GetAuthenticationStateAsync();
-            var user  = state.User;
-            Close();
-
-            bool isSuper = user.IsInRole("Super Admin") ||
-                (!string.IsNullOrEmpty(result.Role) && result.Role.Contains("Super", StringComparison.OrdinalIgnoreCase)) ||
-                (!string.IsNullOrEmpty(_loginForm.Email) && _loginForm.Email.StartsWith("SADM-", StringComparison.OrdinalIgnoreCase));
-
-            bool isAdmin = isSuper || user.IsInRole("Admin") ||
-                (!string.IsNullOrEmpty(result.Role) && result.Role.Contains("Admin", StringComparison.OrdinalIgnoreCase)) ||
-                (!string.IsNullOrEmpty(_loginForm.Email) && _loginForm.Email.StartsWith("ADM-", StringComparison.OrdinalIgnoreCase));
-
-            bool isEmployee = user.IsInRole("Employee") ||
-                user.IsInRole("Office Clerk") ||
-                (!string.IsNullOrEmpty(result.Role) && (result.Role.Contains("Employee", StringComparison.OrdinalIgnoreCase) || result.Role.Contains("Staff", StringComparison.OrdinalIgnoreCase) || result.Role.Contains("Clerk", StringComparison.OrdinalIgnoreCase))) ||
-                (!string.IsNullOrEmpty(_loginForm.Email) && (_loginForm.Email.StartsWith("EMP-", StringComparison.OrdinalIgnoreCase) || _loginForm.Email.StartsWith("CLK-", StringComparison.OrdinalIgnoreCase)));
-
-            if (isAdmin)        Nav.NavigateTo("/admin");
-            else if (isEmployee) Nav.NavigateTo("/staff");
-            else                               Nav.NavigateTo("/my");
-        }
-        else
-        {
-            _loginError = result.Error ?? "Invalid email or password. Please try again.";
-        }
-
-        _isBusy = false;
-    }
-
-    // ── Forgot Password ─────────────────────────────────────────────────────
-    private async Task HandleForgotPassword()
-    {
-        _fpError = string.Empty;
-        _isBusy  = true;
-        StateHasChanged();
-
-        try
-        {
-            var ok = await AuthService.ForgotPasswordAsync(_fpForm.Email.Trim().ToLowerInvariant());
-            if (ok)
-            {
-                _fpSent = true;
-            }
-            else
-            {
-                _fpError = "Could not send the reset email. Please try again.";
-            }
-        }
-        catch
-        {
-            _fpError = "Could not send the reset email. Please try again.";
-        }
-
-        _isBusy = false;
     }
 
     // ── Sign-Up Step 2: Resend verification code ─────────────────────────────
@@ -727,12 +481,10 @@
             return;
         }
 
-        if (string.IsNullOrWhiteSpace(_suPassword.Password) ||
-            _suPassword.Password.Length < 8 ||
-            !_suPassword.Password.Any(char.IsDigit) ||
-            !System.Text.RegularExpressions.Regex.IsMatch(_suPassword.Password, @"[^a-zA-Z0-9]"))
+        var policyError = PasswordPolicyHelper.GetValidationError(_suPassword.Password);
+        if (policyError is not null)
         {
-            _suSignUpError = "Password must be at least 8 characters long and contain at least one number (0–9) and one special character (e.g., @, #, $, !, %, etc.).";
+            _suSignUpError = policyError;
             _isBusy = false;
             return;
         }
@@ -763,8 +515,6 @@
                 var registeredEmail = _suDetails.Email.Trim();
                 ResetSignUpForms();
                 _signUpStep = 1;
-                _view = ModalView.Chooser;
-                _loginSuccessNotice = string.Empty;
 
                 if (OnRegistered.HasDelegate)
                 {
@@ -813,22 +563,6 @@
 
     // ── Form models with DataAnnotations ────────────────────────────────────
 
-    private sealed class CustomerLoginForm
-    {
-        [Required(ErrorMessage = "Account ID or Email is required.")]
-        public string Email { get; set; } = string.Empty;
-
-        [Required(ErrorMessage = "Password is required.")]
-        public string Password { get; set; } = string.Empty;
-    }
-
-    private sealed class ForgotPasswordForm
-    {
-        [Required(ErrorMessage = "Please enter your email address.")]
-        [EmailAddress(ErrorMessage = "Enter a valid email address.")]
-        public string Email { get; set; } = string.Empty;
-    }
-
     private sealed class SignUpDetailsForm
     {
         [Required(ErrorMessage = "First name is required.")]
@@ -874,8 +608,9 @@
     {
         [Required(ErrorMessage = "Password is required.")]
         [MinLength(8, ErrorMessage = "Password must be at least 8 characters long.")]
-        [RegularExpression(@"^(?=.*[0-9])(?=.*[^a-zA-Z0-9]).{8,}$",
-            ErrorMessage = "Password must be at least 8 characters long and contain at least one number (0–9) and one special character (e.g., @, #, $, !, %, etc.).")]
+        [MaxLength(30, ErrorMessage = "Password must not exceed 30 characters.")]
+        [RegularExpression(PasswordPolicyHelper.PolicyRegexPattern,
+            ErrorMessage = "Password must be 8–30 characters long and contain at least one number (0–9) and one special character (@, #, $, %, &).")]
         public string Password { get; set; } = string.Empty;
 
         [Required(ErrorMessage = "Please confirm your password.")]

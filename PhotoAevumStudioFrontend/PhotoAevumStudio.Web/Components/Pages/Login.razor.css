@@ -13,7 +13,7 @@
 .login-card {
     position: relative;
     background-color: #ffffff;
-    padding: 3rem 2.5rem;
+    padding: 2.25rem 2.25rem;
     border-radius: 16px;
     box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.35);
     width: 100%;
@@ -56,18 +56,21 @@
 .logo-wrapper {
     display: flex;
     justify-content: center;
-    margin-bottom: 1.25rem;
+    margin-bottom: 0.5rem;
 }
 
 .aevum-logo {
-    max-width: 130px;
+    display: block;
+    width: min(300px, 100%);
+    aspect-ratio: 16 / 7;
     height: auto;
-    object-fit: contain;
+    object-fit: cover;
+    object-position: 50% 45%;
 }
 
 .portal-badge-container {
     text-align: center;
-    margin-bottom: 0.75rem;
+    margin-bottom: 0.45rem;
 }
 
 .portal-badge {
@@ -86,18 +89,11 @@
 .login-header {
     text-align: center;
     font-weight: 700;
-    font-size: 1.5rem;
+    font-size: 1.45rem;
     color: #111827;
-    margin-bottom: 1.75rem;
+    margin-top: 0;
+    margin-bottom: 1.35rem;
     letter-spacing: -0.02em;
-}
-
-.login-subtext {
-    text-align: center;
-    font-size: 0.85rem;
-    color: #6b7280;
-    margin-bottom: 2rem;
-    line-height: 1.4;
 }
 
 /* --- Input Group & Labels --- */
@@ -138,26 +134,34 @@
 }
 
 /* --- Text Fields --- */
-.minimal-input {
+.minimal-input,
+.input-group ::deep .minimal-input {
     padding: 0.85rem 1rem;
     border: 1px solid #d1d5db;
     border-radius: 8px;
     background-color: #f9fafb;
     font-size: 0.95rem;
+    line-height: 1.5;
     color: #111827;
     width: 100%;
     box-sizing: border-box;
-    transition: all 0.2s ease;
+    transition: border-color 0.2s ease, background-color 0.2s ease, box-shadow 0.2s ease;
 }
 
-.minimal-input:focus {
+.input-group ::deep .password-input-wrapper .minimal-input {
+    padding-right: 2.75rem;
+}
+
+.minimal-input:focus,
+.input-group ::deep .minimal-input:focus {
     outline: none;
     border-color: #111827;
     background-color: #ffffff;
     box-shadow: 0 0 0 2px rgba(17, 24, 39, 0.15);
 }
 
-.minimal-input::placeholder {
+.minimal-input::placeholder,
+.input-group ::deep .minimal-input::placeholder {
     color: #9ca3af;
 }
 

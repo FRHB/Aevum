@@ -30,7 +30,6 @@
         </div>
 
         <h2 class="login-header">Sign In</h2>
-        <p class="login-subtext">Sign in to access your bookings, gallery, or studio management portal</p>
 
         <!-- Blazor EditForm for Unified Data Binding -->
         <EditForm Model="@loginModel" OnValidSubmit="HandleLogin">
@@ -40,7 +39,8 @@
                        id="userId"
                        class="minimal-input"
                        @bind="loginModel.UserId"
-                       placeholder="e.g. client email or Staff ID (ADM-001, EMP-001)"
+                       @bind:event="oninput"
+                       placeholder="Enter your Account Email or ID"
                        required
                        disabled="@isSubmitting" />
             </div>
@@ -53,9 +53,12 @@
                                @bind-Value="loginModel.Password"
                                Placeholder="Enter your account password"
                                Disabled="@isSubmitting" />
-                <div class="forgot-password-row">
-                    <a href="/forgot-password" class="forgot-password-link">Forgot password?</a>
-                </div>
+                @if (!IsStaffOrAdminIdentifier(loginModel.UserId))
+                {
+                    <div class="forgot-password-row">
+                        <a href="/forgot-password" class="forgot-password-link">Forgot password?</a>
+                    </div>
+                }
             </div>
 
             <!-- Display error message if login fails -->
@@ -91,7 +94,7 @@
 
         <!-- Client registration prompt for customers -->
         <div class="client-signup-prompt">
-            <span>New customer?</span>
+            <span>No Account?</span>
             <button type="button" class="signup-link bg-transparent border-0 p-0 text-black font-semibold cursor-pointer underline" @onclick="() => showRegisterModal = true">
                 Create an account
             </button>
@@ -113,8 +116,7 @@
 <!-- Inline Registration Portal Modal for new client account creation -->
 <AuthPortalModal IsVisible="showRegisterModal"
                  OnClose="() => showRegisterModal = false"
-                 OnRegistered="HandleCustomerRegistered"
-                 InitialView="SignUp" />
+                 OnRegistered="HandleCustomerRegistered" />
 
 @code {
     [SupplyParameterFromQuery]
@@ -197,6 +199,19 @@
     private void NavigateToHome()
     {
         NavManager.NavigateTo("/");
+    }
+
+    private static bool IsStaffOrAdminIdentifier(string? identifier)
+    {
+        if (string.IsNullOrWhiteSpace(identifier))
+            return false;
+
+        var trimmed = identifier.Trim();
+        return trimmed.StartsWith("ADM-", StringComparison.OrdinalIgnoreCase)
+            || trimmed.StartsWith("SADM-", StringComparison.OrdinalIgnoreCase)
+            || trimmed.StartsWith("EMP-", StringComparison.OrdinalIgnoreCase)
+            || trimmed.StartsWith("CLK-", StringComparison.OrdinalIgnoreCase)
+            || trimmed.EndsWith("@photoaevum.studio", StringComparison.OrdinalIgnoreCase);
     }
 
     public class LoginCredentials
