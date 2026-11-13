@@ -21,19 +21,37 @@ public class R2StorageService : IR2StorageService
     public string ServicesBucket { get; }
     public string ArchiveBucket { get; }
 
+    private static string? FirstNonEmpty(params string?[] values)
+    {
+        foreach (var v in values)
+        {
+            if (!string.IsNullOrWhiteSpace(v) && !v.Equals("PLACEHOLDER", StringComparison.OrdinalIgnoreCase))
+                return v.Trim();
+        }
+        return null;
+    }
+
     public R2StorageService(IConfiguration configuration, ILogger<R2StorageService> logger)
     {
         _logger = logger;
-        var accessKey = configuration["CloudflareR2:AccessKey"]
-                        ?? configuration["R2_ACCESS_KEY"]
+        var accessKey = FirstNonEmpty(
+                            configuration["CloudflareR2:AccessKey"],
+                            configuration["CloudflareR2__AccessKey"],
+                            configuration["R2_ACCESS_KEY"])
                         ?? "PLACEHOLDER";
-        var secretKey = configuration["CloudflareR2:SecretKey"]
-                        ?? configuration["R2_SECRET_KEY"]
+        var secretKey = FirstNonEmpty(
+                            configuration["CloudflareR2:SecretKey"],
+                            configuration["CloudflareR2__SecretKey"],
+                            configuration["R2_SECRET_KEY"])
                         ?? "PLACEHOLDER";
-        var accountId = configuration["CloudflareR2:AccountId"]
-                        ?? configuration["R2_ACCOUNT_ID"];
-        var serviceUrl = configuration["CloudflareR2:ServiceUrl"]
-                         ?? configuration["R2_SERVICE_URL"];
+        var accountId = FirstNonEmpty(
+                            configuration["CloudflareR2:AccountId"],
+                            configuration["CloudflareR2__AccountId"],
+                            configuration["R2_ACCOUNT_ID"]);
+        var serviceUrl = FirstNonEmpty(
+                            configuration["CloudflareR2:ServiceUrl"],
+                            configuration["CloudflareR2__ServiceUrl"],
+                            configuration["R2_SERVICE_URL"]);
 
         if (string.IsNullOrWhiteSpace(serviceUrl))
         {
@@ -41,15 +59,26 @@ public class R2StorageService : IR2StorageService
                 ? $"https://{accountId.Trim()}.r2.cloudflarestorage.com"
                 : "https://f6757b400d51c23671cedb8b0efc4b32.r2.cloudflarestorage.com";
         }
+        serviceUrl = serviceUrl.TrimEnd('/');
 
-        _publicBaseUrl = (configuration["CloudflareR2:PublicUrl"] ?? serviceUrl).TrimEnd('/');
+        _publicBaseUrl = (FirstNonEmpty(
+                            configuration["CloudflareR2:PublicUrl"],
+                            configuration["CloudflareR2__PublicUrl"],
+                            serviceUrl) ?? serviceUrl).TrimEnd('/');
 
-        PortfolioBucket = configuration["CloudflareR2:Buckets:Portfolio"]
-                          ?? configuration["CloudflareR2:BucketName"]
+        PortfolioBucket = FirstNonEmpty(
+                            configuration["CloudflareR2:Buckets:Portfolio"],
+                            configuration["CloudflareR2__Buckets__Portfolio"],
+                            configuration["CloudflareR2:BucketName"],
+                            configuration["CloudflareR2__BucketName"])
                           ?? "portfolio";
-        ServicesBucket = configuration["CloudflareR2:Buckets:Services"]
+        ServicesBucket = FirstNonEmpty(
+                            configuration["CloudflareR2:Buckets:Services"],
+                            configuration["CloudflareR2__Buckets__Services"])
                          ?? "services";
-        ArchiveBucket = configuration["CloudflareR2:Buckets:Archive"]
+        ArchiveBucket = FirstNonEmpty(
+                            configuration["CloudflareR2:Buckets:Archive"],
+                            configuration["CloudflareR2__Buckets__Archive"])
                         ?? "archive";
 
         _isConfigured = !string.IsNullOrWhiteSpace(accessKey) 
@@ -63,6 +92,7 @@ public class R2StorageService : IR2StorageService
             var s3Config = new AmazonS3Config
             {
                 ServiceURL = serviceUrl,
+                ForcePathStyle = true,
                 AuthenticationRegion = "auto"
             };
             _s3Client = new AmazonS3Client(credentials, s3Config);
@@ -299,10 +329,17 @@ public class R2StorageService : IR2StorageService
         if (string.IsNullOrWhiteSpace(fileName))
             return string.Empty;
 
-        var cleanKey = fileName.TrimStart('/');
+        var cleanKey = ExtractObjectKey(fileName);
+        if (string.IsNullOrWhiteSpace(cleanKey))
+            return string.Empty;
+
         var targetBucket = !string.IsNullOrWhiteSpace(bucketName)
             ? bucketName.Trim()
-            : (cleanKey.StartsWith("services", StringComparison.OrdinalIgnoreCase) ? ServicesBucket : PortfolioBucket);
+            : (cleanKey.StartsWith("services", StringComparison.OrdinalIgnoreCase)
+               || cleanKey.StartsWith("packages", StringComparison.OrdinalIgnoreCase)
+               || cleanKey.StartsWith("equipment", StringComparison.OrdinalIgnoreCase)
+                ? ServicesBucket
+                : PortfolioBucket);
 
         if (_isConfigured && _s3Client != null)
         {
@@ -312,7 +349,7 @@ public class R2StorageService : IR2StorageService
                 {
                     BucketName = targetBucket,
                     Key = cleanKey,
-                    Expires = DateTime.UtcNow.AddHours(1)
+                    Expires = DateTime.UtcNow.AddHours(24)
                 };
                 var presigned = _s3Client.GetPreSignedURL(request);
                 if (!string.IsNullOrWhiteSpace(presigned))
@@ -324,6 +361,33 @@ public class R2StorageService : IR2StorageService
             }
         }
 
-        return $"{_publicBaseUrl}/{targetBucket}/{cleanKey}";
+        return string.Empty;
+    }
+
+    public static string ExtractObjectKey(string? fileNameOrUrl)
+    {
+        if (string.IsNullOrWhiteSpace(fileNameOrUrl))
+            return string.Empty;
+
+        var raw = fileNameOrUrl.Trim();
+        if (raw.StartsWith("http://", StringComparison.OrdinalIgnoreCase) ||
+            raw.StartsWith("https://", StringComparison.OrdinalIgnoreCase))
+        {
+            if (Uri.TryCreate(raw, UriKind.Absolute, out var uri))
+            {
+                var path = uri.AbsolutePath.TrimStart('/');
+                if (path.StartsWith("portfolio/portfolio/", StringComparison.OrdinalIgnoreCase))
+                    return path["portfolio/".Length..];
+                if (path.StartsWith("services/services/", StringComparison.OrdinalIgnoreCase))
+                    return path["services/".Length..];
+                if (path.StartsWith("services/packages/", StringComparison.OrdinalIgnoreCase))
+                    return path["services/".Length..];
+                if (path.StartsWith("services/equipment/", StringComparison.OrdinalIgnoreCase))
+                    return path["services/".Length..];
+                return path;
+            }
+        }
+
+        return raw.TrimStart('/');
     }
 }

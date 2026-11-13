@@ -24,6 +24,18 @@ if (!string.IsNullOrEmpty(infisicalClientId) && !string.IsNullOrEmpty(infisicalC
                 .SetUniversalAuth(infisicalClientId, infisicalClientSecret)
                 .Build())
             .Build());
+
+        var normalizedSecrets = builder.Configuration.AsEnumerable()
+            .Where(kvp => kvp.Key.Contains("__", StringComparison.Ordinal) && !string.IsNullOrWhiteSpace(kvp.Value))
+            .ToDictionary(
+                kvp => kvp.Key.Replace("__", ":", StringComparison.Ordinal),
+                kvp => kvp.Value,
+                StringComparer.OrdinalIgnoreCase);
+
+        if (normalizedSecrets.Count > 0)
+        {
+            builder.Configuration.AddInMemoryCollection(normalizedSecrets);
+        }
     }
     catch (Exception ex)
     {

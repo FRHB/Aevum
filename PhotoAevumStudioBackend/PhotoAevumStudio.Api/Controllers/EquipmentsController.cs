@@ -5,6 +5,7 @@ using Microsoft.Data.SqlClient;
 using Microsoft.EntityFrameworkCore;
 using PhotoAevumStudio.Application.Auth;
 using PhotoAevumStudio.Application.DTOs;
+using PhotoAevumStudio.Application.Interfaces;
 using PhotoAevumStudio.Infrastructure.Data;
 
 namespace PhotoAevumStudio.Api.Controllers;
@@ -16,6 +17,7 @@ public class EquipmentsController : ControllerBase
     private readonly ApplicationDbContext _db;
     private readonly IWebHostEnvironment _env;
     private readonly ILogger<EquipmentsController> _logger;
+    private readonly IR2StorageService? _r2Storage;
 
     private static readonly HashSet<string> AllowedImageExtensions = new(StringComparer.OrdinalIgnoreCase)
     {
@@ -27,11 +29,35 @@ public class EquipmentsController : ControllerBase
     public EquipmentsController(
         ApplicationDbContext db,
         IWebHostEnvironment env,
-        ILogger<EquipmentsController> logger)
+        ILogger<EquipmentsController> logger,
+        IR2StorageService? r2Storage = null)
     {
         _db = db;
         _env = env;
         _logger = logger;
+        _r2Storage = r2Storage;
+    }
+
+    private string? ResolveEquipmentImagePath(string? rawPath)
+    {
+        if (string.IsNullOrWhiteSpace(rawPath))
+            return null;
+
+        if (rawPath.StartsWith("data:", StringComparison.OrdinalIgnoreCase))
+            return rawPath;
+
+        if (_r2Storage != null && (
+            rawPath.StartsWith("equipment/", StringComparison.OrdinalIgnoreCase) ||
+            rawPath.StartsWith("services/", StringComparison.OrdinalIgnoreCase) ||
+            rawPath.Contains("r2.cloudflarestorage.com", StringComparison.OrdinalIgnoreCase) ||
+            rawPath.Contains("r2.dev", StringComparison.OrdinalIgnoreCase)))
+        {
+            var presigned = _r2Storage.GetPresignedUrl(rawPath, _r2Storage.ServicesBucket);
+            if (!string.IsNullOrWhiteSpace(presigned))
+                return presigned;
+        }
+
+        return rawPath;
     }
 
     private string GetConnectionString() =>
@@ -151,7 +177,7 @@ public class EquipmentsController : ControllerBase
                     EquipmentType: reader.GetString(4),
                     EquipmentStatus: reader.GetString(5),
                     SerialNo: reader.IsDBNull(6) ? null : reader.GetString(6),
-                    ImagePath: reader.IsDBNull(7) ? null : reader.GetString(7),
+                    ImagePath: ResolveEquipmentImagePath(reader.IsDBNull(7) ? null : reader.GetString(7)),
                     CreatedAt: reader.GetDateTime(8)
                 ));
             }
@@ -203,7 +229,7 @@ public class EquipmentsController : ControllerBase
                     EquipmentType: reader.GetString(4),
                     EquipmentStatus: reader.GetString(5),
                     SerialNo: reader.IsDBNull(6) ? null : reader.GetString(6),
-                    ImagePath: reader.IsDBNull(7) ? null : reader.GetString(7),
+                    ImagePath: ResolveEquipmentImagePath(reader.IsDBNull(7) ? null : reader.GetString(7)),
                     CreatedAt: reader.GetDateTime(8)
                 ));
             }
@@ -220,7 +246,7 @@ public class EquipmentsController : ControllerBase
     /// <summary>
     /// Creates a new Equipment record via multipart/form-data.
     /// Securely generates sequential custom ID (EQP-####) using atomic SQL Sequence,
-    /// saves the uploaded image to the server disk, and stores the file path in the database.
+    /// uploads the image to Cloudflare R2 (or local disk fallback), and stores the key/path in the database.
     /// </summary>
     [HttpPost]
     [Authorize(Policy = "StaffOrAbove")]
@@ -259,28 +285,43 @@ public class EquipmentsController : ControllerBase
 
             try
             {
-                var webRoot = _env.WebRootPath ?? Path.Combine(Directory.GetCurrentDirectory(), "wwwroot");
-                var uploadsFolder = Path.Combine(webRoot, "uploads", "equipment");
-                if (!Directory.Exists(uploadsFolder))
+                using var ms = new MemoryStream();
+                await dto.ImageFile.CopyToAsync(ms, ct);
+                var imageBytes = ms.ToArray();
+
+                if (_r2Storage != null)
                 {
-                    Directory.CreateDirectory(uploadsFolder);
+                    var r2Key = await _r2Storage.UploadServiceImageAsync(
+                        imageBytes,
+                        dto.ImageFile.FileName,
+                        dto.ImageFile.ContentType ?? "image/jpeg",
+                        "equipment",
+                        ct);
+                    if (!string.IsNullOrWhiteSpace(r2Key))
+                    {
+                        relativeWebPath = r2Key;
+                    }
                 }
 
-                var safeFileName = $"eqp_{DateTime.UtcNow:yyyyMMdd_HHmmss}_{Guid.NewGuid():N}{extension}";
-                savedFilePhysicalPath = Path.Combine(uploadsFolder, safeFileName);
-
-                await using (var fileStream = new FileStream(savedFilePhysicalPath, FileMode.Create, FileAccess.Write))
+                if (string.IsNullOrWhiteSpace(relativeWebPath))
                 {
-                    await dto.ImageFile.CopyToAsync(fileStream, ct);
-                }
+                    var webRoot = _env.WebRootPath ?? Path.Combine(Directory.GetCurrentDirectory(), "wwwroot");
+                    var uploadsFolder = Path.Combine(webRoot, "uploads", "equipment");
+                    if (!Directory.Exists(uploadsFolder))
+                    {
+                        Directory.CreateDirectory(uploadsFolder);
+                    }
 
-                relativeWebPath = $"/uploads/equipment/{safeFileName}";
-                _logger.LogInformation("Saved equipment image to {PhysicalPath}", savedFilePhysicalPath);
+                    var safeFileName = $"eqp_{DateTime.UtcNow:yyyyMMdd_HHmmss}_{Guid.NewGuid():N}{extension}";
+                    savedFilePhysicalPath = Path.Combine(uploadsFolder, safeFileName);
+                    await System.IO.File.WriteAllBytesAsync(savedFilePhysicalPath, imageBytes, ct);
+                    relativeWebPath = $"/uploads/equipment/{safeFileName}";
+                }
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Failed to write uploaded image to disk.");
-                return StatusCode(500, new { message = "Could not save uploaded image to server storage.", error = ex.Message });
+                _logger.LogError(ex, "Failed to save uploaded equipment image.");
+                return StatusCode(500, new { message = "Could not save uploaded image to storage.", error = ex.Message });
             }
         }
 
@@ -327,7 +368,7 @@ public class EquipmentsController : ControllerBase
                     EquipmentType: createdType,
                     EquipmentStatus: createdStatus,
                     SerialNo: createdSerial,
-                    ImagePath: createdImg,
+                    ImagePath: ResolveEquipmentImagePath(createdImg),
                     CreatedAt: createdDate
                 );
 
@@ -346,7 +387,7 @@ public class EquipmentsController : ControllerBase
                     EquipmentType: dto.EquipmentType.Trim(),
                     EquipmentStatus: "Available",
                     SerialNo: dto.SerialNo?.Trim(),
-                    ImagePath: relativeWebPath,
+                    ImagePath: ResolveEquipmentImagePath(relativeWebPath),
                     CreatedAt: DateTime.UtcNow
                 );
                 return CreatedAtAction(nameof(GetById), new { id = assignedId }, fallbackDto);

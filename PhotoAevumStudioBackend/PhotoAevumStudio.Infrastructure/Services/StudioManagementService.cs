@@ -37,6 +37,40 @@ public class StudioManagementService : IStudioManagementService
         return (r2FileKey, r2Url);
     }
 
+    private string? ResolveR2ServiceImageUrl(string? imgFile, string? imgUrl, byte[]? imgBytes = null, string? mimeType = null)
+    {
+        var key = !string.IsNullOrWhiteSpace(imgFile)
+            ? R2StorageService.ExtractObjectKey(imgFile)
+            : R2StorageService.ExtractObjectKey(imgUrl);
+
+        if (_r2Service != null && !string.IsNullOrWhiteSpace(key) &&
+            (key.StartsWith("services/", StringComparison.OrdinalIgnoreCase) ||
+             key.StartsWith("packages/", StringComparison.OrdinalIgnoreCase) ||
+             key.StartsWith("equipment/", StringComparison.OrdinalIgnoreCase) ||
+             key.StartsWith("portfolio/", StringComparison.OrdinalIgnoreCase)))
+        {
+            var presigned = _r2Service.GetPresignedUrl(key, _r2Service.ServicesBucket);
+            if (!string.IsNullOrWhiteSpace(presigned))
+                return presigned;
+        }
+
+        if (!string.IsNullOrWhiteSpace(imgUrl) &&
+            !imgUrl.Contains("r2.cloudflarestorage.com", StringComparison.OrdinalIgnoreCase) &&
+            !imgUrl.Contains("pub-photoaevum.r2.dev", StringComparison.OrdinalIgnoreCase) &&
+            !imgUrl.Contains("PLACEHOLDER", StringComparison.OrdinalIgnoreCase))
+        {
+            return imgUrl;
+        }
+
+        if (imgBytes != null && imgBytes.Length > 0)
+        {
+            var mime = string.IsNullOrWhiteSpace(mimeType) ? "image/jpeg" : mimeType;
+            return $"data:{mime};base64,{Convert.ToBase64String(imgBytes)}";
+        }
+
+        return null;
+    }
+
     private string GetConnectionString() =>
         _db.Database.GetConnectionString()
         ?? throw new InvalidOperationException("Database connection string is not configured.");
@@ -379,10 +413,7 @@ public class StudioManagementService : IStudioManagementService
                 var rateType = reader.FieldCount > 5 && !reader.IsDBNull(5) ? reader.GetString(5) : "per hour";
                 var imgFile = reader.FieldCount > 6 && !reader.IsDBNull(6) ? reader.GetString(6) : null;
                 var imgUrl = reader.FieldCount > 7 && !reader.IsDBNull(7) ? reader.GetString(7) : null;
-                if (string.IsNullOrWhiteSpace(imgUrl) && !string.IsNullOrWhiteSpace(imgFile) && _r2Service != null)
-                {
-                    imgUrl = _r2Service.GetPresignedUrl(imgFile, _r2Service.ServicesBucket);
-                }
+                imgUrl = ResolveR2ServiceImageUrl(imgFile, imgUrl);
 
                 list.Add(new ServiceSummaryDto(
                     Id: reader.GetString(0),
@@ -421,10 +452,7 @@ public class StudioManagementService : IStudioManagementService
                 var rateType = reader.FieldCount > 5 && !reader.IsDBNull(5) ? reader.GetString(5) : "per hour";
                 var imgFile = reader.FieldCount > 6 && !reader.IsDBNull(6) ? reader.GetString(6) : null;
                 var imgUrl = reader.FieldCount > 7 && !reader.IsDBNull(7) ? reader.GetString(7) : null;
-                if (string.IsNullOrWhiteSpace(imgUrl) && !string.IsNullOrWhiteSpace(imgFile) && _r2Service != null)
-                {
-                    imgUrl = _r2Service.GetPresignedUrl(imgFile, _r2Service.ServicesBucket);
-                }
+                imgUrl = ResolveR2ServiceImageUrl(imgFile, imgUrl);
 
                 list.Add(new ServiceSummaryDto(
                     Id: reader.GetString(0),
@@ -469,10 +497,7 @@ public class StudioManagementService : IStudioManagementService
                 var rateType = reader.FieldCount > 7 && !reader.IsDBNull(7) ? reader.GetString(7) : "per hour";
                 var imgFile = reader.FieldCount > 8 && !reader.IsDBNull(8) ? reader.GetString(8) : null;
                 var imgUrl = reader.FieldCount > 9 && !reader.IsDBNull(9) ? reader.GetString(9) : null;
-                if (string.IsNullOrWhiteSpace(imgUrl) && !string.IsNullOrWhiteSpace(imgFile) && _r2Service != null)
-                {
-                    imgUrl = _r2Service.GetPresignedUrl(imgFile, _r2Service.ServicesBucket);
-                }
+                imgUrl = ResolveR2ServiceImageUrl(imgFile, imgUrl, imageBytes, mime);
 
                 return new ServiceDetailDto(id, name, desc, price, imageBytes, mime, hasImage || !string.IsNullOrWhiteSpace(imgFile), rateType, imgFile, imgUrl);
             }
@@ -509,10 +534,7 @@ public class StudioManagementService : IStudioManagementService
                 var rateType = reader.FieldCount > 7 && !reader.IsDBNull(7) ? reader.GetString(7) : "per hour";
                 var imgFile = reader.FieldCount > 8 && !reader.IsDBNull(8) ? reader.GetString(8) : null;
                 var imgUrl = reader.FieldCount > 9 && !reader.IsDBNull(9) ? reader.GetString(9) : null;
-                if (string.IsNullOrWhiteSpace(imgUrl) && !string.IsNullOrWhiteSpace(imgFile) && _r2Service != null)
-                {
-                    imgUrl = _r2Service.GetPresignedUrl(imgFile, _r2Service.ServicesBucket);
-                }
+                imgUrl = ResolveR2ServiceImageUrl(imgFile, imgUrl, imageBytes, mime);
 
                 return new ServiceDetailDto(id, name, desc, price, imageBytes, mime, hasImage || !string.IsNullOrWhiteSpace(imgFile), rateType, imgFile, imgUrl);
             }
@@ -567,10 +589,7 @@ public class StudioManagementService : IStudioManagementService
                 var hasImg = reader.FieldCount > 5 ? (!reader.IsDBNull(5) && reader.GetBoolean(5)) : (!reader.IsDBNull(3) && reader.GetBoolean(3));
                 var imgFile = reader.FieldCount > 6 && !reader.IsDBNull(6) ? reader.GetString(6) : null;
                 var imgUrl = reader.FieldCount > 7 && !reader.IsDBNull(7) ? reader.GetString(7) : null;
-                if (string.IsNullOrWhiteSpace(imgUrl) && !string.IsNullOrWhiteSpace(imgFile) && _r2Service != null)
-                {
-                    imgUrl = _r2Service.GetPresignedUrl(imgFile, _r2Service.ServicesBucket);
-                }
+                imgUrl = ResolveR2ServiceImageUrl(imgFile, imgUrl);
 
                 list.Add(new ServiceSummaryDto(
                     Id: reader.GetString(0),
@@ -597,10 +616,7 @@ public class StudioManagementService : IStudioManagementService
             {
                 var imgFile = reader.FieldCount > 5 && !reader.IsDBNull(5) ? reader.GetString(5) : null;
                 var imgUrl = reader.FieldCount > 6 && !reader.IsDBNull(6) ? reader.GetString(6) : null;
-                if (string.IsNullOrWhiteSpace(imgUrl) && !string.IsNullOrWhiteSpace(imgFile) && _r2Service != null)
-                {
-                    imgUrl = _r2Service.GetPresignedUrl(imgFile, _r2Service.ServicesBucket);
-                }
+                imgUrl = ResolveR2ServiceImageUrl(imgFile, imgUrl);
 
                 list.Add(new ServiceSummaryDto(
                     Id: reader.GetString(0),
@@ -639,18 +655,17 @@ public class StudioManagementService : IStudioManagementService
             var hasImgIdx = hasCategoryCol ? 7 : 5;
             var imgFile = reader.FieldCount > 8 && !reader.IsDBNull(8) ? reader.GetString(8) : null;
             var imgUrl = reader.FieldCount > 9 && !reader.IsDBNull(9) ? reader.GetString(9) : null;
-            if (string.IsNullOrWhiteSpace(imgUrl) && !string.IsNullOrWhiteSpace(imgFile) && _r2Service != null)
-            {
-                imgUrl = _r2Service.GetPresignedUrl(imgFile, _r2Service.ServicesBucket);
-            }
+            byte[]? imgBytes = reader.IsDBNull(imgIdx) ? null : (byte[])reader[imgIdx];
+            var mime = reader.IsDBNull(mimeIdx) ? "image/jpeg" : reader.GetString(mimeIdx);
+            imgUrl = ResolveR2ServiceImageUrl(imgFile, imgUrl, imgBytes, mime);
 
             return new ServiceDetailDto(
                 Id: reader.GetString(0),
                 Name: reader.GetString(1),
                 Description: reader.IsDBNull(2) ? string.Empty : reader.GetString(2),
                 Price: price,
-                Image: reader.IsDBNull(imgIdx) ? null : (byte[])reader[imgIdx],
-                MimeType: reader.IsDBNull(mimeIdx) ? "image/jpeg" : reader.GetString(mimeIdx),
+                Image: imgBytes,
+                MimeType: mime,
                 HasImage: (!reader.IsDBNull(hasImgIdx) && reader.GetBoolean(hasImgIdx)) || !string.IsNullOrWhiteSpace(imgFile),
                 ImageFileName: imgFile,
                 ImageUrl: imgUrl
@@ -707,10 +722,7 @@ public class StudioManagementService : IStudioManagementService
                 var hasImgIdx = hasPriceCol ? 4 : 3;
                 var imgFile = reader.FieldCount > 5 && !reader.IsDBNull(5) ? reader.GetString(5) : null;
                 var imgUrl = reader.FieldCount > 6 && !reader.IsDBNull(6) ? reader.GetString(6) : null;
-                if (string.IsNullOrWhiteSpace(imgUrl) && !string.IsNullOrWhiteSpace(imgFile) && _r2Service != null)
-                {
-                    imgUrl = _r2Service.GetPresignedUrl(imgFile, _r2Service.ServicesBucket);
-                }
+                imgUrl = ResolveR2ServiceImageUrl(imgFile, imgUrl);
 
                 list.Add(new ServiceSummaryDto(
                     Id: reader.GetString(0),
@@ -737,10 +749,7 @@ public class StudioManagementService : IStudioManagementService
             {
                 var imgFile = reader.FieldCount > 5 && !reader.IsDBNull(5) ? reader.GetString(5) : null;
                 var imgUrl = reader.FieldCount > 6 && !reader.IsDBNull(6) ? reader.GetString(6) : null;
-                if (string.IsNullOrWhiteSpace(imgUrl) && !string.IsNullOrWhiteSpace(imgFile) && _r2Service != null)
-                {
-                    imgUrl = _r2Service.GetPresignedUrl(imgFile, _r2Service.ServicesBucket);
-                }
+                imgUrl = ResolveR2ServiceImageUrl(imgFile, imgUrl);
 
                 list.Add(new ServiceSummaryDto(
                     Id: reader.GetString(0),
@@ -779,18 +788,17 @@ public class StudioManagementService : IStudioManagementService
             var hasImgIdx = hasPriceCol ? 6 : 5;
             var imgFile = reader.FieldCount > 7 && !reader.IsDBNull(7) ? reader.GetString(7) : null;
             var imgUrl = reader.FieldCount > 8 && !reader.IsDBNull(8) ? reader.GetString(8) : null;
-            if (string.IsNullOrWhiteSpace(imgUrl) && !string.IsNullOrWhiteSpace(imgFile) && _r2Service != null)
-            {
-                imgUrl = _r2Service.GetPresignedUrl(imgFile, _r2Service.ServicesBucket);
-            }
+            byte[]? imgBytes = reader.IsDBNull(imgIdx) ? null : (byte[])reader[imgIdx];
+            var mime = reader.IsDBNull(mimeIdx) ? "image/jpeg" : reader.GetString(mimeIdx);
+            imgUrl = ResolveR2ServiceImageUrl(imgFile, imgUrl, imgBytes, mime);
 
             return new ServiceDetailDto(
                 Id: reader.GetString(0),
                 Name: reader.GetString(1),
                 Description: reader.IsDBNull(2) ? string.Empty : reader.GetString(2),
                 Price: price,
-                Image: reader.IsDBNull(imgIdx) ? null : (byte[])reader[imgIdx],
-                MimeType: reader.IsDBNull(mimeIdx) ? "image/jpeg" : reader.GetString(mimeIdx),
+                Image: imgBytes,
+                MimeType: mime,
                 HasImage: (!reader.IsDBNull(hasImgIdx) && reader.GetBoolean(hasImgIdx)) || !string.IsNullOrWhiteSpace(imgFile),
                 ImageFileName: imgFile,
                 ImageUrl: imgUrl

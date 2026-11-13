@@ -26,6 +26,16 @@ public class PortfolioService : IPortfolioService
     private readonly string _r2PublicBaseUrl;
     private readonly bool _r2Configured;
 
+    private static string? FirstNonEmpty(params string?[] values)
+    {
+        foreach (var v in values)
+        {
+            if (!string.IsNullOrWhiteSpace(v) && !v.Equals("PLACEHOLDER", StringComparison.OrdinalIgnoreCase))
+                return v.Trim();
+        }
+        return null;
+    }
+
     public PortfolioService(IConfiguration? configuration, IWebHostEnvironment env, ILogger<PortfolioService>? logger = null)
     {
         _env = env;
@@ -33,21 +43,42 @@ public class PortfolioService : IPortfolioService
         _connectionString = configuration?.GetConnectionString("DefaultConnection")
             ?? "Server=db77602.public.databaseasp.net; Database=db77602; User Id=db77602; Password=G!r7cB8#Z5_d; Encrypt=True; TrustServerCertificate=True; MultipleActiveResultSets=True;";
 
-        var accessKey = configuration?["CloudflareR2:AccessKey"] ?? "PLACEHOLDER";
-        var secretKey = configuration?["CloudflareR2:SecretKey"] ?? "PLACEHOLDER";
-        var accountId = configuration?["CloudflareR2:AccountId"];
-        var serviceUrl = configuration?["CloudflareR2:ServiceUrl"];
+        var accessKey = FirstNonEmpty(
+                            configuration?["CloudflareR2:AccessKey"],
+                            configuration?["CloudflareR2__AccessKey"],
+                            configuration?["R2_ACCESS_KEY"])
+                        ?? "PLACEHOLDER";
+        var secretKey = FirstNonEmpty(
+                            configuration?["CloudflareR2:SecretKey"],
+                            configuration?["CloudflareR2__SecretKey"],
+                            configuration?["R2_SECRET_KEY"])
+                        ?? "PLACEHOLDER";
+        var accountId = FirstNonEmpty(
+                            configuration?["CloudflareR2:AccountId"],
+                            configuration?["CloudflareR2__AccountId"],
+                            configuration?["R2_ACCOUNT_ID"]);
+        var serviceUrl = FirstNonEmpty(
+                            configuration?["CloudflareR2:ServiceUrl"],
+                            configuration?["CloudflareR2__ServiceUrl"],
+                            configuration?["R2_SERVICE_URL"]);
         if (string.IsNullOrWhiteSpace(serviceUrl))
         {
             serviceUrl = !string.IsNullOrWhiteSpace(accountId)
                 ? $"https://{accountId}.r2.cloudflarestorage.com"
                 : "https://f6757b400d51c23671cedb8b0efc4b32.r2.cloudflarestorage.com";
         }
+        serviceUrl = serviceUrl.TrimEnd('/');
 
-        _r2BucketName = configuration?["CloudflareR2:Buckets:Portfolio"]
-                        ?? configuration?["CloudflareR2:BucketName"]
+        _r2BucketName = FirstNonEmpty(
+                            configuration?["CloudflareR2:Buckets:Portfolio"],
+                            configuration?["CloudflareR2__Buckets__Portfolio"],
+                            configuration?["CloudflareR2:BucketName"],
+                            configuration?["CloudflareR2__BucketName"])
                         ?? "portfolio";
-        _r2PublicBaseUrl = configuration?["CloudflareR2:PublicUrl"] ?? "https://pub-photoaevum.r2.dev";
+        _r2PublicBaseUrl = (FirstNonEmpty(
+                            configuration?["CloudflareR2:PublicUrl"],
+                            configuration?["CloudflareR2__PublicUrl"],
+                            serviceUrl) ?? serviceUrl).TrimEnd('/');
 
         _r2Configured = !string.IsNullOrWhiteSpace(accessKey) 
                         && !string.IsNullOrWhiteSpace(secretKey) 
@@ -851,20 +882,56 @@ public class PortfolioService : IPortfolioService
         return reader.GetString(ordinal);
     }
 
+    private static string ExtractPortfolioKey(string? rawValue)
+    {
+        if (string.IsNullOrWhiteSpace(rawValue)) return string.Empty;
+        var val = rawValue.Trim();
+
+        if (val.StartsWith("http://", StringComparison.OrdinalIgnoreCase) ||
+            val.StartsWith("https://", StringComparison.OrdinalIgnoreCase))
+        {
+            if (Uri.TryCreate(val, UriKind.Absolute, out var uri))
+            {
+                var path = uri.AbsolutePath.TrimStart('/');
+                if (path.StartsWith("portfolio/portfolio/", StringComparison.OrdinalIgnoreCase))
+                    return path["portfolio/".Length..];
+                if (path.StartsWith("portfolio/", StringComparison.OrdinalIgnoreCase))
+                    return path;
+            }
+            return string.Empty;
+        }
+
+        if (val.StartsWith("data:", StringComparison.OrdinalIgnoreCase) ||
+            val.StartsWith("images/", StringComparison.OrdinalIgnoreCase) ||
+            val.StartsWith("/images/", StringComparison.OrdinalIgnoreCase))
+        {
+            return string.Empty;
+        }
+
+        var clean = val.TrimStart('/');
+        if (clean.StartsWith("portfolio/", StringComparison.OrdinalIgnoreCase))
+            clean = clean["portfolio/".Length..];
+
+        return $"portfolio/{clean}";
+    }
+
     private string ResolveR2Url(string? fileName)
     {
         if (string.IsNullOrWhiteSpace(fileName)) return string.Empty;
-        if (fileName.StartsWith("http://", StringComparison.OrdinalIgnoreCase) ||
-            fileName.StartsWith("https://", StringComparison.OrdinalIgnoreCase))
+
+        var key = ExtractPortfolioKey(fileName);
+        if (string.IsNullOrWhiteSpace(key))
         {
-            return fileName;
+            if ((fileName.StartsWith("http://", StringComparison.OrdinalIgnoreCase) ||
+                 fileName.StartsWith("https://", StringComparison.OrdinalIgnoreCase)) &&
+                !fileName.Contains("r2.cloudflarestorage.com", StringComparison.OrdinalIgnoreCase) &&
+                !fileName.Contains("pub-photoaevum.r2.dev", StringComparison.OrdinalIgnoreCase) &&
+                !fileName.Contains("PLACEHOLDER", StringComparison.OrdinalIgnoreCase))
+            {
+                return fileName;
+            }
+            return string.Empty;
         }
-
-        var clean = fileName.TrimStart('/');
-        if (clean.StartsWith("portfolio/", StringComparison.OrdinalIgnoreCase))
-            clean = clean.Substring("portfolio/".Length);
-
-        var key = $"portfolio/{clean}";
 
         if (_r2Configured && _r2Client != null)
         {
@@ -874,7 +941,7 @@ public class PortfolioService : IPortfolioService
                 {
                     BucketName = _r2BucketName,
                     Key = key,
-                    Expires = DateTime.UtcNow.AddHours(2)
+                    Expires = DateTime.UtcNow.AddHours(24)
                 });
                 if (!string.IsNullOrWhiteSpace(presigned)) return presigned;
             }
@@ -883,44 +950,43 @@ public class PortfolioService : IPortfolioService
             }
         }
 
-        return $"{_r2PublicBaseUrl.TrimEnd('/')}/{key}";
+        return string.Empty;
     }
 
     private string ResolveImageUrl(string? fileName, string? r2ImageUrl = null, string? contentType = null, byte[]? imageData = null)
     {
-        if (imageData is { Length: > 0 } && !_r2Configured)
+        var candidateKey = ExtractPortfolioKey(fileName);
+        if (string.IsNullOrWhiteSpace(candidateKey))
+            candidateKey = ExtractPortfolioKey(r2ImageUrl);
+
+        if (!string.IsNullOrWhiteSpace(candidateKey) && _r2Configured && _r2Client != null)
         {
-            var mime = string.IsNullOrWhiteSpace(contentType) ? "image/jpeg" : contentType;
-            return $"data:{mime};base64,{Convert.ToBase64String(imageData)}";
+            var presigned = ResolveR2Url(candidateKey);
+            if (!string.IsNullOrWhiteSpace(presigned))
+                return presigned;
         }
 
         if (!string.IsNullOrWhiteSpace(r2ImageUrl) &&
             (r2ImageUrl.StartsWith("http://", StringComparison.OrdinalIgnoreCase) ||
              r2ImageUrl.StartsWith("https://", StringComparison.OrdinalIgnoreCase) ||
-             r2ImageUrl.StartsWith("data:image", StringComparison.OrdinalIgnoreCase)))
+             r2ImageUrl.StartsWith("data:image", StringComparison.OrdinalIgnoreCase)) &&
+            !r2ImageUrl.Contains("r2.cloudflarestorage.com", StringComparison.OrdinalIgnoreCase) &&
+            !r2ImageUrl.Contains("pub-photoaevum.r2.dev", StringComparison.OrdinalIgnoreCase) &&
+            !r2ImageUrl.Contains("PLACEHOLDER", StringComparison.OrdinalIgnoreCase))
         {
             return r2ImageUrl;
         }
 
-        if (string.IsNullOrWhiteSpace(fileName))
-        {
-            if (imageData is { Length: > 0 })
-            {
-                var mime = string.IsNullOrWhiteSpace(contentType) ? "image/jpeg" : contentType;
-                return $"data:{mime};base64,{Convert.ToBase64String(imageData)}";
-            }
-            return "images/AevumLogo.jpg";
-        }
-
-        if (fileName.StartsWith("http://", StringComparison.OrdinalIgnoreCase) ||
-            fileName.StartsWith("https://", StringComparison.OrdinalIgnoreCase) ||
-            fileName.StartsWith("data:image", StringComparison.OrdinalIgnoreCase))
+        if (!string.IsNullOrWhiteSpace(fileName) &&
+            (fileName.StartsWith("http://", StringComparison.OrdinalIgnoreCase) ||
+             fileName.StartsWith("https://", StringComparison.OrdinalIgnoreCase) ||
+             fileName.StartsWith("data:image", StringComparison.OrdinalIgnoreCase)) &&
+            !fileName.Contains("r2.cloudflarestorage.com", StringComparison.OrdinalIgnoreCase) &&
+            !fileName.Contains("pub-photoaevum.r2.dev", StringComparison.OrdinalIgnoreCase) &&
+            !fileName.Contains("PLACEHOLDER", StringComparison.OrdinalIgnoreCase))
         {
             return fileName;
         }
-
-        var r2 = ResolveR2Url(fileName);
-        if (!string.IsNullOrWhiteSpace(r2)) return r2;
 
         if (imageData is { Length: > 0 })
         {

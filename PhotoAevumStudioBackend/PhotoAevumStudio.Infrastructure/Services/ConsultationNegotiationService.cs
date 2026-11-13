@@ -489,7 +489,7 @@ public class ConsultationNegotiationService : IConsultationNegotiationService
 
 
 
-                custName,
+                string.IsNullOrWhiteSpace(custName) ? "Valued Customer" : custName,
 
 
 
@@ -689,7 +689,7 @@ public class ConsultationNegotiationService : IConsultationNegotiationService
 
 
 
-                COALESCE(c.CustomerFirstName + ' ' + c.CustomerLastName, bn.CustomerID) AS CustomerName,
+                COALESCE(NULLIF(LTRIM(RTRIM(CONCAT(c.CustomerFirstName, ' ', c.CustomerLastName))), ''), bn.CustomerID, '') AS CustomerName,
 
 
 
@@ -701,11 +701,11 @@ public class ConsultationNegotiationService : IConsultationNegotiationService
 
 
 
-                bn.EmployeeID,
+                ISNULL(bn.EmployeeID, '') AS EmployeeID,
 
 
 
-                COALESCE(e.EmployeeFirstName + ' ' + e.EmployeeLastName, bn.EmployeeID) AS EmployeeName,
+                COALESCE(NULLIF(LTRIM(RTRIM(CONCAT(e.EmployeeFirstName, ' ', e.EmployeeLastName))), ''), NULLIF(bn.EmployeeID, ''), 'Unassigned') AS EmployeeName,
 
 
 
@@ -783,101 +783,32 @@ public class ConsultationNegotiationService : IConsultationNegotiationService
 
         await using var reader = await cmd.ExecuteReaderAsync(cancellationToken);
 
-
-
         while (await reader.ReadAsync(cancellationToken))
-
-
-
         {
-
-
-
-            list.Add(new ConsultationNegotiationDto
-
-
-
-            {
-
-
-
-                NegotiationId = reader.GetString(0),
-
-
-
-                EventAppointmentId = reader.IsDBNull(1) ? null : reader.GetString(1),
-
-
-
-                CustomerId = reader.GetString(2),
-
-
-
-                CustomerName = reader.GetString(3),
-
-
-
-                CustomerEmail = reader.GetString(4),
-
-
-
-                CustomerPhone = reader.GetString(5),
-
-
-
-                EmployeeId = reader.GetString(6),
-
-
-
-                EmployeeName = reader.GetString(7),
-
-
-
-                EmployeeEmail = reader.GetString(8),
-
-
-
-                ConsultationDate = DateOnly.FromDateTime(reader.GetDateTime(9)),
-
-
-
-                ConsultationTime = TimeOnly.FromTimeSpan(reader.GetFieldValue<TimeSpan>(10)),
-
-
-
-                MeetingLink = reader.GetString(11),
-
-
-
-                InquiryNotes = reader.GetString(12),
-
-
-
-                NegotiationStatus = reader.GetString(13),
-
-
-
-                CreatedAt = reader.GetDateTime(14)
-
-
-
-            });
-
-
-
+            list.Add(ReadNegotiationDto(reader));
         }
 
-
-
-
-
-
-
         return list;
-
-
-
     }
+
+    private static ConsultationNegotiationDto ReadNegotiationDto(SqlDataReader reader) => new()
+    {
+        NegotiationId = reader.IsDBNull(0) ? string.Empty : reader.GetString(0),
+        EventAppointmentId = reader.IsDBNull(1) ? null : reader.GetString(1),
+        CustomerId = reader.IsDBNull(2) ? string.Empty : reader.GetString(2),
+        CustomerName = reader.IsDBNull(3) ? string.Empty : reader.GetString(3),
+        CustomerEmail = reader.IsDBNull(4) ? string.Empty : reader.GetString(4),
+        CustomerPhone = reader.IsDBNull(5) ? string.Empty : reader.GetString(5),
+        EmployeeId = reader.IsDBNull(6) ? string.Empty : reader.GetString(6),
+        EmployeeName = reader.IsDBNull(7) ? "Unassigned" : reader.GetString(7),
+        EmployeeEmail = reader.IsDBNull(8) ? string.Empty : reader.GetString(8),
+        ConsultationDate = reader.IsDBNull(9) ? default : DateOnly.FromDateTime(reader.GetDateTime(9)),
+        ConsultationTime = reader.IsDBNull(10) ? default : TimeOnly.FromTimeSpan(reader.GetFieldValue<TimeSpan>(10)),
+        MeetingLink = reader.IsDBNull(11) ? string.Empty : reader.GetString(11),
+        InquiryNotes = reader.IsDBNull(12) ? string.Empty : reader.GetString(12),
+        NegotiationStatus = reader.IsDBNull(13) ? "Pending_Call" : reader.GetString(13),
+        CreatedAt = reader.IsDBNull(14) ? DateTime.UtcNow : reader.GetDateTime(14)
+    };
 
 
 
@@ -929,7 +860,7 @@ public class ConsultationNegotiationService : IConsultationNegotiationService
 
 
 
-                COALESCE(c.CustomerFirstName + ' ' + c.CustomerLastName, bn.CustomerID) AS CustomerName,
+                COALESCE(NULLIF(LTRIM(RTRIM(CONCAT(c.CustomerFirstName, ' ', c.CustomerLastName))), ''), bn.CustomerID, '') AS CustomerName,
 
 
 
@@ -941,11 +872,11 @@ public class ConsultationNegotiationService : IConsultationNegotiationService
 
 
 
-                bn.EmployeeID,
+                ISNULL(bn.EmployeeID, '') AS EmployeeID,
 
 
 
-                COALESCE(e.EmployeeFirstName + ' ' + e.EmployeeLastName, bn.EmployeeID) AS EmployeeName,
+                COALESCE(NULLIF(LTRIM(RTRIM(CONCAT(e.EmployeeFirstName, ' ', e.EmployeeLastName))), ''), NULLIF(bn.EmployeeID, ''), 'Unassigned') AS EmployeeName,
 
 
 
@@ -1015,91 +946,10 @@ public class ConsultationNegotiationService : IConsultationNegotiationService
 
         await using var reader = await cmd.ExecuteReaderAsync(cancellationToken);
 
-
-
         if (await reader.ReadAsync(cancellationToken))
-
-
-
         {
-
-
-
-            dto = new ConsultationNegotiationDto
-
-
-
-            {
-
-
-
-                NegotiationId = reader.GetString(0),
-
-
-
-                EventAppointmentId = reader.IsDBNull(1) ? null : reader.GetString(1),
-
-
-
-                CustomerId = reader.GetString(2),
-
-
-
-                CustomerName = reader.GetString(3),
-
-
-
-                CustomerEmail = reader.GetString(4),
-
-
-
-                CustomerPhone = reader.GetString(5),
-
-
-
-                EmployeeId = reader.GetString(6),
-
-
-
-                EmployeeName = reader.GetString(7),
-
-
-
-                EmployeeEmail = reader.GetString(8),
-
-
-
-                ConsultationDate = DateOnly.FromDateTime(reader.GetDateTime(9)),
-
-
-
-                ConsultationTime = TimeOnly.FromTimeSpan(reader.GetFieldValue<TimeSpan>(10)),
-
-
-
-                MeetingLink = reader.GetString(11),
-
-
-
-                InquiryNotes = reader.GetString(12),
-
-
-
-                NegotiationStatus = reader.GetString(13),
-
-
-
-                CreatedAt = reader.GetDateTime(14)
-
-
-
-            };
-
-
-
+            dto = ReadNegotiationDto(reader);
         }
-
-
 
         await reader.CloseAsync();
 

@@ -463,6 +463,16 @@
 
 
 
+                    else if (!string.IsNullOrEmpty(_loadError))
+                    {
+                        <tr>
+                            <td colspan="7" class="px-4 py-12 text-center text-rose-600">
+                                <div class="text-2xl mb-1">⚠️</div>
+                                <div class="font-bold">Failed to load consultations</div>
+                                <p class="text-rose-500 mt-0.5">@_loadError</p>
+                            </td>
+                        </tr>
+                    }
                     else if (!FilteredNegotiations.Any())
 
 
@@ -3353,6 +3363,7 @@
 
 
     private bool _loading = true;
+    private string? _loadError;
 
 
 
@@ -3768,65 +3779,29 @@
 
 
     private async Task LoadNegotiationsAsync()
-
-
-
     {
-
-
-
         _loading = true;
-
-
-
+        _loadError = null;
         try
-
-
-
         {
-
-
-
             var res = await ConsultationApi.GetNegotiationsAsync();
-
-
-
             if (res.IsSuccess && res.Value != null)
-
-
-
             {
-
-
-
                 _negotiations = res.Value.ToList();
-
-
-
             }
-
-
-
+            else
+            {
+                _loadError = res.Error?.Message ?? "Failed to load consultations.";
+            }
         }
-
-
-
-        finally
-
-
-
+        catch (Exception ex)
         {
-
-
-
-            _loading = false;
-
-
-
+            _loadError = ex.Message;
         }
-
-
-
+        finally
+        {
+            _loading = false;
+        }
     }
 
 

@@ -96,10 +96,10 @@ else
         <div class="flex items-center gap-2">
             <select @bind="_selectedCategoryFilter" class="p-1.5 bg-gray-50 border border-gray-200 rounded text-xs">
                 <option value="">All Categories</option>
-                <option value="Cameras & Bodies">Cameras & Bodies</option>
-                <option value="Lenses & Optics">Lenses & Optics</option>
-                <option value="Strobe & Continuous Lighting">Lighting</option>
-                <option value="Audio & Microphones">Audio</option>
+                @foreach (var cat in EquipmentResources.Select(e => e.Category).Where(c => !string.IsNullOrWhiteSpace(c)).Distinct())
+                {
+                    <option value="@cat">@cat</option>
+                }
             </select>
 
             <select @bind="_selectedStatusFilter" class="p-1.5 bg-gray-50 border border-gray-200 rounded text-xs">
@@ -109,7 +109,7 @@ else
                 <option value="In-Maintenance">In-Maintenance</option>
             </select>
 
-            <input type="text" @bind="_searchQuery" @bind:event="oninput" placeholder="Search gear / serial..." class="p-1.5 bg-gray-50 border border-gray-200 rounded text-xs w-36 focus:w-48 transition-all" />
+            <input type="text" @bind="_searchQuery" @bind:event="oninput" class="p-1.5 bg-gray-50 border border-gray-200 rounded text-xs w-36 focus:w-48 transition-all" />
 
             @if (HasActiveFilters)
             {
@@ -255,7 +255,7 @@ else
                     </div>
                     <div>
                         <label class="block font-semibold mb-1">Project / Production</label>
-                        <input type="text" @bind="_newReservation.ProjectOrClient" class="w-full p-1.5 border rounded" placeholder="e.g. Vogue Editorial" />
+                        <input type="text" @bind="_newReservation.ProjectOrClient" class="w-full p-1.5 border rounded" />
                     </div>
                     <div class="grid grid-cols-2 gap-2">
                         <div>
@@ -441,9 +441,9 @@ else
     {
         _newReservation = new EquipmentReservationModel
         {
-            EquipmentId = EquipmentResources.FirstOrDefault()?.Id ?? "eq-01",
-            TechnicianInCharge = "Elena Rostova",
-            Location = "Studio A",
+            EquipmentId = EquipmentResources.FirstOrDefault()?.Id ?? string.Empty,
+            TechnicianInCharge = string.Empty,
+            Location = string.Empty,
             MaintenanceStatus = "Ready"
         };
         _newReservationDate = _selectedDate;

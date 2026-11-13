@@ -25,6 +25,16 @@ public class ServicesApiClient : IServicesApiClient
     private readonly string _r2PublicBaseUrl;
     private readonly bool _r2Configured;
 
+    private static string? FirstNonEmpty(params string?[] values)
+    {
+        foreach (var v in values)
+        {
+            if (!string.IsNullOrWhiteSpace(v) && !v.Equals("PLACEHOLDER", StringComparison.OrdinalIgnoreCase))
+                return v.Trim();
+        }
+        return null;
+    }
+
     public ServicesApiClient(
         IHttpClientFactory httpClientFactory,
         ITokenStore tokenStore,
@@ -39,19 +49,40 @@ public class ServicesApiClient : IServicesApiClient
         _connectionString = configuration.GetConnectionString("DefaultConnection")
             ?? throw new InvalidOperationException("Connection string 'DefaultConnection' is missing.");
 
-        var accessKey = configuration["CloudflareR2:AccessKey"] ?? "PLACEHOLDER";
-        var secretKey = configuration["CloudflareR2:SecretKey"] ?? "PLACEHOLDER";
-        var accountId = configuration["CloudflareR2:AccountId"];
-        var serviceUrl = configuration["CloudflareR2:ServiceUrl"];
+        var accessKey = FirstNonEmpty(
+                            configuration["CloudflareR2:AccessKey"],
+                            configuration["CloudflareR2__AccessKey"],
+                            configuration["R2_ACCESS_KEY"])
+                        ?? "PLACEHOLDER";
+        var secretKey = FirstNonEmpty(
+                            configuration["CloudflareR2:SecretKey"],
+                            configuration["CloudflareR2__SecretKey"],
+                            configuration["R2_SECRET_KEY"])
+                        ?? "PLACEHOLDER";
+        var accountId = FirstNonEmpty(
+                            configuration["CloudflareR2:AccountId"],
+                            configuration["CloudflareR2__AccountId"],
+                            configuration["R2_ACCOUNT_ID"]);
+        var serviceUrl = FirstNonEmpty(
+                            configuration["CloudflareR2:ServiceUrl"],
+                            configuration["CloudflareR2__ServiceUrl"],
+                            configuration["R2_SERVICE_URL"]);
         if (string.IsNullOrWhiteSpace(serviceUrl))
         {
             serviceUrl = !string.IsNullOrWhiteSpace(accountId)
                 ? $"https://{accountId}.r2.cloudflarestorage.com"
                 : "https://f6757b400d51c23671cedb8b0efc4b32.r2.cloudflarestorage.com";
         }
+        serviceUrl = serviceUrl.TrimEnd('/');
 
-        _servicesBucket = configuration["CloudflareR2:Buckets:Services"] ?? "services";
-        _r2PublicBaseUrl = configuration["CloudflareR2:PublicUrl"] ?? serviceUrl.TrimEnd('/');
+        _servicesBucket = FirstNonEmpty(
+                            configuration["CloudflareR2:Buckets:Services"],
+                            configuration["CloudflareR2__Buckets__Services"])
+                          ?? "services";
+        _r2PublicBaseUrl = (FirstNonEmpty(
+                            configuration["CloudflareR2:PublicUrl"],
+                            configuration["CloudflareR2__PublicUrl"],
+                            serviceUrl) ?? serviceUrl).TrimEnd('/');
         _r2Configured = !string.IsNullOrWhiteSpace(accessKey)
                         && !string.IsNullOrWhiteSpace(secretKey)
                         && accessKey != "PLACEHOLDER"
@@ -131,7 +162,6 @@ public class ServicesApiClient : IServicesApiClient
             }
         }
 
-        resolvedUrl ??= $"{_r2PublicBaseUrl}/{_servicesBucket}/{key}";
         return (key, resolvedUrl);
     }
 

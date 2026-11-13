@@ -84,50 +84,58 @@ public class UserService : IUserService
 
 
 
-	public UserService(IConfiguration? configuration = null, IHttpClientFactory? httpClientFactory = null, IWebHostEnvironment? env = null)
-
+	private static string? FirstNonEmpty(params string?[] candidates)
 	{
+		foreach (var c in candidates)
+		{
+			if (!string.IsNullOrWhiteSpace(c) && c != "PLACEHOLDER")
+				return c.Trim();
+		}
+		return null;
+	}
 
-		_connectionString = configuration?.GetConnectionString("DefaultConnection") ?? DefaultLocalConnectionString;
-
+	public UserService(IConfiguration? configuration = null, IHttpClientFactory? httpClientFactory = null, IWebHostEnvironment? env = null)
+	{
+		_connectionString = FirstNonEmpty(
+			configuration?.GetConnectionString("DefaultConnection"),
+			configuration?["ConnectionStrings__DefaultConnection"]) ?? DefaultLocalConnectionString;
 		_httpClientFactory = httpClientFactory;
-
 		_env = env;
 
-
-
-		var accessKey = configuration?["CloudflareR2:AccessKey"] ?? "PLACEHOLDER";
-
-		var secretKey = configuration?["CloudflareR2:SecretKey"] ?? "PLACEHOLDER";
-
-		var accountId = configuration?["CloudflareR2:AccountId"];
-
-		var serviceUrl = configuration?["CloudflareR2:ServiceUrl"];
-
+		var accessKey = FirstNonEmpty(
+			configuration?["CloudflareR2:AccessKey"],
+			configuration?["CloudflareR2__AccessKey"],
+			Environment.GetEnvironmentVariable("R2_ACCESS_KEY")) ?? "PLACEHOLDER";
+		var secretKey = FirstNonEmpty(
+			configuration?["CloudflareR2:SecretKey"],
+			configuration?["CloudflareR2__SecretKey"],
+			Environment.GetEnvironmentVariable("R2_SECRET_KEY")) ?? "PLACEHOLDER";
+		var accountId = FirstNonEmpty(
+			configuration?["CloudflareR2:AccountId"],
+			configuration?["CloudflareR2__AccountId"],
+			Environment.GetEnvironmentVariable("R2_ACCOUNT_ID"));
+		var serviceUrl = FirstNonEmpty(
+			configuration?["CloudflareR2:ServiceUrl"],
+			configuration?["CloudflareR2__ServiceUrl"],
+			Environment.GetEnvironmentVariable("R2_SERVICE_URL"));
 		if (string.IsNullOrWhiteSpace(serviceUrl))
-
 		{
-
 			serviceUrl = !string.IsNullOrWhiteSpace(accountId)
-
 				? $"https://{accountId}.r2.cloudflarestorage.com"
-
 				: "https://f6757b400d51c23671cedb8b0efc4b32.r2.cloudflarestorage.com";
-
 		}
 
-
-
-		_servicesBucket = configuration?["CloudflareR2:Buckets:Services"] ?? "services";
-
-		_r2PublicBaseUrl = configuration?["CloudflareR2:PublicUrl"] ?? serviceUrl.TrimEnd('/');
-
+		_servicesBucket = FirstNonEmpty(
+			configuration?["CloudflareR2:Buckets:Services"],
+			configuration?["CloudflareR2__Buckets__Services"],
+			Environment.GetEnvironmentVariable("R2_BUCKET_SERVICES")) ?? "services";
+		_r2PublicBaseUrl = FirstNonEmpty(
+			configuration?["CloudflareR2:PublicUrl"],
+			configuration?["CloudflareR2__PublicUrl"],
+			Environment.GetEnvironmentVariable("R2_PUBLIC_URL")) ?? serviceUrl.TrimEnd('/');
 		_r2Configured = !string.IsNullOrWhiteSpace(accessKey)
-
 			&& !string.IsNullOrWhiteSpace(secretKey)
-
 			&& accessKey != "PLACEHOLDER"
-
 			&& secretKey != "PLACEHOLDER";
 
 
@@ -275,8 +283,6 @@ public class UserService : IUserService
 		}
 
 
-
-		resolvedUrl ??= $"{_r2PublicBaseUrl}/{_servicesBucket}/{key}";
 
 		return (key, resolvedUrl);
 
@@ -2788,7 +2794,9 @@ public class UserService : IUserService
 
                     s.ServiceImageMimeType,
 
-                    ISNULL(s.RateType, 'per hour') AS RateType
+                    ISNULL(s.RateType, 'per hour') AS RateType,
+
+                    s.ImageFileName
 
                 FROM dbo.Services s
 
@@ -2829,8 +2837,25 @@ public class UserService : IUserService
 
 
 			string? imageBase64 = null;
+			string? imageFileName = sqlDataReader.FieldCount > 8 && !sqlDataReader.IsDBNull(8) ? sqlDataReader.GetString(8) : null;
+			if (_r2Configured && _r2Client != null && !string.IsNullOrWhiteSpace(imageFileName))
+			{
+				try
+				{
+					var presignedReq = new GetPreSignedUrlRequest
+					{
+						BucketName = _servicesBucket,
+						Key = imageFileName.TrimStart('/'),
+						Expires = DateTime.UtcNow.AddHours(24)
+					};
+					imageBase64 = _r2Client.GetPreSignedURL(presignedReq);
+				}
+				catch
+				{
+				}
+			}
 
-			if (!sqlDataReader.IsDBNull(5))
+			if (string.IsNullOrWhiteSpace(imageBase64) && !sqlDataReader.IsDBNull(5))
 
 			{
 

@@ -45,6 +45,17 @@ if (!string.IsNullOrEmpty(infisicalClientId) && !string.IsNullOrEmpty(infisicalC
     {
         Console.Error.WriteLine($"[Startup Warning] Infisical secret fetch failed; falling back to local configuration: {ex.Message}");
     }
+    var normalizedSecrets = builder.Configuration.AsEnumerable()
+        .Where(kvp => kvp.Key.Contains("__", StringComparison.Ordinal) && !string.IsNullOrWhiteSpace(kvp.Value))
+        .ToDictionary(
+            kvp => kvp.Key.Replace("__", ":", StringComparison.Ordinal),
+            kvp => kvp.Value,
+            StringComparer.OrdinalIgnoreCase);
+
+    if (normalizedSecrets.Count > 0)
+    {
+        builder.Configuration.AddInMemoryCollection(normalizedSecrets);
+    }
 }
 
 // ── Serilog (diagnostic analytics → Seq) ─────────────────────────────────────
