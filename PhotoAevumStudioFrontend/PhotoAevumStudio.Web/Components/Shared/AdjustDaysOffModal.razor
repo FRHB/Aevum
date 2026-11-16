@@ -1,0 +1,165 @@
+@using PhotoAevumStudio.Web.Models
+@using PhotoAevumStudio.Web.Services
+@inject IEmployeeService Employees
+
+@if (IsOpen && Employee != null)
+{
+    <div class="fixed inset-0 bg-slate-950/60 backdrop-blur-xs z-50 flex items-center justify-center p-4"
+         role="dialog" aria-modal="true" aria-labelledby="days-off-modal-title"
+         @onclick="CloseAsync">
+        <div class="bg-white rounded-2xl shadow-xl border border-slate-200 w-full max-w-md overflow-hidden"
+             @onclick:stopPropagation="true">
+            <div class="px-6 py-4 border-b border-slate-100 flex items-center justify-between bg-slate-50/70">
+                <div>
+                    <h3 id="days-off-modal-title" class="text-sm font-extrabold text-slate-900">Adjust Staff Days Off</h3>
+                    <p class="text-[11px] text-slate-500 mt-0.5">
+                        @Employee.FullName &bull; <span class="font-mono">@Employee.EmployeeId</span>
+                    </p>
+                </div>
+                <button type="button"
+                        @onclick="CloseAsync"
+                        disabled="@_isSaving"
+                        class="text-slate-400 hover:text-slate-700 p-1 rounded-lg hover:bg-slate-100 text-xs font-bold"
+                        aria-label="Close modal">
+                    ✕
+                </button>
+            </div>
+
+            <div class="p-6 space-y-4 text-xs">
+                @if (!string.IsNullOrWhiteSpace(_errorMessage))
+                {
+                    <div class="p-2.5 rounded-lg bg-rose-50 border border-rose-200 text-rose-700 font-medium" role="alert">
+                        @_errorMessage
+                    </div>
+                }
+
+                <div class="flex items-center justify-between">
+                    <span class="font-semibold text-slate-700">Select Weekly Rest Days</span>
+                    <button type="button"
+                            @onclick="ClearAllDays"
+                            class="text-[11px] font-semibold text-slate-500 hover:text-slate-900 underline">
+                        Set None
+                    </button>
+                </div>
+
+                <div class="grid grid-cols-2 gap-2">
+                    @foreach (var day in AllDays)
+                    {
+                        var isSelected = _selectedDays.Contains(day);
+                        <label class="flex items-center gap-2.5 p-2.5 rounded-xl border cursor-pointer transition-all @(isSelected ? "border-teal-600 bg-teal-50/60 text-teal-950 font-bold" : "border-slate-200 bg-white text-slate-700 hover:bg-slate-50")">
+                            <input type="checkbox"
+                                   checked="@isSelected"
+                                   @onchange="e => ToggleDay(day, (bool)(e.Value ?? false))"
+                                   class="rounded text-teal-700 focus:ring-teal-500" />
+                            <span>@day</span>
+                        </label>
+                    }
+                </div>
+
+                <div class="p-3 rounded-lg bg-slate-50 border border-slate-200 text-[11px] text-slate-600">
+                    Current selection:
+                    <strong class="text-slate-900">
+                        @(_selectedDays.Count == 0 ? "None (Available all week)" : string.Join(", ", AllDays.Where(d => _selectedDays.Contains(d))))
+                    </strong>
+                </div>
+            </div>
+
+            <div class="px-6 py-4 border-t border-slate-100 bg-slate-50/70 flex items-center justify-end gap-2">
+                <button type="button"
+                        @onclick="CloseAsync"
+                        disabled="@_isSaving"
+                        class="px-3.5 py-2 border border-slate-300 bg-white hover:bg-slate-50 text-slate-700 rounded-lg text-xs font-semibold">
+                    Cancel
+                </button>
+                <button type="button"
+                        @onclick="SaveAsync"
+                        disabled="@_isSaving"
+                        class="px-4 py-2 bg-slate-900 hover:bg-black text-white rounded-lg text-xs font-bold shadow-xs disabled:opacity-50">
+                    @(_isSaving ? "Saving..." : "Save Days Off")
+                </button>
+            </div>
+        </div>
+    </div>
+}
+
+@code {
+    private static readonly string[] AllDays =
+    [
+        "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"
+    ];
+
+    [Parameter] public bool IsOpen { get; set; }
+    [Parameter] public EmployeeViewModel? Employee { get; set; }
+    [Parameter] public EventCallback OnClose { get; set; }
+    [Parameter] public EventCallback<string> OnSaved { get; set; }
+
+    private HashSet<string> _selectedDays = new(StringComparer.OrdinalIgnoreCase);
+    private string? _lastEmployeeId;
+    private bool _wasOpen;
+    private string? _errorMessage;
+    private bool _isSaving;
+
+    protected override void OnParametersSet()
+    {
+        if (IsOpen && Employee != null && (!_wasOpen || _lastEmployeeId != Employee.EmployeeId))
+        {
+            _lastEmployeeId = Employee.EmployeeId;
+            _errorMessage = null;
+            _selectedDays = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+            var raw = Employee.DaysOff ?? string.Empty;
+            if (!string.IsNullOrWhiteSpace(raw) && !raw.Trim().Equals("None", StringComparison.OrdinalIgnoreCase))
+            {
+                foreach (var token in raw.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+                {
+                    var match = AllDays.FirstOrDefault(d => d.Equals(token, StringComparison.OrdinalIgnoreCase));
+                    if (match != null)
+                        _selectedDays.Add(match);
+                }
+            }
+        }
+        _wasOpen = IsOpen;
+    }
+
+    private void ToggleDay(string day, bool isChecked)
+    {
+        if (isChecked) _selectedDays.Add(day);
+        else _selectedDays.Remove(day);
+    }
+
+    private void ClearAllDays() => _selectedDays.Clear();
+
+    private Task CloseAsync() => _isSaving ? Task.CompletedTask : OnClose.InvokeAsync();
+
+    private async Task SaveAsync()
+    {
+        if (Employee == null) return;
+        _isSaving = true;
+        _errorMessage = null;
+
+        try
+        {
+            var ordered = AllDays.Where(d => _selectedDays.Contains(d)).ToList();
+            var value = ordered.Count == 0 ? "None" : string.Join(", ", ordered);
+
+            var ok = await Employees.UpdateEmployeeDaysOffAsync(Employee.EmployeeId, value);
+            if (ok)
+            {
+                Employee.DaysOff = value;
+                await OnSaved.InvokeAsync(value);
+            }
+            else
+            {
+                _errorMessage = "Unable to update Days Off. Please try again.";
+            }
+        }
+        catch (Exception ex)
+        {
+            _errorMessage = ex.Message;
+        }
+        finally
+        {
+            _isSaving = false;
+        }
+    }
+}

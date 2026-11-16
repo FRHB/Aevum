@@ -28,7 +28,7 @@
             We couldn't find that booking.
         </div>
     }
-    else if (_info.EventStatus == "Confirmed" || _info.EventStatus == "Shot" || _paid)
+    else if (_info.EventStatus == "Confirmed" || _info.EventStatus == "Shot" || _info.EventStatus == "Complete" || _paid)
     {
         <div class="mt-8 rounded-2xl border border-emerald-200 bg-emerald-50 p-8 text-center shadow-sm" role="status">
             <div class="text-5xl mb-3">&#10003;</div>

@@ -228,4 +228,79 @@ public class SidebarPasswordCalendarAndTeamLeaderTests
         Assert.True(new PhotoAevumStudio.Web.Models.QrPaymentInfoDto { IsFinalPayment = true }.IsFinalPayment);
         Assert.True(new PhotoAevumStudio.Application.Interfaces.QrPaymentInfoDto { IsFinalPayment = true }.IsFinalPayment);
     }
+
+    [Fact]
+    public void EventExecutionWorkflow_TeamLeader_PreparationDispatchOngoingPostEvent_AndCashVerificationFlow()
+    {
+        var root = GetRepositoryRoot();
+        var webRoot = Path.Combine(root, "PhotoAevumStudioFrontend", "PhotoAevumStudio.Web");
+        var staffDashboard = File.ReadAllText(Path.Combine(webRoot, "Components", "Pages", "StaffDashboard.razor"));
+        var customerDashboard = File.ReadAllText(Path.Combine(webRoot, "Components", "Pages", "CustomerDashboard.razor"));
+        var myBookings = File.ReadAllText(Path.Combine(webRoot, "Components", "Pages", "MyBookings.razor"));
+        var adminDashboard = File.ReadAllText(Path.Combine(webRoot, "Components", "Pages", "AdminDashboard.razor"));
+        var livePanel = File.ReadAllText(Path.Combine(webRoot, "Components", "Shared", "LiveEventsOverviewPanel.razor"));
+
+        // 1. Team Leader toggles, equipment checklist, Dispatch transition, and Cash Received
+        Assert.Contains("Preparation", staffDashboard);
+        Assert.Contains("Dispatch", staffDashboard);
+        Assert.Contains("Ongoing", staffDashboard);
+        Assert.Contains("Post Event", staffDashboard);
+        Assert.Contains("Preparation Equipment Checklist", staffDashboard);
+        Assert.Contains("MarkAllEquipmentTakenAsync", staffDashboard);
+        Assert.Contains("AddAdditionalEquipmentAsync", staffDashboard);
+        Assert.Contains("Cash Received", staffDashboard);
+        Assert.Contains("QuickCashReceivedAsync", staffDashboard);
+
+        // 2. Customer Dashboard & MyBookings immediately mark cash pending verification as Complete
+        Assert.Contains("GetCustomerDisplayStatus", customerDashboard);
+        Assert.Contains("GetCustomerEventDisplayStatus", myBookings);
+        Assert.Contains("Pending Verification", customerDashboard);
+        Assert.Contains("\"Complete\"", customerDashboard);
+
+        // 3. Office Clerk & Admin Overview stacked concurrent events & Verify Cash button
+        Assert.Contains("LiveEventsOverviewPanel", adminDashboard);
+        Assert.Contains("LiveEventsOverviewPanel", staffDashboard);
+        Assert.Contains("Verify Cash", livePanel);
+        Assert.Contains("Paid Cash Pending Verification", livePanel);
+        Assert.Contains("VerifyCashAsync", livePanel);
+
+        // 4. API Controller endpoints & authorization
+        var markTaken = typeof(PaymentsController).GetMethod(nameof(PaymentsController.MarkEquipmentTaken));
+        var addEquip = typeof(PaymentsController).GetMethod(nameof(PaymentsController.AddAdditionalEquipment));
+        var liveOverview = typeof(PaymentsController).GetMethod(nameof(PaymentsController.GetLiveEventsOverview));
+        var verifyCash = typeof(PaymentsController).GetMethod(nameof(PaymentsController.VerifyCashSettlement));
+
+        Assert.NotNull(markTaken);
+        Assert.NotNull(addEquip);
+        Assert.NotNull(liveOverview);
+        Assert.NotNull(verifyCash);
+    }
+
+    [Fact]
+    public void RegularEmployee_RestrictsEquipmentSettlementTimesheetAndNavToAllowedPages()
+    {
+        var root = GetRepositoryRoot();
+        var webRoot = Path.Combine(root, "PhotoAevumStudioFrontend", "PhotoAevumStudio.Web");
+        var sidebar = File.ReadAllText(Path.Combine(webRoot, "Components", "Layout", "Sidebar.razor"));
+        var staffDashboard = File.ReadAllText(Path.Combine(webRoot, "Components", "Pages", "StaffDashboard.razor"));
+        var timesheet = File.ReadAllText(Path.Combine(webRoot, "Components", "Pages", "Timesheet.razor"));
+        var featuredServicesPage = Path.Combine(webRoot, "Components", "Pages", "StaffFeaturedServices.razor");
+
+        Assert.True(File.Exists(featuredServicesPage));
+        Assert.Contains("/staff/featured-services", sidebar);
+        Assert.Contains("My Schedule", sidebar);
+        Assert.Contains("/portfolio", sidebar);
+        Assert.Contains("@if (isClerk || teamLeaderEvents.Any())", staffDashboard);
+        Assert.Contains("My Schedule (Read-Only)", staffDashboard);
+        Assert.Contains("string.Equals(h.EmployeeStudioId, employeeId, StringComparison.OrdinalIgnoreCase)", timesheet);
+
+        // Backend TimesheetController RBAC checks
+        var summaryMethod = typeof(TimesheetController).GetMethod(nameof(TimesheetController.GetTodaySummary));
+        Assert.NotNull(summaryMethod);
+        var authAttr = summaryMethod!.GetCustomAttributes(typeof(Microsoft.AspNetCore.Authorization.AuthorizeAttribute), inherit: false)
+            .Cast<Microsoft.AspNetCore.Authorization.AuthorizeAttribute>()
+            .FirstOrDefault();
+        Assert.NotNull(authAttr);
+        Assert.Equal("ClerkOrAdmin", authAttr!.Policy);
+    }
 }

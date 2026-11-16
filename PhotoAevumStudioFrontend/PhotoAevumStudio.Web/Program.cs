@@ -73,6 +73,7 @@ builder.Services.AddScoped<IServicesApiClient, ServicesApiClient>();
 builder.Services.AddScoped<PhotoAevumStudio.Web.Models.BookScheduleState>();
 builder.Services.AddScoped<IBookScheduleClient, BookScheduleClient>();
 builder.Services.AddScoped<IConsultationClient, ConsultationClient>();
+builder.Services.AddScoped<ICustomerDropboxClient, CustomerDropboxClient>();
 builder.Services.AddScoped<BookingEvents>();
 builder.Services.AddScoped<PaymentHubClient>();
 

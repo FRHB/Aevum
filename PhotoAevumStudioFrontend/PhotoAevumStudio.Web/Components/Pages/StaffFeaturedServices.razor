@@ -1,0 +1,154 @@
+@page "/staff/featured-services"
+@layout EmployeeLayout
+@rendermode InteractiveServer
+@using PhotoAevumStudio.Web.Models
+@using PhotoAevumStudio.Web.Services
+@inject IUserService UserService
+@inject IServicesApiClient ServicesApi
+@attribute [Authorize(Roles = "Employee,Office Clerk,Admin,SystemAdmin")]
+
+<PageTitle>Featured Services | Photo Aevum Studio</PageTitle>
+
+<div class="space-y-6 pb-12 max-w-6xl mx-auto px-4 sm:px-6">
+    <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 pb-4 border-b border-slate-200">
+        <div>
+            <div class="flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-slate-500 mb-1">
+                <span>Catalog</span>
+                <span>/</span>
+                <span class="text-slate-900 font-bold">Featured Services</span>
+            </div>
+            <h1 class="text-2xl sm:text-3xl font-extrabold text-slate-900 tracking-tight">Featured Studio Services</h1>
+            <p class="text-xs text-slate-500 mt-1">Read-only overview of curated signature studio services, bundles, and featured offerings.</p>
+        </div>
+
+        <a href="/staff" class="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg border border-slate-200 bg-white hover:bg-slate-50 text-xs font-bold text-slate-700">
+            &larr; Back to Overview
+        </a>
+    </div>
+
+    <div class="flex flex-wrap items-center gap-2">
+        @foreach (var kind in Kinds)
+        {
+            var active = _kindFilter == kind;
+            <button type="button"
+                    @onclick="() => _kindFilter = kind"
+                    class="px-3.5 py-1.5 rounded-full text-xs font-bold border transition-colors @(active ? "bg-slate-900 text-white border-slate-900" : "bg-white text-slate-600 border-slate-200 hover:bg-slate-50")">
+                @kind
+            </button>
+        }
+    </div>
+
+    @if (_loading)
+    {
+        <div class="py-16 text-center text-xs text-slate-400">Loading featured services...</div>
+    }
+    else if (!VisibleItems.Any())
+    {
+        <div class="bg-white rounded-2xl border border-slate-200 p-12 text-center shadow-xs">
+            <p class="text-2xl mb-2">★</p>
+            <h2 class="text-base font-bold text-slate-900">No Featured Services Available</h2>
+            <p class="text-xs text-slate-500 mt-1">Featured services curated by studio administration will appear here.</p>
+        </div>
+    }
+    else
+    {
+        <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+            @foreach (var item in VisibleItems)
+            {
+                <article class="bg-white rounded-2xl border border-slate-200 shadow-xs p-5 flex flex-col justify-between space-y-3">
+                    <div>
+                        <div class="flex items-center justify-between mb-3">
+                            <span class="text-[10px] font-bold uppercase tracking-widest text-slate-500">@item.Kind</span>
+                            <span class="px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-amber-400 text-slate-950 shadow-xs">
+                                ★ Featured
+                            </span>
+                        </div>
+                        <div class="text-[11px] font-mono text-slate-400">@item.Code</div>
+                        <h3 class="text-base font-bold text-slate-900 mt-0.5">@item.Title</h3>
+                        <div class="text-lg font-black font-mono text-slate-900 mt-2">@item.PriceText</div>
+                        <p class="text-xs text-slate-600 mt-1.5 line-clamp-3">@item.Description</p>
+                    </div>
+
+                    <div class="pt-3 border-t border-slate-100 flex items-center justify-between text-[11px] text-slate-500">
+                        <span>@item.Meta</span>
+                        <span class="font-semibold text-teal-700">Read-Only</span>
+                    </div>
+                </article>
+            }
+        </div>
+    }
+</div>
+
+@code {
+    private sealed record FeaturedCard(string Code, string Kind, string Title, string PriceText, string Description, string Meta);
+
+    private static readonly string[] Kinds = { "All", "Main Service", "Package", "Add-On" };
+    private string _kindFilter = "All";
+    private bool _loading = true;
+    private List<FeaturedCard> _items = new();
+
+    private IEnumerable<FeaturedCard> VisibleItems => _kindFilter == "All"
+        ? _items
+        : _items.Where(i => string.Equals(i.Kind, _kindFilter, StringComparison.OrdinalIgnoreCase));
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            var mainTask = ServicesApi.GetFeaturedCodesAsync(FeaturedEntityTypes.Main);
+            var pkgTask = ServicesApi.GetFeaturedCodesAsync(FeaturedEntityTypes.Package);
+            var addTask = ServicesApi.GetFeaturedCodesAsync(FeaturedEntityTypes.AddOn);
+
+            await Task.WhenAll(mainTask, pkgTask, addTask);
+
+            var mainCodes = (await mainTask).ToHashSet(StringComparer.OrdinalIgnoreCase);
+            var pkgCodes = (await pkgTask).ToHashSet(StringComparer.OrdinalIgnoreCase);
+            var addCodes = (await addTask).ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+            var allMain = UserService.GetMainServices().Where(s => s.IsActive).ToList();
+            var allPackages = UserService.GetPackageServices().Where(p => p.IsActive).ToList();
+            var allAddOns = UserService.GetAdditionalServices().Where(a => a.IsActive).ToList();
+
+            bool hasFeatured = mainCodes.Count > 0 || pkgCodes.Count > 0 || addCodes.Count > 0;
+            var activeMain = hasFeatured ? allMain.Where(s => mainCodes.Contains(s.Code)) : allMain;
+            var activePackages = hasFeatured ? allPackages.Where(p => pkgCodes.Contains(p.Code)) : allPackages;
+            var activeAddOns = hasFeatured ? allAddOns.Where(a => addCodes.Contains(a.Code)) : allAddOns;
+
+            var list = new List<FeaturedCard>();
+
+            list.AddRange(activeMain.Select(s => new FeaturedCard(
+                s.Code,
+                "Main Service",
+                s.Title,
+                s.BasePrice > 0 ? $"₱{s.BasePrice:N0}" : "Custom Quote",
+                !string.IsNullOrWhiteSpace(s.Description) ? s.Description! : "Professional photography session executed in our studio.",
+                $"{s.Duration} • {s.Category}")));
+
+            list.AddRange(activePackages.Select(p => new FeaturedCard(
+                p.Code,
+                "Package",
+                p.Title,
+                p.Price,
+                !string.IsNullOrWhiteSpace(p.Description) ? p.Description! : "Curated bundle of studio services at a package rate.",
+                !string.IsNullOrWhiteSpace(p.SavingsNote) ? p.SavingsNote! : p.BundleCategory)));
+
+            list.AddRange(activeAddOns.Select(a => new FeaturedCard(
+                a.Code,
+                "Add-On",
+                a.Title,
+                a.PriceText,
+                !string.IsNullOrWhiteSpace(a.Description) ? a.Description! : "Optional studio session enhancement.",
+                a.TypeCategory)));
+
+            _items = list;
+        }
+        catch
+        {
+            _items = new();
+        }
+        finally
+        {
+            _loading = false;
+        }
+    }
+}

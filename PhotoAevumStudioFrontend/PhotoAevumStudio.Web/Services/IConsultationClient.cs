@@ -19,6 +19,10 @@ public interface IConsultationClient
     Task<ApiResult<EventAppointmentDto>> CompleteEventAsync(string appointmentId, CompleteEventRequest request, CancellationToken ct = default);
     Task<ApiResult<IReadOnlyList<TeamLeaderEventDto>>> GetTeamLeaderEventsAsync(string? employeeId = null, CancellationToken ct = default);
     Task<ApiResult<EventAppointmentDto>> UpdateTeamLeaderEventStatusAsync(string appointmentId, UpdateTeamLeaderStatusRequest request, CancellationToken ct = default);
+    Task<ApiResult<EventAppointmentDto>> MarkEquipmentTakenAsync(string appointmentId, MarkEquipmentTakenRequest request, CancellationToken ct = default);
+    Task<ApiResult<EventAppointmentDto>> AddEventEquipmentAsync(string appointmentId, AddEventEquipmentRequest request, CancellationToken ct = default);
+    Task<ApiResult<IReadOnlyList<LiveEventOverviewDto>>> GetLiveEventsOverviewAsync(CancellationToken ct = default);
+    Task<ApiResult<EventAppointmentDto>> VerifyCashSettlementAsync(string appointmentId, AdminApproveRemittanceModel? request = null, CancellationToken ct = default);
     Task<ApiResult<PaymentBreakdownModel>> CalculateReservationFeeAsync(decimal total, CancellationToken ct = default);
     Task<ApiResult<PaymentSummaryModel>> SubmitCustomerPaymentAsync(CustomerSubmitPaymentModel request, CancellationToken ct = default);
     Task<ApiResult<PaymentSummaryModel>> LogEmployeeCashAsync(EmployeeLogCashModel request, CancellationToken ct = default);

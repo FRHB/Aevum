@@ -431,12 +431,19 @@
             clockStatus = await Employees.GetClockStatusAsync(employeeId);
             var historyTarget = (isClerk || isAdmin) ? null : employeeId;
             var history = await Employees.GetTimesheetHistoryAsync(historyTarget);
-            myHistory = history.ToList();
+            myHistory = (isClerk || isAdmin)
+                ? history.ToList()
+                : history.Where(h => string.IsNullOrWhiteSpace(employeeId) || string.Equals(h.EmployeeStudioId, employeeId, StringComparison.OrdinalIgnoreCase)).ToList();
 
             if (isClerk || isAdmin)
             {
                 var roster = await Employees.GetTodayAttendanceAsync();
                 todayAttendance = roster.ToList();
+            }
+            else
+            {
+                currentTab = "my";
+                todayAttendance = new();
             }
         }
         catch (Exception ex)

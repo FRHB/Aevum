@@ -40,3 +40,8 @@ public record UpdateAdminDto(
 /// Response containing the next auto-generated Admin ID.
 /// </summary>
 public record NextAdminIdResponse(string NextId, string Role);
+
+/// <summary>
+/// Request to update an employee's scheduled days off.
+/// </summary>
+public record UpdateEmployeeDaysOffDto(string? DaysOff);

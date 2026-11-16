@@ -7,6 +7,8 @@ public interface IR2StorageService
     string PortfolioBucket { get; }
     string ServicesBucket { get; }
     string ArchiveBucket { get; }
+    string DropboxBucket { get; }
+    bool IsConfigured { get; }
 
     Task CreateBucketIfNotExistsAsync(string bucketName);
     Task<string> UploadFileAsync(string bucketName, string objectKey, Stream fileStream, string contentType);
@@ -16,4 +18,5 @@ public interface IR2StorageService
     Task<List<string>> UploadImagesAsync(List<IFormFile> files, string folderPrefix, string? bucketName = null);
     Task<string> UploadServiceImageAsync(byte[] imageBytes, string? originalFileName, string? contentType, string folderPrefix = "services", CancellationToken cancellationToken = default, string? bucketName = null);
     string GetPresignedUrl(string fileName, string? bucketName = null);
+    string GetPresignedDownloadUrl(string bucketName, string objectKey, string downloadFileName, TimeSpan? expiry = null);
 }

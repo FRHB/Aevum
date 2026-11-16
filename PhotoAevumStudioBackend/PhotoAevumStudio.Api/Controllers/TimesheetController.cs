@@ -260,7 +260,7 @@ public class TimesheetController : ControllerBase
     }
 
     [HttpGet("summary-today")]
-    [Authorize(Policy = "StaffOrAbove")]
+    [Authorize(Policy = "ClerkOrAdmin")]
     public async Task<IActionResult> GetTodaySummary(CancellationToken ct)
     {
         var phtNow = GetPhtNow();
@@ -310,11 +310,7 @@ public class TimesheetController : ControllerBase
     [HttpGet("my-history")]
     public async Task<IActionResult> GetMyHistory([FromQuery] string? employeeId, CancellationToken ct)
     {
-        var isManager = User.IsInRole("Admin") 
-                     || User.IsInRole("SystemAdmin") 
-                     || User.IsInRole("Office Clerk")
-                     || User.IsInRole("OfficeClerk")
-                     || User.HasClaim(c => c.Type == ClaimTypes.Role && (c.Value == "Admin" || c.Value == "SystemAdmin" || c.Value.Contains("Clerk")));
+        var isManager = IsClerkOrAdmin();
 
         if (string.IsNullOrWhiteSpace(employeeId) && isManager)
         {
@@ -373,11 +369,21 @@ public class TimesheetController : ControllerBase
         return Ok(record);
     }
 
+    private bool IsClerkOrAdmin() =>
+        User.IsInRole("Admin")
+        || User.IsInRole("SystemAdmin")
+        || User.IsInRole("Office Clerk")
+        || User.IsInRole("OfficeClerk")
+        || User.HasClaim(c => c.Type == ClaimTypes.Role && (c.Value == "Admin" || c.Value == "SystemAdmin" || c.Value.Contains("Clerk", StringComparison.OrdinalIgnoreCase)));
+
     private string ResolveTargetId(string? candidateId)
     {
-        if (!string.IsNullOrWhiteSpace(candidateId)) return candidateId;
+        if (IsClerkOrAdmin() && !string.IsNullOrWhiteSpace(candidateId))
+            return candidateId;
+
         return User.FindFirstValue("studio_id")
                ?? User.FindFirstValue(ClaimTypes.NameIdentifier)
+               ?? User.FindFirstValue("sub")
                ?? "EMP-001";
     }
 }

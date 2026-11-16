@@ -992,3 +992,312 @@
         border-top: 1px dashed #f3f4f6;
     }
 }
+
+/* ── Day View Tabular Gantt / Time-Blocked Timetable ──────────────────── */
+.day-timetable-card {
+    padding: 1rem;
+}
+
+.day-gantt-wrapper {
+    width: 100%;
+    overflow-x: auto;
+    border: 1px solid #e5e7eb;
+    border-radius: 8px;
+    background: #ffffff;
+}
+
+.day-gantt-table {
+    width: 100%;
+    min-width: 880px;
+    border-collapse: collapse;
+    table-layout: fixed;
+}
+
+.day-gantt-table thead tr {
+    background: #f9fafb;
+    border-bottom: 1px solid #e5e7eb;
+}
+
+.gantt-event-col-header {
+    width: 260px;
+    min-width: 240px;
+    padding: 0.65rem 0.85rem;
+    text-align: left;
+    font-size: 0.7rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: #4b5563;
+    border-right: 1px solid #e5e7eb;
+    position: sticky;
+    left: 0;
+    background: #f9fafb;
+    z-index: 2;
+}
+
+.gantt-hour-header {
+    padding: 0.6rem 0.25rem;
+    text-align: center;
+    font-size: 0.68rem;
+    font-weight: 700;
+    color: #6b7280;
+    border-right: 1px solid #f1f5f9;
+}
+
+.gantt-hour-header:last-child {
+    border-right: none;
+}
+
+.day-gantt-row {
+    border-bottom: 1px solid #f1f5f9;
+    cursor: pointer;
+    transition: background-color 0.2s ease, box-shadow 0.2s ease;
+    background: #ffffff;
+}
+
+.day-gantt-row:last-child {
+    border-bottom: none;
+}
+
+.day-gantt-row:hover {
+    background: #f8fafc;
+}
+
+.day-gantt-row.conflict-row {
+    background: #fff5f5;
+}
+
+.day-gantt-row.is-consultation-row .gantt-event-meta-cell {
+    border-left: 3px solid #0d9488;
+}
+
+.day-gantt-row.conflict-row .gantt-event-meta-cell {
+    border-left: 3px solid #ef4444;
+}
+
+.gantt-event-meta-cell {
+    padding: 0.65rem 0.85rem;
+    border-right: 1px solid #e5e7eb;
+    vertical-align: middle;
+    position: sticky;
+    left: 0;
+    background: inherit;
+    z-index: 1;
+}
+
+.gantt-meta-top {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.5rem;
+}
+
+.gantt-client-name {
+    font-size: 0.8rem;
+    font-weight: 700;
+    color: #111827;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.gantt-meta-sub {
+    display: flex;
+    align-items: center;
+    gap: 0.35rem;
+    font-size: 0.68rem;
+    color: #6b7280;
+    margin-top: 0.2rem;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.gantt-meta-time {
+    display: flex;
+    align-items: center;
+    font-size: 0.68rem;
+    font-weight: 600;
+    color: #374151;
+    margin-top: 0.25rem;
+}
+
+.gantt-timeline-cell {
+    position: relative;
+    padding: 0;
+    height: 68px;
+    vertical-align: middle;
+}
+
+.gantt-grid-backdrop {
+    position: absolute;
+    inset: 0;
+    display: grid;
+    grid-template-columns: repeat(var(--hour-cols, 12), minmax(0, 1fr));
+    pointer-events: none;
+}
+
+.gantt-grid-slot {
+    border-right: 1px dashed #e5e7eb;
+    height: 100%;
+}
+
+.gantt-grid-slot:last-child {
+    border-right: none;
+}
+
+.gantt-time-block {
+    position: absolute;
+    top: 12px;
+    bottom: 12px;
+    border-radius: 6px;
+    padding: 0.25rem 0.55rem;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    overflow: hidden;
+    border: 1px solid #bfdbfe;
+    border-left: 4px solid #2563eb;
+    background: #eff6ff;
+    color: #1e3a8a;
+    box-shadow: 0 1px 3px rgba(15, 23, 42, 0.08);
+    z-index: 1;
+    transition: transform 0.15s ease, box-shadow 0.15s ease;
+}
+
+.gantt-time-block:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 4px 10px rgba(15, 23, 42, 0.14);
+}
+
+.gantt-time-block.confirmed {
+    background: #ecfdf5;
+    border-color: #a7f3d0;
+    border-left-color: #10b981;
+    color: #065f46;
+}
+
+.gantt-time-block.pending {
+    background: #fffbeb;
+    border-color: #fde68a;
+    border-left-color: #f59e0b;
+    color: #92400e;
+}
+
+.gantt-time-block.completed {
+    background: #f3f4f6;
+    border-color: #d1d5db;
+    border-left-color: #6b7280;
+    color: #374151;
+}
+
+.gantt-time-block.consultation {
+    background: #f0fdfa;
+    border-color: #99f6e4;
+    border-left-color: #0d9488;
+    color: #115e59;
+}
+
+.gantt-time-block.conflict {
+    background: #fef2f2;
+    border-color: #fca5a5;
+    border-left-color: #ef4444;
+    color: #991b1b;
+}
+
+.gantt-block-time {
+    font-size: 0.65rem;
+    font-weight: 800;
+    line-height: 1.1;
+    white-space: nowrap;
+}
+
+.gantt-block-label {
+    font-size: 0.7rem;
+    font-weight: 600;
+    line-height: 1.2;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+/* 10-second JS Interop Highlight for Clicked Event Row/Block */
+@keyframes aevumRowPulse {
+    0%, 100% {
+        background-color: #fef3c7;
+        box-shadow: inset 0 0 0 2px #f59e0b;
+    }
+    50% {
+        background-color: #fde68a;
+        box-shadow: inset 0 0 0 3px #d97706;
+    }
+}
+
+.day-gantt-row.event-row-highlighted {
+    background-color: #fef3c7 !important;
+    animation: aevumRowPulse 1.6s ease-in-out infinite;
+}
+
+.day-gantt-row.event-row-highlighted .gantt-event-meta-cell {
+    background-color: #fef3c7 !important;
+}
+
+.day-gantt-row.event-row-highlighted .gantt-time-block {
+    box-shadow: 0 0 0 3px #f59e0b, 0 6px 14px rgba(217, 119, 6, 0.25);
+    transform: scale(1.01);
+}
+
+/* ── Collapsible Staff Schedule Admin Panel ───────────────────────────── */
+.staff-schedule-collapsible {
+    background: #ffffff;
+    border: 1px solid #e5e7eb;
+    border-radius: 10px;
+    overflow: hidden;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
+}
+
+.staff-schedule-toggle {
+    width: 100%;
+    padding: 0.9rem 1.15rem;
+    background: #f9fafb;
+    border: none;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1rem;
+    flex-wrap: wrap;
+    cursor: pointer;
+    transition: background-color 0.15s ease;
+}
+
+.staff-schedule-toggle:hover {
+    background: #f3f4f6;
+}
+
+.staff-schedule-chevron {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 22px;
+    height: 22px;
+    border-radius: 6px;
+    background: #e5e7eb;
+    color: #111827;
+    font-size: 0.95rem;
+    font-weight: 800;
+    transition: transform 0.2s ease;
+}
+
+.staff-schedule-chevron.is-open {
+    transform: rotate(90deg);
+    background: #111827;
+    color: #ffffff;
+}
+
+.staff-schedule-body {
+    padding: 1.15rem;
+    border-top: 1px solid #e5e7eb;
+    display: flex;
+    flex-direction: column;
+    gap: 1.25rem;
+}

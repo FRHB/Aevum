@@ -1,0 +1,318 @@
+@page "/my/availability"
+@layout CustomerLayout
+@rendermode InteractiveServer
+@attribute [Authorize(Roles = "Customer")]
+@using PhotoAevumStudio.Web.Models
+@using PhotoAevumStudio.Web.Services
+@inject IBookScheduleClient Api
+
+<PageTitle>Availability Checker | Photo Aevum Studio</PageTitle>
+
+<header class="aev-page-header">
+    <div>
+        <h1 class="aev-page-header__title">Availability Checker</h1>
+        <p class="aev-page-header__subtitle">
+            Check studio schedule, crew availability (Photography &amp; Videography), and approved leaves before starting your booking.
+        </p>
+    </div>
+</header>
+
+<div class="max-w-5xl space-y-6">
+    @* ── Date & Time Selector Card ─────────────────────────────────── *@
+    <section class="rounded-xl border border-slate-200 bg-white p-6 shadow-sm">
+        <h2 class="text-base font-semibold text-slate-900 mb-4">Select Target Date &amp; Time</h2>
+
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-4 items-end">
+            <div>
+                <label for="target-date" class="block text-sm font-medium text-slate-700 mb-1.5">
+                    Target Date
+                </label>
+                <input id="target-date"
+                       type="date"
+                       class="w-full rounded-lg border border-slate-300 px-3.5 py-2.5 text-sm text-slate-900 focus:border-slate-900 focus:outline-none focus:ring-1 focus:ring-slate-900"
+                       min="@DateOnly.FromDateTime(DateTime.Today).ToString("yyyy-MM-dd")"
+                       value="@_targetDate.ToString("yyyy-MM-dd")"
+                       @onchange="OnDateChanged" />
+            </div>
+
+            <div>
+                <label for="target-time" class="block text-sm font-medium text-slate-700 mb-1.5">
+                    Target Time <span class="text-slate-400 font-normal">(optional)</span>
+                </label>
+                <div class="flex gap-2">
+                    <input id="target-time"
+                           type="time"
+                           class="w-full rounded-lg border border-slate-300 px-3.5 py-2.5 text-sm text-slate-900 focus:border-slate-900 focus:outline-none focus:ring-1 focus:ring-slate-900"
+                           value="@(_targetTime.HasValue ? _targetTime.Value.ToString("HH:mm") : string.Empty)"
+                           @onchange="OnTimeChanged" />
+                    @if (_targetTime.HasValue)
+                    {
+                        <button type="button"
+                                class="rounded-lg border border-slate-300 px-3 py-2 text-xs font-medium text-slate-600 hover:bg-slate-50"
+                                title="Clear target time to check full day"
+                                @onclick="ClearTimeAsync">
+                            Full Day
+                        </button>
+                    }
+                </div>
+            </div>
+
+            <div>
+                <button type="button"
+                        class="w-full rounded-lg bg-slate-900 px-4 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-slate-800 disabled:opacity-50 cursor-pointer"
+                        disabled="@_loading"
+                        @onclick="CheckAsync">
+                    @(_loading ? "Checking…" : "Check Availability")
+                </button>
+            </div>
+        </div>
+
+        @* Quick studio hour presets *@
+        <div class="mt-4 pt-4 border-t border-slate-100 flex flex-wrap items-center gap-2">
+            <span class="text-xs font-medium text-slate-500 mr-1">Studio Hours:</span>
+            <button type="button"
+                    class="rounded-full px-3 py-1 text-xs font-medium border transition @(!_targetTime.HasValue ? "bg-slate-900 text-white border-slate-900" : "bg-slate-50 text-slate-700 border-slate-200 hover:bg-slate-100")"
+                    @onclick="ClearTimeAsync">
+                Full Day
+            </button>
+            @foreach (var preset in StudioHourPresets)
+            {
+                var isSelected = _targetTime.HasValue && _targetTime.Value == preset;
+                <button type="button"
+                        class="rounded-full px-3 py-1 text-xs font-medium border transition @(isSelected ? "bg-slate-900 text-white border-slate-900" : "bg-slate-50 text-slate-700 border-slate-200 hover:bg-slate-100")"
+                        @onclick="() => SelectPresetTimeAsync(preset)">
+                    @preset.ToString("h:mm tt")
+                </button>
+            }
+        </div>
+    </section>
+
+    @if (_error is not null)
+    {
+        <div class="rounded-xl border border-rose-200 bg-rose-50 p-4 text-sm text-rose-800" role="alert">
+            @_error
+        </div>
+    }
+
+    @if (_result is not null)
+    {
+        @* ── Dynamic Status Output Banner ──────────────────────────────── *@
+        var bannerStyle = GetBannerStyle(_result);
+        <section class="rounded-xl border p-6 shadow-sm @bannerStyle.ContainerClass" role="status" aria-live="polite">
+            <div class="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+                <div class="space-y-1.5">
+                    <div class="flex items-center gap-2">
+                        <span class="inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-semibold @bannerStyle.BadgeClass">
+                            @bannerStyle.BadgeLabel
+                        </span>
+                        <span class="text-xs font-medium opacity-80">
+                            @_result.Date.ToString("dddd, MMMM d, yyyy")
+                            @if (_result.TargetTime.HasValue)
+                            {
+                                <text> &bull; @_result.TargetTime.Value.ToString("h:mm tt")</text>
+                            }
+                        </span>
+                    </div>
+
+                    <h2 class="text-xl font-bold tracking-tight">
+                        @(_result.TimeStatusMessage ?? _result.DayStatusMessage)
+                    </h2>
+
+                    @if (!string.IsNullOrWhiteSpace(_result.TimeStatusMessage))
+                    {
+                        <p class="text-sm opacity-90">
+                            Day overview: <strong>@_result.DayStatusMessage</strong>
+                        </p>
+                    }
+                </div>
+
+                <div class="shrink-0">
+                    @if (_result.IsWholeDayUnavailable)
+                    {
+                        <span class="inline-flex items-center rounded-lg border border-current/20 bg-white/60 px-4 py-2.5 text-sm font-semibold opacity-70">
+                            Pick Another Date to Book
+                        </span>
+                    }
+                    else
+                    {
+                        <a href="/my/book"
+                           class="inline-flex items-center gap-2 rounded-lg bg-slate-900 px-5 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-slate-800 no-underline">
+                            Proceed to Book Schedule
+                            <span aria-hidden="true">&rarr;</span>
+                        </a>
+                    }
+                </div>
+            </div>
+
+            @* Crew Summary Pills *@
+            <div class="mt-5 pt-4 border-t border-current/10 grid grid-cols-1 sm:grid-cols-2 gap-3">
+                @{
+                    var photoOk = _result.TargetTime.HasValue
+                        ? _result.IsPhotographyAvailableForTime
+                        : _result.Slots.Any(s => s.IsBookable && s.IsPhotographyAvailable);
+                    var videoOk = _result.TargetTime.HasValue
+                        ? _result.IsVideographyAvailableForTime
+                        : _result.Slots.Any(s => s.IsBookable && s.IsVideographyAvailable);
+                }
+                <div class="flex items-center justify-between rounded-lg bg-white/75 px-4 py-2.5 text-sm text-slate-800">
+                    <span class="font-medium">Photography Crew</span>
+                    <span class="font-semibold @(photoOk ? "text-emerald-700" : "text-rose-700")">
+                        @(photoOk ? "Available" : "Unavailable")
+                        <span class="text-xs font-normal text-slate-500">(@_result.TotalPhotographers total)</span>
+                    </span>
+                </div>
+                <div class="flex items-center justify-between rounded-lg bg-white/75 px-4 py-2.5 text-sm text-slate-800">
+                    <span class="font-medium">Videography Crew</span>
+                    <span class="font-semibold @(videoOk ? "text-emerald-700" : "text-rose-700")">
+                        @(videoOk ? "Available" : "Unavailable")
+                        <span class="text-xs font-normal text-slate-500">(@_result.TotalVideographers total)</span>
+                    </span>
+                </div>
+            </div>
+        </section>
+
+        @* ── Hourly Time Slot Breakdown ────────────────────────────────── *@
+        <section class="rounded-xl border border-slate-200 bg-white p-6 shadow-sm">
+            <div class="flex items-center justify-between mb-4">
+                <div>
+                    <h3 class="text-base font-semibold text-slate-900">Studio Time Slots</h3>
+                    <p class="text-xs text-slate-500">Click any slot to inspect availability for that specific hour.</p>
+                </div>
+            </div>
+
+            <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+                @foreach (var slot in _result.Slots)
+                {
+                    var isActiveSlot = _result.TargetTime.HasValue
+                        && _result.TargetTime.Value >= slot.Start
+                        && _result.TargetTime.Value < slot.End;
+                    var slotCardClass = !slot.IsBookable || (!slot.IsPhotographyAvailable && !slot.IsVideographyAvailable)
+                        ? "border-slate-200 bg-slate-50 text-slate-500"
+                        : slot.IsPhotographyAvailable && slot.IsVideographyAvailable
+                            ? "border-emerald-200 bg-emerald-50/50 text-slate-900 hover:border-emerald-400"
+                            : "border-amber-200 bg-amber-50/60 text-slate-900 hover:border-amber-400";
+
+                    <button type="button"
+                            class="text-left rounded-xl border p-4 transition cursor-pointer @slotCardClass @(isActiveSlot ? "ring-2 ring-slate-900" : "")"
+                            @onclick="() => SelectPresetTimeAsync(slot.Start)">
+                        <div class="flex items-center justify-between gap-2 mb-1.5">
+                            <span class="text-sm font-bold">
+                                @slot.Start.ToString("h:mm tt") &ndash; @slot.End.ToString("h:mm tt")
+                            </span>
+                            @if (slot.IsBookable && (slot.IsPhotographyAvailable || slot.IsVideographyAvailable))
+                            {
+                                <span class="rounded-full px-2 py-0.5 text-[11px] font-semibold @(slot.IsPhotographyAvailable && slot.IsVideographyAvailable ? "bg-emerald-100 text-emerald-800" : "bg-amber-100 text-amber-800")">
+                                    @(slot.IsPhotographyAvailable && slot.IsVideographyAvailable ? "Both Open" : "Partial")
+                                </span>
+                            }
+                            else
+                            {
+                                <span class="rounded-full bg-slate-200 px-2 py-0.5 text-[11px] font-semibold text-slate-600">
+                                    Unavailable
+                                </span>
+                            }
+                        </div>
+                        <p class="text-xs leading-relaxed mb-2">@slot.StatusMessage</p>
+                        <div class="flex items-center gap-3 text-[11px] text-slate-600">
+                            <span>Photo: <strong>@slot.AvailablePhotographers/@slot.TotalPhotographers</strong></span>
+                            <span>Video: <strong>@slot.AvailableVideographers/@slot.TotalVideographers</strong></span>
+                        </div>
+                    </button>
+                }
+            </div>
+        </section>
+    }
+</div>
+
+@code {
+    private static readonly TimeOnly[] StudioHourPresets =
+    [
+        new(9, 0), new(10, 0), new(13, 0), new(14, 0), new(15, 0), new(16, 0)
+    ];
+
+    private DateOnly _targetDate = DateOnly.FromDateTime(DateTime.Today.AddDays(1));
+    private TimeOnly? _targetTime;
+    private AvailabilityCheckResult? _result;
+    private bool _loading;
+    private string? _error;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await CheckAsync();
+    }
+
+    private async Task OnDateChanged(ChangeEventArgs e)
+    {
+        if (DateOnly.TryParse(e.Value?.ToString(), out var parsed))
+        {
+            _targetDate = parsed;
+            await CheckAsync();
+        }
+    }
+
+    private async Task OnTimeChanged(ChangeEventArgs e)
+    {
+        var raw = e.Value?.ToString();
+        if (string.IsNullOrWhiteSpace(raw))
+        {
+            _targetTime = null;
+        }
+        else if (TimeOnly.TryParse(raw, out var parsed))
+        {
+            _targetTime = parsed;
+        }
+        await CheckAsync();
+    }
+
+    private async Task SelectPresetTimeAsync(TimeOnly time)
+    {
+        _targetTime = time;
+        await CheckAsync();
+    }
+
+    private async Task ClearTimeAsync()
+    {
+        _targetTime = null;
+        await CheckAsync();
+    }
+
+    private async Task CheckAsync()
+    {
+        _loading = true;
+        _error = null;
+        try
+        {
+            var res = await Api.CheckAvailabilityAsync(_targetDate, _targetTime);
+            if (res.IsSuccess)
+            {
+                _result = res.Value;
+            }
+            else
+            {
+                _error = res.Error?.Message ?? "Unable to check availability right now.";
+            }
+        }
+        finally
+        {
+            _loading = false;
+        }
+    }
+
+    private static (string ContainerClass, string BadgeClass, string BadgeLabel) GetBannerStyle(AvailabilityCheckResult result)
+    {
+        if (result.IsWholeDayUnavailable ||
+            (result.TargetTime.HasValue && !result.IsPhotographyAvailableForTime && !result.IsVideographyAvailableForTime))
+        {
+            return ("border-rose-200 bg-rose-50 text-rose-950", "bg-rose-200 text-rose-900", "Unavailable");
+        }
+
+        if ((result.TargetTime.HasValue && result.IsPhotographyAvailableForTime && result.IsVideographyAvailableForTime
+             && !string.Equals(result.TimeStatusMessage, "Only some time slots are available for this hour.", StringComparison.Ordinal))
+            || (!result.TargetTime.HasValue && result.IsFullDayAvailable))
+        {
+            return ("border-emerald-200 bg-emerald-50 text-emerald-950", "bg-emerald-200 text-emerald-900", "Available");
+        }
+
+        return ("border-amber-200 bg-amber-50 text-amber-950", "bg-amber-200 text-amber-900", "Limited Availability");
+    }
+}

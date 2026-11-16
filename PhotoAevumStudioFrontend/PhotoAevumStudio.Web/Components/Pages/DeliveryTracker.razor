@@ -1,8 +1,11 @@
 @page "/staff/pipeline"
 @layout EmployeeLayout
 @using PhotoAevumStudio.Web.Services
+@using Microsoft.AspNetCore.Components.Authorization
 @inject IUserService UserService
-@attribute [Authorize(Roles = "Employee")]
+@inject AuthenticationStateProvider AuthStateProvider
+@inject NavigationManager Nav
+@attribute [Authorize(Roles = "Employee,Office Clerk,Admin,SystemAdmin")]
 
 <PageTitle>Delivery Pipeline Tracker</PageTitle>
 
@@ -62,8 +65,14 @@
 @code {
     private List<BookingRow> PipelineBookings = new();
 
-    protected override void OnInitialized()
+    protected override async Task OnInitializedAsync()
     {
+        var auth = await AuthStateProvider.GetAuthenticationStateAsync();
+        if (EmployeeRoleHelper.IsPhotographerOrCreative(auth.User, UserService))
+        {
+            Nav.NavigateTo("/staff");
+            return;
+        }
         PipelineBookings = UserService.GetBookings();
     }
 

@@ -16,6 +16,12 @@ public interface IConsultationNegotiationService
     Task<EventAppointmentDto> CompleteEventSettlementAsync(CompleteEventRequest request, CancellationToken cancellationToken = default);
     Task<IReadOnlyList<TeamLeaderEventDto>> GetTeamLeaderEventsAsync(string? employeeId = null, CancellationToken cancellationToken = default);
     Task<EventAppointmentDto> UpdateTeamLeaderEventStatusAsync(string appointmentId, UpdateTeamLeaderStatusRequest request, CancellationToken cancellationToken = default);
+    Task<EventAppointmentDto> MarkEquipmentTakenAsync(string appointmentId, MarkEquipmentTakenRequest request, CancellationToken cancellationToken = default);
+    Task<EventAppointmentDto> AddAdditionalEquipmentToEventAsync(string appointmentId, AddEventEquipmentRequest request, CancellationToken cancellationToken = default);
+    Task<IReadOnlyList<LiveEventOverviewDto>> GetLiveEventsOverviewAsync(CancellationToken cancellationToken = default);
+    Task<EventAppointmentDto> VerifyCashSettlementAsync(string appointmentId, string verifierId, string? verifierName = null, string? notes = null, CancellationToken cancellationToken = default);
+    Task<bool> IsTeamLeaderForEventAsync(string appointmentId, string employeeId, CancellationToken cancellationToken = default);
+    Task<int> AutoTriggerPostEventsAsync(CancellationToken cancellationToken = default);
     Task NotifyTeamLeaderFinalQrPaidAsync(string appointmentId, decimal amountPaid, string? paymentChannel, CancellationToken cancellationToken = default);
     Task<bool> UpdateAppointmentRosterAsync(string appointmentId, UpdateAppointmentRosterRequest request, CancellationToken cancellationToken = default);
     Task<EventAppointmentDto> UpdateBookingStatusFromPaymentAsync(string appointmentId, UpdatePaymentBookingStatusRequest request, CancellationToken cancellationToken = default);

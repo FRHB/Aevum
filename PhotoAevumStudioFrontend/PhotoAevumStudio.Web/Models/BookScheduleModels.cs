@@ -31,7 +31,7 @@ public static class SessionWindows
     public static bool IsInWindow(TimeOnly start, TimeOnly end) => IsMorning(start, end) || IsAfternoon(start, end);
 }
 
-public sealed record ScheduleServiceOption(string ServicesId, string Name, string Description, decimal Price);
+public sealed record ScheduleServiceOption(string ServicesId, string Name, string Description, decimal Price, string RateType = "Per Session");
 
 public sealed record OfficeClerkOption(string EmployeeId, string FullName, string DaysOff);
 
@@ -43,6 +43,32 @@ public sealed record DayAvailability(DateOnly Date, IReadOnlyList<SlotAvailabili
 }
 
 public sealed record MonthAvailability(int Year, int Month, IReadOnlyList<DayAvailability> Days);
+
+public sealed record CrewSlotStatus(
+    TimeOnly Start,
+    TimeOnly End,
+    bool IsBookable,
+    bool IsPhotographyAvailable,
+    bool IsVideographyAvailable,
+    int AvailablePhotographers,
+    int TotalPhotographers,
+    int AvailableVideographers,
+    int TotalVideographers,
+    bool IsConsultationSlotOpen,
+    string StatusMessage);
+
+public sealed record AvailabilityCheckResult(
+    DateOnly Date,
+    TimeOnly? TargetTime,
+    string DayStatusMessage,
+    string? TimeStatusMessage,
+    bool IsFullDayAvailable,
+    bool IsWholeDayUnavailable,
+    bool IsPhotographyAvailableForTime,
+    bool IsVideographyAvailableForTime,
+    int TotalPhotographers,
+    int TotalVideographers,
+    IReadOnlyList<CrewSlotStatus> Slots);
 
 public sealed record MeetingLinkPreview(MeetingPlatform Platform, string MeetingLink);
 

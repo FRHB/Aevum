@@ -245,5 +245,6 @@ public class EventCategoryCreationTests
         public Task<IReadOnlyList<RateTypeDto>> GetRateTypesAsync(CancellationToken cancellationToken = default) => Task.FromResult<IReadOnlyList<RateTypeDto>>(new List<RateTypeDto>());
         public Task<IReadOnlyList<ServiceRateDto>> GetServiceRatesAsync(string serviceId, CancellationToken cancellationToken = default) => Task.FromResult<IReadOnlyList<ServiceRateDto>>(new List<ServiceRateDto>());
         public Task<bool> AddOrUpdateServiceRateAsync(string serviceId, string rateTypeId, decimal rateAmount, CancellationToken cancellationToken = default) => Task.FromResult(true);
+        public Task<bool> UpdateEmployeeDaysOffAsync(string employeeId, string daysOff, string? requestingAdminId = null, CancellationToken cancellationToken = default) => Task.FromResult(true);
     }
 }

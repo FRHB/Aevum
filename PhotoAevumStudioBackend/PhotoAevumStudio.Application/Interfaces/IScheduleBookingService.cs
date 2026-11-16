@@ -26,6 +26,8 @@ public interface IScheduleBookingService
 
     Task<DayAvailabilityDto> GetDayAvailabilityAsync(DateOnly date, string? clerkId = null, CancellationToken cancellationToken = default);
 
+    Task<AvailabilityCheckResultDto> CheckAvailabilityAsync(DateOnly date, TimeOnly? targetTime = null, CancellationToken cancellationToken = default);
+
     Task<IReadOnlyList<MyBookingDto>> GetMyBookingsAsync(string customerId, CancellationToken cancellationToken = default);
 }
 

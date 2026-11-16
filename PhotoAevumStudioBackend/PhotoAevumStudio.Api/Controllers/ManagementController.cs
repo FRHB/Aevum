@@ -46,6 +46,21 @@ public class ManagementController : ControllerBase
         return Ok(result);
     }
 
+    [HttpPut("employees/{employeeId}/days-off")]
+    [Authorize(Policy = "ClerkOrAdmin")]
+    public async Task<IActionResult> UpdateEmployeeDaysOff(string employeeId, [FromBody] UpdateEmployeeDaysOffDto dto, CancellationToken ct)
+    {
+        if (dto == null)
+            return BadRequest(new { Message = "Request payload is required." });
+
+        var adminId = User.FindFirstValue("studio_id") ?? User.FindFirstValue(ClaimTypes.NameIdentifier) ?? User.Identity?.Name ?? "Admin";
+        var updated = await _service.UpdateEmployeeDaysOffAsync(employeeId, dto.DaysOff ?? "None", adminId, ct);
+        if (!updated)
+            return NotFound(new { Message = $"Employee '{employeeId}' not found." });
+
+        return Ok(new { Success = true, EmployeeId = employeeId, DaysOff = dto.DaysOff });
+    }
+
     [HttpGet("departments")]
     public async Task<IActionResult> GetDepartments(CancellationToken ct)
     {

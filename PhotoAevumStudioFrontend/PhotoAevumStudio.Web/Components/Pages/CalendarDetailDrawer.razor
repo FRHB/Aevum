@@ -7,7 +7,7 @@
             <div class="drawer-header">
                 <div>
                     <div class="flex items-center gap-2">
-                        <span class="status-pill text-xs">@Booking.Status</span>
+                        <span class="status-pill text-xs @(Booking.Status is "Pending Payment" or "Awaiting_Downpayment" ? "bg-amber-100 text-amber-800 border border-amber-300 font-bold" : "")">@Booking.DisplayStatus</span>
                         @if (Booking.HasConflict)
                         {
                             <span class="badge-conflict">⚠️ Conflict</span>
@@ -48,11 +48,21 @@
                     <span class="drawer-field-label">Schedule</span>
                     <span class="drawer-field-val">@Booking.Date.ToString("ddd, MMM d, yyyy") (@Booking.FormattedTimeRange)</span>
                 </div>
+                @if (!Booking.IsConsultation)
+                {
+                    <div class="drawer-field">
+                        <span class="drawer-field-label">Buffer Window</span>
+                        <span class="drawer-field-val text-xs text-slate-600">
+                            Prep: @DateTime.Today.Add(Booking.CombinedStartTime).ToString("h:mm tt") – @DateTime.Today.Add(Booking.StartTime).ToString("h:mm tt") (2h) &bull;
+                            Post: @DateTime.Today.Add(Booking.EffectiveEndTime).ToString("h:mm tt") – @DateTime.Today.Add(Booking.CombinedEndTime).ToString("h:mm tt") (1h)
+                        </span>
+                    </div>
+                }
                 <div class="drawer-field">
                     <span class="drawer-field-label">Photographer</span>
                     <span class="drawer-field-val">@Booking.AssignedPhotographer</span>
                 </div>
-                @if (!Booking.IsConsultation)
+                @if (!Booking.IsConsultation && !HidePricing)
                 {
                     <div class="drawer-field">
                         <span class="drawer-field-label">Price</span>
@@ -74,6 +84,7 @@
 
 @code {
     [Parameter] public EventBookingModel? Booking { get; set; }
+    [Parameter] public bool HidePricing { get; set; }
     [Parameter] public EventCallback OnClose { get; set; }
 
     private Task CloseAsync() => OnClose.InvokeAsync();

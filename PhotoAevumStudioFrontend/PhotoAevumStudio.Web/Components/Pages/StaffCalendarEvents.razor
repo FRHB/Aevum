@@ -2,7 +2,64 @@
 @page "/staff/calendar/events"
 @layout EmployeeLayout
 @rendermode InteractiveServer
+@using System.Security.Claims
+@using Microsoft.AspNetCore.Components.Authorization
+@using PhotoAevumStudio.Web.Components.Shared
+@using PhotoAevumStudio.Web.Services
+@inject AuthenticationStateProvider AuthStateProvider
 
 <PageTitle>Calendar of Events - PhotoAevum Staff</PageTitle>
 
+<div class="mb-4 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 bg-white border border-slate-200 rounded-xl px-5 py-3.5 shadow-2xs">
+    <div>
+        <h2 class="text-sm font-extrabold text-slate-900">My Schedule &amp; Calendar</h2>
+        <p class="text-xs text-slate-500">Review assigned shoots and submit leave requests directly to Admin.</p>
+    </div>
+    <div class="flex items-center gap-2">
+        <button type="button"
+                @onclick="() => _isLeaveModalOpen = true"
+                class="px-4 py-2 bg-slate-900 hover:bg-black text-white text-xs font-bold rounded-lg shadow-xs transition-colors">
+            Request for Leave
+        </button>
+    </div>
+</div>
+
+@if (!string.IsNullOrWhiteSpace(_leaveSuccessMessage))
+{
+    <div class="mb-4 px-4 py-2.5 rounded-lg bg-emerald-50 border border-emerald-200 text-emerald-800 text-xs font-semibold flex items-center justify-between">
+        <span>@_leaveSuccessMessage</span>
+        <button type="button" @onclick="() => _leaveSuccessMessage = null" class="text-[11px] font-bold opacity-70 hover:opacity-100">✕</button>
+    </div>
+}
+
 <CalendarOfEvents />
+
+<LeaveRequestModal @bind-IsOpen="_isLeaveModalOpen"
+                   EmployeeId="@_employeeId"
+                   OnSubmitted="HandleLeaveSubmitted" />
+
+@code {
+    [CascadingParameter] Task<AuthenticationState>? AuthState { get; set; }
+    private bool _isLeaveModalOpen;
+    private string? _employeeId;
+    private string? _leaveSuccessMessage;
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (AuthState != null)
+        {
+            var state = await AuthState;
+            _employeeId = EmployeeRoleHelper.GetCurrentEmployeeId(state.User);
+        }
+        else if (AuthStateProvider != null)
+        {
+            var state = await AuthStateProvider.GetAuthenticationStateAsync();
+            _employeeId = EmployeeRoleHelper.GetCurrentEmployeeId(state.User);
+        }
+    }
+
+    private void HandleLeaveSubmitted()
+    {
+        _leaveSuccessMessage = "Leave request submitted to the Admin dashboard for review.";
+    }
+}

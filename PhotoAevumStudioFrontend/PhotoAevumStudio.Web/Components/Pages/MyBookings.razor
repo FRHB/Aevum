@@ -97,6 +97,34 @@
         </div>
     }
 
+    @* Confirmed & Active Shoot Events (immediately shows "Complete" on Cash Received) *@
+    @if (_customerEvents.Any())
+    {
+        <div class="mb-8 space-y-4">
+            <h2 class="text-lg font-bold text-slate-900">Photoshoot Events &amp; Status</h2>
+            @foreach (var ev in _customerEvents)
+            {
+                var displayStatus = GetCustomerEventDisplayStatus(ev);
+                <div class="bg-white border border-slate-200 rounded-xl p-5 shadow-sm flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                    <div>
+                        <div class="flex items-center gap-2 mb-1">
+                            <span class="font-mono text-xs font-bold text-slate-500">#@ev.EventAppointmentId</span>
+                            <span class="px-2.5 py-0.5 rounded-full text-xs font-bold @(displayStatus == "Complete" || displayStatus == "Confirmed" ? "bg-emerald-100 text-emerald-800" : "bg-amber-100 text-amber-800")">
+                                @displayStatus
+                            </span>
+                        </div>
+                        <h3 class="text-lg font-bold text-slate-900">@ev.EventName</h3>
+                        <p class="text-xs text-slate-500 mt-0.5">@ev.EventDate.ToString("MMM dd, yyyy") &bull; @DateTime.Today.Add(ev.EventTime.ToTimeSpan()).ToString("h:mm tt")</p>
+                    </div>
+                    <div class="text-right text-xs">
+                        <div class="text-slate-500">Total: <strong class="text-slate-900">₱@ev.TotalAmount.ToString("N2")</strong></div>
+                        <div class="text-slate-500">Final Balance: <strong class="text-slate-900">₱@ev.FinalBalanceAmount.ToString("N2")</strong></div>
+                    </div>
+                </div>
+            }
+        </div>
+    }
+
     @if (_loading)
     {
         <div class="py-12 text-center">
@@ -156,6 +184,7 @@
 
 @code {
     private List<MyBooking> Bookings = new();
+    private List<EventAppointmentDto> _customerEvents = new();
     private List<EventAppointmentDto> _awaitingAppointments = new();
     private bool _loading = true;
     private bool _isActionBusy = false;
@@ -181,18 +210,32 @@
 
         try
         {
-            var apptRes = await ConsultationApi.GetCustomerAppointmentsAsync(status: "Pending Payment");
-            if (!apptRes.IsSuccess || apptRes.Value == null || apptRes.Value.Count == 0)
+            var allRes = await ConsultationApi.GetCustomerAppointmentsAsync();
+            if (allRes.IsSuccess && allRes.Value != null)
             {
-                apptRes = await ConsultationApi.GetCustomerAppointmentsAsync(status: "Awaiting_Downpayment");
-            }
-            if (apptRes.IsSuccess && apptRes.Value != null)
-            {
-                _awaitingAppointments = apptRes.Value.ToList();
-                StartHoldCountdown();
+                _customerEvents = allRes.Value
+                    .OrderByDescending(a => a.EventDate)
+                    .ThenByDescending(a => a.EventTime)
+                    .ToList();
+
+                _awaitingAppointments = _customerEvents
+                    .Where(a => (string.Equals(a.EventStatus, "Pending Payment", StringComparison.OrdinalIgnoreCase) ||
+                                 string.Equals(a.EventStatus, "Awaiting_Downpayment", StringComparison.OrdinalIgnoreCase)) &&
+                                !string.Equals(a.DownpaymentStatus, "Paid", StringComparison.OrdinalIgnoreCase))
+                    .ToList();
+
+                if (_awaitingAppointments.Any())
+                {
+                    StartHoldCountdown();
+                }
+                else
+                {
+                    _countdownTimer?.Dispose();
+                }
             }
             else
             {
+                _customerEvents.Clear();
                 _awaitingAppointments.Clear();
                 _countdownTimer?.Dispose();
             }
@@ -235,6 +278,23 @@
             _isExpired = false;
             _countdownDisplay = $"{(int)diff.TotalMinutes:D2}:{diff.Seconds:D2}";
         }
+    }
+
+    private static string GetCustomerEventDisplayStatus(EventAppointmentDto appt)
+    {
+        if (string.Equals(appt.EventStatus, "Pending Verification", StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(appt.EventStatus, "Paid Cash Pending Verification", StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(appt.EventStatus, "Complete", StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(appt.EventStatus, "Shot", StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(appt.EventStatus, "Delivered", StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(appt.FinalPaymentStatus, "Pending Verification", StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(appt.FinalPaymentStatus, "Paid", StringComparison.OrdinalIgnoreCase))
+        {
+            return "Complete";
+        }
+        if (string.Equals(appt.EventStatus, "Preparing", StringComparison.OrdinalIgnoreCase)) return "Preparation";
+        if (string.Equals(appt.EventStatus, "On Going", StringComparison.OrdinalIgnoreCase)) return "Ongoing";
+        return appt.EventStatus;
     }
 
     private string GetCheckoutUrl(EventAppointmentDto appt)

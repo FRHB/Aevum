@@ -1415,412 +1415,253 @@
 
 @* ── 5-STEP EVENT APPOINTMENT SETUP WIZARD MODAL ─────────────────────────── *@
 
-
-
 @if (_isWizardOpen && _selectedNegotiation != null)
-
-
-
 {
-
-
+    var bufferedWindow = BookingWizardEngine.ComputeBufferedWindow(_wizardEventTime.TimeOfDay, _wizardEventEndTime.TimeOfDay);
+    var availableCrews = GetAvailableWizardCrews();
+    var conflictingEqIds = GetConflictingWizardEquipmentIds();
 
     <div class="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-xs p-4 animate-in fade-in duration-200">
-
-
-
-        <div class="bg-white rounded-2xl shadow-2xl border border-slate-200 w-full max-w-4xl lg:max-w-5xl max-h-[92vh] flex flex-col overflow-hidden">
-
-
-
-            
-
-
+        <div class="bg-white rounded-2xl shadow-2xl border border-slate-200 w-full max-w-5xl max-h-[92vh] flex flex-col overflow-hidden">
 
             @* Wizard Header *@
-
-
-
             <div class="px-6 py-4 border-b border-slate-200 flex items-center justify-between bg-slate-50">
-
-
-
                 <div>
-
-
-
                     <span class="text-[11px] font-bold text-teal-700 uppercase tracking-wider">Event Photoshoot Booking Wizard (5 Steps)</span>
-
-
-
                     <h2 class="text-lg font-black text-slate-900">Setup Event Appointment for @_selectedNegotiation.CustomerName</h2>
-
-
-
                 </div>
-
-
-
                 <button type="button" @onclick="CloseEventWizard" class="text-slate-400 hover:text-slate-700 p-2">✕</button>
-
-
-
             </div>
-
-
-
-
-
-
 
             @* Stepper Progress *@
-
-
-
             <div class="px-6 py-3 bg-slate-100/70 border-b border-slate-200 flex items-center justify-between text-xs font-bold overflow-x-auto">
-
-
-
                 <div class="flex items-center gap-1.5 shrink-0 @(_wizardStep == 1 ? "text-slate-900 font-black" : (_wizardStep > 1 ? "text-teal-700" : "text-slate-400"))">
-
-
-
                     <span class="w-6 h-6 rounded-full flex items-center justify-center text-[11px] @(_wizardStep == 1 ? "bg-slate-900 text-white" : (_wizardStep > 1 ? "bg-teal-700 text-white" : "bg-slate-300 text-slate-600"))">1</span>
-
-
-
-                    <span>Services</span>
-
-
-
+                    <span>Services &amp; Schedule</span>
                 </div>
-
-
-
                 <span class="text-slate-300 shrink-0 mx-1">&rarr;</span>
-
-
-
                 <div class="flex items-center gap-1.5 shrink-0 @(_wizardStep == 2 ? "text-slate-900 font-black" : (_wizardStep > 2 ? "text-teal-700" : "text-slate-400"))">
-
-
-
                     <span class="w-6 h-6 rounded-full flex items-center justify-center text-[11px] @(_wizardStep == 2 ? "bg-slate-900 text-white" : (_wizardStep > 2 ? "bg-teal-700 text-white" : "bg-slate-300 text-slate-600"))">2</span>
-
-
-
-                    <span>Reservation Fee</span>
-
-
-
+                    <span>Select Crew</span>
                 </div>
-
-
-
                 <span class="text-slate-300 shrink-0 mx-1">&rarr;</span>
-
-
-
                 <div class="flex items-center gap-1.5 shrink-0 @(_wizardStep == 3 ? "text-slate-900 font-black" : (_wizardStep > 3 ? "text-teal-700" : "text-slate-400"))">
-
-
-
                     <span class="w-6 h-6 rounded-full flex items-center justify-center text-[11px] @(_wizardStep == 3 ? "bg-slate-900 text-white" : (_wizardStep > 3 ? "bg-teal-700 text-white" : "bg-slate-300 text-slate-600"))">3</span>
-
-
-
-                    <span>Staff &amp; Leader</span>
-
-
-
-                </div>
-
-
-
-                <span class="text-slate-300 shrink-0 mx-1">&rarr;</span>
-
-
-
-                <div class="flex items-center gap-1.5 shrink-0 @(_wizardStep == 4 ? "text-slate-900 font-black" : (_wizardStep > 4 ? "text-teal-700" : "text-slate-400"))">
-
-
-
-                    <span class="w-6 h-6 rounded-full flex items-center justify-center text-[11px] @(_wizardStep == 4 ? "bg-slate-900 text-white" : (_wizardStep > 4 ? "bg-teal-700 text-white" : "bg-slate-300 text-slate-600"))">4</span>
-
-
-
                     <span>Equipment</span>
-
-
-
                 </div>
-
-
-
                 <span class="text-slate-300 shrink-0 mx-1">&rarr;</span>
-
-
-
-                <div class="flex items-center gap-1.5 shrink-0 @(_wizardStep == 5 ? "text-slate-900 font-black" : "text-slate-400")">
-
-
-
-                    <span class="w-6 h-6 rounded-full flex items-center justify-center text-[11px] @(_wizardStep == 5 ? "bg-slate-900 text-white" : "bg-slate-300 text-slate-600")">5</span>
-
-
-
-                    <span>Await Payment</span>
-
-
-
+                <div class="flex items-center gap-1.5 shrink-0 @(_wizardStep == 4 ? "text-slate-900 font-black" : (_wizardStep > 4 ? "text-teal-700" : "text-slate-400"))">
+                    <span class="w-6 h-6 rounded-full flex items-center justify-center text-[11px] @(_wizardStep == 4 ? "bg-slate-900 text-white" : (_wizardStep > 4 ? "bg-teal-700 text-white" : "bg-slate-300 text-slate-600"))">4</span>
+                    <span>Reservation Fee Payment Method</span>
                 </div>
-
-
-
+                <span class="text-slate-300 shrink-0 mx-1">&rarr;</span>
+                <div class="flex items-center gap-1.5 shrink-0 @(_wizardStep == 5 ? "text-slate-900 font-black" : "text-slate-400")">
+                    <span class="w-6 h-6 rounded-full flex items-center justify-center text-[11px] @(_wizardStep == 5 ? "bg-slate-900 text-white" : "bg-slate-300 text-slate-600")">5</span>
+                    <span>Final Overview</span>
+                </div>
             </div>
 
-
-
-
-
-
-
             @* Wizard Step Body *@
-
-
-
-            <div class="p-6 overflow-y-auto flex-1 space-y-4">
-
-
-
-                
-
-
+            <div class="p-6 overflow-y-auto flex-1 space-y-5">
 
                 @if (!string.IsNullOrWhiteSpace(_wizardError))
-
-
-
                 {
-
-
-
                     <div class="p-3 rounded-lg bg-red-50 border border-red-200 text-red-700 text-xs font-semibold">
-
-
-
                         @_wizardError
-
-
-
                     </div>
-
-
-
                 }
 
-
-
-
-
-
-
-                @* STEP 1: Services Selection & Shoot Details *@
-
-
-
+                @* STEP 1: Services Selection, Customization, Date & Minute-Level Time + Buffers *@
                 @if (_wizardStep == 1)
-
-
-
                 {
+                    <div class="space-y-5">
 
-
-
-                    <div class="space-y-4">
-
-
-
+                        @* 1A. Service Selection *@
                         <div>
-
-
-
                             <div class="flex items-center justify-between pb-2 border-b border-slate-100">
-
-
-
-                                <span class="text-xs font-bold text-slate-700">Select studio packages &amp; creative services (multiple selections allowed):</span>
-
-
-
+                                <span class="text-xs font-bold text-slate-700">1. Select studio packages &amp; creative services (multiple selections allowed):</span>
                                 <span class="text-xs font-bold text-teal-700">@_selectedServiceIds.Count selected</span>
-
-
-
                             </div>
 
-
-
-
-
-
-
-                            <div class="grid grid-cols-1 md:grid-cols-2 gap-3 max-h-52 overflow-y-auto pr-1 mt-2">
-
-
-
+                            <div class="grid grid-cols-1 md:grid-cols-2 gap-3 max-h-48 overflow-y-auto pr-1 mt-2">
                                 @if (!_availableServices.Any())
                                 {
                                     <p class="text-xs text-slate-500 italic py-2 col-span-2">No services currently available</p>
                                 }
                                 @foreach (var svc in _availableServices)
-
-
-
                                 {
-
-
-
                                     var isChecked = _selectedServiceIds.Contains(svc.ServicesId);
-
-
-
                                     <label class="flex items-start gap-3 p-3 rounded-xl border cursor-pointer transition-all @(isChecked ? "border-slate-900 bg-slate-50 shadow-xs" : "border-slate-200 hover:border-slate-300")">
-
-
-
                                         <input type="checkbox"
-
-
-
                                                checked="@isChecked"
-
-
-
                                                @onchange="e => ToggleWizardService(svc.ServicesId, (bool)(e.Value ?? false))"
-
-
-
                                                class="mt-1 rounded text-slate-900 focus:ring-0" />
-
-
-
-                                        <div class="flex-1">
-
-
-
-                                            <div class="flex items-center justify-between">
-
-
-
-                                                <span class="text-xs font-bold text-slate-900">@svc.Name</span>
-
-
-
-                                                <span class="text-xs font-mono font-bold text-slate-900">₱@svc.Price.ToString("N2")</span>
-
-
-
+                                        <div class="flex-1 min-w-0">
+                                            <div class="flex items-center justify-between gap-2">
+                                                <span class="text-xs font-bold text-slate-900 truncate">@svc.Name</span>
+                                                <span class="text-xs font-mono font-bold text-slate-900 shrink-0">₱@svc.Price.ToString("N2")</span>
                                             </div>
-
-
-
+                                            <div class="flex items-center gap-2 mt-0.5">
+                                                <span class="inline-block px-1.5 py-0.5 rounded bg-teal-50 border border-teal-200 text-teal-800 text-[10px] font-bold">@svc.RateType</span>
+                                            </div>
                                             <p class="text-[11px] text-slate-500 line-clamp-2 mt-0.5">@svc.Description</p>
-
-
-
                                         </div>
-
-
-
                                     </label>
-
-
-
                                 }
-
-
-
                             </div>
-
-
-
                         </div>
 
-
-
-
-
-
-
-                        <div class="pt-2 border-t border-slate-100">
-
-
-
-                            <span class="text-xs font-bold text-slate-700 block mb-2">Shoot Details (Auto-populated from consultation inquiry):</span>
-
-
-
-                            <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
-
-
-
-                                <div class="sm:col-span-2">
-
-
-
-                                    <label class="block text-[11px] font-bold text-slate-600 mb-1">Event Photoshoot Name *</label>
-
-
-
-                                    <input type="text" @bind="_wizardEventName" placeholder="e.g. Graduation &amp; Editorial Session"
-
-
-
-                                           class="w-full px-3 py-1.5 bg-slate-50 border border-slate-200 rounded-lg text-xs font-medium focus:outline-none focus:ring-1 focus:ring-slate-900" />
-
-
-
+                        @* 1B. Detailed Customization Panel under Chosen Services + Confirmation Checkboxes *@
+                        @if (_serviceSelections.Count > 0)
+                        {
+                            <div class="bg-slate-50 border border-slate-200 rounded-2xl p-4 space-y-3" data-testid="service-customization-panel">
+                                <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-1 pb-2 border-b border-slate-200">
+                                    <div>
+                                        <span class="text-xs font-bold text-slate-900">Chosen Service Customization &amp; Rate Configuration</span>
+                                        <p class="text-[11px] text-slate-500">Adjust hours or shot/picture quantities. Combined hourly services run concurrently (max duration: @GetCombinedShootDurationText()).</p>
+                                    </div>
+                                    <span class="text-[11px] font-bold px-2.5 py-1 rounded-full bg-slate-900 text-white self-start sm:self-auto">
+                                        Shoot Duration: @GetCombinedShootDurationText()
+                                    </span>
                                 </div>
 
+                                <div class="space-y-3">
+                                    @foreach (var item in _serviceSelections)
+                                    {
+                                        <div class="bg-white border @(item.IsConfirmed ? "border-emerald-300 ring-1 ring-emerald-200" : "border-slate-200") rounded-xl p-3.5 space-y-2.5">
+                                            <div class="flex flex-wrap items-center justify-between gap-2">
+                                                <div class="flex items-center gap-2">
+                                                    <span class="text-xs font-black text-slate-900">@item.Name</span>
+                                                    <span class="px-2 py-0.5 rounded-full text-[10px] font-bold bg-indigo-50 text-indigo-800 border border-indigo-200">@item.RateType</span>
+                                                </div>
+                                                <div class="text-xs font-mono">
+                                                    <span class="text-slate-400">₱@item.UnitPrice.ToString("N2") &times; @item.Quantity = </span>
+                                                    <strong class="text-slate-900">₱@item.LineTotal.ToString("N2")</strong>
+                                                </div>
+                                            </div>
 
+                                            <div class="grid grid-cols-1 sm:grid-cols-3 gap-3 items-end">
+                                                @if (item.RateCategory == ServiceRateCategory.PerHour)
+                                                {
+                                                    <div>
+                                                        <label class="block text-[11px] font-bold text-slate-600 mb-1">Hours Quantity *</label>
+                                                        <input type="number" min="1" max="24"
+                                                               value="@item.Quantity"
+                                                               @onchange="e => UpdateServiceQuantity(item.ServicesId, e.Value)"
+                                                               class="w-full px-2.5 py-1.5 bg-slate-50 border border-slate-300 rounded-lg text-xs font-bold text-slate-900 focus:outline-none focus:ring-1 focus:ring-slate-900" />
+                                                    </div>
+                                                    <div class="sm:col-span-2 text-[11px] text-slate-500 pb-1.5">
+                                                        Billed per hour. Contributes <strong>@item.Quantity hr(s)</strong> to shoot duration (concurrent max across hourly services).
+                                                    </div>
+                                                }
+                                                else if (item.RateCategory == ServiceRateCategory.PerSession)
+                                                {
+                                                    <div>
+                                                        <label class="block text-[11px] font-bold text-slate-600 mb-1">Session Quantity *</label>
+                                                        <input type="number" min="1" max="10"
+                                                               value="@item.Quantity"
+                                                               @onchange="e => UpdateServiceQuantity(item.ServicesId, e.Value)"
+                                                               class="w-full px-2.5 py-1.5 bg-slate-50 border border-slate-300 rounded-lg text-xs font-bold text-slate-900 focus:outline-none focus:ring-1 focus:ring-slate-900" />
+                                                    </div>
+                                                    <div>
+                                                        <label class="block text-[11px] font-bold text-slate-600 mb-1">Session Duration (Hours) *</label>
+                                                        <input type="number" min="1" max="24"
+                                                               value="@item.DurationHours"
+                                                               @onchange="e => UpdateServiceDurationHours(item.ServicesId, e.Value)"
+                                                               class="w-full px-2.5 py-1.5 bg-slate-50 border border-slate-300 rounded-lg text-xs font-bold text-slate-900 focus:outline-none focus:ring-1 focus:ring-slate-900" />
+                                                    </div>
+                                                    <div class="text-[11px] text-slate-500 pb-1.5">
+                                                        Per-session rate; duration determined in hours.
+                                                    </div>
+                                                }
+                                                else
+                                                {
+                                                    <div>
+                                                        <label class="block text-[11px] font-bold text-slate-600 mb-1">Pictures / Shots Quantity *</label>
+                                                        <input type="number" min="1" max="500"
+                                                               value="@item.Quantity"
+                                                               @onchange="e => UpdateServiceQuantity(item.ServicesId, e.Value)"
+                                                               class="w-full px-2.5 py-1.5 bg-slate-50 border border-slate-300 rounded-lg text-xs font-bold text-slate-900 focus:outline-none focus:ring-1 focus:ring-slate-900" />
+                                                    </div>
+                                                    <div class="sm:col-span-2 text-[11px] text-slate-500 pb-1.5">
+                                                        Billed per shot / picture (<strong>@item.Quantity</strong> unit(s)). Set exact Start &amp; End time below.
+                                                    </div>
+                                                }
+                                            </div>
+
+                                            @* Confirmation checkbox below each chosen service *@
+                                            <div class="pt-2 border-t border-slate-100 flex items-center justify-between">
+                                                <label class="inline-flex items-center gap-2 text-xs font-semibold cursor-pointer @(item.IsConfirmed ? "text-emerald-800" : "text-slate-700")">
+                                                    <input type="checkbox"
+                                                           checked="@item.IsConfirmed"
+                                                           @onchange="e => ToggleServiceConfirmation(item.ServicesId, (bool)(e.Value ?? false))"
+                                                           class="rounded text-emerald-700 focus:ring-0" />
+                                                    <span>Confirm <strong>@item.Name</strong> (@item.Quantity @(item.RateCategory == ServiceRateCategory.PerHour ? "hr(s)" : item.RateCategory == ServiceRateCategory.PerShot ? "shot(s)/pic(s)" : "session(s)") &bull; ₱@item.LineTotal.ToString("N2"))</span>
+                                                </label>
+                                                @if (item.IsConfirmed)
+                                                {
+                                                    <span class="text-[10px] font-bold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-full">✓ Confirmed</span>
+                                                }
+                                            </div>
+                                        </div>
+                                    }
+                                </div>
+
+                                @* Overall Confirmation Checkbox below chosen services *@
+                                <div class="pt-2 border-t border-slate-200 flex items-center justify-between flex-wrap gap-2">
+                                    <label class="inline-flex items-center gap-2 text-xs font-bold text-slate-900 cursor-pointer">
+                                        <input type="checkbox"
+                                               checked="@AllWizardServicesConfirmed"
+                                               @onchange="e => ToggleAllServicesConfirmation((bool)(e.Value ?? false))"
+                                               class="rounded text-slate-900 focus:ring-0" />
+                                        <span>Confirm all chosen services, quantities, and dynamic 15% reservation fee</span>
+                                    </label>
+                                    <span class="text-[11px] font-semibold @(_serviceSelections.All(s => s.IsConfirmed) ? "text-emerald-700" : "text-amber-700")">
+                                        @_serviceSelections.Count(s => s.IsConfirmed) / @_serviceSelections.Count confirmed
+                                    </span>
+                                </div>
+                            </div>
+                        }
+
+                        @* 1C. Shoot Details & High-Granularity Date/Time Selection *@
+                        <div class="pt-2 border-t border-slate-100">
+                            <span class="text-xs font-bold text-slate-700 block mb-2">2. Shoot Details &amp; High-Granularity Schedule:</span>
+                            <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                                <div class="sm:col-span-2">
+                                    <label class="block text-[11px] font-bold text-slate-600 mb-1">Event Photoshoot Name *</label>
+                                    <input type="text" @bind="_wizardEventName" placeholder="e.g. Graduation &amp; Editorial Session"
+                                           class="w-full px-3 py-1.5 bg-slate-50 border border-slate-200 rounded-lg text-xs font-medium focus:outline-none focus:ring-1 focus:ring-slate-900" />
+                                </div>
 
                                 <div class="sm:col-span-2 space-y-3">
                                     <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-1 pb-1 border-b border-slate-200">
                                         <div>
-                                            <label class="block text-xs font-bold text-slate-800">Choose Shoot Schedule &amp; Available Time *</label>
-                                            <p class="text-[11px] text-slate-500">Select a date on the calendar. Booked events and required buffer times (2 hours prep prior, 1 hour post-event) are shown automatically.</p>
+                                            <label class="block text-xs font-bold text-slate-800">Choose Shoot Date &amp; Exact Minute-Level Time *</label>
+                                            <p class="text-[11px] text-slate-500">Pick a date on the calendar and set exact minute-level start/end times (e.g., 9:15 AM, 1:35 PM). Overlapping times are allowed when different crews are available.</p>
                                         </div>
-                                        @if (_wizardEventDate > DateTime.MinValue && _wizardEventTime != default)
+                                        @if (_wizardEventDate > DateTime.MinValue)
                                         {
-                                            <div class="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-emerald-50 border border-emerald-200 text-emerald-800 text-xs font-bold shadow-xs">
-                                                <span>🗓️ Selected: @_wizardEventDate.ToString("MMM d, yyyy") at @_wizardEventTime.ToString("h:mm tt")</span>
+                                            <div class="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-emerald-50 border border-emerald-200 text-emerald-800 text-xs font-bold shadow-xs shrink-0">
+                                                <span>🗓️ @_wizardEventDate.ToString("MMM d, yyyy") &bull; @BookingWizardEngine.FormatTime(_wizardEventTime.TimeOfDay) – @BookingWizardEngine.FormatTime(_wizardEventEndTime.TimeOfDay)</span>
                                             </div>
                                         }
                                     </div>
 
-                                    <!-- 2-Column Responsive Layout: Calendar (Left) & Available Times (Right) -->
+                                    <!-- 2-Column Responsive Layout: Calendar (Left) & Minute-Level Time + Buffers (Right) -->
                                     <div class="grid grid-cols-1 lg:grid-cols-12 gap-4 bg-slate-50/80 p-3.5 rounded-2xl border border-slate-200">
                                         <!-- Calendar (Left Column) -->
                                         <div class="lg:col-span-5 bg-white p-3.5 rounded-xl border border-slate-200 shadow-xs flex flex-col justify-between">
                                             <div>
-                                                <!-- Calendar Month Navigation -->
                                                 <div class="flex items-center justify-between mb-3 pb-2 border-b border-slate-100">
-                                                    <button type="button" @onclick="PrevWizardMonth" class="px-2 py-1 hover:bg-slate-100 rounded-lg text-slate-600 transition-colors font-bold text-xs">
-                                                        ‹
-                                                    </button>
+                                                    <button type="button" @onclick="PrevWizardMonth" class="px-2 py-1 hover:bg-slate-100 rounded-lg text-slate-600 transition-colors font-bold text-xs">‹</button>
                                                     <span class="text-xs font-bold text-slate-900">@_wizardCalendarMonth.ToString("MMMM yyyy")</span>
-                                                    <button type="button" @onclick="NextWizardMonth" class="px-2 py-1 hover:bg-slate-100 rounded-lg text-slate-600 transition-colors font-bold text-xs">
-                                                        ›
-                                                    </button>
+                                                    <button type="button" @onclick="NextWizardMonth" class="px-2 py-1 hover:bg-slate-100 rounded-lg text-slate-600 transition-colors font-bold text-xs">›</button>
                                                 </div>
 
-                                                <!-- Calendar Weekdays -->
                                                 <div class="grid grid-cols-7 gap-1 text-center text-[10px] font-bold text-slate-400 mb-1.5">
                                                     <span>Su</span><span>Mo</span><span>Tu</span><span>We</span><span>Th</span><span>Fr</span><span>Sa</span>
                                                 </div>
 
-                                                <!-- Calendar Days Grid -->
                                                 <div class="grid grid-cols-7 gap-1 text-center">
                                                     @for (int b = 0; b < (int)_wizardCalendarMonth.DayOfWeek; b++)
                                                     {
@@ -1847,289 +1688,300 @@
                                                 </div>
                                             </div>
 
-                                            <!-- Calendar Footer / Legend -->
                                             <div class="pt-3 border-t border-slate-100 mt-3 flex items-center justify-between text-[10px] text-slate-500">
                                                 <span class="flex items-center gap-1"><span class="w-2 h-2 rounded-full bg-rose-500 inline-block"></span> Has Bookings</span>
                                                 <span class="flex items-center gap-1"><span class="w-2 h-2 rounded-full bg-slate-900 inline-block"></span> Selected</span>
                                             </div>
                                         </div>
 
-                                        <!-- Available Times beside the Calendar (Right Column) -->
-                                        <div class="lg:col-span-7 bg-white p-3.5 rounded-xl border border-slate-200 shadow-xs flex flex-col">
-                                            <div class="flex items-center justify-between pb-2 mb-2 border-b border-slate-100">
+                                        <!-- Minute-Level Time Selector & Buffer Visualization (Right Column) -->
+                                        <div class="lg:col-span-7 bg-white p-3.5 rounded-xl border border-slate-200 shadow-xs flex flex-col space-y-3">
+                                            <div class="flex items-center justify-between pb-2 border-b border-slate-100">
                                                 <div>
-                                                    <span class="text-xs font-bold text-slate-800">Times on @_wizardEventDate.ToString("ddd, MMMM d, yyyy")</span>
-                                                    <p class="text-[10px] text-slate-500">Booked events include 2h prep before and 1h buffer after.</p>
+                                                    <span class="text-xs font-bold text-slate-800">Time &amp; Buffer Window for @_wizardEventDate.ToString("ddd, MMM d, yyyy")</span>
+                                                    <p class="text-[10px] text-slate-500">Minute-level precision enabled (e.g. 9:15 AM, 1:35 PM, 2:35 PM).</p>
                                                 </div>
-                                                <!-- Mini Legend -->
-                                                <div class="hidden sm:flex items-center gap-2 text-[10px]">
-                                                    <span class="flex items-center gap-1"><span class="w-2 h-2 rounded bg-emerald-500 inline-block"></span> Available</span>
-                                                    <span class="flex items-center gap-1"><span class="w-2 h-2 rounded bg-amber-400 inline-block"></span> 2h Prep</span>
-                                                    <span class="flex items-center gap-1"><span class="w-2 h-2 rounded bg-rose-500 inline-block"></span> Booked</span>
-                                                    <span class="flex items-center gap-1"><span class="w-2 h-2 rounded bg-orange-400 inline-block"></span> 1h Buffer</span>
+                                                <span class="text-[10px] font-bold px-2 py-0.5 rounded bg-slate-100 text-slate-700">
+                                                    2h Prep + Shoot + 1h Post
+                                                </span>
+                                            </div>
+
+                                            @* Minute-level Start & End Time inputs *@
+                                            <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                                                <div class="p-2.5 rounded-xl bg-slate-50 border border-slate-200">
+                                                    <label class="block text-[11px] font-bold text-slate-700 mb-1">Event Start Time (Minute Precision) *</label>
+                                                    <input type="time"
+                                                           step="60"
+                                                           value="@_wizardEventTime.ToString("HH:mm")"
+                                                           @onchange="OnWizardStartTimeChanged"
+                                                           class="w-full px-2.5 py-1.5 bg-white border border-slate-300 rounded-lg text-xs font-bold text-slate-900 focus:outline-none focus:ring-1 focus:ring-slate-900" />
+                                                    <span class="text-[10px] text-slate-500 mt-1 block">Selected: <strong>@BookingWizardEngine.FormatTime(_wizardEventTime.TimeOfDay)</strong></span>
+                                                </div>
+                                                <div class="p-2.5 rounded-xl bg-slate-50 border border-slate-200">
+                                                    <label class="block text-[11px] font-bold text-slate-700 mb-1">Event End Time (Minute Precision) *</label>
+                                                    <input type="time"
+                                                           step="60"
+                                                           value="@_wizardEventEndTime.ToString("HH:mm")"
+                                                           @onchange="OnWizardEndTimeChanged"
+                                                           class="w-full px-2.5 py-1.5 bg-white border border-slate-300 rounded-lg text-xs font-bold text-slate-900 focus:outline-none focus:ring-1 focus:ring-slate-900" />
+                                                    <span class="text-[10px] text-slate-500 mt-1 block">Selected: <strong>@BookingWizardEngine.FormatTime(_wizardEventEndTime.TimeOfDay)</strong> (@((_wizardEventEndTime.TimeOfDay - _wizardEventTime.TimeOfDay).TotalHours.ToString("0.##"))h)</span>
                                                 </div>
                                             </div>
 
-                                            <!-- Time Slots Grid -->
-                                            <div class="grid grid-cols-1 sm:grid-cols-2 gap-2 max-h-64 overflow-y-auto pr-1 flex-1">
-                                                @foreach (var slot in GetWizardDaySlots(_wizardEventDate))
+                                            @* Required Prep & Post-Event Buffer Display *@
+                                            <div class="grid grid-cols-3 gap-2 text-center">
+                                                <div class="p-2 rounded-lg bg-amber-50 border border-amber-200">
+                                                    <div class="text-[10px] font-bold uppercase text-amber-800">2h Prep Buffer</div>
+                                                    <div class="text-[11px] font-mono font-bold text-amber-950 mt-0.5">
+                                                        @BookingWizardEngine.FormatTime(bufferedWindow.PrepStart) – @BookingWizardEngine.FormatTime(bufferedWindow.EventStart)
+                                                    </div>
+                                                </div>
+                                                <div class="p-2 rounded-lg bg-emerald-50 border border-emerald-200">
+                                                    <div class="text-[10px] font-bold uppercase text-emerald-800">Event Shoot</div>
+                                                    <div class="text-[11px] font-mono font-bold text-emerald-950 mt-0.5">
+                                                        @BookingWizardEngine.FormatTime(bufferedWindow.EventStart) – @BookingWizardEngine.FormatTime(bufferedWindow.EventEnd)
+                                                    </div>
+                                                </div>
+                                                <div class="p-2 rounded-lg bg-orange-50 border border-orange-200">
+                                                    <div class="text-[10px] font-bold uppercase text-orange-800">1h Post Buffer</div>
+                                                    <div class="text-[11px] font-mono font-bold text-orange-950 mt-0.5">
+                                                        @BookingWizardEngine.FormatTime(bufferedWindow.EventEnd) – @BookingWizardEngine.FormatTime(bufferedWindow.PostEnd)
+                                                    </div>
+                                                </div>
+                                            </div>
+
+                                            @* Crew Availability Indicator for the combined window *@
+                                            @if (availableCrews.Count > 0)
+                                            {
+                                                <div class="p-2.5 rounded-xl bg-emerald-50 border border-emerald-200 text-emerald-900 text-[11px] font-semibold flex items-center justify-between">
+                                                    <span>✓ <strong>@availableCrews.Count</strong> crew member(s) available for combined window (@BookingWizardEngine.FormatTime(bufferedWindow.PrepStart) – @BookingWizardEngine.FormatTime(bufferedWindow.PostEnd)).</span>
+                                                </div>
+                                            }
+                                            else
+                                            {
+                                                <div class="p-2.5 rounded-xl bg-rose-50 border border-rose-200 text-rose-800 text-[11px] font-semibold">
+                                                    ⚠️ No crew available for this combined Prep + Event + Post window (@BookingWizardEngine.FormatTime(bufferedWindow.PrepStart) – @BookingWizardEngine.FormatTime(bufferedWindow.PostEnd)). Please adjust time or date.
+                                                </div>
+                                            }
+
+                                            @* Existing Events on Selected Date (showing buffer & crew for reference) *@
+                                            @{
+                                                var dayExistingBookings = GetDayBookingsForReference(_wizardEventDate);
+                                            }
+                                            <div class="space-y-1.5 max-h-32 overflow-y-auto pr-1">
+                                                <div class="text-[10px] font-bold uppercase tracking-wider text-slate-400">
+                                                    Scheduled Events on @_wizardEventDate.ToString("MMM d") (@dayExistingBookings.Count)
+                                                </div>
+                                                @if (dayExistingBookings.Count == 0)
                                                 {
-                                                    var isChosen = _wizardEventTime.Hour == slot.Start.Hours && _wizardEventTime.Minute == slot.Start.Minutes;
-                                                    if (slot.IsAvailable)
+                                                    <div class="text-[11px] text-slate-400 italic">No existing events on this date. All crews are open.</div>
+                                                }
+                                                else
+                                                {
+                                                    @foreach (var eb in dayExistingBookings)
                                                     {
-                                                        <button type="button"
-                                                                @onclick="() => SelectWizardTimeSlot(slot.Start)"
-                                                                class="p-2.5 rounded-xl border text-left transition-all flex items-center justify-between @(isChosen ? "border-emerald-600 bg-emerald-50 text-emerald-950 ring-1 ring-emerald-500 shadow-xs font-bold" : "border-slate-200 hover:border-emerald-400 hover:bg-slate-50/80 text-slate-800 font-medium")">
-                                                            <div>
-                                                                <div class="text-xs">@FormatTimeSpan(slot.Start) – @FormatTimeSpan(slot.End)</div>
-                                                                <span class="text-[10px] text-emerald-600 font-semibold">Available</span>
+                                                        var ebWin = BookingWizardEngine.ComputeBufferedWindow(eb.StartTime, eb.EffectiveEndTime);
+                                                        <div class="flex items-center justify-between gap-2 px-2.5 py-1.5 rounded-lg bg-slate-50 border border-slate-200 text-[11px]">
+                                                            <div class="min-w-0">
+                                                                <span class="font-bold text-slate-800 truncate block">@eb.ServiceType (@eb.ClientName)</span>
+                                                                <span class="text-[10px] text-slate-500">Crew: @eb.AssignedPhotographer</span>
                                                             </div>
-                                                            @if (isChosen)
-                                                            {
-                                                                <span class="text-emerald-700 text-xs">✓</span>
-                                                            }
-                                                        </button>
-                                                    }
-                                                    else
-                                                    {
-                                                        <div class="p-2.5 rounded-xl border text-left transition-all flex flex-col justify-center opacity-85 @(slot.Status == SlotStatusType.Booked ? "bg-rose-50/70 border-rose-200 text-rose-900" : (slot.Status == SlotStatusType.PrepBuffer ? "bg-amber-50/70 border-amber-200 text-amber-900" : "bg-orange-50/70 border-orange-200 text-orange-900"))">
-                                                            <div class="flex items-center justify-between text-xs font-semibold">
-                                                                <span>@FormatTimeSpan(slot.Start) – @FormatTimeSpan(slot.End)</span>
-                                                                <span class="text-[9px] uppercase px-1.5 py-0.5 rounded font-bold @(slot.Status == SlotStatusType.Booked ? "bg-rose-200 text-rose-800" : (slot.Status == SlotStatusType.PrepBuffer ? "bg-amber-200 text-amber-800" : "bg-orange-200 text-orange-800"))">
-                                                                    @(slot.Status == SlotStatusType.Booked ? "Booked" : (slot.Status == SlotStatusType.PrepBuffer ? "2h Prep" : "1h Buffer"))
-                                                                </span>
-                                                            </div>
-                                                            <div class="text-[10px] truncate text-slate-500 mt-0.5">
-                                                                @slot.Reason
+                                                            <div class="text-right shrink-0">
+                                                                <span class="font-mono font-bold text-slate-700 block">@BookingWizardEngine.FormatTime(eb.StartTime) – @BookingWizardEngine.FormatTime(eb.EffectiveEndTime)</span>
+                                                                <span class="text-[10px] text-amber-700">Block: @BookingWizardEngine.FormatTime(ebWin.PrepStart) – @BookingWizardEngine.FormatTime(ebWin.PostEnd)</span>
                                                             </div>
                                                         </div>
                                                     }
                                                 }
                                             </div>
-
-                                            <!-- Manual / Custom Time Adjustment Field -->
-                                            <div class="pt-2 border-t border-slate-100 mt-2 flex items-center justify-between gap-3">
-                                                <span class="text-[11px] text-slate-500">Custom exact time:</span>
-                                                <input type="time" @bind="_wizardEventTime"
-                                                       class="px-2 py-1 bg-slate-50 border border-slate-200 rounded text-xs font-semibold focus:outline-none focus:ring-1 focus:ring-slate-900" />
-                                            </div>
                                         </div>
                                     </div>
                                 </div>
 
-
-
                                 <div class="sm:col-span-2">
-
-
-
                                     <label class="block text-[11px] font-bold text-slate-600 mb-1">Venue Location / Studio Stage *</label>
-
-
-
                                     <input type="text" @bind="_wizardEventLocation" placeholder="e.g. Studio A (Main Hall)"
-
-
-
                                            class="w-full px-3 py-1.5 bg-slate-50 border border-slate-200 rounded-lg text-xs font-medium focus:outline-none focus:ring-1 focus:ring-slate-900" />
-
-
-
                                 </div>
-
-
 
                                 <div class="sm:col-span-2">
-
-
-
                                     <label class="block text-[11px] font-bold text-slate-600 mb-1">Notes &amp; Client Preferences</label>
-
-
-
                                     <textarea @bind="_wizardEventDescription" rows="2" placeholder="Agreed during consultation..."
-
-
-
                                               class="w-full px-3 py-1.5 bg-slate-50 border border-slate-200 rounded-lg text-xs font-medium focus:outline-none focus:ring-1 focus:ring-slate-900"></textarea>
-
-
-
                                 </div>
-
-
-
                             </div>
-
-
-
                         </div>
-
-
-
-
-
-
 
                         @* Live Price Calculation Box *@
-
-
-
                         <div class="bg-slate-900 text-white rounded-xl p-4 shadow-sm flex items-center justify-between">
-
-
-
                             <div>
-
-
-
                                 <span class="text-[10px] uppercase tracking-wider text-slate-400 font-bold">Total Estimated Package</span>
-
-
-
                                 <div class="text-xl font-black font-mono">₱@CalculateWizardTotal().ToString("N2")</div>
-
-
-
                             </div>
-
-
-
                             <div class="text-right">
-
-
-
-                                <span class="text-[10px] uppercase tracking-wider text-emerald-400 font-bold">15% Required Reservation Fee</span>
-
-
-
+                                <span class="text-[10px] uppercase tracking-wider text-emerald-400 font-bold">15% Dynamic Reservation Fee</span>
                                 <div class="text-xl font-black font-mono text-emerald-400">₱@CalculateWizardDownpayment().ToString("N2")</div>
-
-
-
-                                <span class="text-[10px] text-slate-400">Remaining 85% due on shoot completion</span>
-
-
-
+                                <span class="text-[10px] text-slate-400">Remaining 85% (₱@((CalculateWizardTotal() - CalculateWizardDownpayment()).ToString("N2"))) due on shoot completion</span>
                             </div>
-
-
-
                         </div>
-
-
-
                     </div>
-
-
-
                 }
-
-
-
                 else if (_wizardStep == 2)
-
-
-
                 {
-
-
-
-                    @* STEP 2: Total Payment & Payment Method Selection *@
-
-
-
+                    @* STEP 2: Select Crew (Only Available Crews with Availability Text + Team Leader) *@
                     <div class="space-y-4">
-
-
-
-                        <div class="bg-slate-50 border border-slate-200 rounded-xl p-4 space-y-3">
-
-
-
-                            <h4 class="text-xs font-bold text-slate-700 uppercase tracking-wider">Payment Breakdown</h4>
-
-
-
-                            <div class="space-y-2 text-xs">
-
-
-
-                                <div class="flex justify-between py-1 border-b border-slate-200">
-
-
-
-                                    <span class="text-slate-600">Total Services Value:</span>
-
-
-
-                                    <span class="font-bold font-mono text-slate-900">₱@CalculateWizardTotal().ToString("N2")</span>
-
-
-
-                                </div>
-
-
-
-                                <div class="flex justify-between py-1 border-b border-slate-200 text-emerald-700 font-bold">
-
-
-
-                                    <span>Required Reservation Deposit (15%):</span>
-
-
-
-                                    <span class="font-mono text-sm">₱@CalculateWizardDownpayment().ToString("N2")</span>
-
-
-
-                                </div>
-
-
-
-                                <div class="flex justify-between py-1 text-slate-500">
-
-
-
-                                    <span>Balance Due Upon Completion (85%):</span>
-
-
-
-                                    <span class="font-mono">₱@((CalculateWizardTotal() - CalculateWizardDownpayment()).ToString("N2"))</span>
-
-
-
-                                </div>
-
-
-
+                        <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-2 border-b border-slate-100">
+                            <div>
+                                <span class="text-xs font-bold text-slate-900">Select Available Crew</span>
+                                <p class="text-[11px] text-slate-500 mt-0.5">
+                                    Showing only crews free during <strong>@BookingWizardEngine.FormatTime(bufferedWindow.PrepStart) – @BookingWizardEngine.FormatTime(bufferedWindow.PostEnd)</strong> (2h prep + shoot + 1h post) on @_wizardEventDate.ToString("MMM d, yyyy").
+                                    Select at least 1 crew member and designate one <strong>Team Leader</strong>.
+                                </p>
                             </div>
-
-
-
+                            <span class="text-xs font-bold text-teal-700 shrink-0">@availableCrews.Count available</span>
                         </div>
 
+                        @if (availableCrews.Count == 0)
+                        {
+                            <div class="p-4 rounded-xl bg-amber-50 border border-amber-200 text-amber-900 text-xs">
+                                <strong>No crews available</strong> for @_wizardEventDate.ToString("MMM d, yyyy") (@BookingWizardEngine.FormatTime(bufferedWindow.PrepStart) – @BookingWizardEngine.FormatTime(bufferedWindow.PostEnd)). Go back to Step 1 and select another time or date.
+                            </div>
+                        }
+                        else
+                        {
+                            var blockedByLeaveOrOff = _availableEmployees
+                                .Select(e => new { Emp = e, Reason = GetEmployeeBlockReason(e, _wizardEventDate) })
+                                .Where(x => x.Reason != null)
+                                .ToList();
 
+                            @if (blockedByLeaveOrOff.Count > 0)
+                            {
+                                <div class="p-2.5 rounded-xl bg-rose-50/80 border border-rose-200 text-[11px] text-rose-800 space-y-1">
+                                    <div class="font-bold">Unavailable due to Approved Leave / Scheduled Day Off (@blockedByLeaveOrOff.Count):</div>
+                                    <div class="flex flex-wrap gap-1.5">
+                                        @foreach (var b in blockedByLeaveOrOff)
+                                        {
+                                            <span class="px-2 py-0.5 rounded-full bg-white border border-rose-200 text-rose-700 font-semibold">
+                                                @b.Emp.FullName — @b.Reason
+                                            </span>
+                                        }
+                                    </div>
+                                </div>
+                            }
 
+                            <div class="space-y-2 max-h-80 overflow-y-auto pr-1">
+                                @foreach (var crew in availableCrews)
+                                {
+                                    var emp = crew.Employee;
+                                    var isAssigned = _selectedEmployeeIds.Contains(emp.EmployeeId);
+                                    var isTeamLead = _teamLeaderId == emp.EmployeeId;
 
+                                    <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-2 p-3 rounded-xl border transition-all @(isAssigned ? "border-slate-800 bg-slate-50" : "border-slate-200 hover:border-slate-300")">
+                                        <label class="flex items-center gap-3 cursor-pointer flex-1">
+                                            <input type="checkbox"
+                                                   checked="@isAssigned"
+                                                   @onchange="e => ToggleWizardEmployee(emp.EmployeeId, (bool)(e.Value ?? false))"
+                                                   class="rounded text-slate-900" />
+                                            <div>
+                                                <div class="flex items-center gap-2 flex-wrap">
+                                                    <span class="text-xs font-bold text-slate-900">@emp.FullName</span>
+                                                    <span class="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200">
+                                                        @crew.AvailabilityText
+                                                    </span>
+                                                </div>
+                                                <div class="text-[11px] text-slate-500 font-medium mt-0.5">
+                                                    @string.Join(", ", emp.Specializations) &bull; <span class="font-mono text-[10px]">@emp.EmployeeId</span>
+                                                </div>
+                                            </div>
+                                        </label>
 
+                                        @if (isAssigned)
+                                        {
+                                            <label class="flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold cursor-pointer transition-all self-start sm:self-auto @(isTeamLead ? "bg-amber-400 text-slate-950 shadow-xs" : "bg-slate-200 text-slate-700 hover:bg-slate-300")">
+                                                <input type="radio"
+                                                       name="teamLeaderRadio"
+                                                       checked="@isTeamLead"
+                                                       @onchange="() => _teamLeaderId = emp.EmployeeId"
+                                                       class="text-slate-950 focus:ring-0" />
+                                                <span>Team Leader</span>
+                                            </label>
+                                        }
+                                    </div>
+                                }
+                            </div>
+                        }
+                    </div>
+                }
+                else if (_wizardStep == 3)
+                {
+                    @* STEP 3: Equipment Allocation *@
+                    <div class="space-y-4">
+                        <div class="flex items-center justify-between pb-2 border-b border-slate-100">
+                            <div>
+                                <span class="text-xs font-bold text-slate-700">Equipment Allocation</span>
+                                <p class="text-[11px] text-slate-500 mt-0.5">Gear conflicting within @BookingWizardEngine.FormatTime(bufferedWindow.PrepStart) – @BookingWizardEngine.FormatTime(bufferedWindow.PostEnd) is disabled automatically.</p>
+                            </div>
+                            <span class="text-xs font-bold text-teal-700">@_selectedEquipmentIds.Count items reserved</span>
+                        </div>
 
+                        <div class="grid grid-cols-1 sm:grid-cols-2 gap-2 max-h-72 overflow-y-auto pr-1">
+                            @foreach (var eq in _availableEquipment)
+                            {
+                                var isConflict = conflictingEqIds.Contains(eq.EquipmentID);
+                                var isChecked = !isConflict && _selectedEquipmentIds.Contains(eq.EquipmentID);
+                                <label class="flex items-center gap-2.5 p-2.5 rounded-lg border transition-all text-xs @(isConflict ? "border-rose-200 bg-rose-50/60 text-rose-400 cursor-not-allowed opacity-75" : (isChecked ? "border-slate-800 bg-slate-50 font-bold cursor-pointer" : "border-slate-200 text-slate-600 hover:border-slate-300 cursor-pointer"))">
+                                    <input type="checkbox"
+                                           disabled="@isConflict"
+                                           checked="@isChecked"
+                                           @onchange="e => ToggleWizardEquipment(eq.EquipmentID, (bool)(e.Value ?? false))"
+                                           class="rounded text-slate-900" />
+                                    <div class="truncate flex-1">
+                                        <div class="flex items-center justify-between gap-2">
+                                            <span class="font-mono text-[10px] text-slate-400">@eq.EquipmentID</span>
+                                            @if (isConflict)
+                                            {
+                                                <span class="text-[9px] font-bold uppercase px-1.5 py-0.5 rounded bg-rose-100 text-rose-700">In Use (Buffer)</span>
+                                            }
+                                        </div>
+                                        <span class="truncate block">@eq.EquipmentName</span>
+                                    </div>
+                                </label>
+                            }
+                        </div>
+                    </div>
+                }
+                else if (_wizardStep == 4)
+                {
+                    @* STEP 4: Reservation Fee Payment Method (Triggers Appointment Creation + Email + Calendar Sync upon Proceeding) *@
+                    <div class="space-y-4">
+                        <div class="bg-slate-50 border border-slate-200 rounded-xl p-4 space-y-3">
+                            <h4 class="text-xs font-bold text-slate-700 uppercase tracking-wider">Payment Breakdown</h4>
+                            <div class="space-y-2 text-xs">
+                                @foreach (var item in _serviceSelections)
+                                {
+                                    <div class="flex justify-between py-1 border-b border-slate-200/60 text-slate-600">
+                                        <span>@item.Name (@item.Quantity &times; ₱@item.UnitPrice.ToString("N2") &bull; @item.RateType)</span>
+                                        <span class="font-mono font-semibold text-slate-800">₱@item.LineTotal.ToString("N2")</span>
+                                    </div>
+                                }
+                                <div class="flex justify-between py-1 border-b border-slate-200">
+                                    <span class="text-slate-600 font-semibold">Total Services Value:</span>
+                                    <span class="font-bold font-mono text-slate-900">₱@CalculateWizardTotal().ToString("N2")</span>
+                                </div>
+                                <div class="flex justify-between py-1 border-b border-slate-200 text-emerald-700 font-bold">
+                                    <span>Required Reservation Deposit (15%):</span>
+                                    <span class="font-mono text-sm">₱@CalculateWizardDownpayment().ToString("N2")</span>
+                                </div>
+                                <div class="flex justify-between py-1 text-slate-500">
+                                    <span>Balance Due Upon Completion (85%):</span>
+                                    <span class="font-mono">₱@((CalculateWizardTotal() - CalculateWizardDownpayment()).ToString("N2"))</span>
+                                </div>
+                            </div>
+                        </div>
 
                         <div class="space-y-2">
-
-
-
                             <label class="block text-xs font-bold text-slate-900">Customer Payment Method for Reservation Fee *</label>
-
-
-
                             <p class="text-[11px] text-slate-500 mb-2">Select the payment channel requested by the client. Scan via Bangko Sentral QR Ph for instant automated reservation confirmation.</p>
-
-
-
-
-
-
 
                             <div class="w-full">
                                 <label class="flex items-start gap-3 p-3.5 rounded-xl border cursor-pointer transition-all border-slate-900 bg-slate-50 ring-2 ring-slate-900 shadow-xs">
@@ -2151,912 +2003,230 @@
                         </div>
 
                         <div class="p-3.5 bg-blue-50 border border-blue-200 rounded-xl flex items-start gap-3 text-blue-900">
-
-
-
                             <span class="text-base">📧</span>
-
-
-
                             <div class="text-xs leading-relaxed">
-
-
-
-                                <strong>Notification Dispatch:</strong> Clicking <strong>Proceed &amp; Send Payment Email</strong> will initialize the appointment, generate the official QR Ph invoice, and email the customer directly with a secure scan-to-pay link and a <strong>30-minute hold countdown</strong>.
-
-
-
+                                <strong>Email &amp; Calendar Sync:</strong> Proceeding to the Final Overview will create this appointment (marked <strong>Awaiting Reserve Fee Payment</strong>), dispatch the reservation payment email with a <strong>30-minute hold countdown</strong> to the customer, and immediately sync it to the Events Calendar.
                             </div>
-
-
-
                         </div>
-
-
-
                     </div>
-
-
-
                 }
-
-
-
-                else if (_wizardStep == 3)
-
-
-
-                {
-
-
-
-                    @* STEP 3: Staff Assignment & Team Leader Selection *@
-
-
-
-                    <div class="space-y-4">
-
-
-
-                        <div class="flex items-center justify-between pb-2 border-b border-slate-100">
-
-
-
-                            <div>
-
-
-
-                                <span class="text-xs font-bold text-slate-700">Assign Creative Crew</span>
-
-
-
-                                <p class="text-[11px] text-slate-500 mt-0.5">Pre-set minimum staff needed: <strong>@Math.Max(1, _selectedServiceIds.Count)</strong> crew member(s). Select exactly one <strong>Team Leader</strong>.</p>
-
-
-
-                            </div>
-
-
-
-                        </div>
-
-
-
-
-
-
-
-                        <div class="space-y-2 max-h-72 overflow-y-auto pr-1">
-
-
-
-                            @foreach (var emp in _availableEmployees)
-
-
-
-                            {
-
-
-
-                                var isAssigned = _selectedEmployeeIds.Contains(emp.EmployeeId);
-
-
-
-                                var isTeamLead = _teamLeaderId == emp.EmployeeId;
-
-
-
-
-
-
-
-                                <div class="flex items-center justify-between p-3 rounded-xl border transition-all @(isAssigned ? "border-slate-800 bg-slate-50" : "border-slate-200")">
-
-
-
-                                    <label class="flex items-center gap-3 cursor-pointer flex-1">
-
-
-
-                                        <input type="checkbox"
-
-
-
-                                               checked="@isAssigned"
-
-
-
-                                               @onchange="e => ToggleWizardEmployee(emp.EmployeeId, (bool)(e.Value ?? false))"
-
-
-
-                                               class="rounded text-slate-900" />
-
-
-
-                                        <div>
-
-
-
-                                            <div class="text-xs font-bold text-slate-900">@emp.FullName</div>
-
-
-
-                                            <div class="text-[11px] text-slate-500 font-medium">@string.Join(", ", emp.Specializations) &bull; <span class="font-mono text-[10px]">@emp.EmployeeId</span></div>
-
-
-
-                                        </div>
-
-
-
-                                    </label>
-
-
-
-
-
-
-
-                                    @if (isAssigned)
-
-
-
-                                    {
-
-
-
-                                        <label class="flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold cursor-pointer transition-all @(isTeamLead ? "bg-amber-400 text-slate-950 shadow-xs" : "bg-slate-200 text-slate-700 hover:bg-slate-300")">
-
-
-
-                                            <input type="radio"
-
-
-
-                                                   name="teamLeaderRadio"
-
-
-
-                                                   checked="@isTeamLead"
-
-
-
-                                                   @onchange="() => _teamLeaderId = emp.EmployeeId"
-
-
-
-                                                   class="text-slate-950 focus:ring-0" />
-
-
-
-                                            <span>Team Leader</span>
-
-
-
-                                        </label>
-
-
-
-                                    }
-
-
-
-                                </div>
-
-
-
-                            }
-
-
-
-                        </div>
-
-
-
-                    </div>
-
-
-
-                }
-
-
-
-                else if (_wizardStep == 4)
-
-
-
-                {
-
-
-
-                    @* STEP 4: Equipment Allocation *@
-
-
-
-                    <div class="space-y-4">
-
-
-
-                        <div class="flex items-center justify-between pb-2 border-b border-slate-100">
-
-
-
-                            <div>
-
-
-
-                                <span class="text-xs font-bold text-slate-700">Equipment Allocation</span>
-
-
-
-                                <p class="text-[11px] text-slate-500 mt-0.5">Auto-suggested gear tailored to the requested services. Modify if required.</p>
-
-
-
-                            </div>
-
-
-
-                            <span class="text-xs font-bold text-teal-700">@_selectedEquipmentIds.Count items reserved</span>
-
-
-
-                        </div>
-
-
-
-
-
-
-
-                        <div class="grid grid-cols-1 sm:grid-cols-2 gap-2 max-h-72 overflow-y-auto pr-1">
-
-
-
-                            @foreach (var eq in _availableEquipment)
-
-
-
-                            {
-
-
-
-                                var isChecked = _selectedEquipmentIds.Contains(eq.EquipmentID);
-
-
-
-                                <label class="flex items-center gap-2.5 p-2.5 rounded-lg border cursor-pointer transition-all text-xs @(isChecked ? "border-slate-800 bg-slate-50 font-bold" : "border-slate-200 text-slate-600 hover:border-slate-300")">
-
-
-
-                                    <input type="checkbox"
-
-
-
-                                           checked="@isChecked"
-
-
-
-                                           @onchange="e => ToggleWizardEquipment(eq.EquipmentID, (bool)(e.Value ?? false))"
-
-
-
-                                           class="rounded text-slate-900" />
-
-
-
-                                    <div class="truncate">
-
-
-
-                                        <span class="font-mono text-[10px] text-slate-400 block">@eq.EquipmentID</span>
-
-
-
-                                        <span class="truncate block">@eq.EquipmentName</span>
-
-
-
-                                    </div>
-
-
-
-                                </label>
-
-
-
-                            }
-
-
-
-                        </div>
-
-
-
-                    </div>
-
-
-
-                }
-
-
-
                 else if (_wizardStep == 5)
-
-
-
                 {
-
-
-
-                    @* STEP 5: Awaiting Payment & Confirmation *@
-
-
-
+                    @* STEP 5: Final Overview — Awaiting Reserve Fee Payment & Synced to Events Calendar *@
                     <div class="space-y-4">
-
-
-
                         @if (_wizardPaymentStatus == "Paid" || _wizardPaymentStatus == "Confirmed")
-
-
-
                         {
-
-
-
-                            <div class="p-4 bg-emerald-50 border border-emerald-200 rounded-xl text-emerald-900 flex items-start gap-3">
-
-
-
-                                <span class="text-2xl">🎉</span>
-
-
-
-                                <div>
-
-
-
-                                    <h4 class="text-xs font-black uppercase tracking-wider text-emerald-800">Reservation Fee Settled!</h4>
-
-
-
-                                    <p class="text-xs mt-1">The customer has successfully settled the 15% reservation deposit of <strong>₱@CalculateWizardDownpayment().ToString("N2")</strong>. You may now finalize and confirm the event booking.</p>
-
-
-
+                            <div class="p-4 bg-emerald-50 border border-emerald-200 rounded-xl text-emerald-900 flex items-start justify-between gap-3">
+                                <div class="flex items-start gap-3">
+                                    <span class="text-2xl">🎉</span>
+                                    <div>
+                                        <h4 class="text-xs font-black uppercase tracking-wider text-emerald-800">Reservation Fee Settled!</h4>
+                                        <p class="text-xs mt-1">The customer has settled the 15% reservation deposit of <strong>₱@CalculateWizardDownpayment().ToString("N2")</strong>. Appointment is confirmed on the Events Calendar.</p>
+                                    </div>
                                 </div>
-
-
-
+                                <span class="px-2.5 py-1 rounded-full text-[10px] font-bold bg-emerald-200 text-emerald-900 shrink-0">✓ Synced to Events Calendar</span>
                             </div>
-
-
-
                         }
-
-
-
                         else
-
-
-
                         {
-
-
-
-                            <div class="p-4 bg-amber-50 border border-amber-200 rounded-xl text-amber-900 flex items-start gap-3">
-
-
-
-                                <span class="text-2xl">⏳</span>
-
-
-
-                                <div>
-
-
-
-                                    <h4 class="text-xs font-black uppercase tracking-wider text-amber-800">Awaiting Reservation Fee Payment</h4>
-
-
-
-                                    <p class="text-xs mt-1">Customer must pay the reservation fee of <strong>₱@CalculateWizardDownpayment().ToString("N2")</strong> before this event appointment can be confirmed.</p>
-
-
-
+                            <div class="p-4 bg-amber-50 border border-amber-200 rounded-xl text-amber-900 flex items-start justify-between gap-3">
+                                <div class="flex items-start gap-3">
+                                    <span class="text-2xl">⏳</span>
+                                    <div>
+                                        <h4 class="text-xs font-black uppercase tracking-wider text-amber-800">Awaiting Reserve Fee Payment</h4>
+                                        <p class="text-xs mt-1">Appointment <strong>#@_wizardCreatedAppointmentId</strong> is booked and marked as <strong>Awaiting Reserve Fee Payment</strong> (₱@CalculateWizardDownpayment().ToString("N2")).</p>
+                                    </div>
                                 </div>
-
-
-
+                                <span class="px-2.5 py-1 rounded-full text-[10px] font-bold bg-amber-200 text-amber-900 shrink-0">✓ Synced to Events Calendar</span>
                             </div>
-
-
-
                         }
 
+                        @* Comprehensive Event Overview Grid *@
+                        <div class="bg-slate-50 border border-slate-200 rounded-2xl p-4 space-y-4" data-testid="final-event-overview">
+                            <div class="flex items-center justify-between pb-2 border-b border-slate-200">
+                                <h4 class="text-xs font-black uppercase tracking-wider text-slate-800">Comprehensive Event Overview</h4>
+                                <span class="px-2.5 py-0.5 rounded-full text-[10px] font-bold @(_wizardPaymentStatus == "Paid" || _wizardPaymentStatus == "Confirmed" ? "bg-emerald-100 text-emerald-800" : "bg-amber-100 text-amber-800 border border-amber-300")">
+                                    @(_wizardPaymentStatus == "Paid" || _wizardPaymentStatus == "Confirmed" ? "Confirmed" : "Awaiting Reserve Fee Payment")
+                                </span>
+                            </div>
 
+                            <div class="grid grid-cols-1 md:grid-cols-2 gap-4 text-xs">
+                                <div class="bg-white p-3 rounded-xl border border-slate-200 space-y-1.5">
+                                    <div class="text-[10px] font-bold uppercase tracking-wider text-slate-400">Event &amp; Schedule</div>
+                                    <div><span class="text-slate-500">Event:</span> <strong>@_wizardEventName</strong></div>
+                                    <div><span class="text-slate-500">Client:</span> <strong>@_selectedNegotiation.CustomerName</strong> (@_selectedNegotiation.CustomerEmail)</div>
+                                    <div><span class="text-slate-500">Date:</span> <strong>@_wizardEventDate.ToString("dddd, MMMM d, yyyy")</strong></div>
+                                    <div><span class="text-slate-500">Shoot Time:</span> <strong>@BookingWizardEngine.FormatTime(bufferedWindow.EventStart) – @BookingWizardEngine.FormatTime(bufferedWindow.EventEnd)</strong></div>
+                                    <div><span class="text-slate-500">Buffers:</span> Prep @BookingWizardEngine.FormatTime(bufferedWindow.PrepStart)–@BookingWizardEngine.FormatTime(bufferedWindow.EventStart) (2h) &bull; Post @BookingWizardEngine.FormatTime(bufferedWindow.EventEnd)–@BookingWizardEngine.FormatTime(bufferedWindow.PostEnd) (1h)</div>
+                                    <div><span class="text-slate-500">Venue:</span> <strong>@_wizardEventLocation</strong></div>
+                                </div>
 
+                                <div class="bg-white p-3 rounded-xl border border-slate-200 space-y-1.5">
+                                    <div class="text-[10px] font-bold uppercase tracking-wider text-slate-400">Crew &amp; Equipment</div>
+                                    <div>
+                                        <span class="text-slate-500 block mb-1">Assigned Crew:</span>
+                                        <div class="flex flex-wrap gap-1.5">
+                                            @foreach (var empId in _selectedEmployeeIds)
+                                            {
+                                                var emp = _availableEmployees.FirstOrDefault(e => e.EmployeeId == empId);
+                                                var isLead = empId == _teamLeaderId;
+                                                <span class="px-2 py-0.5 rounded-full text-[11px] font-semibold @(isLead ? "bg-amber-100 text-amber-900 border border-amber-300" : "bg-slate-100 text-slate-800")">
+                                                    @(emp?.FullName ?? empId)@(isLead ? " (Team Leader)" : "")
+                                                </span>
+                                            }
+                                        </div>
+                                    </div>
+                                    <div class="pt-1">
+                                        <span class="text-slate-500 block mb-1">Reserved Equipment (@_selectedEquipmentIds.Count):</span>
+                                        @if (_selectedEquipmentIds.Count == 0)
+                                        {
+                                            <span class="text-[11px] text-slate-400 italic">None reserved</span>
+                                        }
+                                        else
+                                        {
+                                            <div class="flex flex-wrap gap-1">
+                                                @foreach (var eqId in _selectedEquipmentIds)
+                                                {
+                                                    var eq = _availableEquipment.FirstOrDefault(x => x.EquipmentID == eqId);
+                                                    <span class="px-2 py-0.5 rounded bg-slate-100 text-slate-700 text-[10px] font-medium">@(eq?.EquipmentName ?? eqId)</span>
+                                                }
+                                            </div>
+                                        }
+                                    </div>
+                                </div>
+                            </div>
 
-
-
+                            <div class="bg-white p-3 rounded-xl border border-slate-200 space-y-2 text-xs">
+                                <div class="text-[10px] font-bold uppercase tracking-wider text-slate-400">Selected Services &amp; Payment</div>
+                                @foreach (var item in _serviceSelections)
+                                {
+                                    <div class="flex justify-between text-slate-700">
+                                        <span>@item.Name <span class="text-slate-400">(@item.RateType &times; @item.Quantity)</span></span>
+                                        <span class="font-mono font-bold">₱@item.LineTotal.ToString("N2")</span>
+                                    </div>
+                                }
+                                <div class="pt-2 border-t border-slate-100 flex flex-wrap items-center justify-between gap-2 font-bold">
+                                    <span>Total: ₱@CalculateWizardTotal().ToString("N2")</span>
+                                    <span class="text-emerald-700">15% Reserve Fee (@_wizardPaymentMethod): ₱@CalculateWizardDownpayment().ToString("N2")</span>
+                                    <span class="text-slate-500">85% Balance: ₱@((CalculateWizardTotal() - CalculateWizardDownpayment()).ToString("N2"))</span>
+                                </div>
+                            </div>
+                        </div>
 
                         @* Timer Card *@
-
-
-
                         <div class="bg-slate-900 text-white p-5 rounded-2xl flex items-center justify-between shadow-sm">
-
-
-
                             <div>
-
-
-
                                 <span class="text-[10px] uppercase tracking-wider text-slate-400 font-bold">30-Minute Reservation Hold</span>
-
-
-
                                 <div class="text-2xl font-black font-mono mt-1 @(IsHoldExpired() ? "text-red-400" : "text-emerald-400")">
-
-
-
                                     @GetRemainingHoldText()
-
-
-
                                 </div>
-
-
-
                                 <div class="text-[11px] text-slate-400 mt-1">
-
-
-
                                     Hold expires at @_wizardHoldExpiresAt.ToLocalTime().ToString("h:mm tt")
-
-
-
                                 </div>
-
-
-
                             </div>
-
-
-
-
-
-
 
                             <div class="text-right space-y-2">
-
-
-
                                 <button type="button"
-
-
-
                                         @onclick="VerifyWizardPaymentAsync"
-
-
-
                                         disabled="@_isVerifyingPayment"
-
-
-
                                         class="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-bold transition-all shadow-xs block w-full">
-
-
-
                                     @(_isVerifyingPayment ? "Checking..." : "🔄 Check Payment Status")
-
-
-
                                 </button>
-
-
-
-
-
-
 
                                 <button type="button"
-
-
-
                                         @onclick="AskAnotherPaymentAsync"
-
-
-
                                         disabled="@_isRequestingExtension"
-
-
-
                                         class="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-white border border-slate-700 rounded-lg text-xs font-bold transition-all shadow-xs block w-full">
-
-
-
                                     @(_isRequestingExtension ? "Sending..." : "📩 Ask Another Payment")
-
-
-
                                 </button>
-
-
-
                             </div>
-
-
-
                         </div>
-
-
-
-
-
-
-
-                        @* Checkout URL Link *@
-
-
 
                         @if (!string.IsNullOrWhiteSpace(_wizardInvoiceUrl))
-
-
-
                         {
-
-
-
                             <div class="bg-slate-50 border border-slate-200 rounded-xl p-3.5 flex items-center justify-between text-xs">
-
-
-
                                 <div class="truncate mr-3">
-
-
-
                                     <span class="text-[11px] text-slate-500 font-bold block">Customer Payment URL</span>
-
-
-
                                     <a href="@(GetWizardCheckoutUrl())" target="_blank" class="text-teal-700 hover:underline font-mono text-[11px] truncate block">
-
-
-
                                         @_wizardInvoiceUrl
-
-
-
                                     </a>
-
-
-
                                 </div>
-
-
-
                                 <div class="flex items-center gap-2 shrink-0">
-
-
-
                                     <a href="@(GetWizardCheckoutUrl())" target="_blank" class="px-3 py-1.5 bg-slate-200 hover:bg-slate-300 rounded-lg text-slate-800 font-bold text-xs">
-
-
-
                                         Open ↗
-
-
-
                                     </a>
-
-
-
                                 </div>
-
-
-
                             </div>
-
-
-
                         }
-
-
-
-
-
-
-
-                        <div class="text-[11px] text-slate-500 leading-normal bg-slate-100 p-3 rounded-lg">
-
-
-
-                            <strong>Note for Office Clerk:</strong> If the customer does not complete payment within 30 minutes, click <strong>Ask Another Payment</strong> to extend the hold timer by another 30 minutes and re-send the payment request email to the client.
-
-
-
-                        </div>
-
-
-
                     </div>
-
-
-
                 }
 
-
-
-
-
-
-
             </div>
-
-
-
-
-
-
 
             @* Wizard Footer Navigation *@
-
-
-
             <div class="px-6 py-4 border-t border-slate-200 bg-slate-50 flex items-center justify-between">
-
-
-
                 <div>
-
-
-
                     @if (_wizardStep > 1 && _wizardStep < 5)
-
-
-
                     {
-
-
-
                         <button type="button" @onclick="PrevWizardStep" class="px-4 py-2 border border-slate-300 rounded-lg text-xs font-semibold text-slate-700 hover:bg-slate-100">
-
-
-
                             &larr; Back
-
-
-
                         </button>
-
-
-
                     }
-
-
-
                 </div>
-
-
-
-
-
-
 
                 <div>
-
-
-
                     @if (_wizardStep == 1)
-
-
-
                     {
-
-
-
-                        var hasChosenDateTime = _wizardEventDate > DateTime.MinValue && _wizardEventTime != default;
-
-
-
                         <button type="button"
-
-
-
-                                @onclick="Step1ProceedToReservationPaymentAsync"
-
-
-
-                                disabled="@_submittingWizard"
-
-
-
-                                class="inline-flex items-center gap-2 px-6 py-2.5 @(hasChosenDateTime ? "bg-emerald-700 hover:bg-emerald-800 cursor-pointer" : "bg-slate-400 cursor-not-allowed") text-white rounded-lg text-xs font-bold shadow-sm transition-all">
-
-
-
-                            <span>@(_submittingWizard ? "Dispatching Email..." : (hasChosenDateTime ? "Reservation Fee Payment" : "Choose Date & Time"))</span>
-
-
-
+                                @onclick="NextWizardStep"
+                                class="inline-flex items-center gap-2 px-6 py-2.5 bg-slate-900 hover:bg-black text-white rounded-lg text-xs font-bold shadow-sm transition-all">
+                            <span>Next: Select Crew</span>
                             <span>&rarr;</span>
-
-
-
                         </button>
-
-
-
                     }
-
-
-
                     else if (_wizardStep == 2)
-
-
-
                     {
-
-
-
                         <button type="button"
-
-
-
-                                @onclick="() => _wizardStep = 3"
-
-
-
+                                @onclick="NextWizardStep"
                                 class="inline-flex items-center gap-2 px-6 py-2.5 bg-slate-900 hover:bg-black text-white rounded-lg text-xs font-bold shadow-sm transition-all">
-
-
-
-                            <span>Continue to Staff &amp; Leader &rarr;</span>
-
-
-
-                        </button>
-
-
-
-                    }
-
-
-
-                    else if (_wizardStep == 3)
-
-
-
-                    {
-
-
-
-                        <button type="button" @onclick="NextWizardStep" class="px-5 py-2 bg-slate-900 hover:bg-black text-white rounded-lg text-xs font-bold shadow-xs transition-colors">
-
-
-
-                            Continue to Equipment &rarr;
-
-
-
-                        </button>
-
-
-
-                    }
-
-
-
-                    else if (_wizardStep == 4)
-
-
-
-                    {
-
-
-
-                        <button type="button"
-
-
-
-                                @onclick="Step4ProceedToPaymentStatusAsync"
-
-
-
-                                disabled="@_submittingWizard"
-
-
-
-                                class="inline-flex items-center gap-2 px-6 py-2.5 bg-slate-900 hover:bg-black text-white rounded-lg text-xs font-bold shadow-sm transition-all">
-
-
-
-                            <span>@(_submittingWizard ? "Saving Roster..." : "Proceed to Payment Status")</span>
-
-
-
+                            <span>Next: Equipment</span>
                             <span>&rarr;</span>
-
-
-
                         </button>
-
-
-
                     }
-
-
-
-                    else if (_wizardStep == 5)
-
-
-
+                    else if (_wizardStep == 3)
                     {
-
-
-
                         <button type="button"
-
-
-
-                                @onclick="FinalizeBookingAsync"
-
-
-
-                                
-
-
-
-                                class="inline-flex items-center gap-2 px-6 py-2.5 @(_wizardPaymentStatus == "Paid" || _wizardPaymentStatus == "Confirmed" ? "bg-emerald-700 hover:bg-emerald-800 cursor-pointer" : "bg-amber-600 hover:bg-amber-700 cursor-pointer") text-white rounded-lg text-xs font-bold shadow-sm transition-all">
-
-
-
-                            <span>@(_wizardPaymentStatus == "Paid" || _wizardPaymentStatus == "Confirmed" ? "Confirm & Finalize Booking" : "Reserve Slot (Pending Payment)")</span>
-
-
-
-                            <span>✓</span>
-
-
-
+                                @onclick="NextWizardStep"
+                                class="inline-flex items-center gap-2 px-6 py-2.5 bg-slate-900 hover:bg-black text-white rounded-lg text-xs font-bold shadow-sm transition-all">
+                            <span>Next: Reservation Fee Payment Method</span>
+                            <span>&rarr;</span>
                         </button>
-
-
-
                     }
-
-
-
+                    else if (_wizardStep == 4)
+                    {
+                        <button type="button"
+                                @onclick="Step4CreateAppointmentAndSendEmailAsync"
+                                disabled="@_submittingWizard"
+                                class="inline-flex items-center gap-2 px-6 py-2.5 bg-emerald-700 hover:bg-emerald-800 text-white rounded-lg text-xs font-bold shadow-sm transition-all">
+                            <span>@(_submittingWizard ? "Creating & Dispatching Email..." : "Proceed to Final Overview & Send Payment Email")</span>
+                            <span>&rarr;</span>
+                        </button>
+                    }
+                    else if (_wizardStep == 5)
+                    {
+                        <button type="button"
+                                @onclick="FinalizeBookingAsync"
+                                class="inline-flex items-center gap-2 px-6 py-2.5 @(_wizardPaymentStatus == "Paid" || _wizardPaymentStatus == "Confirmed" ? "bg-emerald-700 hover:bg-emerald-800" : "bg-amber-600 hover:bg-amber-700") text-white rounded-lg text-xs font-bold shadow-sm transition-all cursor-pointer">
+                            <span>@(_wizardPaymentStatus == "Paid" || _wizardPaymentStatus == "Confirmed" ? "Confirm & Finalize Booking" : "Done (Awaiting Reserve Fee Payment)")</span>
+                            <span>✓</span>
+                        </button>
+                    }
                 </div>
-
-
-
             </div>
 
-
-
-
-
-
-
         </div>
-
-
-
     </div>
-
-
-
 }
-
-
-
-
-
-
 
 @* ── Consultation Reschedule Modal ────────────────────────────────────────── *@
 @if (_isRescheduleModalOpen && _selectedNegotiation != null)
@@ -3433,8 +2603,13 @@
 
     private DateTime _wizardEventDate = DateTime.Today.AddDays(7);
     private DateTime _wizardEventTime = DateTime.Today.AddHours(14);
+    private DateTime _wizardEventEndTime = DateTime.Today.AddHours(15);
+    private bool _isEndTimeManuallyOverridden = false;
     private DateTime _wizardCalendarMonth = new DateTime(DateTime.Today.Year, DateTime.Today.Month, 1);
     private List<EventBookingModel> _studioBookings = new();
+    private List<EquipmentReservationModel> _equipmentReservations = new();
+    private List<LeaveItemViewModel> _approvedLeaves = new();
+    private List<ServiceCustomizationItem> _serviceSelections = new();
 
     public enum SlotStatusType
     {
@@ -3495,7 +2670,9 @@
                 if (neg.Appointment != null && neg.Appointment.EventDate.ToDateTime(TimeOnly.MinValue).Date == date.Date && !string.Equals(neg.Appointment.EventStatus, "Cancelled", StringComparison.OrdinalIgnoreCase))
                 {
                     var start = neg.Appointment.EventTime.ToTimeSpan();
-                    var end = start.Add(TimeSpan.FromHours(1));
+                    var end = neg.Appointment.EventEndTime.HasValue && neg.Appointment.EventEndTime.Value > neg.Appointment.EventTime
+                        ? neg.Appointment.EventEndTime.Value.ToTimeSpan()
+                        : start.Add(TimeSpan.FromHours(1));
                     var name = string.IsNullOrWhiteSpace(neg.Appointment.EventName) ? "Booked Photoshoot" : neg.Appointment.EventName;
                     if (!dayEvents.Any(e => e.Start == start))
                         dayEvents.Add((start, end, name));
@@ -3527,15 +2704,12 @@
                 var evStart = ev.Start;
                 var evEnd = ev.End;
 
-                // 2 hours advance preparation buffer: [evStart - 2h, evStart)
                 var prepStart = evStart >= TimeSpan.FromHours(2) ? evStart.Subtract(TimeSpan.FromHours(2)) : TimeSpan.Zero;
                 var prepEnd = evStart;
 
-                // 1 hour after events buffer: [evEnd, evEnd + 1h)
                 var postStart = evEnd;
                 var postEnd = evEnd <= TimeSpan.FromHours(23) ? evEnd.Add(TimeSpan.FromHours(1)) : TimeSpan.FromHours(24);
 
-                // 1. Overlaps with booked event itself
                 if (slotStart < evEnd && evStart < slotEnd)
                 {
                     slotInfo.IsAvailable = false;
@@ -3544,14 +2718,12 @@
                     break;
                 }
 
-                // 2. Overlaps with 2-hour advance preparation buffer
                 if (slotStart < prepEnd && prepStart < slotEnd)
                 {
                     slotInfo.IsAvailable = false;
                     slotInfo.Status = SlotStatusType.PrepBuffer;
                     slotInfo.Reason = $"2h Prep Buffer ({ev.Name})";
                 }
-                // 3. Overlaps with 1-hour post-event buffer (if not already prep buffer)
                 else if (slotStart < postEnd && postStart < slotEnd && slotInfo.Status != SlotStatusType.PrepBuffer)
                 {
                     slotInfo.IsAvailable = false;
@@ -3577,22 +2749,67 @@
         return false;
     }
 
+    private List<EventBookingModel> GetDayBookingsForReference(DateTime date)
+    {
+        if (_studioBookings == null) return new List<EventBookingModel>();
+        return _studioBookings
+            .Where(b => b.Date.Date == date.Date &&
+                        !b.IsConsultation &&
+                        !string.Equals(b.Status, "Cancelled", StringComparison.OrdinalIgnoreCase) &&
+                        !string.Equals(b.Status, "Expired", StringComparison.OrdinalIgnoreCase) &&
+                        !string.Equals(b.Status, "Deal_Lost", StringComparison.OrdinalIgnoreCase))
+            .OrderBy(b => b.StartTime)
+            .ToList();
+    }
+
     private void SelectWizardDate(DateTime date)
     {
         _wizardEventDate = date;
-        var slots = GetWizardDaySlots(date);
-        var firstAvail = slots.FirstOrDefault(s => s.IsAvailable);
-        if (firstAvail != null)
-        {
-            _wizardEventTime = date.Date.Add(firstAvail.Start);
-        }
+        _wizardEventTime = date.Date.Add(_wizardEventTime.TimeOfDay);
+        SyncWizardEndTimeFromSelections();
+        PruneUnavailableCrewAndEquipment();
         StateHasChanged();
     }
 
-    private void SelectWizardTimeSlot(TimeSpan time)
+    private void OnWizardStartTimeChanged(ChangeEventArgs e)
     {
-        _wizardEventTime = _wizardEventDate.Date.Add(time);
-        StateHasChanged();
+        if (TimeSpan.TryParse(e.Value?.ToString(), out var parsed))
+        {
+            _wizardEventTime = _wizardEventDate.Date.Add(parsed);
+            _isEndTimeManuallyOverridden = false;
+            SyncWizardEndTimeFromSelections();
+            PruneUnavailableCrewAndEquipment();
+        }
+    }
+
+    private void OnWizardEndTimeChanged(ChangeEventArgs e)
+    {
+        if (TimeSpan.TryParse(e.Value?.ToString(), out var parsed))
+        {
+            _wizardEventEndTime = _wizardEventDate.Date.Add(parsed);
+            _isEndTimeManuallyOverridden = true;
+            PruneUnavailableCrewAndEquipment();
+        }
+    }
+
+    private void SyncWizardEndTimeFromSelections(bool force = false)
+    {
+        if (_isEndTimeManuallyOverridden && !force) return;
+        var mins = BookingWizardEngine.ComputeCombinedShootDurationMinutes(_serviceSelections);
+        var endSpan = _wizardEventTime.TimeOfDay.Add(TimeSpan.FromMinutes(mins));
+        if (endSpan > new TimeSpan(23, 59, 0)) endSpan = new TimeSpan(23, 59, 0);
+        _wizardEventEndTime = _wizardEventDate.Date.Add(endSpan);
+    }
+
+    private string GetCombinedShootDurationText()
+    {
+        var span = _wizardEventEndTime.TimeOfDay - _wizardEventTime.TimeOfDay;
+        if (span <= TimeSpan.Zero)
+        {
+            var mins = BookingWizardEngine.ComputeCombinedShootDurationMinutes(_serviceSelections);
+            span = TimeSpan.FromMinutes(mins);
+        }
+        return span.Minutes > 0 ? $"{(int)span.TotalHours}h {span.Minutes}m" : $"{(int)span.TotalHours}h";
     }
 
     private void PrevWizardMonth()
@@ -3605,24 +2822,41 @@
         _wizardCalendarMonth = _wizardCalendarMonth.AddMonths(1);
     }
 
-    private static string FormatTimeSpan(TimeSpan ts)
+    private static string FormatTimeSpan(TimeSpan ts) => BookingWizardEngine.FormatTime(ts);
+
+    private string? GetEmployeeBlockReason(EmployeeViewModel emp, DateTime date) =>
+        BookingWizardEngine.GetEmployeeBlockReason(emp, date, _approvedLeaves);
+
+    private List<AvailableCrewOption> GetAvailableWizardCrews() =>
+        BookingWizardEngine.GetAvailableCrews(
+            _availableEmployees,
+            _wizardEventDate,
+            _wizardEventTime.TimeOfDay,
+            _wizardEventEndTime.TimeOfDay,
+            _studioBookings,
+            _negotiations,
+            _wizardCreatedAppointmentId,
+            _approvedLeaves);
+
+    private HashSet<string> GetConflictingWizardEquipmentIds() =>
+        BookingWizardEngine.GetConflictingEquipmentIds(
+            _wizardEventDate,
+            _wizardEventTime.TimeOfDay,
+            _wizardEventEndTime.TimeOfDay,
+            _studioBookings,
+            _equipmentReservations,
+            _wizardCreatedAppointmentId);
+
+    private void PruneUnavailableCrewAndEquipment()
     {
-        var dt = DateTime.Today.Add(ts);
-        return dt.ToString("h:mm tt");
+        var availIds = GetAvailableWizardCrews().Select(c => c.Employee.EmployeeId).ToHashSet(StringComparer.OrdinalIgnoreCase);
+        _selectedEmployeeIds.RemoveWhere(id => !availIds.Contains(id));
+        if (!string.IsNullOrWhiteSpace(_teamLeaderId) && !availIds.Contains(_teamLeaderId))
+            _teamLeaderId = _selectedEmployeeIds.FirstOrDefault() ?? string.Empty;
+
+        var conflictEq = GetConflictingWizardEquipmentIds();
+        _selectedEquipmentIds.RemoveWhere(id => conflictEq.Contains(id));
     }
-
-    private string? GetWizardSlotConflict(DateTime date, TimeSpan time)
-    {
-        var slots = GetWizardDaySlots(date);
-        var matchingSlot = slots.FirstOrDefault(s => time >= s.Start && time < s.End);
-        if (matchingSlot != null && !matchingSlot.IsAvailable)
-        {
-            return $"Selected time ({FormatTimeSpan(time)}) is not available: {matchingSlot.Reason}. Booked events require 2 hours preparation in advance and 1 hour buffer after.";
-        }
-        return null;
-    }
-
-
 
     private string _wizardEventLocation = string.Empty;
 
@@ -3657,8 +2891,6 @@
 
 
     private List<EmployeeViewModel> _availableEmployees = new();
-
-
 
     private List<EquipmentItemModel> _availableEquipment = new();
 
@@ -3732,7 +2964,7 @@
 
 
 
-            if (!isAdmin && !isClerk && !isEmployee)
+            if (!isAdmin && !isClerk)
 
 
 
@@ -3766,7 +2998,7 @@
 
         await LoadNegotiationsAsync();
         await LoadCatalogDataAsync();
-        try { if (ScheduleService != null) _studioBookings = ScheduleService.GetEventBookings(); } catch { }
+        try { if (ScheduleService != null) { _studioBookings = ScheduleService.GetEventBookings(); _equipmentReservations = ScheduleService.GetEquipmentReservations(); } } catch { }
 
 
 
@@ -3852,8 +3084,6 @@
 
             var emps = await EmployeeService.GetEmployeesAsync();
 
-
-
             _availableEmployees = emps.Where(e => e.Status == "Active").ToList();
 
 
@@ -3867,6 +3097,9 @@
 
 
             _availableEquipment = eqs.ToList();
+
+            var leaves = await EmployeeService.GetAllLeavesAsync("Approved");
+            _approvedLeaves = leaves.ToList();
 
 
 
@@ -4421,963 +3654,225 @@
 
 
     private void OpenEventWizard()
-
-
-
     {
-
-
-
         if (_selectedNegotiation == null) return;
 
-
-
         _wizardStep = 1;
-
-
-
         _wizardError = null;
-
-
-
         _wizardEventName = $"{_selectedNegotiation.CustomerName} - Photoshoot Event";
-
-
-
         _wizardEventDescription = _selectedNegotiation.InquiryNotes;
-
-
 
         _wizardEventDate = DateTime.Today.AddDays(7);
         _wizardCalendarMonth = new DateTime(_wizardEventDate.Year, _wizardEventDate.Month, 1);
-        _wizardEventTime = DateTime.Today.AddHours(14);
-        if (ScheduleService != null)
-        {
-            RefreshStudioScheduleCache();
-        }
-        var initSlots = GetWizardDaySlots(_wizardEventDate);
-        var firstAvail = initSlots.FirstOrDefault(s => s.IsAvailable);
-        if (firstAvail != null)
-        {
-            _wizardEventTime = _wizardEventDate.Date.Add(firstAvail.Start);
-        }
+        _wizardEventTime = _wizardEventDate.Date.AddHours(14);
+        _isEndTimeManuallyOverridden = false;
 
-
+        RefreshStudioScheduleCache();
 
         _wizardEventLocation = "Studio A (Main Hall)";
-
-
-
         _wizardPaymentMethod = "QR Ph";
-
-
-
         _wizardCreatedAppointmentId = null;
-
-
-
         _wizardInvoiceUrl = null;
-
-
-
         _wizardHoldExpiresAt = DateTime.UtcNow.AddMinutes(30);
-
-
-
         _wizardPaymentStatus = "Pending";
 
-
-
         _selectedServiceIds.Clear();
-
-
-
+        _serviceSelections.Clear();
         _selectedEmployeeIds.Clear();
-
-
-
         _teamLeaderId = string.Empty;
-
-
-
         _selectedEquipmentIds.Clear();
 
-
-
-
-
-
-
-        // Pre-select first service
-
-
-
         if (_availableServices.Count > 0)
-
-
-
         {
-
-
-
-            _selectedServiceIds.Add(_availableServices[0].ServicesId);
-
-
-
+            var firstSvc = _availableServices[0];
+            _selectedServiceIds.Add(firstSvc.ServicesId);
+            _serviceSelections.Add(BookingWizardEngine.CreateCustomizationItem(firstSvc));
         }
 
+        SyncWizardEndTimeFromSelections(force: true);
 
-
-
-
-
-
-        // Auto pre-select active creative crew
-
-
-
-        if (_availableEmployees.Count > 0)
-
-
-
+        var availCrews = GetAvailableWizardCrews();
+        if (availCrews.Count > 0)
         {
-
-
-
-            _selectedEmployeeIds.Add(_availableEmployees[0].EmployeeId);
-
-
-
-            _teamLeaderId = _availableEmployees[0].EmployeeId;
-
-
-
+            _selectedEmployeeIds.Add(availCrews[0].Employee.EmployeeId);
+            _teamLeaderId = availCrews[0].Employee.EmployeeId;
         }
 
-
-
-
-
-
-
-        // Auto pre-select essential equipment
-
-
-
-        foreach (var eq in _availableEquipment.Take(3))
-
-
-
+        var conflictEq = GetConflictingWizardEquipmentIds();
+        foreach (var eq in _availableEquipment.Where(e => !conflictEq.Contains(e.EquipmentID)).Take(3))
         {
-
-
-
             _selectedEquipmentIds.Add(eq.EquipmentID);
-
-
-
         }
-
-
-
-
-
-
 
         StartCountdownTimer();
-
-
-
         _isWizardOpen = true;
-
-
-
     }
-
-
-
-
-
-
 
     private void CloseEventWizard()
-
-
-
     {
-
-
-
         _isWizardOpen = false;
-
-
-
         _countdownTimer?.Dispose();
-
-
-
     }
-
-
-
-
-
-
 
     private void NextWizardStep()
-
-
-
     {
-
-
-
         _wizardError = null;
-
-
 
         if (_wizardStep == 1)
-
-
-
         {
+            if (_selectedServiceIds.Count == 0 || _serviceSelections.Count == 0)
+            {
+                _wizardError = "Please select at least one service package.";
+                return;
+            }
 
+            if (_serviceSelections.Any(s => !s.IsConfirmed))
+            {
+                _wizardError = "Please check the confirmation boxes under all chosen services before continuing.";
+                return;
+            }
 
+            if (string.IsNullOrWhiteSpace(_wizardEventName))
+            {
+                _wizardError = "Please enter an event photoshoot name.";
+                return;
+            }
 
-            if (_selectedServiceIds.Count == 0) { _wizardError = "Please select at least one service package."; return; }
+            if (_wizardEventDate == DateTime.MinValue || _wizardEventTime == default || _wizardEventEndTime <= _wizardEventTime)
+            {
+                _wizardError = "Please choose a valid shoot date and minute-level start/end time.";
+                return;
+            }
 
+            var availCrews = GetAvailableWizardCrews();
+            if (availCrews.Count == 0)
+            {
+                var win = BookingWizardEngine.ComputeBufferedWindow(_wizardEventTime.TimeOfDay, _wizardEventEndTime.TimeOfDay);
+                _wizardError = $"No crew is available for {BookingWizardEngine.FormatTime(win.PrepStart)} – {BookingWizardEngine.FormatTime(win.PostEnd)} (including 2h prep and 1h post-event buffers). Please adjust the time or date.";
+                return;
+            }
 
+            if (string.IsNullOrWhiteSpace(_wizardEventLocation))
+            {
+                _wizardError = "Please specify the venue or location.";
+                return;
+            }
 
-            if (string.IsNullOrWhiteSpace(_wizardEventName)) { _wizardError = "Please enter an event photoshoot name."; return; }
-
-
-
-            if (string.IsNullOrWhiteSpace(_wizardEventLocation)) { _wizardError = "Please specify the venue or location."; return; }
-
-
+            PruneUnavailableCrewAndEquipment();
+            if (_selectedEmployeeIds.Count == 0 && availCrews.Count > 0)
+            {
+                _selectedEmployeeIds.Add(availCrews[0].Employee.EmployeeId);
+                _teamLeaderId = availCrews[0].Employee.EmployeeId;
+            }
 
             _wizardStep = 2;
-
-
-
         }
-
-
-
-        else if (_wizardStep == 3)
-
-
-
+        else if (_wizardStep == 2)
         {
-
-
-
-            if (_selectedEmployeeIds.Count == 0) { _wizardError = "Please assign at least one staff member."; return; }
-
-
+            if (_selectedEmployeeIds.Count == 0)
+            {
+                _wizardError = "Please assign at least one available crew member.";
+                return;
+            }
 
             if (string.IsNullOrWhiteSpace(_teamLeaderId) || !_selectedEmployeeIds.Contains(_teamLeaderId))
-
-
-
             {
-
-
-
                 _wizardError = "Please explicitly designate a Team Leader from the assigned crew.";
-
-
-
                 return;
-
-
-
             }
 
-
-
-            _wizardStep = 4;
-
-
-
+            _wizardStep = 3;
         }
-
-
-
+        else if (_wizardStep == 3)
+        {
+            _wizardStep = 4;
+        }
     }
-
-
-
-
-
-
 
     private void PrevWizardStep()
-
-
-
     {
-
-
-
-        if (_wizardStep > 1 && _wizardStep < 5) _wizardStep--;
-
-
-
+        if (_wizardStep > 1 && _wizardStep < 5)
+        {
+            _wizardError = null;
+            _wizardStep--;
+        }
     }
 
-
-
-
-
-
-
-    private async Task Step1ProceedToReservationPaymentAsync()
-
-
-
+    private async Task Step4CreateAppointmentAndSendEmailAsync()
     {
-
-
-
         if (_selectedNegotiation == null) return;
-
-
-
         _wizardError = null;
-
-
-
-
-
-
-
-        if (_selectedServiceIds.Count == 0)
-
-
-
-        {
-
-
-
-            _wizardError = "Please select at least one service package.";
-
-
-
-            return;
-
-
-
-        }
-
-
-
-
-
-
-
-        if (string.IsNullOrWhiteSpace(_wizardEventName))
-
-
-
-        {
-
-
-
-            _wizardError = "Please enter an event photoshoot name.";
-
-
-
-            return;
-
-
-
-        }
-
-
-
-
-
-
-
-        if (_wizardEventDate == DateTime.MinValue || _wizardEventTime == default)
-        {
-            _wizardError = "Please select a shoot date and time.";
-            return;
-        }
-
-        var conflict = GetWizardSlotConflict(_wizardEventDate, _wizardEventTime.TimeOfDay);
-        if (conflict != null)
-        {
-            _wizardError = conflict;
-            return;
-        }
-
-
-
-
-
-
-
-        if (string.IsNullOrWhiteSpace(_wizardEventLocation))
-
-
-
-        {
-
-
-
-            _wizardError = "Please specify the venue or location.";
-
-
-
-            return;
-
-
-
-        }
-
-
-
-
-
-
-
-        _submittingWizard = true;
-
-
-
-        try
-
-
-
-        {
-
-
-
-            var req = new CreateEventAppointmentFromNegotiationRequest
-
-
-
-            {
-
-
-
-                NegotiationId = _selectedNegotiation.NegotiationId,
-
-
-
-                CustomerId = _selectedNegotiation.CustomerId,
-
-
-
-                EventName = _wizardEventName,
-
-
-
-                EventDescription = _wizardEventDescription,
-
-
-
-                EventDate = DateOnly.FromDateTime(_wizardEventDate),
-
-
-
-                EventTime = TimeOnly.FromDateTime(_wizardEventTime),
-
-
-
-                EventLocation = _wizardEventLocation,
-
-
-
-                ServiceIds = _selectedServiceIds.ToList(),
-
-
-
-                EmployeeIds = _selectedEmployeeIds.ToList(),
-
-
-
-                TeamLeaderEmployeeId = _teamLeaderId,
-
-
-
-                EquipmentIds = _selectedEquipmentIds.ToList()
-
-
-
-            };
-
-
-
-
-
-
-
-            var res = await ConsultationApi.CreateEventAppointmentAsync(_selectedNegotiation.NegotiationId, req);
-
-
-
-            if (res.IsSuccess && res.Value != null)
-
-
-
-            {
-
-
-
-                _wizardCreatedAppointmentId = res.Value.EventAppointmentId;
-
-
-
-                _wizardInvoiceUrl = res.Value.XenditInvoiceUrl;
-
-
-
-                _wizardHoldExpiresAt = res.Value.LockExpiresAt ?? res.Value.HoldExpiresAt ?? DateTime.UtcNow.AddMinutes(60);
-
-
-
-                _wizardPaymentStatus = res.Value.DownpaymentStatus;
-
-                RefreshStudioScheduleCache();
-
-                await DisplayToast("Reservation fee invoice generated & payment email dispatched to customer.");
-
-
-
-                _wizardStep = 2;
-
-
-
-            }
-
-
-
-            else
-
-
-
-            {
-
-
-
-                _wizardError = res.Error?.Message ?? "Failed to create appointment & send payment email.";
-
-
-
-            }
-
-
-
-        }
-
-
-
-        catch (Exception ex)
-
-
-
-        {
-
-
-
-            _wizardError = ex.Message;
-
-
-
-        }
-
-
-
-        finally
-
-
-
-        {
-
-
-
-            _submittingWizard = false;
-
-
-
-        }
-
-
-
-    }
-
-
-
-
-
-
-
-    private async Task Step2ProceedAndSendEmailAsync()
-
-
-
-    {
-
-
-
-        if (_selectedNegotiation == null) return;
-
-
-
-        _wizardError = null;
-
-
-
-
-
-
 
         if (string.IsNullOrWhiteSpace(_wizardPaymentMethod))
-
-
-
         {
-
-
-
             _wizardError = "Please select a payment method (QR Ph).";
-
-
-
             return;
-
-
-
         }
 
-
-
-
-
-
+        if (_selectedEmployeeIds.Count == 0 || string.IsNullOrWhiteSpace(_teamLeaderId))
+        {
+            _wizardError = "Please ensure crew and Team Leader are assigned before proceeding.";
+            return;
+        }
 
         _submittingWizard = true;
 
-
-
         try
-
-
-
         {
-
-
-
             var req = new CreateEventAppointmentFromNegotiationRequest
-
-
-
             {
-
-
-
                 NegotiationId = _selectedNegotiation.NegotiationId,
-
-
-
                 CustomerId = _selectedNegotiation.CustomerId,
-
-
-
                 EventName = _wizardEventName,
-
-
-
                 EventDescription = _wizardEventDescription,
-
-
-
                 EventDate = DateOnly.FromDateTime(_wizardEventDate),
-
-
-
                 EventTime = TimeOnly.FromDateTime(_wizardEventTime),
-
-
-
+                EventEndTime = TimeOnly.FromDateTime(_wizardEventEndTime),
+                DurationMinutes = Math.Max(15, (int)Math.Round((_wizardEventEndTime.TimeOfDay - _wizardEventTime.TimeOfDay).TotalMinutes)),
                 EventLocation = _wizardEventLocation,
-
-
-
+                PaymentMethod = _wizardPaymentMethod,
                 ServiceIds = _selectedServiceIds.ToList(),
-
-
-
+                ServiceSelections = _serviceSelections.Select(s => new EventServiceLineInput
+                {
+                    ServicesId = s.ServicesId,
+                    Quantity = s.Quantity,
+                    DurationHours = s.EffectiveDurationHours,
+                    RateType = s.RateType
+                }).ToList(),
                 EmployeeIds = _selectedEmployeeIds.ToList(),
-
-
-
                 TeamLeaderEmployeeId = _teamLeaderId,
-
-
-
                 EquipmentIds = _selectedEquipmentIds.ToList()
-
-
-
             };
-
-
-
-
-
-
 
             var res = await ConsultationApi.CreateEventAppointmentAsync(_selectedNegotiation.NegotiationId, req);
 
-
-
             if (res.IsSuccess && res.Value != null)
-
-
-
             {
-
-
-
                 _wizardCreatedAppointmentId = res.Value.EventAppointmentId;
-
-
-
                 _wizardInvoiceUrl = res.Value.XenditInvoiceUrl;
-
-
-
-                _wizardHoldExpiresAt = res.Value.LockExpiresAt ?? res.Value.HoldExpiresAt ?? DateTime.UtcNow.AddMinutes(60);
-
-
-
+                _wizardHoldExpiresAt = res.Value.LockExpiresAt ?? res.Value.HoldExpiresAt ?? DateTime.UtcNow.AddMinutes(30);
                 _wizardPaymentStatus = res.Value.DownpaymentStatus;
 
+                // Immediately sync pending appointment to Events Calendar
                 RefreshStudioScheduleCache();
 
-                await DisplayToast("Reservation invoice generated & payment email dispatched to customer.");
-
-
-
-                _wizardStep = 3;
-
-
-
+                await DisplayToast("Appointment created (Awaiting Reserve Fee Payment), payment email dispatched, and synced to Events Calendar.");
+                _wizardStep = 5;
             }
-
-
-
             else
-
-
-
             {
-
-
-
-                _wizardError = res.Error?.Message ?? "Failed to create appointment & send payment email.";
-
-
-
+                _wizardError = res.Error?.Message ?? "Failed to create appointment and send payment email.";
             }
-
-
-
         }
-
-
-
         catch (Exception ex)
-
-
-
         {
-
-
-
             _wizardError = ex.Message;
-
-
-
         }
-
-
-
         finally
-
-
-
         {
-
-
-
             _submittingWizard = false;
-
-
-
         }
-
-
-
     }
-
-
-
-
-
-
-
-    private async Task Step4ProceedToPaymentStatusAsync()
-
-
-
-    {
-
-
-
-        _wizardError = null;
-
-
-
-        _submittingWizard = true;
-
-
-
-
-
-
-
-        try
-
-
-
-        {
-
-
-
-            if (!string.IsNullOrWhiteSpace(_wizardCreatedAppointmentId))
-
-
-
-            {
-
-
-
-                var rosterReq = new UpdateAppointmentRosterRequest
-
-
-
-                {
-
-
-
-                    EmployeeIds = _selectedEmployeeIds.ToList(),
-
-
-
-                    TeamLeaderEmployeeId = _teamLeaderId,
-
-
-
-                    EquipmentIds = _selectedEquipmentIds.ToList()
-
-
-
-                };
-
-
-
-
-
-
-
-                await ConsultationApi.UpdateAppointmentRosterAsync(_wizardCreatedAppointmentId, rosterReq);
-                RefreshStudioScheduleCache();
-
-
-                // Check live payment status
-
-
-
-                var verifyRes = await ConsultationApi.VerifyDownpaymentAsync(_wizardCreatedAppointmentId);
-
-
-
-                if (verifyRes.IsSuccess && verifyRes.Value != null)
-
-
-
-                {
-
-
-
-                    _wizardPaymentStatus = verifyRes.Value.DownpaymentStatus;
-
-
-
-                }
-
-
-
-            }
-
-
-
-
-
-
-
-            _wizardStep = 5;
-
-
-
-        }
-
-
-
-        catch (Exception ex)
-
-
-
-        {
-
-
-
-            _wizardError = ex.Message;
-
-
-
-        }
-
-
-
-        finally
-
-
-
-        {
-
-
-
-            _submittingWizard = false;
-
-
-
-        }
-
-
-
-    }
-
-
-
-
-
-
 
     private bool _isSimulatingWebhook = false;
 
@@ -5701,6 +4196,7 @@
         {
             ScheduleService.InvalidateCache();
             _studioBookings = ScheduleService.GetEventBookings();
+            _equipmentReservations = ScheduleService.GetEquipmentReservations();
         }
         catch { }
     }
@@ -5762,137 +4258,107 @@
 
 
 
+    private bool AllWizardServicesConfirmed =>
+        _serviceSelections.Count > 0 && _serviceSelections.All(s => s.IsConfirmed);
+
     private void ToggleWizardService(string serviceId, bool isChecked)
-
-
-
     {
+        if (isChecked)
+        {
+            _selectedServiceIds.Add(serviceId);
+            if (!_serviceSelections.Any(s => string.Equals(s.ServicesId, serviceId, StringComparison.OrdinalIgnoreCase)))
+            {
+                var svc = _availableServices.FirstOrDefault(s => string.Equals(s.ServicesId, serviceId, StringComparison.OrdinalIgnoreCase));
+                if (svc != null)
+                {
+                    _serviceSelections.Add(BookingWizardEngine.CreateCustomizationItem(svc));
+                }
+            }
+        }
+        else
+        {
+            _selectedServiceIds.Remove(serviceId);
+            _serviceSelections.RemoveAll(s => string.Equals(s.ServicesId, serviceId, StringComparison.OrdinalIgnoreCase));
+        }
 
-
-
-        if (isChecked) _selectedServiceIds.Add(serviceId);
-
-
-
-        else _selectedServiceIds.Remove(serviceId);
-
-
-
+        SyncWizardEndTimeFromSelections();
+        PruneUnavailableCrewAndEquipment();
     }
 
+    private void UpdateServiceQuantity(string serviceId, object? rawVal)
+    {
+        var item = _serviceSelections.FirstOrDefault(s => string.Equals(s.ServicesId, serviceId, StringComparison.OrdinalIgnoreCase));
+        if (item == null) return;
+        if (int.TryParse(rawVal?.ToString(), out var qty))
+        {
+            item.Quantity = Math.Clamp(qty, 1, item.RateCategory == ServiceRateCategory.PerShot ? 500 : 24);
+            if (item.RateCategory == ServiceRateCategory.PerHour)
+                item.DurationHours = item.Quantity;
+            SyncWizardEndTimeFromSelections();
+            PruneUnavailableCrewAndEquipment();
+        }
+    }
 
+    private void UpdateServiceDurationHours(string serviceId, object? rawVal)
+    {
+        var item = _serviceSelections.FirstOrDefault(s => string.Equals(s.ServicesId, serviceId, StringComparison.OrdinalIgnoreCase));
+        if (item == null) return;
+        if (int.TryParse(rawVal?.ToString(), out var hrs))
+        {
+            item.DurationHours = Math.Clamp(hrs, 1, 24);
+            SyncWizardEndTimeFromSelections();
+            PruneUnavailableCrewAndEquipment();
+        }
+    }
 
+    private void ToggleServiceConfirmation(string serviceId, bool isConfirmed)
+    {
+        var item = _serviceSelections.FirstOrDefault(s => string.Equals(s.ServicesId, serviceId, StringComparison.OrdinalIgnoreCase));
+        if (item != null) item.IsConfirmed = isConfirmed;
+    }
 
-
-
+    private void ToggleAllServicesConfirmation(bool isConfirmed)
+    {
+        foreach (var item in _serviceSelections)
+            item.IsConfirmed = isConfirmed;
+    }
 
     private void ToggleWizardEmployee(string employeeId, bool isChecked)
-
-
-
     {
-
-
-
         if (isChecked)
-
-
-
         {
-
-
-
+            var emp = _availableEmployees.FirstOrDefault(e => string.Equals(e.EmployeeId, employeeId, StringComparison.OrdinalIgnoreCase));
+            var blockReason = emp == null ? null : GetEmployeeBlockReason(emp, _wizardEventDate);
+            if (blockReason != null)
+            {
+                _wizardError = $"Cannot assign {employeeId}: {blockReason}.";
+                return;
+            }
             _selectedEmployeeIds.Add(employeeId);
-
-
-
             if (string.IsNullOrWhiteSpace(_teamLeaderId)) _teamLeaderId = employeeId;
-
-
-
         }
-
-
-
         else
-
-
-
         {
-
-
-
             _selectedEmployeeIds.Remove(employeeId);
-
-
-
             if (_teamLeaderId == employeeId) _teamLeaderId = _selectedEmployeeIds.FirstOrDefault() ?? string.Empty;
-
-
-
         }
-
-
-
     }
-
-
-
-
-
-
 
     private void ToggleWizardEquipment(string equipmentId, bool isChecked)
-
-
-
     {
-
-
-
         if (isChecked) _selectedEquipmentIds.Add(equipmentId);
-
-
-
         else _selectedEquipmentIds.Remove(equipmentId);
-
-
-
     }
-
-
-
-
-
-
 
     private decimal CalculateWizardTotal()
-
-
-
     {
-
-
+        if (_serviceSelections.Count > 0)
+            return _serviceSelections.Sum(s => s.LineTotal);
 
         return _availableServices
-
-
-
             .Where(s => _selectedServiceIds.Contains(s.ServicesId))
-
-
-
             .Sum(s => s.Price);
-
-
-
     }
-
-
-
-
-
-
 
     private decimal CalculateWizardDownpayment() => Math.Round(CalculateWizardTotal() * 0.15m, 2);
 

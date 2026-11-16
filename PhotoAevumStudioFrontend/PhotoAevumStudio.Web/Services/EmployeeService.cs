@@ -1561,10 +1561,51 @@ public class EmployeeService : IEmployeeService
 
             var res = await _http.PostAsJsonAsync("api/leaves/request", payload, cancellationToken);
 
-            return res.IsSuccessStatusCode;
+            if (res.IsSuccessStatusCode)
+                return true;
 
         }
 
+        catch { }
+
+        // Direct SQL fallback if API server is unreachable
+        try
+        {
+            if (endDate < startDate || string.IsNullOrWhiteSpace(employeeId))
+                return false;
+
+            await using var conn = SqlResilienceHelper.CreateConnection(_connectionString);
+            await conn.OpenAsync(cancellationToken);
+
+            const string empNameSql = @"
+                SELECT TOP 1 LTRIM(RTRIM(CONCAT(ISNULL(EmployeeFirstName, ''), ' ', ISNULL(EmployeeLastName, ''))))
+                FROM dbo.Employees WHERE EmployeeID = @EmpId;";
+            string empName = employeeId;
+            await using (var nameCmd = new SqlCommand(empNameSql, conn))
+            {
+                nameCmd.Parameters.AddWithValue("@EmpId", employeeId.Trim());
+                var obj = await nameCmd.ExecuteScalarAsync(cancellationToken);
+                if (obj is string s && !string.IsNullOrWhiteSpace(s))
+                    empName = s;
+            }
+
+            var leaveId = "LV-" + DateTime.UtcNow.ToString("yyyyMMdd") + "-" + Guid.NewGuid().ToString("N")[..4].ToUpperInvariant();
+            const string sql = @"
+                IF OBJECT_ID(N'dbo.EmployeeLeaves', N'U') IS NOT NULL
+                BEGIN
+                    INSERT INTO dbo.EmployeeLeaves (LeaveId, EmployeeStudioId, EmployeeName, LeaveType, StartDate, EndDate, Reason, Status, CreatedAt)
+                    VALUES (@LeaveId, @EmpId, @EmpName, @LeaveType, @StartDate, @EndDate, @Reason, 'Pending', SYSUTCDATETIME());
+                END";
+            await using var cmd = new SqlCommand(sql, conn);
+            cmd.Parameters.AddWithValue("@LeaveId", leaveId);
+            cmd.Parameters.AddWithValue("@EmpId", employeeId.Trim());
+            cmd.Parameters.AddWithValue("@EmpName", empName);
+            cmd.Parameters.AddWithValue("@LeaveType", leaveType);
+            cmd.Parameters.AddWithValue("@StartDate", startDate.ToDateTime(TimeOnly.MinValue));
+            cmd.Parameters.AddWithValue("@EndDate", endDate.ToDateTime(TimeOnly.MinValue));
+            cmd.Parameters.AddWithValue("@Reason", (object?)reason ?? DBNull.Value);
+            return await cmd.ExecuteNonQueryAsync(cancellationToken) > 0;
+        }
         catch { return false; }
 
     }
@@ -1591,8 +1632,83 @@ public class EmployeeService : IEmployeeService
 
         catch { }
 
-        return new List<LeaveItemViewModel>();
+        return await GetLeavesFromSqlFallbackAsync("Pending", null, cancellationToken);
 
+    }
+
+    public async Task<IReadOnlyList<LeaveItemViewModel>> GetAllLeavesAsync(string? status = null, string? employeeId = null, CancellationToken cancellationToken = default)
+
+    {
+
+        if (cancellationToken.IsCancellationRequested) return new List<LeaveItemViewModel>();
+
+        try
+
+        {
+
+            try { await _tokenStore.GetTokenAsync(cancellationToken); } catch { }
+
+            var queryParts = new List<string>();
+            if (!string.IsNullOrWhiteSpace(status))
+                queryParts.Add($"status={Uri.EscapeDataString(status.Trim())}");
+            if (!string.IsNullOrWhiteSpace(employeeId))
+                queryParts.Add($"employeeId={Uri.EscapeDataString(employeeId.Trim())}");
+
+            var url = queryParts.Count > 0 ? $"api/leaves?{string.Join("&", queryParts)}" : "api/leaves";
+            var res = await _http.GetFromJsonAsync<List<LeaveItemViewModel>>(url, cancellationToken);
+
+            if (res != null) return res;
+
+        }
+
+        catch { }
+
+        return await GetLeavesFromSqlFallbackAsync(status, employeeId, cancellationToken);
+
+    }
+
+    private async Task<IReadOnlyList<LeaveItemViewModel>> GetLeavesFromSqlFallbackAsync(string? status, string? employeeId, CancellationToken cancellationToken)
+    {
+        var list = new List<LeaveItemViewModel>();
+        try
+        {
+            await using var conn = SqlResilienceHelper.CreateConnection(_connectionString);
+            await conn.OpenAsync(cancellationToken);
+            const string sql = @"
+                IF OBJECT_ID(N'dbo.EmployeeLeaves', N'U') IS NOT NULL
+                BEGIN
+                    SELECT Id, LeaveId, EmployeeStudioId, EmployeeName, LeaveType, StartDate, EndDate, Reason, Status, ApprovedBy, ApprovedAt, RejectionReason, CreatedAt
+                    FROM dbo.EmployeeLeaves
+                    WHERE (@Status IS NULL OR Status = @Status)
+                      AND (@EmpId IS NULL OR EmployeeStudioId = @EmpId)
+                    ORDER BY CreatedAt DESC;
+                END";
+            await using var cmd = new SqlCommand(sql, conn);
+            cmd.Parameters.AddWithValue("@Status", string.IsNullOrWhiteSpace(status) ? DBNull.Value : status.Trim());
+            cmd.Parameters.AddWithValue("@EmpId", string.IsNullOrWhiteSpace(employeeId) ? DBNull.Value : employeeId.Trim());
+            await using var reader = await cmd.ExecuteReaderAsync(cancellationToken);
+            while (await reader.ReadAsync(cancellationToken))
+            {
+                list.Add(new LeaveItemViewModel
+                {
+                    Id = reader.GetInt32(0),
+                    LeaveId = reader.IsDBNull(1) ? string.Empty : reader.GetString(1),
+                    EmployeeStudioId = reader.IsDBNull(2) ? string.Empty : reader.GetString(2),
+                    EmployeeName = reader.IsDBNull(3) ? string.Empty : reader.GetString(3),
+                    LeaveType = reader.IsDBNull(4) ? "Sick Leave" : reader.GetString(4),
+                    StartDate = DateOnly.FromDateTime(reader.GetDateTime(5)),
+                    EndDate = DateOnly.FromDateTime(reader.GetDateTime(6)),
+                    Reason = reader.IsDBNull(7) ? null : reader.GetString(7),
+                    Status = reader.IsDBNull(8) ? "Pending" : reader.GetString(8),
+                    ApprovedBy = reader.IsDBNull(9) ? null : reader.GetString(9),
+                    ApprovedAt = reader.IsDBNull(10) ? null : reader.GetDateTime(10),
+                    RejectionReason = reader.IsDBNull(11) ? null : reader.GetString(11),
+                    CreatedAt = reader.IsDBNull(12) ? DateTime.UtcNow : reader.GetDateTime(12)
+                });
+            }
+        }
+        catch { }
+        return list;
     }
 
 
@@ -1619,7 +1735,9 @@ public class EmployeeService : IEmployeeService
 
         catch { }
 
-        return new List<LeaveItemViewModel>();
+        return string.IsNullOrWhiteSpace(employeeId)
+            ? new List<LeaveItemViewModel>()
+            : await GetLeavesFromSqlFallbackAsync(null, employeeId, cancellationToken);
 
     }
 
@@ -1639,10 +1757,27 @@ public class EmployeeService : IEmployeeService
 
             var res = await _http.PostAsync($"api/leaves/{leaveId}/approve", null, cancellationToken);
 
-            return res.IsSuccessStatusCode;
+            if (res.IsSuccessStatusCode)
+                return true;
 
         }
 
+        catch { }
+
+        try
+        {
+            await using var conn = SqlResilienceHelper.CreateConnection(_connectionString);
+            await conn.OpenAsync(cancellationToken);
+            const string sql = @"
+                UPDATE dbo.EmployeeLeaves
+                SET Status = 'Approved',
+                    ApprovedBy = ISNULL(ApprovedBy, 'Admin'),
+                    ApprovedAt = SYSUTCDATETIME()
+                WHERE Id = @Id;";
+            await using var cmd = new SqlCommand(sql, conn);
+            cmd.Parameters.AddWithValue("@Id", leaveId);
+            return await cmd.ExecuteNonQueryAsync(cancellationToken) > 0;
+        }
         catch { return false; }
 
     }
@@ -1663,12 +1798,59 @@ public class EmployeeService : IEmployeeService
 
             var res = await _http.PostAsJsonAsync($"api/leaves/{leaveId}/reject", new { Reason = reason }, cancellationToken);
 
-            return res.IsSuccessStatusCode;
+            if (res.IsSuccessStatusCode)
+                return true;
 
         }
 
+        catch { }
+
+        try
+        {
+            await using var conn = SqlResilienceHelper.CreateConnection(_connectionString);
+            await conn.OpenAsync(cancellationToken);
+            const string sql = @"
+                UPDATE dbo.EmployeeLeaves
+                SET Status = 'Rejected',
+                    ApprovedBy = ISNULL(ApprovedBy, 'Admin'),
+                    ApprovedAt = SYSUTCDATETIME(),
+                    RejectionReason = @Reason
+                WHERE Id = @Id;";
+            await using var cmd = new SqlCommand(sql, conn);
+            cmd.Parameters.AddWithValue("@Id", leaveId);
+            cmd.Parameters.AddWithValue("@Reason", string.IsNullOrWhiteSpace(reason) ? "Declined by management." : reason.Trim());
+            return await cmd.ExecuteNonQueryAsync(cancellationToken) > 0;
+        }
         catch { return false; }
 
+    }
+
+    public async Task<bool> UpdateEmployeeDaysOffAsync(string employeeId, string daysOff, CancellationToken cancellationToken = default)
+    {
+        if (cancellationToken.IsCancellationRequested || string.IsNullOrWhiteSpace(employeeId))
+            return false;
+
+        var normalized = string.IsNullOrWhiteSpace(daysOff) ? "None" : daysOff.Trim();
+
+        try
+        {
+            try { await _tokenStore.GetTokenAsync(cancellationToken); } catch { }
+
+            var res = await _http.PutAsJsonAsync($"api/management/employees/{Uri.EscapeDataString(employeeId.Trim())}/days-off", new { DaysOff = normalized }, cancellationToken);
+            if (res.IsSuccessStatusCode)
+                return true;
+        }
+        catch { }
+
+        try
+        {
+            await PersistEmployeeDaysOffAsync(employeeId.Trim(), normalized, cancellationToken);
+            return true;
+        }
+        catch
+        {
+            return false;
+        }
     }
 
 

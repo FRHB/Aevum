@@ -10,6 +10,7 @@ public interface IBookScheduleClient
     Task<ApiResult<IReadOnlyList<OfficeClerkOption>>> GetOfficeClerksAsync(CancellationToken ct = default);
     Task<ApiResult<MonthAvailability>> GetAvailabilityAsync(int year, int month, string? clerkId = null, CancellationToken ct = default);
     Task<ApiResult<DayAvailability>> GetDayAvailabilityAsync(DateOnly date, string? clerkId = null, CancellationToken ct = default);
+    Task<ApiResult<AvailabilityCheckResult>> CheckAvailabilityAsync(DateOnly date, TimeOnly? time = null, CancellationToken ct = default);
     Task<ApiResult<MeetingLinkPreview>> PreviewMeetingLinkAsync(MeetingPlatform platform, DateOnly date, TimeOnly slotStart, CancellationToken ct = default);
     Task<ApiResult<ScheduleBookingResult>> BookAsync(ScheduleBookingRequest request, CancellationToken ct = default);
     Task<ApiResult<IReadOnlyList<MyBooking>>> GetMyBookingsAsync(CancellationToken ct = default);
@@ -46,6 +47,14 @@ public sealed class BookScheduleClient(IHttpClientFactory httpClientFactory, ITo
             ? $"api/schedule/availability/day?date={date:yyyy-MM-dd}"
             : $"api/schedule/availability/day?date={date:yyyy-MM-dd}&clerkId={Uri.EscapeDataString(clerkId)}";
         return SendAsync<DayAvailability>(() => _http.GetAsync(url, ct), ct);
+    }
+
+    public Task<ApiResult<AvailabilityCheckResult>> CheckAvailabilityAsync(DateOnly date, TimeOnly? time = null, CancellationToken ct = default)
+    {
+        var url = time.HasValue
+            ? $"api/schedule/availability/check?date={date:yyyy-MM-dd}&time={time.Value:HH:mm}"
+            : $"api/schedule/availability/check?date={date:yyyy-MM-dd}";
+        return SendAsync<AvailabilityCheckResult>(() => _http.GetAsync(url, ct), ct);
     }
 
     public Task<ApiResult<MeetingLinkPreview>> PreviewMeetingLinkAsync(MeetingPlatform platform, DateOnly date, TimeOnly slotStart, CancellationToken ct = default) =>

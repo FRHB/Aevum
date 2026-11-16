@@ -1,0 +1,177 @@
+@using PhotoAevumStudio.Web.Services
+@inject IEmployeeService Employees
+
+@if (IsOpen)
+{
+    <div class="fixed inset-0 bg-slate-950/60 backdrop-blur-xs z-50 flex items-center justify-center p-4"
+         role="dialog" aria-modal="true" aria-labelledby="leave-modal-title"
+         @onclick="CloseAsync">
+        <div class="bg-white rounded-2xl shadow-xl border border-slate-200 w-full max-w-md overflow-hidden"
+             @onclick:stopPropagation="true">
+            <div class="px-6 py-4 border-b border-slate-100 flex items-center justify-between bg-slate-50/70">
+                <div>
+                    <h3 id="leave-modal-title" class="text-sm font-extrabold text-slate-900">Request for Leave</h3>
+                    <p class="text-[11px] text-slate-500 mt-0.5">Submits directly to Admin &amp; Office Clerk review queue.</p>
+                </div>
+                <button type="button"
+                        @onclick="CloseAsync"
+                        disabled="@_isSubmitting"
+                        class="text-slate-400 hover:text-slate-700 p-1 rounded-lg hover:bg-slate-100 text-xs font-bold"
+                        aria-label="Close modal">
+                    ✕
+                </button>
+            </div>
+
+            <div class="p-6 space-y-4 text-xs">
+                @if (!string.IsNullOrWhiteSpace(_errorMessage))
+                {
+                    <div class="p-2.5 rounded-lg bg-rose-50 border border-rose-200 text-rose-700 font-medium" role="alert">
+                        @_errorMessage
+                    </div>
+                }
+
+                <div>
+                    <label for="leave-type-select" class="block font-semibold text-slate-700 mb-1">
+                        Leave Type <span class="text-rose-500">*</span>
+                    </label>
+                    <select id="leave-type-select"
+                            @bind="_leaveType"
+                            class="w-full px-3 py-2 bg-white border border-slate-300 rounded-lg text-slate-900 focus:outline-none focus:ring-2 focus:ring-teal-500">
+                        <option value="Sick Leave">Sick Leave</option>
+                        <option value="Vacation Leave">Vacation Leave</option>
+                        <option value="Maternity Leave">Maternity Leave</option>
+                        <option value="Paternity Leave">Paternity Leave</option>
+                    </select>
+                </div>
+
+                <div class="grid grid-cols-2 gap-3">
+                    <div>
+                        <label for="leave-start-date" class="block font-semibold text-slate-700 mb-1">
+                            Start Date <span class="text-rose-500">*</span>
+                        </label>
+                        <input id="leave-start-date"
+                               type="date"
+                               @bind="_startDate"
+                               class="w-full px-3 py-2 bg-white border border-slate-300 rounded-lg text-slate-900 focus:outline-none focus:ring-2 focus:ring-teal-500" />
+                    </div>
+                    <div>
+                        <label for="leave-end-date" class="block font-semibold text-slate-700 mb-1">
+                            End Date <span class="text-rose-500">*</span>
+                        </label>
+                        <input id="leave-end-date"
+                               type="date"
+                               @bind="_endDate"
+                               class="w-full px-3 py-2 bg-white border border-slate-300 rounded-lg text-slate-900 focus:outline-none focus:ring-2 focus:ring-teal-500" />
+                    </div>
+                </div>
+
+                <div>
+                    <label for="leave-description" class="block font-semibold text-slate-700 mb-1">
+                        Description <span class="text-rose-500">*</span>
+                    </label>
+                    <textarea id="leave-description"
+                              @bind="_description"
+                              rows="3"
+                              placeholder="Provide details or reason for your leave request..."
+                              class="w-full px-3 py-2 bg-white border border-slate-300 rounded-lg text-slate-900 focus:outline-none focus:ring-2 focus:ring-teal-500"></textarea>
+                </div>
+            </div>
+
+            <div class="px-6 py-4 border-t border-slate-100 bg-slate-50/70 flex items-center justify-end gap-2">
+                <button type="button"
+                        @onclick="CloseAsync"
+                        disabled="@_isSubmitting"
+                        class="px-3.5 py-2 border border-slate-300 bg-white hover:bg-slate-50 text-slate-700 rounded-lg text-xs font-semibold">
+                    Cancel
+                </button>
+                <button type="button"
+                        @onclick="SubmitAsync"
+                        disabled="@_isSubmitting"
+                        class="px-4 py-2 bg-slate-900 hover:bg-black text-white rounded-lg text-xs font-bold shadow-xs disabled:opacity-50">
+                    @(_isSubmitting ? "Submitting..." : "Submit Request")
+                </button>
+            </div>
+        </div>
+    </div>
+}
+
+@code {
+    [Parameter] public bool IsOpen { get; set; }
+    [Parameter] public EventCallback<bool> IsOpenChanged { get; set; }
+    [Parameter] public string? EmployeeId { get; set; }
+    [Parameter] public EventCallback OnSubmitted { get; set; }
+
+    private string _leaveType = "Sick Leave";
+    private DateTime _startDate = DateTime.Today;
+    private DateTime _endDate = DateTime.Today;
+    private string _description = string.Empty;
+    private string? _errorMessage;
+    private bool _isSubmitting;
+
+    protected override void OnParametersSet()
+    {
+        if (IsOpen && _startDate == default)
+        {
+            _startDate = DateTime.Today;
+            _endDate = DateTime.Today;
+        }
+    }
+
+    private async Task CloseAsync()
+    {
+        if (_isSubmitting) return;
+        _errorMessage = null;
+        IsOpen = false;
+        await IsOpenChanged.InvokeAsync(false);
+    }
+
+    private async Task SubmitAsync()
+    {
+        _errorMessage = null;
+
+        if (_endDate.Date < _startDate.Date)
+        {
+            _errorMessage = "End Date cannot be before Start Date.";
+            return;
+        }
+
+        if (string.IsNullOrWhiteSpace(_description))
+        {
+            _errorMessage = "Please enter a brief description for your leave request.";
+            return;
+        }
+
+        _isSubmitting = true;
+        try
+        {
+            var ok = await Employees.RequestLeaveAsync(
+                _leaveType,
+                DateOnly.FromDateTime(_startDate),
+                DateOnly.FromDateTime(_endDate),
+                _description.Trim(),
+                string.IsNullOrWhiteSpace(EmployeeId) ? null : EmployeeId);
+
+            if (ok)
+            {
+                _description = string.Empty;
+                _startDate = DateTime.Today;
+                _endDate = DateTime.Today;
+                IsOpen = false;
+                await IsOpenChanged.InvokeAsync(false);
+                await OnSubmitted.InvokeAsync();
+            }
+            else
+            {
+                _errorMessage = "Failed to submit leave request. Please verify your inputs and try again.";
+            }
+        }
+        catch (Exception ex)
+        {
+            _errorMessage = ex.Message;
+        }
+        finally
+        {
+            _isSubmitting = false;
+        }
+    }
+}

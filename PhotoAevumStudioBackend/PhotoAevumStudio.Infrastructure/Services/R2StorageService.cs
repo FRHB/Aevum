@@ -20,6 +20,8 @@ public class R2StorageService : IR2StorageService
     public string PortfolioBucket { get; }
     public string ServicesBucket { get; }
     public string ArchiveBucket { get; }
+    public string DropboxBucket { get; }
+    public bool IsConfigured => _isConfigured;
 
     private static string? FirstNonEmpty(params string?[] values)
     {
@@ -80,6 +82,10 @@ public class R2StorageService : IR2StorageService
                             configuration["CloudflareR2:Buckets:Archive"],
                             configuration["CloudflareR2__Buckets__Archive"])
                         ?? "archive";
+        DropboxBucket = FirstNonEmpty(
+                            configuration["CloudflareR2:Buckets:Dropbox"],
+                            configuration["CloudflareR2__Buckets__Dropbox"])
+                        ?? "dropbox";
 
         _isConfigured = !string.IsNullOrWhiteSpace(accessKey) 
                         && !string.IsNullOrWhiteSpace(secretKey) 
@@ -358,6 +364,42 @@ public class R2StorageService : IR2StorageService
             catch (Exception ex)
             {
                 _logger.LogWarning(ex, "Failed to generate presigned URL for {FileName} in bucket {Bucket}", cleanKey, targetBucket);
+            }
+        }
+
+        return string.Empty;
+    }
+
+    public string GetPresignedDownloadUrl(string bucketName, string objectKey, string downloadFileName, TimeSpan? expiry = null)
+    {
+        if (string.IsNullOrWhiteSpace(bucketName) || string.IsNullOrWhiteSpace(objectKey))
+            return string.Empty;
+
+        var cleanKey = objectKey.Trim().TrimStart('/');
+        var safeName = string.IsNullOrWhiteSpace(downloadFileName) ? "event-photos.zip" : Path.GetFileName(downloadFileName).Replace("\"", string.Empty);
+
+        if (_isConfigured && _s3Client != null)
+        {
+            try
+            {
+                var request = new GetPreSignedUrlRequest
+                {
+                    BucketName = bucketName.Trim(),
+                    Key = cleanKey,
+                    Expires = DateTime.UtcNow.Add(expiry ?? TimeSpan.FromMinutes(15)),
+                    ResponseHeaderOverrides = new ResponseHeaderOverrides
+                    {
+                        ContentDisposition = $"attachment; filename=\"{safeName}\"",
+                        ContentType = "application/zip"
+                    }
+                };
+                var presigned = _s3Client.GetPreSignedURL(request);
+                if (!string.IsNullOrWhiteSpace(presigned))
+                    return presigned;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Failed to generate presigned download URL for {Key} in bucket {Bucket}", cleanKey, bucketName);
             }
         }
 

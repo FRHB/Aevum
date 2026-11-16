@@ -166,11 +166,11 @@ public class PaymentsController : ControllerBase
 
     // POST api/payments/{id}/approve-remittance
 
-    // Endpoint for Admin Approval updating employee status to Cleared
+    // Endpoint for Admin/Office Clerk Approval updating employee status to Cleared
 
     [HttpPost("{id}/approve-remittance")]
 
-    [Authorize(Roles = AppRoles.Admin)]
+    [Authorize(Policy = "ClerkOrAdmin")]
 
     public async Task<IActionResult> ApproveRemittance(
 
@@ -190,6 +190,20 @@ public class PaymentsController : ControllerBase
 
         var result = await _paymentService.ApproveRemittanceAsync(id, adminId, adminName, request?.Notes, cancellationToken);
 
+        if (!string.IsNullOrWhiteSpace(result.EventAppointmentId))
+        {
+            try
+            {
+                var dropbox = HttpContext?.RequestServices.GetService<ICustomerDropboxService>();
+                if (dropbox != null)
+                    await dropbox.EnsureFolderForCompletedEventAsync(result.EventAppointmentId, cancellationToken);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Customer Dropbox folder auto-generation failed after remittance approval for {AppointmentId}", result.EventAppointmentId);
+            }
+        }
+
         return Ok(result);
 
     }
@@ -198,11 +212,11 @@ public class PaymentsController : ControllerBase
 
     // GET api/payments/pending-remittances
 
-    // Endpoint for Admin to inspect cash payments logged by employees pending clearance
+    // Endpoint for Admin/Office Clerk to inspect cash payments logged by employees pending clearance
 
     [HttpGet("pending-remittances")]
 
-    [Authorize(Roles = AppRoles.Admin)]
+    [Authorize(Policy = "ClerkOrAdmin")]
 
     public async Task<IActionResult> GetPendingRemittances(CancellationToken cancellationToken)
 
@@ -419,18 +433,19 @@ public class PaymentsController : ControllerBase
     {
 
         request.EventAppointmentId = appointmentId;
+        var empId = User.FindFirstValue("studio_id")
+            ?? User.FindFirstValue(ClaimTypes.NameIdentifier)
+            ?? User.FindFirstValue("sub")
+            ?? string.Empty;
 
         if (string.IsNullOrWhiteSpace(request.TeamLeaderEmployeeId))
-
-        {
-
-            var empId = User.FindFirstValue(ClaimTypes.NameIdentifier) ?? User.FindFirstValue("sub") ?? string.Empty;
-
             request.TeamLeaderEmployeeId = empId;
 
+        var isManager = User.IsInRole(AppRoles.Admin) || User.IsInRole(AppRoles.SystemAdmin) || User.IsInRole(AppRoles.OfficeClerk);
+        if (!isManager && !await _consultationService.IsTeamLeaderForEventAsync(appointmentId, empId, cancellationToken))
+        {
+            return Forbid();
         }
-
-
 
         var result = await _consultationService.CompleteEventSettlementAsync(request, cancellationToken);
 
@@ -459,7 +474,7 @@ public class PaymentsController : ControllerBase
     }
 
     // POST api/payments/team-leader-events/{appointmentId}/status
-    // Updates the Team Leader's Ongoing Event stage: Preparing, On Going, Post Event, Pending Payment
+    // Updates the Team Leader's Ongoing Event stage: Preparation, Dispatch, Ongoing, Post Event, Pending Payment
     [HttpPost("team-leader-events/{appointmentId}/status")]
     [Authorize(Roles = $"{AppRoles.Employee},{AppRoles.OfficeClerk},{AppRoles.Admin},{AppRoles.SystemAdmin}")]
     public async Task<IActionResult> UpdateTeamLeaderEventStatus(
@@ -467,11 +482,17 @@ public class PaymentsController : ControllerBase
         [FromBody] UpdateTeamLeaderStatusRequest request,
         CancellationToken cancellationToken)
     {
+        var claimEmpId = User.FindFirstValue("studio_id")
+            ?? User.FindFirstValue(ClaimTypes.NameIdentifier)
+            ?? User.FindFirstValue("sub");
+
         if (string.IsNullOrWhiteSpace(request.EmployeeId))
+            request.EmployeeId = claimEmpId;
+
+        var isManager = User.IsInRole(AppRoles.Admin) || User.IsInRole(AppRoles.SystemAdmin) || User.IsInRole(AppRoles.OfficeClerk);
+        if (!isManager && (string.IsNullOrWhiteSpace(claimEmpId) || !await _consultationService.IsTeamLeaderForEventAsync(appointmentId, claimEmpId, cancellationToken)))
         {
-            request.EmployeeId = User.FindFirstValue("studio_id")
-                ?? User.FindFirstValue(ClaimTypes.NameIdentifier)
-                ?? User.FindFirstValue("sub");
+            return Forbid();
         }
 
         try
@@ -486,6 +507,116 @@ public class PaymentsController : ControllerBase
         catch (ArgumentException ex)
         {
             return BadRequest(new { message = ex.Message });
+        }
+    }
+
+    // POST api/payments/team-leader-events/{appointmentId}/equipment/taken
+    [HttpPost("team-leader-events/{appointmentId}/equipment/taken")]
+    [Authorize(Roles = $"{AppRoles.Employee},{AppRoles.OfficeClerk},{AppRoles.Admin},{AppRoles.SystemAdmin}")]
+    public async Task<IActionResult> MarkEquipmentTaken(
+        string appointmentId,
+        [FromBody] MarkEquipmentTakenRequest request,
+        CancellationToken cancellationToken)
+    {
+        var claimEmpId = User.FindFirstValue("studio_id")
+            ?? User.FindFirstValue(ClaimTypes.NameIdentifier)
+            ?? User.FindFirstValue("sub");
+
+        if (string.IsNullOrWhiteSpace(request.EmployeeId))
+            request.EmployeeId = claimEmpId;
+
+        var isManager = User.IsInRole(AppRoles.Admin) || User.IsInRole(AppRoles.SystemAdmin) || User.IsInRole(AppRoles.OfficeClerk);
+        if (!isManager && (string.IsNullOrWhiteSpace(claimEmpId) || !await _consultationService.IsTeamLeaderForEventAsync(appointmentId, claimEmpId, cancellationToken)))
+        {
+            return Forbid();
+        }
+
+        try
+        {
+            var updated = await _consultationService.MarkEquipmentTakenAsync(appointmentId, request, cancellationToken);
+            return Ok(updated);
+        }
+        catch (KeyNotFoundException ex)
+        {
+            return NotFound(new { message = ex.Message });
+        }
+    }
+
+    // POST api/payments/team-leader-events/{appointmentId}/equipment
+    [HttpPost("team-leader-events/{appointmentId}/equipment")]
+    [Authorize(Roles = $"{AppRoles.Employee},{AppRoles.OfficeClerk},{AppRoles.Admin},{AppRoles.SystemAdmin}")]
+    public async Task<IActionResult> AddAdditionalEquipment(
+        string appointmentId,
+        [FromBody] AddEventEquipmentRequest request,
+        CancellationToken cancellationToken)
+    {
+        var claimEmpId = User.FindFirstValue("studio_id")
+            ?? User.FindFirstValue(ClaimTypes.NameIdentifier)
+            ?? User.FindFirstValue("sub");
+
+        if (string.IsNullOrWhiteSpace(request.EmployeeId))
+            request.EmployeeId = claimEmpId;
+
+        var isManager = User.IsInRole(AppRoles.Admin) || User.IsInRole(AppRoles.SystemAdmin) || User.IsInRole(AppRoles.OfficeClerk);
+        if (!isManager && (string.IsNullOrWhiteSpace(claimEmpId) || !await _consultationService.IsTeamLeaderForEventAsync(appointmentId, claimEmpId, cancellationToken)))
+        {
+            return Forbid();
+        }
+
+        try
+        {
+            var updated = await _consultationService.AddAdditionalEquipmentToEventAsync(appointmentId, request, cancellationToken);
+            return Ok(updated);
+        }
+        catch (KeyNotFoundException ex)
+        {
+            return NotFound(new { message = ex.Message });
+        }
+        catch (ArgumentException ex)
+        {
+            return BadRequest(new { message = ex.Message });
+        }
+        catch (InvalidOperationException ex)
+        {
+            return BadRequest(new { message = ex.Message });
+        }
+    }
+
+    // GET api/payments/live-events-overview
+    [HttpGet("live-events-overview")]
+    [Authorize(Policy = "ClerkOrAdmin")]
+    public async Task<IActionResult> GetLiveEventsOverview(CancellationToken cancellationToken)
+    {
+        var items = await _consultationService.GetLiveEventsOverviewAsync(cancellationToken);
+        return Ok(items);
+    }
+
+    // POST api/payments/verify-cash/{appointmentId}
+    [HttpPost("verify-cash/{appointmentId}")]
+    [Authorize(Policy = "ClerkOrAdmin")]
+    public async Task<IActionResult> VerifyCashSettlement(
+        string appointmentId,
+        [FromBody] AdminApproveRemittanceRequest? request,
+        CancellationToken cancellationToken)
+    {
+        var verifierId = User.FindFirstValue("studio_id")
+            ?? User.FindFirstValue(ClaimTypes.NameIdentifier)
+            ?? User.FindFirstValue("sub")
+            ?? request?.AdminId
+            ?? "Admin";
+        var verifierName = User.FindFirstValue("full_name")
+            ?? User.FindFirstValue(ClaimTypes.Name)
+            ?? request?.AdminName
+            ?? verifierId;
+
+        try
+        {
+            var updated = await _consultationService.VerifyCashSettlementAsync(appointmentId, verifierId, verifierName, request?.Notes, cancellationToken);
+            return Ok(updated);
+        }
+        catch (KeyNotFoundException ex)
+        {
+            return NotFound(new { message = ex.Message });
         }
     }
 
@@ -839,13 +970,15 @@ public class PaymentsController : ControllerBase
 
             var appt = await _consultationService.GetAppointmentByIdAsync(externalId, cancellationToken);
             if (appt != null && (string.Equals(appt.EventStatus, "Confirmed", StringComparison.OrdinalIgnoreCase)
-                                  || string.Equals(appt.EventStatus, "Shot", StringComparison.OrdinalIgnoreCase)))
+                                  || string.Equals(appt.EventStatus, "Shot", StringComparison.OrdinalIgnoreCase)
+                                  || string.Equals(appt.EventStatus, "Complete", StringComparison.OrdinalIgnoreCase)))
             {
                 return true;
             }
 
             var qrInfo = await _pendingPayments.GetQrPaymentAsync(externalId, cancellationToken);
-            if (qrInfo != null && string.Equals(qrInfo.EventStatus, "Shot", StringComparison.OrdinalIgnoreCase))
+            if (qrInfo != null && (string.Equals(qrInfo.EventStatus, "Shot", StringComparison.OrdinalIgnoreCase)
+                                    || string.Equals(qrInfo.EventStatus, "Complete", StringComparison.OrdinalIgnoreCase)))
             {
                 return true;
             }
@@ -865,6 +998,17 @@ public class PaymentsController : ControllerBase
     {
         if (confirmation.IsFinalPayment)
         {
+            try
+            {
+                var dropbox = HttpContext?.RequestServices.GetService<ICustomerDropboxService>();
+                if (dropbox != null)
+                    await dropbox.EnsureFolderForCompletedEventAsync(confirmation.AppointmentId, cancellationToken);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Customer Dropbox folder auto-generation failed for {AppointmentId}", confirmation.AppointmentId);
+            }
+
             try
             {
                 await _consultationService.NotifyTeamLeaderFinalQrPaidAsync(

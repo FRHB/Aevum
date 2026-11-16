@@ -60,7 +60,12 @@ public class ScheduleService : IScheduleService
         HasConflict = b.HasConflict,
         ConflictMessage = b.ConflictMessage,
         IsConsultation = b.IsConsultation,
-        MeetingLink = b.MeetingLink
+        MeetingLink = b.MeetingLink,
+        AssignedCrewIds = b.AssignedCrewIds.ToList(),
+        AssignedEquipmentIds = b.AssignedEquipmentIds.ToList(),
+        PrepBufferMinutes = b.PrepBufferMinutes,
+        PostBufferMinutes = b.PostBufferMinutes,
+        EventLocation = b.EventLocation
     };
 
     private static StaffMemberResource CloneStaffMember(StaffMemberResource s) => new()
@@ -211,6 +216,8 @@ public class ScheduleService : IScheduleService
                 EndTime = new TimeSpan(14, 0, 0),
                 Status = "Confirmed",
                 AssignedPhotographer = "Elena Rostova",
+                AssignedCrewIds = new List<string> { "staff-01" },
+                AssignedEquipmentIds = new List<string> { "eq-01" },
                 EstimatedPrice = 1400.00m,
                 Notes = "Winter outerwear collection lookbook."
             },
@@ -228,6 +235,8 @@ public class ScheduleService : IScheduleService
                 EndTime = new TimeSpan(16, 0, 0),
                 Status = "Pending",
                 AssignedPhotographer = "Clara Oswald",
+                AssignedCrewIds = new List<string> { "staff-03" },
+                AssignedEquipmentIds = new List<string> { "eq-01" },
                 EstimatedPrice = 850.00m,
                 Notes = "Board of Directors corporate portrait session."
             }
@@ -416,7 +425,19 @@ public class ScheduleService : IScheduleService
             using var conn = CreateConnection();
             conn.Open();
 
-            const string sql = @"
+            bool hasGranularCols = false;
+            try
+            {
+                using var chkCmd = new SqlCommand("SELECT CASE WHEN COL_LENGTH(N'dbo.EventAppointment', N'EventEndTime') IS NOT NULL AND COL_LENGTH(N'dbo.EventAppointment', N'DurationMinutes') IS NOT NULL THEN 1 ELSE 0 END;", conn);
+                hasGranularCols = Convert.ToInt32(chkCmd.ExecuteScalar()) == 1;
+            }
+            catch { }
+
+            var endTimeSelect = hasGranularCols
+                ? "ea.EventEndTime, ISNULL(ea.DurationMinutes, 120) AS DurationMinutes,"
+                : "CAST(NULL AS time) AS EventEndTime, CAST(120 AS int) AS DurationMinutes,";
+
+            string sql = $@"
                 SELECT ea.EventAppointmentID,
                        ea.EventName,
                        ea.EventDescription,
@@ -430,17 +451,45 @@ public class ScheduleService : IScheduleService
                        leadEmp.EmployeeID,
                        COALESCE(leadEmp.EmployeeName, 'Unassigned') AS EmployeeName,
                        CAST(0 AS bit) AS IsConsultation,
-                       NULL AS MeetingLink
+                       NULL AS MeetingLink,
+                       {endTimeSelect}
+                       ISNULL(ea.TotalAmount, 0) AS TotalAmount,
+                       crewIds.CrewIdList,
+                       eqIds.EquipIdList
                 FROM dbo.EventAppointment ea
                 LEFT JOIN dbo.Customer c ON c.CustomerID = ea.CustomerID
                 OUTER APPLY (
-                    SELECT TOP 1 ee.EmployeeID,
-                           COALESCE(NULLIF(LTRIM(RTRIM(emp.EmployeeFirstName + ' ' + ISNULL(emp.EmployeeLastName, ''))), ''), emp.EmployeeID, 'Unassigned') AS EmployeeName
-                    FROM dbo.EventEmployee ee
-                    LEFT JOIN dbo.Employees emp ON emp.EmployeeID = ee.EmployeeID
-                    WHERE ee.EventAppointmentID = ea.EventAppointmentID
-                    ORDER BY ISNULL(ee.IsTeamLeader, 0) DESC, ee.EmployeeID
+                    SELECT STUFF((
+                        SELECT ', ' + COALESCE(NULLIF(LTRIM(RTRIM(emp.EmployeeFirstName + ' ' + ISNULL(emp.EmployeeLastName, ''))), ''), emp.EmployeeID)
+                        FROM dbo.EventEmployee ee
+                        LEFT JOIN dbo.Employees emp ON emp.EmployeeID = ee.EmployeeID
+                        WHERE ee.EventAppointmentID = ea.EventAppointmentID
+                        ORDER BY ISNULL(ee.IsTeamLeader, 0) DESC, ee.EmployeeID
+                        FOR XML PATH(''), TYPE
+                    ).value('.', 'nvarchar(max)'), 1, 2, '') AS EmployeeName,
+                    (
+                        SELECT TOP 1 ee.EmployeeID
+                        FROM dbo.EventEmployee ee
+                        WHERE ee.EventAppointmentID = ea.EventAppointmentID
+                        ORDER BY ISNULL(ee.IsTeamLeader, 0) DESC, ee.EmployeeID
+                    ) AS EmployeeID
                 ) leadEmp
+                OUTER APPLY (
+                    SELECT STUFF((
+                        SELECT ',' + ee.EmployeeID
+                        FROM dbo.EventEmployee ee
+                        WHERE ee.EventAppointmentID = ea.EventAppointmentID AND ee.EmployeeID IS NOT NULL
+                        FOR XML PATH(''), TYPE
+                    ).value('.', 'nvarchar(max)'), 1, 1, '') AS CrewIdList
+                ) crewIds
+                OUTER APPLY (
+                    SELECT STUFF((
+                        SELECT ',' + eeq.EquipmentID
+                        FROM dbo.EventEquipment eeq
+                        WHERE eeq.EventAppointmentID = ea.EventAppointmentID AND eeq.EquipmentID IS NOT NULL
+                        FOR XML PATH(''), TYPE
+                    ).value('.', 'nvarchar(max)'), 1, 1, '') AS EquipIdList
+                ) eqIds
                 WHERE ISNULL(ea.EventStatus, '') NOT IN ('Cancelled', 'Expired')
                 AND ea.EventAppointmentID NOT IN (
                     SELECT EventAppointmentID 
@@ -472,7 +521,12 @@ public class ScheduleService : IScheduleService
                        emp.EmployeeID,
                        COALESCE(NULLIF(LTRIM(RTRIM(emp.EmployeeFirstName + ' ' + ISNULL(emp.EmployeeLastName, ''))), ''), emp.EmployeeID, 'Office Clerk') AS EmployeeName,
                        CAST(1 AS bit) AS IsConsultation,
-                       bn.MeetingLink
+                       bn.MeetingLink,
+                       CAST(NULL AS time) AS EventEndTime,
+                       CAST(30 AS int) AS DurationMinutes,
+                       CAST(0 AS decimal(18,2)) AS TotalAmount,
+                       emp.EmployeeID AS CrewIdList,
+                       CAST(NULL AS nvarchar(max)) AS EquipIdList
                 FROM dbo.BookingNegotiation bn
                 LEFT JOIN dbo.Customer c ON c.CustomerID = bn.CustomerID
                 LEFT JOIN dbo.Employees emp ON emp.EmployeeID = bn.EmployeeID
@@ -501,11 +555,15 @@ public class ScheduleService : IScheduleService
                 var empName = reader.IsDBNull(11) ? "Unassigned" : reader.GetString(11);
                 var isConsultation = !reader.IsDBNull(12) && reader.GetBoolean(12);
                 var meetingLink = reader.IsDBNull(13) ? null : reader.GetString(13);
+                var dbEndTime = reader.FieldCount > 14 && !reader.IsDBNull(14) ? reader.GetFieldValue<TimeSpan>(14) : (TimeSpan?)null;
+                var durationMins = reader.FieldCount > 15 && !reader.IsDBNull(15) ? Math.Max(15, reader.GetInt32(15)) : (isConsultation ? 30 : 120);
+                var totalAmount = reader.FieldCount > 16 && !reader.IsDBNull(16) ? reader.GetDecimal(16) : 0m;
+                var crewListRaw = reader.FieldCount > 17 && !reader.IsDBNull(17) ? reader.GetString(17) : string.Empty;
+                var equipListRaw = reader.FieldCount > 18 && !reader.IsDBNull(18) ? reader.GetString(18) : string.Empty;
 
-                // Default duration: 30 mins for consultation, 2 hours for shoot events
-                var endTime = isConsultation
-                    ? eventTime.Add(TimeSpan.FromMinutes(30))
-                    : eventTime.Add(TimeSpan.FromHours(2));
+                var endTime = dbEndTime.HasValue && dbEndTime.Value > eventTime
+                    ? dbEndTime.Value
+                    : (isConsultation ? eventTime.Add(TimeSpan.FromMinutes(30)) : eventTime.Add(TimeSpan.FromMinutes(durationMins)));
 
                 if (endTime > new TimeSpan(23, 59, 0))
                     endTime = new TimeSpan(23, 59, 0);
@@ -526,8 +584,10 @@ public class ScheduleService : IScheduleService
                     EndTime = endTime,
                     Status = status,
                     AssignedPhotographer = empName,
+                    AssignedCrewIds = crewListRaw.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).ToList(),
+                    AssignedEquipmentIds = equipListRaw.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).ToList(),
                     Notes = desc,
-                    EstimatedPrice = isConsultation ? 0.00m : 350.00m,
+                    EstimatedPrice = isConsultation ? 0.00m : (totalAmount > 0 ? totalAmount : 350.00m),
                     IsConsultation = isConsultation,
                     MeetingLink = meetingLink
                 });
@@ -570,6 +630,42 @@ public class ScheduleService : IScheduleService
             using var conn = CreateConnection();
             conn.Open();
 
+            // Pre-validate assigned employee against Approved Leaves and DaysOff before creating EventAppointment
+            if (!string.IsNullOrWhiteSpace(booking.AssignedPhotographer) && !booking.AssignedPhotographer.Equals("Unassigned", StringComparison.OrdinalIgnoreCase))
+            {
+                const string validateSql = @"
+                    DECLARE @VId nvarchar(50) = NULL;
+                    DECLARE @VDaysOff nvarchar(100) = NULL;
+                    SELECT TOP 1 @VId = EmployeeID, @VDaysOff = ISNULL(DaysOff, 'Sunday')
+                    FROM dbo.Employees
+                    WHERE EmployeeID = @EmpName
+                       OR (EmployeeFirstName + ' ' + ISNULL(EmployeeLastName, '')) LIKE '%' + @EmpName + '%';
+
+                    IF @VId IS NOT NULL
+                    BEGIN
+                        IF OBJECT_ID(N'dbo.EmployeeLeaves', N'U') IS NOT NULL
+                           AND EXISTS (
+                               SELECT 1 FROM dbo.EmployeeLeaves el
+                               WHERE el.EmployeeStudioId = @VId
+                                 AND el.Status = 'Approved'
+                                 AND @EvtDate BETWEEN el.StartDate AND el.EndDate
+                           )
+                        BEGIN
+                            THROW 50004, 'Cannot assign employee: Employee is on approved leave during this date.', 1;
+                        END;
+
+                        IF CHARINDEX(DATENAME(dw, @EvtDate), ISNULL(@VDaysOff, 'Sunday')) > 0
+                        BEGIN
+                            THROW 50003, 'Cannot assign employee: Scheduled Day Off on event date.', 1;
+                        END;
+                    END";
+
+                using var valCmd = new SqlCommand(validateSql, conn);
+                valCmd.Parameters.AddWithValue("@EmpName", booking.AssignedPhotographer.Trim());
+                valCmd.Parameters.AddWithValue("@EvtDate", booking.Date.Date);
+                valCmd.ExecuteNonQuery();
+            }
+
             const string insertSql = @"
                 IF NOT EXISTS (SELECT 1 FROM dbo.EventAppointment WHERE EventAppointmentID = @Id)
                 BEGIN
@@ -596,13 +692,30 @@ public class ScheduleService : IScheduleService
             {
                 const string assignSql = @"
                     DECLARE @EmpId nvarchar(50) = NULL;
-                    SELECT TOP 1 @EmpId = EmployeeID 
+                    DECLARE @EmpDaysOff nvarchar(100) = NULL;
+                    SELECT TOP 1 @EmpId = EmployeeID, @EmpDaysOff = ISNULL(DaysOff, 'Sunday')
                     FROM dbo.Employees 
                     WHERE EmployeeID = @EmpName 
                        OR (EmployeeFirstName + ' ' + ISNULL(EmployeeLastName, '')) LIKE '%' + @EmpName + '%';
 
                     IF @EmpId IS NOT NULL
                     BEGIN
+                        IF OBJECT_ID(N'dbo.EmployeeLeaves', N'U') IS NOT NULL
+                           AND EXISTS (
+                               SELECT 1 FROM dbo.EmployeeLeaves el
+                               WHERE el.EmployeeStudioId = @EmpId
+                                 AND el.Status = 'Approved'
+                                 AND @EvtDate BETWEEN el.StartDate AND el.EndDate
+                           )
+                        BEGIN
+                            THROW 50004, 'Cannot assign employee: Employee is on approved leave during this date.', 1;
+                        END;
+
+                        IF CHARINDEX(DATENAME(dw, @EvtDate), ISNULL(@EmpDaysOff, 'Sunday')) > 0
+                        BEGIN
+                            THROW 50003, 'Cannot assign employee: Scheduled Day Off on event date.', 1;
+                        END;
+
                         IF NOT EXISTS (SELECT 1 FROM dbo.EventEmployee WHERE EventAppointmentID = @ApptId AND EmployeeID = @EmpId)
                         BEGIN
                             INSERT INTO dbo.EventEmployee (EventAppointmentID, EmployeeID)
@@ -613,6 +726,7 @@ public class ScheduleService : IScheduleService
                 using var assignCmd = new SqlCommand(assignSql, conn);
                 assignCmd.Parameters.AddWithValue("@ApptId", booking.Id.Trim());
                 assignCmd.Parameters.AddWithValue("@EmpName", booking.AssignedPhotographer.Trim());
+                assignCmd.Parameters.AddWithValue("@EvtDate", booking.Date.Date);
                 assignCmd.ExecuteNonQuery();
             }
 
@@ -628,6 +742,10 @@ public class ScheduleService : IScheduleService
             logCmd.Parameters.AddWithValue("@Id", booking.Id.Trim());
             logCmd.Parameters.AddWithValue("@Details", $"Scheduled event {booking.Id}: {booking.ClientName} ({booking.ServiceType}) on {booking.Date:yyyy-MM-dd} at {booking.StartTime}");
             logCmd.ExecuteNonQuery();
+        }
+        catch (SqlException ex) when (ex.Number == 50003 || ex.Number == 50004)
+        {
+            throw new InvalidOperationException(ex.Message, ex);
         }
         catch
         {
@@ -656,6 +774,42 @@ public class ScheduleService : IScheduleService
             using var conn = CreateConnection();
             conn.Open();
 
+            // Pre-validate assigned employee against Approved Leaves and DaysOff before updating EventAppointment
+            if (!string.IsNullOrWhiteSpace(booking.AssignedPhotographer) && !booking.AssignedPhotographer.Equals("Unassigned", StringComparison.OrdinalIgnoreCase))
+            {
+                const string validateSql = @"
+                    DECLARE @VId nvarchar(50) = NULL;
+                    DECLARE @VDaysOff nvarchar(100) = NULL;
+                    SELECT TOP 1 @VId = EmployeeID, @VDaysOff = ISNULL(DaysOff, 'Sunday')
+                    FROM dbo.Employees
+                    WHERE EmployeeID = @EmpName
+                       OR (EmployeeFirstName + ' ' + ISNULL(EmployeeLastName, '')) LIKE '%' + @EmpName + '%';
+
+                    IF @VId IS NOT NULL
+                    BEGIN
+                        IF OBJECT_ID(N'dbo.EmployeeLeaves', N'U') IS NOT NULL
+                           AND EXISTS (
+                               SELECT 1 FROM dbo.EmployeeLeaves el
+                               WHERE el.EmployeeStudioId = @VId
+                                 AND el.Status = 'Approved'
+                                 AND @EvtDate BETWEEN el.StartDate AND el.EndDate
+                           )
+                        BEGIN
+                            THROW 50004, 'Cannot assign employee: Employee is on approved leave during this date.', 1;
+                        END;
+
+                        IF CHARINDEX(DATENAME(dw, @EvtDate), ISNULL(@VDaysOff, 'Sunday')) > 0
+                        BEGIN
+                            THROW 50003, 'Cannot assign employee: Scheduled Day Off on event date.', 1;
+                        END;
+                    END";
+
+                using var valCmd = new SqlCommand(validateSql, conn);
+                valCmd.Parameters.AddWithValue("@EmpName", booking.AssignedPhotographer.Trim());
+                valCmd.Parameters.AddWithValue("@EvtDate", booking.Date.Date);
+                valCmd.ExecuteNonQuery();
+            }
+
             const string updateSql = @"
                 UPDATE dbo.EventAppointment
                 SET EventName = @Name,
@@ -680,16 +834,32 @@ public class ScheduleService : IScheduleService
             if (!string.IsNullOrWhiteSpace(booking.AssignedPhotographer) && !booking.AssignedPhotographer.Equals("Unassigned", StringComparison.OrdinalIgnoreCase))
             {
                 const string reassignSql = @"
-                    DELETE FROM dbo.EventEmployee WHERE EventAppointmentID = @ApptId;
-
                     DECLARE @EmpId nvarchar(50) = NULL;
-                    SELECT TOP 1 @EmpId = EmployeeID 
+                    DECLARE @EmpDaysOff nvarchar(100) = NULL;
+                    SELECT TOP 1 @EmpId = EmployeeID, @EmpDaysOff = ISNULL(DaysOff, 'Sunday')
                     FROM dbo.Employees 
                     WHERE EmployeeID = @EmpName 
                        OR (EmployeeFirstName + ' ' + ISNULL(EmployeeLastName, '')) LIKE '%' + @EmpName + '%';
 
                     IF @EmpId IS NOT NULL
                     BEGIN
+                        IF OBJECT_ID(N'dbo.EmployeeLeaves', N'U') IS NOT NULL
+                           AND EXISTS (
+                               SELECT 1 FROM dbo.EmployeeLeaves el
+                               WHERE el.EmployeeStudioId = @EmpId
+                                 AND el.Status = 'Approved'
+                                 AND @EvtDate BETWEEN el.StartDate AND el.EndDate
+                           )
+                        BEGIN
+                            THROW 50004, 'Cannot assign employee: Employee is on approved leave during this date.', 1;
+                        END;
+
+                        IF CHARINDEX(DATENAME(dw, @EvtDate), ISNULL(@EmpDaysOff, 'Sunday')) > 0
+                        BEGIN
+                            THROW 50003, 'Cannot assign employee: Scheduled Day Off on event date.', 1;
+                        END;
+
+                        DELETE FROM dbo.EventEmployee WHERE EventAppointmentID = @ApptId;
                         INSERT INTO dbo.EventEmployee (EventAppointmentID, EmployeeID)
                         VALUES (@ApptId, @EmpId);
                     END";
@@ -697,6 +867,7 @@ public class ScheduleService : IScheduleService
                 using var reassignCmd = new SqlCommand(reassignSql, conn);
                 reassignCmd.Parameters.AddWithValue("@ApptId", booking.Id.Trim());
                 reassignCmd.Parameters.AddWithValue("@EmpName", booking.AssignedPhotographer.Trim());
+                reassignCmd.Parameters.AddWithValue("@EvtDate", booking.Date.Date);
                 reassignCmd.ExecuteNonQuery();
             }
 
@@ -712,6 +883,10 @@ public class ScheduleService : IScheduleService
             logCmd.Parameters.AddWithValue("@Id", booking.Id.Trim());
             logCmd.Parameters.AddWithValue("@Details", $"Updated event {booking.Id}: Status={booking.Status}, Date={booking.Date:yyyy-MM-dd}");
             logCmd.ExecuteNonQuery();
+        }
+        catch (SqlException ex) when (ex.Number == 50003 || ex.Number == 50004)
+        {
+            throw new InvalidOperationException(ex.Message, ex);
         }
         catch
         {
@@ -778,11 +953,16 @@ public class ScheduleService : IScheduleService
             b.ConflictMessage = null;
         }
 
-        var spaceGroups = bookings
-            .Where(b => !b.IsConsultation && !string.IsNullOrEmpty(b.StudioSpaceId))
-            .GroupBy(b => (b.Date.Date, b.StudioSpaceId));
+        // Partition by Date only: overlapping studio times are permitted when different crews & equipment are assigned.
+        // Conflicts occur only when a crew member OR equipment item overlaps within combined Prep (2h) + Event + Post (1h).
+        var dateGroups = bookings
+            .Where(b => !b.IsConsultation &&
+                        !string.Equals(b.Status, "Cancelled", StringComparison.OrdinalIgnoreCase) &&
+                        !string.Equals(b.Status, "Expired", StringComparison.OrdinalIgnoreCase) &&
+                        !string.Equals(b.Status, "Deal_Lost", StringComparison.OrdinalIgnoreCase))
+            .GroupBy(b => b.Date.Date);
 
-        foreach (var group in spaceGroups)
+        foreach (var group in dateGroups)
         {
             var list = group.ToList();
             for (int i = 0; i < list.Count; i++)
@@ -794,11 +974,15 @@ public class ScheduleService : IScheduleService
 
                     if (b1.OverlapsWith(b2))
                     {
+                        var reason = b1.SharesCrewWith(b2)
+                            ? "Crew buffer overlap (2h prep + event + 1h post)"
+                            : "Equipment buffer overlap (2h prep + event + 1h post)";
+
                         b1.HasConflict = true;
-                        b1.ConflictMessage = $"Double-booked with '{b2.ClientName}' ({b2.FormattedTimeRange})";
+                        b1.ConflictMessage = $"Double-booked ({reason}) with '{b2.ClientName}' ({b2.FormattedTimeRange})";
 
                         b2.HasConflict = true;
-                        b2.ConflictMessage = $"Double-booked with '{b1.ClientName}' ({b1.FormattedTimeRange})";
+                        b2.ConflictMessage = $"Double-booked ({reason}) with '{b1.ClientName}' ({b1.FormattedTimeRange})";
                     }
                 }
             }

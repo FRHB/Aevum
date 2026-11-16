@@ -461,11 +461,11 @@ public class PaymentService : IPaymentService
                 IF OBJECT_ID(N'dbo.EventAppointment', N'U') IS NOT NULL AND @EvtId IS NOT NULL
                 BEGIN
                     UPDATE dbo.EventAppointment
-                    SET EventStatus = 'Shot',
+                    SET EventStatus = 'Complete',
                         FinalPaymentStatus = 'Paid',
                         FinalPaymentPaidAt = SYSUTCDATETIME()
                     WHERE EventAppointmentID = @EvtId
-                      AND EventStatus = 'Pending Verification';
+                      AND EventStatus IN ('Pending Verification', 'Paid Cash Pending Verification');
                 END;
 
                 IF OBJECT_ID(N'dbo.HistoryLog', N'U') IS NOT NULL

@@ -31,7 +31,7 @@
                 We couldn't find that reservation (#@AppointmentId). Please re-scan the QR code.
             </div>
         }
-        else if (_paid || _info.EventStatus == "Confirmed" || _info.EventStatus == "Shot")
+        else if (_paid || _info.EventStatus == "Confirmed" || _info.EventStatus == "Shot" || _info.EventStatus == "Complete")
         {
             <div class="rounded-2xl border border-emerald-200 bg-emerald-50 p-8 text-center shadow-sm" role="status">
                 <div class="text-5xl mb-3">&#10003;</div>
@@ -140,7 +140,7 @@
             for (var i = 0; i < 10 && !_paid; i++)
             {
                 await LoadAsync();
-                _paid = _info?.EventStatus == "Confirmed" || _info?.EventStatus == "Shot";
+                _paid = _info?.EventStatus == "Confirmed" || _info?.EventStatus == "Shot" || _info?.EventStatus == "Complete";
                 if (_paid) break;
                 await Task.Delay(1000);
             }
@@ -154,7 +154,7 @@
                 if (fallbackRes.IsSuccessStatusCode)
                 {
                     await LoadAsync();
-                    _paid = _info?.EventStatus == "Confirmed" || _info?.EventStatus == "Shot" || true;
+                    _paid = _info?.EventStatus == "Confirmed" || _info?.EventStatus == "Shot" || _info?.EventStatus == "Complete" || true;
                 }
             }
 

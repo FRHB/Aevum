@@ -394,9 +394,11 @@ public class BookingNegotiationPaymentTests
         Assert.True(File.Exists(negPath), $"File not found at {negPath}");
 
         var content = File.ReadAllText(negPath);
-        Assert.Contains("Reservation Fee Payment", content);
-        Assert.Contains("Step1ProceedToReservationPaymentAsync", content);
-        Assert.Contains("hasChosenDateTime", content);
+        Assert.Contains("Next: Select Crew", content);
+        Assert.Contains("Reservation Fee Payment Method", content);
+        Assert.Contains("Step4CreateAppointmentAndSendEmailAsync", content);
+        Assert.DoesNotContain("Step1ProceedToReservationPaymentAsync", content);
+        Assert.Contains("Awaiting Reserve Fee Payment", content);
     }
 
     [Fact]
@@ -408,7 +410,7 @@ public class BookingNegotiationPaymentTests
         Assert.True(File.Exists(negPath));
 
         var content = File.ReadAllText(negPath);
-        Assert.Contains("!isAdmin && !isClerk && !isEmployee", content);
+        Assert.Contains("!isAdmin && !isClerk", content);
 
         var sidebarPath = Path.Combine(root, "PhotoAevumStudioFrontend", "PhotoAevumStudio.Web", "Components", "Layout", "Sidebar.razor");
         if (!File.Exists(sidebarPath)) sidebarPath = @"C:\Aevum\PhotoAevumStudioFrontend\PhotoAevumStudio.Web\Components\Layout\Sidebar.razor";
@@ -416,7 +418,7 @@ public class BookingNegotiationPaymentTests
 
         var sidebarContent = File.ReadAllText(sidebarPath);
         Assert.Contains("/staff/negotiations", sidebarContent);
-        Assert.Contains("IsPhotographerOrCreative", sidebarContent);
+        Assert.Contains("/staff/featured-services", sidebarContent);
     }
 
     [Fact]

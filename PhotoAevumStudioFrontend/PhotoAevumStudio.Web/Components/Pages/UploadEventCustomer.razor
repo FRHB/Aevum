@@ -1,0 +1,401 @@
+@page "/admin/upload-event-customer"
+@page "/staff/upload-event-customer"
+@layout SidebarLayout
+@attribute [Authorize(Roles = "Admin,SystemAdmin,Employee,Office Clerk")]
+@rendermode InteractiveServer
+@using Microsoft.AspNetCore.Components.Authorization
+@using Microsoft.AspNetCore.Components.Forms
+@using PhotoAevumStudio.Web.Models
+@using PhotoAevumStudio.Web.Services
+@inject ICustomerDropboxClient DropboxClient
+@inject IUserService UserService
+@inject AuthenticationStateProvider AuthStateProvider
+@inject NavigationManager Nav
+
+<PageTitle>Upload Event Customer | Photo Aevum Studio</PageTitle>
+
+<header class="aev-page-header">
+    <div>
+        <h1 class="aev-page-header__title">Upload Event Customer</h1>
+        <p class="aev-page-header__subtitle">
+            Click any completed event pill-box below to upload a ZIP archive directly to that customer&apos;s isolated Cloudflare R2 Dropbox.
+        </p>
+    </div>
+    <button type="button"
+            @onclick="LoadContainersAsync"
+            disabled="@_loading"
+            class="px-4 py-2 rounded-lg border border-slate-200 bg-white hover:bg-slate-50 text-xs font-semibold text-slate-700 shadow-sm transition-colors">
+        @(_loading ? "Refreshing..." : "Refresh Events")
+    </button>
+</header>
+
+@if (!string.IsNullOrWhiteSpace(_successMessage))
+{
+    <div class="mb-5 px-4 py-3 rounded-xl bg-emerald-50 border border-emerald-200 text-emerald-800 text-xs font-semibold flex items-center justify-between">
+        <span>@_successMessage</span>
+        <button type="button" @onclick="() => _successMessage = null" class="text-emerald-700 hover:text-emerald-900">Dismiss</button>
+    </div>
+}
+
+@if (!string.IsNullOrWhiteSpace(_errorMessage))
+{
+    <div class="mb-5 px-4 py-3 rounded-xl bg-rose-50 border border-rose-200 text-rose-800 text-xs font-semibold flex items-center justify-between">
+        <span>@_errorMessage</span>
+        <button type="button" @onclick="() => _errorMessage = null" class="text-rose-700 hover:text-rose-900">Dismiss</button>
+    </div>
+}
+
+<section class="bg-white border border-slate-200 rounded-2xl p-4 mb-6 shadow-sm flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+    <div class="flex flex-wrap items-center gap-2">
+        <button type="button"
+                @onclick='() => _statusFilter = "All"'
+                class="px-3 py-1.5 rounded-full text-xs font-bold border transition-colors @(_statusFilter == "All" ? "bg-slate-900 text-white border-slate-900" : "bg-white text-slate-600 border-slate-200 hover:bg-slate-50")">
+            All (@_containers.Count)
+        </button>
+        <button type="button"
+                @onclick='() => _statusFilter = "Waiting"'
+                class="px-3 py-1.5 rounded-full text-xs font-bold border transition-colors @(_statusFilter == "Waiting" ? "bg-amber-600 text-white border-amber-600" : "bg-white text-slate-600 border-slate-200 hover:bg-amber-50")">
+            Waiting (@_containers.Count(c => !c.HasFile))
+        </button>
+        <button type="button"
+                @onclick='() => _statusFilter = "Uploaded"'
+                class="px-3 py-1.5 rounded-full text-xs font-bold border transition-colors @(_statusFilter == "Uploaded" ? "bg-teal-700 text-white border-teal-700" : "bg-white text-slate-600 border-slate-200 hover:bg-teal-50")">
+            Uploaded (@_containers.Count(c => c.HasFile))
+        </button>
+    </div>
+
+    <div class="w-full sm:w-72">
+        <input type="search"
+               @bind="_searchQuery"
+               @bind:event="oninput"
+               placeholder="Search event, ID, or customer..."
+               class="w-full px-3.5 py-2 rounded-full border border-slate-200 text-xs focus:outline-none focus:border-teal-600" />
+    </div>
+</section>
+
+@if (_loading)
+{
+    <div class="bg-white border border-slate-200 rounded-2xl p-12 text-center shadow-sm">
+        <div class="inline-block animate-spin rounded-full h-8 w-8 border-4 border-teal-600 border-t-transparent mb-3"></div>
+        <p class="text-sm text-slate-500">Loading completed event containers...</p>
+    </div>
+}
+else if (!FilteredContainers.Any())
+{
+    <div class="bg-white border border-slate-200 rounded-2xl p-12 text-center shadow-sm">
+        <h2 class="text-lg font-bold text-slate-900 mb-1">No Completed Event Containers</h2>
+        <p class="text-sm text-slate-500">
+            Completed events will appear here automatically as pill-box containers ready for customer ZIP uploads.
+        </p>
+    </div>
+}
+else
+{
+    <div class="space-y-3" role="list" aria-label="Completed event upload containers">
+        @foreach (var item in FilteredContainers)
+        {
+            <button type="button"
+                    role="listitem"
+                    @key="item.DropboxId"
+                    @onclick="() => OpenUploadModal(item)"
+                    class="aev-event-pillbox @(item.HasFile ? "is-uploaded" : "is-waiting")">
+                <div class="aev-event-pillbox__left">
+                    <span class="aev-event-pillbox__id">#@item.EventAppointmentId</span>
+                    <div class="min-w-0 text-left">
+                        <div class="text-sm font-extrabold text-slate-900 truncate">@item.EventName</div>
+                        <div class="text-xs text-slate-500 flex flex-wrap items-center gap-x-2 gap-y-0.5 mt-0.5">
+                            <span>Customer: <strong class="text-slate-700">@(string.IsNullOrWhiteSpace(item.CustomerName) ? item.CustomerId : item.CustomerName)</strong></span>
+                            @if (!string.IsNullOrWhiteSpace(item.CustomerEmail))
+                            {
+                                <span>&bull; @item.CustomerEmail</span>
+                            }
+                            <span>&bull; @item.EventDate.ToString("MMM dd, yyyy")</span>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="aev-event-pillbox__right">
+                    @if (item.HasFile)
+                    {
+                        <span class="aev-pill-badge aev-pill-badge--uploaded" title="@item.OriginalFileName (@item.FormattedFileSize)">
+                            ✓ ZIP Uploaded (@item.FormattedFileSize)
+                        </span>
+                    }
+                    else
+                    {
+                        <span class="aev-pill-badge aev-pill-badge--waiting">
+                            ⏳ Waiting for Upload
+                        </span>
+                    }
+                    <span class="aev-pill-badge aev-pill-badge--days">
+                        @item.EffectiveCountdownLabel
+                    </span>
+                    <span class="aev-pill-action">
+                        @(item.HasFile ? "Replace ZIP" : "Upload ZIP") &rarr;
+                    </span>
+                </div>
+            </button>
+        }
+    </div>
+}
+
+@if (_selectedContainer != null)
+{
+    <div class="fixed inset-0 z-50 bg-slate-900/50 backdrop-blur-sm flex items-center justify-center p-4"
+         @onclick="CloseUploadModal"
+         role="dialog"
+         aria-modal="true"
+         aria-labelledby="dropboxUploadModalTitle">
+        <div class="bg-white rounded-2xl border border-slate-200 shadow-2xl w-full max-w-lg overflow-hidden"
+             @onclick:stopPropagation="true">
+            <div class="px-6 py-4 border-b border-slate-100 flex items-center justify-between bg-slate-50">
+                <div>
+                    <span class="font-mono text-[11px] font-bold px-2 py-0.5 rounded bg-slate-900 text-white">#@_selectedContainer.EventAppointmentId</span>
+                    <h2 id="dropboxUploadModalTitle" class="text-base font-extrabold text-slate-900 mt-1">
+                        Upload Customer ZIP Archive
+                    </h2>
+                </div>
+                <button type="button" @onclick="CloseUploadModal" disabled="@_isUploading" class="text-slate-400 hover:text-slate-700 text-lg font-bold">✕</button>
+            </div>
+
+            <div class="p-6 space-y-4">
+                <div class="rounded-xl bg-slate-50 border border-slate-200 p-4 text-xs space-y-1.5">
+                    <div><span class="text-slate-500">Event:</span> <strong class="text-slate-900">@_selectedContainer.EventName</strong></div>
+                    <div>
+                        <span class="text-slate-500">Isolated Customer:</span>
+                        <strong class="text-slate-900">@(string.IsNullOrWhiteSpace(_selectedContainer.CustomerName) ? _selectedContainer.CustomerId : _selectedContainer.CustomerName)</strong>
+                        <span class="font-mono text-[11px] text-slate-500">(@_selectedContainer.CustomerId)</span>
+                    </div>
+                    <div><span class="text-slate-500">Event Date:</span> <strong class="text-slate-900">@_selectedContainer.EventDate.ToString("MMMM dd, yyyy")</strong></div>
+                    <div><span class="text-slate-500">Auto-Expiry:</span> <strong class="text-teal-700">@_selectedContainer.EffectiveCountdownLabel</strong> (expires @_selectedContainer.ExpiresAt.ToString("MMM dd, yyyy"))</div>
+                </div>
+
+                @if (_selectedContainer.HasFile)
+                {
+                    <div class="rounded-xl bg-teal-50 border border-teal-200 px-3.5 py-2.5 text-xs text-teal-900">
+                        Current file: <strong>@_selectedContainer.OriginalFileName</strong> (@_selectedContainer.FormattedFileSize). Uploading a new ZIP will replace it.
+                    </div>
+                }
+
+                <div>
+                    <label class="block text-xs font-bold text-slate-700 mb-2">Select Photo Archive (.zip, max 500 MB)</label>
+                    <label for="zipUploadInput" class="aev-zip-dropzone">
+                        <InputFile id="zipUploadInput"
+                                   OnChange="OnZipSelected"
+                                   accept=".zip,application/zip,application/x-zip-compressed"
+                                   disabled="@_isUploading"
+                                   style="display:none;" />
+                        <div class="text-center space-y-1">
+                            <div class="text-sm font-bold text-slate-800">
+                                @(_selectedFile != null ? _selectedFile.Name : "Click to choose a .zip file")
+                            </div>
+                            <div class="text-xs text-slate-500">
+                                @(_selectedFile != null ? FormatBytes(_selectedFile.Size) : "Strictly isolated to this customer's Cloudflare R2 folder")
+                            </div>
+                        </div>
+                    </label>
+                </div>
+
+                @if (!string.IsNullOrWhiteSpace(_modalError))
+                {
+                    <div class="px-3.5 py-2.5 rounded-lg bg-rose-50 border border-rose-200 text-rose-700 text-xs font-semibold">
+                        @_modalError
+                    </div>
+                }
+            </div>
+
+            <div class="px-6 py-4 border-t border-slate-100 bg-slate-50 flex items-center justify-end gap-3">
+                <button type="button"
+                        @onclick="CloseUploadModal"
+                        disabled="@_isUploading"
+                        class="px-4 py-2 rounded-lg border border-slate-200 bg-white text-xs font-bold text-slate-700 hover:bg-slate-100">
+                    Cancel
+                </button>
+                <button type="button"
+                        @onclick="UploadSelectedZipAsync"
+                        disabled="@(_isUploading || _selectedFile == null)"
+                        class="px-5 py-2 rounded-lg bg-slate-900 hover:bg-teal-700 disabled:opacity-50 text-white text-xs font-bold transition-colors">
+                    @(_isUploading ? "Uploading to Cloudflare R2..." : "Upload ZIP to R2")
+                </button>
+            </div>
+        </div>
+    </div>
+}
+
+@code {
+    private const long MaxZipSizeBytes = 500L * 1024 * 1024;
+
+    private List<CustomerDropboxFolderItem> _containers = new();
+    private CustomerDropboxFolderItem? _selectedContainer;
+    private IBrowserFile? _selectedFile;
+    private bool _loading = true;
+    private bool _isUploading;
+    private string _statusFilter = "All";
+    private string _searchQuery = string.Empty;
+    private string? _successMessage;
+    private string? _errorMessage;
+    private string? _modalError;
+
+    private IEnumerable<CustomerDropboxFolderItem> FilteredContainers
+    {
+        get
+        {
+            IEnumerable<CustomerDropboxFolderItem> q = _containers;
+
+            if (_statusFilter == "Waiting")
+                q = q.Where(c => !c.HasFile);
+            else if (_statusFilter == "Uploaded")
+                q = q.Where(c => c.HasFile);
+
+            if (!string.IsNullOrWhiteSpace(_searchQuery))
+            {
+                var term = _searchQuery.Trim();
+                q = q.Where(c =>
+                    c.EventAppointmentId.Contains(term, StringComparison.OrdinalIgnoreCase) ||
+                    c.EventName.Contains(term, StringComparison.OrdinalIgnoreCase) ||
+                    c.CustomerName.Contains(term, StringComparison.OrdinalIgnoreCase) ||
+                    c.CustomerEmail.Contains(term, StringComparison.OrdinalIgnoreCase) ||
+                    c.CustomerId.Contains(term, StringComparison.OrdinalIgnoreCase));
+            }
+
+            return q;
+        }
+    }
+
+    protected override async Task OnInitializedAsync()
+    {
+        var authState = await AuthStateProvider.GetAuthenticationStateAsync();
+        var user = authState.User;
+        if (user.Identity?.IsAuthenticated == true)
+        {
+            var isAdmin = EmployeeRoleHelper.IsAdmin(user) || EmployeeRoleHelper.IsSystemAdmin(user);
+            var isClerk = EmployeeRoleHelper.IsOfficeClerk(user, UserService);
+            if (!isAdmin && !isClerk)
+            {
+                Nav.NavigateTo("/staff");
+                return;
+            }
+        }
+
+        await LoadContainersAsync();
+    }
+
+    private async Task LoadContainersAsync()
+    {
+        _loading = true;
+        _errorMessage = null;
+        try
+        {
+            var res = await DropboxClient.GetAdminEventContainersAsync();
+            if (res.IsSuccess && res.Value != null)
+            {
+                _containers = res.Value.ToList();
+            }
+            else
+            {
+                _errorMessage = res.Error?.Message ?? "Failed to load completed event containers.";
+            }
+        }
+        catch (Exception ex)
+        {
+            _errorMessage = ex.Message;
+        }
+        finally
+        {
+            _loading = false;
+        }
+    }
+
+    private void OpenUploadModal(CustomerDropboxFolderItem item)
+    {
+        _selectedContainer = item;
+        _selectedFile = null;
+        _modalError = null;
+    }
+
+    private void CloseUploadModal()
+    {
+        if (_isUploading) return;
+        _selectedContainer = null;
+        _selectedFile = null;
+        _modalError = null;
+    }
+
+    private void OnZipSelected(InputFileChangeEventArgs e)
+    {
+        _modalError = null;
+        var file = e.File;
+        if (file == null) return;
+
+        if (!Path.GetExtension(file.Name).Equals(".zip", StringComparison.OrdinalIgnoreCase))
+        {
+            _selectedFile = null;
+            _modalError = "Please select a valid .zip archive file.";
+            return;
+        }
+
+        if (file.Size <= 0 || file.Size > MaxZipSizeBytes)
+        {
+            _selectedFile = null;
+            _modalError = "ZIP file must be between 1 byte and 500 MB.";
+            return;
+        }
+
+        _selectedFile = file;
+    }
+
+    private async Task UploadSelectedZipAsync()
+    {
+        if (_selectedContainer == null || _selectedFile == null || _isUploading) return;
+
+        _isUploading = true;
+        _modalError = null;
+        _successMessage = null;
+
+        try
+        {
+            await using var stream = _selectedFile.OpenReadStream(MaxZipSizeBytes);
+            var res = await DropboxClient.UploadEventZipAsync(
+                _selectedContainer.EventAppointmentId,
+                stream,
+                _selectedFile.Name,
+                _selectedFile.ContentType);
+
+            if (res.IsSuccess && res.Value != null)
+            {
+                var idx = _containers.FindIndex(c => c.EventAppointmentId == res.Value.EventAppointmentId);
+                if (idx >= 0) _containers[idx] = res.Value;
+                else _containers.Insert(0, res.Value);
+
+                _successMessage = $"Uploaded '{res.Value.OriginalFileName}' for #{res.Value.EventAppointmentId} ({res.Value.CustomerName}). Isolated to customer {res.Value.CustomerId}.";
+                _selectedContainer = null;
+                _selectedFile = null;
+            }
+            else
+            {
+                _modalError = res.Error?.Message ?? "ZIP upload failed.";
+            }
+        }
+        catch (Exception ex)
+        {
+            _modalError = ex.Message;
+        }
+        finally
+        {
+            _isUploading = false;
+        }
+    }
+
+    private static string FormatBytes(long bytes)
+    {
+        string[] units = ["B", "KB", "MB", "GB"];
+        double size = bytes;
+        int unit = 0;
+        while (size >= 1024 && unit < units.Length - 1)
+        {
+            size /= 1024;
+            unit++;
+        }
+        return $"{size:0.##} {units[unit]}";
+    }
+}

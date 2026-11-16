@@ -57,6 +57,8 @@ IF NOT EXISTS (SELECT 1 FROM sys.sequences WHERE name = N'Seq_DepartmentID' AND 
     CREATE SEQUENCE dbo.Seq_DepartmentID AS INT START WITH 8 INCREMENT BY 1;
 IF NOT EXISTS (SELECT 1 FROM sys.sequences WHERE name = N'Seq_HomeHighlightID' AND schema_id = SCHEMA_ID(N'dbo'))
     CREATE SEQUENCE dbo.Seq_HomeHighlightID AS INT START WITH 1 INCREMENT BY 1;
+IF NOT EXISTS (SELECT 1 FROM sys.sequences WHERE name = N'Seq_DropboxID' AND schema_id = SCHEMA_ID(N'dbo'))
+    CREATE SEQUENCE dbo.Seq_DropboxID AS INT START WITH 1 INCREMENT BY 1;
 GO
 
 /* =====================================================================
@@ -388,6 +390,8 @@ BEGIN
         AssignedEmployeeName nvarchar(100) NULL,
         EventDate date NOT NULL,
         EventTime time NOT NULL,
+        EventEndTime time NULL,
+        DurationMinutes int NOT NULL CONSTRAINT DF_EventAppointment_DurationMinutes DEFAULT 60,
         EventStatus nvarchar(30) NOT NULL CONSTRAINT DF_EventAppointment_Status DEFAULT 'Pending',
         TotalAmount decimal(18,2) NOT NULL CONSTRAINT DF_EventAppointment_Total DEFAULT 0.00,
         DownpaymentAmount decimal(18,2) NOT NULL CONSTRAINT DF_EventAppointment_Downpayment DEFAULT 0.00,
@@ -407,7 +411,7 @@ BEGIN
         FinalPaymentPaidAt datetime2 NULL,
         CreatedAt datetime2 NOT NULL CONSTRAINT DF_EventAppointment_Created DEFAULT SYSUTCDATETIME(),
         RowVer rowversion, 
-        CONSTRAINT CK_EventAppointment_Status CHECK (EventStatus IN ('Pending','Awaiting_Downpayment','Pending Payment','Preparing','On Going','Post Event','Pending Verification','Confirmed','Shot','Editing','Delivered','Cancelled','Expired'))
+        CONSTRAINT CK_EventAppointment_Status CHECK (EventStatus IN ('Pending','Awaiting_Downpayment','Pending Payment','Preparation','Preparing','Dispatch','Ongoing','On Going','Post Event','Pending Verification','Paid Cash Pending Verification','Confirmed','Complete','Completed','Shot','Editing','Delivered','Cancelled','Expired'))
     );
 END;
 
@@ -416,6 +420,10 @@ IF OBJECT_ID(N'dbo.EventAppointment', N'U') IS NOT NULL
 BEGIN
     IF COL_LENGTH(N'dbo.EventAppointment', N'AssignedEmployeeName') IS NULL
         ALTER TABLE dbo.EventAppointment ADD AssignedEmployeeName NVARCHAR(100) NULL;
+    IF COL_LENGTH(N'dbo.EventAppointment', N'EventEndTime') IS NULL
+        ALTER TABLE dbo.EventAppointment ADD EventEndTime time NULL;
+    IF COL_LENGTH(N'dbo.EventAppointment', N'DurationMinutes') IS NULL
+        ALTER TABLE dbo.EventAppointment ADD DurationMinutes int NOT NULL CONSTRAINT DF_EventAppointment_DurationMinutes DEFAULT 60;
 END;
 
 IF OBJECT_ID(N'dbo.BookingNegotiation', N'U') IS NULL
@@ -467,8 +475,28 @@ BEGIN
         EventEquipmentID int IDENTITY(1,1) NOT NULL PRIMARY KEY,
         EventAppointmentID nvarchar(30) NOT NULL,
         EquipmentID nvarchar(30) NOT NULL,
+        IsTaken bit NOT NULL CONSTRAINT DF_EventEquipment_IsTaken DEFAULT 0,
+        TakenAt datetime2 NULL,
+        TakenByEmployeeID nvarchar(30) NULL,
+        IsAdditionalRequest bit NOT NULL CONSTRAINT DF_EventEquipment_IsAdditionalRequest DEFAULT 0,
+        RequestedNotes nvarchar(500) NULL,
         CONSTRAINT UQ_EventEquipment_Assign UNIQUE (EventAppointmentID, EquipmentID)
     );
+END;
+
+-- Idempotent column additions for EventEquipment
+IF OBJECT_ID(N'dbo.EventEquipment', N'U') IS NOT NULL
+BEGIN
+    IF COL_LENGTH(N'dbo.EventEquipment', N'IsTaken') IS NULL
+        ALTER TABLE dbo.EventEquipment ADD IsTaken bit NOT NULL CONSTRAINT DF_EventEquipment_IsTaken DEFAULT 0;
+    IF COL_LENGTH(N'dbo.EventEquipment', N'TakenAt') IS NULL
+        ALTER TABLE dbo.EventEquipment ADD TakenAt datetime2 NULL;
+    IF COL_LENGTH(N'dbo.EventEquipment', N'TakenByEmployeeID') IS NULL
+        ALTER TABLE dbo.EventEquipment ADD TakenByEmployeeID nvarchar(30) NULL;
+    IF COL_LENGTH(N'dbo.EventEquipment', N'IsAdditionalRequest') IS NULL
+        ALTER TABLE dbo.EventEquipment ADD IsAdditionalRequest bit NOT NULL CONSTRAINT DF_EventEquipment_IsAdditionalRequest DEFAULT 0;
+    IF COL_LENGTH(N'dbo.EventEquipment', N'RequestedNotes') IS NULL
+        ALTER TABLE dbo.EventEquipment ADD RequestedNotes nvarchar(500) NULL;
 END;
 
 IF OBJECT_ID(N'dbo.EventLineItem', N'U') IS NULL
@@ -479,11 +507,31 @@ BEGIN
         ServicesID nvarchar(30),
         AdditionalServicesID nvarchar(30),
         ComboPackageID nvarchar(30),
+        Quantity int NOT NULL CONSTRAINT DF_EventLineItem_Quantity DEFAULT 1,
+        UnitPrice decimal(18,2) NOT NULL CONSTRAINT DF_EventLineItem_UnitPrice DEFAULT 0.00,
+        LineTotal decimal(18,2) NOT NULL CONSTRAINT DF_EventLineItem_LineTotal DEFAULT 0.00,
+        RateType nvarchar(50) NULL,
+        DurationHours int NULL,
         CONSTRAINT CK_EventLineItem_ExactlyOne CHECK (
             (CASE WHEN ServicesID IS NOT NULL THEN 1 ELSE 0 END) +
             (CASE WHEN AdditionalServicesID IS NOT NULL THEN 1 ELSE 0 END) +
             (CASE WHEN ComboPackageID IS NOT NULL THEN 1 ELSE 0 END) = 1)
     );
+END;
+
+-- Idempotent column additions for EventLineItem
+IF OBJECT_ID(N'dbo.EventLineItem', N'U') IS NOT NULL
+BEGIN
+    IF COL_LENGTH(N'dbo.EventLineItem', N'Quantity') IS NULL
+        ALTER TABLE dbo.EventLineItem ADD Quantity int NOT NULL CONSTRAINT DF_EventLineItem_Quantity DEFAULT 1;
+    IF COL_LENGTH(N'dbo.EventLineItem', N'UnitPrice') IS NULL
+        ALTER TABLE dbo.EventLineItem ADD UnitPrice decimal(18,2) NOT NULL CONSTRAINT DF_EventLineItem_UnitPrice DEFAULT 0.00;
+    IF COL_LENGTH(N'dbo.EventLineItem', N'LineTotal') IS NULL
+        ALTER TABLE dbo.EventLineItem ADD LineTotal decimal(18,2) NOT NULL CONSTRAINT DF_EventLineItem_LineTotal DEFAULT 0.00;
+    IF COL_LENGTH(N'dbo.EventLineItem', N'RateType') IS NULL
+        ALTER TABLE dbo.EventLineItem ADD RateType nvarchar(50) NULL;
+    IF COL_LENGTH(N'dbo.EventLineItem', N'DurationHours') IS NULL
+        ALTER TABLE dbo.EventLineItem ADD DurationHours int NULL;
 END;
 
 IF OBJECT_ID(N'dbo.EmployeeJointSpecialization', N'U') IS NULL
@@ -719,6 +767,28 @@ BEGIN
         UpdatedAt datetime2 NOT NULL CONSTRAINT DF_HomeHighlights_UpdatedAt DEFAULT SYSUTCDATETIME()
     );
 END;
+
+IF OBJECT_ID(N'dbo.CustomerDropbox', N'U') IS NULL
+BEGIN
+    CREATE TABLE dbo.CustomerDropbox (
+        DropboxID nvarchar(30) NOT NULL PRIMARY KEY,
+        EventAppointmentID nvarchar(30) NOT NULL,
+        CustomerID nvarchar(30) NOT NULL,
+        BucketName nvarchar(100) NOT NULL CONSTRAINT DF_CustomerDropbox_Bucket DEFAULT 'dropbox',
+        R2ObjectKey nvarchar(500) NULL,
+        OriginalFileName nvarchar(255) NULL,
+        FileSizeBytes bigint NULL,
+        ContentType nvarchar(100) NULL,
+        DropboxStatus nvarchar(30) NOT NULL CONSTRAINT DF_CustomerDropbox_Status DEFAULT 'Waiting',
+        EventCompletedAt datetime2 NOT NULL CONSTRAINT DF_CustomerDropbox_CompletedAt DEFAULT SYSUTCDATETIME(),
+        UploadedAt datetime2 NULL,
+        UploadedByEmployeeID nvarchar(30) NULL,
+        ExpiresAt datetime2 NOT NULL,
+        CreatedAt datetime2 NOT NULL CONSTRAINT DF_CustomerDropbox_CreatedAt DEFAULT SYSUTCDATETIME(),
+        CONSTRAINT UQ_CustomerDropbox_Event UNIQUE (EventAppointmentID),
+        CONSTRAINT CK_CustomerDropbox_Status CHECK (DropboxStatus IN ('Waiting', 'Uploaded', 'Expired'))
+    );
+END;
 GO
 
 /* =====================================================================
@@ -927,6 +997,15 @@ ALTER TABLE dbo.HistoryLog WITH NOCHECK ADD CONSTRAINT FK_HistoryLog_ChangedByEm
 IF OBJECT_ID(N'dbo.FK_HistoryLog_ChangedByAdmin', N'F') IS NOT NULL
     ALTER TABLE dbo.HistoryLog DROP CONSTRAINT FK_HistoryLog_ChangedByAdmin;
 ALTER TABLE dbo.HistoryLog WITH NOCHECK ADD CONSTRAINT FK_HistoryLog_ChangedByAdmin FOREIGN KEY (ChangedByAdminID) REFERENCES dbo.Admin(AdminID) ON DELETE NO ACTION;
+
+-- 8.10 CustomerDropbox Constraints
+IF OBJECT_ID(N'dbo.FK_CustomerDropbox_EventAppointment', N'F') IS NOT NULL
+    ALTER TABLE dbo.CustomerDropbox DROP CONSTRAINT FK_CustomerDropbox_EventAppointment;
+ALTER TABLE dbo.CustomerDropbox ADD CONSTRAINT FK_CustomerDropbox_EventAppointment FOREIGN KEY (EventAppointmentID) REFERENCES dbo.EventAppointment(EventAppointmentID) ON DELETE CASCADE;
+
+IF OBJECT_ID(N'dbo.FK_CustomerDropbox_Customer', N'F') IS NOT NULL
+    ALTER TABLE dbo.CustomerDropbox DROP CONSTRAINT FK_CustomerDropbox_Customer;
+ALTER TABLE dbo.CustomerDropbox ADD CONSTRAINT FK_CustomerDropbox_Customer FOREIGN KEY (CustomerID) REFERENCES dbo.Customer(CustomerID) ON DELETE NO ACTION;
 GO
 
 /* =====================================================================
@@ -1009,6 +1088,12 @@ IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = N'IX_EventAppointment_Date
 
 IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = N'IX_PaymentTransactions_Remittance' AND object_id = OBJECT_ID(N'dbo.PaymentTransactions'))
     CREATE INDEX IX_PaymentTransactions_Remittance ON dbo.PaymentTransactions (EmployeeRemittanceStatus, PaymentType);
+
+IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = N'IX_CustomerDropbox_Customer_ExpiresAt' AND object_id = OBJECT_ID(N'dbo.CustomerDropbox'))
+    CREATE INDEX IX_CustomerDropbox_Customer_ExpiresAt ON dbo.CustomerDropbox (CustomerID, ExpiresAt);
+
+IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = N'IX_CustomerDropbox_ExpiresAt' AND object_id = OBJECT_ID(N'dbo.CustomerDropbox'))
+    CREATE INDEX IX_CustomerDropbox_ExpiresAt ON dbo.CustomerDropbox (ExpiresAt);
 GO
 
 /* =====================================================================
@@ -1181,13 +1266,17 @@ GO
 
 IF OBJECT_ID(N'dbo.EventAppointment', N'U') IS NOT NULL
    AND NOT EXISTS (SELECT 1 FROM sys.check_constraints
-                   WHERE name = N'CK_EventAppointment_Status' AND definition LIKE N'%Pending Verification%')
+                   WHERE name = N'CK_EventAppointment_Status'
+                     AND definition LIKE N'%Pending Verification%'
+                     AND definition LIKE N'%Dispatch%'
+                     AND definition LIKE N'%Complete%'
+                     AND definition LIKE N'%Completed%')
 BEGIN
     IF EXISTS (SELECT 1 FROM sys.check_constraints WHERE name = N'CK_EventAppointment_Status')
         ALTER TABLE dbo.EventAppointment DROP CONSTRAINT CK_EventAppointment_Status;
 
     ALTER TABLE dbo.EventAppointment ADD CONSTRAINT CK_EventAppointment_Status
-        CHECK (EventStatus IN ('Pending','Awaiting_Downpayment','Pending Payment','Preparing','On Going','Post Event','Pending Verification','Confirmed','Shot','Editing','Delivered','Cancelled','Expired'));
+        CHECK (EventStatus IN ('Pending','Awaiting_Downpayment','Pending Payment','Preparation','Preparing','Dispatch','Ongoing','On Going','Post Event','Pending Verification','Paid Cash Pending Verification','Confirmed','Complete','Completed','Shot','Editing','Delivered','Cancelled','Expired'));
 END;
 GO
 

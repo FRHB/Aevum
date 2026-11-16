@@ -44,13 +44,13 @@ public sealed class ScheduleBookingService(
 
             await using var cmd = conn.CreateCommand();
             cmd.CommandText = @"
-                SELECT ServicesID AS Id, ServiceName AS Name, ISNULL(ServicesDescription, '') AS [Desc], CAST(ServicePrice AS decimal(18,2)) AS Price
+                SELECT ServicesID AS Id, ServiceName AS Name, ISNULL(ServicesDescription, '') AS [Desc], CAST(ServicePrice AS decimal(18,2)) AS Price, ISNULL(RateType, 'Per Hour') AS RateType
                 FROM dbo.Services
                 UNION ALL
-                SELECT ComboPackageID AS Id, ComboPackageName AS Name, ISNULL(ComboPackageDescription, '') AS [Desc], CAST(ComboPackagePrice AS decimal(18,2)) AS Price
+                SELECT ComboPackageID AS Id, ComboPackageName AS Name, ISNULL(ComboPackageDescription, '') AS [Desc], CAST(ComboPackagePrice AS decimal(18,2)) AS Price, N'Per Session' AS RateType
                 FROM dbo.ComboPackage
                 UNION ALL
-                SELECT AdditionalServicesID AS Id, AdditionalServiceName AS Name, ISNULL(AdditionalServicesDescription, '') AS [Desc], CAST(ServicePrice AS decimal(18,2)) AS Price
+                SELECT AdditionalServicesID AS Id, AdditionalServiceName AS Name, ISNULL(AdditionalServicesDescription, '') AS [Desc], CAST(ServicePrice AS decimal(18,2)) AS Price, N'Per Session' AS RateType
                 FROM dbo.AdditionalServices
                 ORDER BY Name ASC;
             ";
@@ -62,7 +62,8 @@ public sealed class ScheduleBookingService(
                 var name = reader.GetString(1);
                 var desc = reader.IsDBNull(2) ? string.Empty : reader.GetString(2);
                 var price = reader.IsDBNull(3) ? 0m : Convert.ToDecimal(reader.GetValue(3));
-                list.Add(new ScheduleServiceDto(id, name, desc, price));
+                var rateType = reader.FieldCount > 4 && !reader.IsDBNull(4) ? reader.GetString(4) : "Per Session";
+                list.Add(new ScheduleServiceDto(id, name, desc, price, rateType));
             }
 
             return list;
@@ -148,6 +149,33 @@ public sealed class ScheduleBookingService(
                 return new SlotAvailabilityDto(s.Start, s.End, isSlotTimeBookable && !isSlotTaken && hasAvailableClerk);
             })
             .ToList());
+    }
+
+    public async Task<AvailabilityCheckResultDto> CheckAvailabilityAsync(DateOnly date, TimeOnly? targetTime = null, CancellationToken cancellationToken = default)
+    {
+        var taken = (await db.Appointments.AsNoTracking()
+                .Where(a => a.SlotDate == date && a.Status != AppointmentStatus.Cancelled)
+                .Select(a => a.SlotStart)
+                .ToListAsync(cancellationToken))
+            .ToHashSet();
+
+        var activeClerks = await GetActiveClerksDataAsync(cancellationToken);
+        var activeCrew = await GetActiveCrewDataAsync(cancellationToken);
+        var leaves = await GetApprovedLeavesRangeAsync(date, date, cancellationToken);
+        var assignedEvents = await GetAssignedEventsWithDirectAssignmentRangeAsync(date, date, cancellationToken);
+        var bookedConsultations = await GetBookedConsultationsRangeAsync(date, date, cancellationToken);
+
+        return EvaluateAvailability(
+            date,
+            targetTime,
+            StudioNow(),
+            _options.BookingWindowDays,
+            taken,
+            activeClerks,
+            activeCrew,
+            leaves,
+            assignedEvents,
+            bookedConsultations);
     }
 
     public async Task<IReadOnlyList<OfficeClerkDto>> GetOfficeClerksAsync(CancellationToken cancellationToken = default)
@@ -389,10 +417,11 @@ public sealed class ScheduleBookingService(
             services, 0m, request.Platform, meetingLink, location, emailSent);
     }
 
-    private sealed record ClerkSummary(string EmployeeId, string DaysOff, string FullName);
-    private sealed record LeaveSummary(string EmployeeStudioId, DateOnly StartDate, DateOnly EndDate);
-    private sealed record EventSummary(string EmployeeId, DateOnly EventDate, TimeOnly EventTime);
-    private sealed record ConsultationSummary(string EmployeeId, DateOnly ConsultationDate, TimeOnly ConsultationTime);
+    public sealed record ClerkSummary(string EmployeeId, string DaysOff, string FullName);
+    public sealed record CrewMemberSummary(string EmployeeId, string DaysOff, bool IsPhotographer, bool IsVideographer);
+    public sealed record LeaveSummary(string EmployeeStudioId, DateOnly StartDate, DateOnly EndDate);
+    public sealed record EventSummary(string EmployeeId, DateOnly EventDate, TimeOnly EventTime);
+    public sealed record ConsultationSummary(string EmployeeId, DateOnly ConsultationDate, TimeOnly ConsultationTime);
 
     private async Task<List<ClerkSummary>> GetActiveClerksDataAsync(CancellationToken ct)
     {
@@ -550,6 +579,296 @@ public sealed class ScheduleBookingService(
             list.Add(new EventSummary(empId, d, t));
         }
         return list;
+    }
+
+    private async Task<List<CrewMemberSummary>> GetActiveCrewDataAsync(CancellationToken ct)
+    {
+        var crewMap = new Dictionary<string, (string DaysOff, bool IsPhotographer, bool IsVideographer)>(StringComparer.OrdinalIgnoreCase);
+        var conn = db.Database.GetDbConnection();
+        if (conn.State != ConnectionState.Open) await conn.OpenAsync(ct);
+
+        await using var cmd = conn.CreateCommand();
+        cmd.CommandText = @"
+            SELECT e.EmployeeID,
+                   ISNULL(e.DaysOff, 'Sunday'),
+                   ISNULL(e.DepartmentID, ''),
+                   ISNULL(e.Specializations, ''),
+                   ISNULL(es.DepartmentID, ''),
+                   ISNULL(es.DepartmentName, ''),
+                   ISNULL(es.SpecializationName, ''),
+                   ISNULL(es.Specialization, '')
+            FROM dbo.Employees e
+            LEFT JOIN dbo.EmployeeJointSpecialization ejs ON e.EmployeeID = ejs.EmployeeID
+            LEFT JOIN dbo.EmployeeSpecialization es ON ejs.SpecializationID = es.SpecializationID
+            WHERE (e.EmployeeStatus = 'Active' OR e.Status = 'Active');";
+
+        await using var reader = await cmd.ExecuteReaderAsync(ct);
+        while (await reader.ReadAsync(ct))
+        {
+            var id = reader.GetString(0);
+            var daysOff = reader.GetString(1);
+            var empDeptId = reader.GetString(2);
+            var empSpecs = reader.GetString(3);
+            var specDeptId = reader.GetString(4);
+            var specDeptName = reader.GetString(5);
+            var specName = reader.GetString(6);
+            var specAlt = reader.GetString(7);
+
+            bool isPhoto = string.Equals(empDeptId, "DEP-0001", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(specDeptId, "DEP-0001", StringComparison.OrdinalIgnoreCase)
+                || specDeptName.Contains("Photography", StringComparison.OrdinalIgnoreCase)
+                || specName.Contains("Photograph", StringComparison.OrdinalIgnoreCase)
+                || specAlt.Contains("Photograph", StringComparison.OrdinalIgnoreCase)
+                || empSpecs.Contains("Photograph", StringComparison.OrdinalIgnoreCase);
+
+            bool isVideo = string.Equals(empDeptId, "DEP-0002", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(specDeptId, "DEP-0002", StringComparison.OrdinalIgnoreCase)
+                || specDeptName.Contains("Videography", StringComparison.OrdinalIgnoreCase)
+                || specName.Contains("Videograph", StringComparison.OrdinalIgnoreCase)
+                || specAlt.Contains("Videograph", StringComparison.OrdinalIgnoreCase)
+                || empSpecs.Contains("Videograph", StringComparison.OrdinalIgnoreCase);
+
+            if (!isPhoto && !isVideo)
+                continue;
+
+            if (crewMap.TryGetValue(id, out var existing))
+            {
+                crewMap[id] = (existing.DaysOff, existing.IsPhotographer || isPhoto, existing.IsVideographer || isVideo);
+            }
+            else
+            {
+                crewMap[id] = (daysOff, isPhoto, isVideo);
+            }
+        }
+
+        return crewMap.Select(kvp => new CrewMemberSummary(kvp.Key, kvp.Value.DaysOff, kvp.Value.IsPhotographer, kvp.Value.IsVideographer)).ToList();
+    }
+
+    private async Task<List<EventSummary>> GetAssignedEventsWithDirectAssignmentRangeAsync(DateOnly first, DateOnly last, CancellationToken ct)
+    {
+        var list = new List<EventSummary>();
+        var seen = new HashSet<(string EmployeeId, DateOnly EventDate, TimeOnly EventTime)>();
+        var conn = db.Database.GetDbConnection();
+        if (conn.State != ConnectionState.Open) await conn.OpenAsync(ct);
+
+        await using var cmd = conn.CreateCommand();
+        cmd.CommandText = @"
+            IF OBJECT_ID(N'dbo.EventAppointment', N'U') IS NOT NULL
+            BEGIN
+                IF OBJECT_ID(N'dbo.EventEmployee', N'U') IS NOT NULL
+                BEGIN
+                    SELECT ee.EmployeeID, ea.EventDate, ea.EventTime
+                    FROM dbo.EventEmployee ee
+                    JOIN dbo.EventAppointment ea ON ee.EventAppointmentID = ea.EventAppointmentID
+                    WHERE ea.EventDate >= @First AND ea.EventDate <= @Last
+                      AND ea.EventStatus NOT IN ('Cancelled', 'Expired')
+                    UNION
+                    SELECT ea.EmployeeID, ea.EventDate, ea.EventTime
+                    FROM dbo.EventAppointment ea
+                    WHERE ea.EventDate >= @First AND ea.EventDate <= @Last
+                      AND ea.EventStatus NOT IN ('Cancelled', 'Expired')
+                      AND ea.EmployeeID IS NOT NULL;
+                END
+                ELSE
+                BEGIN
+                    SELECT ea.EmployeeID, ea.EventDate, ea.EventTime
+                    FROM dbo.EventAppointment ea
+                    WHERE ea.EventDate >= @First AND ea.EventDate <= @Last
+                      AND ea.EventStatus NOT IN ('Cancelled', 'Expired')
+                      AND ea.EmployeeID IS NOT NULL;
+                END
+            END";
+
+        var pFirst = cmd.CreateParameter();
+        pFirst.ParameterName = "@First";
+        pFirst.Value = first.ToDateTime(TimeOnly.MinValue);
+        cmd.Parameters.Add(pFirst);
+
+        var pLast = cmd.CreateParameter();
+        pLast.ParameterName = "@Last";
+        pLast.Value = last.ToDateTime(TimeOnly.MinValue);
+        cmd.Parameters.Add(pLast);
+
+        await using var reader = await cmd.ExecuteReaderAsync(ct);
+        while (await reader.ReadAsync(ct))
+        {
+            if (reader.IsDBNull(0) || reader.IsDBNull(1) || reader.IsDBNull(2)) continue;
+            var empId = reader.GetString(0);
+            var d = DateOnly.FromDateTime(reader.GetDateTime(1));
+            var t = TimeOnly.FromTimeSpan(reader.GetFieldValue<TimeSpan>(2));
+            if (seen.Add((empId, d, t)))
+                list.Add(new EventSummary(empId, d, t));
+        }
+        return list;
+    }
+
+    public static AvailabilityCheckResultDto EvaluateAvailability(
+        DateOnly date,
+        TimeOnly? targetTime,
+        DateTime studioNow,
+        int bookingWindowDays,
+        IReadOnlySet<TimeOnly> takenConsultationSlots,
+        IReadOnlyList<ClerkSummary> clerks,
+        IReadOnlyList<CrewMemberSummary> crew,
+        IReadOnlyList<LeaveSummary> leaves,
+        IReadOnlyList<EventSummary> assignedEvents,
+        IReadOnlyList<ConsultationSummary> bookedConsultations)
+    {
+        var today = DateOnly.FromDateTime(studioNow);
+        bool isDateInWindow = date >= today && date <= today.AddDays(bookingWindowDays);
+
+        int totalPhoto = crew.Count(c => c.IsPhotographer);
+        int totalVideo = crew.Count(c => c.IsVideographer);
+
+        var slotResults = new List<CrewSlotStatusDto>(StudioSlots.All.Count);
+        foreach (var slot in StudioSlots.All)
+        {
+            bool isBookable = isDateInWindow && date.ToDateTime(slot.Start) > studioNow;
+            var (availPhoto, availVideo) = CountAvailableCrew(crew, leaves, assignedEvents, bookedConsultations, date, slot.Start, slot.End, isBookable);
+            bool isConsultationOpen = isBookable
+                && !takenConsultationSlots.Contains(slot.Start)
+                && HasAnyAvailableClerk(clerks.ToList(), leaves.ToList(), assignedEvents.ToList(), bookedConsultations.ToList(), date, slot.Start);
+
+            string slotMsg = FormatSlotStatusMessage(isBookable, availPhoto, availVideo, totalPhoto, totalVideo);
+            slotResults.Add(new CrewSlotStatusDto(
+                slot.Start,
+                slot.End,
+                isBookable,
+                availPhoto > 0,
+                availVideo > 0,
+                availPhoto,
+                totalPhoto,
+                availVideo,
+                totalVideo,
+                isConsultationOpen,
+                slotMsg));
+        }
+
+        bool isFullDayAvailable = slotResults.All(s => s.IsBookable && s.IsPhotographyAvailable && s.IsVideographyAvailable);
+        bool isWholeDayUnavailable = slotResults.All(s => !s.IsBookable || (!s.IsPhotographyAvailable && !s.IsVideographyAvailable));
+
+        string dayStatusMessage = isFullDayAvailable
+            ? "The full day is available."
+            : isWholeDayUnavailable
+                ? "The whole day is not available."
+                : "Only some time slots are available for this day.";
+
+        string? timeStatusMessage = null;
+        bool isPhotoForTime = false;
+        bool isVideoForTime = false;
+
+        if (targetTime.HasValue)
+        {
+            var matchedSlot = StudioSlots.All.FirstOrDefault(s => targetTime.Value >= s.Start && targetTime.Value < s.End);
+            if (matchedSlot is null)
+            {
+                timeStatusMessage = isWholeDayUnavailable
+                    ? "The whole day is not available."
+                    : "Selected time is outside studio hours (9:00 AM - 11:00 AM, 1:00 PM - 5:00 PM).";
+            }
+            else
+            {
+                bool isSlotBookable = isDateInWindow && date.ToDateTime(matchedSlot.Start) > studioNow;
+                var firstHalfEnd = matchedSlot.Start.AddMinutes(30);
+                var (p1, v1) = CountAvailableCrew(crew, leaves, assignedEvents, bookedConsultations, date, matchedSlot.Start, firstHalfEnd, isSlotBookable);
+                var (p2, v2) = CountAvailableCrew(crew, leaves, assignedEvents, bookedConsultations, date, firstHalfEnd, matchedSlot.End, isSlotBookable);
+
+                bool half1Open = p1 > 0 || v1 > 0;
+                bool half2Open = p2 > 0 || v2 > 0;
+
+                isPhotoForTime = p1 > 0 || p2 > 0;
+                isVideoForTime = v1 > 0 || v2 > 0;
+
+                if (!isSlotBookable || (!half1Open && !half2Open))
+                {
+                    timeStatusMessage = isWholeDayUnavailable
+                        ? "The whole day is not available."
+                        : "No crew available for this time.";
+                }
+                else if (half1Open != half2Open)
+                {
+                    timeStatusMessage = "Only some time slots are available for this hour.";
+                }
+                else if (isPhotoForTime && isVideoForTime)
+                {
+                    timeStatusMessage = "Both Photography and Videography available.";
+                }
+                else if (isPhotoForTime)
+                {
+                    timeStatusMessage = "Available for this time: Photography only";
+                }
+                else
+                {
+                    timeStatusMessage = "Available for this time: Videography only";
+                }
+            }
+        }
+
+        return new AvailabilityCheckResultDto(
+            date,
+            targetTime,
+            dayStatusMessage,
+            timeStatusMessage,
+            isFullDayAvailable,
+            isWholeDayUnavailable,
+            isPhotoForTime,
+            isVideoForTime,
+            totalPhoto,
+            totalVideo,
+            slotResults);
+    }
+
+    private static (int AvailablePhotographers, int AvailableVideographers) CountAvailableCrew(
+        IReadOnlyList<CrewMemberSummary> crew,
+        IReadOnlyList<LeaveSummary> leaves,
+        IReadOnlyList<EventSummary> assignedEvents,
+        IReadOnlyList<ConsultationSummary> bookedConsultations,
+        DateOnly date,
+        TimeOnly windowStart,
+        TimeOnly windowEnd,
+        bool isBookable)
+    {
+        if (!isBookable) return (0, 0);
+
+        var dayName = date.DayOfWeek.ToString();
+        int photo = 0;
+        int video = 0;
+
+        foreach (var member in crew)
+        {
+            if (member.DaysOff.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+                .Any(d => string.Equals(d, dayName, StringComparison.OrdinalIgnoreCase)))
+                continue;
+
+            if (leaves.Any(l => string.Equals(l.EmployeeStudioId, member.EmployeeId, StringComparison.OrdinalIgnoreCase)
+                && date >= l.StartDate && date <= l.EndDate))
+                continue;
+
+            if (assignedEvents.Any(ev => string.Equals(ev.EmployeeId, member.EmployeeId, StringComparison.OrdinalIgnoreCase)
+                && ev.EventDate == date
+                && DoesSlotOverlapWithBufferedBooking(windowStart, windowEnd, ev.EventTime, ev.EventTime.AddHours(1))))
+                continue;
+
+            if (bookedConsultations.Any(c => string.Equals(c.EmployeeId, member.EmployeeId, StringComparison.OrdinalIgnoreCase)
+                && c.ConsultationDate == date
+                && DoesSlotOverlapWithBufferedBooking(windowStart, windowEnd, c.ConsultationTime, c.ConsultationTime.AddHours(1))))
+                continue;
+
+            if (member.IsPhotographer) photo++;
+            if (member.IsVideographer) video++;
+        }
+
+        return (photo, video);
+    }
+
+    private static string FormatSlotStatusMessage(bool isBookable, int availPhoto, int availVideo, int totalPhoto, int totalVideo)
+    {
+        if (!isBookable) return "Unavailable";
+        if (totalPhoto == 0 && totalVideo == 0) return "No crew configured";
+        if (availPhoto > 0 && availVideo > 0) return "Both Photography and Videography available.";
+        if (availPhoto > 0) return "Available for this time: Photography only";
+        if (availVideo > 0) return "Available for this time: Videography only";
+        return "Not available (crew booked or on leave)";
     }
 
     public static bool DoesSlotOverlapWithBufferedBooking(TimeOnly slotStart, TimeOnly slotEnd, TimeOnly bookingStart, TimeOnly bookingEnd)

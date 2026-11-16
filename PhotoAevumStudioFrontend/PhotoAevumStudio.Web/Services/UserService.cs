@@ -6006,25 +6006,25 @@ public class UserService : IUserService
 					IF OBJECT_ID(N'dbo.EventAppointment', N'U') IS NOT NULL
 					BEGIN
 						UPDATE ea
-						SET ea.EventStatus = 'Shot',
+						SET ea.EventStatus = 'Complete',
 						    ea.FinalPaymentStatus = 'Paid',
 						    ea.FinalPaymentPaidAt = SYSUTCDATETIME()
 						FROM dbo.EventAppointment ea
 						INNER JOIN dbo.PaymentTransactions pt ON pt.EventAppointmentID = ea.EventAppointmentID
 						WHERE (CAST(ABS(CHECKSUM(pt.PaymentTransactionID)) % 100000 AS int) = @PaymentId
 						    OR pt.PaymentTransactionID = CAST(@PaymentId AS nvarchar(50)))
-						  AND ea.EventStatus = 'Pending Verification';
+						  AND ea.EventStatus IN ('Pending Verification', 'Paid Cash Pending Verification');
 
 						IF OBJECT_ID(N'dbo.Payments', N'U') IS NOT NULL
 						BEGIN
 							UPDATE ea
-							SET ea.EventStatus = 'Shot',
+							SET ea.EventStatus = 'Complete',
 							    ea.FinalPaymentStatus = 'Paid',
 							    ea.FinalPaymentPaidAt = SYSUTCDATETIME()
 							FROM dbo.EventAppointment ea
 							INNER JOIN dbo.Payments p ON p.EventAppointmentId = ea.EventAppointmentID
 							WHERE p.Id = @PaymentId
-							  AND ea.EventStatus = 'Pending Verification';
+							  AND ea.EventStatus IN ('Pending Verification', 'Paid Cash Pending Verification');
 						END;
 					END;
 

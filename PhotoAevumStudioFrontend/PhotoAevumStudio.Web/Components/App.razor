@@ -99,6 +99,47 @@
                 requestAnimationFrame(() => setTimeout(check, 100));
             }
         };
+
+        // Calendar Day Timetable Row/Block 10-Second Highlight Helper
+        window.aevumCalendar = {
+            highlightTimers: {},
+            highlightEventRow: function (eventId, durationMs) {
+                if (!eventId) return;
+                const duration = typeof durationMs === 'number' && durationMs > 0 ? durationMs : 10000;
+                const selector = '[data-event-id="' + CSS.escape(eventId) + '"]';
+
+                const attemptHighlight = (retries) => {
+                    const el = document.querySelector(selector);
+                    if (!el) {
+                        if (retries > 0) {
+                            setTimeout(() => attemptHighlight(retries - 1), 60);
+                        }
+                        return;
+                    }
+
+                    document.querySelectorAll('.event-row-highlighted').forEach(node => {
+                        node.classList.remove('event-row-highlighted');
+                    });
+
+                    Object.keys(this.highlightTimers).forEach(k => {
+                        clearTimeout(this.highlightTimers[k]);
+                        delete this.highlightTimers[k];
+                    });
+
+                    el.classList.add('event-row-highlighted');
+                    try {
+                        el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                    } catch (e) { }
+
+                    this.highlightTimers[eventId] = setTimeout(() => {
+                        el.classList.remove('event-row-highlighted');
+                        delete this.highlightTimers[eventId];
+                    }, duration);
+                };
+
+                requestAnimationFrame(() => attemptHighlight(8));
+            }
+        };
     </script>
 </body>
 </html>

@@ -60,8 +60,22 @@ public class PendingPaymentExpiryService : BackgroundService
     {
         using var scope = _scopes.CreateScope();
         var payments = scope.ServiceProvider.GetRequiredService<IPendingPaymentService>();
+        var consultations = scope.ServiceProvider.GetRequiredService<IConsultationNegotiationService>();
         var notifier = scope.ServiceProvider.GetRequiredService<IPaymentNotifier>();
         var email = scope.ServiceProvider.GetRequiredService<IEmailService>();
+
+        try
+        {
+            var autoTriggered = await consultations.AutoTriggerPostEventsAsync(ct);
+            if (autoTriggered > 0)
+            {
+                _logger.LogInformation("Auto-triggered Post Event for {Count} ongoing event(s) 1 hour after scheduled start.", autoTriggered);
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Auto-trigger Post Event sweep failed.");
+        }
 
         var released = await payments.ReleaseExpiredAsync(ct);
         foreach (var b in released)

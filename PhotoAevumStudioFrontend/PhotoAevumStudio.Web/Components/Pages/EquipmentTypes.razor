@@ -16,6 +16,7 @@
 @inject IEquipmentService EquipmentService
 @inject IUserService UserService
 @inject AuthenticationStateProvider AuthStateProvider
+@inject NavigationManager Nav
 
 @inject NavigationManager Nav
 
@@ -615,6 +616,11 @@
             _currentUser = state.User;
         }
         _isReadOnly = !EmployeeRoleHelper.IsOfficeClerk(_currentUser, UserService) && !EmployeeRoleHelper.IsAdmin(_currentUser) && !EmployeeRoleHelper.IsSystemAdmin(_currentUser);
+        if (_isReadOnly)
+        {
+            Nav.NavigateTo("/staff");
+            return;
+        }
 
         EquipmentService.OnChange += HandleExternalStateChange;
 

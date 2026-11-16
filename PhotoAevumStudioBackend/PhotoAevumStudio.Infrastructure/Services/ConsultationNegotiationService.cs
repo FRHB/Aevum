@@ -1332,131 +1332,175 @@ public class ConsultationNegotiationService : IConsultationNegotiationService
 
 
 
-    public async Task<EventAppointmentDto> CreateEventAppointmentFromNegotiationAsync(
+    private static volatile bool _granularSchemaEnsured;
 
-
-
-        CreateEventAppointmentFromNegotiationRequest request,
-
-
-
-        CancellationToken cancellationToken = default)
-
-
-
+    private static async Task EnsureGranularEventColumnsAsync(SqlConnection conn, CancellationToken cancellationToken)
     {
+        if (_granularSchemaEnsured) return;
 
+        const string ddl = @"
+            IF OBJECT_ID(N'dbo.EventAppointment', N'U') IS NOT NULL
+            BEGIN
+                IF COL_LENGTH(N'dbo.EventAppointment', N'EventEndTime') IS NULL
+                    ALTER TABLE dbo.EventAppointment ADD EventEndTime time NULL;
+                IF COL_LENGTH(N'dbo.EventAppointment', N'DurationMinutes') IS NULL
+                    ALTER TABLE dbo.EventAppointment ADD DurationMinutes int NOT NULL CONSTRAINT DF_EventAppointment_DurationMinutes DEFAULT 60;
+            END;
+            IF OBJECT_ID(N'dbo.EventLineItem', N'U') IS NOT NULL
+            BEGIN
+                IF COL_LENGTH(N'dbo.EventLineItem', N'Quantity') IS NULL
+                    ALTER TABLE dbo.EventLineItem ADD Quantity int NOT NULL CONSTRAINT DF_EventLineItem_Quantity DEFAULT 1;
+                IF COL_LENGTH(N'dbo.EventLineItem', N'UnitPrice') IS NULL
+                    ALTER TABLE dbo.EventLineItem ADD UnitPrice decimal(18,2) NOT NULL CONSTRAINT DF_EventLineItem_UnitPrice DEFAULT 0.00;
+                IF COL_LENGTH(N'dbo.EventLineItem', N'LineTotal') IS NULL
+                    ALTER TABLE dbo.EventLineItem ADD LineTotal decimal(18,2) NOT NULL CONSTRAINT DF_EventLineItem_LineTotal DEFAULT 0.00;
+                IF COL_LENGTH(N'dbo.EventLineItem', N'RateType') IS NULL
+                    ALTER TABLE dbo.EventLineItem ADD RateType nvarchar(50) NULL;
+                IF COL_LENGTH(N'dbo.EventLineItem', N'DurationHours') IS NULL
+                    ALTER TABLE dbo.EventLineItem ADD DurationHours int NULL;
+            END;";
 
-
-        await using var conn = await OpenConnectionAsync(cancellationToken);
-
-
-
-
-
-
-
-        // 1. Calculate pricing from selected services
-
-
-
-        var serviceLines = new List<EventServiceLineDto>();
-
-
-
-        if (request.ServiceIds.Count > 0)
-
-
-
+        try
         {
+            await using var cmd = new SqlCommand(ddl, conn);
+            await cmd.ExecuteNonQueryAsync(cancellationToken);
+            _granularSchemaEnsured = true;
+        }
+        catch
+        {
+            // Ignore DDL permission issues
+        }
+    }
 
+    public async Task<EventAppointmentDto> CreateEventAppointmentFromNegotiationAsync(
+        CreateEventAppointmentFromNegotiationRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        await using var conn = await OpenConnectionAsync(cancellationToken);
+        await EnsureGranularEventColumnsAsync(conn, cancellationToken);
 
-
-            var pList = string.Join(",", request.ServiceIds.Select((_, i) => $"@s{i}"));
-
-
-
-            var qry = $"SELECT ServicesID, ServiceName, ServicePrice FROM dbo.Services WHERE ServicesID IN ({pList});";
-
-
-
-            await using var sCmd = new SqlCommand(qry, conn);
-
-
-
-            for (var i = 0; i < request.ServiceIds.Count; i++)
-
-
-
+        // 1. Calculate pricing & duration from selected services (Main, ComboPackage, AdditionalServices)
+        var requestedItems = new List<EventServiceLineInput>();
+        if (request.ServiceSelections != null && request.ServiceSelections.Count > 0)
+        {
+            foreach (var item in request.ServiceSelections)
             {
-
-
-
-                sCmd.Parameters.AddWithValue($"@s{i}", request.ServiceIds[i]);
-
-
-
-            }
-
-
-
-            await using var sReader = await sCmd.ExecuteReaderAsync(cancellationToken);
-
-
-
-            while (await sReader.ReadAsync(cancellationToken))
-
-
-
-            {
-
-
-
-                serviceLines.Add(new EventServiceLineDto
-
-
-
+                if (!string.IsNullOrWhiteSpace(item.ServicesId) &&
+                    !requestedItems.Any(x => string.Equals(x.ServicesId, item.ServicesId, StringComparison.OrdinalIgnoreCase)))
                 {
-
-
-
-                    ServicesId = sReader.GetString(0),
-
-
-
-                    ServiceName = sReader.GetString(1),
-
-
-
-                    ServicePrice = sReader.GetDecimal(2)
-
-
-
-                });
-
-
-
+                    requestedItems.Add(new EventServiceLineInput
+                    {
+                        ServicesId = item.ServicesId.Trim(),
+                        Quantity = Math.Max(1, item.Quantity),
+                        DurationHours = item.DurationHours,
+                        RateType = item.RateType
+                    });
+                }
             }
-
-
-
-            await sReader.CloseAsync();
-
-
-
+        }
+        foreach (var sid in request.ServiceIds ?? new List<string>())
+        {
+            if (!string.IsNullOrWhiteSpace(sid) &&
+                !requestedItems.Any(x => string.Equals(x.ServicesId, sid, StringComparison.OrdinalIgnoreCase)))
+            {
+                requestedItems.Add(new EventServiceLineInput
+                {
+                    ServicesId = sid.Trim(),
+                    Quantity = 1
+                });
+            }
         }
 
+        var serviceLines = new List<(EventServiceLineDto Line, string CatalogKind)>();
 
+        if (requestedItems.Count > 0)
+        {
+            var pList = string.Join(",", requestedItems.Select((_, i) => $"@s{i}"));
+            var qry = $@"
+                SELECT ServicesID AS Id, ServiceName AS Name, ServicePrice AS Price, ISNULL(RateType, 'Per Hour') AS RateType, N'Main' AS Kind
+                FROM dbo.Services WHERE ServicesID IN ({pList})
+                UNION ALL
+                SELECT ComboPackageID AS Id, ComboPackageName AS Name, ComboPackagePrice AS Price, N'Per Session' AS RateType, N'Combo' AS Kind
+                FROM dbo.ComboPackage WHERE ComboPackageID IN ({pList})
+                UNION ALL
+                SELECT AdditionalServicesID AS Id, AdditionalServiceName AS Name, ServicePrice AS Price, N'Per Session' AS RateType, N'Additional' AS Kind
+                FROM dbo.AdditionalServices WHERE AdditionalServicesID IN ({pList});";
 
+            await using var sCmd = new SqlCommand(qry, conn);
+            for (var i = 0; i < requestedItems.Count; i++)
+            {
+                sCmd.Parameters.AddWithValue($"@s{i}", requestedItems[i].ServicesId);
+            }
 
+            var catalogRows = new Dictionary<string, (string Name, decimal Price, string RateType, string Kind)>(StringComparer.OrdinalIgnoreCase);
+            await using var sReader = await sCmd.ExecuteReaderAsync(cancellationToken);
+            while (await sReader.ReadAsync(cancellationToken))
+            {
+                catalogRows[sReader.GetString(0)] = (
+                    sReader.GetString(1),
+                    sReader.GetDecimal(2),
+                    sReader.IsDBNull(3) ? "Per Session" : sReader.GetString(3),
+                    sReader.GetString(4)
+                );
+            }
+            await sReader.CloseAsync();
 
+            foreach (var item in requestedItems)
+            {
+                if (catalogRows.TryGetValue(item.ServicesId, out var cat))
+                {
+                    var effectiveRate = !string.IsNullOrWhiteSpace(item.RateType) ? item.RateType! : cat.RateType;
+                    var qty = Math.Max(1, item.Quantity);
+                    var unitPrice = cat.Price;
+                    var lineTotal = unitPrice * qty;
+                    int? durHours = item.DurationHours;
+                    if (!durHours.HasValue && effectiveRate.Contains("hour", StringComparison.OrdinalIgnoreCase))
+                        durHours = qty;
 
+                    serviceLines.Add((new EventServiceLineDto
+                    {
+                        ServicesId = item.ServicesId,
+                        ServiceName = cat.Name,
+                        ServicePrice = lineTotal,
+                        UnitPrice = unitPrice,
+                        Quantity = qty,
+                        LineTotal = lineTotal,
+                        RateType = effectiveRate,
+                        DurationHours = durHours
+                    }, cat.Kind));
+                }
+            }
+        }
 
-        var totalAmount = serviceLines.Sum(s => s.ServicePrice);
+        int computedDurationMinutes;
+        TimeOnly eventEndTime;
+        if (request.EventEndTime.HasValue && request.EventEndTime.Value > request.EventTime)
+        {
+            eventEndTime = request.EventEndTime.Value;
+            computedDurationMinutes = Math.Max(15, (int)Math.Round((eventEndTime.ToTimeSpan() - request.EventTime.ToTimeSpan()).TotalMinutes));
+        }
+        else if (request.DurationMinutes.HasValue && request.DurationMinutes.Value > 0)
+        {
+            computedDurationMinutes = request.DurationMinutes.Value;
+            var rawEnd = request.EventTime.ToTimeSpan().Add(TimeSpan.FromMinutes(computedDurationMinutes));
+            if (rawEnd > new TimeSpan(23, 59, 0)) rawEnd = new TimeSpan(23, 59, 0);
+            eventEndTime = TimeOnly.FromTimeSpan(rawEnd);
+        }
+        else
+        {
+            var maxHours = serviceLines
+                .Where(s => s.Line.DurationHours.HasValue && s.Line.DurationHours.Value > 0)
+                .Select(s => s.Line.DurationHours!.Value)
+                .DefaultIfEmpty(1)
+                .Max();
+            computedDurationMinutes = maxHours * 60;
+            var rawEnd = request.EventTime.ToTimeSpan().Add(TimeSpan.FromMinutes(computedDurationMinutes));
+            if (rawEnd > new TimeSpan(23, 59, 0)) rawEnd = new TimeSpan(23, 59, 0);
+            eventEndTime = TimeOnly.FromTimeSpan(rawEnd);
+        }
 
-
-
-        if (totalAmount <= 0) totalAmount = 5000.00m; // reasonable fallback studio base rate if services unpriced
+        var totalAmount = serviceLines.Sum(s => s.Line.LineTotal);
+        if (totalAmount <= 0 && serviceLines.Count == 0) totalAmount = 5000.00m;
 
 
 
@@ -1603,30 +1647,102 @@ public class ConsultationNegotiationService : IConsultationNegotiationService
 
 
 
-        // 4. Verify the required staff are still free for the chosen date/time (active bookings and unexpired Pending Payment locks both block the slot)
+        // 4. Verify the required staff & equipment are still free for the combined window (Prep 2h + Event + Post 1h)
+        // Overlapping event times ARE allowed if different crews and equipment are assigned.
+        await ValidateEmployeesAvailableAsync(conn, null, request.EmployeeIds, request.EventDate, cancellationToken);
+
+        var newStartSpan = request.EventTime.ToTimeSpan();
+        var newEndSpan = eventEndTime.ToTimeSpan();
+        var newPrepStart = newStartSpan >= TimeSpan.FromHours(2) ? newStartSpan.Subtract(TimeSpan.FromHours(2)) : TimeSpan.Zero;
+        var newPostEnd = newEndSpan.Add(TimeSpan.FromHours(1));
+        if (newPostEnd > new TimeSpan(23, 59, 59)) newPostEnd = new TimeSpan(23, 59, 59);
+
         if (request.EmployeeIds.Count > 0)
         {
             var empParams = string.Join(",", request.EmployeeIds.Select((_, i) => $"@e{i}"));
             var conflictSql = $@"
-                SELECT TOP 1 ea.EventAppointmentID
+                SELECT ea.EventAppointmentID, ea.EventName, ea.EventTime, ea.EventEndTime, ISNULL(ea.DurationMinutes, 60) AS DurationMinutes
                 FROM dbo.EventAppointment ea
                 JOIN dbo.EventEmployee ee ON ee.EventAppointmentID = ea.EventAppointmentID
                 WHERE ee.EmployeeID IN ({empParams})
-                  AND ea.EventDate = @CDate AND ea.EventTime = @CTime
+                  AND ea.EventDate = @CDate
                   AND ea.EventStatus NOT IN ('Cancelled','Expired')
                   AND ea.EventAppointmentID <> @CEvtId
                   AND NOT EXISTS (SELECT 1 FROM dbo.BookingNegotiation bn
-                                  WHERE bn.EventAppointmentID = ea.EventAppointmentID AND bn.NegotiationID = @CNeg);";
+                                  WHERE bn.EventAppointmentID = ea.EventAppointmentID
+                                    AND (bn.NegotiationID = @CNeg OR bn.NegotiationStatus IN ('Deal_Lost','Cancelled')));";
             await using var conflictCmd = new SqlCommand(conflictSql, conn);
             for (var i = 0; i < request.EmployeeIds.Count; i++)
                 conflictCmd.Parameters.AddWithValue($"@e{i}", request.EmployeeIds[i]);
             conflictCmd.Parameters.AddWithValue("@CDate", request.EventDate.ToDateTime(TimeOnly.MinValue));
-            conflictCmd.Parameters.AddWithValue("@CTime", request.EventTime.ToTimeSpan());
             conflictCmd.Parameters.AddWithValue("@CEvtId", appointmentId);
             conflictCmd.Parameters.AddWithValue("@CNeg", (object?)request.NegotiationId ?? DBNull.Value);
-            var conflictId = await conflictCmd.ExecuteScalarAsync(cancellationToken);
-            if (conflictId != null)
-                throw new InvalidOperationException($"The selected staff are no longer available on {request.EventDate:yyyy-MM-dd} at {request.EventTime:HH:mm} (conflicts with {conflictId}). Please pick another time slot.");
+
+            await using var cReader = await conflictCmd.ExecuteReaderAsync(cancellationToken);
+            while (await cReader.ReadAsync(cancellationToken))
+            {
+                var exId = cReader.GetString(0);
+                var exName = cReader.IsDBNull(1) ? exId : cReader.GetString(1);
+                var exStart = cReader.GetFieldValue<TimeSpan>(2);
+                var exDuration = cReader.IsDBNull(4) ? 60 : Math.Max(15, cReader.GetInt32(4));
+                var exEnd = !cReader.IsDBNull(3) ? cReader.GetFieldValue<TimeSpan>(3) : exStart.Add(TimeSpan.FromMinutes(exDuration));
+                if (exEnd <= exStart) exEnd = exStart.Add(TimeSpan.FromMinutes(exDuration));
+
+                var exPrepStart = exStart >= TimeSpan.FromHours(2) ? exStart.Subtract(TimeSpan.FromHours(2)) : TimeSpan.Zero;
+                var exPostEnd = exEnd.Add(TimeSpan.FromHours(1));
+                if (exPostEnd > new TimeSpan(23, 59, 59)) exPostEnd = new TimeSpan(23, 59, 59);
+
+                if (newPrepStart < exPostEnd && exPrepStart < newPostEnd)
+                {
+                    throw new InvalidOperationException(
+                        $"Selected crew conflicts with '{exName}' ({exId}) on {request.EventDate:yyyy-MM-dd} including 2h prep & 1h post buffers. Please choose an available crew or adjust time.");
+                }
+            }
+            await cReader.CloseAsync();
+        }
+
+        if (request.EquipmentIds != null && request.EquipmentIds.Count > 0)
+        {
+            var eqParams = string.Join(",", request.EquipmentIds.Select((_, i) => $"@eqC{i}"));
+            var eqConflictSql = $@"
+                SELECT ea.EventAppointmentID, ea.EventName, ea.EventTime, ea.EventEndTime, ISNULL(ea.DurationMinutes, 60) AS DurationMinutes
+                FROM dbo.EventAppointment ea
+                JOIN dbo.EventEquipment eeq ON eeq.EventAppointmentID = ea.EventAppointmentID
+                WHERE eeq.EquipmentID IN ({eqParams})
+                  AND ea.EventDate = @CDate
+                  AND ea.EventStatus NOT IN ('Cancelled','Expired')
+                  AND ea.EventAppointmentID <> @CEvtId
+                  AND NOT EXISTS (SELECT 1 FROM dbo.BookingNegotiation bn
+                                  WHERE bn.EventAppointmentID = ea.EventAppointmentID
+                                    AND (bn.NegotiationID = @CNeg OR bn.NegotiationStatus IN ('Deal_Lost','Cancelled')));";
+            await using var eqConflictCmd = new SqlCommand(eqConflictSql, conn);
+            for (var i = 0; i < request.EquipmentIds.Count; i++)
+                eqConflictCmd.Parameters.AddWithValue($"@eqC{i}", request.EquipmentIds[i]);
+            eqConflictCmd.Parameters.AddWithValue("@CDate", request.EventDate.ToDateTime(TimeOnly.MinValue));
+            eqConflictCmd.Parameters.AddWithValue("@CEvtId", appointmentId);
+            eqConflictCmd.Parameters.AddWithValue("@CNeg", (object?)request.NegotiationId ?? DBNull.Value);
+
+            await using var eqReader = await eqConflictCmd.ExecuteReaderAsync(cancellationToken);
+            while (await eqReader.ReadAsync(cancellationToken))
+            {
+                var exId = eqReader.GetString(0);
+                var exName = eqReader.IsDBNull(1) ? exId : eqReader.GetString(1);
+                var exStart = eqReader.GetFieldValue<TimeSpan>(2);
+                var exDuration = eqReader.IsDBNull(4) ? 60 : Math.Max(15, eqReader.GetInt32(4));
+                var exEnd = !eqReader.IsDBNull(3) ? eqReader.GetFieldValue<TimeSpan>(3) : exStart.Add(TimeSpan.FromMinutes(exDuration));
+                if (exEnd <= exStart) exEnd = exStart.Add(TimeSpan.FromMinutes(exDuration));
+
+                var exPrepStart = exStart >= TimeSpan.FromHours(2) ? exStart.Subtract(TimeSpan.FromHours(2)) : TimeSpan.Zero;
+                var exPostEnd = exEnd.Add(TimeSpan.FromHours(1));
+                if (exPostEnd > new TimeSpan(23, 59, 59)) exPostEnd = new TimeSpan(23, 59, 59);
+
+                if (newPrepStart < exPostEnd && exPrepStart < newPostEnd)
+                {
+                    throw new InvalidOperationException(
+                        $"Selected equipment conflicts with '{exName}' ({exId}) on {request.EventDate:yyyy-MM-dd} within the 2h prep & 1h post buffer window.");
+                }
+            }
+            await eqReader.CloseAsync();
         }
 
         var qrGeneratedOrRefreshed = false;
@@ -1661,6 +1777,8 @@ public class ConsultationNegotiationService : IConsultationNegotiationService
                         EventDescription = @Desc,
                         EventDate = @Date,
                         EventTime = @Time,
+                        EventEndTime = @EndTime,
+                        DurationMinutes = @DurationMinutes,
                         TotalAmount = @Total,
                         DownpaymentAmount = @Downpayment,
                         FinalBalanceAmount = @FinalBal
@@ -1672,6 +1790,8 @@ public class ConsultationNegotiationService : IConsultationNegotiationService
                 uCmd.Parameters.AddWithValue("@Desc", (object?)request.EventDescription ?? DBNull.Value);
                 uCmd.Parameters.AddWithValue("@Date", request.EventDate.ToDateTime(TimeOnly.MinValue));
                 uCmd.Parameters.AddWithValue("@Time", request.EventTime.ToTimeSpan());
+                uCmd.Parameters.AddWithValue("@EndTime", eventEndTime.ToTimeSpan());
+                uCmd.Parameters.AddWithValue("@DurationMinutes", computedDurationMinutes);
                 uCmd.Parameters.AddWithValue("@Total", totalAmount);
                 uCmd.Parameters.AddWithValue("@Downpayment", downpaymentAmount);
                 uCmd.Parameters.AddWithValue("@FinalBal", finalBalanceAmount);
@@ -1697,13 +1817,13 @@ public class ConsultationNegotiationService : IConsultationNegotiationService
                 const string insertEvtSql = @"
                     INSERT INTO dbo.EventAppointment (
                         EventAppointmentID, CustomerID, EventName, EventDescription,
-                        EventDate, EventTime, EventStatus, TotalAmount, DownpaymentAmount,
+                        EventDate, EventTime, EventEndTime, DurationMinutes, EventStatus, TotalAmount, DownpaymentAmount,
                         FinalBalanceAmount, DownpaymentStatus, HoldExpiresAt, LockExpiresAt,
                         XenditExternalId, CreatedAt
                     )
                     VALUES (
                         @EvtId, @CustId, @Name, @Desc,
-                        @Date, @Time, 'Pending Payment', @Total, @Downpayment,
+                        @Date, @Time, @EndTime, @DurationMinutes, 'Pending Payment', @Total, @Downpayment,
                         @FinalBal, 'Pending', @ExpiresAt, @ExpiresAt,
                         @ExternalId, SYSUTCDATETIME()
                     );";
@@ -1716,6 +1836,8 @@ public class ConsultationNegotiationService : IConsultationNegotiationService
                     cmd.Parameters.AddWithValue("@Desc", (object?)request.EventDescription ?? DBNull.Value);
                     cmd.Parameters.AddWithValue("@Date", request.EventDate.ToDateTime(TimeOnly.MinValue));
                     cmd.Parameters.AddWithValue("@Time", request.EventTime.ToTimeSpan());
+                    cmd.Parameters.AddWithValue("@EndTime", eventEndTime.ToTimeSpan());
+                    cmd.Parameters.AddWithValue("@DurationMinutes", computedDurationMinutes);
                     cmd.Parameters.AddWithValue("@Total", totalAmount);
                     cmd.Parameters.AddWithValue("@Downpayment", downpaymentAmount);
                     cmd.Parameters.AddWithValue("@FinalBal", finalBalanceAmount);
@@ -1736,7 +1858,7 @@ public class ConsultationNegotiationService : IConsultationNegotiationService
                 qrGeneratedOrRefreshed = true;
             }
 
-            // Persist selected service line items
+            // Persist selected service line items across Services, ComboPackage, and AdditionalServices
             if (serviceLines.Count > 0)
             {
                 await using (var delLineCmd = new SqlCommand("DELETE FROM dbo.EventLineItem WHERE EventAppointmentID = @EvtId;", conn, tx))
@@ -1747,20 +1869,30 @@ public class ConsultationNegotiationService : IConsultationNegotiationService
 
                 for (var idx = 0; idx < serviceLines.Count; idx++)
                 {
-                    var svcId = serviceLines[idx].ServicesId;
+                    var (line, kind) = serviceLines[idx];
                     var lineId = $"ELI-{appointmentId}-{idx + 1:D2}";
                     if (lineId.Length > 30) lineId = $"ELI-{Guid.NewGuid():N}"[..24];
 
                     const string insLineSql = @"
-                        IF EXISTS (SELECT 1 FROM dbo.Services WHERE ServicesID = @SvcId)
-                        BEGIN
-                            INSERT INTO dbo.EventLineItem (EventLineItemID, EventAppointmentID, ServicesID)
-                            VALUES (@LineId, @EvtId, @SvcId);
-                        END;";
+                        INSERT INTO dbo.EventLineItem (
+                            EventLineItemID, EventAppointmentID, ServicesID, AdditionalServicesID, ComboPackageID,
+                            Quantity, UnitPrice, LineTotal, RateType, DurationHours
+                        )
+                        VALUES (
+                            @LineId, @EvtId, @SvcId, @AddId, @PkgId,
+                            @Qty, @UnitPrice, @LineTotal, @RateType, @DurHours
+                        );";
                     await using var lCmd = new SqlCommand(insLineSql, conn, tx);
                     lCmd.Parameters.AddWithValue("@LineId", lineId);
                     lCmd.Parameters.AddWithValue("@EvtId", appointmentId);
-                    lCmd.Parameters.AddWithValue("@SvcId", svcId);
+                    lCmd.Parameters.AddWithValue("@SvcId", kind == "Main" ? line.ServicesId : DBNull.Value);
+                    lCmd.Parameters.AddWithValue("@AddId", kind == "Additional" ? line.ServicesId : DBNull.Value);
+                    lCmd.Parameters.AddWithValue("@PkgId", kind == "Combo" ? line.ServicesId : DBNull.Value);
+                    lCmd.Parameters.AddWithValue("@Qty", line.Quantity);
+                    lCmd.Parameters.AddWithValue("@UnitPrice", line.UnitPrice);
+                    lCmd.Parameters.AddWithValue("@LineTotal", line.LineTotal);
+                    lCmd.Parameters.AddWithValue("@RateType", (object?)line.RateType ?? DBNull.Value);
+                    lCmd.Parameters.AddWithValue("@DurHours", (object?)line.DurationHours ?? DBNull.Value);
                     await lCmd.ExecuteNonQueryAsync(cancellationToken);
                 }
             }
@@ -1890,7 +2022,7 @@ public class ConsultationNegotiationService : IConsultationNegotiationService
                     downpaymentAmount,
                     holdExpiresAt,
                     $"{ResolvePortalBaseUrl()}/checkout/confirm/{Uri.EscapeDataString(appointmentId)}",
-                    "QR Ph / E-Wallet"
+                    string.IsNullOrWhiteSpace(request.PaymentMethod) ? "QR Ph / E-Wallet" : request.PaymentMethod
                 );
 
                 if (!string.IsNullOrWhiteSpace(custEmail))
@@ -1920,6 +2052,8 @@ public class ConsultationNegotiationService : IConsultationNegotiationService
         string appointmentId,
         CancellationToken cancellationToken = default)
     {
+        await EnsureGranularEventColumnsAsync(conn, cancellationToken);
+
         const string sql = @"
             SELECT 
                 ea.EventAppointmentID,
@@ -1947,7 +2081,9 @@ public class ConsultationNegotiationService : IConsultationNegotiationService
                 ea.FinalPaymentStatus,
                 ea.FinalQrString,
                 ea.FinalPaymentReferenceId,
-                ea.FinalPaymentPaidAt
+                ea.FinalPaymentPaidAt,
+                ea.EventEndTime,
+                ISNULL(ea.DurationMinutes, 60) AS DurationMinutes
             FROM dbo.EventAppointment ea
             LEFT JOIN dbo.Customer c ON c.CustomerID = ea.CustomerID
             LEFT JOIN dbo.BookingNegotiation bn ON bn.EventAppointmentID = ea.EventAppointmentID
@@ -1965,7 +2101,13 @@ public class ConsultationNegotiationService : IConsultationNegotiationService
 
             SELECT eq.EquipmentID, 
                    ISNULL(e.EquipmentName, eq.EquipmentID) AS EquipmentName,
-                   COALESCE(et.EquipmentTypeName, e.EquipmentTypeID, 'Equipment') AS EquipmentType
+                   COALESCE(et.EquipmentTypeName, e.EquipmentTypeID, 'Equipment') AS EquipmentType,
+                   eq.EventEquipmentID,
+                   ISNULL(eq.IsTaken, 0) AS IsTaken,
+                   eq.TakenAt,
+                   eq.TakenByEmployeeID,
+                   ISNULL(eq.IsAdditionalRequest, 0) AS IsAdditionalRequest,
+                   eq.RequestedNotes
             FROM dbo.EventEquipment eq
             LEFT JOIN dbo.Equipment e ON e.EquipmentID = eq.EquipmentID
             LEFT JOIN dbo.EquipmentType et ON et.EquipmentTypeID = e.EquipmentTypeID
@@ -1978,7 +2120,21 @@ public class ConsultationNegotiationService : IConsultationNegotiationService
             SELECT PaymentTransactionID, EventAppointmentID, PaymentType, PaymentMethod, Amount, Status, ExternalReference, ReceivedByEmployeeID, CreatedAt
             FROM dbo.PaymentTransactions
             WHERE EventAppointmentID = @EvtId
-            ORDER BY CreatedAt DESC;";
+            ORDER BY CreatedAt DESC;
+
+            SELECT COALESCE(eli.ServicesID, eli.ComboPackageID, eli.AdditionalServicesID) AS ServicesID,
+                   COALESCE(s.ServiceName, cp.ComboPackageName, ads.AdditionalServiceName, eli.EventLineItemID) AS ServiceName,
+                   CASE WHEN ISNULL(eli.LineTotal, 0) > 0 THEN eli.LineTotal ELSE COALESCE(s.ServicePrice, cp.ComboPackagePrice, ads.ServicePrice, 0) END AS ServicePrice,
+                   ISNULL(eli.Quantity, 1) AS Quantity,
+                   CASE WHEN ISNULL(eli.UnitPrice, 0) > 0 THEN eli.UnitPrice ELSE COALESCE(s.ServicePrice, cp.ComboPackagePrice, ads.ServicePrice, 0) END AS UnitPrice,
+                   CASE WHEN ISNULL(eli.LineTotal, 0) > 0 THEN eli.LineTotal ELSE COALESCE(s.ServicePrice, cp.ComboPackagePrice, ads.ServicePrice, 0) * ISNULL(eli.Quantity, 1) END AS LineTotal,
+                   COALESCE(NULLIF(eli.RateType, ''), s.RateType, N'Per Session') AS RateType,
+                   eli.DurationHours
+            FROM dbo.EventLineItem eli
+            LEFT JOIN dbo.Services s ON s.ServicesID = eli.ServicesID
+            LEFT JOIN dbo.ComboPackage cp ON cp.ComboPackageID = eli.ComboPackageID
+            LEFT JOIN dbo.AdditionalServices ads ON ads.AdditionalServicesID = eli.AdditionalServicesID
+            WHERE eli.EventAppointmentID = @EvtId;";
 
         await using var cmd = new SqlCommand(sql, conn);
         cmd.Parameters.AddWithValue("@EvtId", appointmentId);
@@ -2025,7 +2181,11 @@ public class ConsultationNegotiationService : IConsultationNegotiationService
                 FinalPaymentStatus = reader.IsDBNull(22) ? null : reader.GetString(22),
                 FinalQrString = reader.IsDBNull(23) ? null : reader.GetString(23),
                 FinalPaymentReferenceId = reader.IsDBNull(24) ? null : reader.GetString(24),
-                FinalPaymentPaidAt = reader.IsDBNull(25) ? null : reader.GetDateTime(25)
+                FinalPaymentPaidAt = reader.IsDBNull(25) ? null : reader.GetDateTime(25),
+                EventEndTime = reader.FieldCount > 26 && !reader.IsDBNull(26) ? TimeOnly.FromTimeSpan(reader.GetFieldValue<TimeSpan>(26)) : null,
+                DurationMinutes = reader.FieldCount > 27 && !reader.IsDBNull(27) ? reader.GetInt32(27) : 60,
+                PrepBufferMinutes = 120,
+                PostBufferMinutes = 60
             };
         }
 
@@ -2055,7 +2215,13 @@ public class ConsultationNegotiationService : IConsultationNegotiationService
                 {
                     EquipmentId = reader.GetString(0),
                     EquipmentName = reader.GetString(1),
-                    EquipmentType = reader.GetString(2)
+                    EquipmentType = reader.GetString(2),
+                    EventEquipmentId = reader.FieldCount > 3 && !reader.IsDBNull(3) ? reader.GetInt32(3) : 0,
+                    IsTaken = reader.FieldCount > 4 && !reader.IsDBNull(4) && reader.GetBoolean(4),
+                    TakenAt = reader.FieldCount > 5 && !reader.IsDBNull(5) ? reader.GetDateTime(5) : null,
+                    TakenByEmployeeId = reader.FieldCount > 6 && !reader.IsDBNull(6) ? reader.GetString(6) : null,
+                    IsAdditionalRequest = reader.FieldCount > 7 && !reader.IsDBNull(7) && reader.GetBoolean(7),
+                    RequestedNotes = reader.FieldCount > 8 && !reader.IsDBNull(8) ? reader.GetString(8) : null
                 });
             }
         }
@@ -2095,6 +2261,25 @@ public class ConsultationNegotiationService : IConsultationNegotiationService
                     ExternalReference = reader.IsDBNull(6) ? null : reader.GetString(6),
                     ReceivedByEmployeeId = reader.IsDBNull(7) ? null : reader.GetString(7),
                     CreatedAt = reader.GetDateTime(8)
+                });
+            }
+        }
+
+        // Result set 6: Selected Services
+        if (await reader.NextResultAsync(cancellationToken))
+        {
+            while (await reader.ReadAsync(cancellationToken))
+            {
+                dto.SelectedServices.Add(new EventServiceLineDto
+                {
+                    ServicesId = reader.IsDBNull(0) ? string.Empty : reader.GetString(0),
+                    ServiceName = reader.IsDBNull(1) ? string.Empty : reader.GetString(1),
+                    ServicePrice = reader.IsDBNull(2) ? 0m : reader.GetDecimal(2),
+                    Quantity = reader.IsDBNull(3) ? 1 : reader.GetInt32(3),
+                    UnitPrice = reader.IsDBNull(4) ? 0m : reader.GetDecimal(4),
+                    LineTotal = reader.IsDBNull(5) ? 0m : reader.GetDecimal(5),
+                    RateType = reader.IsDBNull(6) ? "Per Session" : reader.GetString(6),
+                    DurationHours = reader.IsDBNull(7) ? null : reader.GetInt32(7)
                 });
             }
         }
@@ -4120,6 +4305,16 @@ var invId = invoiceId ?? appt.XenditInvoiceId ?? $"inv_mock_{appointmentId}";
                   OR CHARINDEX(DATENAME(dw, @EvtDate), ISNULL(e.DaysOff, 'Sunday')) = 0
               )
               AND (
+                  @EvtDate IS NULL
+                  OR OBJECT_ID(N'dbo.EmployeeLeaves', N'U') IS NULL
+                  OR NOT EXISTS (
+                      SELECT 1 FROM dbo.EmployeeLeaves el
+                      WHERE el.EmployeeStudioId = e.EmployeeID
+                        AND el.Status = 'Approved'
+                        AND @EvtDate BETWEEN el.StartDate AND el.EndDate
+                  )
+              )
+              AND (
                   @EvtTime IS NULL
                   OR NOT EXISTS (
                       SELECT 1 FROM dbo.BookingNegotiation bn2
@@ -4207,6 +4402,17 @@ var invId = invoiceId ?? appt.XenditInvoiceId ?? $"inv_mock_{appointmentId}";
 
 
         {
+            if (request.EmployeeIds != null && request.EmployeeIds.Count > 0)
+            {
+                const string getDateSql = "SELECT EventDate FROM dbo.EventAppointment WHERE EventAppointmentID = @EvtId;";
+                await using var dCmd = new SqlCommand(getDateSql, conn, tx);
+                dCmd.Parameters.AddWithValue("@EvtId", appointmentId);
+                var dateObj = await dCmd.ExecuteScalarAsync(cancellationToken);
+                if (dateObj is DateTime evtDateTime)
+                {
+                    await ValidateEmployeesAvailableAsync(conn, tx, request.EmployeeIds, DateOnly.FromDateTime(evtDateTime), cancellationToken);
+                }
+            }
 
 
 
@@ -4536,6 +4742,27 @@ var invId = invoiceId ?? appt.XenditInvoiceId ?? $"inv_mock_{appointmentId}";
                 throw new InvalidOperationException($"Cannot reschedule: The Office Clerk has a scheduled Day Off on {newDate:dddd, MMMM dd, yyyy}.");
             }
 
+            // Check if designated clerk has an approved leave covering newDate
+            await using var lvCmd = conn.CreateCommand();
+            lvCmd.CommandText = @"
+                IF OBJECT_ID(N'dbo.EmployeeLeaves', N'U') IS NOT NULL
+                BEGIN
+                    SELECT TOP 1 el.LeaveType
+                    FROM dbo.BookingNegotiation bn
+                    JOIN dbo.EmployeeLeaves el ON bn.EmployeeID = el.EmployeeStudioId
+                    WHERE (bn.EventAppointmentID = @EvtId OR bn.NegotiationID = @NegId)
+                      AND el.Status = 'Approved'
+                      AND @NewDate BETWEEN el.StartDate AND el.EndDate;
+                END";
+            lvCmd.Parameters.AddWithValue("@EvtId", appointmentId);
+            lvCmd.Parameters.AddWithValue("@NegId", (object?)appt.NegotiationId ?? DBNull.Value);
+            lvCmd.Parameters.AddWithValue("@NewDate", newDate.ToDateTime(TimeOnly.MinValue));
+            var leaveTypeObj = await lvCmd.ExecuteScalarAsync(cancellationToken);
+            if (leaveTypeObj is string leaveType && !string.IsNullOrWhiteSpace(leaveType))
+            {
+                throw new InvalidOperationException($"Cannot reschedule: The Office Clerk is on approved {leaveType} on {newDate:dddd, MMMM dd, yyyy}.");
+            }
+
             await using var cmdResched = conn.CreateCommand();
             cmdResched.CommandText = @"
                 IF OBJECT_ID(N'dbo.EventAppointment', N'U') IS NOT NULL
@@ -4593,6 +4820,7 @@ var invId = invoiceId ?? appt.XenditInvoiceId ?? $"inv_mock_{appointmentId}";
         CancellationToken cancellationToken = default)
     {
         await using var conn = await OpenConnectionAsync(cancellationToken);
+        await AutoTriggerPostEventsOnConnectionAsync(conn, cancellationToken);
 
         const string sql = @"
             SELECT DISTINCT
@@ -4611,13 +4839,19 @@ var invId = invoiceId ?? appt.XenditInvoiceId ?? $"inv_mock_{appointmentId}";
                    OR NULLIF(ea.FinalPaymentReferenceId, '') IS NOT NULL)
             ORDER BY
                 CASE ea.EventStatus
+                    WHEN 'Ongoing' THEN 1
                     WHEN 'On Going' THEN 1
-                    WHEN 'Preparing' THEN 2
-                    WHEN 'Post Event' THEN 3
-                    WHEN 'Pending Payment' THEN 4
-                    WHEN 'Pending Verification' THEN 5
-                    WHEN 'Confirmed' THEN 6
-                    ELSE 7
+                    WHEN 'Dispatch' THEN 2
+                    WHEN 'Preparation' THEN 3
+                    WHEN 'Preparing' THEN 3
+                    WHEN 'Post Event' THEN 4
+                    WHEN 'Pending Payment' THEN 5
+                    WHEN 'Pending Verification' THEN 6
+                    WHEN 'Paid Cash Pending Verification' THEN 6
+                    WHEN 'Confirmed' THEN 7
+                    WHEN 'Complete' THEN 8
+                    WHEN 'Shot' THEN 8
+                    ELSE 9
                 END,
                 ea.EventDate ASC,
                 ea.EventTime ASC;";
@@ -4639,6 +4873,7 @@ var invId = invoiceId ?? appt.XenditInvoiceId ?? $"inv_mock_{appointmentId}";
             var detail = await GetAppointmentByIdOnConnectionAsync(conn, apptId, cancellationToken);
             if (detail == null) continue;
 
+            var triggerAt = detail.EventDate.ToDateTime(detail.EventTime).AddHours(1);
             result.Add(new TeamLeaderEventDto
             {
                 EventAppointmentId = detail.EventAppointmentId,
@@ -4673,7 +4908,9 @@ var invId = invoiceId ?? appt.XenditInvoiceId ?? $"inv_mock_{appointmentId}";
                 OvertimeCharges = detail.OvertimeCharges,
                 Transactions = detail.Transactions,
                 CreatedAt = detail.CreatedAt,
-                IsTeamLeader = true
+                IsTeamLeader = true,
+                PostEventTriggerAt = triggerAt,
+                IsPostEventAutoTriggered = string.Equals(detail.EventStatus, "Post Event", StringComparison.OrdinalIgnoreCase)
             });
         }
 
@@ -4688,11 +4925,15 @@ var invId = invoiceId ?? appt.XenditInvoiceId ?? $"inv_mock_{appointmentId}";
         var normalized = (request.Status ?? string.Empty).Trim() switch
         {
             var s when s.Equals("Confirmed", StringComparison.OrdinalIgnoreCase) => "Confirmed",
+            var s when s.Equals("Preparation", StringComparison.OrdinalIgnoreCase) => "Preparation",
             var s when s.Equals("Preparing", StringComparison.OrdinalIgnoreCase) => "Preparing",
-            var s when s.Equals("On Going", StringComparison.OrdinalIgnoreCase) || s.Equals("OnGoing", StringComparison.OrdinalIgnoreCase) => "On Going",
+            var s when s.Equals("Dispatch", StringComparison.OrdinalIgnoreCase) => "Dispatch",
+            var s when s.Equals("Ongoing", StringComparison.OrdinalIgnoreCase) => "Ongoing",
+            var s when s.Equals("On Going", StringComparison.OrdinalIgnoreCase) => "On Going",
             var s when s.Equals("Post Event", StringComparison.OrdinalIgnoreCase) || s.Equals("PostEvent", StringComparison.OrdinalIgnoreCase) => "Post Event",
             var s when s.Equals("Pending Payment", StringComparison.OrdinalIgnoreCase) || s.Equals("PendingPayment", StringComparison.OrdinalIgnoreCase) => "Pending Payment",
-            _ => throw new ArgumentException($"Unsupported Team Leader event stage: '{request.Status}'. Allowed stages: Preparing, On Going, Post Event, Pending Payment.")
+            var s when s.Equals("Complete", StringComparison.OrdinalIgnoreCase) => "Complete",
+            _ => throw new ArgumentException($"Unsupported Team Leader event stage: '{request.Status}'. Allowed stages: Preparation, Dispatch, Ongoing, Post Event, Pending Payment.")
         };
 
         await using var conn = await OpenConnectionAsync(cancellationToken);
@@ -4790,6 +5031,571 @@ var invId = invoiceId ?? appt.XenditInvoiceId ?? $"inv_mock_{appointmentId}";
             body,
             isHtml: true,
             cancellationToken);
+    }
+
+    private static async Task ValidateEmployeesAvailableAsync(
+        SqlConnection conn,
+        SqlTransaction? tx,
+        IEnumerable<string>? employeeIds,
+        DateOnly eventDate,
+        CancellationToken cancellationToken)
+    {
+        var ids = employeeIds?
+            .Where(id => !string.IsNullOrWhiteSpace(id))
+            .Select(id => id.Trim())
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList();
+
+        if (ids == null || ids.Count == 0)
+            return;
+
+        var empParams = string.Join(",", ids.Select((_, i) => $"@vEmp{i}"));
+        var eventDateValue = eventDate.ToDateTime(TimeOnly.MinValue);
+
+        // 1. Check approved leaves covering eventDate
+        var leaveSql = $@"
+            IF OBJECT_ID(N'dbo.EmployeeLeaves', N'U') IS NOT NULL
+            BEGIN
+                SELECT TOP 1
+                    el.EmployeeStudioId,
+                    COALESCE(NULLIF(el.EmployeeName, ''), LTRIM(RTRIM(ISNULL(e.EmployeeFirstName, '') + ' ' + ISNULL(e.EmployeeLastName, ''))), el.EmployeeStudioId) AS EmpName,
+                    el.LeaveType,
+                    el.StartDate,
+                    el.EndDate
+                FROM dbo.EmployeeLeaves el
+                LEFT JOIN dbo.Employees e ON e.EmployeeID = el.EmployeeStudioId
+                WHERE el.EmployeeStudioId IN ({empParams})
+                  AND el.Status = 'Approved'
+                  AND @VDate BETWEEN el.StartDate AND el.EndDate;
+            END";
+
+        await using (var lvCmd = new SqlCommand(leaveSql, conn, tx))
+        {
+            for (var i = 0; i < ids.Count; i++)
+                lvCmd.Parameters.AddWithValue($"@vEmp{i}", ids[i]);
+            lvCmd.Parameters.AddWithValue("@VDate", eventDateValue);
+
+            await using var lvReader = await lvCmd.ExecuteReaderAsync(cancellationToken);
+            if (await lvReader.ReadAsync(cancellationToken))
+            {
+                var empId = lvReader.GetString(0);
+                var empName = lvReader.IsDBNull(1) ? empId : lvReader.GetString(1);
+                var leaveType = lvReader.IsDBNull(2) ? "Leave" : lvReader.GetString(2);
+                var start = DateOnly.FromDateTime(lvReader.GetDateTime(3));
+                var end = DateOnly.FromDateTime(lvReader.GetDateTime(4));
+                throw new InvalidOperationException(
+                    $"Cannot assign {empName} ({empId}): Employee is on approved {leaveType} ({start:MMM d, yyyy} - {end:MMM d, yyyy}).");
+            }
+        }
+
+        // 2. Check scheduled DaysOff
+        var dayOffSql = $@"
+            IF COL_LENGTH(N'dbo.Employees', N'DaysOff') IS NOT NULL
+            BEGIN
+                SELECT TOP 1
+                    e.EmployeeID,
+                    COALESCE(NULLIF(LTRIM(RTRIM(ISNULL(e.EmployeeFirstName, '') + ' ' + ISNULL(e.EmployeeLastName, ''))), ''), e.EmployeeID) AS EmpName,
+                    ISNULL(e.DaysOff, 'Sunday') AS DaysOff
+                FROM dbo.Employees e
+                WHERE e.EmployeeID IN ({empParams})
+                  AND CHARINDEX(DATENAME(dw, @VDate), ISNULL(e.DaysOff, 'Sunday')) > 0;
+            END";
+
+        await using (var doCmd = new SqlCommand(dayOffSql, conn, tx))
+        {
+            for (var i = 0; i < ids.Count; i++)
+                doCmd.Parameters.AddWithValue($"@vEmp{i}", ids[i]);
+            doCmd.Parameters.AddWithValue("@VDate", eventDateValue);
+
+            await using var doReader = await doCmd.ExecuteReaderAsync(cancellationToken);
+            if (await doReader.ReadAsync(cancellationToken))
+            {
+                var empId = doReader.GetString(0);
+                var empName = doReader.IsDBNull(1) ? empId : doReader.GetString(1);
+                throw new InvalidOperationException(
+                    $"Cannot assign {empName} ({empId}): {eventDate:dddd, MMM d, yyyy} is their scheduled Day Off.");
+            }
+        }
+    }
+
+    public async Task<bool> IsTeamLeaderForEventAsync(
+        string appointmentId,
+        string employeeId,
+        CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrWhiteSpace(appointmentId) || string.IsNullOrWhiteSpace(employeeId))
+            return false;
+
+        await using var conn = await OpenConnectionAsync(cancellationToken);
+        const string sql = @"
+            SELECT COUNT(1)
+            FROM dbo.EventEmployee
+            WHERE EventAppointmentID = @EvtId
+              AND EmployeeID = @EmpId
+              AND ISNULL(IsTeamLeader, 0) = 1;";
+        await using var cmd = new SqlCommand(sql, conn);
+        cmd.Parameters.AddWithValue("@EvtId", appointmentId);
+        cmd.Parameters.AddWithValue("@EmpId", employeeId);
+        var count = Convert.ToInt32(await cmd.ExecuteScalarAsync(cancellationToken) ?? 0);
+        return count > 0;
+    }
+
+    public async Task<int> AutoTriggerPostEventsAsync(CancellationToken cancellationToken = default)
+    {
+        await using var conn = await OpenConnectionAsync(cancellationToken);
+        return await AutoTriggerPostEventsOnConnectionAsync(conn, cancellationToken);
+    }
+
+    private static async Task<int> AutoTriggerPostEventsOnConnectionAsync(SqlConnection conn, CancellationToken cancellationToken)
+    {
+        try
+        {
+            const string sql = @"
+                DECLARE @PhtNow datetime2 = DATEADD(HOUR, 8, SYSUTCDATETIME());
+                DECLARE @Triggered TABLE (EventAppointmentID nvarchar(30));
+
+                UPDATE dbo.EventAppointment
+                SET EventStatus = 'Post Event'
+                OUTPUT inserted.EventAppointmentID INTO @Triggered
+                WHERE EventStatus IN ('Ongoing', 'On Going')
+                  AND DATEADD(HOUR, 1, DATEADD(SECOND, DATEDIFF(SECOND, CAST('00:00:00' AS time), EventTime), CAST(EventDate AS datetime2))) <= @PhtNow;
+
+                IF OBJECT_ID(N'dbo.HistoryLog', N'U') IS NOT NULL
+                    INSERT INTO dbo.HistoryLog (ActionType, EntityName, EntityID, ActionDetails, EventAppointmentID, ChangedByType, LoggedAt)
+                    SELECT 'STATUS_CHANGE', 'EventAppointment', t.EventAppointmentID,
+                           'Automatically transitioned event to Post Event 1 hour after scheduled start.',
+                           t.EventAppointmentID, 'System', SYSUTCDATETIME()
+                    FROM @Triggered t;
+
+                SELECT COUNT(1) FROM @Triggered;";
+
+            await using var cmd = new SqlCommand(sql, conn);
+            return Convert.ToInt32(await cmd.ExecuteScalarAsync(cancellationToken) ?? 0);
+        }
+        catch
+        {
+            return 0;
+        }
+    }
+
+    public async Task<EventAppointmentDto> MarkEquipmentTakenAsync(
+        string appointmentId,
+        MarkEquipmentTakenRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        await using var conn = await OpenConnectionAsync(cancellationToken);
+        await using var tx = (SqlTransaction)await conn.BeginTransactionAsync(cancellationToken);
+        try
+        {
+            var existing = await GetAppointmentByIdOnConnectionAsync(conn, appointmentId, cancellationToken);
+            if (existing == null)
+                throw new KeyNotFoundException($"Event appointment {appointmentId} not found.");
+
+            var markIds = request.EventEquipmentIds?.Where(id => id > 0).Distinct().ToList() ?? new List<int>();
+            if (markIds.Count > 0)
+            {
+                var paramNames = markIds.Select((_, idx) => $"@ee{idx}").ToArray();
+                var updItemsSql = $@"
+                    UPDATE dbo.EventEquipment
+                    SET IsTaken = @Taken,
+                        TakenAt = CASE WHEN @Taken = 1 THEN SYSUTCDATETIME() ELSE NULL END,
+                        TakenByEmployeeID = CASE WHEN @Taken = 1 THEN NULLIF(@EmpId, '') ELSE NULL END
+                    WHERE EventAppointmentID = @EvtId
+                      AND EventEquipmentID IN ({string.Join(",", paramNames)});";
+                await using var cmd = new SqlCommand(updItemsSql, conn, tx);
+                cmd.Parameters.AddWithValue("@Taken", request.IsTaken ? 1 : 0);
+                cmd.Parameters.AddWithValue("@EmpId", request.EmployeeId ?? string.Empty);
+                cmd.Parameters.AddWithValue("@EvtId", appointmentId);
+                for (int i = 0; i < markIds.Count; i++)
+                    cmd.Parameters.AddWithValue(paramNames[i], markIds[i]);
+                await cmd.ExecuteNonQueryAsync(cancellationToken);
+            }
+            else
+            {
+                const string updAllSql = @"
+                    UPDATE dbo.EventEquipment
+                    SET IsTaken = @Taken,
+                        TakenAt = CASE WHEN @Taken = 1 THEN SYSUTCDATETIME() ELSE NULL END,
+                        TakenByEmployeeID = CASE WHEN @Taken = 1 THEN NULLIF(@EmpId, '') ELSE NULL END
+                    WHERE EventAppointmentID = @EvtId;";
+                await using var cmd = new SqlCommand(updAllSql, conn, tx);
+                cmd.Parameters.AddWithValue("@Taken", request.IsTaken ? 1 : 0);
+                cmd.Parameters.AddWithValue("@EmpId", request.EmployeeId ?? string.Empty);
+                cmd.Parameters.AddWithValue("@EvtId", appointmentId);
+                await cmd.ExecuteNonQueryAsync(cancellationToken);
+            }
+
+            if (request.TransitionToDispatch && request.IsTaken)
+            {
+                const string checkUntakenSql = @"
+                    SELECT COUNT(1)
+                    FROM dbo.EventEquipment
+                    WHERE EventAppointmentID = @EvtId
+                      AND ISNULL(IsTaken, 0) = 0;";
+                await using var checkCmd = new SqlCommand(checkUntakenSql, conn, tx);
+                checkCmd.Parameters.AddWithValue("@EvtId", appointmentId);
+                var remainingUntaken = Convert.ToInt32(await checkCmd.ExecuteScalarAsync(cancellationToken) ?? 0);
+
+                if (remainingUntaken == 0)
+                {
+                    const string dispatchSql = @"
+                        UPDATE dbo.EventAppointment
+                        SET EventStatus = 'Dispatch'
+                        WHERE EventAppointmentID = @EvtId;
+
+                        IF OBJECT_ID(N'dbo.HistoryLog', N'U') IS NOT NULL
+                        BEGIN
+                            INSERT INTO dbo.HistoryLog (
+                                ActionType, EntityName, EntityID, ActionDetails,
+                                EventAppointmentID, ChangedByType, ChangedByEmployeeID, LoggedAt
+                            )
+                            VALUES (
+                                'STATUS_CHANGE', 'EventAppointment', @EvtId,
+                                'Equipment checklist marked taken by Team Leader. Event status updated to Dispatch.',
+                                @EvtId, 'Employee', NULLIF(@EmpId, ''), SYSUTCDATETIME()
+                            );
+                        END;";
+                    await using var dCmd = new SqlCommand(dispatchSql, conn, tx);
+                    dCmd.Parameters.AddWithValue("@EvtId", appointmentId);
+                    dCmd.Parameters.AddWithValue("@EmpId", request.EmployeeId ?? string.Empty);
+                    await dCmd.ExecuteNonQueryAsync(cancellationToken);
+                }
+            }
+
+            await tx.CommitAsync(cancellationToken);
+        }
+        catch
+        {
+            await tx.RollbackAsync(cancellationToken);
+            throw;
+        }
+
+        return (await GetAppointmentByIdOnConnectionAsync(conn, appointmentId, cancellationToken))!;
+    }
+
+    public async Task<EventAppointmentDto> AddAdditionalEquipmentToEventAsync(
+        string appointmentId,
+        AddEventEquipmentRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrWhiteSpace(request.EquipmentId))
+            throw new ArgumentException("EquipmentId is required.");
+
+        await using var conn = await OpenConnectionAsync(cancellationToken);
+        await using var tx = (SqlTransaction)await conn.BeginTransactionAsync(cancellationToken);
+        try
+        {
+            const string existsApptSql = "SELECT COUNT(1) FROM dbo.EventAppointment WHERE EventAppointmentID = @EvtId;";
+            await using (var aCmd = new SqlCommand(existsApptSql, conn, tx))
+            {
+                aCmd.Parameters.AddWithValue("@EvtId", appointmentId);
+                if (Convert.ToInt32(await aCmd.ExecuteScalarAsync(cancellationToken) ?? 0) == 0)
+                    throw new KeyNotFoundException($"Event appointment {appointmentId} not found.");
+            }
+
+            const string eqInfoSql = "SELECT EquipmentName, EquipmentStatus FROM dbo.Equipment WHERE EquipmentID = @EqId;";
+            string? eqName = null;
+            string? eqStatus = null;
+            await using (var eCmd = new SqlCommand(eqInfoSql, conn, tx))
+            {
+                eCmd.Parameters.AddWithValue("@EqId", request.EquipmentId.Trim());
+                await using var r = await eCmd.ExecuteReaderAsync(cancellationToken);
+                if (await r.ReadAsync(cancellationToken))
+                {
+                    eqName = r.GetString(0);
+                    eqStatus = r.IsDBNull(1) ? "Available" : r.GetString(1);
+                }
+            }
+
+            if (eqName == null)
+                throw new KeyNotFoundException($"Equipment '{request.EquipmentId}' not found.");
+            if (string.Equals(eqStatus, "Maintenance", StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(eqStatus, "Retired", StringComparison.OrdinalIgnoreCase))
+                throw new InvalidOperationException($"Equipment '{eqName}' is currently '{eqStatus}' and cannot be requested.");
+
+            const string upsertSql = @"
+                IF NOT EXISTS (SELECT 1 FROM dbo.EventEquipment WHERE EventAppointmentID = @EvtId AND EquipmentID = @EqId)
+                BEGIN
+                    INSERT INTO dbo.EventEquipment (EventAppointmentID, EquipmentID, IsTaken, IsAdditionalRequest, RequestedNotes)
+                    VALUES (@EvtId, @EqId, 0, 1, NULLIF(@Notes, ''));
+                END
+                ELSE
+                BEGIN
+                    UPDATE dbo.EventEquipment
+                    SET IsAdditionalRequest = 1,
+                        RequestedNotes = COALESCE(NULLIF(@Notes, ''), RequestedNotes)
+                    WHERE EventAppointmentID = @EvtId AND EquipmentID = @EqId;
+                END
+
+                IF OBJECT_ID(N'dbo.HistoryLog', N'U') IS NOT NULL
+                BEGIN
+                    INSERT INTO dbo.HistoryLog (
+                        ActionType, EntityName, EntityID, ActionDetails,
+                        EventAppointmentID, ChangedByType, ChangedByEmployeeID, LoggedAt
+                    )
+                    VALUES (
+                        'INSERT', 'EventEquipment', @EqId,
+                        'Team Leader requested/added additional equipment (' + @EqName + ') for event.',
+                        @EvtId, 'Employee', NULLIF(@EmpId, ''), SYSUTCDATETIME()
+                    );
+                END;";
+
+            await using (var uCmd = new SqlCommand(upsertSql, conn, tx))
+            {
+                uCmd.Parameters.AddWithValue("@EvtId", appointmentId);
+                uCmd.Parameters.AddWithValue("@EqId", request.EquipmentId.Trim());
+                uCmd.Parameters.AddWithValue("@EqName", eqName);
+                uCmd.Parameters.AddWithValue("@Notes", request.Notes ?? string.Empty);
+                uCmd.Parameters.AddWithValue("@EmpId", request.EmployeeId ?? string.Empty);
+                await uCmd.ExecuteNonQueryAsync(cancellationToken);
+            }
+
+            await tx.CommitAsync(cancellationToken);
+        }
+        catch
+        {
+            await tx.RollbackAsync(cancellationToken);
+            throw;
+        }
+
+        return (await GetAppointmentByIdOnConnectionAsync(conn, appointmentId, cancellationToken))!;
+    }
+
+    public async Task<IReadOnlyList<LiveEventOverviewDto>> GetLiveEventsOverviewAsync(CancellationToken cancellationToken = default)
+    {
+        await using var conn = await OpenConnectionAsync(cancellationToken);
+        await AutoTriggerPostEventsOnConnectionAsync(conn, cancellationToken);
+
+        const string sql = @"
+            SELECT
+                ea.EventAppointmentID,
+                ISNULL(c.CustomerPhoneNumber, '') AS CustomerPhone,
+                pay.PendingPaymentId
+            FROM dbo.EventAppointment ea
+            LEFT JOIN dbo.Customer c ON c.CustomerID = ea.CustomerID
+            OUTER APPLY (
+                SELECT TOP 1 p.Id AS PendingPaymentId
+                FROM dbo.Payments p
+                WHERE p.EventAppointmentId = ea.EventAppointmentID
+                  AND p.EmployeeRemittanceStatus = N'PendingAdminApproval'
+                ORDER BY p.CreatedAt DESC
+            ) pay
+            WHERE ISNULL(ea.EventStatus, '') NOT IN ('Cancelled', 'Expired', 'Delivered')
+              AND (ea.EventStatus <> 'Pending Payment'
+                   OR ISNULL(ea.DownpaymentStatus, 'Pending') = 'Paid'
+                   OR NULLIF(ea.FinalPaymentReferenceId, '') IS NOT NULL)
+            ORDER BY
+                CASE ea.EventStatus
+                    WHEN 'Pending Verification' THEN 1
+                    WHEN 'Paid Cash Pending Verification' THEN 1
+                    WHEN 'Ongoing' THEN 2
+                    WHEN 'On Going' THEN 2
+                    WHEN 'Post Event' THEN 3
+                    WHEN 'Dispatch' THEN 4
+                    WHEN 'Preparation' THEN 5
+                    WHEN 'Preparing' THEN 5
+                    WHEN 'Pending Payment' THEN 6
+                    WHEN 'Confirmed' THEN 7
+                    WHEN 'Complete' THEN 8
+                    WHEN 'Shot' THEN 8
+                    ELSE 9
+                END,
+                ea.EventDate ASC,
+                ea.EventTime ASC;";
+
+        var rows = new List<(string AppointmentId, string Phone, int? PaymentId)>();
+        await using (var cmd = new SqlCommand(sql, conn))
+        {
+            await using var reader = await cmd.ExecuteReaderAsync(cancellationToken);
+            while (await reader.ReadAsync(cancellationToken))
+            {
+                rows.Add((
+                    reader.GetString(0),
+                    reader.IsDBNull(1) ? string.Empty : reader.GetString(1),
+                    reader.IsDBNull(2) ? null : reader.GetInt32(2)));
+            }
+        }
+
+        var list = new List<LiveEventOverviewDto>();
+        foreach (var (apptId, phone, payId) in rows)
+        {
+            var detail = await GetAppointmentByIdOnConnectionAsync(conn, apptId, cancellationToken);
+            if (detail == null) continue;
+
+            list.Add(new LiveEventOverviewDto
+            {
+                EventAppointmentId = detail.EventAppointmentId,
+                NegotiationId = detail.NegotiationId,
+                CustomerId = detail.CustomerId,
+                CustomerName = detail.CustomerName,
+                CustomerEmail = detail.CustomerEmail,
+                CustomerPhone = phone,
+                EventName = detail.EventName,
+                EventDescription = detail.EventDescription,
+                EventDate = detail.EventDate,
+                EventTime = detail.EventTime,
+                EventStatus = detail.EventStatus,
+                DisplayStage = MapDisplayStage(detail.EventStatus, detail.FinalPaymentMethod, detail.FinalPaymentStatus),
+                TotalAmount = detail.TotalAmount,
+                DownpaymentAmount = detail.DownpaymentAmount,
+                FinalBalanceAmount = detail.FinalBalanceAmount,
+                DownpaymentStatus = detail.DownpaymentStatus,
+                HoldExpiresAt = detail.HoldExpiresAt,
+                LockExpiresAt = detail.LockExpiresAt,
+                QrString = detail.QrString,
+                XenditInvoiceUrl = detail.XenditInvoiceUrl,
+                XenditInvoiceId = detail.XenditInvoiceId,
+                XenditExternalId = detail.XenditExternalId,
+                FinalPaymentMethod = detail.FinalPaymentMethod,
+                FinalPaymentStatus = detail.FinalPaymentStatus,
+                FinalQrString = detail.FinalQrString,
+                FinalPaymentReferenceId = detail.FinalPaymentReferenceId,
+                FinalPaymentPaidAt = detail.FinalPaymentPaidAt,
+                AssignedEmployees = detail.AssignedEmployees,
+                AssignedEquipment = detail.AssignedEquipment,
+                SelectedServices = detail.SelectedServices,
+                OvertimeCharges = detail.OvertimeCharges,
+                Transactions = detail.Transactions,
+                CreatedAt = detail.CreatedAt,
+                PendingRemittancePaymentId = payId
+            });
+        }
+
+        return list;
+    }
+
+    private static string MapDisplayStage(string eventStatus, string? finalMethod, string? finalStatus)
+    {
+        if (string.Equals(eventStatus, "Complete", StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(eventStatus, "Shot", StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(finalStatus, "Paid", StringComparison.OrdinalIgnoreCase))
+            return "Complete";
+
+        if (string.Equals(eventStatus, "Pending Verification", StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(eventStatus, "Paid Cash Pending Verification", StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(finalStatus, "Pending Verification", StringComparison.OrdinalIgnoreCase))
+            return "Paid Cash Pending Verification";
+
+        if (string.Equals(eventStatus, "Post Event", StringComparison.OrdinalIgnoreCase))
+            return "Post Event";
+
+        if (string.Equals(eventStatus, "Ongoing", StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(eventStatus, "On Going", StringComparison.OrdinalIgnoreCase))
+            return "Ongoing";
+
+        if (string.Equals(eventStatus, "Dispatch", StringComparison.OrdinalIgnoreCase))
+            return "Dispatch";
+
+        if (string.Equals(eventStatus, "Preparation", StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(eventStatus, "Preparing", StringComparison.OrdinalIgnoreCase))
+            return "Preparation";
+
+        return eventStatus;
+    }
+
+    public async Task<EventAppointmentDto> VerifyCashSettlementAsync(
+        string appointmentId,
+        string verifierId,
+        string? verifierName = null,
+        string? notes = null,
+        CancellationToken cancellationToken = default)
+    {
+        await using var conn = await OpenConnectionAsync(cancellationToken);
+        await using var tx = (SqlTransaction)await conn.BeginTransactionAsync(cancellationToken);
+        try
+        {
+            const string updSql = @"
+                UPDATE dbo.EventAppointment
+                SET EventStatus = 'Complete',
+                    FinalPaymentStatus = 'Paid',
+                    FinalPaymentPaidAt = COALESCE(FinalPaymentPaidAt, SYSUTCDATETIME())
+                WHERE EventAppointmentID = @EvtId;
+
+                IF @@ROWCOUNT = 0
+                    THROW 50030, 'Event appointment not found.', 1;
+
+                IF OBJECT_ID(N'dbo.PaymentTransactions', N'U') IS NOT NULL
+                BEGIN
+                    UPDATE dbo.PaymentTransactions
+                    SET EmployeeRemittanceStatus = 'Cleared',
+                        Status = 'Paid',
+                        AdminApproverID = @VerifierId,
+                        ApprovalTimestamp = SYSUTCDATETIME()
+                    WHERE EventAppointmentID = @EvtId
+                      AND (EmployeeRemittanceStatus = 'PendingAdminApproval' OR Status <> 'Paid');
+                END
+
+                IF OBJECT_ID(N'dbo.HistoryLog', N'U') IS NOT NULL
+                BEGIN
+                    INSERT INTO dbo.HistoryLog (
+                        ActionType, EntityName, EntityID, ActionDetails,
+                        EventAppointmentID, ChangedByType, ChangedBy, LoggedAt
+                    )
+                    VALUES (
+                        'APPROVAL', 'CashRemittance', @EvtId,
+                        @ActionDetails,
+                        @EvtId, 'Admin', @VerifierId, SYSUTCDATETIME()
+                    );
+                END;";
+
+            await using (var cmd = new SqlCommand(updSql, conn, tx))
+            {
+                cmd.Parameters.AddWithValue("@EvtId", appointmentId);
+                cmd.Parameters.AddWithValue("@VerifierId", string.IsNullOrWhiteSpace(verifierId) ? "Admin" : verifierId);
+                cmd.Parameters.AddWithValue("@ActionDetails",
+                    string.IsNullOrWhiteSpace(notes)
+                        ? $"Cash verified by {verifierName ?? verifierId}. Employee event workflow finalized as Complete."
+                        : notes);
+                await cmd.ExecuteNonQueryAsync(cancellationToken);
+            }
+
+            await tx.CommitAsync(cancellationToken);
+        }
+        catch (SqlException ex) when (ex.Number == 50030)
+        {
+            await tx.RollbackAsync(cancellationToken);
+            throw new KeyNotFoundException($"Event appointment {appointmentId} not found.");
+        }
+        catch
+        {
+            await tx.RollbackAsync(cancellationToken);
+            throw;
+        }
+
+        try
+        {
+            var pendingEfPayments = await _db.Payments
+                .Where(p => p.EventAppointmentId == appointmentId &&
+                            p.EmployeeRemittanceStatus == PhotoAevumStudio.Application.Entities.EmployeeRemittanceStatus.PendingAdminApproval)
+                .ToListAsync(cancellationToken);
+            foreach (var p in pendingEfPayments)
+            {
+                p.EmployeeRemittanceStatus = PhotoAevumStudio.Application.Entities.EmployeeRemittanceStatus.Cleared;
+                p.AdminApproverId = verifierId;
+                p.AdminApproverName = verifierName;
+                p.ApprovalTimestamp = DateTime.UtcNow;
+            }
+            if (pendingEfPayments.Count > 0)
+            {
+                _db.AuditLogs.Add(new PhotoAevumStudio.Application.Entities.AuditLog
+                {
+                    UserId = verifierId,
+                    UserEmail = verifierName ?? verifierId,
+                    Action = "Verify Cash Payment",
+                    Resource = "EventAppointment",
+                    ResourceId = appointmentId,
+                    Timestamp = DateTime.UtcNow,
+                    Details = $"Verified cash payment for Event #{appointmentId}. Employee workflow marked Complete."
+                });
+                await _db.SaveChangesAsync(cancellationToken);
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Could not sync EF Core Payments remittance status for {AppointmentId}", appointmentId);
+        }
+
+        return (await GetAppointmentByIdOnConnectionAsync(conn, appointmentId, cancellationToken))!;
     }
 }
 

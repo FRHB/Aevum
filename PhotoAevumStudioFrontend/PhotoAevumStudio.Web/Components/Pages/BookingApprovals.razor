@@ -8,7 +8,7 @@
 @inject IConsultationClient ConsultationApi
 @inject AuthenticationStateProvider AuthStateProvider
 @rendermode InteractiveServer
-@attribute [Authorize(Roles = "Admin")]
+@attribute [Authorize(Roles = "Admin,SystemAdmin,Office Clerk")]
 
 <PageTitle>Booking &amp; Payment Approvals</PageTitle>
 
@@ -110,7 +110,7 @@
                                         @onclick="() => HandleApproveRemittance(rem)"
                                         disabled="@isProcessingRemittance"
                                         class="bg-emerald-600 hover:bg-emerald-700 text-white px-3.5 py-1.5 rounded-lg font-bold text-xs shadow-xs transition-colors">
-                                    Approve Cash Remittance
+                                    Verify Cash
                                 </button>
                             </td>
                         </tr>

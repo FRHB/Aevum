@@ -40,6 +40,7 @@ public class ApplicationDbContext : IdentityDbContext<ApplicationUser>
     public DbSet<PortfolioEntity> Portfolios => Set<PortfolioEntity>();
     public DbSet<PortfolioImage> PortfolioImages => Set<PortfolioImage>();
     public DbSet<ArchiveIndex> ArchiveIndices => Set<ArchiveIndex>();
+    public DbSet<CustomerDropbox> CustomerDropboxes => Set<CustomerDropbox>();
 
     protected override void OnModelCreating(ModelBuilder builder)
     {
@@ -258,6 +259,24 @@ public class ApplicationDbContext : IdentityDbContext<ApplicationUser>
             e.Property(a => a.FileUri).HasMaxLength(1000).IsRequired();
             e.Property(a => a.RecordCount).HasDefaultValue(0);
             e.Property(a => a.ArchivedAt).HasDefaultValueSql("SYSUTCDATETIME()");
+        });
+
+        // ── CustomerDropbox ──────────────────────────────────────────────────
+        builder.Entity<CustomerDropbox>(e =>
+        {
+            e.ToTable("CustomerDropbox", "dbo");
+            e.HasKey(d => d.DropboxId);
+            e.Property(d => d.DropboxId).HasColumnName("DropboxID").HasMaxLength(30).IsRequired();
+            e.Property(d => d.EventAppointmentId).HasColumnName("EventAppointmentID").HasMaxLength(30).IsRequired();
+            e.Property(d => d.CustomerId).HasColumnName("CustomerID").HasMaxLength(30).IsRequired();
+            e.Property(d => d.BucketName).HasMaxLength(100).IsRequired().HasDefaultValue("dropbox");
+            e.Property(d => d.R2ObjectKey).HasMaxLength(500);
+            e.Property(d => d.OriginalFileName).HasMaxLength(255);
+            e.Property(d => d.ContentType).HasMaxLength(100);
+            e.Property(d => d.DropboxStatus).HasMaxLength(30).IsRequired().HasDefaultValue("Waiting");
+            e.Property(d => d.UploadedByEmployeeId).HasColumnName("UploadedByEmployeeID").HasMaxLength(30);
+            e.Property(d => d.EventCompletedAt).HasDefaultValueSql("SYSUTCDATETIME()");
+            e.Property(d => d.CreatedAt).HasDefaultValueSql("SYSUTCDATETIME()");
         });
     }
 }

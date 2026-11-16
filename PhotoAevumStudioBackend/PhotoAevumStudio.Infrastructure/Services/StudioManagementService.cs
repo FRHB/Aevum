@@ -2561,4 +2561,72 @@ public class StudioManagementService : IStudioManagementService
 
         return new DepartmentDto(nextId, dto.DepartmentName.Trim(), dto.DepartmentDescription?.Trim(), DateTime.UtcNow);
     }
+
+    public async Task<bool> UpdateEmployeeDaysOffAsync(string employeeId, string daysOff, string? requestingAdminId = null, CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrWhiteSpace(employeeId))
+            throw new ArgumentException("Employee ID is required.", nameof(employeeId));
+
+        var normalizedDays = NormalizeDaysOff(daysOff);
+
+        await using var conn = SqlResilienceHelper.CreateConnection(GetConnectionString());
+        await conn.OpenAsync(cancellationToken);
+
+        const string sql = @"
+            IF COL_LENGTH(N'dbo.Employees', N'DaysOff') IS NULL
+                ALTER TABLE dbo.Employees ADD DaysOff nvarchar(50) NOT NULL CONSTRAINT DF_Employees_DaysOff DEFAULT 'Sunday';
+
+            UPDATE dbo.Employees
+            SET DaysOff = @DaysOff
+            WHERE EmployeeID = @EmpId;
+
+            DECLARE @Affected INT = @@ROWCOUNT;
+
+            IF @Affected > 0 AND OBJECT_ID(N'dbo.sp_AddHistoryLog', N'P') IS NOT NULL
+            BEGIN
+                EXEC dbo.sp_AddHistoryLog
+                    @ActionType = 'UPDATE',
+                    @EntityName = 'Employees',
+                    @EntityID = @EmpId,
+                    @ActionDetails = @Details,
+                    @ChangedByType = 'Admin',
+                    @ActorID = @AdminId;
+            END;
+
+            SELECT @Affected;";
+
+        await using var cmd = new SqlCommand(sql, conn);
+        cmd.Parameters.AddWithValue("@EmpId", employeeId.Trim());
+        cmd.Parameters.AddWithValue("@DaysOff", normalizedDays);
+        cmd.Parameters.AddWithValue("@Details", $"Updated staff Days Off for {employeeId.Trim()} to '{normalizedDays}'.");
+        cmd.Parameters.AddWithValue("@AdminId", (object?)requestingAdminId ?? DBNull.Value);
+
+        var result = await cmd.ExecuteScalarAsync(cancellationToken);
+        return result != null && Convert.ToInt32(result) > 0;
+    }
+
+    private static string NormalizeDaysOff(string? daysOff)
+    {
+        if (string.IsNullOrWhiteSpace(daysOff) || daysOff.Trim().Equals("None", StringComparison.OrdinalIgnoreCase))
+            return "None";
+
+        var validDays = new[]
+        {
+            DayOfWeek.Monday.ToString(),
+            DayOfWeek.Tuesday.ToString(),
+            DayOfWeek.Wednesday.ToString(),
+            DayOfWeek.Thursday.ToString(),
+            DayOfWeek.Friday.ToString(),
+            DayOfWeek.Saturday.ToString(),
+            DayOfWeek.Sunday.ToString()
+        };
+
+        var tokens = daysOff.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .Select(t => validDays.FirstOrDefault(v => v.Equals(t, StringComparison.OrdinalIgnoreCase)))
+            .Where(v => v != null)
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList();
+
+        return tokens.Count == 0 ? "None" : string.Join(", ", tokens!);
+    }
 }

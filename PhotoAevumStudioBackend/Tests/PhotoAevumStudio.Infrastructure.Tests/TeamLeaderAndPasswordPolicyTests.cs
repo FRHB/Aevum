@@ -142,9 +142,15 @@ public class TeamLeaderAndPasswordPolicyTests
         Assert.Contains("FinalPaymentPaidAt", allSql);
 
         Assert.Contains("'Preparing'", allSql);
+        Assert.Contains("'Preparation'", allSql);
+        Assert.Contains("'Dispatch'", allSql);
+        Assert.Contains("'Ongoing'", allSql);
         Assert.Contains("'On Going'", allSql);
         Assert.Contains("'Post Event'", allSql);
         Assert.Contains("'Pending Verification'", allSql);
+        Assert.Contains("'Complete'", allSql);
+        Assert.Contains("IsTaken", allSql);
+        Assert.Contains("IsAdditionalRequest", allSql);
 
         Assert.Contains("ISNULL(DownpaymentStatus, 'Pending') <> 'Paid'", allSql);
     }

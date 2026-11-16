@@ -570,6 +570,57 @@
 
 
 
+@* ── Confirmed / Active Photoshoot Events Status ────────────────── *@
+@if (_customerEventAppointments.Any())
+{
+    <section class="aev-card mb-8" aria-label="My photoshoot events">
+        <header class="aev-card__header">
+            <h2 class="aev-card__heading">My Photoshoot Events &amp; Live Status</h2>
+            <a href="/my/bookings" class="aev-card__action-link">View Details</a>
+        </header>
+        <div class="aev-table-wrap">
+            <table class="aev-table">
+                <thead>
+                    <tr>
+                        <th>Event</th>
+                        <th>Date &amp; Time</th>
+                        <th>Balance / Settlement</th>
+                        <th>Status</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var ev in _customerEventAppointments)
+                    {
+                        var custStatus = GetCustomerDisplayStatus(ev);
+                        <tr>
+                            <td>
+                                <div class="font-semibold text-slate-900">@ev.EventName</div>
+                                <div class="text-[11px] font-mono text-slate-400">#@ev.EventAppointmentId</div>
+                            </td>
+                            <td>@ev.EventDate.ToString("MMM dd, yyyy") &bull; @DateTime.Today.Add(ev.EventTime.ToTimeSpan()).ToString("h:mm tt")</td>
+                            <td class="text-xs font-mono text-slate-700">
+                                @if (custStatus == "Complete")
+                                {
+                                    <span class="text-emerald-700 font-bold">Settled (₱@ev.FinalBalanceAmount.ToString("N2"))</span>
+                                }
+                                else
+                                {
+                                    <span>₱@ev.FinalBalanceAmount.ToString("N2")</span>
+                                }
+                            </td>
+                            <td>
+                                <span class="aev-badge @(custStatus == "Complete" || custStatus == "Confirmed" ? "aev-badge--green" : "aev-badge--amber")">
+                                    @custStatus
+                                </span>
+                            </td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+    </section>
+}
+
 @* ── Upcoming appointments mini-list ─────────────────────────────── *@
 
 
@@ -1455,6 +1506,7 @@
 
 
     private List<MyBooking> UpcomingBookings = new();
+    private List<EventAppointmentDto> _customerEventAppointments = new();
 
 
 
@@ -1802,50 +1854,33 @@
 
 
 
-            var appts = await ConsultationApi.GetCustomerAppointmentsAsync(status: "Pending Payment");
-            if (!appts.IsSuccess || appts.Value == null || appts.Value.Count == 0)
+            var allApptsRes = await ConsultationApi.GetCustomerAppointmentsAsync();
+            if (allApptsRes.IsSuccess && allApptsRes.Value != null && allApptsRes.Value.Count > 0)
             {
-                appts = await ConsultationApi.GetCustomerAppointmentsAsync(status: "Awaiting_Downpayment");
+                _customerEventAppointments = allApptsRes.Value
+                    .OrderByDescending(a => a.EventDate)
+                    .ThenByDescending(a => a.EventTime)
+                    .ToList();
+
+                _awaitingDepositAppointment = _customerEventAppointments.FirstOrDefault(a =>
+                    (string.Equals(a.EventStatus, "Pending Payment", StringComparison.OrdinalIgnoreCase) ||
+                     string.Equals(a.EventStatus, "Awaiting_Downpayment", StringComparison.OrdinalIgnoreCase)) &&
+                    !string.Equals(a.DownpaymentStatus, "Paid", StringComparison.OrdinalIgnoreCase));
+
+                if (_awaitingDepositAppointment != null)
+                {
+                    StartHoldCountdown();
+                }
+                else
+                {
+                    _countdownTimer?.Dispose();
+                }
             }
-
-
-
-            if (appts.IsSuccess && appts.Value != null && appts.Value.Count > 0)
-
-
-
-            {
-
-
-
-                _awaitingDepositAppointment = appts.Value.FirstOrDefault();
-
-
-
-                StartHoldCountdown();
-
-
-
-            }
-
-
-
             else
-
-
-
             {
-
-
-
+                _customerEventAppointments = new();
                 _awaitingDepositAppointment = null;
-
-
-
                 _countdownTimer?.Dispose();
-
-
-
             }
 
 
@@ -2025,6 +2060,23 @@
 
 
 
+
+    private static string GetCustomerDisplayStatus(EventAppointmentDto appt)
+    {
+        if (string.Equals(appt.EventStatus, "Pending Verification", StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(appt.EventStatus, "Paid Cash Pending Verification", StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(appt.EventStatus, "Complete", StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(appt.EventStatus, "Shot", StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(appt.EventStatus, "Delivered", StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(appt.FinalPaymentStatus, "Pending Verification", StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(appt.FinalPaymentStatus, "Paid", StringComparison.OrdinalIgnoreCase))
+        {
+            return "Complete";
+        }
+        if (string.Equals(appt.EventStatus, "Preparing", StringComparison.OrdinalIgnoreCase)) return "Preparation";
+        if (string.Equals(appt.EventStatus, "On Going", StringComparison.OrdinalIgnoreCase)) return "Ongoing";
+        return appt.EventStatus;
+    }
 
         private string GetCheckoutUrl(EventAppointmentDto? appt)
     {

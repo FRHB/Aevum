@@ -34,6 +34,12 @@ public sealed class ScheduleController(IScheduleBookingService schedule, ILogger
     public Task<IActionResult> GetDayAvailability([FromQuery] DateOnly date, [FromQuery] string? clerkId, CancellationToken ct) =>
         Handle(async () => Ok(await schedule.GetDayAvailabilityAsync(date, clerkId, ct)));
 
+    /// <summary>Standalone availability checker for target date and optional time (checks events, crew, and approved leaves).</summary>
+    [HttpGet("availability/check")]
+    [AllowAnonymous]
+    public Task<IActionResult> CheckAvailability([FromQuery] DateOnly date, [FromQuery] TimeOnly? time, CancellationToken ct) =>
+        Handle(async () => Ok(await schedule.CheckAvailabilityAsync(date, time, ct)));
+
     /// <summary>The signed-in customer's appointments (feeds Overview and Appointments pages).</summary>
     [HttpGet("my-bookings")]
     public Task<IActionResult> GetMyBookings(CancellationToken ct) =>

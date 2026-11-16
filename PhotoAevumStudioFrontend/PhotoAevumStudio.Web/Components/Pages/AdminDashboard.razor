@@ -74,6 +74,9 @@
     </div>
 }
 
+@* ── Stacked Concurrent Events & Live Progress (Verify Cash) ───────────────── *@
+<LiveEventsOverviewPanel ManagerId="@_adminId" ManagerName="@_adminName" OnCashVerified="LoadPendingRemittancesAsync" />
+
 @* ── Relevant Statistics (KPIs) ───────────────────────────────────────────── *@
 <section class="aev-stat-grid" aria-label="Executive KPI statistics">
     <article class="aev-stat-card">
@@ -140,47 +143,52 @@
                     }
                 </div>
 
-                @if (_liveEvent != null)
+                @if (_liveEvents.Any())
                 {
                     <div class="space-y-3">
-                        <div class="flex items-start justify-between">
-                            <div>
-                                <h3 class="text-base font-bold text-gray-900 leading-tight">@_liveEvent.ClientName</h3>
-                                <p class="text-xs font-semibold text-teal-700 mt-0.5">@_liveEvent.ServiceType</p>
-                            </div>
-                            <span class="px-2 py-0.5 rounded-md text-[11px] font-bold @(_liveEvent.IsConsultation ? "bg-purple-100 text-purple-800" : "bg-blue-100 text-blue-800")">
-                                @(_liveEvent.IsConsultation ? "Video Consultation" : "Studio Shoot")
-                            </span>
-                        </div>
-
-                        <div class="text-xs text-slate-600 space-y-1 bg-white/80 p-3 rounded-lg border border-slate-200/60">
-                            <div class="flex items-center justify-between">
-                                <span class="text-slate-400">Scheduled Time:</span>
-                                <span class="font-bold text-slate-900">@_liveEvent.FormattedTimeRange</span>
-                            </div>
-                            <div class="flex items-center justify-between">
-                                <span class="text-slate-400">Assigned Staff:</span>
-                                <span class="font-medium text-slate-800">@_liveEvent.AssignedPhotographer</span>
-                            </div>
-                            @if (!string.IsNullOrWhiteSpace(_liveEvent.ClientPhone) || !string.IsNullOrWhiteSpace(_liveEvent.ClientEmail))
-                            {
-                                <div class="flex items-center justify-between">
-                                    <span class="text-slate-400">Contact:</span>
-                                    <span class="font-mono text-[11px] text-slate-700">@(_liveEvent.ClientPhone ?? _liveEvent.ClientEmail)</span>
-                                </div>
-                            }
-                        </div>
-
-                        @if (_liveEvent.IsConsultation && !string.IsNullOrWhiteSpace(_liveEvent.MeetingLink))
+                        @foreach (var liveEv in _liveEvents)
                         {
-                            <div class="pt-2">
-                                <a href="@_liveEvent.MeetingLink"
-                                   target="_blank"
-                                   rel="noopener noreferrer"
-                                   class="w-full inline-flex items-center justify-center gap-2 px-4 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-bold shadow-xs transition-colors">
-                                    <span>📹 Launch Google Meet Consultation</span>
-                                    <span>↗</span>
-                                </a>
+                            <div class="space-y-2 p-3 rounded-lg bg-white/80 border border-slate-200/80">
+                                <div class="flex items-start justify-between">
+                                    <div>
+                                        <h3 class="text-base font-bold text-gray-900 leading-tight">@liveEv.ClientName</h3>
+                                        <p class="text-xs font-semibold text-teal-700 mt-0.5">@liveEv.ServiceType</p>
+                                    </div>
+                                    <span class="px-2 py-0.5 rounded-md text-[11px] font-bold @(liveEv.IsConsultation ? "bg-purple-100 text-purple-800" : "bg-blue-100 text-blue-800")">
+                                        @(liveEv.IsConsultation ? "Video Consultation" : "Studio Shoot")
+                                    </span>
+                                </div>
+
+                                <div class="text-xs text-slate-600 space-y-1">
+                                    <div class="flex items-center justify-between">
+                                        <span class="text-slate-400">Scheduled Time:</span>
+                                        <span class="font-bold text-slate-900">@liveEv.FormattedTimeRange</span>
+                                    </div>
+                                    <div class="flex items-center justify-between">
+                                        <span class="text-slate-400">Assigned Staff:</span>
+                                        <span class="font-medium text-slate-800">@liveEv.AssignedPhotographer</span>
+                                    </div>
+                                    @if (!string.IsNullOrWhiteSpace(liveEv.ClientPhone) || !string.IsNullOrWhiteSpace(liveEv.ClientEmail))
+                                    {
+                                        <div class="flex items-center justify-between">
+                                            <span class="text-slate-400">Contact:</span>
+                                            <span class="font-mono text-[11px] text-slate-700">@(liveEv.ClientPhone ?? liveEv.ClientEmail)</span>
+                                        </div>
+                                    }
+                                </div>
+
+                                @if (liveEv.IsConsultation && !string.IsNullOrWhiteSpace(liveEv.MeetingLink))
+                                {
+                                    <div class="pt-1">
+                                        <a href="@liveEv.MeetingLink"
+                                           target="_blank"
+                                           rel="noopener noreferrer"
+                                           class="w-full inline-flex items-center justify-center gap-2 px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-bold shadow-xs transition-colors">
+                                            <span>📹 Launch Google Meet Consultation</span>
+                                            <span>↗</span>
+                                        </a>
+                                    </div>
+                                }
                             </div>
                         }
                     </div>
@@ -313,6 +321,69 @@
     </div>
 </section>
 
+@* ── Staff Leave Requests (Submitted by Employees) ─────────────────────────── *@
+<section class="aev-card mb-6" aria-label="Pending staff leave requests">
+    <header class="aev-card__header">
+        <div>
+            <h2 class="aev-card__heading">Staff Leave Requests</h2>
+            <p class="text-xs text-slate-400 mt-0.5">Review employee leave requests; approved leaves block booking assignments automatically</p>
+        </div>
+        <a href="/admin/calendar/events" class="aev-card__action-link">Staff Schedule &amp; Days Off &rarr;</a>
+    </header>
+    <div class="aev-table-wrap">
+        <table class="aev-table">
+            <thead>
+                <tr>
+                    <th>Staff Member</th>
+                    <th>Leave Type</th>
+                    <th>Dates</th>
+                    <th>Description</th>
+                    <th class="text-right">Action</th>
+                </tr>
+            </thead>
+            <tbody>
+                @if (_pendingLeaves.Count == 0)
+                {
+                    <tr>
+                        <td colspan="5" class="text-center py-5 text-slate-400 text-xs">
+                            No pending leave requests awaiting approval.
+                        </td>
+                    </tr>
+                }
+                else
+                {
+                    @foreach (var lv in _pendingLeaves)
+                    {
+                        <tr>
+                            <td>
+                                <div class="font-semibold text-slate-800">@lv.EmployeeName</div>
+                                <div class="text-[11px] font-mono text-slate-400">@lv.EmployeeStudioId</div>
+                            </td>
+                            <td class="text-xs font-semibold text-slate-700">@lv.LeaveType</td>
+                            <td class="font-mono text-xs text-slate-600">@lv.StartDate.ToString("MMM d") – @lv.EndDate.ToString("MMM d, yyyy")</td>
+                            <td class="text-xs text-slate-500 max-w-xs truncate">@(string.IsNullOrWhiteSpace(lv.Reason) ? "—" : lv.Reason)</td>
+                            <td class="text-right whitespace-nowrap">
+                                <button type="button"
+                                        disabled="@_isProcessingLeave"
+                                        @onclick="() => HandleApproveLeaveAsync(lv)"
+                                        class="px-2.5 py-1 rounded bg-emerald-600 hover:bg-emerald-700 text-white text-[11px] font-bold mr-1 disabled:opacity-50">
+                                    Approve
+                                </button>
+                                <button type="button"
+                                        disabled="@_isProcessingLeave"
+                                        @onclick="() => HandleRejectLeaveAsync(lv)"
+                                        class="px-2.5 py-1 rounded bg-rose-600 hover:bg-rose-700 text-white text-[11px] font-bold disabled:opacity-50">
+                                    Reject
+                                </button>
+                            </td>
+                        </tr>
+                    }
+                }
+            </tbody>
+        </table>
+    </div>
+</section>
+
 @* ── Recent Bookings & Quick Actions ───────────────────────────────────────── *@
 <div class="aev-content-row">
     <section class="aev-card aev-card--wide" aria-label="Recent bookings">
@@ -417,10 +488,13 @@
     private int _totalActiveBookings;
 
     private List<EventBookingModel> _allEvents = new();
-    private EventBookingModel? _liveEvent;
+    private List<EventBookingModel> _liveEvents = new();
+    private EventBookingModel? _liveEvent => _liveEvents.FirstOrDefault();
     private List<EventBookingModel> _upcomingEvents = new();
 
     private IReadOnlyList<TodayAttendanceSummaryDto> _todayAttendance = Array.Empty<TodayAttendanceSummaryDto>();
+    private List<LeaveItemViewModel> _pendingLeaves = new();
+    private bool _isProcessingLeave = false;
     private IReadOnlyList<BookingRowDto> _recentBookings = Array.Empty<BookingRowDto>();
     private List<PaymentSummaryModel> _pendingRemittances = new();
     private decimal _pendingRemittancesSum => _pendingRemittances.Sum(r => r.Amount);
@@ -454,6 +528,7 @@
         var statsTask = SafeGetStatsAsync();
         var attendanceTask = SafeGetAttendanceAsync();
         var remittancesTask = LoadPendingRemittancesAsync();
+        var leavesTask = LoadPendingLeavesAsync();
 
         // 2. Bookings & Revenue
         try
@@ -480,11 +555,11 @@
             var today = DateTime.Today;
             var nowTime = DateTime.Now.TimeOfDay;
 
-            _liveEvent = _allEvents.FirstOrDefault(e =>
+            _liveEvents = _allEvents.Where(e =>
                 e.Date.Date == today &&
                 nowTime >= e.StartTime &&
                 nowTime < e.EndTime &&
-                !string.Equals(e.Status, "Cancelled", StringComparison.OrdinalIgnoreCase));
+                !string.Equals(e.Status, "Cancelled", StringComparison.OrdinalIgnoreCase)).ToList();
 
             _upcomingEvents = _allEvents
                 .Where(e => (e.Date.Date == today && e.StartTime > nowTime) || (e.Date.Date > today))
@@ -498,13 +573,65 @@
         {
             _allEvents = new();
             _activeConsultations = 0;
-            _liveEvent = null;
+            _liveEvents = new();
             _upcomingEvents = new();
         }
 
         // 4. Await parallel async tasks
         var adminClockTask = SafeGetAdminClockStatusAsync();
-        await Task.WhenAll(statsTask, attendanceTask, remittancesTask, adminClockTask);
+        await Task.WhenAll(statsTask, attendanceTask, remittancesTask, leavesTask, adminClockTask);
+    }
+
+    private async Task LoadPendingLeavesAsync()
+    {
+        try
+        {
+            _pendingLeaves = (await EmployeeService.GetPendingLeavesAsync()).ToList();
+        }
+        catch
+        {
+            _pendingLeaves = new();
+        }
+    }
+
+    private async Task HandleApproveLeaveAsync(LeaveItemViewModel lv)
+    {
+        _isProcessingLeave = true;
+        _actionSuccessMessage = null;
+        try
+        {
+            var ok = await EmployeeService.ApproveLeaveAsync(lv.Id);
+            if (ok)
+            {
+                ScheduleService.InvalidateCache();
+                _actionSuccessMessage = $"Approved {lv.LeaveType} for {lv.EmployeeName} ({lv.StartDate:MMM d} – {lv.EndDate:MMM d, yyyy}). Booking assignments during this period are now blocked.";
+                await Task.WhenAll(LoadPendingLeavesAsync(), SafeGetAttendanceAsync());
+            }
+        }
+        finally
+        {
+            _isProcessingLeave = false;
+        }
+    }
+
+    private async Task HandleRejectLeaveAsync(LeaveItemViewModel lv)
+    {
+        _isProcessingLeave = true;
+        _actionSuccessMessage = null;
+        try
+        {
+            var ok = await EmployeeService.RejectLeaveAsync(lv.Id, "Declined by Studio Admin from Dashboard.");
+            if (ok)
+            {
+                ScheduleService.InvalidateCache();
+                _actionSuccessMessage = $"Rejected {lv.LeaveType} request for {lv.EmployeeName}.";
+                await LoadPendingLeavesAsync();
+            }
+        }
+        finally
+        {
+            _isProcessingLeave = false;
+        }
     }
 
     private async Task SafeGetStatsAsync()

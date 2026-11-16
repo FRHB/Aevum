@@ -1,13 +1,17 @@
 @using PhotoAevumStudio.Web.Models
 
 <div @onclick="OnClick"
-     title="@Booking.ClientName (@Booking.ServiceType) with @Booking.AssignedPhotographer"
-     class="compact-event-chip week-event-chip @(Booking.IsConsultation ? "is-consultation-chip" : "") @(Booking.HasConflict ? "conflict-chip" : "") @(Booking.Status.ToLowerInvariant())">
+     title="@Booking.ClientName (@Booking.ServiceType) with @Booking.AssignedPhotographer — @Booking.DisplayStatus"
+     class="compact-event-chip week-event-chip @(Booking.IsConsultation ? "is-consultation-chip" : "") @(Booking.HasConflict ? "conflict-chip" : "") @(Booking.Status is "Pending Payment" or "Awaiting_Downpayment" ? "pending" : Booking.Status.ToLowerInvariant())">
     <div class="chip-top-row">
-        <span class="chip-time">@(Booking.IsConsultation ? "💬 " : "")@Booking.StartTime.ToString(@"hh\:mm") - @Booking.EndTime.ToString(@"hh\:mm")</span>
+        <span class="chip-time">@(Booking.IsConsultation ? "💬 " : "")@Booking.StartTime.ToString(@"hh\:mm") - @Booking.EffectiveEndTime.ToString(@"hh\:mm")</span>
         <span class="chip-status-dot"></span>
     </div>
     <div class="chip-client">@Booking.ClientName</div>
+    @if (Booking.Status is "Pending Payment" or "Awaiting_Downpayment")
+    {
+        <div class="text-[10px] font-bold text-amber-700 truncate">⏳ Awaiting Reserve Fee Payment</div>
+    }
     <div class="chip-photog">@(Booking.IsConsultation ? "Clerk: " : "📷 ")@Booking.AssignedPhotographer</div>
     @if (!string.IsNullOrWhiteSpace(Booking.StudioSpaceName))
     {

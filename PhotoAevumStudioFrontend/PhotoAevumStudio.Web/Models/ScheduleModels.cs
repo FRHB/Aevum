@@ -47,21 +47,87 @@ public class EventBookingModel
     public string? ConflictMessage { get; set; }
     public bool IsConsultation { get; set; }
     public string? MeetingLink { get; set; }
+    public List<string> AssignedCrewIds { get; set; } = new();
+    public List<string> AssignedEquipmentIds { get; set; } = new();
+    public int PrepBufferMinutes { get; set; } = 120;
+    public int PostBufferMinutes { get; set; } = 60;
+    public string? EventLocation { get; set; }
 
     public double DurationHours => (EndTime - StartTime).TotalHours;
 
+    public TimeSpan EffectiveEndTime => EndTime > StartTime ? EndTime : StartTime.Add(TimeSpan.FromHours(1));
+
+    public TimeSpan CombinedStartTime =>
+        StartTime >= TimeSpan.FromMinutes(PrepBufferMinutes)
+            ? StartTime.Subtract(TimeSpan.FromMinutes(PrepBufferMinutes))
+            : TimeSpan.Zero;
+
+    public TimeSpan CombinedEndTime
+    {
+        get
+        {
+            var end = EffectiveEndTime.Add(TimeSpan.FromMinutes(PostBufferMinutes));
+            return end > new TimeSpan(23, 59, 59) ? new TimeSpan(23, 59, 59) : end;
+        }
+    }
+
+    public string DisplayStatus => Status switch
+    {
+        "Pending Payment" or "Pending_Payment" or "Awaiting_Downpayment" => "Awaiting Reserve Fee Payment",
+        _ => Status
+    };
+
     public string FormattedTimeRange =>
-        $"{DateTime.Today.Add(StartTime):hh:mm tt} - {DateTime.Today.Add(EndTime):hh:mm tt}";
+        $"{DateTime.Today.Add(StartTime):h:mm tt} - {DateTime.Today.Add(EffectiveEndTime):h:mm tt}";
+
+    public bool CombinedWindowOverlapsWith(EventBookingModel other)
+    {
+        if (IsConsultation || other.IsConsultation || Id == other.Id || Date.Date != other.Date.Date)
+            return false;
+
+        return CombinedStartTime < other.CombinedEndTime && other.CombinedStartTime < CombinedEndTime;
+    }
 
     public bool OverlapsWith(EventBookingModel other)
     {
         if (IsConsultation || other.IsConsultation)
             return false;
 
-        if (Id == other.Id || StudioSpaceId != other.StudioSpaceId || Date.Date != other.Date.Date)
+        if (Id == other.Id || Date.Date != other.Date.Date)
             return false;
 
-        return StartTime < other.EndTime && EndTime > other.StartTime;
+        if (!CombinedWindowOverlapsWith(other))
+            return false;
+
+        return SharesCrewWith(other) || SharesEquipmentWith(other);
+    }
+
+    public bool SharesCrewWith(EventBookingModel other)
+    {
+        if (AssignedCrewIds.Count > 0 && other.AssignedCrewIds.Count > 0)
+        {
+            if (AssignedCrewIds.Any(id => other.AssignedCrewIds.Contains(id, StringComparer.OrdinalIgnoreCase)))
+                return true;
+        }
+
+        var names1 = (AssignedPhotographer ?? string.Empty)
+            .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .Where(n => !string.Equals(n, "Unassigned", StringComparison.OrdinalIgnoreCase))
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+        var names2 = (other.AssignedPhotographer ?? string.Empty)
+            .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .Where(n => !string.Equals(n, "Unassigned", StringComparison.OrdinalIgnoreCase));
+
+        return names2.Any(n => names1.Contains(n));
+    }
+
+    public bool SharesEquipmentWith(EventBookingModel other)
+    {
+        if (AssignedEquipmentIds.Count == 0 || other.AssignedEquipmentIds.Count == 0)
+            return false;
+
+        return AssignedEquipmentIds.Any(id => other.AssignedEquipmentIds.Contains(id, StringComparer.OrdinalIgnoreCase));
     }
 }
 

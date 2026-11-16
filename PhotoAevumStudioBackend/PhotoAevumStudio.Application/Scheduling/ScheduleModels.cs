@@ -26,7 +26,7 @@ public static class StudioSlots
     public static SlotDefinition? Find(TimeOnly start) => All.FirstOrDefault(s => s.Start == start);
 }
 
-public sealed record ScheduleServiceDto(string ServicesId, string Name, string Description, decimal Price);
+public sealed record ScheduleServiceDto(string ServicesId, string Name, string Description, decimal Price, string RateType = "Per Session");
 
 public sealed record OfficeClerkDto(string EmployeeId, string FullName, string DaysOff);
 
@@ -35,6 +35,32 @@ public sealed record SlotAvailabilityDto(TimeOnly Start, TimeOnly End, bool IsAv
 public sealed record DayAvailabilityDto(DateOnly Date, IReadOnlyList<SlotAvailabilityDto> Slots);
 
 public sealed record MonthAvailabilityDto(int Year, int Month, IReadOnlyList<DayAvailabilityDto> Days);
+
+public sealed record CrewSlotStatusDto(
+    TimeOnly Start,
+    TimeOnly End,
+    bool IsBookable,
+    bool IsPhotographyAvailable,
+    bool IsVideographyAvailable,
+    int AvailablePhotographers,
+    int TotalPhotographers,
+    int AvailableVideographers,
+    int TotalVideographers,
+    bool IsConsultationSlotOpen,
+    string StatusMessage);
+
+public sealed record AvailabilityCheckResultDto(
+    DateOnly Date,
+    TimeOnly? TargetTime,
+    string DayStatusMessage,
+    string? TimeStatusMessage,
+    bool IsFullDayAvailable,
+    bool IsWholeDayUnavailable,
+    bool IsPhotographyAvailableForTime,
+    bool IsVideographyAvailableForTime,
+    int TotalPhotographers,
+    int TotalVideographers,
+    IReadOnlyList<CrewSlotStatusDto> Slots);
 
 public sealed record MeetingLinkDto(MeetingPlatform Platform, string MeetingLink);
 

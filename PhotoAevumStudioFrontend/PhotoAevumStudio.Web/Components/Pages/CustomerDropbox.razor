@@ -1,0 +1,228 @@
+@page "/my/dropbox"
+@layout CustomerLayout
+@attribute [Authorize(Roles = "Customer")]
+@rendermode InteractiveServer
+@using PhotoAevumStudio.Web.Models
+@using PhotoAevumStudio.Web.Services
+@inject ICustomerDropboxClient DropboxClient
+@inject NavigationManager Nav
+
+<PageTitle>Dropbox | Photo Aevum Studio</PageTitle>
+
+<header class="aev-page-header">
+    <div>
+        <h1 class="aev-page-header__title">Dropbox</h1>
+        <p class="aev-page-header__subtitle">
+            Private event photo archives stored in isolated cloud folders for 30 days after event completion.
+        </p>
+    </div>
+    <button type="button"
+            @onclick="LoadDropboxesAsync"
+            disabled="@_loading"
+            class="px-4 py-2 rounded-lg border border-slate-200 bg-white hover:bg-slate-50 text-xs font-semibold text-slate-700 shadow-sm transition-colors">
+        @(_loading ? "Refreshing..." : "Refresh Folders")
+    </button>
+</header>
+
+@if (!string.IsNullOrWhiteSpace(_statusMessage))
+{
+    <div class="mb-5 px-4 py-3 rounded-xl bg-emerald-50 border border-emerald-200 text-emerald-800 text-xs font-semibold flex items-center justify-between">
+        <span>@_statusMessage</span>
+        <button type="button" @onclick="() => _statusMessage = null" class="text-emerald-700 hover:text-emerald-900">Dismiss</button>
+    </div>
+}
+
+@if (!string.IsNullOrWhiteSpace(_errorMessage))
+{
+    <div class="mb-5 px-4 py-3 rounded-xl bg-rose-50 border border-rose-200 text-rose-800 text-xs font-semibold flex items-center justify-between">
+        <span>@_errorMessage</span>
+        <button type="button" @onclick="() => _errorMessage = null" class="text-rose-700 hover:text-rose-900">Dismiss</button>
+    </div>
+}
+
+@if (_loading)
+{
+    <div class="bg-white border border-slate-200 rounded-2xl p-12 text-center shadow-sm">
+        <div class="inline-block animate-spin rounded-full h-8 w-8 border-4 border-teal-600 border-t-transparent mb-3"></div>
+        <p class="text-sm text-slate-500">Loading your event Dropbox folders...</p>
+    </div>
+}
+else if (!_folders.Any())
+{
+    <div class="bg-white border border-slate-200 rounded-2xl p-12 text-center shadow-sm">
+        <div class="mx-auto w-14 h-14 rounded-2xl bg-slate-100 text-slate-500 flex items-center justify-center mb-4">
+            <svg xmlns="http://www.w3.org/2000/svg" width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path>
+            </svg>
+        </div>
+        <h2 class="text-lg font-bold text-slate-900 mb-1">No Completed Event Folders Yet</h2>
+        <p class="text-sm text-slate-500 max-w-md mx-auto">
+            Once your photography event is completed, an isolated Dropbox folder will automatically appear here for your photo ZIP archive.
+        </p>
+    </div>
+}
+else
+{
+    <div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-5">
+        @foreach (var folder in _folders)
+        {
+            var isUrgent = folder.DaysRemaining <= 5;
+            <article class="aev-dropbox-folder @(folder.HasFile ? "aev-dropbox-folder--ready" : "aev-dropbox-folder--waiting")"
+                     @key="folder.DropboxId">
+                <div class="aev-dropbox-folder__tab">
+                    <span class="font-mono text-[11px] font-bold text-slate-700">#@folder.EventAppointmentId</span>
+                    <span class="aev-dropbox-countdown @(isUrgent ? "is-urgent" : "")" title="Auto-deletes on @folder.ExpiresAt.ToString("MMM dd, yyyy HH:mm") UTC">
+                        <span class="aev-dropbox-countdown__dot" aria-hidden="true"></span>
+                        @folder.EffectiveCountdownLabel
+                    </span>
+                </div>
+
+                <div class="aev-dropbox-folder__body">
+                    <div class="flex items-start gap-3">
+                        <div class="aev-dropbox-folder__icon @(folder.HasFile ? "is-ready" : "is-waiting")" aria-hidden="true">
+                            <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round">
+                                <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path>
+                            </svg>
+                        </div>
+                        <div class="min-w-0 flex-1">
+                            <h2 class="text-base font-bold text-slate-900 truncate" title="@folder.EventName">@folder.EventName</h2>
+                            <p class="text-xs text-slate-500 mt-0.5">
+                                Event Date: <strong class="text-slate-700">@folder.EventDate.ToString("MMM dd, yyyy")</strong>
+                            </p>
+                        </div>
+                    </div>
+
+                    @if (!folder.HasFile)
+                    {
+                        <div class="aev-dropbox-waiting-box">
+                            <span class="aev-dropbox-waiting-dot" aria-hidden="true"></span>
+                            <div>
+                                <div class="text-xs font-bold text-amber-900">Waiting for uploads...</div>
+                                <div class="text-[11px] text-amber-700 mt-0.5">
+                                    Our studio team is preparing your photo archive.
+                                </div>
+                            </div>
+                        </div>
+                    }
+                    else
+                    {
+                        <div class="aev-dropbox-file-box">
+                            <div class="flex items-center gap-2.5 min-w-0">
+                                <span class="aev-dropbox-zip-badge">ZIP</span>
+                                <div class="min-w-0 flex-1">
+                                    <div class="text-xs font-bold text-slate-900 truncate" title="@folder.OriginalFileName">@folder.OriginalFileName</div>
+                                    <div class="text-[11px] text-slate-500">
+                                        @folder.FormattedFileSize
+                                        @if (folder.UploadedAt.HasValue)
+                                        {
+                                            <span> &bull; Uploaded @folder.UploadedAt.Value.ToLocalTime().ToString("MMM dd, yyyy")</span>
+                                        }
+                                    </div>
+                                </div>
+                            </div>
+
+                            <button type="button"
+                                    @onclick="() => DownloadZipAsync(folder)"
+                                    disabled="@(_downloadingDropboxId == folder.DropboxId)"
+                                    class="aev-dropbox-download-btn">
+                                @if (_downloadingDropboxId == folder.DropboxId)
+                                {
+                                    <span>Preparing Download...</span>
+                                }
+                                else
+                                {
+                                    <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                                        <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                                        <polyline points="7 10 12 15 17 10"></polyline>
+                                        <line x1="12" y1="15" x2="12" y2="3"></line>
+                                    </svg>
+                                    <span>Download ZIP</span>
+                                }
+                            </button>
+                        </div>
+                    }
+
+                    <div class="pt-2 border-t border-slate-100">
+                        <div class="flex items-center justify-between text-[11px] text-slate-500 mb-1.5">
+                            <span>30-Day Retention Window</span>
+                            <span class="font-semibold @(isUrgent ? "text-rose-700" : "text-slate-700")">@folder.EffectiveCountdownLabel</span>
+                        </div>
+                        <div class="aev-dropbox-progress" role="progressbar" aria-valuenow="@folder.DaysRemaining" aria-valuemin="0" aria-valuemax="30">
+                            <div class="aev-dropbox-progress__fill @(isUrgent ? "is-urgent" : "")"
+                                 style="width: @(folder.CountdownPercent)%;"></div>
+                        </div>
+                    </div>
+                </div>
+            </article>
+        }
+    </div>
+}
+
+@code {
+    private List<CustomerDropboxFolderItem> _folders = new();
+    private bool _loading = true;
+    private string? _downloadingDropboxId;
+    private string? _statusMessage;
+    private string? _errorMessage;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadDropboxesAsync();
+    }
+
+    private async Task LoadDropboxesAsync()
+    {
+        _loading = true;
+        _errorMessage = null;
+        try
+        {
+            var res = await DropboxClient.GetMyDropboxesAsync();
+            if (res.IsSuccess && res.Value != null)
+            {
+                _folders = res.Value.ToList();
+            }
+            else
+            {
+                _errorMessage = res.Error?.Message ?? "Failed to load your Dropbox folders.";
+            }
+        }
+        catch (Exception ex)
+        {
+            _errorMessage = ex.Message;
+        }
+        finally
+        {
+            _loading = false;
+        }
+    }
+
+    private async Task DownloadZipAsync(CustomerDropboxFolderItem folder)
+    {
+        if (_downloadingDropboxId != null) return;
+        _downloadingDropboxId = folder.DropboxId;
+        _errorMessage = null;
+        _statusMessage = null;
+
+        try
+        {
+            var res = await DropboxClient.GetDownloadUrlAsync(folder.DropboxId);
+            if (res.IsSuccess && res.Value != null && !string.IsNullOrWhiteSpace(res.Value.DownloadUrl))
+            {
+                _statusMessage = $"Starting download for {res.Value.FileName}...";
+                Nav.NavigateTo(res.Value.DownloadUrl, forceLoad: true);
+            }
+            else
+            {
+                _errorMessage = res.Error?.Message ?? "Unable to generate download link.";
+            }
+        }
+        catch (Exception ex)
+        {
+            _errorMessage = ex.Message;
+        }
+        finally
+        {
+            _downloadingDropboxId = null;
+        }
+    }
+}

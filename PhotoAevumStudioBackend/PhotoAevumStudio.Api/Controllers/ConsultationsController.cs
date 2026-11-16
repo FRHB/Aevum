@@ -88,9 +88,17 @@ public class ConsultationsController : ControllerBase
         [FromBody] UpdateNegotiationOutcomeRequest request,
         CancellationToken cancellationToken)
     {
-        var success = await _consultationService.UpdateNegotiationOutcomeAsync(id, request, cancellationToken);
-        if (!success) return NotFound(new { message = $"Consultation {id} not found." });
-        return Ok(new { success = true, negotiationId = id, status = request.NegotiationStatus });
+        try
+        {
+            var success = await _consultationService.UpdateNegotiationOutcomeAsync(id, request, cancellationToken);
+            if (!success) return NotFound(new { message = $"Consultation {id} not found." });
+            return Ok(new { success = true, negotiationId = id, status = request.NegotiationStatus });
+        }
+        catch (InvalidOperationException ex)
+        {
+            _logger.LogWarning(ex, "Consultation outcome update blocked: {Message}", ex.Message);
+            return BadRequest(new { message = ex.Message });
+        }
     }
 
     // POST api/consultations/{id}/create-event
@@ -103,8 +111,16 @@ public class ConsultationsController : ControllerBase
         CancellationToken cancellationToken)
     {
         request.NegotiationId = id;
-        var appointment = await _consultationService.CreateEventAppointmentFromNegotiationAsync(request, cancellationToken);
-        return StatusCode(StatusCodes.Status201Created, appointment);
+        try
+        {
+            var appointment = await _consultationService.CreateEventAppointmentFromNegotiationAsync(request, cancellationToken);
+            return StatusCode(StatusCodes.Status201Created, appointment);
+        }
+        catch (InvalidOperationException ex)
+        {
+            _logger.LogWarning(ex, "Event creation blocked: {Message}", ex.Message);
+            return BadRequest(new { message = ex.Message });
+        }
     }
 
     // PUT api/consultations/appointments/{id}/roster
@@ -115,7 +131,15 @@ public class ConsultationsController : ControllerBase
         [FromBody] UpdateAppointmentRosterRequest request,
         CancellationToken cancellationToken)
     {
-        var success = await _consultationService.UpdateAppointmentRosterAsync(id, request, cancellationToken);
-        return Ok(new { success = true, appointmentId = id });
+        try
+        {
+            var success = await _consultationService.UpdateAppointmentRosterAsync(id, request, cancellationToken);
+            return Ok(new { success = true, appointmentId = id });
+        }
+        catch (InvalidOperationException ex)
+        {
+            _logger.LogWarning(ex, "Roster update blocked for {AppointmentId}: {Message}", id, ex.Message);
+            return BadRequest(new { message = ex.Message });
+        }
     }
 }

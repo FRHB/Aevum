@@ -369,6 +369,8 @@ builder.Services.AddScoped<PhotoAevumStudio.Application.Interfaces.IBookingNotif
 builder.Services.AddScoped<PhotoAevumStudio.Application.Interfaces.ISqlAuthService, PhotoAevumStudio.Infrastructure.Services.SqlAuthService>();
 builder.Services.AddScoped<PhotoAevumStudio.Application.Interfaces.IR2StorageService, PhotoAevumStudio.Infrastructure.Services.R2StorageService>();
 builder.Services.AddScoped<PhotoAevumStudio.Application.Interfaces.IDataArchiveService, PhotoAevumStudio.Infrastructure.Services.DataArchiveService>();
+builder.Services.AddScoped<PhotoAevumStudio.Application.Interfaces.ICustomerDropboxService, PhotoAevumStudio.Infrastructure.Services.CustomerDropboxService>();
+builder.Services.AddHostedService<PhotoAevumStudio.Api.BackgroundServices.CustomerDropboxExpiryService>();
 
 // ── Analytics: Hangfire (ETL), ML.NET (predictive), RulesEngine (prescriptive) ──
 builder.Services.AddHangfire(cfg => cfg
@@ -573,6 +575,13 @@ await using (var scope = app.Services.CreateAsyncScope())
             await DatabaseSeeder.EnsureStoredProceduresAsync(db);
             await PhotoAevumStudio.Infrastructure.Scheduling.SchedulingSchema.EnsureAsync(schedulingDb);
             await DatabaseSeeder.SeedRolesAsync(roleManager);
+
+            var dropboxService = scope.ServiceProvider.GetRequiredService<ICustomerDropboxService>();
+            await dropboxService.EnsureSchemaAsync();
+            RecurringJob.AddOrUpdate<ICustomerDropboxService>(
+                "customer-dropbox-expiry",
+                s => s.PurgeExpiredDropboxesAsync(CancellationToken.None),
+                Cron.Hourly);
         }
         else
         {

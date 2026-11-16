@@ -4,6 +4,7 @@ using System.Linq;
 using PhotoAevumStudio.Infrastructure.Scheduling;
 using PhotoAevumStudio.Web.Components.Pages;
 using PhotoAevumStudio.Web.Models;
+using PhotoAevumStudio.Web.Services;
 using Xunit;
 
 namespace PhotoAevumStudio.Web.Tests;
@@ -153,5 +154,188 @@ public class BookingScheduleBufferAndDealWizardTests
         // 1:00 PM - 2:00 PM (13:00) is Available
         var afternoonSlot = slots.First(s => s.Start == new TimeSpan(13, 0, 0));
         Assert.True(afternoonSlot.IsAvailable);
+    }
+
+    [Fact]
+    public void ServiceCustomization_PerHourConcurrentMaxDuration_AndDynamicReservationFee()
+    {
+        var svc1 = new ScheduleServiceOption("SRV-0001", "Portrait Photography", "Studio portrait", 2000m, "Per Hour");
+        var svc2 = new ScheduleServiceOption("SRV-0002", "Event Videography", "Video coverage", 3000m, "Per Hour");
+        var svc3 = new ScheduleServiceOption("SRV-0003", "Printed Portraits", "Edited shots", 250m, "Per Shot");
+
+        var item1 = BookingWizardEngine.CreateCustomizationItem(svc1);
+        item1.Quantity = 3; // 3 hours -> 6,000
+        item1.IsConfirmed = true;
+
+        var item2 = BookingWizardEngine.CreateCustomizationItem(svc2);
+        item2.Quantity = 3; // 3 hours -> 9,000
+        item2.IsConfirmed = true;
+
+        var item3 = BookingWizardEngine.CreateCustomizationItem(svc3);
+        item3.Quantity = 4; // 4 shots -> 1,000
+        item3.IsConfirmed = true;
+
+        var selections = new List<ServiceCustomizationItem> { item1, item2, item3 };
+
+        // Combined duration of two 3-hour Per-Hour services is 3 hours (180 mins), not 6 hours
+        var combinedMinutes = BookingWizardEngine.ComputeCombinedShootDurationMinutes(selections);
+        Assert.Equal(180, combinedMinutes);
+
+        var total = selections.Sum(s => s.LineTotal);
+        Assert.Equal(16000m, total);
+
+        var reservationFee = Math.Round(total * 0.15m, 2);
+        Assert.Equal(2400m, reservationFee);
+    }
+
+    [Fact]
+    public void MinuteLevelGranularity_AndBuffers_AllowDifferentCrewOverlap_BlockSameCrewOverlap()
+    {
+        var date = new DateTime(2026, 11, 20); // Friday
+
+        var emp1 = new EmployeeViewModel { EmployeeId = "EMP-001", FirstName = "Elena", LastName = "Rostova", Status = "Active", DaysOff = "Sunday" };
+        var emp2 = new EmployeeViewModel { EmployeeId = "EMP-002", FirstName = "Marcus", LastName = "Vance", Status = "Active", DaysOff = "Sunday" };
+
+        // Existing event 10:15 AM - 11:35 AM assigned to Elena
+        // Combined window for Elena: 8:15 AM (2h prep) to 12:35 PM (1h post)
+        var existingBookings = new List<EventBookingModel>
+        {
+            new()
+            {
+                Id = "EVT-0001",
+                StudioSpaceId = "studio-a",
+                ClientName = "Client Alpha",
+                ServiceType = "Editorial",
+                Date = date,
+                StartTime = new TimeSpan(10, 15, 0),
+                EndTime = new TimeSpan(11, 35, 0),
+                Status = "Pending Payment",
+                AssignedPhotographer = "Elena Rostova",
+                AssignedCrewIds = new List<string> { "EMP-001" },
+                AssignedEquipmentIds = new List<string> { "EQP-0001" }
+            }
+        };
+
+        // New event at overlapping minute-level time: 11:00 AM - 1:35 PM
+        // New combined window: 9:00 AM - 2:35 PM
+        var newStart = new TimeSpan(11, 0, 0);
+        var newEnd = new TimeSpan(13, 35, 0);
+
+        var available = BookingWizardEngine.GetAvailableCrews(
+            new[] { emp1, emp2 },
+            date,
+            newStart,
+            newEnd,
+            existingBookings,
+            null);
+
+        // Elena is blocked due to combined Prep+Event+Post overlap; Marcus is available!
+        Assert.Single(available);
+        Assert.Equal("EMP-002", available[0].Employee.EmployeeId);
+        Assert.Equal("Available all day", available[0].AvailabilityText);
+    }
+
+    [Fact]
+    public void CrewAvailabilityText_FormatsOnwardAndBoundedWindowsAccurately()
+    {
+        var date = new DateTime(2026, 11, 21); // Saturday
+        var emp = new EmployeeViewModel { EmployeeId = "EMP-010", FirstName = "Clara", LastName = "Oswald", Status = "Active", DaysOff = "Sunday" };
+
+        // Morning event 9:00 AM - 11:00 AM -> Post buffer ends at 12:00 PM
+        var morningBooking = new EventBookingModel
+        {
+            Id = "EVT-AM",
+            Date = date,
+            StartTime = new TimeSpan(9, 0, 0),
+            EndTime = new TimeSpan(11, 0, 0),
+            Status = "Confirmed",
+            AssignedCrewIds = new List<string> { "EMP-010" }
+        };
+
+        // Candidate event 2:00 PM - 3:00 PM -> Prep starts at 12:00 PM (no overlap!)
+        var onwardText = BookingWizardEngine.GetCrewAvailabilityText(
+            emp, date, new TimeSpan(14, 0, 0), new TimeSpan(15, 0, 0), new[] { morningBooking }, null);
+        Assert.Equal("Available 12:00 PM onward", onwardText);
+
+        // Add evening event 6:00 PM - 7:00 PM -> Prep starts at 4:00 PM
+        var lateBooking = new EventBookingModel
+        {
+            Id = "EVT-LATE",
+            Date = date,
+            StartTime = new TimeSpan(18, 0, 0), // Prep starts at 4:00 PM
+            EndTime = new TimeSpan(19, 0, 0),
+            Status = "Confirmed",
+            AssignedCrewIds = new List<string> { "EMP-010" }
+        };
+        var boundedText = BookingWizardEngine.GetCrewAvailabilityText(
+            emp, date, new TimeSpan(14, 0, 0), new TimeSpan(15, 0, 0), new[] { morningBooking, lateBooking }, null);
+        Assert.Equal("Available 12:00 PM - 4:00 PM", boundedText);
+    }
+
+    [Fact]
+    public void ScheduleService_SameStudioOverlap_AllowedWithDifferentCrewAndEquipment_ConflictWhenCrewOrEquipmentOverlapsWithBuffers()
+    {
+        var service = new ScheduleService();
+        var date = DateTime.Today.AddDays(20);
+
+        // Event 1: Studio A, 10:00 AM - 12:00 PM, Crew EMP-1, Gear EQP-1
+        var evt1 = new EventBookingModel
+        {
+            Id = "EVT-DIFF-1",
+            StudioSpaceId = "studio-a",
+            ClientName = "Client One",
+            Date = date,
+            StartTime = new TimeSpan(10, 0, 0),
+            EndTime = new TimeSpan(12, 0, 0),
+            Status = "Pending Payment",
+            AssignedPhotographer = "Elena Rostova",
+            AssignedCrewIds = new List<string> { "EMP-1" },
+            AssignedEquipmentIds = new List<string> { "EQP-1" }
+        };
+
+        // Event 2: Studio A (same studio space!), 10:30 AM - 12:30 PM, DIFFERENT Crew EMP-2 & DIFFERENT Gear EQP-2
+        var evt2 = new EventBookingModel
+        {
+            Id = "EVT-DIFF-2",
+            StudioSpaceId = "studio-a",
+            ClientName = "Client Two",
+            Date = date,
+            StartTime = new TimeSpan(10, 30, 0),
+            EndTime = new TimeSpan(12, 30, 0),
+            Status = "Confirmed",
+            AssignedPhotographer = "Marcus Vance",
+            AssignedCrewIds = new List<string> { "EMP-2" },
+            AssignedEquipmentIds = new List<string> { "EQP-2" }
+        };
+
+        service.AddEventBooking(evt1);
+        service.AddEventBooking(evt2);
+
+        var loaded1 = service.GetEventBookings().First(b => b.Id == "EVT-DIFF-1");
+        var loaded2 = service.GetEventBookings().First(b => b.Id == "EVT-DIFF-2");
+        Assert.False(loaded1.HasConflict);
+        Assert.False(loaded2.HasConflict);
+        Assert.Equal("Awaiting Reserve Fee Payment", loaded1.DisplayStatus);
+
+        // Event 3: 12:30 PM - 1:30 PM with SAME Crew EMP-1 (conflicts with evt1's 1h post buffer until 1:00 PM!)
+        var evt3 = new EventBookingModel
+        {
+            Id = "EVT-SAME-CREW-3",
+            StudioSpaceId = "studio-a",
+            ClientName = "Client Three",
+            Date = date,
+            StartTime = new TimeSpan(12, 30, 0),
+            EndTime = new TimeSpan(13, 30, 0),
+            Status = "Confirmed",
+            AssignedPhotographer = "Elena Rostova",
+            AssignedCrewIds = new List<string> { "EMP-1" },
+            AssignedEquipmentIds = new List<string> { "EQP-3" }
+        };
+
+        service.AddEventBooking(evt3);
+        var loaded1After = service.GetEventBookings().First(b => b.Id == "EVT-DIFF-1");
+        var loaded3After = service.GetEventBookings().First(b => b.Id == "EVT-SAME-CREW-3");
+        Assert.True(loaded1After.HasConflict);
+        Assert.True(loaded3After.HasConflict);
     }
 }

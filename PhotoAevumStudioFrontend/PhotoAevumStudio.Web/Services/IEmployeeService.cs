@@ -25,10 +25,12 @@ public interface IEmployeeService
     Task<IReadOnlyList<EmployeeTimesheetHistoryDto>> GetTimesheetHistoryAsync(string? employeeId = null, CancellationToken cancellationToken = default);
     Task<bool> AdjustTimesheetPunchAsync(int id, DateTime? clockIn, DateTime? clockOut, string? reason, CancellationToken cancellationToken = default);
 
-    // ── Leaves ───────────────────────────────────────────────────────────────
+    // ── Leaves & Days Off ────────────────────────────────────────────────────
     Task<bool> RequestLeaveAsync(string leaveType, DateOnly startDate, DateOnly endDate, string? reason, string? employeeId = null, CancellationToken cancellationToken = default);
     Task<IReadOnlyList<LeaveItemViewModel>> GetPendingLeavesAsync(CancellationToken cancellationToken = default);
+    Task<IReadOnlyList<LeaveItemViewModel>> GetAllLeavesAsync(string? status = null, string? employeeId = null, CancellationToken cancellationToken = default);
     Task<IReadOnlyList<LeaveItemViewModel>> GetMyLeavesAsync(string? employeeId = null, CancellationToken cancellationToken = default);
     Task<bool> ApproveLeaveAsync(int leaveId, CancellationToken cancellationToken = default);
     Task<bool> RejectLeaveAsync(int leaveId, string? reason = null, CancellationToken cancellationToken = default);
+    Task<bool> UpdateEmployeeDaysOffAsync(string employeeId, string daysOff, CancellationToken cancellationToken = default);
 }

@@ -11,6 +11,8 @@
 @inject IScheduleService ScheduleService
 @inject AuthenticationStateProvider AuthStateProvider
 @inject IUserService UserService
+@inject IEmployeeService EmployeeService
+@inject IJSRuntime JS
 
 <PageTitle>Calendar of Events | Aevum Studio</PageTitle>
 
@@ -82,6 +84,7 @@
             <select value="@_selectedStatusFilter" @onchange="OnStatusFilterChanged" class="toolbar-select">
                 <option value="">All Statuses</option>
                 <option value="Confirmed">Confirmed</option>
+                <option value="Pending Payment">Awaiting Reserve Fee Payment</option>
                 <option value="Pending">Pending</option>
                 <option value="Completed">Completed</option>
             </select>
@@ -137,7 +140,7 @@
                         {
                             @foreach (var booking in dayBookings)
                             {
-                                <CalendarEventChip Booking="booking" OnClick="() => OpenDetailDrawer(booking)" />
+                                <CalendarEventChip Booking="booking" OnClick="() => HandleWeekEventClick(booking)" />
                             }
                         }
 
@@ -158,14 +161,30 @@
     }
     else if (_currentView == ScheduleViewMode.Day)
     {
-        @* ── DAY VIEW — Agenda-style chronological list ───────────────── *@
+        @* ── DAY VIEW — Tabular Gantt / Time-Blocked Timetable ─────────── *@
         var dayBookings = GetBookingsForDate(_selectedDate.Date);
+        var (startHour, endHour) = GetDayTimelineBounds(dayBookings);
+        var timelineHours = Enumerable.Range(startHour, endHour - startHour).ToList();
+        var totalMinutes = (endHour - startHour) * 60.0;
 
-        <div class="compact-agenda-card">
-            @* Date header row *@
+        <div class="compact-agenda-card day-timetable-card">
             <div class="agenda-date-divider">
-                <span>@_selectedDate.ToString("dddd, MMMM d, yyyy")</span>
-                <span class="badge-count">@dayBookings.Count session@(dayBookings.Count == 1 ? "" : "s")</span>
+                <div class="flex items-center gap-2 flex-wrap">
+                    <span>@_selectedDate.ToString("dddd, MMMM d, yyyy")</span>
+                    @if (_selectedDate.Date == DateTime.Today)
+                    {
+                        <span class="day-today-pill">Today</span>
+                    }
+                    <span class="badge-count">@dayBookings.Count session@(dayBookings.Count == 1 ? "" : "s")</span>
+                </div>
+                @if (!_isPhotographerOrCreative)
+                {
+                    <button type="button"
+                            @onclick='() => OpenCreateModalForSlot(FilteredStudioSpaces.FirstOrDefault()?.Id ?? "studio-a", _selectedDate)'
+                            class="day-quick-add-link">
+                        + Book Session
+                    </button>
+                }
             </div>
 
             @if (!dayBookings.Any())
@@ -188,33 +207,77 @@
             }
             else
             {
-                <div class="agenda-items-stack">
-                    @foreach (var b in dayBookings)
-                    {
-                        <div @onclick="() => OpenDetailDrawer(b)"
-                             class="agenda-item-row cursor-pointer hover:bg-gray-50 @(b.HasConflict ? "conflict-row" : "") @(b.IsConsultation ? "is-consultation-row" : "")">
-                            <div class="agenda-time">@b.FormattedTimeRange</div>
-                            <div class="agenda-details">
-                                <div class="font-bold text-sm">
-                                    @if (b.IsConsultation)
-                                    {
-                                        <span class="px-1.5 py-0.5 rounded text-[10px] font-bold bg-teal-100 text-teal-800 mr-1">💬 Consultation</span>
-                                    }
-                                    @b.ClientName
-                                </div>
-                                <div class="text-xs text-gray-500">
-                                    @b.ServiceType &bull; @(b.IsConsultation ? "Clerk: " : "📷 ")@b.AssignedPhotographer
-                                </div>
-                            </div>
-                            <div class="agenda-actions">
-                                <span class="status-pill text-xs @b.Status.ToLowerInvariant()">@b.Status</span>
-                                @if (!b.IsConsultation)
+                <div class="day-gantt-wrapper">
+                    <table class="day-gantt-table" aria-label="Daily tabular event timetable">
+                        <thead>
+                            <tr>
+                                <th class="gantt-event-col-header">Event &amp; Assigned Staff</th>
+                                @foreach (var hour in timelineHours)
                                 {
-                                    <span class="text-xs font-bold text-gray-900">₱@b.EstimatedPrice.ToString("F0")</span>
+                                    <th class="gantt-hour-header">@FormatHourLabel(hour)</th>
                                 }
-                            </div>
-                        </div>
-                    }
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @foreach (var b in dayBookings)
+                            {
+                                var startMin = Math.Max(0, (b.StartTime.TotalMinutes - startHour * 60.0));
+                                var rawEndMin = b.EndTime > b.StartTime ? b.EndTime.TotalMinutes : b.StartTime.Add(TimeSpan.FromHours(1)).TotalMinutes;
+                                var endMin = Math.Min(totalMinutes, Math.Max(startMin + 20, rawEndMin - startHour * 60.0));
+                                var leftPct = totalMinutes > 0 ? (startMin / totalMinutes) * 100.0 : 0;
+                                var widthPct = totalMinutes > 0 ? Math.Max(4.0, ((endMin - startMin) / totalMinutes) * 100.0) : 10.0;
+                                var isHighlighted = string.Equals(_highlightedEventId, b.Id, StringComparison.OrdinalIgnoreCase);
+
+                                <tr id="day-event-row-@b.Id"
+                                    data-event-id="@b.Id"
+                                    @onclick="() => OpenDetailDrawer(b)"
+                                    class="day-gantt-row @(b.HasConflict ? "conflict-row" : "") @(b.IsConsultation ? "is-consultation-row" : "") @(isHighlighted ? "event-row-highlighted" : "")">
+                                    <td class="gantt-event-meta-cell">
+                                        <div class="gantt-meta-top">
+                                            <span class="gantt-client-name">
+                                                @if (b.IsConsultation)
+                                                {
+                                                    <span class="px-1.5 py-0.5 rounded text-[10px] font-bold bg-teal-100 text-teal-800 mr-1">💬 Consultation</span>
+                                                }
+                                                @b.ClientName
+                                            </span>
+                                            <span class="status-pill text-[10px] @(b.Status is "Pending Payment" or "Awaiting_Downpayment" ? "pending" : b.Status.ToLowerInvariant())">@b.DisplayStatus</span>
+                                        </div>
+                                        <div class="gantt-meta-sub">
+                                            <span>@b.ServiceType</span>
+                                            <span>&bull;</span>
+                                            <span>@(b.IsConsultation ? "Clerk: " : "📷 ")@b.AssignedPhotographer</span>
+                                        </div>
+                                        <div class="gantt-meta-time">
+                                            <span>@b.FormattedTimeRange</span>
+                                            @if (b.HasConflict)
+                                            {
+                                                <span class="text-rose-700 font-bold ml-2">⚠️ Conflict</span>
+                                            }
+                                            @if (!b.IsConsultation && b.EstimatedPrice > 0 && !_isPhotographerOrCreative)
+                                            {
+                                                <span class="ml-auto font-bold text-gray-800">₱@b.EstimatedPrice.ToString("F0")</span>
+                                            }
+                                        </div>
+                                    </td>
+                                    <td colspan="@timelineHours.Count" class="gantt-timeline-cell">
+                                        <div class="gantt-grid-backdrop" style="--hour-cols: @timelineHours.Count;">
+                                            @foreach (var _ in timelineHours)
+                                            {
+                                                <span class="gantt-grid-slot"></span>
+                                            }
+                                        </div>
+                                        <div class="gantt-time-block @GetMiniEventBadgeClass(b)"
+                                             style="left: @leftPct.ToString("F2", System.Globalization.CultureInfo.InvariantCulture)%; width: @widthPct.ToString("F2", System.Globalization.CultureInfo.InvariantCulture)%;"
+                                             title="@b.FormattedTimeRange — @b.ClientName (@b.ServiceType) with @b.AssignedPhotographer">
+                                            <span class="gantt-block-time">@b.StartTime.ToString(@"hh\:mm")–@b.EndTime.ToString(@"hh\:mm")</span>
+                                            <span class="gantt-block-label">@b.ClientName (@b.ServiceType)</span>
+                                        </div>
+                                    </td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
                 </div>
                 @if (!_isPhotographerOrCreative)
                 {
@@ -245,7 +308,7 @@
                     var totalEvts = GetBookingsForDate(day.Date).Count;
 
                     <div class="month-day-cell @(isCurrentMonth ? "" : "other-month") @(isToday ? "is-today" : "")"
-                         @onclick="async () => { _selectedDate = day; await SetViewMode(ScheduleViewMode.Day); }">
+                         @onclick="() => NavigateToDayTimetable(day)">
                         <div class="month-cell-header">
                             <span class="month-day-num">@day.Day</span>
                             @if (totalEvts > 0)
@@ -274,8 +337,252 @@
         </div>
     }
 
+    @* ── 4. COLLAPSIBLE STAFF SCHEDULE & LEAVE ADMIN PANEL ──────────── *@
+    @if (!_isPhotographerOrCreative)
+    {
+        var today = DateOnly.FromDateTime(DateTime.Today);
+        var displayedLeaves = _showAllLeavesHistory
+            ? _allLeaves
+            : _allLeaves
+                .Where(l => string.Equals(l.Status, "Pending", StringComparison.OrdinalIgnoreCase)
+                         || (string.Equals(l.Status, "Approved", StringComparison.OrdinalIgnoreCase) && l.EndDate >= today))
+                .OrderBy(l => string.Equals(l.Status, "Pending", StringComparison.OrdinalIgnoreCase) ? 0 : 1)
+                .ThenBy(l => l.StartDate)
+                .ToList();
+        var pendingCount = _allLeaves.Count(l => string.Equals(l.Status, "Pending", StringComparison.OrdinalIgnoreCase));
+        var activeUpcomingCount = _allLeaves.Count(l => string.Equals(l.Status, "Approved", StringComparison.OrdinalIgnoreCase) && l.EndDate >= today);
+
+        <section class="staff-schedule-collapsible" aria-label="Staff Schedule and Leave Management">
+            <button type="button"
+                    class="staff-schedule-toggle"
+                    @onclick="ToggleStaffScheduleSection"
+                    aria-expanded="@_isStaffScheduleExpanded"
+                    aria-controls="staff-schedule-admin-body">
+                <div class="flex items-center gap-3 flex-wrap">
+                    <span class="staff-schedule-chevron @(_isStaffScheduleExpanded ? "is-open" : "")" aria-hidden="true">›</span>
+                    <div class="text-left">
+                        <div class="text-sm font-extrabold text-gray-900">Staff Schedule</div>
+                        <div class="text-[11px] text-gray-500 font-normal">Upcoming &amp; ongoing leaves, leave approvals, and staff scheduled days off</div>
+                    </div>
+                </div>
+                <div class="flex items-center gap-2 flex-wrap">
+                    @if (pendingCount > 0)
+                    {
+                        <span class="px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-amber-100 text-amber-900 border border-amber-200">
+                            @pendingCount Pending
+                        </span>
+                    }
+                    <span class="px-2.5 py-0.5 rounded-full text-[11px] font-semibold bg-teal-50 text-teal-800 border border-teal-200">
+                        @activeUpcomingCount Active / Upcoming Leaves
+                    </span>
+                    <span class="px-2.5 py-0.5 rounded-full text-[11px] font-semibold bg-gray-100 text-gray-700 border border-gray-200">
+                        @_staffDirectory.Count Staff
+                    </span>
+                </div>
+            </button>
+
+            @if (_isStaffScheduleExpanded)
+            {
+                <div id="staff-schedule-admin-body" class="staff-schedule-body">
+                    @if (!string.IsNullOrWhiteSpace(_staffScheduleFeedback))
+                    {
+                        <div class="px-4 py-2.5 rounded-lg border text-xs font-semibold flex items-center justify-between @(_staffScheduleIsError ? "bg-rose-50 border-rose-200 text-rose-800" : "bg-emerald-50 border-emerald-200 text-emerald-800")">
+                            <span>@_staffScheduleFeedback</span>
+                            <button type="button" @onclick="() => _staffScheduleFeedback = null" class="text-[11px] font-bold opacity-70 hover:opacity-100">✕</button>
+                        </div>
+                    }
+
+                    @* ── Upcoming & Ongoing Leaves Table ── *@
+                    <div class="space-y-2">
+                        <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
+                            <div>
+                                <h3 class="text-xs font-extrabold uppercase tracking-wider text-gray-700">Upcoming &amp; Ongoing Leaves</h3>
+                                <p class="text-[11px] text-gray-500">Approved leaves automatically block staff assignment in the booking engine during their timeframe.</p>
+                            </div>
+                            <div class="flex items-center gap-2">
+                                <button type="button"
+                                        @onclick="() => _showAllLeavesHistory = false"
+                                        class="px-2.5 py-1 rounded text-[11px] font-semibold border @(!_showAllLeavesHistory ? "bg-gray-900 text-white border-gray-900" : "bg-white text-gray-600 border-gray-200")">
+                                    Upcoming &amp; Pending
+                                </button>
+                                <button type="button"
+                                        @onclick="() => _showAllLeavesHistory = true"
+                                        class="px-2.5 py-1 rounded text-[11px] font-semibold border @(_showAllLeavesHistory ? "bg-gray-900 text-white border-gray-900" : "bg-white text-gray-600 border-gray-200")">
+                                    All Records (@_allLeaves.Count)
+                                </button>
+                                <button type="button"
+                                        @onclick="LoadStaffScheduleDataAsync"
+                                        disabled="@_isLoadingStaffSchedule"
+                                        class="px-2.5 py-1 rounded text-[11px] font-semibold bg-gray-100 hover:bg-gray-200 text-gray-700">
+                                    @(_isLoadingStaffSchedule ? "Loading..." : "Refresh")
+                                </button>
+                            </div>
+                        </div>
+
+                        <div class="overflow-x-auto border border-gray-200 rounded-lg">
+                            <table class="w-full text-left text-xs border-collapse">
+                                <thead>
+                                    <tr class="bg-gray-50 border-b border-gray-200 text-[11px] font-bold uppercase tracking-wider text-gray-500">
+                                        <th class="py-2.5 px-3">Employee</th>
+                                        <th class="py-2.5 px-3">Leave Type</th>
+                                        <th class="py-2.5 px-3">Timeframe</th>
+                                        <th class="py-2.5 px-3">Description</th>
+                                        <th class="py-2.5 px-3">Status</th>
+                                        <th class="py-2.5 px-3 text-right">Actions</th>
+                                    </tr>
+                                </thead>
+                                <tbody class="divide-y divide-gray-100 bg-white">
+                                    @if (_isLoadingStaffSchedule && displayedLeaves.Count == 0)
+                                    {
+                                        <tr>
+                                            <td colspan="6" class="py-6 text-center text-gray-400">Loading staff leave schedule...</td>
+                                        </tr>
+                                    }
+                                    else if (displayedLeaves.Count == 0)
+                                    {
+                                        <tr>
+                                            <td colspan="6" class="py-6 text-center text-gray-400 italic">No upcoming, ongoing, or pending leave requests found.</td>
+                                        </tr>
+                                    }
+                                    else
+                                    {
+                                        @foreach (var lv in displayedLeaves)
+                                        {
+                                            var isOngoing = string.Equals(lv.Status, "Approved", StringComparison.OrdinalIgnoreCase) && lv.StartDate <= today && lv.EndDate >= today;
+                                            <tr class="hover:bg-gray-50/70">
+                                                <td class="py-2.5 px-3">
+                                                    <div class="font-bold text-gray-900">@lv.EmployeeName</div>
+                                                    <div class="text-[10px] font-mono text-gray-400">@lv.EmployeeStudioId</div>
+                                                </td>
+                                                <td class="py-2.5 px-3 font-semibold text-gray-800">@lv.LeaveType</td>
+                                                <td class="py-2.5 px-3 font-mono text-gray-700 whitespace-nowrap">
+                                                    @lv.StartDate.ToString("MMM d") – @lv.EndDate.ToString("MMM d, yyyy")
+                                                </td>
+                                                <td class="py-2.5 px-3 text-gray-600 max-w-xs truncate" title="@lv.Reason">
+                                                    @(string.IsNullOrWhiteSpace(lv.Reason) ? "—" : lv.Reason)
+                                                </td>
+                                                <td class="py-2.5 px-3">
+                                                    @if (isOngoing)
+                                                    {
+                                                        <span class="px-2 py-0.5 rounded-full text-[10px] font-bold bg-teal-100 text-teal-900 border border-teal-200">Ongoing Leave</span>
+                                                    }
+                                                    else if (string.Equals(lv.Status, "Approved", StringComparison.OrdinalIgnoreCase))
+                                                    {
+                                                        <span class="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-800">Approved (Upcoming)</span>
+                                                    }
+                                                    else if (string.Equals(lv.Status, "Rejected", StringComparison.OrdinalIgnoreCase))
+                                                    {
+                                                        <span class="px-2 py-0.5 rounded-full text-[10px] font-bold bg-rose-100 text-rose-800" title="@lv.RejectionReason">Rejected</span>
+                                                    }
+                                                    else
+                                                    {
+                                                        <span class="px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-100 text-amber-900">Pending</span>
+                                                    }
+                                                </td>
+                                                <td class="py-2.5 px-3 text-right whitespace-nowrap">
+                                                    @if (string.Equals(lv.Status, "Pending", StringComparison.OrdinalIgnoreCase))
+                                                    {
+                                                        <div class="inline-flex items-center gap-1.5">
+                                                            <button type="button"
+                                                                    disabled="@_isProcessingLeaveAction"
+                                                                    @onclick="() => ApproveLeaveRequestAsync(lv)"
+                                                                    class="px-2.5 py-1 rounded bg-emerald-600 hover:bg-emerald-700 text-white text-[11px] font-bold disabled:opacity-50">
+                                                                Approve
+                                                            </button>
+                                                            <button type="button"
+                                                                    disabled="@_isProcessingLeaveAction"
+                                                                    @onclick="() => OpenRejectLeaveModal(lv)"
+                                                                    class="px-2.5 py-1 rounded bg-rose-600 hover:bg-rose-700 text-white text-[11px] font-bold disabled:opacity-50">
+                                                                Reject
+                                                            </button>
+                                                        </div>
+                                                    }
+                                                    else
+                                                    {
+                                                        <span class="text-[11px] text-gray-400">@(string.IsNullOrWhiteSpace(lv.ApprovedBy) ? "Reviewed" : $"By {lv.ApprovedBy}")</span>
+                                                    }
+                                                </td>
+                                            </tr>
+                                        }
+                                    }
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+
+                    @* ── Staff Scheduled Days Off Table ── *@
+                    <div class="space-y-2 pt-2 border-t border-gray-100">
+                        <div>
+                            <h3 class="text-xs font-extrabold uppercase tracking-wider text-gray-700">Staff Days Off Roster</h3>
+                            <p class="text-[11px] text-gray-500">Manually adjust recurring weekly days off per staff member.</p>
+                        </div>
+
+                        <div class="overflow-x-auto border border-gray-200 rounded-lg">
+                            <table class="w-full text-left text-xs border-collapse">
+                                <thead>
+                                    <tr class="bg-gray-50 border-b border-gray-200 text-[11px] font-bold uppercase tracking-wider text-gray-500">
+                                        <th class="py-2.5 px-3">Staff Member</th>
+                                        <th class="py-2.5 px-3">Specializations</th>
+                                        <th class="py-2.5 px-3">Scheduled Days Off</th>
+                                        <th class="py-2.5 px-3 text-right">Action</th>
+                                    </tr>
+                                </thead>
+                                <tbody class="divide-y divide-gray-100 bg-white">
+                                    @if (_staffDirectory.Count == 0)
+                                    {
+                                        <tr>
+                                            <td colspan="4" class="py-5 text-center text-gray-400 italic">No active staff records found.</td>
+                                        </tr>
+                                    }
+                                    else
+                                    {
+                                        @foreach (var emp in _staffDirectory)
+                                        {
+                                            var currentDaysOff = string.IsNullOrWhiteSpace(emp.DaysOff) ? "Sunday" : emp.DaysOff;
+                                            <tr class="hover:bg-gray-50/70">
+                                                <td class="py-2.5 px-3">
+                                                    <div class="font-bold text-gray-900">@emp.FullName</div>
+                                                    <div class="text-[10px] font-mono text-gray-400">@emp.EmployeeId</div>
+                                                </td>
+                                                <td class="py-2.5 px-3 text-gray-600">
+                                                    @(emp.Specializations != null && emp.Specializations.Count > 0 ? string.Join(", ", emp.Specializations) : "Studio Staff")
+                                                </td>
+                                                <td class="py-2.5 px-3">
+                                                    @if (currentDaysOff.Equals("None", StringComparison.OrdinalIgnoreCase))
+                                                    {
+                                                        <span class="px-2 py-0.5 rounded-full text-[10px] font-semibold bg-gray-100 text-gray-600">None</span>
+                                                    }
+                                                    else
+                                                    {
+                                                        <div class="flex flex-wrap gap-1">
+                                                            @foreach (var d in currentDaysOff.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+                                                            {
+                                                                <span class="px-2 py-0.5 rounded-full text-[10px] font-bold bg-blue-50 text-blue-800 border border-blue-200">@d</span>
+                                                            }
+                                                        </div>
+                                                    }
+                                                </td>
+                                                <td class="py-2.5 px-3 text-right">
+                                                    <button type="button"
+                                                            @onclick="() => OpenAdjustDaysOffModal(emp)"
+                                                            class="px-2.5 py-1 rounded border border-gray-300 bg-white hover:bg-gray-100 text-gray-800 text-[11px] font-semibold">
+                                                        Adjust Days Off
+                                                    </button>
+                                                </td>
+                                            </tr>
+                                        }
+                                    }
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+            }
+        </section>
+    }
+
     @* ── MODULAR DETAIL DRAWER ────────────────────────────────────────── *@
-    <CalendarDetailDrawer Booking="_selectedBooking" OnClose="CloseDetailDrawer" />
+    <CalendarDetailDrawer Booking="_selectedBooking" HidePricing="_isPhotographerOrCreative" OnClose="CloseDetailDrawer" />
 
     @* ── MODULAR CREATE NEW EVENT MODAL ───────────────────────────────── *@
     @* Fallback state for services: No services currently available *@
@@ -290,6 +597,48 @@
                          OnClose="CloseCreateModal"
                          OnSave="SaveNewEvent"
                          OnServiceSelected="OnServiceTypeSelected" />
+
+    @* ── ADJUST STAFF DAYS OFF MODAL ──────────────────────────────────── *@
+    <AdjustDaysOffModal IsOpen="_isDaysOffModalOpen"
+                        Employee="_daysOffTargetEmployee"
+                        OnClose="() => _isDaysOffModalOpen = false"
+                        OnSaved="HandleDaysOffSavedAsync" />
+
+    @* ── REJECT LEAVE REASON MODAL ────────────────────────────────────── *@
+    @if (_rejectTargetLeave != null)
+    {
+        <div class="fixed inset-0 bg-slate-950/60 backdrop-blur-xs z-50 flex items-center justify-center p-4"
+             role="dialog" aria-modal="true" aria-labelledby="reject-leave-title"
+             @onclick="() => _rejectTargetLeave = null">
+            <div class="bg-white rounded-2xl shadow-xl border border-slate-200 w-full max-w-md overflow-hidden"
+                 @onclick:stopPropagation="true">
+                <div class="px-6 py-4 border-b border-slate-100 flex items-center justify-between bg-slate-50/70">
+                    <h3 id="reject-leave-title" class="text-sm font-extrabold text-slate-900">Reject Leave Request</h3>
+                    <button type="button" @onclick="() => _rejectTargetLeave = null" class="text-slate-400 hover:text-slate-700 text-xs font-bold">✕</button>
+                </div>
+                <div class="p-6 space-y-3 text-xs">
+                    <p class="text-slate-600">
+                        Decline <strong>@_rejectTargetLeave.LeaveType</strong> for <strong>@_rejectTargetLeave.EmployeeName</strong>
+                        (@_rejectTargetLeave.StartDate.ToString("MMM d") – @_rejectTargetLeave.EndDate.ToString("MMM d, yyyy"))?
+                    </p>
+                    <div>
+                        <label for="reject-reason-input" class="block font-semibold text-slate-700 mb-1">Reason for Rejection (optional)</label>
+                        <textarea id="reject-reason-input"
+                                  @bind="_rejectReasonInput"
+                                  rows="3"
+                                  placeholder="e.g., Peak studio booking schedule on requested dates..."
+                                  class="w-full px-3 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-rose-500"></textarea>
+                    </div>
+                </div>
+                <div class="px-6 py-4 border-t border-slate-100 bg-slate-50/70 flex justify-end gap-2">
+                    <button type="button" @onclick="() => _rejectTargetLeave = null" class="px-3.5 py-2 border border-slate-300 bg-white rounded-lg text-xs font-semibold text-slate-700">Cancel</button>
+                    <button type="button" @onclick="ConfirmRejectLeaveAsync" disabled="@_isProcessingLeaveAction" class="px-4 py-2 bg-rose-600 hover:bg-rose-700 text-white rounded-lg text-xs font-bold">
+                        @(_isProcessingLeaveAction ? "Rejecting..." : "Confirm Rejection")
+                    </button>
+                </div>
+            </div>
+        </div>
+    }
 </div>
 
 @code {
@@ -333,9 +682,26 @@
     private int _conflictCount;
 
     private System.Threading.Timer? _debounceTimer;
+    private System.Threading.Timer? _highlightTimer;
+    private string? _highlightedEventId;
+    private string? _pendingHighlightEventId;
 
     private bool _isLoadingBookings = true;
     private bool _hasLoadedInitialData;
+
+    // Collapsible Staff Schedule & Leave Admin Panel state
+    private bool _isStaffScheduleExpanded;
+    private bool _isLoadingStaffSchedule;
+    private bool _isProcessingLeaveAction;
+    private bool _showAllLeavesHistory;
+    private string? _staffScheduleFeedback;
+    private bool _staffScheduleIsError;
+    private List<LeaveItemViewModel> _allLeaves = new();
+    private List<EmployeeViewModel> _staffDirectory = new();
+    private bool _isDaysOffModalOpen;
+    private EmployeeViewModel? _daysOffTargetEmployee;
+    private LeaveItemViewModel? _rejectTargetLeave;
+    private string _rejectReasonInput = string.Empty;
 
     protected override async Task OnInitializedAsync()
     {
@@ -360,23 +726,43 @@
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
-        if (!firstRender || _hasLoadedInitialData) return;
-        _hasLoadedInitialData = true;
-
-        await Task.Run(() =>
+        if (firstRender && !_hasLoadedInitialData)
         {
+            _hasLoadedInitialData = true;
+
+            await Task.Run(() =>
+            {
+                try
+                {
+                    AvailableServices = UserService.GetMainServices().Where(s => s.IsActive).ToList();
+                }
+                catch
+                {
+                    AvailableServices = new();
+                }
+            });
+
+            await LoadBookingsForCurrentViewAsync();
+            if (!_isPhotographerOrCreative)
+            {
+                await LoadStaffScheduleDataAsync();
+            }
+            await InvokeAsync(StateHasChanged);
+        }
+
+        if (!string.IsNullOrEmpty(_pendingHighlightEventId) && _currentView == ScheduleViewMode.Day)
+        {
+            var targetId = _pendingHighlightEventId;
+            _pendingHighlightEventId = null;
             try
             {
-                AvailableServices = UserService.GetMainServices().Where(s => s.IsActive).ToList();
+                await JS.InvokeVoidAsync("aevumCalendar.highlightEventRow", targetId, 10000);
             }
             catch
             {
-                AvailableServices = new();
+                // Ignore JS interop failures when prerendering or circuit is disconnecting
             }
-        });
-
-        await LoadBookingsForCurrentViewAsync();
-        await InvokeAsync(StateHasChanged);
+        }
     }
 
     private void CalculateCurrentRange(out DateTime rangeStart, out DateTime rangeEnd)
@@ -468,7 +854,9 @@
         }
 
         if (!string.IsNullOrEmpty(_selectedStatusFilter))
-            query = query.Where(b => b.Status.Equals(_selectedStatusFilter, StringComparison.OrdinalIgnoreCase));
+            query = query.Where(b =>
+                b.Status.Equals(_selectedStatusFilter, StringComparison.OrdinalIgnoreCase) ||
+                b.DisplayStatus.Equals(_selectedStatusFilter, StringComparison.OrdinalIgnoreCase));
 
         if (!string.IsNullOrEmpty(_selectedServiceTypeFilter))
             query = query.Where(b => b.ServiceType.Equals(_selectedServiceTypeFilter, StringComparison.OrdinalIgnoreCase));
@@ -570,7 +958,7 @@
         return ev.Status.ToLowerInvariant() switch
         {
             "confirmed" => "confirmed",
-            "pending" => "pending",
+            "pending" or "pending payment" or "awaiting_downpayment" => "pending",
             "completed" => "completed",
             _ => ""
         };
@@ -588,8 +976,178 @@
 
     private async Task SetViewMode(ScheduleViewMode mode)
     {
+        if (mode != ScheduleViewMode.Day)
+        {
+            _highlightedEventId = null;
+            _pendingHighlightEventId = null;
+        }
         _currentView = mode;
         await LoadBookingsForCurrentViewAsync();
+    }
+
+    private async Task HandleWeekEventClick(EventBookingModel booking)
+    {
+        _selectedDate = booking.Date.Date;
+        _highlightedEventId = booking.Id;
+        _pendingHighlightEventId = booking.Id;
+
+        _highlightTimer?.Dispose();
+        _highlightTimer = new System.Threading.Timer(_ =>
+        {
+            InvokeAsync(() =>
+            {
+                if (string.Equals(_highlightedEventId, booking.Id, StringComparison.OrdinalIgnoreCase))
+                {
+                    _highlightedEventId = null;
+                    StateHasChanged();
+                }
+            });
+        }, null, 10000, Timeout.Infinite);
+
+        _currentView = ScheduleViewMode.Day;
+        await LoadBookingsForCurrentViewAsync();
+    }
+
+    private async Task NavigateToDayTimetable(DateTime day)
+    {
+        _highlightedEventId = null;
+        _pendingHighlightEventId = null;
+        _selectedDate = day.Date;
+        await SetViewMode(ScheduleViewMode.Day);
+    }
+
+    private static (int StartHour, int EndHour) GetDayTimelineBounds(List<EventBookingModel> dayBookings)
+    {
+        int startHour = 8;
+        int endHour = 20;
+
+        if (dayBookings.Count > 0)
+        {
+            var minH = (int)Math.Floor(dayBookings.Min(b => b.StartTime.TotalHours));
+            var maxH = (int)Math.Ceiling(dayBookings.Max(b => (b.EndTime > b.StartTime ? b.EndTime : b.StartTime.Add(TimeSpan.FromHours(1))).TotalHours));
+            if (minH < startHour) startHour = Math.Max(0, minH);
+            if (maxH > endHour) endHour = Math.Min(24, maxH);
+        }
+
+        if (endHour <= startHour) endHour = Math.Min(24, startHour + 12);
+        return (startHour, endHour);
+    }
+
+    private static string FormatHourLabel(int hour)
+    {
+        var normalized = ((hour % 24) + 24) % 24;
+        return DateTime.Today.AddHours(normalized).ToString("h tt");
+    }
+
+    private async Task ToggleStaffScheduleSection()
+    {
+        _isStaffScheduleExpanded = !_isStaffScheduleExpanded;
+        if (_isStaffScheduleExpanded && _allLeaves.Count == 0 && _staffDirectory.Count == 0)
+        {
+            await LoadStaffScheduleDataAsync();
+        }
+    }
+
+    private async Task LoadStaffScheduleDataAsync()
+    {
+        if (_isPhotographerOrCreative) return;
+        _isLoadingStaffSchedule = true;
+        try
+        {
+            var leavesTask = EmployeeService.GetAllLeavesAsync();
+            var staffTask = EmployeeService.GetEmployeesAsync();
+            await Task.WhenAll(leavesTask, staffTask);
+
+            _allLeaves = (await leavesTask).ToList();
+            _staffDirectory = (await staffTask)
+                .Where(e => e.IsActive)
+                .OrderBy(e => e.FullName)
+                .ToList();
+        }
+        catch
+        {
+            // Preserve last known state on transient failure
+        }
+        finally
+        {
+            _isLoadingStaffSchedule = false;
+        }
+    }
+
+    private async Task ApproveLeaveRequestAsync(LeaveItemViewModel leave)
+    {
+        _isProcessingLeaveAction = true;
+        _staffScheduleFeedback = null;
+        _staffScheduleIsError = false;
+        try
+        {
+            var ok = await EmployeeService.ApproveLeaveAsync(leave.Id);
+            if (ok)
+            {
+                ScheduleService.InvalidateCache();
+                _staffScheduleFeedback = $"Approved {leave.LeaveType} for {leave.EmployeeName} ({leave.StartDate:MMM d} – {leave.EndDate:MMM d, yyyy}). Booking engine will now block assignments during this timeframe.";
+                await LoadStaffScheduleDataAsync();
+            }
+            else
+            {
+                _staffScheduleIsError = true;
+                _staffScheduleFeedback = "Could not approve leave request. Please try again.";
+            }
+        }
+        finally
+        {
+            _isProcessingLeaveAction = false;
+        }
+    }
+
+    private void OpenRejectLeaveModal(LeaveItemViewModel leave)
+    {
+        _rejectTargetLeave = leave;
+        _rejectReasonInput = string.Empty;
+    }
+
+    private async Task ConfirmRejectLeaveAsync()
+    {
+        if (_rejectTargetLeave == null) return;
+        _isProcessingLeaveAction = true;
+        _staffScheduleFeedback = null;
+        _staffScheduleIsError = false;
+        try
+        {
+            var target = _rejectTargetLeave;
+            var ok = await EmployeeService.RejectLeaveAsync(target.Id, string.IsNullOrWhiteSpace(_rejectReasonInput) ? null : _rejectReasonInput.Trim());
+            if (ok)
+            {
+                _rejectTargetLeave = null;
+                ScheduleService.InvalidateCache();
+                _staffScheduleFeedback = $"Rejected {target.LeaveType} request for {target.EmployeeName}.";
+                await LoadStaffScheduleDataAsync();
+            }
+            else
+            {
+                _staffScheduleIsError = true;
+                _staffScheduleFeedback = "Could not reject leave request. Please try again.";
+            }
+        }
+        finally
+        {
+            _isProcessingLeaveAction = false;
+        }
+    }
+
+    private void OpenAdjustDaysOffModal(EmployeeViewModel emp)
+    {
+        _daysOffTargetEmployee = emp;
+        _isDaysOffModalOpen = true;
+    }
+
+    private async Task HandleDaysOffSavedAsync(string updatedDaysOff)
+    {
+        _isDaysOffModalOpen = false;
+        ScheduleService.InvalidateCache();
+        _staffScheduleIsError = false;
+        _staffScheduleFeedback = $"Updated scheduled Days Off for {_daysOffTargetEmployee?.FullName ?? "staff member"} to: {updatedDaysOff}.";
+        await LoadStaffScheduleDataAsync();
     }
 
     private async Task NavigatePrevious()
@@ -708,15 +1266,23 @@
         _newEvent.StartTime = _newStartTime.ToTimeSpan();
         _newEvent.EndTime = _newEndTime.ToTimeSpan();
 
-        ScheduleService.AddEventBooking(_newEvent);
-        _isCreateModalOpen = false;
-        _modalErrorMessage = null;
+        try
+        {
+            ScheduleService.AddEventBooking(_newEvent);
+            _isCreateModalOpen = false;
+            _modalErrorMessage = null;
 
-        await LoadBookingsForCurrentViewAsync(forceReload: true);
+            await LoadBookingsForCurrentViewAsync(forceReload: true);
+        }
+        catch (InvalidOperationException ex)
+        {
+            _modalErrorMessage = ex.Message;
+        }
     }
 
     public void Dispose()
     {
         _debounceTimer?.Dispose();
+        _highlightTimer?.Dispose();
     }
 }

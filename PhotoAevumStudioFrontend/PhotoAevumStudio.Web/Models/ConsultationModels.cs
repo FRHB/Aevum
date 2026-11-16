@@ -44,6 +44,14 @@ public class UpdateNegotiationOutcomeRequest
     public string? NewEmployeeName { get; set; }
 }
 
+public class EventServiceLineInput
+{
+    public string ServicesId { get; set; } = string.Empty;
+    public int Quantity { get; set; } = 1;
+    public int? DurationHours { get; set; }
+    public string? RateType { get; set; }
+}
+
 public class CreateEventAppointmentFromNegotiationRequest
 {
     public string NegotiationId { get; set; } = string.Empty;
@@ -52,8 +60,12 @@ public class CreateEventAppointmentFromNegotiationRequest
     public string? EventDescription { get; set; }
     public DateOnly EventDate { get; set; }
     public TimeOnly EventTime { get; set; }
+    public TimeOnly? EventEndTime { get; set; }
+    public int? DurationMinutes { get; set; }
     public string? EventLocation { get; set; }
+    public string? PaymentMethod { get; set; }
     public List<string> ServiceIds { get; set; } = new();
+    public List<EventServiceLineInput> ServiceSelections { get; set; } = new();
     public List<string> EmployeeIds { get; set; } = new();
     public string TeamLeaderEmployeeId { get; set; } = string.Empty;
     public List<string> EquipmentIds { get; set; } = new();
@@ -77,6 +89,11 @@ public class EventAppointmentDto
     public string EventDescription { get; set; } = string.Empty;
     public DateOnly EventDate { get; set; }
     public TimeOnly EventTime { get; set; }
+    public TimeOnly? EventEndTime { get; set; }
+    public int DurationMinutes { get; set; } = 60;
+    public int PrepBufferMinutes { get; set; } = 120;
+    public int PostBufferMinutes { get; set; } = 60;
+    public string? EventLocation { get; set; }
     public string EventStatus { get; set; } = "Awaiting_Downpayment";
     public decimal TotalAmount { get; set; }
     public decimal DownpaymentAmount { get; set; }
@@ -111,9 +128,15 @@ public class AssignedEmployeeDto
 
 public class AssignedEquipmentDto
 {
+    public int EventEquipmentId { get; set; }
     public string EquipmentId { get; set; } = string.Empty;
     public string EquipmentName { get; set; } = string.Empty;
     public string EquipmentType { get; set; } = string.Empty;
+    public bool IsTaken { get; set; }
+    public DateTime? TakenAt { get; set; }
+    public string? TakenByEmployeeId { get; set; }
+    public bool IsAdditionalRequest { get; set; }
+    public string? RequestedNotes { get; set; }
 }
 
 public class EventServiceLineDto
@@ -121,6 +144,11 @@ public class EventServiceLineDto
     public string ServicesId { get; set; } = string.Empty;
     public string ServiceName { get; set; } = string.Empty;
     public decimal ServicePrice { get; set; }
+    public int Quantity { get; set; } = 1;
+    public decimal UnitPrice { get; set; }
+    public decimal LineTotal { get; set; }
+    public string RateType { get; set; } = "Per Session";
+    public int? DurationHours { get; set; }
 }
 
 public class EventOvertimeDto
@@ -198,10 +226,34 @@ public class TeamLeaderEventDto : EventAppointmentDto
 {
     public bool IsTeamLeader { get; set; } = true;
     public string? CustomerPhone { get; set; }
+    public DateTime? PostEventTriggerAt { get; set; }
+    public bool IsPostEventAutoTriggered { get; set; }
 }
 
 public class UpdateTeamLeaderStatusRequest
 {
     public string Status { get; set; } = string.Empty;
     public string? EmployeeId { get; set; }
+}
+
+public class MarkEquipmentTakenRequest
+{
+    public List<int>? EventEquipmentIds { get; set; }
+    public bool IsTaken { get; set; } = true;
+    public bool TransitionToDispatch { get; set; } = true;
+    public string? EmployeeId { get; set; }
+}
+
+public class AddEventEquipmentRequest
+{
+    public string EquipmentId { get; set; } = string.Empty;
+    public string? Notes { get; set; }
+    public string? EmployeeId { get; set; }
+}
+
+public class LiveEventOverviewDto : EventAppointmentDto
+{
+    public string? CustomerPhone { get; set; }
+    public string DisplayStage { get; set; } = string.Empty;
+    public int? PendingRemittancePaymentId { get; set; }
 }

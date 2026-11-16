@@ -8,6 +8,7 @@ public interface IStudioManagementService
     // Employees
     Task<IReadOnlyList<Employee>> GetEmployeesAsync(bool includeArchived = false, CancellationToken cancellationToken = default);
     Task<IReadOnlyList<string>> GetSpecializationsAsync(CancellationToken cancellationToken = default);
+    Task<bool> UpdateEmployeeDaysOffAsync(string employeeId, string daysOff, string? requestingAdminId = null, CancellationToken cancellationToken = default);
 
     // Departments
     Task<IReadOnlyList<DepartmentDto>> GetDepartmentsAsync(CancellationToken cancellationToken = default);

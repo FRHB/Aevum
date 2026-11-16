@@ -152,6 +152,21 @@ public sealed class ConsultationClient(
     public Task<ApiResult<EventAppointmentDto>> UpdateTeamLeaderEventStatusAsync(string appointmentId, UpdateTeamLeaderStatusRequest request, CancellationToken ct = default) =>
         SendAsync<EventAppointmentDto>(() => _http.PostAsJsonAsync($"api/payments/team-leader-events/{Uri.EscapeDataString(appointmentId)}/status", request, ct), ct);
 
+    public Task<ApiResult<EventAppointmentDto>> MarkEquipmentTakenAsync(string appointmentId, MarkEquipmentTakenRequest request, CancellationToken ct = default) =>
+        SendAsync<EventAppointmentDto>(() => _http.PostAsJsonAsync($"api/payments/team-leader-events/{Uri.EscapeDataString(appointmentId)}/equipment/taken", request, ct), ct);
+
+    public Task<ApiResult<EventAppointmentDto>> AddEventEquipmentAsync(string appointmentId, AddEventEquipmentRequest request, CancellationToken ct = default) =>
+        SendAsync<EventAppointmentDto>(() => _http.PostAsJsonAsync($"api/payments/team-leader-events/{Uri.EscapeDataString(appointmentId)}/equipment", request, ct), ct);
+
+    public async Task<ApiResult<IReadOnlyList<LiveEventOverviewDto>>> GetLiveEventsOverviewAsync(CancellationToken ct = default)
+    {
+        var result = await SendAsync<List<LiveEventOverviewDto>>(() => _http.GetAsync("api/payments/live-events-overview", ct), ct);
+        return result.IsSuccess ? ApiResult<IReadOnlyList<LiveEventOverviewDto>>.Ok(result.Value!) : new(null, result.Error);
+    }
+
+    public Task<ApiResult<EventAppointmentDto>> VerifyCashSettlementAsync(string appointmentId, AdminApproveRemittanceModel? request = null, CancellationToken ct = default) =>
+        SendAsync<EventAppointmentDto>(() => _http.PostAsJsonAsync($"api/payments/verify-cash/{Uri.EscapeDataString(appointmentId)}", request ?? new(), ct), ct);
+
 
 
     public Task<ApiResult<PaymentBreakdownModel>> CalculateReservationFeeAsync(decimal total, CancellationToken ct = default) =>

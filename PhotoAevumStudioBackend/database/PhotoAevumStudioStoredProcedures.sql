@@ -389,144 +389,167 @@ GO
    2. EVENT & BOOKING MANAGEMENT
    ===================================================================== */
 
-CREATE OR ALTER PROCEDURE dbo.sp_CreateEventAppointment
-    @EventAppointmentID nvarchar(30),
-    @EventName nvarchar(255),
-    @EventDescription nvarchar(255) = NULL,
-    @CustomerID nvarchar(30),
-    @EventDate date,
-    @EventTime time,
-    @EmployeeID nvarchar(30) = NULL
-AS
-BEGIN
-    SET NOCOUNT ON;
-
-    -- Query Employees table for the First and Last name of the provided EmployeeID
-    DECLARE @AssignedEmployeeName NVARCHAR(100) = NULL;
-
-    IF @EmployeeID IS NOT NULL AND LTRIM(RTRIM(@EmployeeID)) <> ''
-    BEGIN
-        SELECT TOP 1 @AssignedEmployeeName = LTRIM(RTRIM(ISNULL(EmployeeFirstName, '') + ' ' + ISNULL(EmployeeLastName, '')))
-        FROM dbo.Employees
-        WHERE EmployeeID = @EmployeeID;
-    END;
-
-    INSERT INTO dbo.EventAppointment (
-        EventAppointmentID, EventName, EventDescription, CustomerID, 
-        EmployeeID, AssignedEmployeeName,
-        EventDate, EventTime, EventStatus
-    )
-    VALUES (
-        @EventAppointmentID, @EventName, @EventDescription, @CustomerID, 
-        @EmployeeID, @AssignedEmployeeName,
-        @EventDate, @EventTime, 'Pending'
-    );
-
-    SELECT @EventAppointmentID AS EventAppointmentID, @EmployeeID AS EmployeeID, @AssignedEmployeeName AS AssignedEmployeeName;
-END;
-GO
-
-CREATE OR ALTER PROCEDURE dbo.spCreateAppointment
-    @EventAppointmentID nvarchar(30) = NULL,
-    @CustomerID nvarchar(30),
-    @EmployeeID nvarchar(30) = NULL,
-    @EventName nvarchar(255) = 'Photoshoot Event',
-    @EventDescription nvarchar(255) = NULL,
-    @EventDate date = NULL,
-    @EventTime time = NULL,
-    @AppointmentID nvarchar(30) = NULL
-AS
-BEGIN
-    SET NOCOUNT ON;
-
-    DECLARE @ActualID nvarchar(30) = COALESCE(@EventAppointmentID, @AppointmentID);
-    IF @ActualID IS NULL OR LTRIM(RTRIM(@ActualID)) = ''
-    BEGIN
-        DECLARE @MaxNum INT = 0;
-        SELECT @MaxNum = ISNULL(MAX(TRY_CAST(SUBSTRING(EventAppointmentID, CHARINDEX('-', EventAppointmentID) + 1, 20) AS INT)), 0)
-        FROM dbo.EventAppointment WITH (UPDLOCK, HOLDLOCK)
-        WHERE EventAppointmentID LIKE 'EVT-%';
-
-        SET @ActualID = 'EVT-' + RIGHT('0000' + CAST((@MaxNum + 1) AS VARCHAR(10)), 4);
-    END;
-
-    -- Query Employees table for the First and Last name of the provided EmployeeID
-    DECLARE @AssignedEmployeeName NVARCHAR(100) = NULL;
-
-    IF @EmployeeID IS NOT NULL AND LTRIM(RTRIM(@EmployeeID)) <> ''
-    BEGIN
-        SELECT TOP 1 @AssignedEmployeeName = LTRIM(RTRIM(ISNULL(EmployeeFirstName, '') + ' ' + ISNULL(EmployeeLastName, '')))
-        FROM dbo.Employees
-        WHERE EmployeeID = @EmployeeID;
-    END;
-
-    IF OBJECT_ID(N'dbo.Appointments', N'U') IS NOT NULL
-    BEGIN
-        INSERT INTO dbo.Appointments (
-            AppointmentID, CustomerID, EmployeeID, AssignedEmployeeName, EventDate, EventTime
-        )
-        VALUES (
-            @ActualID, @CustomerID, @EmployeeID, @AssignedEmployeeName, ISNULL(@EventDate, CAST(GETUTCDATE() AS DATE)), ISNULL(@EventTime, CAST(GETUTCDATE() AS TIME))
-        );
-    END;
-
-    INSERT INTO dbo.EventAppointment (
-        EventAppointmentID, EventName, EventDescription, CustomerID, 
-        EmployeeID, AssignedEmployeeName,
-        EventDate, EventTime, EventStatus
-    )
-    VALUES (
-        @ActualID, ISNULL(@EventName, 'Photoshoot Event'), @EventDescription, @CustomerID, 
-        @EmployeeID, @AssignedEmployeeName,
-        ISNULL(@EventDate, CAST(GETUTCDATE() AS DATE)), ISNULL(@EventTime, CAST(GETUTCDATE() AS TIME)), 'Pending'
-    );
-
-    SELECT @ActualID AS EventAppointmentID, @EmployeeID AS EmployeeID, @AssignedEmployeeName AS AssignedEmployeeName;
-END;
-GO
-
-CREATE OR ALTER PROCEDURE dbo.sp_CreateAppointment
-    @EventAppointmentID nvarchar(30) = NULL,
-    @CustomerID nvarchar(30),
-    @EmployeeID nvarchar(30) = NULL,
-    @EventName nvarchar(255) = 'Photoshoot Event',
-    @EventDescription nvarchar(255) = NULL,
-    @EventDate date = NULL,
-    @EventTime time = NULL,
-    @AppointmentID nvarchar(30) = NULL
-AS
-BEGIN
-    SET NOCOUNT ON;
-    EXEC dbo.spCreateAppointment 
-        @EventAppointmentID = @EventAppointmentID,
-        @CustomerID = @CustomerID,
-        @EmployeeID = @EmployeeID,
-        @EventName = @EventName,
-        @EventDescription = @EventDescription,
-        @EventDate = @EventDate,
-        @EventTime = @EventTime,
-        @AppointmentID = @AppointmentID;
-END;
-GO
-
-CREATE OR ALTER PROCEDURE dbo.sp_AddEventLineItem
-    @EventLineItemID nvarchar(30),
-    @EventAppointmentID nvarchar(30),
-    @ServicesID nvarchar(30) = NULL,
-    @AdditionalServicesID nvarchar(30) = NULL,
-    @ComboPackageID nvarchar(30) = NULL
-AS
-BEGIN
-    SET NOCOUNT ON;
-    INSERT INTO dbo.EventLineItem (
-        EventLineItemID, EventAppointmentID, ServicesID, AdditionalServicesID, ComboPackageID
-    )
-    VALUES (
-        @EventLineItemID, @EventAppointmentID, @ServicesID, @AdditionalServicesID, @ComboPackageID
-    );
-END;
-GO
-
+CREATE OR ALTER PROCEDURE dbo.sp_CreateEventAppointment
+    @EventAppointmentID nvarchar(30),
+    @EventName nvarchar(255),
+    @EventDescription nvarchar(255) = NULL,
+    @CustomerID nvarchar(30),
+    @EventDate date,
+    @EventTime time,
+    @EmployeeID nvarchar(30) = NULL,
+    @EventEndTime time = NULL,
+    @DurationMinutes int = 60
+AS
+BEGIN
+    SET NOCOUNT ON;
+
+    -- Query Employees table for the First and Last name of the provided EmployeeID
+    DECLARE @AssignedEmployeeName NVARCHAR(100) = NULL;
+
+    IF @EmployeeID IS NOT NULL AND LTRIM(RTRIM(@EmployeeID)) <> ''
+    BEGIN
+        SELECT TOP 1 @AssignedEmployeeName = LTRIM(RTRIM(ISNULL(EmployeeFirstName, '') + ' ' + ISNULL(EmployeeLastName, '')))
+        FROM dbo.Employees
+        WHERE EmployeeID = @EmployeeID;
+    END;
+
+    DECLARE @EffectiveDuration int = CASE WHEN ISNULL(@DurationMinutes, 0) > 0 THEN @DurationMinutes ELSE 60 END;
+    DECLARE @EffectiveEndTime time = COALESCE(@EventEndTime, DATEADD(minute, @EffectiveDuration, @EventTime));
+
+    INSERT INTO dbo.EventAppointment (
+        EventAppointmentID, EventName, EventDescription, CustomerID, 
+        EmployeeID, AssignedEmployeeName,
+        EventDate, EventTime, EventEndTime, DurationMinutes, EventStatus
+    )
+    VALUES (
+        @EventAppointmentID, @EventName, @EventDescription, @CustomerID, 
+        @EmployeeID, @AssignedEmployeeName,
+        @EventDate, @EventTime, @EffectiveEndTime, @EffectiveDuration, 'Pending'
+    );
+
+    SELECT @EventAppointmentID AS EventAppointmentID, @EmployeeID AS EmployeeID, @AssignedEmployeeName AS AssignedEmployeeName;
+END;
+GO
+
+CREATE OR ALTER PROCEDURE dbo.spCreateAppointment
+    @EventAppointmentID nvarchar(30) = NULL,
+    @CustomerID nvarchar(30),
+    @EmployeeID nvarchar(30) = NULL,
+    @EventName nvarchar(255) = 'Photoshoot Event',
+    @EventDescription nvarchar(255) = NULL,
+    @EventDate date = NULL,
+    @EventTime time = NULL,
+    @AppointmentID nvarchar(30) = NULL,
+    @EventEndTime time = NULL,
+    @DurationMinutes int = 60
+AS
+BEGIN
+    SET NOCOUNT ON;
+
+    DECLARE @ActualID nvarchar(30) = COALESCE(@EventAppointmentID, @AppointmentID);
+    IF @ActualID IS NULL OR LTRIM(RTRIM(@ActualID)) = ''
+    BEGIN
+        DECLARE @MaxNum INT = 0;
+        SELECT @MaxNum = ISNULL(MAX(TRY_CAST(SUBSTRING(EventAppointmentID, CHARINDEX('-', EventAppointmentID) + 1, 20) AS INT)), 0)
+        FROM dbo.EventAppointment WITH (UPDLOCK, HOLDLOCK)
+        WHERE EventAppointmentID LIKE 'EVT-%';
+
+        SET @ActualID = 'EVT-' + RIGHT('0000' + CAST((@MaxNum + 1) AS VARCHAR(10)), 4);
+    END;
+
+    -- Query Employees table for the First and Last name of the provided EmployeeID
+    DECLARE @AssignedEmployeeName NVARCHAR(100) = NULL;
+
+    IF @EmployeeID IS NOT NULL AND LTRIM(RTRIM(@EmployeeID)) <> ''
+    BEGIN
+        SELECT TOP 1 @AssignedEmployeeName = LTRIM(RTRIM(ISNULL(EmployeeFirstName, '') + ' ' + ISNULL(EmployeeLastName, '')))
+        FROM dbo.Employees
+        WHERE EmployeeID = @EmployeeID;
+    END;
+
+    DECLARE @EffectiveDate date = ISNULL(@EventDate, CAST(GETUTCDATE() AS DATE));
+    DECLARE @EffectiveTime time = ISNULL(@EventTime, CAST(GETUTCDATE() AS TIME));
+    DECLARE @EffectiveDuration int = CASE WHEN ISNULL(@DurationMinutes, 0) > 0 THEN @DurationMinutes ELSE 60 END;
+    DECLARE @EffectiveEndTime time = COALESCE(@EventEndTime, DATEADD(minute, @EffectiveDuration, @EffectiveTime));
+
+    IF OBJECT_ID(N'dbo.Appointments', N'U') IS NOT NULL
+    BEGIN
+        INSERT INTO dbo.Appointments (
+            AppointmentID, CustomerID, EmployeeID, AssignedEmployeeName, EventDate, EventTime
+        )
+        VALUES (
+            @ActualID, @CustomerID, @EmployeeID, @AssignedEmployeeName, @EffectiveDate, @EffectiveTime
+        );
+    END;
+
+    INSERT INTO dbo.EventAppointment (
+        EventAppointmentID, EventName, EventDescription, CustomerID, 
+        EmployeeID, AssignedEmployeeName,
+        EventDate, EventTime, EventEndTime, DurationMinutes, EventStatus
+    )
+    VALUES (
+        @ActualID, ISNULL(@EventName, 'Photoshoot Event'), @EventDescription, @CustomerID, 
+        @EmployeeID, @AssignedEmployeeName,
+        @EffectiveDate, @EffectiveTime, @EffectiveEndTime, @EffectiveDuration, 'Pending'
+    );
+
+    SELECT @ActualID AS EventAppointmentID, @EmployeeID AS EmployeeID, @AssignedEmployeeName AS AssignedEmployeeName;
+END;
+GO
+
+CREATE OR ALTER PROCEDURE dbo.sp_CreateAppointment
+    @EventAppointmentID nvarchar(30) = NULL,
+    @CustomerID nvarchar(30),
+    @EmployeeID nvarchar(30) = NULL,
+    @EventName nvarchar(255) = 'Photoshoot Event',
+    @EventDescription nvarchar(255) = NULL,
+    @EventDate date = NULL,
+    @EventTime time = NULL,
+    @AppointmentID nvarchar(30) = NULL,
+    @EventEndTime time = NULL,
+    @DurationMinutes int = 60
+AS
+BEGIN
+    SET NOCOUNT ON;
+    EXEC dbo.spCreateAppointment 
+        @EventAppointmentID = @EventAppointmentID,
+        @CustomerID = @CustomerID,
+        @EmployeeID = @EmployeeID,
+        @EventName = @EventName,
+        @EventDescription = @EventDescription,
+        @EventDate = @EventDate,
+        @EventTime = @EventTime,
+        @AppointmentID = @AppointmentID,
+        @EventEndTime = @EventEndTime,
+        @DurationMinutes = @DurationMinutes;
+END;
+GO
+
+CREATE OR ALTER PROCEDURE dbo.sp_AddEventLineItem
+    @EventLineItemID nvarchar(30),
+    @EventAppointmentID nvarchar(30),
+    @ServicesID nvarchar(30) = NULL,
+    @AdditionalServicesID nvarchar(30) = NULL,
+    @ComboPackageID nvarchar(30) = NULL,
+    @Quantity int = 1,
+    @UnitPrice decimal(18,2) = 0.00,
+    @LineTotal decimal(18,2) = 0.00,
+    @RateType nvarchar(50) = NULL,
+    @DurationHours int = NULL
+AS
+BEGIN
+    SET NOCOUNT ON;
+    INSERT INTO dbo.EventLineItem (
+        EventLineItemID, EventAppointmentID, ServicesID, AdditionalServicesID, ComboPackageID,
+        Quantity, UnitPrice, LineTotal, RateType, DurationHours
+    )
+    VALUES (
+        @EventLineItemID, @EventAppointmentID, @ServicesID, @AdditionalServicesID, @ComboPackageID,
+        ISNULL(@Quantity, 1), ISNULL(@UnitPrice, 0.00), ISNULL(@LineTotal, 0.00), @RateType, @DurationHours
+    );
+END;
+GO
+
 CREATE OR ALTER PROCEDURE dbo.sp_AssignEmployeeToEvent
     @EventAppointmentID nvarchar(30),
     @EmployeeID nvarchar(30)
@@ -2164,61 +2187,87 @@ BEGIN
 END;
 GO
 
-CREATE OR ALTER PROCEDURE dbo.sp_AssignOfficeClerkRoundRobin
-    @AssignedEmployeeID nvarchar(30) = NULL OUTPUT,
-    @AssignedEmployeeName nvarchar(255) = NULL OUTPUT,
-    @AssignedEmployeeEmail nvarchar(255) = NULL OUTPUT
-AS
-BEGIN
-    SET NOCOUNT ON;
-
-    -- Look for clerks or front desk coordinators first
-    SELECT TOP 1 
-        @AssignedEmployeeID = e.EmployeeID,
-        @AssignedEmployeeName = e.EmployeeFirstName + ' ' + e.EmployeeLastName,
-        @AssignedEmployeeEmail = e.EmployeeEmail
-    FROM dbo.Employees e
-    LEFT JOIN (
-        SELECT EmployeeID, MAX(CreatedAt) AS LastAssignedAt
-        FROM dbo.BookingNegotiation
-        WHERE EmployeeID IS NOT NULL
-        GROUP BY EmployeeID
-    ) bn ON e.EmployeeID = bn.EmployeeID
-    WHERE (e.EmployeeStatus = 'Active' OR e.Status = 'Active')
-      AND (
-          EXISTS (
-              SELECT 1 FROM dbo.EmployeeJointSpecialization ejs
-              JOIN dbo.EmployeeSpecialization es ON ejs.SpecializationID = es.SpecializationID
-              WHERE ejs.EmployeeID = e.EmployeeID
-                AND (es.SpecializationName LIKE '%Clerk%' OR es.SpecializationName LIKE '%Front Desk%' OR es.SpecializationName LIKE '%Office%')
-          )
-          OR NOT EXISTS (
-              SELECT 1 FROM dbo.EmployeeJointSpecialization ejs2
-              JOIN dbo.EmployeeSpecialization es2 ON ejs2.SpecializationID = es2.SpecializationID
-              WHERE es2.SpecializationName LIKE '%Clerk%' OR es2.SpecializationName LIKE '%Front Desk%' OR es2.SpecializationName LIKE '%Office%'
-          )
-      )
-    ORDER BY COALESCE(bn.LastAssignedAt, '1900-01-01') ASC, e.EmployeeID ASC;
-
-    -- Fallback to any active employee if no clerk specialized employee found
-    IF @AssignedEmployeeID IS NULL
-    BEGIN
-        SELECT TOP 1 
-            @AssignedEmployeeID = e.EmployeeID,
-            @AssignedEmployeeName = e.EmployeeFirstName + ' ' + e.EmployeeLastName,
-            @AssignedEmployeeEmail = e.EmployeeEmail
-        FROM dbo.Employees e
-        LEFT JOIN (
-            SELECT EmployeeID, MAX(CreatedAt) AS LastAssignedAt
-            FROM dbo.BookingNegotiation
-            WHERE EmployeeID IS NOT NULL
-            GROUP BY EmployeeID
-        ) bn ON e.EmployeeID = bn.EmployeeID
-        WHERE (e.EmployeeStatus = 'Active' OR e.Status = 'Active')
-        ORDER BY COALESCE(bn.LastAssignedAt, '1900-01-01') ASC, e.EmployeeID ASC;
-    END
-
-    SELECT @AssignedEmployeeID AS EmployeeID, @AssignedEmployeeName AS EmployeeName, @AssignedEmployeeEmail AS EmployeeEmail;
+CREATE OR ALTER PROCEDURE dbo.sp_AssignOfficeClerkRoundRobin
+    @AssignedEmployeeID nvarchar(30) = NULL OUTPUT,
+    @AssignedEmployeeName nvarchar(255) = NULL OUTPUT,
+    @AssignedEmployeeEmail nvarchar(255) = NULL OUTPUT,
+    @ConsultationDate date = NULL
+AS
+BEGIN
+    SET NOCOUNT ON;
+
+    DECLARE @TargetDate date = COALESCE(@ConsultationDate, CAST(DATEADD(HOUR, 8, SYSUTCDATETIME()) AS date));
+    DECLARE @DayName nvarchar(20) = DATENAME(WEEKDAY, @TargetDate);
+
+    -- Look for clerks or front desk coordinators first, excluding those on DayOff or Approved Leave
+    SELECT TOP 1 
+        @AssignedEmployeeID = e.EmployeeID,
+        @AssignedEmployeeName = e.EmployeeFirstName + ' ' + e.EmployeeLastName,
+        @AssignedEmployeeEmail = e.EmployeeEmail
+    FROM dbo.Employees e
+    LEFT JOIN (
+        SELECT EmployeeID, MAX(CreatedAt) AS LastAssignedAt
+        FROM dbo.BookingNegotiation
+        WHERE EmployeeID IS NOT NULL
+        GROUP BY EmployeeID
+    ) bn ON e.EmployeeID = bn.EmployeeID
+    WHERE (e.EmployeeStatus = 'Active' OR e.Status = 'Active')
+      AND (e.DaysOff IS NULL OR LOWER(e.DaysOff) NOT LIKE '%' + LOWER(@DayName) + '%')
+      AND (
+          OBJECT_ID(N'dbo.EmployeeLeaves', N'U') IS NULL
+          OR NOT EXISTS (
+              SELECT 1 FROM dbo.EmployeeLeaves el
+              WHERE el.EmployeeStudioId = e.EmployeeID
+                AND el.Status = 'Approved'
+                AND @TargetDate >= el.StartDate
+                AND @TargetDate <= el.EndDate
+          )
+      )
+      AND (
+          EXISTS (
+              SELECT 1 FROM dbo.EmployeeJointSpecialization ejs
+              JOIN dbo.EmployeeSpecialization es ON ejs.SpecializationID = es.SpecializationID
+              WHERE ejs.EmployeeID = e.EmployeeID
+                AND (es.SpecializationName LIKE '%Clerk%' OR es.SpecializationName LIKE '%Front Desk%' OR es.SpecializationName LIKE '%Office%')
+          )
+          OR NOT EXISTS (
+              SELECT 1 FROM dbo.EmployeeJointSpecialization ejs2
+              JOIN dbo.EmployeeSpecialization es2 ON ejs2.SpecializationID = es2.SpecializationID
+              WHERE es2.SpecializationName LIKE '%Clerk%' OR es2.SpecializationName LIKE '%Front Desk%' OR es2.SpecializationName LIKE '%Office%'
+          )
+      )
+    ORDER BY COALESCE(bn.LastAssignedAt, '1900-01-01') ASC, e.EmployeeID ASC;
+
+    -- Fallback to any active available employee if no clerk specialized employee found
+    IF @AssignedEmployeeID IS NULL
+    BEGIN
+        SELECT TOP 1 
+            @AssignedEmployeeID = e.EmployeeID,
+            @AssignedEmployeeName = e.EmployeeFirstName + ' ' + e.EmployeeLastName,
+            @AssignedEmployeeEmail = e.EmployeeEmail
+        FROM dbo.Employees e
+        LEFT JOIN (
+            SELECT EmployeeID, MAX(CreatedAt) AS LastAssignedAt
+            FROM dbo.BookingNegotiation
+            WHERE EmployeeID IS NOT NULL
+            GROUP BY EmployeeID
+        ) bn ON e.EmployeeID = bn.EmployeeID
+        WHERE (e.EmployeeStatus = 'Active' OR e.Status = 'Active')
+          AND (e.DaysOff IS NULL OR LOWER(e.DaysOff) NOT LIKE '%' + LOWER(@DayName) + '%')
+          AND (
+              OBJECT_ID(N'dbo.EmployeeLeaves', N'U') IS NULL
+              OR NOT EXISTS (
+                  SELECT 1 FROM dbo.EmployeeLeaves el
+                  WHERE el.EmployeeStudioId = e.EmployeeID
+                    AND el.Status = 'Approved'
+                    AND @TargetDate >= el.StartDate
+                    AND @TargetDate <= el.EndDate
+              )
+          )
+        ORDER BY COALESCE(bn.LastAssignedAt, '1900-01-01') ASC, e.EmployeeID ASC;
+    END
+
+    SELECT @AssignedEmployeeID AS EmployeeID, @AssignedEmployeeName AS EmployeeName, @AssignedEmployeeEmail AS EmployeeEmail;
 END;
 GO
 
@@ -2344,4 +2393,157 @@ BEGIN
     FROM @Released r
     LEFT JOIN dbo.Customer c ON c.CustomerID = r.CustomerID;
 END;
+GO
+
+
+-- Automatically transitions 'Ongoing' / 'On Going' events to 'Post Event' 1 hour after the scheduled event time (PHT UTC+8).
+CREATE OR ALTER PROCEDURE dbo.usp_AutoTriggerPostEvent
+AS
+BEGIN
+    SET NOCOUNT ON;
+    DECLARE @PhtNow datetime2 = DATEADD(HOUR, 8, SYSUTCDATETIME());
+    DECLARE @Triggered TABLE (EventAppointmentID nvarchar(30), EventName nvarchar(255));
+
+    UPDATE dbo.EventAppointment
+    SET EventStatus = 'Post Event'
+    OUTPUT inserted.EventAppointmentID, inserted.EventName INTO @Triggered
+    WHERE EventStatus IN ('Ongoing', 'On Going')
+      AND DATEADD(HOUR, 1, DATEADD(SECOND, DATEDIFF(SECOND, CAST('00:00:00' AS time), EventTime), CAST(EventDate AS datetime2))) <= @PhtNow;
+
+    IF OBJECT_ID(N'dbo.HistoryLog', N'U') IS NOT NULL
+        INSERT INTO dbo.HistoryLog (ActionType, EntityName, EntityID, ActionDetails, EventAppointmentID, ChangedByType, LoggedAt)
+        SELECT 'STATUS_CHANGE', 'EventAppointment', t.EventAppointmentID,
+               'Automatically transitioned event to Post Event 1 hour after scheduled start.',
+               t.EventAppointmentID, 'System', SYSUTCDATETIME()
+        FROM @Triggered t;
+
+    SELECT EventAppointmentID, EventName FROM @Triggered;
+END;
+GO
+
+-- Verifies cash payment remittance on behalf of Admin/Office Clerk and finalizes the Employee event workflow as Complete.
+CREATE OR ALTER PROCEDURE dbo.usp_VerifyCashPayment
+    @EventAppointmentID nvarchar(30),
+    @VerifierID         nvarchar(100),
+    @VerifierRole       nvarchar(30) = 'Admin',
+    @Notes              nvarchar(1000) = NULL
+AS
+BEGIN
+    SET NOCOUNT ON;
+    SET XACT_ABORT ON;
+
+    BEGIN TRANSACTION;
+    BEGIN TRY
+        UPDATE dbo.EventAppointment
+        SET EventStatus = 'Complete',
+            FinalPaymentStatus = 'Paid',
+            FinalPaymentPaidAt = COALESCE(FinalPaymentPaidAt, SYSUTCDATETIME())
+        WHERE EventAppointmentID = @EventAppointmentID;
+
+        IF @@ROWCOUNT = 0
+        BEGIN
+            THROW 50030, 'Event appointment not found.', 1;
+        END
+
+        IF OBJECT_ID(N'dbo.PaymentTransactions', N'U') IS NOT NULL
+        BEGIN
+            UPDATE dbo.PaymentTransactions
+            SET EmployeeRemittanceStatus = 'Cleared',
+                Status = 'Paid',
+                AdminApproverID = @VerifierID,
+                ApprovalTimestamp = SYSUTCDATETIME()
+            WHERE EventAppointmentID = @EventAppointmentID
+              AND (EmployeeRemittanceStatus = 'PendingAdminApproval' OR Status <> 'Paid');
+        END
+
+        IF OBJECT_ID(N'dbo.HistoryLog', N'U') IS NOT NULL
+        BEGIN
+            INSERT INTO dbo.HistoryLog (
+                ActionType, EntityName, EntityID, ActionDetails,
+                EventAppointmentID, ChangedByType, ChangedBy, LoggedAt
+            )
+            VALUES (
+                'APPROVAL', 'CashRemittance', @EventAppointmentID,
+                COALESCE(@Notes, 'Cash payment verified by ' + @VerifierID + '. Event workflow finalized as Complete.'),
+                @EventAppointmentID, @VerifierRole, @VerifierID, SYSUTCDATETIME()
+            );
+        END
+
+        COMMIT TRANSACTION;
+    END TRY
+    BEGIN CATCH
+        IF @@TRANCOUNT > 0 ROLLBACK TRANSACTION;
+        THROW;
+    END CATCH
+END;
+GO
+
+
+CREATE OR ALTER PROCEDURE dbo.sp_GetNextDropboxID
+    @NextID nvarchar(30) OUTPUT
+AS
+BEGIN
+    SET NOCOUNT ON;
+    DECLARE @Num int = NEXT VALUE FOR dbo.Seq_DropboxID;
+    SET @NextID = 'DRP-' + RIGHT('0000' + CAST(@Num AS nvarchar(10)), 4);
+    WHILE EXISTS (SELECT 1 FROM dbo.CustomerDropbox WHERE DropboxID = @NextID)
+    BEGIN
+        SET @Num = NEXT VALUE FOR dbo.Seq_DropboxID;
+        SET @NextID = 'DRP-' + RIGHT('0000' + CAST(@Num AS nvarchar(10)), 4);
+    END;
+END;
+GO
+
+CREATE OR ALTER PROCEDURE dbo.usp_SyncCustomerDropboxFolders
+    @CustomerID nvarchar(30) = NULL
+AS
+BEGIN
+    SET NOCOUNT ON;
+    SET XACT_ABORT ON;
+
+    IF OBJECT_ID(N'dbo.CustomerDropbox', N'U') IS NULL OR OBJECT_ID(N'dbo.EventAppointment', N'U') IS NULL
+        RETURN;
+
+    DECLARE @Missing TABLE (
+        EventAppointmentID nvarchar(30),
+        CustomerID nvarchar(30),
+        CompletedAt datetime2,
+        ExpiresAt datetime2
+    );
+
+    INSERT INTO @Missing (EventAppointmentID, CustomerID, CompletedAt, ExpiresAt)
+    SELECT ea.EventAppointmentID,
+           ea.CustomerID,
+           COALESCE(ea.FinalPaymentPaidAt, CAST(ea.EventDate AS datetime2)),
+           DATEADD(day, 30, COALESCE(ea.FinalPaymentPaidAt, CAST(ea.EventDate AS datetime2)))
+    FROM dbo.EventAppointment ea
+    WHERE (@CustomerID IS NULL OR LTRIM(RTRIM(@CustomerID)) = '' OR ea.CustomerID = @CustomerID)
+      AND ea.EventStatus IN ('Shot', 'Editing', 'Delivered', 'Complete', 'Completed')
+      AND DATEADD(day, 30, COALESCE(ea.FinalPaymentPaidAt, CAST(ea.EventDate AS datetime2))) > SYSUTCDATETIME()
+      AND NOT EXISTS (
+          SELECT 1 FROM dbo.CustomerDropbox cd WHERE cd.EventAppointmentID = ea.EventAppointmentID
+      );
+
+    DECLARE @EvtId nvarchar(30), @CustId nvarchar(30), @CompletedAt datetime2, @ExpiresAt datetime2, @NewId nvarchar(30);
+    DECLARE cur CURSOR LOCAL FAST_FORWARD FOR
+        SELECT EventAppointmentID, CustomerID, CompletedAt, ExpiresAt FROM @Missing;
+
+    OPEN cur;
+    FETCH NEXT FROM cur INTO @EvtId, @CustId, @CompletedAt, @ExpiresAt;
+    WHILE @@FETCH_STATUS = 0
+    BEGIN
+        EXEC dbo.sp_GetNextDropboxID @NextID = @NewId OUTPUT;
+        INSERT INTO dbo.CustomerDropbox (
+            DropboxID, EventAppointmentID, CustomerID, BucketName, DropboxStatus,
+            EventCompletedAt, ExpiresAt, CreatedAt
+        )
+        VALUES (
+            @NewId, @EvtId, @CustId, 'dropbox', 'Waiting',
+            @CompletedAt, @ExpiresAt, SYSUTCDATETIME()
+        );
+        FETCH NEXT FROM cur INTO @EvtId, @CustId, @CompletedAt, @ExpiresAt;
+    END;
+    CLOSE cur;
+    DEALLOCATE cur;
+END;
 GO
