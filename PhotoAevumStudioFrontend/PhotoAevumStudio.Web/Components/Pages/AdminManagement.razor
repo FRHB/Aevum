@@ -41,16 +41,7 @@
     </div>
 
     <!-- Notification Banner -->
-    @if (!string.IsNullOrWhiteSpace(notificationMessage))
-    {
-        <div class="p-3.5 bg-emerald-50 border border-emerald-200 text-emerald-900 rounded-xl flex items-center justify-between text-xs shadow-xs animate-in fade-in duration-200">
-            <div class="flex items-center gap-2.5">
-                <span class="w-6 h-6 rounded-full bg-emerald-600 text-white flex items-center justify-center shrink-0 text-xs font-bold">✓</span>
-                <span class="font-medium">@notificationMessage</span>
-            </div>
-            <button type="button" @onclick="() => notificationMessage = null" class="text-emerald-700 hover:text-emerald-950 p-1 font-bold text-sm cursor-pointer">&times;</button>
-        </div>
-    }
+    <SystemMessage Message="@notificationMessage" Severity="success" Mode="banner" OnDismiss="() => notificationMessage = null" />
 
     <!-- Role Status Notice for Regular Admins -->
     @if (!isSystemAdmin && !isLoading)
@@ -117,8 +108,8 @@
         <div class="flex flex-col sm:flex-row gap-3 w-full sm:w-auto flex-1">
             <div class="relative w-full sm:w-80">
                 <input type="text" 
-                       @bind="searchQuery" 
-                       @bind:event="oninput"
+                       value="@searchQuery" 
+                       @oninput="OnSearchInput"
                        placeholder="Search by name, ID, or email..." 
                        class="w-full pl-9 pr-4 py-2 text-xs rounded-lg border border-slate-300 focus:outline-none focus:ring-1 focus:ring-slate-900 focus:border-slate-900" />
                 <svg class="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -128,7 +119,7 @@
 
             @if (isSystemAdmin)
             {
-                <select @bind="selectedRoleFilter" class="text-xs rounded-lg border border-slate-300 py-2 px-3 bg-white focus:outline-none focus:ring-1 focus:ring-slate-900">
+                <select value="@selectedRoleFilter" @onchange="OnRoleFilterChanged" class="text-xs rounded-lg border border-slate-300 py-2 px-3 bg-white focus:outline-none focus:ring-1 focus:ring-slate-900">
                     <option value="All">All Roles (@admins.Count)</option>
                     <option value="System Admin">System Admins (@admins.Count(a => a.IsSuperAdmin))</option>
                     <option value="Admin">Regular Admins (@admins.Count(a => !a.IsSuperAdmin))</option>
@@ -174,7 +165,7 @@
                     }
                     else
                     {
-                        @foreach (var admin in FilteredAdmins)
+                        @foreach (var admin in PagedAdmins)
                         {
                             <tr class="hover:bg-slate-50/60 transition-colors">
                                 <td class="px-5 py-3.5">
@@ -291,6 +282,7 @@
                 </tbody>
             </table>
         </div>
+        <TablePagination TotalItems="FilteredAdmins.Count" PageSize="10" @bind-CurrentPage="currentPage" ItemLabel="admins" />
     </div>
 </div>
 
@@ -310,6 +302,21 @@
 
     private string searchQuery = string.Empty;
     private string selectedRoleFilter = "All";
+    private int currentPage = 1;
+    private List<AdminViewModel> PagedAdmins => TablePagination.Paginate(FilteredAdmins, currentPage, 10);
+
+    private void OnSearchInput(ChangeEventArgs e)
+    {
+        searchQuery = e.Value?.ToString() ?? string.Empty;
+        currentPage = 1;
+    }
+
+    private void OnRoleFilterChanged(ChangeEventArgs e)
+    {
+        selectedRoleFilter = e.Value?.ToString() ?? "All";
+        currentPage = 1;
+    }
+
     private List<AdminViewModel> admins = new();
     private AdminViewModel? selectedAdmin;
 

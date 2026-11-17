@@ -209,6 +209,13 @@
             {
                 <div class="day-gantt-wrapper">
                     <table class="day-gantt-table" aria-label="Daily tabular event timetable">
+                        <colgroup>
+                            <col style="width: 260px;" />
+                            @foreach (var _ in timelineHours)
+                            {
+                                <col />
+                            }
+                        </colgroup>
                         <thead>
                             <tr>
                                 <th class="gantt-event-col-header">Event &amp; Assigned Staff</th>
@@ -222,10 +229,10 @@
                             @foreach (var b in dayBookings)
                             {
                                 var startMin = Math.Max(0, (b.StartTime.TotalMinutes - startHour * 60.0));
-                                var rawEndMin = b.EndTime > b.StartTime ? b.EndTime.TotalMinutes : b.StartTime.Add(TimeSpan.FromHours(1)).TotalMinutes;
+                                var rawEndMin = b.EffectiveEndTime.TotalMinutes;
                                 var endMin = Math.Min(totalMinutes, Math.Max(startMin + 20, rawEndMin - startHour * 60.0));
-                                var leftPct = totalMinutes > 0 ? (startMin / totalMinutes) * 100.0 : 0;
-                                var widthPct = totalMinutes > 0 ? Math.Max(4.0, ((endMin - startMin) / totalMinutes) * 100.0) : 10.0;
+                                var leftPct = totalMinutes > 0 ? Math.Clamp((startMin / totalMinutes) * 100.0, 0.0, 96.0) : 0;
+                                var widthPct = totalMinutes > 0 ? Math.Clamp(((endMin - startMin) / totalMinutes) * 100.0, 4.0, 100.0 - leftPct) : 10.0;
                                 var isHighlighted = string.Equals(_highlightedEventId, b.Id, StringComparison.OrdinalIgnoreCase);
 
                                 <tr id="day-event-row-@b.Id"
@@ -261,17 +268,22 @@
                                         </div>
                                     </td>
                                     <td colspan="@timelineHours.Count" class="gantt-timeline-cell">
-                                        <div class="gantt-grid-backdrop" style="--hour-cols: @timelineHours.Count;">
-                                            @foreach (var _ in timelineHours)
-                                            {
-                                                <span class="gantt-grid-slot"></span>
-                                            }
-                                        </div>
-                                        <div class="gantt-time-block @GetMiniEventBadgeClass(b)"
-                                             style="left: @leftPct.ToString("F2", System.Globalization.CultureInfo.InvariantCulture)%; width: @widthPct.ToString("F2", System.Globalization.CultureInfo.InvariantCulture)%;"
-                                             title="@b.FormattedTimeRange — @b.ClientName (@b.ServiceType) with @b.AssignedPhotographer">
-                                            <span class="gantt-block-time">@b.StartTime.ToString(@"hh\:mm")–@b.EndTime.ToString(@"hh\:mm")</span>
-                                            <span class="gantt-block-label">@b.ClientName (@b.ServiceType)</span>
+                                        <div class="gantt-timeline-track">
+                                            <div class="gantt-grid-backdrop" style="--hour-cols: @timelineHours.Count;">
+                                                @foreach (var _ in timelineHours)
+                                                {
+                                                    <span class="gantt-grid-slot"></span>
+                                                }
+                                            </div>
+                                            <button type="button"
+                                                    @onclick="() => OpenDetailDrawer(b)"
+                                                    @onclick:stopPropagation="true"
+                                                    class="gantt-time-block @GetMiniEventBadgeClass(b)"
+                                                    style="left: @leftPct.ToString("F2", System.Globalization.CultureInfo.InvariantCulture)%; width: @widthPct.ToString("F2", System.Globalization.CultureInfo.InvariantCulture)%;"
+                                                    title="@b.FormattedTimeRange — @b.ClientName (@b.ServiceType) with @b.AssignedPhotographer">
+                                                <span class="gantt-block-time">@DateTime.Today.Add(b.StartTime).ToString("h:mm tt") – @DateTime.Today.Add(b.EffectiveEndTime).ToString("h:mm tt")</span>
+                                                <span class="gantt-block-label">@b.ClientName (@b.ServiceType)</span>
+                                            </button>
                                         </div>
                                     </td>
                                 </tr>
@@ -307,9 +319,10 @@
                     var dayEvents = GetBookingsForDate(day.Date).Take(3).ToList();
                     var totalEvts = GetBookingsForDate(day.Date).Count;
 
-                    <div class="month-day-cell @(isCurrentMonth ? "" : "other-month") @(isToday ? "is-today" : "")"
-                         @onclick="() => NavigateToDayTimetable(day)">
-                        <div class="month-cell-header">
+                    <div class="month-day-cell @(isCurrentMonth ? "" : "other-month") @(isToday ? "is-today" : "")">
+                        <div class="month-cell-header"
+                             @onclick="() => NavigateToDayTimetable(day)"
+                             title="View @day.ToString("MMM d") Day timetable">
                             <span class="month-day-num">@day.Day</span>
                             @if (totalEvts > 0)
                             {
@@ -319,16 +332,22 @@
                         <div class="month-events-mini">
                             @foreach (var ev in dayEvents)
                             {
-                                <div class="mini-event-pill @GetMiniEventBadgeClass(ev)"
-                                     title="@ev.FormattedTimeRange: @ev.ClientName (@ev.ServiceType) with @ev.AssignedPhotographer"
-                                     @onclick="() => OpenDetailDrawer(ev)"
-                                     @onclick:stopPropagation="true">
-                                    @(ev.IsConsultation ? "💬 " : "")@ev.StartTime.ToString(@"hh\:mm") @ev.ClientName
-                                </div>
+                                <button type="button"
+                                        class="mini-event-pill @GetMiniEventBadgeClass(ev)"
+                                        title="@ev.FormattedTimeRange: @ev.ClientName (@ev.ServiceType) with @ev.AssignedPhotographer"
+                                        @onclick="() => OpenDetailDrawer(ev)"
+                                        @onclick:stopPropagation="true">
+                                    @(ev.IsConsultation ? "💬 " : "")@DateTime.Today.Add(ev.StartTime).ToString("h:mm tt") @ev.ClientName
+                                </button>
                             }
                             @if (totalEvts > 3)
                             {
-                                <div class="mini-more-pill">+@(totalEvts - 3) more</div>
+                                <button type="button"
+                                        class="mini-more-pill"
+                                        @onclick="() => NavigateToDayTimetable(day)"
+                                        @onclick:stopPropagation="true">
+                                    +@(totalEvts - 3) more
+                                </button>
                             }
                         </div>
                     </div>
@@ -349,6 +368,8 @@
                 .OrderBy(l => string.Equals(l.Status, "Pending", StringComparison.OrdinalIgnoreCase) ? 0 : 1)
                 .ThenBy(l => l.StartDate)
                 .ToList();
+        var pagedLeaves = TablePagination.Paginate(displayedLeaves, _leavesPage, 10);
+        var pagedStaffDirectory = TablePagination.Paginate(_staffDirectory, _daysOffPage, 10);
         var pendingCount = _allLeaves.Count(l => string.Equals(l.Status, "Pending", StringComparison.OrdinalIgnoreCase));
         var activeUpcomingCount = _allLeaves.Count(l => string.Equals(l.Status, "Approved", StringComparison.OrdinalIgnoreCase) && l.EndDate >= today);
 
@@ -384,13 +405,7 @@
             @if (_isStaffScheduleExpanded)
             {
                 <div id="staff-schedule-admin-body" class="staff-schedule-body">
-                    @if (!string.IsNullOrWhiteSpace(_staffScheduleFeedback))
-                    {
-                        <div class="px-4 py-2.5 rounded-lg border text-xs font-semibold flex items-center justify-between @(_staffScheduleIsError ? "bg-rose-50 border-rose-200 text-rose-800" : "bg-emerald-50 border-emerald-200 text-emerald-800")">
-                            <span>@_staffScheduleFeedback</span>
-                            <button type="button" @onclick="() => _staffScheduleFeedback = null" class="text-[11px] font-bold opacity-70 hover:opacity-100">✕</button>
-                        </div>
-                    }
+                    <SystemMessage Message="@_staffScheduleFeedback" Severity="@(_staffScheduleIsError ? "error" : "success")" Mode="banner" OnDismiss="() => _staffScheduleFeedback = null" />
 
                     @* ── Upcoming & Ongoing Leaves Table ── *@
                     <div class="space-y-2">
@@ -401,12 +416,12 @@
                             </div>
                             <div class="flex items-center gap-2">
                                 <button type="button"
-                                        @onclick="() => _showAllLeavesHistory = false"
+                                        @onclick="() => SetLeavesHistoryFilter(false)"
                                         class="px-2.5 py-1 rounded text-[11px] font-semibold border @(!_showAllLeavesHistory ? "bg-gray-900 text-white border-gray-900" : "bg-white text-gray-600 border-gray-200")">
                                     Upcoming &amp; Pending
                                 </button>
                                 <button type="button"
-                                        @onclick="() => _showAllLeavesHistory = true"
+                                        @onclick="() => SetLeavesHistoryFilter(true)"
                                         class="px-2.5 py-1 rounded text-[11px] font-semibold border @(_showAllLeavesHistory ? "bg-gray-900 text-white border-gray-900" : "bg-white text-gray-600 border-gray-200")">
                                     All Records (@_allLeaves.Count)
                                 </button>
@@ -446,7 +461,7 @@
                                     }
                                     else
                                     {
-                                        @foreach (var lv in displayedLeaves)
+                                        @foreach (var lv in pagedLeaves)
                                         {
                                             var isOngoing = string.Equals(lv.Status, "Approved", StringComparison.OrdinalIgnoreCase) && lv.StartDate <= today && lv.EndDate >= today;
                                             <tr class="hover:bg-gray-50/70">
@@ -507,6 +522,7 @@
                                     }
                                 </tbody>
                             </table>
+                            <TablePagination TotalItems="displayedLeaves.Count" PageSize="10" @bind-CurrentPage="_leavesPage" ItemLabel="leave requests" />
                         </div>
                     </div>
 
@@ -536,7 +552,7 @@
                                     }
                                     else
                                     {
-                                        @foreach (var emp in _staffDirectory)
+                                        @foreach (var emp in pagedStaffDirectory)
                                         {
                                             var currentDaysOff = string.IsNullOrWhiteSpace(emp.DaysOff) ? "Sunday" : emp.DaysOff;
                                             <tr class="hover:bg-gray-50/70">
@@ -574,6 +590,7 @@
                                     }
                                 </tbody>
                             </table>
+                            <TablePagination TotalItems="_staffDirectory.Count" PageSize="10" @bind-CurrentPage="_daysOffPage" ItemLabel="staff" />
                         </div>
                     </div>
                 </div>
@@ -694,6 +711,14 @@
     private bool _isLoadingStaffSchedule;
     private bool _isProcessingLeaveAction;
     private bool _showAllLeavesHistory;
+    private int _leavesPage = 1;
+    private int _daysOffPage = 1;
+
+    private void SetLeavesHistoryFilter(bool showAll)
+    {
+        _showAllLeavesHistory = showAll;
+        _leavesPage = 1;
+    }
     private string? _staffScheduleFeedback;
     private bool _staffScheduleIsError;
     private List<LeaveItemViewModel> _allLeaves = new();
@@ -1024,7 +1049,7 @@
         if (dayBookings.Count > 0)
         {
             var minH = (int)Math.Floor(dayBookings.Min(b => b.StartTime.TotalHours));
-            var maxH = (int)Math.Ceiling(dayBookings.Max(b => (b.EndTime > b.StartTime ? b.EndTime : b.StartTime.Add(TimeSpan.FromHours(1))).TotalHours));
+            var maxH = (int)Math.Ceiling(dayBookings.Max(b => b.EffectiveEndTime.TotalHours));
             if (minH < startHour) startHour = Math.Max(0, minH);
             if (maxH > endHour) endHour = Math.Min(24, maxH);
         }

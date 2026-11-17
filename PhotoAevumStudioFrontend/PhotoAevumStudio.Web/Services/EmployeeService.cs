@@ -802,8 +802,8 @@ public class EmployeeService : IEmployeeService
 
                     IF OBJECT_ID(N'dbo.HistoryLog', N'U') IS NOT NULL
                     BEGIN
-                        INSERT INTO dbo.HistoryLog (ActionType, EntityName, EntityID, ActionDetails, LoggedAt)
-                        VALUES ('Archive', 'Employee', @EmpId, 'Archived employee record', SYSUTCDATETIME());
+                        INSERT INTO dbo.HistoryLog (ActionType, EntityName, EntityID, ChangedByType, ActionDetails, LoggedAt)
+                        VALUES ('STATUS_CHANGE', 'Employee', @EmpId, 'Admin', 'Archived employee record', SYSUTCDATETIME());
                     END
                 END";
 
@@ -842,8 +842,8 @@ public class EmployeeService : IEmployeeService
 
                     IF OBJECT_ID(N'dbo.HistoryLog', N'U') IS NOT NULL
                     BEGIN
-                        INSERT INTO dbo.HistoryLog (ActionType, EntityName, EntityID, ActionDetails, LoggedAt)
-                        VALUES ('Restore', 'Employee', @EmpId, 'Restored employee to Active', SYSUTCDATETIME());
+                        INSERT INTO dbo.HistoryLog (ActionType, EntityName, EntityID, ChangedByType, ActionDetails, LoggedAt)
+                        VALUES ('STATUS_CHANGE', 'Employee', @EmpId, 'Admin', 'Restored employee to Active', SYSUTCDATETIME());
                     END
                 END";
 
@@ -896,8 +896,8 @@ public class EmployeeService : IEmployeeService
                 END
                 IF OBJECT_ID(N'dbo.HistoryLog', N'U') IS NOT NULL
                 BEGIN
-                    INSERT INTO dbo.HistoryLog (ActionType, EntityName, EntityID, ActionDetails, LoggedAt)
-                    VALUES ('Delete', 'Employee', @EmpId, 'Permanently deleted employee', SYSUTCDATETIME());
+                    INSERT INTO dbo.HistoryLog (ActionType, EntityName, EntityID, ChangedByType, ActionDetails, LoggedAt)
+                    VALUES ('DELETE', 'Employee', @EmpId, 'Admin', 'Permanently deleted employee', SYSUTCDATETIME());
                 END";
 
             await using var cmd = new SqlCommand(cleanupSql, conn);
@@ -912,6 +912,44 @@ public class EmployeeService : IEmployeeService
         catch
         {
             return _userService.DeleteEmployee(cleanId);
+        }
+    }
+
+    public async Task<(bool Success, string Message)> ResetEmployeePasswordAsync(string employeeId, CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrWhiteSpace(employeeId))
+            return (false, "Employee ID is required.");
+
+        var cleanId = employeeId.Trim().ToUpperInvariant();
+        try
+        {
+            await _tokenStore.GetTokenAsync(cancellationToken);
+            var response = await _http.PostAsync($"api/management/employees/{Uri.EscapeDataString(cleanId)}/reset-password", null, cancellationToken);
+            if (response.IsSuccessStatusCode)
+            {
+                try
+                {
+                    var payload = await response.Content.ReadFromJsonAsync<System.Text.Json.JsonElement>(cancellationToken: cancellationToken);
+                    if (payload.TryGetProperty("message", out var msgProp) && !string.IsNullOrWhiteSpace(msgProp.GetString()))
+                        return (true, msgProp.GetString()!);
+                }
+                catch { }
+                return (true, $"Password for {cleanId} has been reset to their initial creation password.");
+            }
+
+            if (response.StatusCode is System.Net.HttpStatusCode.Forbidden or System.Net.HttpStatusCode.Unauthorized)
+                return (false, "Unauthorized: Only Administrators can reset staff passwords.");
+
+            var errBody = await response.Content.ReadAsStringAsync(cancellationToken);
+            return (false, string.IsNullOrWhiteSpace(errBody) ? $"Password reset failed ({(int)response.StatusCode})." : errBody);
+        }
+        catch (OperationCanceledException)
+        {
+            return (false, "Operation was cancelled.");
+        }
+        catch (Exception ex)
+        {
+            return (false, $"Failed to reset password: {ex.Message}");
         }
     }
 

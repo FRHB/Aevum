@@ -49,7 +49,7 @@
                 }
                 else
                 {
-                    @foreach (var item in EquipmentItems)
+                    @foreach (var item in PagedEquipmentItems)
                     {
                         <tr class="hover:bg-gray-50">
                             <td class="px-6 py-4 font-bold text-gray-900">@item.Name</td>
@@ -64,12 +64,15 @@
                 }
             </tbody>
         </table>
+        <TablePagination TotalItems="EquipmentItems.Count" PageSize="10" @bind-CurrentPage="currentPage" ItemLabel="equipment items" />
     </div>
 </div>
 
 @code {
     private string selectedEquipmentId = string.Empty;
     private List<EquipmentRow> EquipmentItems = new();
+    private int currentPage = 1;
+    private List<EquipmentRow> PagedEquipmentItems => TablePagination.Paginate(EquipmentItems, currentPage, 10);
 
     protected override async Task OnInitializedAsync()
     {

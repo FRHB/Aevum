@@ -11,7 +11,11 @@
 <div class="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-8">
     <div class="relative w-full md:w-96">
         <i data-lucide="search" class="w-5 h-5 absolute left-3 top-1/2 -translate-y-1/2 text-gray-400"></i>
-        <input type="text" placeholder="Search bookings..." class="w-full pl-10 pr-4 py-2.5 bg-white border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-teal-500 focus:border-teal-500 transition-shadow">
+        <input type="text"
+               value="@_searchQuery"
+               @oninput="OnSearchInput"
+               placeholder="Search bookings..."
+               class="w-full pl-10 pr-4 py-2.5 bg-white border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-teal-500 focus:border-teal-500 transition-shadow">
     </div>
     <div class="flex gap-3">
         <button class="px-4 py-2.5 bg-white border border-gray-300 text-gray-700 rounded-lg font-medium hover:bg-gray-50 transition-colors flex items-center gap-2">
@@ -34,17 +38,17 @@
                 </tr>
             </thead>
             <tbody class="divide-y divide-gray-200 text-sm">
-                @if (!SchedulesList.Any())
+                @if (!FilteredSchedules.Any())
                 {
                     <tr>
                         <td colspan="6" class="px-6 py-12 text-center text-gray-500">
-                            No scheduled bookings found in the database.
+                            @(SchedulesList.Count == 0 ? "No scheduled bookings found in the database." : "No bookings matched your search query.")
                         </td>
                     </tr>
                 }
                 else
                 {
-                    @foreach (var schedule in SchedulesList)
+                    @foreach (var schedule in PagedSchedules)
                     {
                         <tr class="hover:bg-gray-50 transition-colors group">
                             <td class="px-6 py-4 text-gray-500">#@schedule.BookingId</td>
@@ -77,10 +81,33 @@
             </tbody>
         </table>
     </div>
+
+    <TablePagination TotalItems="@FilteredSchedules.Count"
+                     PageSize="10"
+                     @bind-CurrentPage="_currentPage"
+                     ItemLabel="bookings" />
 </div>
 
 @code {
     private List<BookingRow> SchedulesList = new();
+    private string _searchQuery = string.Empty;
+    private int _currentPage = 1;
+
+    private List<BookingRow> FilteredSchedules => SchedulesList
+        .Where(s => string.IsNullOrWhiteSpace(_searchQuery) ||
+                    s.BookingId.Contains(_searchQuery.Trim(), StringComparison.OrdinalIgnoreCase) ||
+                    (s.ClientName?.Contains(_searchQuery.Trim(), StringComparison.OrdinalIgnoreCase) ?? false) ||
+                    (s.ServiceTitle?.Contains(_searchQuery.Trim(), StringComparison.OrdinalIgnoreCase) ?? false) ||
+                    (s.Status?.Contains(_searchQuery.Trim(), StringComparison.OrdinalIgnoreCase) ?? false))
+        .ToList();
+
+    private List<BookingRow> PagedSchedules => TablePagination.Paginate(FilteredSchedules, _currentPage);
+
+    private void OnSearchInput(ChangeEventArgs e)
+    {
+        _searchQuery = e.Value?.ToString() ?? string.Empty;
+        _currentPage = 1;
+    }
 
     protected override void OnInitialized()
     {

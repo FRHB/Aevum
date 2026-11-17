@@ -130,4 +130,6 @@ public sealed class Customer
     public string   Email    { get; set; } = string.Empty;
     public string   Phone    { get; set; } = string.Empty;
     public DateTime JoinDate { get; set; } = DateTime.UtcNow;
+    public bool     HasRequestedDeletion { get; set; }
+    public DateTime? DeletionRequestedAt { get; set; }
 }

@@ -13,27 +13,8 @@
 <PageTitle>Booking &amp; Payment Approvals</PageTitle>
 
 <div class="px-8 py-5 max-w-7xl mx-auto space-y-8">
-    @if (!string.IsNullOrWhiteSpace(successMessage))
-    {
-        <div class="p-4 bg-emerald-50 border border-emerald-200 text-emerald-800 rounded-xl text-sm font-semibold flex items-center justify-between shadow-xs">
-            <div class="flex items-center gap-2">
-                <span class="text-emerald-600 font-bold text-base">✓</span>
-                <span>@successMessage</span>
-            </div>
-            <button type="button" @onclick="() => successMessage = null" class="text-emerald-700 hover:text-emerald-900 text-xs">Dismiss</button>
-        </div>
-    }
-
-    @if (!string.IsNullOrWhiteSpace(errorMessage))
-    {
-        <div class="p-4 bg-rose-50 border border-rose-200 text-rose-800 rounded-xl text-sm font-semibold flex items-center justify-between shadow-xs">
-            <div class="flex items-center gap-2">
-                <span class="text-rose-600 font-bold text-base">⚠</span>
-                <span>@errorMessage</span>
-            </div>
-            <button type="button" @onclick="() => errorMessage = null" class="text-rose-700 hover:text-rose-900 text-xs">Dismiss</button>
-        </div>
-    }
+    <SystemMessage Message="@successMessage" Severity="success" Mode="banner" OnDismiss="() => successMessage = null" />
+    <SystemMessage Message="@errorMessage" Severity="error" Mode="banner" OnDismiss="() => errorMessage = null" />
 
     @* ── Admin Action Panel: Cash Remittance Verification ────────────── *@
     <div class="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
@@ -74,7 +55,7 @@
                 }
                 else
                 {
-                    @foreach (var rem in PendingRemittances)
+                    @foreach (var rem in PagedRemittances)
                     {
                         <tr class="hover:bg-amber-50/30 transition-colors">
                             <td class="px-6 py-4 font-mono font-medium text-gray-900 text-xs">
@@ -118,6 +99,7 @@
                 }
             </tbody>
         </table>
+        <TablePagination TotalItems="PendingRemittances.Count" PageSize="10" @bind-CurrentPage="remittancePage" ItemLabel="remittances" />
     </div>
 
     @* ── Booking Schedule Approvals ─────────────────────────────────── *@
@@ -149,7 +131,7 @@
                     }
                     else
                     {
-                        @foreach (var booking in PendingBookings)
+                        @foreach (var booking in PagedBookings)
                         {
                             <tr class="hover:bg-gray-50">
                                 <td class="px-6 py-4 font-medium text-gray-900">#@booking.BookingId</td>
@@ -169,6 +151,7 @@
                     }
                 </tbody>
             </table>
+            <TablePagination TotalItems="PendingBookings.Count" PageSize="10" @bind-CurrentPage="bookingPage" ItemLabel="bookings" />
         </div>
     </div>
 </div>
@@ -176,6 +159,10 @@
 @code {
     private List<BookingRow> PendingBookings = new();
     private List<PaymentSummaryModel> PendingRemittances = new();
+    private int remittancePage = 1;
+    private int bookingPage = 1;
+    private List<PaymentSummaryModel> PagedRemittances => TablePagination.Paginate(PendingRemittances, remittancePage, 10);
+    private List<BookingRow> PagedBookings => TablePagination.Paginate(PendingBookings, bookingPage, 10);
     private bool isProcessingRemittance = false;
     private string? successMessage;
     private string? errorMessage;

@@ -133,7 +133,8 @@ public interface IUserService
     IReadOnlyList<Customer> GetCustomers();
     Customer? GetCustomerById(string id);
     void AddCustomer(Customer customer);
-    bool DeleteCustomer(string id);
+    bool DeleteCustomer(string id);
+    bool RequestCustomerDeletion(string id) => false;
 
     // ── Specializations ─────────────────────────────────────────────────────
     IReadOnlyList<SpecializationLookupItem> GetSpecializationLookups();
@@ -188,7 +189,8 @@ public interface IUserService
         AddEquipment(name, typeName, $"SN-{Guid.NewGuid():N}"[..9].ToUpperInvariant(), status);
 
     // ── Bookings, Photos & Audit Logs ───────────────────────────────────────
-    List<BookingRowDto> GetBookings(string? customerId = null);
+    List<BookingRowDto> GetBookings(string? customerId = null);
+    int GetBookingsCount() => GetBookings().Count;
     void UpdateBookingStatus(string eventAppointmentId, string newStatus);
     List<PhotoRowDto> GetPhotos(string? bookingId = null);
     List<AuditLogRowDto> GetAuditLogs(string? userId = null);

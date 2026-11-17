@@ -1,0 +1,69 @@
+@if (TotalItems > 0)
+{
+    <div class="px-5 py-3 bg-slate-50/70 border-t border-slate-200 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 text-xs text-slate-600"
+         role="navigation" aria-label="Table pagination">
+        <div>
+            Showing <span class="font-semibold text-slate-900">@StartItem</span>–<span class="font-semibold text-slate-900">@EndItem</span>
+            of <span class="font-semibold text-slate-900">@TotalItems</span> @ItemLabel
+        </div>
+        <div class="flex items-center gap-2">
+            <button type="button"
+                    @onclick="GoPreviousAsync"
+                    disabled="@(SafeCurrentPage <= 1)"
+                    class="px-3 py-1.5 rounded-lg border border-slate-300 bg-white text-slate-700 font-semibold hover:bg-slate-100 disabled:opacity-40 disabled:cursor-not-allowed transition-colors cursor-pointer">
+                Previous
+            </button>
+            <span class="px-2 font-medium text-slate-700">
+                Page <span class="font-bold text-slate-900">@SafeCurrentPage</span> of <span class="font-bold text-slate-900">@TotalPages</span>
+            </span>
+            <button type="button"
+                    @onclick="GoNextAsync"
+                    disabled="@(SafeCurrentPage >= TotalPages)"
+                    class="px-3 py-1.5 rounded-lg border border-slate-300 bg-white text-slate-700 font-semibold hover:bg-slate-100 disabled:opacity-40 disabled:cursor-not-allowed transition-colors cursor-pointer">
+                Next
+            </button>
+        </div>
+    </div>
+}
+
+@code {
+    public const int DefaultPageSize = 10;
+
+    [Parameter] public int TotalItems { get; set; }
+    [Parameter] public int PageSize { get; set; } = DefaultPageSize;
+    [Parameter] public int CurrentPage { get; set; } = 1;
+    [Parameter] public EventCallback<int> CurrentPageChanged { get; set; }
+    [Parameter] public string ItemLabel { get; set; } = "items";
+
+    private int EffectivePageSize => PageSize > 0 ? PageSize : DefaultPageSize;
+    private int TotalPages => Math.Max(1, (int)Math.Ceiling(TotalItems / (double)EffectivePageSize));
+    private int SafeCurrentPage => Math.Clamp(CurrentPage, 1, TotalPages);
+    private int StartItem => TotalItems == 0 ? 0 : ((SafeCurrentPage - 1) * EffectivePageSize) + 1;
+    private int EndItem => TotalItems == 0 ? 0 : Math.Min(TotalItems, SafeCurrentPage * EffectivePageSize);
+
+    public static List<T> Paginate<T>(IEnumerable<T> source, int currentPage, int pageSize = DefaultPageSize)
+    {
+        var list = source as IList<T> ?? source.ToList();
+        if (list.Count == 0) return new List<T>();
+        var size = pageSize > 0 ? pageSize : DefaultPageSize;
+        var totalPages = Math.Max(1, (int)Math.Ceiling(list.Count / (double)size));
+        var safePage = Math.Clamp(currentPage, 1, totalPages);
+        return list.Skip((safePage - 1) * size).Take(size).ToList();
+    }
+
+    private async Task GoPreviousAsync()
+    {
+        if (SafeCurrentPage > 1)
+        {
+            await CurrentPageChanged.InvokeAsync(SafeCurrentPage - 1);
+        }
+    }
+
+    private async Task GoNextAsync()
+    {
+        if (SafeCurrentPage < TotalPages)
+        {
+            await CurrentPageChanged.InvokeAsync(SafeCurrentPage + 1);
+        }
+    }
+}

@@ -1512,4 +1512,42 @@ public static class StudioEmailTemplates
         return WrapLayout(preview, badge, "#059669", title, content);
     }
 
+    /// <summary>
+    /// Security notification sent to a staff member when an Administrator resets their password to their initial creation password.
+    /// </summary>
+    public static string StaffPasswordResetNotification(
+        string employeeName,
+        string employeeId,
+        string initialPassword,
+        string loginUrl)
+    {
+        var preview = $"Your Photo Aevum Studio password for {employeeId} was reset by an Administrator.";
+        var badge = "Password Reset";
+        var title = "Account Password Reset to Initial Credentials";
+
+        var content = $@"
+<p style=""margin:0 0 16px;color:{TextSecondary};font-size:14px;line-height:1.6;"">
+  Hi <strong>{WebUtility.HtmlEncode(employeeName)}</strong>,
+</p>
+<p style=""margin:0 0 18px;color:{TextSecondary};font-size:14px;line-height:1.6;"">
+  An administrator has reset your Photo Aevum Studio staff account password back to your initial creation password. For your security, you will be required to set a new personal password upon your next login.
+</p>
+<table width=""100%"" cellpadding=""0"" cellspacing=""0"" style=""background-color:#f8fafc;border:1px solid #e2e8f0;border-radius:10px;margin:0 0 20px;"">
+  <tr>
+    <td style=""padding:14px 16px;font-size:13px;color:#0f172a;"">
+      <div><strong>Employee ID:</strong> <span style=""font-family:monospace;"">{WebUtility.HtmlEncode(employeeId)}</span></div>
+      <div style=""margin-top:6px;""><strong>Temporary Initial Password:</strong> <span style=""font-family:monospace;background:#fff;padding:2px 6px;border:1px solid #cbd5e1;border-radius:4px;"">{WebUtility.HtmlEncode(initialPassword)}</span></div>
+    </td>
+  </tr>
+</table>
+<div style=""text-align:center;margin:22px 0 12px;"">
+  <a href=""{WebUtility.HtmlEncode(loginUrl)}""
+     style=""display:inline-block;background-color:#0f172a;color:#ffffff;padding:12px 24px;border-radius:10px;text-decoration:none;font-weight:700;font-size:14px;"">
+    Sign In &amp; Change Password &rarr;
+  </a>
+</div>";
+
+        return WrapLayout(preview, badge, AccentGold, title, content);
+    }
+
 }

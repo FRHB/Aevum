@@ -2,6 +2,7 @@ using System.ComponentModel.DataAnnotations;
 using System.Security.Claims;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.OutputCaching;
 using PhotoAevumStudio.Application.DTOs;
 using PhotoAevumStudio.Application.Interfaces;
 
@@ -55,11 +56,13 @@ public class CategoriesController : ControllerBase
 {
     private readonly IStudioManagementService _service;
     private readonly ILogger<CategoriesController> _logger;
+    private readonly IOutputCacheStore? _outputCache;
 
-    public CategoriesController(IStudioManagementService service, ILogger<CategoriesController> logger)
+    public CategoriesController(IStudioManagementService service, ILogger<CategoriesController> logger, IOutputCacheStore? outputCache = null)
     {
         _service = service;
         _logger = logger;
+        _outputCache = outputCache;
     }
 
     /// <summary>
@@ -86,6 +89,7 @@ public class CategoriesController : ControllerBase
     /// </summary>
     [HttpGet]
     [AllowAnonymous]
+    [OutputCache(PolicyName = "CatalogCache")]
     public async Task<IActionResult> GetAll(CancellationToken ct)
     {
         try
@@ -149,6 +153,7 @@ public class CategoriesController : ControllerBase
         try
         {
             var result = await _service.CreateCategoryAsync(dto, adminId, ct);
+            if (_outputCache != null) await _outputCache.EvictByTagAsync("catalog", ct);
             return CreatedAtAction(nameof(GetById), new { id = result.Id }, result);
         }
         catch (Exception ex)

@@ -125,6 +125,18 @@ else
                     <a href="/schedule" class="btn btn--primary btn-sm">
                         <span>✨</span> Book New Session
                     </a>
+                    @if (!profile.HasRequestedDeletion)
+                    {
+                        <button type="button"
+                                @onclick="HandleRequestAccountDeletion"
+                                class="btn btn-outline-danger btn-sm">
+                            Request Account Deletion
+                        </button>
+                    }
+                    else
+                    {
+                        <span class="text-xs font-semibold text-rose-700">Account Deletion Requested</span>
+                    }
                 </div>
             </div>
         </section>
@@ -149,18 +161,20 @@ else
 
                 @if (!string.IsNullOrEmpty(passwordSuccessMessage))
                 {
-                    <div class="alert alert-success alert-dismissible" role="status">
-                        <span class="alert-icon">✓</span>
-                        <span>@passwordSuccessMessage</span>
-                    </div>
+                    <SystemMessage Message="@passwordSuccessMessage"
+                                   Severity="success"
+                                   Mode="banner"
+                                   CssClass="mb-3"
+                                   OnDismiss="() => passwordSuccessMessage = string.Empty" />
                 }
 
                 @if (!string.IsNullOrEmpty(passwordErrorMessage))
                 {
-                    <div class="alert alert-danger" role="alert">
-                        <span class="alert-icon">⚠️</span>
-                        <span>@passwordErrorMessage</span>
-                    </div>
+                    <SystemMessage Message="@passwordErrorMessage"
+                                   Severity="error"
+                                   Mode="banner"
+                                   CssClass="mb-3"
+                                   OnDismiss="() => passwordErrorMessage = string.Empty" />
                 }
 
                 <EditForm Model="@passwordForm" OnValidSubmit="HandleUpdatePassword">
@@ -269,6 +283,7 @@ else
                     if (string.IsNullOrWhiteSpace(profile.Email)) profile.Email = customer.Email;
                     profile.Phone = customer.Phone;
                     profile.MemberSince = customer.JoinDate;
+                    profile.HasRequestedDeletion = customer.HasRequestedDeletion;
                 }
             }
 
@@ -346,6 +361,20 @@ else
         isUpdatingPassword = false;
     }
 
+    private void HandleRequestAccountDeletion()
+    {
+        if (string.IsNullOrWhiteSpace(profile.Id)) return;
+        if (UserService.RequestCustomerDeletion(profile.Id))
+        {
+            profile.HasRequestedDeletion = true;
+            passwordSuccessMessage = "Your account deletion request has been submitted for administrator review.";
+        }
+        else
+        {
+            passwordErrorMessage = "Unable to submit account deletion request. Please contact studio support.";
+        }
+    }
+
     private static string GetInitials(string name, string id)
     {
         if (string.IsNullOrWhiteSpace(name))
@@ -366,6 +395,7 @@ else
         public string Status { get; set; } = "Active";
         public string Phone { get; set; } = string.Empty;
         public DateTime? MemberSince { get; set; }
+        public bool HasRequestedDeletion { get; set; }
     }
 
     public class PasswordUpdateModel

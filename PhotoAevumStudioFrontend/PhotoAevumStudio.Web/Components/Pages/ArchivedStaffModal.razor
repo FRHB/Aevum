@@ -34,18 +34,12 @@
 
             <!-- Modal Body Content -->
             <div class="p-6 overflow-y-auto space-y-4 flex-1">
-                @if (!string.IsNullOrEmpty(statusMessage))
-                {
-                    <div class="p-3 text-xs rounded-lg border @(isError ? "bg-rose-50 border-rose-200 text-rose-800" : "bg-emerald-50 border-emerald-200 text-emerald-800") flex items-center justify-between">
-                        <span>@statusMessage</span>
-                        <button type="button" @onclick="() => statusMessage = null" class="font-bold opacity-60 hover:opacity-100 cursor-pointer">✕</button>
-                    </div>
-                }
+                <SystemMessage Message="@statusMessage" Severity="@(isError ? "error" : "success")" Mode="banner" OnDismiss="() => statusMessage = null" />
 
                 <div class="relative">
                     <input type="text"
-                           @bind="modalSearchQuery"
-                           @bind:event="oninput"
+                           value="@modalSearchQuery"
+                           @oninput="OnModalSearchInput"
                            placeholder="Filter archived employees by name or ID..."
                            class="w-full pl-9 pr-4 py-2 text-xs rounded-lg border border-slate-300 focus:outline-none focus:ring-1 focus:ring-slate-900 focus:border-slate-900" />
                     <svg class="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -84,7 +78,7 @@
                             }
                             else
                             {
-                                @foreach (var emp in FilteredArchivedEmployees)
+                                @foreach (var emp in PagedArchivedEmployees)
                                 {
                                     <tr @key="emp.EmployeeId" class="hover:bg-slate-50/60 transition-colors">
                                         <td class="px-4 py-3">
@@ -139,6 +133,7 @@
                             }
                         </tbody>
                     </table>
+                    <TablePagination TotalItems="FilteredArchivedEmployees.Count()" PageSize="10" @bind-CurrentPage="currentPage" ItemLabel="archived staff" />
                 </div>
             </div>
 
@@ -164,6 +159,15 @@
 
     private bool isLoading = true;
     private string modalSearchQuery = string.Empty;
+    private int currentPage = 1;
+    private List<EmployeeViewModel> PagedArchivedEmployees => TablePagination.Paginate(FilteredArchivedEmployees, currentPage, 10);
+
+    private void OnModalSearchInput(ChangeEventArgs e)
+    {
+        modalSearchQuery = e.Value?.ToString() ?? string.Empty;
+        currentPage = 1;
+    }
+
     private List<EmployeeViewModel> archivedList = new();
     private string? statusMessage;
     private bool isError;

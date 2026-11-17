@@ -124,6 +124,8 @@ CREATE TABLE dbo.Customer (
     CustomerPhoneNumber nvarchar(30),
     CustomerPassword nvarchar(255) NOT NULL,
     CustomerStatus nvarchar(20) NOT NULL CONSTRAINT DF_Customer_Status DEFAULT 'Active',
+    DeletionRequested bit NOT NULL CONSTRAINT DF_Customer_DeletionRequested DEFAULT 0,
+    DeletionRequestedAt datetime2 NULL,
     CreatedAt datetime2 NOT NULL CONSTRAINT DF_Customer_CreatedAt DEFAULT SYSUTCDATETIME(),
     CONSTRAINT CK_Customer_Status CHECK (CustomerStatus IN ('Active','Inactive'))
 );
@@ -592,7 +594,14 @@ CREATE INDEX IX_EventAppointment_Customer   ON dbo.EventAppointment (CustomerID,
 CREATE INDEX IX_EventAppointment_Schedule   ON dbo.EventAppointment (EventDate, EventTime);
 CREATE INDEX IX_EventLineItem_Event         ON dbo.EventLineItem (EventAppointmentID);
 CREATE INDEX IX_ServiceCategoryJoins_Cat    ON dbo.ServiceCategoryJoins (ServiceCategoryID);
+CREATE INDEX IX_ServiceCategoryJoins_Services ON dbo.ServiceCategoryJoins (ServicesID) INCLUDE (ServiceCategoryID);
+CREATE INDEX IX_ServiceCategoryJoins_AddOn    ON dbo.ServiceCategoryJoins (AdditionalServicesID) INCLUDE (ServiceCategoryID);
+CREATE INDEX IX_ServiceCategoryJoins_Pkg      ON dbo.ServiceCategoryJoins (ComboPackageID) INCLUDE (ServiceCategoryID);
 CREATE INDEX IX_ComboPackageJoin_Package    ON dbo.ComboPackageJoin (ComboPackageID);
+CREATE INDEX IX_ComboPackageJoin_Services   ON dbo.ComboPackageJoin (ServicesID) INCLUDE (ComboPackageID);
+CREATE INDEX IX_ComboPackageJoin_AddOn      ON dbo.ComboPackageJoin (AdditionalServicesID) INCLUDE (ComboPackageID);
+CREATE INDEX IX_ServiceCategory_Name        ON dbo.ServiceCategory (ServiceCategoryName);
+CREATE INDEX IX_Services_Name               ON dbo.Services (ServiceName);
 CREATE INDEX IX_Equipment_EquipmentType     ON dbo.Equipment (EquipmentTypeID);
 CREATE INDEX IX_EmployeeTimesheets_EmpDate ON dbo.EmployeeTimesheets (EmployeeStudioId, WorkDate);
 CREATE INDEX IX_EmployeeTimesheets_ClockIn ON dbo.EmployeeTimesheets (ClockIn DESC);
@@ -926,6 +935,15 @@ BEGIN
 
     ALTER TABLE dbo.EventAppointment ADD CONSTRAINT CK_EventAppointment_Status
         CHECK (EventStatus IN ('Pending','Awaiting_Downpayment','Pending Payment','Preparation','Preparing','Dispatch','Ongoing','On Going','Post Event','Pending Verification','Paid Cash Pending Verification','Confirmed','Complete','Completed','Shot','Editing','Delivered','Cancelled','Expired'));
+END;
+GO
+
+IF OBJECT_ID(N'dbo.Customer', N'U') IS NOT NULL
+BEGIN
+    IF COL_LENGTH(N'dbo.Customer', N'DeletionRequested') IS NULL
+        ALTER TABLE dbo.Customer ADD DeletionRequested bit NOT NULL CONSTRAINT DF_Customer_DeletionRequested DEFAULT 0;
+    IF COL_LENGTH(N'dbo.Customer', N'DeletionRequestedAt') IS NULL
+        ALTER TABLE dbo.Customer ADD DeletionRequestedAt datetime2 NULL;
 END;
 GO
 

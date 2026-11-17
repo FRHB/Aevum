@@ -92,40 +92,7 @@
 
 
     <!-- Alert / Toast Banner -->
-
-    @if (!string.IsNullOrWhiteSpace(notificationMessage))
-
-    {
-
-        <div class="p-4 bg-emerald-50 border border-emerald-200 text-emerald-900 rounded-xl flex items-center justify-between shadow-xs animate-in fade-in duration-200">
-
-            <div class="flex items-center gap-3">
-
-                <span class="w-7 h-7 rounded-full bg-emerald-600 text-white flex items-center justify-center shrink-0">
-
-                    <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M5 13l4 4L19 7" />
-
-                    </svg>
-
-                </span>
-
-                <div>
-
-                    <p class="text-xs font-bold text-emerald-950">Master Category Registry Updated</p>
-
-                    <p class="text-xs text-emerald-800">@notificationMessage</p>
-
-                </div>
-
-            </div>
-
-            <button type="button" @onclick="() => notificationMessage = null" class="text-emerald-700 hover:text-emerald-950 p-1 text-sm font-bold">&times;</button>
-
-        </div>
-
-    }
+    <SystemMessage Title="Master Category Registry Updated" Message="@notificationMessage" Severity="success" Mode="banner" OnDismiss="() => notificationMessage = null" />
 
 
 
@@ -234,11 +201,8 @@
             <div class="relative w-full sm:w-80">
 
                 <input type="text" 
-
-                       @bind="searchQuery" 
-
-                       @bind:event="oninput"
-
+                       value="@searchQuery" 
+                       @oninput="OnSearchInput"
                        class="w-full pl-9 pr-4 py-2 text-xs rounded-lg border border-slate-300 focus:outline-none focus:ring-1 focus:ring-slate-900 focus:border-slate-900" />
 
                 <svg class="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -290,9 +254,7 @@
             
 
             <button type="button"
-
-                    @onclick='() => selectedPillFilter = "ALL"'
-
+                    @onclick="ResetPillFilter"
                     class="px-2.5 py-1 rounded-full text-xs font-medium transition-all @(selectedPillFilter == "ALL" ? "bg-slate-900 text-white font-bold" : "bg-slate-100 text-slate-600 hover:bg-slate-200")">
 
                 All (@equipmentTypes.Count)
@@ -407,7 +369,7 @@
 
                     {
 
-                        @foreach (var type in FilteredTypes)
+                        @foreach (var type in PagedTypes)
 
                         {
 
@@ -545,9 +507,8 @@
                 </tbody>
 
             </table>
-
         </div>
-
+        <TablePagination TotalItems="FilteredTypes.Count()" PageSize="10" @bind-CurrentPage="currentPage" ItemLabel="equipment types" />
     </div>
 
 </div>
@@ -589,8 +550,21 @@
 
 
     private string searchQuery = string.Empty;
-
     private string selectedPillFilter = "ALL";
+    private int currentPage = 1;
+    private List<EquipmentTypeModel> PagedTypes => TablePagination.Paginate(FilteredTypes, currentPage, 10);
+
+    private void OnSearchInput(ChangeEventArgs e)
+    {
+        searchQuery = e.Value?.ToString() ?? string.Empty;
+        currentPage = 1;
+    }
+
+    private void ResetPillFilter()
+    {
+        selectedPillFilter = "ALL";
+        currentPage = 1;
+    }
 
     private string? notificationMessage;
 
@@ -666,37 +640,16 @@
 
 
     private void FilterByPill(string typeName)
-
     {
-
-        if (selectedPillFilter.Equals(typeName, StringComparison.OrdinalIgnoreCase))
-
-        {
-
-            selectedPillFilter = "ALL";
-
-        }
-
-        else
-
-        {
-
-            selectedPillFilter = typeName;
-
-        }
-
+        selectedPillFilter = selectedPillFilter.Equals(typeName, StringComparison.OrdinalIgnoreCase) ? "ALL" : typeName;
+        currentPage = 1;
     }
 
-
-
     private void ResetFilters()
-
     {
-
         searchQuery = string.Empty;
-
         selectedPillFilter = "ALL";
-
+        currentPage = 1;
     }
 
 

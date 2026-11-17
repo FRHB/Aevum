@@ -30,7 +30,7 @@
                 }
                 else
                 {
-                    @foreach (var slot in ScheduleSlots)
+                    @foreach (var slot in PagedScheduleSlots)
                     {
                         <tr>
                             <td class="p-4 border-b font-medium bg-gray-50 whitespace-nowrap w-32">@slot.Time</td>
@@ -70,10 +70,13 @@
             </tbody>
         </table>
     </div>
+    <TablePagination TotalItems="ScheduleSlots.Count" PageSize="10" @bind-CurrentPage="currentPage" ItemLabel="time slots" />
 </div>
 
 @code {
     private List<TimeSlotData> ScheduleSlots = new();
+    private int currentPage = 1;
+    private List<TimeSlotData> PagedScheduleSlots => TablePagination.Paginate(ScheduleSlots, currentPage, 10);
 
     protected override void OnInitialized()
     {

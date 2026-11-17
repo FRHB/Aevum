@@ -9,6 +9,8 @@ public interface IStudioManagementService
     Task<IReadOnlyList<Employee>> GetEmployeesAsync(bool includeArchived = false, CancellationToken cancellationToken = default);
     Task<IReadOnlyList<string>> GetSpecializationsAsync(CancellationToken cancellationToken = default);
     Task<bool> UpdateEmployeeDaysOffAsync(string employeeId, string daysOff, string? requestingAdminId = null, CancellationToken cancellationToken = default);
+    Task<(bool Success, string Message)> ResetEmployeePasswordToInitialAsync(string employeeId, string? requestingAdminId = null, CancellationToken cancellationToken = default) =>
+        Task.FromResult((false, "Password reset is not implemented."));
 
     // Departments
     Task<IReadOnlyList<DepartmentDto>> GetDepartmentsAsync(CancellationToken cancellationToken = default);

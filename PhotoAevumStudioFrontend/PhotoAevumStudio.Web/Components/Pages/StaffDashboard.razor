@@ -511,7 +511,7 @@
                     </tr>
                 </thead>
                 <tbody class="divide-y divide-slate-100">
-                    @foreach (var ev in displayedEvents)
+                    @foreach (var ev in PagedEvents)
                     {
                         <tr class="hover:bg-slate-50 transition-colors">
                             <td class="py-3 font-mono font-bold text-slate-800">
@@ -554,6 +554,7 @@
                     }
                 </tbody>
             </table>
+            <TablePagination TotalItems="displayedEvents.Count" PageSize="10" @bind-CurrentPage="eventsPage" ItemLabel="events" />
         </div>
     }
 </section>
@@ -636,7 +637,7 @@
                     </tr>
                 </thead>
                 <tbody class="divide-y divide-slate-100">
-                    @foreach (var rem in myCashRemittances)
+                    @foreach (var rem in PagedCashRemittances)
                     {
                         <tr>
                             <td class="py-2.5 px-3 text-slate-600">@rem.CreatedAt.ToLocalTime().ToString("MMM d, yyyy • h:mm tt")</td>
@@ -665,6 +666,7 @@
                     }
                 </tbody>
             </table>
+            <TablePagination TotalItems="myCashRemittances.Count" PageSize="10" @bind-CurrentPage="remittancesPage" ItemLabel="remittances" />
         </div>
     }
 </section>
@@ -699,7 +701,7 @@
                     </tr>
                 </thead>
                 <tbody class="divide-y divide-slate-50">
-                    @foreach (var l in myLeaves)
+                    @foreach (var l in PagedLeaves)
                     {
                         <tr>
                             <td class="py-2.5 font-bold text-slate-800">@l.LeaveType</td>
@@ -723,6 +725,7 @@
                     }
                 </tbody>
             </table>
+            <TablePagination TotalItems="myLeaves.Count" PageSize="10" @bind-CurrentPage="leavesPage" ItemLabel="leave requests" />
         </div>
     }
 </section>
@@ -921,6 +924,12 @@
 
 @code {
     private List<PaymentSummaryModel> myCashRemittances = new();
+    private int eventsPage = 1;
+    private int remittancesPage = 1;
+    private int leavesPage = 1;
+    private List<EventBookingModel> PagedEvents => TablePagination.Paginate(displayedEvents, eventsPage, 10);
+    private List<PaymentSummaryModel> PagedCashRemittances => TablePagination.Paginate(myCashRemittances, remittancesPage, 10);
+    private List<LeaveItemViewModel> PagedLeaves => TablePagination.Paginate(myLeaves, leavesPage, 10);
     private List<TeamLeaderEventDto> teamLeaderEvents = new();
     private List<EquipmentItemModel> _studioEquipments = new();
     private readonly Dictionary<string, string> _addEquipmentSelections = new(StringComparer.OrdinalIgnoreCase);

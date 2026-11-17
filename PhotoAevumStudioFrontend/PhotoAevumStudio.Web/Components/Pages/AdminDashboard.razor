@@ -301,7 +301,7 @@
                 }
                 else
                 {
-                    @foreach (var att in _todayAttendance)
+                    @foreach (var att in PagedAttendance)
                     {
                         <tr>
                             <td class="font-semibold text-slate-800">@att.EmployeeName</td>
@@ -318,6 +318,7 @@
                 }
             </tbody>
         </table>
+        <TablePagination TotalItems="_todayAttendance.Count" PageSize="10" @bind-CurrentPage="_attendancePage" ItemLabel="staff" />
     </div>
 </section>
 
@@ -352,7 +353,7 @@
                 }
                 else
                 {
-                    @foreach (var lv in _pendingLeaves)
+                    @foreach (var lv in PagedPendingLeaves)
                     {
                         <tr>
                             <td>
@@ -381,6 +382,7 @@
                 }
             </tbody>
         </table>
+        <TablePagination TotalItems="_pendingLeaves.Count" PageSize="10" @bind-CurrentPage="_leavesPage" ItemLabel="requests" />
     </div>
 </section>
 
@@ -413,7 +415,7 @@
                     }
                     else
                     {
-                        @foreach (var booking in _recentBookings)
+                        @foreach (var booking in PagedRecentBookings)
                         {
                             <tr>
                                 <td>@booking.CustomerName</td>
@@ -430,6 +432,7 @@
                     }
                 </tbody>
             </table>
+            <TablePagination TotalItems="_recentBookings.Count" PageSize="10" @bind-CurrentPage="_bookingsPage" ItemLabel="bookings" />
         </div>
     </section>
 
@@ -496,6 +499,12 @@
     private List<LeaveItemViewModel> _pendingLeaves = new();
     private bool _isProcessingLeave = false;
     private IReadOnlyList<BookingRowDto> _recentBookings = Array.Empty<BookingRowDto>();
+    private int _attendancePage = 1;
+    private int _leavesPage = 1;
+    private int _bookingsPage = 1;
+    private List<TodayAttendanceSummaryDto> PagedAttendance => TablePagination.Paginate(_todayAttendance, _attendancePage, 10);
+    private List<LeaveItemViewModel> PagedPendingLeaves => TablePagination.Paginate(_pendingLeaves, _leavesPage, 10);
+    private List<BookingRowDto> PagedRecentBookings => TablePagination.Paginate(_recentBookings, _bookingsPage, 10);
     private List<PaymentSummaryModel> _pendingRemittances = new();
     private decimal _pendingRemittancesSum => _pendingRemittances.Sum(r => r.Amount);
 

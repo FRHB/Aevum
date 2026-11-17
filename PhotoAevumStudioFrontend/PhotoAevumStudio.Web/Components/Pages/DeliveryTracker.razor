@@ -35,7 +35,7 @@
                 }
                 else
                 {
-                    @foreach (var item in PipelineBookings)
+                    @foreach (var item in PagedPipelineBookings)
                     {
                         <tr class="hover:bg-gray-50">
                             <td class="px-6 py-4">
@@ -59,11 +59,14 @@
                 }
             </tbody>
         </table>
+        <TablePagination TotalItems="PipelineBookings.Count" PageSize="10" @bind-CurrentPage="currentPage" ItemLabel="bookings" />
     </div>
 </div>
 
 @code {
     private List<BookingRow> PipelineBookings = new();
+    private int currentPage = 1;
+    private List<BookingRow> PagedPipelineBookings => TablePagination.Paginate(PipelineBookings, currentPage, 10);
 
     protected override async Task OnInitializedAsync()
     {

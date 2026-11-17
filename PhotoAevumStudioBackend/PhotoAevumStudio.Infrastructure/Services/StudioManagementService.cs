@@ -1,6 +1,7 @@
 using System.Data;
 using Microsoft.Data.SqlClient;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Caching.Memory;
 using PhotoAevumStudio.Application.DTOs;
 using PhotoAevumStudio.Application.Entities;
 using PhotoAevumStudio.Application.Interfaces;
@@ -10,13 +11,38 @@ namespace PhotoAevumStudio.Infrastructure.Services;
 
 public class StudioManagementService : IStudioManagementService
 {
+    private const string CacheKeyServicesSummary = "Catalog:ServicesSummary";
+    private const string CacheKeyAdditionalSummary = "Catalog:AdditionalServicesSummary";
+    private const string CacheKeyPackagesSummary = "Catalog:ComboPackagesSummary";
+    private const string CacheKeyCategories = "Catalog:Categories";
+    private const string CacheKeyRateTypes = "Catalog:RateTypes";
+    private static readonly TimeSpan CatalogCacheTtl = TimeSpan.FromMinutes(5);
+
     private readonly ApplicationDbContext _db;
     private readonly IR2StorageService? _r2Service;
+    private readonly IMemoryCache? _cache;
+    private readonly IEmailService? _emailService;
 
-    public StudioManagementService(ApplicationDbContext db, IR2StorageService? r2Service = null)
+    public StudioManagementService(
+        ApplicationDbContext db,
+        IR2StorageService? r2Service = null,
+        IMemoryCache? cache = null,
+        IEmailService? emailService = null)
     {
         _db = db;
         _r2Service = r2Service;
+        _cache = cache;
+        _emailService = emailService;
+    }
+
+    private void InvalidateCatalogCache()
+    {
+        if (_cache is null) return;
+        _cache.Remove(CacheKeyServicesSummary);
+        _cache.Remove(CacheKeyAdditionalSummary);
+        _cache.Remove(CacheKeyPackagesSummary);
+        _cache.Remove(CacheKeyCategories);
+        _cache.Remove(CacheKeyRateTypes);
     }
 
     private async Task<(string? FileName, string? ImageUrl)> UploadServiceAssetToR2Async(
@@ -395,6 +421,9 @@ public class StudioManagementService : IStudioManagementService
 
     public async Task<IReadOnlyList<ServiceSummaryDto>> GetServicesSummaryAsync(CancellationToken cancellationToken = default)
     {
+        if (_cache != null && _cache.TryGetValue(CacheKeyServicesSummary, out IReadOnlyList<ServiceSummaryDto>? cached) && cached != null)
+            return cached;
+
         await using var conn = SqlResilienceHelper.CreateConnection(GetConnectionString());
         await conn.OpenAsync(cancellationToken);
         await EnsureServicesRateTypeSchemaAsync(conn, cancellationToken);
@@ -467,6 +496,7 @@ public class StudioManagementService : IStudioManagementService
             }
         }
 
+        _cache?.Set(CacheKeyServicesSummary, (IReadOnlyList<ServiceSummaryDto>)list, CatalogCacheTtl);
         return list;
     }
 
@@ -563,6 +593,7 @@ public class StudioManagementService : IStudioManagementService
         cmd.Parameters.AddWithValue("@UpdatedByAdminID", (object?)requestingAdminId ?? DBNull.Value);
 
         await cmd.ExecuteNonQueryAsync(cancellationToken);
+        InvalidateCatalogCache();
         return true;
     }
 
@@ -570,6 +601,9 @@ public class StudioManagementService : IStudioManagementService
 
     public async Task<IReadOnlyList<ServiceSummaryDto>> GetAdditionalServicesSummaryAsync(CancellationToken cancellationToken = default)
     {
+        if (_cache != null && _cache.TryGetValue(CacheKeyAdditionalSummary, out IReadOnlyList<ServiceSummaryDto>? cached) && cached != null)
+            return cached;
+
         await using var conn = SqlResilienceHelper.CreateConnection(GetConnectionString());
         await conn.OpenAsync(cancellationToken);
         await EnsureServicesRateTypeSchemaAsync(conn, cancellationToken);
@@ -630,6 +664,7 @@ public class StudioManagementService : IStudioManagementService
             }
         }
 
+        _cache?.Set(CacheKeyAdditionalSummary, (IReadOnlyList<ServiceSummaryDto>)list, CatalogCacheTtl);
         return list;
     }
 
@@ -695,6 +730,7 @@ public class StudioManagementService : IStudioManagementService
         cmd.Parameters.AddWithValue("@UpdatedByAdminID", (object?)requestingAdminId ?? DBNull.Value);
 
         await cmd.ExecuteNonQueryAsync(cancellationToken);
+        InvalidateCatalogCache();
         return true;
     }
 
@@ -702,6 +738,9 @@ public class StudioManagementService : IStudioManagementService
 
     public async Task<IReadOnlyList<ServiceSummaryDto>> GetComboPackagesSummaryAsync(CancellationToken cancellationToken = default)
     {
+        if (_cache != null && _cache.TryGetValue(CacheKeyPackagesSummary, out IReadOnlyList<ServiceSummaryDto>? cached) && cached != null)
+            return cached;
+
         await using var conn = SqlResilienceHelper.CreateConnection(GetConnectionString());
         await conn.OpenAsync(cancellationToken);
         await EnsureServicesRateTypeSchemaAsync(conn, cancellationToken);
@@ -763,6 +802,7 @@ public class StudioManagementService : IStudioManagementService
             }
         }
 
+        _cache?.Set(CacheKeyPackagesSummary, (IReadOnlyList<ServiceSummaryDto>)list, CatalogCacheTtl);
         return list;
     }
 
@@ -828,6 +868,7 @@ public class StudioManagementService : IStudioManagementService
         cmd.Parameters.AddWithValue("@UpdatedByAdminID", (object?)requestingAdminId ?? DBNull.Value);
 
         await cmd.ExecuteNonQueryAsync(cancellationToken);
+        InvalidateCatalogCache();
         return true;
     }
 
@@ -1015,6 +1056,9 @@ public class StudioManagementService : IStudioManagementService
 
     public async Task<IReadOnlyList<CategoryDto>> GetCategoriesAsync(CancellationToken cancellationToken = default)
     {
+        if (_cache != null && _cache.TryGetValue(CacheKeyCategories, out IReadOnlyList<CategoryDto>? cached) && cached != null)
+            return cached;
+
         await using var conn = SqlResilienceHelper.CreateConnection(GetConnectionString());
         await conn.OpenAsync(cancellationToken);
         await EnsureServicesRateTypeSchemaAsync(conn, cancellationToken);
@@ -1115,9 +1159,11 @@ public class StudioManagementService : IStudioManagementService
                 assocMap.TryGetValue(c.Id, out var assocNames);
                 enriched.Add(c with { AssociatedServices = assocNames ?? new List<string>() });
             }
+            _cache?.Set(CacheKeyCategories, (IReadOnlyList<CategoryDto>)enriched, CatalogCacheTtl);
             return enriched;
         }
 
+        _cache?.Set(CacheKeyCategories, (IReadOnlyList<CategoryDto>)list, CatalogCacheTtl);
         return list;
     }
 
@@ -1201,6 +1247,7 @@ public class StudioManagementService : IStudioManagementService
                 var catId = reader.IsDBNull(4) ? dto.CategoryId : reader.GetString(4);
                 var catName = reader.IsDBNull(5) ? null : reader.GetString(5);
                 var hasImg = !reader.IsDBNull(6) && reader.GetBoolean(6);
+                InvalidateCatalogCache();
 
                 return new ServiceCreatedResponseDto(id, name, desc, price, catId ?? string.Empty, catName, hasImg, effectiveFileName, effectiveUrl);
             }
@@ -1266,6 +1313,7 @@ public class StudioManagementService : IStudioManagementService
             }
 
             await trans.CommitAsync(cancellationToken);
+            InvalidateCatalogCache();
 
             return new ServiceCreatedResponseDto(
                 Id: nextId,
@@ -1321,6 +1369,7 @@ public class StudioManagementService : IStudioManagementService
             }
 
             var serviceNames = await ResolveAssociatedNamesAsync(joins, cancellationToken);
+            InvalidateCatalogCache();
 
             return new CategoryDto(
                 Id: eventCategory.Id,
@@ -1712,39 +1761,36 @@ public class StudioManagementService : IStudioManagementService
         var names = new List<string>();
         if (joins.Count == 0) return names;
 
+        var serviceIds = joins.Where(j => !string.IsNullOrWhiteSpace(j.ServiceId)).Select(j => j.ServiceId!).Distinct(StringComparer.OrdinalIgnoreCase).ToList();
+        var addOnIds = joins.Where(j => !string.IsNullOrWhiteSpace(j.AdditionalServiceId)).Select(j => j.AdditionalServiceId!).Distinct(StringComparer.OrdinalIgnoreCase).ToList();
+        var pkgIds = joins.Where(j => !string.IsNullOrWhiteSpace(j.ComboPackageId)).Select(j => j.ComboPackageId!).Distinct(StringComparer.OrdinalIgnoreCase).ToList();
+
         await using var conn = SqlResilienceHelper.CreateConnection(GetConnectionString());
         await conn.OpenAsync(ct);
 
-        foreach (var j in joins)
+        async Task QueryBatchAsync(string sqlTemplate, List<string> ids)
         {
-            if (!string.IsNullOrWhiteSpace(j.ServiceId))
+            if (ids.Count == 0) return;
+            var paramNames = ids.Select((_, i) => $"@p{i}").ToArray();
+            var sql = string.Format(sqlTemplate, string.Join(",", paramNames));
+            await using var cmd = new SqlCommand(sql, conn);
+            for (int i = 0; i < ids.Count; i++)
+                cmd.Parameters.AddWithValue(paramNames[i], ids[i]);
+            await using var reader = await cmd.ExecuteReaderAsync(ct);
+            while (await reader.ReadAsync(ct))
             {
-                const string sql = "SELECT ServiceName FROM dbo.Services WHERE ServicesID = @Id;";
-                await using var cmd = new SqlCommand(sql, conn);
-                cmd.Parameters.AddWithValue("@Id", j.ServiceId);
-                var name = (await cmd.ExecuteScalarAsync(ct))?.ToString();
-                if (!string.IsNullOrWhiteSpace(name) && !names.Contains(name))
-                    names.Add(name);
-            }
-            else if (!string.IsNullOrWhiteSpace(j.AdditionalServiceId))
-            {
-                const string sql = "SELECT AdditionalServiceName FROM dbo.AdditionalServices WHERE AdditionalServicesID = @Id;";
-                await using var cmd = new SqlCommand(sql, conn);
-                cmd.Parameters.AddWithValue("@Id", j.AdditionalServiceId);
-                var name = (await cmd.ExecuteScalarAsync(ct))?.ToString();
-                if (!string.IsNullOrWhiteSpace(name) && !names.Contains(name))
-                    names.Add(name);
-            }
-            else if (!string.IsNullOrWhiteSpace(j.ComboPackageId))
-            {
-                const string sql = "SELECT ComboPackageName FROM dbo.ComboPackage WHERE ComboPackageID = @Id;";
-                await using var cmd = new SqlCommand(sql, conn);
-                cmd.Parameters.AddWithValue("@Id", j.ComboPackageId);
-                var name = (await cmd.ExecuteScalarAsync(ct))?.ToString();
-                if (!string.IsNullOrWhiteSpace(name) && !names.Contains(name))
-                    names.Add(name);
+                if (!reader.IsDBNull(0))
+                {
+                    var name = reader.GetString(0);
+                    if (!string.IsNullOrWhiteSpace(name) && !names.Contains(name))
+                        names.Add(name);
+                }
             }
         }
+
+        await QueryBatchAsync("SELECT ServiceName FROM dbo.Services WHERE ServicesID IN ({0});", serviceIds);
+        await QueryBatchAsync("SELECT AdditionalServiceName FROM dbo.AdditionalServices WHERE AdditionalServicesID IN ({0});", addOnIds);
+        await QueryBatchAsync("SELECT ComboPackageName FROM dbo.ComboPackage WHERE ComboPackageID IN ({0});", pkgIds);
 
         return names;
     }
@@ -1865,6 +1911,7 @@ public class StudioManagementService : IStudioManagementService
             {
                 createdId = await GetNextAdditionalServiceIdAsync(cancellationToken);
             }
+            InvalidateCatalogCache();
 
             return new AdditionalServiceResponseDto(
                 Id: createdId,
@@ -1920,6 +1967,7 @@ public class StudioManagementService : IStudioManagementService
             await insertCmd.ExecuteNonQueryAsync(cancellationToken);
 
             await trans.CommitAsync(cancellationToken);
+            InvalidateCatalogCache();
 
             return new AdditionalServiceResponseDto(
                 Id: nextId,
@@ -2269,6 +2317,8 @@ public class StudioManagementService : IStudioManagementService
         }
         catch { }
 
+        InvalidateCatalogCache();
+
         return new ComboPackageCreatedResponseDto(
             PackageId: generatedId,
             Name: model.Name.Trim(),
@@ -2289,6 +2339,9 @@ public class StudioManagementService : IStudioManagementService
 
     public async Task<IReadOnlyList<RateTypeDto>> GetRateTypesAsync(CancellationToken cancellationToken = default)
     {
+        if (_cache != null && _cache.TryGetValue(CacheKeyRateTypes, out IReadOnlyList<RateTypeDto>? cached) && cached != null)
+            return cached;
+
         await using var conn = SqlResilienceHelper.CreateConnection(GetConnectionString());
         await conn.OpenAsync(cancellationToken);
         await EnsureServicesRateTypeSchemaAsync(conn, cancellationToken);
@@ -2339,6 +2392,7 @@ public class StudioManagementService : IStudioManagementService
                 });
             }
         }
+        _cache?.Set(CacheKeyRateTypes, (IReadOnlyList<RateTypeDto>)list, CatalogCacheTtl);
         return list;
     }
 
@@ -2442,6 +2496,7 @@ public class StudioManagementService : IStudioManagementService
                 cmd.Parameters.AddWithValue("@RtId", rateTypeId.Trim());
                 cmd.Parameters.AddWithValue("@Amount", rateAmount);
                 await cmd.ExecuteNonQueryAsync(cancellationToken);
+                InvalidateCatalogCache();
                 return true;
             }
             catch
@@ -2628,5 +2683,121 @@ public class StudioManagementService : IStudioManagementService
             .ToList();
 
         return tokens.Count == 0 ? "None" : string.Join(", ", tokens!);
+    }
+
+    public async Task<(bool Success, string Message)> ResetEmployeePasswordToInitialAsync(
+        string employeeId,
+        string? requestingAdminId = null,
+        CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrWhiteSpace(employeeId))
+            return (false, "Employee ID is required.");
+
+        var cleanEmpId = employeeId.Trim().ToUpperInvariant();
+        await using var conn = SqlResilienceHelper.CreateConnection(GetConnectionString());
+        await conn.OpenAsync(cancellationToken);
+
+        const string lookupSql = @"
+            SELECT TOP 1
+                EmployeeID,
+                EmployeeFirstName,
+                EmployeeLastName,
+                EmployeeEmail,
+                BirthDate,
+                BirthYear
+            FROM dbo.Employees
+            WHERE UPPER(LTRIM(RTRIM(EmployeeID))) = @EmpId;";
+
+        string? dbEmpId = null;
+        string firstName = string.Empty;
+        string lastName = string.Empty;
+        string? email = null;
+        DateTime? birthDate = null;
+        int? birthYear = null;
+
+        await using (var cmd = new SqlCommand(lookupSql, conn))
+        {
+            cmd.Parameters.AddWithValue("@EmpId", cleanEmpId);
+            await using var reader = await cmd.ExecuteReaderAsync(cancellationToken);
+            if (await reader.ReadAsync(cancellationToken))
+            {
+                dbEmpId = reader.GetString(0).Trim();
+                firstName = reader.IsDBNull(1) ? string.Empty : reader.GetString(1).Trim();
+                lastName = reader.IsDBNull(2) ? string.Empty : reader.GetString(2).Trim();
+                email = reader.IsDBNull(3) ? null : reader.GetString(3).Trim();
+                birthDate = reader.IsDBNull(4) ? null : reader.GetDateTime(4);
+                birthYear = reader.IsDBNull(5) ? null : reader.GetInt32(5);
+            }
+        }
+
+        if (string.IsNullOrWhiteSpace(dbEmpId))
+            return (false, $"Staff member '{cleanEmpId}' was not found.");
+
+        var initialPassword = PhotoAevumStudio.Application.Utils.EmployeeCredentialGenerator.GenerateInitialPassword(
+            lastName,
+            birthDate?.Year ?? birthYear,
+            dbEmpId);
+        var hashedPassword = BCrypt.Net.BCrypt.HashPassword(initialPassword);
+
+        const string updateSql = @"
+            UPDATE dbo.Employees
+            SET EmployeePassword = @Hash,
+                isFirstLogin = 1
+            WHERE UPPER(LTRIM(RTRIM(EmployeeID))) = @EmpId;
+
+            IF OBJECT_ID(N'dbo.AspNetUsers', N'U') IS NOT NULL
+            BEGIN
+                UPDATE dbo.AspNetUsers
+                SET PasswordHash = @Hash,
+                    MustChangePassword = 1
+                WHERE UPPER(LTRIM(RTRIM(StudioId))) = @EmpId
+                   OR UPPER(LTRIM(RTRIM(UserName))) = @EmpId
+                   OR (@Email IS NOT NULL AND UPPER(LTRIM(RTRIM(Email))) = UPPER(@Email));
+            END;
+
+            IF OBJECT_ID(N'dbo.HistoryLog', N'U') IS NOT NULL
+            BEGIN
+                DECLARE @ActorType nvarchar(20) = CASE WHEN @AdminId LIKE 'SADM-%' THEN 'SystemAdmin' ELSE 'Admin' END;
+                IF OBJECT_ID(N'dbo.sp_AddHistoryLog', N'P') IS NOT NULL
+                BEGIN
+                    EXEC dbo.sp_AddHistoryLog
+                        @ActionType = 'PASSWORD_RESET',
+                        @EntityName = 'Employee',
+                        @EntityID = @EmpId,
+                        @ActionDetails = @Details,
+                        @ChangedByType = @ActorType,
+                        @ActorID = @AdminId;
+                END
+                ELSE
+                BEGIN
+                    INSERT INTO dbo.HistoryLog (ActionType, EntityName, EntityID, ActionDetails, ChangedByType, LoggedAt)
+                    VALUES ('PASSWORD_RESET', 'Employee', @EmpId, @Details, @ActorType, SYSUTCDATETIME());
+                END
+            END;";
+
+        await using (var updCmd = new SqlCommand(updateSql, conn))
+        {
+            updCmd.Parameters.AddWithValue("@EmpId", dbEmpId);
+            updCmd.Parameters.AddWithValue("@Hash", hashedPassword);
+            updCmd.Parameters.AddWithValue("@Email", (object?)email ?? DBNull.Value);
+            updCmd.Parameters.AddWithValue("@AdminId", string.IsNullOrWhiteSpace(requestingAdminId) ? DBNull.Value : requestingAdminId.Trim());
+            updCmd.Parameters.AddWithValue("@Details", $"Admin reset password for {dbEmpId} to initial creation password and flagged for forced password change on next login.");
+            await updCmd.ExecuteNonQueryAsync(cancellationToken);
+        }
+
+        if (_emailService != null && !string.IsNullOrWhiteSpace(email))
+        {
+            var fullName = string.Join(" ", new[] { firstName, lastName }.Where(s => !string.IsNullOrWhiteSpace(s)));
+            if (string.IsNullOrWhiteSpace(fullName)) fullName = dbEmpId;
+            var htmlBody = StudioEmailTemplates.StaffPasswordResetNotification(fullName, dbEmpId, initialPassword, "/login");
+            await _emailService.TrySendEmailAsync(
+                email,
+                $"Photo Aevum Studio — Password Reset ({dbEmpId})",
+                htmlBody,
+                isHtml: true,
+                cancellationToken: cancellationToken);
+        }
+
+        return (true, $"Password for {dbEmpId} has been reset to their initial creation password. A notification email has been sent and they will be prompted to change it on next login.");
     }
 }

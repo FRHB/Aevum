@@ -2,6 +2,7 @@ using System.ComponentModel.DataAnnotations;
 using System.Security.Claims;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.OutputCaching;
 using PhotoAevumStudio.Application.Auth;
 using PhotoAevumStudio.Application.DTOs;
 using PhotoAevumStudio.Application.Interfaces;
@@ -36,11 +37,13 @@ public class ServicesController : ControllerBase
 {
     private readonly IStudioManagementService _service;
     private readonly ILogger<ServicesController> _logger;
+    private readonly IOutputCacheStore? _outputCache;
 
-    public ServicesController(IStudioManagementService service, ILogger<ServicesController> logger)
+    public ServicesController(IStudioManagementService service, ILogger<ServicesController> logger, IOutputCacheStore? outputCache = null)
     {
         _service = service;
         _logger = logger;
+        _outputCache = outputCache;
     }
 
     /// <summary>
@@ -67,6 +70,7 @@ public class ServicesController : ControllerBase
     /// </summary>
     [HttpGet]
     [AllowAnonymous]
+    [OutputCache(PolicyName = "CatalogCache")]
     public async Task<IActionResult> GetAll(CancellationToken ct)
     {
         var services = await _service.GetServicesSummaryAsync(ct);
@@ -125,6 +129,7 @@ public class ServicesController : ControllerBase
         try
         {
             var result = await _service.CreateServiceAsync(dto, adminId, ct);
+            if (_outputCache != null) await _outputCache.EvictByTagAsync("catalog", ct);
             return CreatedAtAction(nameof(GetNextId), new { id = result.Id }, result);
         }
         catch (Exception ex)
@@ -139,6 +144,7 @@ public class ServicesController : ControllerBase
     /// </summary>
     [HttpGet("rate-types")]
     [AllowAnonymous]
+    [OutputCache(PolicyName = "CatalogCache")]
     public async Task<IActionResult> GetRateTypes(CancellationToken ct)
     {
         var list = await _service.GetRateTypesAsync(ct);
@@ -164,6 +170,7 @@ public class ServicesController : ControllerBase
     public async Task<IActionResult> SetServiceRate(string serviceId, [FromBody] SetServiceRateDto dto, CancellationToken ct)
     {
         var success = await _service.AddOrUpdateServiceRateAsync(serviceId, dto.RateTypeId, dto.RateAmount, ct);
+        if (success && _outputCache != null) await _outputCache.EvictByTagAsync("catalog", ct);
         return success
             ? Ok(new { Message = "Rate updated successfully." })
             : BadRequest(new { Message = "Failed to update service rate." });

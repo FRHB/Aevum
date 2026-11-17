@@ -44,23 +44,11 @@
         }
     </div>
 
-    @if (!string.IsNullOrWhiteSpace(notificationMessage))
-    {
-        <div class="p-4 bg-emerald-50 border border-emerald-200 text-emerald-900 rounded-xl flex items-center justify-between shadow-xs animate-in fade-in duration-200">
-            <div class="flex items-center gap-3">
-                <span class="w-7 h-7 rounded-full bg-emerald-600 text-white flex items-center justify-center shrink-0">
-                    <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M5 13l4 4L19 7" />
-                    </svg>
-                </span>
-                <div>
-                    <p class="text-xs font-bold text-emerald-950">Service Catalog Updated</p>
-                    <p class="text-xs text-emerald-800">@notificationMessage</p>
-                </div>
-            </div>
-            <button type="button" @onclick="() => notificationMessage = null" class="text-emerald-700 hover:text-emerald-950 p-1 text-sm font-bold">&times;</button>
-        </div>
-    }
+    <SystemMessage Message="@notificationMessage"
+                   Title="Service Catalog Updated"
+                   Severity="success"
+                   Mode="banner"
+                   OnDismiss="() => notificationMessage = null" />
 
     <!-- Quick Stats Grid -->
     <div class="grid grid-cols-2 lg:grid-cols-4 gap-4">
@@ -106,8 +94,8 @@
         <div class="flex flex-col md:flex-row gap-3 items-stretch md:items-center justify-between">
             <div class="relative flex-1 min-w-[240px]">
                 <input type="text"
-                       @bind="searchQuery"
-                       @bind:event="oninput"
+                       value="@searchQuery"
+                       @oninput="OnSearchInput"
                        placeholder="Search services by title, code, or description..."
                        class="w-full px-4 py-2.5 text-sm bg-gray-50/70 border border-gray-200 rounded-lg text-gray-900 placeholder-gray-400 focus:bg-white focus:outline-none focus:ring-2 focus:ring-gray-900" />
             </div>
@@ -146,9 +134,9 @@
                     </tr>
                 </thead>
                 <tbody class="divide-y divide-gray-100 text-sm">
-                    @if (FilteredServices.Any())
+                    @if (PagedServices.Any())
                     {
-                        @foreach (var svc in FilteredServices)
+                        @foreach (var svc in PagedServices)
                         {
                             <tr class="hover:bg-gray-50/60 transition-colors duration-100">
                                 <td class="py-4 px-6">
@@ -231,6 +219,11 @@
                 </tbody>
             </table>
         </div>
+
+        <TablePagination TotalItems="@FilteredServices.Count()"
+                         PageSize="10"
+                         @bind-CurrentPage="_currentPage"
+                         ItemLabel="main services" />
     </div>
 </div>
 
@@ -252,19 +245,15 @@
     private MainServiceItem? selectedEditService;
     private string? notificationMessage;
     private string searchQuery = string.Empty;
+    private int _currentPage = 1;
     private int activeBookingsCount;
     private List<MainServiceItem> services = new();
 
-    protected override void OnInitialized()
-    {
-        LoadFromDatabase();
-    }
-
     private void LoadFromDatabase()
     {
-        services = UserService.GetMainServices().ToList();
+        services = UserService.GetMainServicesSummary().ToList();
         ApplyFeaturedFlags();
-        activeBookingsCount = UserService.GetBookings().Count;
+        activeBookingsCount = UserService.GetBookingsCount();
     }
 
     private void OpenCreateModal() => isCreateModalOpen = true;
@@ -321,9 +310,18 @@
         }
     }
 
+    private List<MainServiceItem> PagedServices => TablePagination.Paginate(FilteredServices, _currentPage);
+
+    private void OnSearchInput(ChangeEventArgs e)
+    {
+        searchQuery = e.Value?.ToString() ?? string.Empty;
+        _currentPage = 1;
+    }
+
     private void ResetFilters()
     {
         searchQuery = string.Empty;
+        _currentPage = 1;
     }
 
     // ── Featured toggle ─────────────────────────────────────────────────
@@ -344,8 +342,19 @@
         }
         _isOfficeClerk = EmployeeRoleHelper.IsOfficeClerk(_currentUser, UserService);
 
-        var codes = await ServicesApi.GetFeaturedCodesAsync(FeaturedEntityTypes.Main);
-        _featuredCodes = new HashSet<string>(codes, StringComparer.OrdinalIgnoreCase);
+        var dataTask = Task.Run(() =>
+        {
+            var svcList = UserService.GetMainServicesSummary().ToList();
+            var bCount = UserService.GetBookingsCount();
+            return (svcList, bCount);
+        });
+        var codesTask = ServicesApi.GetFeaturedCodesAsync(FeaturedEntityTypes.Main);
+        await Task.WhenAll(dataTask, codesTask);
+
+        var (svcList, bCount) = await dataTask;
+        services = svcList;
+        activeBookingsCount = bCount;
+        _featuredCodes = new HashSet<string>(await codesTask, StringComparer.OrdinalIgnoreCase);
         ApplyFeaturedFlags();
     }
 

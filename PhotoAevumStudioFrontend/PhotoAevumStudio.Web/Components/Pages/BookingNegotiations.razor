@@ -336,21 +336,9 @@
 
 
             <input type="text"
-
-
-
-                   @bind="_searchTerm"
-
-
-
-                   @bind:event="oninput"
-
-
-
+                   value="@_searchTerm"
+                   @oninput="OnSearchInput"
                    placeholder="Search client, ID, notes…"
-
-
-
                    class="w-full px-3 py-1.5 bg-slate-50 border border-slate-200 rounded-lg text-xs focus:outline-none focus:ring-1 focus:ring-slate-900" />
 
 
@@ -521,7 +509,7 @@
 
 
 
-                        @foreach (var neg in FilteredNegotiations)
+                        @foreach (var neg in PagedNegotiations)
 
 
 
@@ -750,17 +738,9 @@
 
 
                 </tbody>
-
-
-
             </table>
-
-
-
         </div>
-
-
-
+        <TablePagination TotalItems="FilteredNegotiations.Count()" PageSize="10" @bind-CurrentPage="_currentPage" ItemLabel="negotiations" />
     </div>
 
 
@@ -2538,10 +2518,15 @@
 
 
     private string _selectedStatusFilter = "All";
-
-
-
     private string _searchTerm = string.Empty;
+    private int _currentPage = 1;
+    private List<ConsultationNegotiationDto> PagedNegotiations => TablePagination.Paginate(FilteredNegotiations, _currentPage, 10);
+
+    private void OnSearchInput(ChangeEventArgs e)
+    {
+        _searchTerm = e.Value?.ToString() ?? string.Empty;
+        _currentPage = 1;
+    }
 
 
 
@@ -3155,7 +3140,11 @@
 
 
 
-    private void SetFilter(string filter) => _selectedStatusFilter = filter;
+    private void SetFilter(string filter)
+    {
+        _selectedStatusFilter = filter;
+        _currentPage = 1;
+    }
 
 
 

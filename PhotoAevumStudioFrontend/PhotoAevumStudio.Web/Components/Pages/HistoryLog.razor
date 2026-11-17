@@ -111,30 +111,35 @@
                 </svg>
             </span>
             <input type="text"
-                   @bind="_searchTerm"
-                   @bind:event="oninput"
+                   value="@_searchTerm"
+                   @oninput="OnSearchInput"
                    placeholder="Search by action, entity, user ID, or details..."
                    class="w-full pl-10 pr-4 py-2 border border-slate-200 rounded-lg text-xs focus:ring-1 focus:ring-slate-900 focus:border-slate-900 placeholder-slate-400 transition-colors" />
         </div>
 
         <div class="flex items-center gap-2">
-            <select @bind="_actionFilter" class="border border-slate-200 rounded-lg px-3 py-2 text-xs bg-white text-slate-700 font-medium focus:ring-1 focus:ring-slate-900">
+            <select value="@_actionFilter" @onchange="OnActionFilterChanged" class="border border-slate-200 rounded-lg px-3 py-2 text-xs bg-white text-slate-700 font-medium focus:ring-1 focus:ring-slate-900">
                 <option value="">All Action Types</option>
-                <option value="Create">Create</option>
-                <option value="Update">Update</option>
-                <option value="Delete">Delete</option>
-                <option value="Maintenance">Maintenance</option>
-                <option value="Resolution">Resolution</option>
-                <option value="Login">Login</option>
+                <option value="CREATE">Create / Insert</option>
+                <option value="UPDATE">Update</option>
+                <option value="DELETE">Delete</option>
+                <option value="STATUS_CHANGE">Status Change / Archive</option>
+                <option value="PASSWORD_RESET">Password Reset</option>
+                <option value="PASSWORD_CHANGE">Password Change</option>
+                <option value="IMAGE_UPLOAD">Image Upload</option>
+                <option value="LOGIN">Login</option>
             </select>
 
-            <select @bind="_entityFilter" class="border border-slate-200 rounded-lg px-3 py-2 text-xs bg-white text-slate-700 font-medium focus:ring-1 focus:ring-slate-900">
+            <select value="@_entityFilter" @onchange="OnEntityFilterChanged" class="border border-slate-200 rounded-lg px-3 py-2 text-xs bg-white text-slate-700 font-medium focus:ring-1 focus:ring-slate-900">
                 <option value="">All Entities</option>
                 <option value="Admin">Admin</option>
+                <option value="Employee">Employee</option>
+                <option value="Customer">Customer</option>
                 <option value="Equipment">Equipment</option>
+                <option value="EventAppointment">EventAppointment</option>
+                <option value="Services">Services</option>
                 <option value="Booking">Booking</option>
                 <option value="Session">Session</option>
-                <option value="General">General</option>
             </select>
         </div>
     </div>
@@ -177,7 +182,7 @@
                     }
                     else
                     {
-                        @foreach (var log in FilteredLogs)
+                        @foreach (var log in PagedLogs)
                         {
                             <tr class="hover:bg-slate-50/70 transition-colors">
                                 <!-- LOG ID -->
@@ -231,6 +236,11 @@
                 </tbody>
             </table>
         </div>
+
+        <TablePagination TotalItems="@FilteredLogs.Count()"
+                         PageSize="10"
+                         @bind-CurrentPage="_currentPage"
+                         ItemLabel="logs" />
     </div>
 </div>
 
@@ -240,6 +250,7 @@
     private string _searchTerm = string.Empty;
     private string _actionFilter = string.Empty;
     private string _entityFilter = string.Empty;
+    private int _currentPage = 1;
     private string _requestingUserId = "SADM-001";
     // True when the logged-in user is a System Admin (SADM-xxx) - unrestricted access.
     private bool _isSystemAdmin = false;
@@ -265,16 +276,43 @@
 
             if (!string.IsNullOrWhiteSpace(_actionFilter))
             {
-                result = result.Where(l => l.Action.Equals(_actionFilter, StringComparison.OrdinalIgnoreCase));
+                if (_actionFilter.Equals("CREATE", StringComparison.OrdinalIgnoreCase))
+                {
+                    result = result.Where(l => l.Action.Equals("CREATE", StringComparison.OrdinalIgnoreCase) || l.Action.Equals("INSERT", StringComparison.OrdinalIgnoreCase));
+                }
+                else
+                {
+                    result = result.Where(l => l.Action.Equals(_actionFilter, StringComparison.OrdinalIgnoreCase));
+                }
             }
 
             if (!string.IsNullOrWhiteSpace(_entityFilter))
             {
-                result = result.Where(l => l.EntityType.Equals(_entityFilter, StringComparison.OrdinalIgnoreCase));
+                result = result.Where(l => l.EntityType.Contains(_entityFilter, StringComparison.OrdinalIgnoreCase));
             }
 
             return result;
         }
+    }
+
+    private List<AuditLogRowDto> PagedLogs => TablePagination.Paginate(FilteredLogs, _currentPage);
+
+    private void OnSearchInput(ChangeEventArgs e)
+    {
+        _searchTerm = e.Value?.ToString() ?? string.Empty;
+        _currentPage = 1;
+    }
+
+    private void OnActionFilterChanged(ChangeEventArgs e)
+    {
+        _actionFilter = e.Value?.ToString() ?? string.Empty;
+        _currentPage = 1;
+    }
+
+    private void OnEntityFilterChanged(ChangeEventArgs e)
+    {
+        _entityFilter = e.Value?.ToString() ?? string.Empty;
+        _currentPage = 1;
     }
 
     protected override async Task OnInitializedAsync()

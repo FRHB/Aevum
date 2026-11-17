@@ -758,6 +758,10 @@ public class ServicesApiClient : IServicesApiClient
 
     private static readonly SemaphoreSlim FeaturedSchemaLock = new(1, 1);
     private static bool _featuredSchemaReady;
+    private static readonly object CatalogCacheLock = new();
+    private static readonly Dictionary<string, (DateTime FetchedAt, HashSet<string> Codes)> FeaturedCodesCache = new(StringComparer.OrdinalIgnoreCase);
+    private static (DateTime FetchedAt, List<PortfolioCategoryDto> Items)? PortfolioCategoriesCache;
+    private static readonly TimeSpan LocalCatalogCacheTtl = TimeSpan.FromSeconds(60);
 
     /// <summary>
     /// Creates the three helper tables if they do not exist yet. If your DB login has no DDL
@@ -813,6 +817,15 @@ public class ServicesApiClient : IServicesApiClient
 
     public async Task<IReadOnlySet<string>> GetFeaturedCodesAsync(string entityType, CancellationToken cancellationToken = default)
     {
+        lock (CatalogCacheLock)
+        {
+            if (FeaturedCodesCache.TryGetValue(entityType, out var cached) &&
+                DateTime.UtcNow - cached.FetchedAt < LocalCatalogCacheTtl)
+            {
+                return new HashSet<string>(cached.Codes, StringComparer.OrdinalIgnoreCase);
+            }
+        }
+
         var codes = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         try
         {
@@ -827,6 +840,11 @@ public class ServicesApiClient : IServicesApiClient
             await using var reader = await cmd.ExecuteReaderAsync(cancellationToken);
             while (await reader.ReadAsync(cancellationToken))
                 codes.Add(reader.GetString(0));
+
+            lock (CatalogCacheLock)
+            {
+                FeaturedCodesCache[entityType] = (DateTime.UtcNow, new HashSet<string>(codes, StringComparer.OrdinalIgnoreCase));
+            }
         }
         catch (Exception ex)
         {
@@ -862,6 +880,10 @@ public class ServicesApiClient : IServicesApiClient
             cmd.Parameters.AddWithValue("@Code", code.Trim());
             cmd.Parameters.AddWithValue("@IsFeatured", isFeatured ? 1 : 0);
             await cmd.ExecuteNonQueryAsync(cancellationToken);
+            lock (CatalogCacheLock)
+            {
+                FeaturedCodesCache.Remove(entityType);
+            }
             return true;
         }
         catch (Exception ex)
@@ -874,6 +896,15 @@ public class ServicesApiClient : IServicesApiClient
     /// <summary>Returns every category an admin has published to the portfolio (active or not).</summary>
     public async Task<IReadOnlyList<PortfolioCategoryDto>> GetPortfolioCategoriesAsync(CancellationToken cancellationToken = default)
     {
+        lock (CatalogCacheLock)
+        {
+            if (PortfolioCategoriesCache.HasValue &&
+                DateTime.UtcNow - PortfolioCategoriesCache.Value.FetchedAt < LocalCatalogCacheTtl)
+            {
+                return PortfolioCategoriesCache.Value.Items.ToList();
+            }
+        }
+
         var map = new Dictionary<string, PortfolioCategoryDto>(StringComparer.OrdinalIgnoreCase);
         try
         {
@@ -913,12 +944,18 @@ public class ServicesApiClient : IServicesApiClient
                         dto.ServiceNames.Add(reader.GetString(1));
                 }
             }
+            var result = map.Values.ToList();
+            lock (CatalogCacheLock)
+            {
+                PortfolioCategoriesCache = (DateTime.UtcNow, result);
+            }
+            return result;
         }
         catch (Exception ex)
         {
             _logger.LogError(ex, "Failed to load portfolio categories.");
+            return map.Values.ToList();
         }
-        return map.Values.ToList();
     }
 
     /// <summary>
@@ -991,6 +1028,10 @@ public class ServicesApiClient : IServicesApiClient
                 }
 
                 await trans.CommitAsync(cancellationToken);
+                lock (CatalogCacheLock)
+                {
+                    PortfolioCategoriesCache = null;
+                }
                 return true;
             }
             catch

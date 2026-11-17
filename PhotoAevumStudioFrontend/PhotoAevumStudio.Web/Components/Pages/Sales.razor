@@ -104,11 +104,11 @@
         <div class="p-4 border-b border-slate-200 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
             <div class="flex items-center gap-2">
                 <input type="text"
-                       @bind="SearchQuery"
-                       @bind:event="oninput"
+                       value="@SearchQuery"
+                       @oninput="OnSearchInput"
                        placeholder="Search transactions, clients, or IDs..."
                        class="text-xs px-3 py-2 border border-slate-300 rounded-lg w-64 focus:outline-none focus:ring-1 focus:ring-teal-500" />
-                <select @bind="StatusFilter" class="text-xs px-3 py-2 border border-slate-300 rounded-lg bg-white focus:outline-none focus:ring-1 focus:ring-teal-500">
+                <select value="@StatusFilter" @onchange="OnStatusFilterChanged" class="text-xs px-3 py-2 border border-slate-300 rounded-lg bg-white focus:outline-none focus:ring-1 focus:ring-teal-500">
                     <option value="All">All Statuses</option>
                     <option value="Completed">Completed</option>
                     <option value="Deposit Paid">Deposit Paid</option>
@@ -116,7 +116,7 @@
                 </select>
             </div>
             <div class="text-xs text-slate-500">
-                Showing <span class="font-semibold text-slate-800">@FilteredSales.Count</span> sales records
+                Showing <span class="font-semibold text-slate-800">@PagedSales.Count</span> of <span class="font-semibold text-slate-800">@FilteredSales.Count</span> sales records
             </div>
         </div>
 
@@ -144,7 +144,7 @@
                     }
                     else
                     {
-                        @foreach (var sale in FilteredSales)
+                        @foreach (var sale in PagedSales)
                         {
                             <tr class="hover:bg-slate-50 transition-colors">
                                 <td class="px-5 py-3.5 font-mono font-medium text-slate-900">@sale.InvoiceNo</td>
@@ -185,12 +185,27 @@
                 </tbody>
             </table>
         </div>
+        <TablePagination TotalItems="FilteredSales.Count" PageSize="10" @bind-CurrentPage="currentPage" ItemLabel="sales records" />
     </div>
 </div>
 
 @code {
     private string SearchQuery = "";
     private string StatusFilter = "All";
+    private int currentPage = 1;
+    private List<SaleRecord> PagedSales => TablePagination.Paginate(FilteredSales, currentPage, 10);
+
+    private void OnSearchInput(ChangeEventArgs e)
+    {
+        SearchQuery = e.Value?.ToString() ?? "";
+        currentPage = 1;
+    }
+
+    private void OnStatusFilterChanged(ChangeEventArgs e)
+    {
+        StatusFilter = e.Value?.ToString() ?? "All";
+        currentPage = 1;
+    }
 
     private class SaleRecord
     {

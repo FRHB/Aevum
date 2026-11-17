@@ -175,6 +175,8 @@ BEGIN
         CustomerPhoneNumber nvarchar(30),
         CustomerPassword nvarchar(255) NOT NULL,
         CustomerStatus nvarchar(20) NOT NULL CONSTRAINT DF_Customer_Status DEFAULT 'Active',
+        DeletionRequested bit NOT NULL CONSTRAINT DF_Customer_DeletionRequested DEFAULT 0,
+        DeletionRequestedAt datetime2 NULL,
         CreatedAt datetime2 NOT NULL CONSTRAINT DF_Customer_CreatedAt DEFAULT SYSUTCDATETIME(),
         CONSTRAINT CK_Customer_Status CHECK (CustomerStatus IN ('Active','Inactive'))
     );
@@ -1035,8 +1037,29 @@ IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = N'IX_EventLineItem_Event' 
 IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = N'IX_ServiceCategoryJoins_Cat' AND object_id = OBJECT_ID(N'dbo.ServiceCategoryJoins'))
     CREATE INDEX IX_ServiceCategoryJoins_Cat    ON dbo.ServiceCategoryJoins (ServiceCategoryID);
 
+IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = N'IX_ServiceCategoryJoins_Services' AND object_id = OBJECT_ID(N'dbo.ServiceCategoryJoins'))
+    CREATE INDEX IX_ServiceCategoryJoins_Services ON dbo.ServiceCategoryJoins (ServicesID) INCLUDE (ServiceCategoryID);
+
+IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = N'IX_ServiceCategoryJoins_AddOn' AND object_id = OBJECT_ID(N'dbo.ServiceCategoryJoins'))
+    CREATE INDEX IX_ServiceCategoryJoins_AddOn    ON dbo.ServiceCategoryJoins (AdditionalServicesID) INCLUDE (ServiceCategoryID);
+
+IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = N'IX_ServiceCategoryJoins_Pkg' AND object_id = OBJECT_ID(N'dbo.ServiceCategoryJoins'))
+    CREATE INDEX IX_ServiceCategoryJoins_Pkg      ON dbo.ServiceCategoryJoins (ComboPackageID) INCLUDE (ServiceCategoryID);
+
 IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = N'IX_ComboPackageJoin_Package' AND object_id = OBJECT_ID(N'dbo.ComboPackageJoin'))
     CREATE INDEX IX_ComboPackageJoin_Package    ON dbo.ComboPackageJoin (ComboPackageID);
+
+IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = N'IX_ComboPackageJoin_Services' AND object_id = OBJECT_ID(N'dbo.ComboPackageJoin'))
+    CREATE INDEX IX_ComboPackageJoin_Services   ON dbo.ComboPackageJoin (ServicesID) INCLUDE (ComboPackageID);
+
+IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = N'IX_ComboPackageJoin_AddOn' AND object_id = OBJECT_ID(N'dbo.ComboPackageJoin'))
+    CREATE INDEX IX_ComboPackageJoin_AddOn      ON dbo.ComboPackageJoin (AdditionalServicesID) INCLUDE (ComboPackageID);
+
+IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = N'IX_ServiceCategory_Name' AND object_id = OBJECT_ID(N'dbo.ServiceCategory'))
+    CREATE INDEX IX_ServiceCategory_Name        ON dbo.ServiceCategory (ServiceCategoryName);
+
+IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = N'IX_Services_Name' AND object_id = OBJECT_ID(N'dbo.Services'))
+    CREATE INDEX IX_Services_Name               ON dbo.Services (ServiceName);
 
 IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = N'IX_Equipment_EquipmentType' AND object_id = OBJECT_ID(N'dbo.Equipment'))
     CREATE INDEX IX_Equipment_EquipmentType     ON dbo.Equipment (EquipmentTypeID);
@@ -1277,6 +1300,15 @@ BEGIN
 
     ALTER TABLE dbo.EventAppointment ADD CONSTRAINT CK_EventAppointment_Status
         CHECK (EventStatus IN ('Pending','Awaiting_Downpayment','Pending Payment','Preparation','Preparing','Dispatch','Ongoing','On Going','Post Event','Pending Verification','Paid Cash Pending Verification','Confirmed','Complete','Completed','Shot','Editing','Delivered','Cancelled','Expired'));
+END;
+GO
+
+IF OBJECT_ID(N'dbo.Customer', N'U') IS NOT NULL
+BEGIN
+    IF COL_LENGTH(N'dbo.Customer', N'DeletionRequested') IS NULL
+        ALTER TABLE dbo.Customer ADD DeletionRequested bit NOT NULL CONSTRAINT DF_Customer_DeletionRequested DEFAULT 0;
+    IF COL_LENGTH(N'dbo.Customer', N'DeletionRequestedAt') IS NULL
+        ALTER TABLE dbo.Customer ADD DeletionRequestedAt datetime2 NULL;
 END;
 GO
 

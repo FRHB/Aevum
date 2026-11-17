@@ -2,6 +2,7 @@ using System.ComponentModel.DataAnnotations;
 using System.Security.Claims;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.OutputCaching;
 using PhotoAevumStudio.Application.DTOs;
 using PhotoAevumStudio.Application.Interfaces;
 
@@ -14,11 +15,13 @@ public class PackagesController : ControllerBase
 {
     private readonly IStudioManagementService _service;
     private readonly ILogger<PackagesController> _logger;
+    private readonly IOutputCacheStore? _outputCache;
 
-    public PackagesController(IStudioManagementService service, ILogger<PackagesController> logger)
+    public PackagesController(IStudioManagementService service, ILogger<PackagesController> logger, IOutputCacheStore? outputCache = null)
     {
         _service = service;
         _logger = logger;
+        _outputCache = outputCache;
     }
 
     /// <summary>
@@ -37,6 +40,7 @@ public class PackagesController : ControllerBase
     /// Retrieves service categories available for dropdown selection in Wizard Step 1.
     /// </summary>
     [HttpGet("categories")]
+    [OutputCache(PolicyName = "CatalogCache")]
     [ProducesResponseType(typeof(IReadOnlyList<CategoryDto>), StatusCodes.Status200OK)]
     public async Task<IActionResult> GetCategories(CancellationToken ct)
     {
@@ -48,6 +52,7 @@ public class PackagesController : ControllerBase
     /// Retrieves available Main Services and Additional Services for many-to-many bundling in Wizard Step 2.
     /// </summary>
     [HttpGet("available-services")]
+    [OutputCache(PolicyName = "CatalogCache")]
     [ProducesResponseType(typeof(IReadOnlyList<BundledServiceSelectionItem>), StatusCodes.Status200OK)]
     public async Task<IActionResult> GetAvailableServices(CancellationToken ct)
     {
@@ -59,6 +64,7 @@ public class PackagesController : ControllerBase
     /// Retrieves a lightweight summary of all combo packages.
     /// </summary>
     [HttpGet("summary")]
+    [OutputCache(PolicyName = "CatalogCache")]
     [ProducesResponseType(typeof(IReadOnlyList<ServiceSummaryDto>), StatusCodes.Status200OK)]
     public async Task<IActionResult> GetPackageSummary(CancellationToken ct)
     {
@@ -180,6 +186,7 @@ public class PackagesController : ControllerBase
             );
 
             var result = await _service.CreateComboPackageWithServicesAsync(model, imageBytes, mimeType, adminId, ct);
+            if (_outputCache != null) await _outputCache.EvictByTagAsync("catalog", ct);
             _logger.LogInformation("Successfully created Combo Package {PackageId} with {ServiceCount} bundled services.", result.PackageId, result.BundledServicesCount);
 
             return StatusCode(StatusCodes.Status201Created, result);

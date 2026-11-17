@@ -54,23 +54,7 @@
     </div>
 
     <!-- Alert / Toast Banner for Updates -->
-    @if (!string.IsNullOrWhiteSpace(notificationMessage))
-    {
-        <div class="p-4 bg-emerald-50 border border-emerald-200 text-emerald-900 rounded-xl flex items-center justify-between shadow-xs animate-in fade-in duration-200">
-            <div class="flex items-center gap-3">
-                <span class="w-7 h-7 rounded-full bg-emerald-600 text-white flex items-center justify-center shrink-0">
-                    <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M5 13l4 4L19 7" />
-                    </svg>
-                </span>
-                <div>
-                    <p class="text-xs font-bold text-emerald-950">Master Registry Updated</p>
-                    <p class="text-xs text-emerald-800">@notificationMessage</p>
-                </div>
-            </div>
-            <button type="button" @onclick="() => notificationMessage = null" class="text-emerald-700 hover:text-emerald-950 p-1 text-sm font-bold cursor-pointer">&times;</button>
-        </div>
-    }
+    <SystemMessage Title="Master Registry Updated" Message="@notificationMessage" Severity="success" Mode="banner" OnDismiss="() => notificationMessage = null" />
 
     <!-- Quick Stats Grid -->
     <div class="grid grid-cols-2 lg:grid-cols-4 gap-4">
@@ -156,12 +140,13 @@
                     <input type="text"
                            @bind="catalogSearchQuery"
                            @bind:event="oninput"
+                           @bind:after="() => specPage = 1"
                            placeholder="Search specialization by title, ID, or description..."
                            class="w-full pl-10 pr-10 py-2.5 text-sm bg-gray-50/70 border border-gray-200 rounded-lg text-gray-900 placeholder-gray-400 focus:bg-white focus:outline-none focus:ring-2 focus:ring-gray-900 focus:border-transparent transition-all" />
                     @if (!string.IsNullOrWhiteSpace(catalogSearchQuery))
                     {
                         <button type="button" 
-                                @onclick="() => catalogSearchQuery = string.Empty"
+                                @onclick="() => { catalogSearchQuery = string.Empty; specPage = 1; }"
                                 class="absolute inset-y-0 right-0 pr-3 flex items-center text-gray-400 hover:text-gray-700 cursor-pointer">
                             <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
@@ -174,6 +159,7 @@
                     <!-- Filter to show Specialization vs Department -->
                     <div class="relative min-w-[170px]">
                         <select @bind="registryTypeFilter"
+                                @bind:after="ResetAllPages"
                                 class="w-full px-3 py-2.5 text-sm font-semibold bg-gray-50/70 border border-gray-200 rounded-lg text-gray-800 focus:bg-white focus:outline-none focus:ring-2 focus:ring-gray-900 focus:border-transparent cursor-pointer transition-all">
                             <option value="specialization">Filter to Show: Specialization</option>
                             <option value="department">Filter to Show: Department</option>
@@ -184,6 +170,7 @@
                     <!-- Filter by Specialization -->
                     <div class="relative min-w-[190px]">
                         <select @bind="selectedSpecializationFilter"
+                                @bind:after="() => specPage = 1"
                                 class="w-full px-3 py-2.5 text-sm bg-gray-50/70 border border-gray-200 rounded-lg text-gray-800 focus:bg-white focus:outline-none focus:ring-2 focus:ring-gray-900 focus:border-transparent cursor-pointer transition-all">
                             <option value="ALL">All Specializations (@masterSpecializations.Count)</option>
                             @foreach (var spec in masterSpecializations)
@@ -196,6 +183,7 @@
                     <!-- Filter by Department -->
                     <div class="relative min-w-[180px]">
                         <select @bind="selectedDepartmentFilter"
+                                @bind:after="() => specPage = 1"
                                 class="w-full px-3 py-2.5 text-sm bg-gray-50/70 border border-gray-200 rounded-lg text-gray-800 focus:bg-white focus:outline-none focus:ring-2 focus:ring-gray-900 focus:border-transparent cursor-pointer transition-all">
                             <option value="ALL">All Departments</option>
                             @foreach (var dept in UniqueDepartments)
@@ -241,7 +229,7 @@
                     <tbody class="divide-y divide-gray-100 text-sm">
                         @if (FilteredMasterSpecializations.Any())
                         {
-                            @foreach (var spec in FilteredMasterSpecializations)
+                            @foreach (var spec in PagedMasterSpecializations)
                             {
                                 var classes = SpecializationColorHelper.GetClasses(spec.ColorTag);
                                 var staffCount = GetStaffCountForSpecialization(spec.Name, spec.Id);
@@ -305,6 +293,7 @@
                     </tbody>
                 </table>
             </div>
+            <TablePagination TotalItems="FilteredMasterSpecializations.Count()" PageSize="10" @bind-CurrentPage="specPage" ItemLabel="specializations" />
         </div>
     }
 
@@ -325,12 +314,13 @@
                     <input type="text"
                            @bind="departmentSearchQuery"
                            @bind:event="oninput"
+                           @bind:after="() => deptPage = 1"
                            placeholder="Search department by name, ID, or description..."
                            class="w-full pl-10 pr-10 py-2.5 text-sm bg-gray-50/70 border border-gray-200 rounded-lg text-gray-900 placeholder-gray-400 focus:bg-white focus:outline-none focus:ring-2 focus:ring-gray-900 focus:border-transparent transition-all" />
                     @if (!string.IsNullOrWhiteSpace(departmentSearchQuery))
                     {
                         <button type="button" 
-                                @onclick="() => departmentSearchQuery = string.Empty"
+                                @onclick="() => { departmentSearchQuery = string.Empty; deptPage = 1; }"
                                 class="absolute inset-y-0 right-0 pr-3 flex items-center text-gray-400 hover:text-gray-700 cursor-pointer">
                             <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
@@ -343,6 +333,7 @@
                     <!-- Filter to show Specialization vs Department -->
                     <div class="relative min-w-[170px]">
                         <select @bind="registryTypeFilter"
+                                @bind:after="ResetAllPages"
                                 class="w-full px-3 py-2.5 text-sm font-semibold bg-gray-50/70 border border-gray-200 rounded-lg text-gray-800 focus:bg-white focus:outline-none focus:ring-2 focus:ring-gray-900 focus:border-transparent cursor-pointer transition-all">
                             <option value="specialization">Filter to Show: Specialization</option>
                             <option value="department">Filter to Show: Department</option>
@@ -353,6 +344,7 @@
                     <!-- Filter by Department -->
                     <div class="relative min-w-[180px]">
                         <select @bind="selectedDepartmentFilter"
+                                @bind:after="() => deptPage = 1"
                                 class="w-full px-3 py-2.5 text-sm bg-gray-50/70 border border-gray-200 rounded-lg text-gray-800 focus:bg-white focus:outline-none focus:ring-2 focus:ring-gray-900 focus:border-transparent cursor-pointer transition-all">
                             <option value="ALL">All Departments (@departments.Count)</option>
                             @foreach (var dept in departments)
@@ -397,7 +389,7 @@
                     <tbody class="divide-y divide-gray-100 text-sm">
                         @if (FilteredDepartments.Any())
                         {
-                            @foreach (var dept in FilteredDepartments)
+                            @foreach (var dept in PagedDepartments)
                             {
                                 var staffCount = GetStaffCountForDepartment(dept.DepartmentName, dept.DepartmentId);
                                 var specCount = GetSpecializationsCountForDepartment(dept.DepartmentName, dept.DepartmentId);
@@ -459,6 +451,7 @@
                     </tbody>
                 </table>
             </div>
+            <TablePagination TotalItems="FilteredDepartments.Count()" PageSize="10" @bind-CurrentPage="deptPage" ItemLabel="departments" />
         </div>
     }
 
@@ -479,12 +472,13 @@
                     <input type="text"
                            @bind="staffSearchQuery"
                            @bind:event="oninput"
+                           @bind:after="() => staffPage = 1"
                            placeholder="Search employee by name, ID, or email..."
                            class="w-full pl-10 pr-10 py-2.5 text-sm bg-gray-50/70 border border-gray-200 rounded-lg text-gray-900 placeholder-gray-400 focus:bg-white focus:outline-none focus:ring-2 focus:ring-gray-900 focus:border-transparent transition-all" />
                     @if (!string.IsNullOrWhiteSpace(staffSearchQuery))
                     {
                         <button type="button" 
-                                @onclick="() => staffSearchQuery = string.Empty"
+                                @onclick="() => { staffSearchQuery = string.Empty; staffPage = 1; }"
                                 class="absolute inset-y-0 right-0 pr-3 flex items-center text-gray-400 hover:text-gray-700 cursor-pointer">
                             <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
@@ -497,6 +491,7 @@
                     <!-- Filter to show Specialization vs Department -->
                     <div class="relative min-w-[170px]">
                         <select @bind="staffViewFilter"
+                                @bind:after="() => staffPage = 1"
                                 class="w-full px-3 py-2.5 text-sm font-semibold bg-gray-50/70 border border-gray-200 rounded-lg text-gray-800 focus:bg-white focus:outline-none focus:ring-2 focus:ring-gray-900 focus:border-transparent cursor-pointer transition-all">
                             <option value="all">Show All Staff</option>
                             <option value="specialization">Filter: Specialization</option>
@@ -507,6 +502,7 @@
                     <!-- Filter by Specialization -->
                     <div class="relative min-w-[200px]">
                         <select @bind="selectedSpecializationFilter"
+                                @bind:after="() => staffPage = 1"
                                 class="w-full px-3 py-2.5 text-sm bg-gray-50/70 border border-gray-200 rounded-lg text-gray-800 focus:bg-white focus:outline-none focus:ring-2 focus:ring-gray-900 focus:border-transparent cursor-pointer transition-all">
                             <option value="ALL">All Specializations (@masterSpecializations.Count)</option>
                             @foreach (var spec in masterSpecializations)
@@ -519,6 +515,7 @@
                     <!-- Filter by Department -->
                     <div class="relative min-w-[180px]">
                         <select @bind="selectedDepartmentFilter"
+                                @bind:after="() => staffPage = 1"
                                 class="w-full px-3 py-2.5 text-sm bg-gray-50/70 border border-gray-200 rounded-lg text-gray-800 focus:bg-white focus:outline-none focus:ring-2 focus:ring-gray-900 focus:border-transparent cursor-pointer transition-all">
                             <option value="ALL">All Departments</option>
                             @foreach (var dept in UniqueDepartments)
@@ -579,7 +576,7 @@
                     <tbody class="divide-y divide-gray-100 text-sm">
                         @if (FilteredEmployees.Any())
                         {
-                            @foreach (var emp in FilteredEmployees)
+                            @foreach (var emp in PagedEmployees)
                             {
                                 <tr class="hover:bg-gray-50/60 transition-colors duration-100">
                                     <td class="py-4 px-6">
@@ -655,19 +652,20 @@
                                     <div class="max-w-sm mx-auto space-y-2">
                                         <h4 class="text-sm font-bold text-gray-900">No employees or specializations found</h4>
                                         <p class="text-xs text-gray-500">
-                                            @(employees.Count == 0
-                                                ? "No employee records exist in the database yet. You can see registered specializations under the 'Specializations' tab."
-                                                : "No team members matched your current filter criteria.")
-                                        </p>
-                                    </div>
-                                </td>
-                            </tr>
-                        }
-                    </tbody>
-                </table>
-            </div>
-        </div>
-    }
+                                    @(employees.Count == 0
+                                        ? "No employee records exist in the database yet. You can see registered specializations under the 'Specializations' tab."
+                                        : "No team members matched your current filter criteria.")
+                                </p>
+                            </div>
+                        </td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    </div>
+    <TablePagination TotalItems="FilteredEmployees.Count()" PageSize="10" @bind-CurrentPage="staffPage" ItemLabel="staff" />
+</div>
+}
 </div>
 
 <!-- Add Specialization Wizard Modal -->
@@ -930,6 +928,19 @@
     }
     private string staffViewFilter = "all";
     private string? notificationMessage;
+    private int specPage = 1;
+    private int deptPage = 1;
+    private int staffPage = 1;
+    private List<SpecializationLookupItem> PagedMasterSpecializations => TablePagination.Paginate(FilteredMasterSpecializations, specPage, 10);
+    private List<DepartmentModel> PagedDepartments => TablePagination.Paginate(FilteredDepartments, deptPage, 10);
+    private List<EmployeeSpecializationDto> PagedEmployees => TablePagination.Paginate(FilteredEmployees, staffPage, 10);
+
+    private void ResetAllPages()
+    {
+        specPage = 1;
+        deptPage = 1;
+        staffPage = 1;
+    }
 
     private SpecializationLookupItem? specToDelete;
     private DepartmentModel? deptToDelete;
@@ -1045,6 +1056,8 @@
         selectedDepartmentFilter = "ALL";
         selectedSpecializationFilter = "ALL";
         _registryTypeFilter = activeTab == "department" ? "department" : (activeTab == "both" ? "all" : "specialization");
+        specPage = 1;
+        deptPage = 1;
     }
 
     private void ResetStaffFilters()
@@ -1053,6 +1066,7 @@
         selectedSpecializationFilter = "ALL";
         selectedDepartmentFilter = "ALL";
         staffViewFilter = "all";
+        staffPage = 1;
     }
 
     private int GetStaffCountForSpecialization(string specializationName, string? specializationId = null)

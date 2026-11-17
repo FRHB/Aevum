@@ -80,7 +80,7 @@
                         </tr>
                     </thead>
                     <tbody class="divide-y divide-slate-100">
-                        @foreach (var row in _scoredBookings)
+                        @foreach (var row in PagedScoredBookings)
                         {
                             <tr>
                                 <td class="py-2.5 px-3 font-mono font-bold text-slate-800">#@row.BookingId</td>
@@ -97,12 +97,15 @@
                     </tbody>
                 </table>
             </div>
+            <TablePagination TotalItems="_scoredBookings.Count" PageSize="10" @bind-CurrentPage="_currentPage" ItemLabel="bookings" />
         </div>
     </div>
 </div>
 
 @code {
     private int _bookingIdInput = 101;
+    private int _currentPage = 1;
+    private List<ScoredBookingRow> PagedScoredBookings => TablePagination.Paginate(_scoredBookings, _currentPage, 10);
     private int? _lastScoredBookingId = 101;
     private float _lastProbability = 0.15f;
 

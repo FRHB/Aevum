@@ -39,16 +39,7 @@
     </div>
 
     <!-- Feedback Toast -->
-    @if (!string.IsNullOrWhiteSpace(_notification))
-    {
-        <div class="p-4 bg-emerald-50 border border-emerald-200 rounded-xl flex items-center justify-between text-xs text-emerald-800 shadow-sm animate-in fade-in duration-200">
-            <div class="flex items-center gap-2.5">
-                <span class="text-base">✓</span>
-                <span>@_notification</span>
-            </div>
-            <button type="button" @onclick="() => _notification = null" class="text-emerald-600 hover:text-emerald-900">✕</button>
-        </div>
-    }
+    <SystemMessage Message="@_notification" Severity="@(_notification?.StartsWith("Unable", StringComparison.OrdinalIgnoreCase) == true ? "error" : "success")" Mode="banner" OnDismiss="() => _notification = null" />
 
     <!-- Quick Stats -->
     <div class="grid grid-cols-1 sm:grid-cols-3 gap-4">
@@ -79,8 +70,8 @@
     <div class="bg-white p-4 rounded-xl border border-slate-200 shadow-sm flex flex-col sm:flex-row gap-3 items-center justify-between">
         <div class="relative w-full sm:w-80">
             <input type="text"
-                   @bind="_searchQuery"
-                   @bind:event="oninput"
+                   value="@_searchQuery"
+                   @oninput="OnSearchInput"
                    class="w-full pl-9 pr-4 py-2 text-xs rounded-lg border border-slate-300 focus:outline-none focus:ring-1 focus:ring-slate-900 focus:border-slate-900" />
             <svg class="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
@@ -126,7 +117,7 @@
                     }
                     else
                     {
-                        @foreach (var c in FilteredCategories)
+                        @foreach (var c in PagedCategories)
                         {
                             <tr class="hover:bg-slate-50/60 transition-colors">
                                 <td class="px-5 py-3.5 font-mono font-semibold text-slate-800">
@@ -179,6 +170,7 @@
                 </tbody>
             </table>
         </div>
+        <TablePagination TotalItems="FilteredCategories.Count" PageSize="10" @bind-CurrentPage="_currentPage" ItemLabel="categories" />
     </div>
 </div>
 
@@ -270,6 +262,15 @@
     private List<PortfolioCategoryModel> _categories = new();
     private bool _isLoading = true;
     private string _searchQuery = string.Empty;
+    private int _currentPage = 1;
+    private List<PortfolioCategoryModel> PagedCategories => TablePagination.Paginate(FilteredCategories, _currentPage, 10);
+
+    private void OnSearchInput(ChangeEventArgs e)
+    {
+        _searchQuery = e.Value?.ToString() ?? string.Empty;
+        _currentPage = 1;
+    }
+
     private string? _notification;
 
     private bool _isModalOpen;

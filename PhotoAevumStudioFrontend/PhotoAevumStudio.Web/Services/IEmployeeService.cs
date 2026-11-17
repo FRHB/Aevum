@@ -14,6 +14,8 @@ public interface IEmployeeService
     Task<bool> ArchiveEmployeeAsync(string employeeId, CancellationToken cancellationToken = default);
     Task<bool> RestoreEmployeeAsync(string employeeId, CancellationToken cancellationToken = default);
     Task<bool> DeleteEmployeeAsync(string employeeId, CancellationToken cancellationToken = default);
+    Task<(bool Success, string Message)> ResetEmployeePasswordAsync(string employeeId, CancellationToken cancellationToken = default) =>
+        Task.FromResult((false, "Password reset is not configured."));
     Task<DashboardStatsViewModel> GetDashboardStatsAsync(CancellationToken cancellationToken = default);
     Task<IReadOnlyList<DayAvailabilityViewModel>> GetAvailabilityAsync(int days, CancellationToken cancellationToken = default);
 

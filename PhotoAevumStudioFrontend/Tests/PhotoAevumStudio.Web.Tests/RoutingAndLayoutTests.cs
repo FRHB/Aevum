@@ -296,21 +296,16 @@ public class RoutingAndLayoutTests
         Assert.True(sidebarPath != null && File.Exists(sidebarPath), $"Sidebar.razor was not found starting from {AppContext.BaseDirectory}");
         var content = File.ReadAllText(sidebarPath!);
 
-        // 1. History Log menu item exists
+        // 1. History Log menu item exists as a direct single-click link (no collapsible dropdown)
         Assert.Contains("History Log", content);
+        Assert.DoesNotContain("IsOpen(\"history\")", content);
+        Assert.DoesNotContain("Toggle(\"history\")", content);
+        Assert.DoesNotContain("acc-history", content);
 
-        // 2. Collapsible accordion styling matches existing items
-        Assert.Contains("aev-sidebar__link aev-sidebar__accordion-toggle", content);
-        Assert.Contains("IsOpen(\"history\")", content);
-        Assert.Contains("Toggle(\"history\")", content);
-        Assert.Contains("acc-history", content);
-        Assert.Contains("aev-sidebar__sub", content);
-        Assert.Contains("aev-sidebar__sub-link", content);
-
-        // 3. Points to history log page
+        // 2. Points directly to history log page via NavLink
         Assert.Contains("href=\"/admin/history-log\"", content);
 
-        // 4. Role-based authorization wrapping
+        // 3. Role-based authorization wrapping
         Assert.Contains("<AuthorizeView Roles=\"System Admin, Admin\">", content);
     }
 

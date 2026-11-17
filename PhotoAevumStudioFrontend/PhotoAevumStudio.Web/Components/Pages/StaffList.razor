@@ -33,37 +33,10 @@
     </div>
 
     <!-- Notification / Status Banner -->
-    @if (!string.IsNullOrEmpty(feedbackMessage))
-    {
-        <div class="p-4 rounded-xl border flex items-center justify-between transition-all duration-200 @(feedbackType == "success" ? "bg-emerald-50 border-emerald-200 text-emerald-800" : (feedbackType == "error" ? "bg-rose-50 border-rose-200 text-rose-800" : "bg-amber-50 border-amber-200 text-amber-800"))">
-            <div class="flex items-center gap-2.5 text-xs font-medium">
-                @if (feedbackType == "success")
-                {
-                    <svg class="w-4 h-4 text-emerald-600 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7" />
-                    </svg>
-                }
-                else if (feedbackType == "error")
-                {
-                    <svg class="w-4 h-4 text-rose-600 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                    </svg>
-                }
-                else
-                {
-                    <svg class="w-4 h-4 text-amber-600 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                    </svg>
-                }
-                <span>@feedbackMessage</span>
-            </div>
-            <button type="button" 
-                    @onclick="() => feedbackMessage = null"
-                    class="text-xs font-bold opacity-60 hover:opacity-100 cursor-pointer">
-                ✕
-            </button>
-        </div>
-    }
+    <SystemMessage Message="@feedbackMessage"
+                   Severity="@feedbackType"
+                   Mode="banner"
+                   OnDismiss="() => feedbackMessage = null" />
 
     <!-- Quick Stats Cards -->
     <div class="grid grid-cols-1 sm:grid-cols-3 gap-4">
@@ -100,8 +73,8 @@
     <div class="bg-white p-4 rounded-xl border border-slate-200 shadow-sm flex flex-col sm:flex-row gap-3 items-center justify-between">
         <div class="relative w-full sm:w-80">
             <input type="text" 
-                   @bind="searchQuery" 
-                   @bind:event="oninput"
+                   value="@searchQuery" 
+                   @oninput="OnSearchInput"
                    placeholder="Search by name, ID, or skill..." 
                    class="w-full pl-9 pr-4 py-2 text-xs rounded-lg border border-slate-300 focus:outline-none focus:ring-1 focus:ring-slate-900 focus:border-slate-900" />
             <svg class="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -177,9 +150,11 @@
                     }
                     else
                     {
-                        @foreach (var emp in FilteredEmployees)
+                        @foreach (var emp in PagedEmployees)
                         {
-                            <tr @key="emp.EmployeeId" class="hover:bg-slate-50/60 transition-colors">
+                            <tr @key="emp.EmployeeId"
+                                @onclick="() => OpenStaffOverview(emp)"
+                                class="hover:bg-slate-50/80 transition-colors cursor-pointer">
                                 <td class="px-5 py-3.5">
                                     <div class="flex items-center gap-3">
                                         <div class="w-8 h-8 rounded-full bg-slate-900 text-white flex items-center justify-center font-bold text-xs uppercase shrink-0">
@@ -234,7 +209,7 @@
                                 </td>
                                 @if (!EffectiveReadOnly)
                                 {
-                                    <td class="px-5 py-3.5 text-right whitespace-nowrap">
+                                    <td class="px-5 py-3.5 text-right whitespace-nowrap" @onclick:stopPropagation="true">
                                         <div class="inline-flex items-center justify-end gap-1.5">
                                             @if (!showArchivedOnly)
                                             {
@@ -291,8 +266,20 @@
                 </tbody>
             </table>
         </div>
+
+        <TablePagination TotalItems="@FilteredEmployees.Count"
+                         PageSize="10"
+                         @bind-CurrentPage="_currentPage"
+                         ItemLabel="staff members" />
     </div>
 </div>
+
+<StaffOverviewModal IsOpen="@isOverviewModalOpen"
+                    Employee="@overviewEmployee"
+                    CanResetPassword="@CanResetStaffPassword"
+                    IsResettingPassword="@isResettingPassword"
+                    OnClose="() => isOverviewModalOpen = false"
+                    OnResetPassword="HandleResetStaffPasswordAsync" />
 
 <!-- Add / Edit Employee Wizard Modal -->
 @if (!EffectiveReadOnly)
@@ -330,19 +317,62 @@
     private string currentActionType = "Archive"; // "Archive", "Restore", "Delete"
     private EmployeeViewModel? actionTargetEmployee;
     private bool isProcessingAction = false;
+    private bool isOverviewModalOpen = false;
+    private EmployeeViewModel? overviewEmployee;
+    private bool isResettingPassword = false;
+    private int _currentPage = 1;
     private string? feedbackMessage;
     private string feedbackType = "success"; // "success", "error", "info"
+
+    private bool CanResetStaffPassword =>
+        EmployeeRoleHelper.IsAdmin(_currentUser) || EmployeeRoleHelper.IsSystemAdmin(_currentUser);
 
     private CancellationTokenSource? _cts;
 
     private List<EmployeeViewModel> FilteredEmployees => employees
         .Where(e => string.IsNullOrWhiteSpace(searchQuery) ||
-                    e.FullName.Contains(searchQuery, StringComparison.OrdinalIgnoreCase) ||
-                    e.EmployeeId.Contains(searchQuery, StringComparison.OrdinalIgnoreCase) ||
-                    (e.Department != null && e.Department.Contains(searchQuery, StringComparison.OrdinalIgnoreCase)) ||
-                    (e.Address != null && e.Address.Contains(searchQuery, StringComparison.OrdinalIgnoreCase)) ||
-                    e.Specializations.Any(s => s.Contains(searchQuery, StringComparison.OrdinalIgnoreCase)))
+                    e.FullName.Contains(searchQuery.Trim(), StringComparison.OrdinalIgnoreCase) ||
+                    e.EmployeeId.Contains(searchQuery.Trim(), StringComparison.OrdinalIgnoreCase) ||
+                    (e.Department != null && e.Department.Contains(searchQuery.Trim(), StringComparison.OrdinalIgnoreCase)) ||
+                    (e.Address != null && e.Address.Contains(searchQuery.Trim(), StringComparison.OrdinalIgnoreCase)) ||
+                    e.Specializations.Any(s => s.Contains(searchQuery.Trim(), StringComparison.OrdinalIgnoreCase)))
         .ToList();
+
+    private List<EmployeeViewModel> PagedEmployees =>
+        TablePagination.Paginate(FilteredEmployees, _currentPage);
+
+    private void OnSearchInput(ChangeEventArgs e)
+    {
+        searchQuery = e.Value?.ToString() ?? string.Empty;
+        _currentPage = 1;
+    }
+
+    private void OpenStaffOverview(EmployeeViewModel emp)
+    {
+        overviewEmployee = emp;
+        isOverviewModalOpen = true;
+    }
+
+    private async Task HandleResetStaffPasswordAsync(EmployeeViewModel emp)
+    {
+        if (!CanResetStaffPassword) return;
+        isResettingPassword = true;
+        try
+        {
+            var (success, msg) = await Employees.ResetEmployeePasswordAsync(emp.EmployeeId, _cts?.Token ?? CancellationToken.None);
+            feedbackType = success ? "success" : "error";
+            feedbackMessage = msg;
+            if (success)
+            {
+                isOverviewModalOpen = false;
+            }
+        }
+        finally
+        {
+            isResettingPassword = false;
+            StateHasChanged();
+        }
+    }
 
     protected override async Task OnInitializedAsync()
     {
@@ -390,6 +420,7 @@
     private async Task ToggleArchivedView()
     {
         showArchivedOnly = !showArchivedOnly;
+        _currentPage = 1;
         feedbackMessage = null;
         await LoadEmployeesAsync();
     }

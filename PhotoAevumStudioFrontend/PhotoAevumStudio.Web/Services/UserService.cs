@@ -82,6 +82,25 @@ public class UserService : IUserService
 
 	private readonly bool _r2Configured;
 
+	private static readonly object _catalogCacheLock = new();
+	private static (DateTime FetchedAt, List<MainServiceItem> Items)? _cachedMainServicesSummary;
+	private static (DateTime FetchedAt, List<ServiceCategoryItem> Items)? _cachedCategories;
+	private static (DateTime FetchedAt, List<PackageServiceItem> Items)? _cachedPackages;
+	private static (DateTime FetchedAt, List<AddOnServiceItem> Items)? _cachedAddOns;
+	private static (DateTime FetchedAt, int Count)? _cachedBookingsCount;
+	private static readonly TimeSpan CatalogCacheDuration = TimeSpan.FromSeconds(60);
+
+	private static void InvalidateServiceCatalogCache()
+	{
+		lock (_catalogCacheLock)
+		{
+			_cachedMainServicesSummary = null;
+			_cachedCategories = null;
+			_cachedPackages = null;
+			_cachedAddOns = null;
+		}
+	}
+
 
 
 	private static string? FirstNonEmpty(params string?[] candidates)
@@ -744,11 +763,11 @@ public class UserService : IUserService
 
 		{
 
-			using SqlCommand sqlCommand3 = new SqlCommand("\n                IF OBJECT_ID(N'dbo.HistoryLog', N'U') IS NOT NULL\n                BEGIN\n                    INSERT INTO dbo.HistoryLog (ActionType, EntityName, EntityID, ChangedBy, ActionDetails, LoggedAt)\n                    VALUES ('Create', 'Admin', @Id, @By, @Details, SYSUTCDATETIME());\n                END", sqlConnection);
+			using SqlCommand sqlCommand3 = new SqlCommand("\n                IF OBJECT_ID(N'dbo.HistoryLog', N'U') IS NOT NULL\n                BEGIN\n                    INSERT INTO dbo.HistoryLog (ActionType, EntityName, EntityID, ChangedByType, ActionDetails, LoggedAt)\n                    VALUES ('CREATE', 'Admin', @Id, @ByType, @Details, SYSUTCDATETIME());\n                END", sqlConnection);
 
 			sqlCommand3.Parameters.AddWithValue("@Id", admin.Id.ToUpperInvariant());
 
-			sqlCommand3.Parameters.AddWithValue("@By", string.IsNullOrWhiteSpace(requestingUserId) ? "SADM-001" : requestingUserId.Trim());
+			sqlCommand3.Parameters.AddWithValue("@ByType", (!string.IsNullOrWhiteSpace(requestingUserId) && requestingUserId.Trim().StartsWith("SADM-", StringComparison.OrdinalIgnoreCase)) ? "SystemAdmin" : "Admin");
 
 			sqlCommand3.Parameters.AddWithValue("@Details", $"Created admin {admin.Id} ({admin.Name}) with email {value3}");
 
@@ -802,11 +821,11 @@ public class UserService : IUserService
 
 		{
 
-			using SqlCommand sqlCommand2 = new SqlCommand("\n                IF OBJECT_ID(N'dbo.HistoryLog', N'U') IS NOT NULL\n                BEGIN\n                    INSERT INTO dbo.HistoryLog (ActionType, EntityName, EntityID, ChangedBy, ActionDetails, LoggedAt)\n                    VALUES ('Delete', 'Admin', @Id, @By, 'Deleted admin account', SYSUTCDATETIME());\n                END", sqlConnection);
+			using SqlCommand sqlCommand2 = new SqlCommand("\n                IF OBJECT_ID(N'dbo.HistoryLog', N'U') IS NOT NULL\n                BEGIN\n                    INSERT INTO dbo.HistoryLog (ActionType, EntityName, EntityID, ChangedByType, ActionDetails, LoggedAt)\n                    VALUES ('DELETE', 'Admin', @Id, @ByType, 'Deleted admin account', SYSUTCDATETIME());\n                END", sqlConnection);
 
 			sqlCommand2.Parameters.AddWithValue("@Id", admin.Id.ToUpperInvariant());
 
-			sqlCommand2.Parameters.AddWithValue("@By", requestingUserId.Trim());
+			sqlCommand2.Parameters.AddWithValue("@ByType", (!string.IsNullOrWhiteSpace(requestingUserId) && requestingUserId.Trim().StartsWith("SADM-", StringComparison.OrdinalIgnoreCase)) ? "SystemAdmin" : "Admin");
 
 			sqlCommand2.ExecuteNonQuery();
 
@@ -1379,8 +1398,8 @@ public class UserService : IUserService
 
                 IF OBJECT_ID(N'dbo.HistoryLog', N'U') IS NOT NULL
                 BEGIN
-                    INSERT INTO dbo.HistoryLog (ActionType, EntityName, EntityID, ActionDetails, LoggedAt)
-                    VALUES ('Archive', 'Employee', @Id, 'Archived employee record', SYSUTCDATETIME());
+                    INSERT INTO dbo.HistoryLog (ActionType, EntityName, EntityID, ChangedByType, ActionDetails, LoggedAt)
+                    VALUES ('STATUS_CHANGE', 'Employee', @Id, 'Admin', 'Archived employee record', SYSUTCDATETIME());
                 END
             END", sqlConnection);
 		sqlCommand.Parameters.AddWithValue("@Id", id.Trim().ToUpperInvariant());
@@ -1402,8 +1421,8 @@ public class UserService : IUserService
 
                 IF OBJECT_ID(N'dbo.HistoryLog', N'U') IS NOT NULL
                 BEGIN
-                    INSERT INTO dbo.HistoryLog (ActionType, EntityName, EntityID, ActionDetails, LoggedAt)
-                    VALUES ('Restore', 'Employee', @Id, 'Restored employee to Active', SYSUTCDATETIME());
+                    INSERT INTO dbo.HistoryLog (ActionType, EntityName, EntityID, ChangedByType, ActionDetails, LoggedAt)
+                    VALUES ('STATUS_CHANGE', 'Employee', @Id, 'Admin', 'Restored employee to Active', SYSUTCDATETIME());
                 END
             END", sqlConnection);
 		sqlCommand.Parameters.AddWithValue("@Id", id.Trim().ToUpperInvariant());
@@ -1464,7 +1483,24 @@ public class UserService : IUserService
 
 		sqlConnection.Open();
 
-		using SqlCommand sqlCommand = new SqlCommand("\n            IF OBJECT_ID(N'dbo.Customer', N'U') IS NOT NULL\n            BEGIN\n                SELECT CustomerID, CustomerFirstName, CustomerLastName, CustomerMiddleName, CustomerEmail, CustomerPhoneNumber\n                FROM dbo.Customer\n                ORDER BY CustomerID;\n            END", sqlConnection);
+		using SqlCommand sqlCommand = new SqlCommand(@"
+            IF OBJECT_ID(N'dbo.Customer', N'U') IS NOT NULL
+            BEGIN
+                IF COL_LENGTH(N'dbo.Customer', N'DeletionRequested') IS NOT NULL
+                BEGIN
+                    SELECT CustomerID, CustomerFirstName, CustomerLastName, CustomerMiddleName, CustomerEmail, CustomerPhoneNumber,
+                           ISNULL(DeletionRequested, 0) AS DeletionRequested, DeletionRequestedAt
+                    FROM dbo.Customer
+                    ORDER BY CustomerID;
+                END
+                ELSE
+                BEGIN
+                    SELECT CustomerID, CustomerFirstName, CustomerLastName, CustomerMiddleName, CustomerEmail, CustomerPhoneNumber,
+                           CAST(0 AS bit) AS DeletionRequested, CAST(NULL AS datetime2) AS DeletionRequestedAt
+                    FROM dbo.Customer
+                    ORDER BY CustomerID;
+                END
+            END", sqlConnection);
 
 		using SqlDataReader sqlDataReader = sqlCommand.ExecuteReader();
 
@@ -1488,6 +1524,10 @@ public class UserService : IUserService
 
 				string phone = (sqlDataReader.IsDBNull(5) ? string.Empty : sqlDataReader.GetString(5));
 
+				bool hasRequestedDeletion = sqlDataReader.FieldCount > 6 && !sqlDataReader.IsDBNull(6) && sqlDataReader.GetBoolean(6);
+
+				DateTime? deletionRequestedAt = sqlDataReader.FieldCount > 7 && !sqlDataReader.IsDBNull(7) ? sqlDataReader.GetDateTime(7) : null;
+
 				string name = string.Join(" ", new string[3] { text2, text4, text3 }.Where((string s) => !string.IsNullOrWhiteSpace(s)));
 
 				list.Add(new Customer
@@ -1500,7 +1540,11 @@ public class UserService : IUserService
 
 					Email = email,
 
-					Phone = phone
+					Phone = phone,
+
+					HasRequestedDeletion = hasRequestedDeletion,
+
+					DeletionRequestedAt = deletionRequestedAt
 
 				});
 
@@ -1636,6 +1680,34 @@ public class UserService : IUserService
 
 
 
+	public bool RequestCustomerDeletion(string id)
+	{
+		if (string.IsNullOrWhiteSpace(id)) return false;
+		var cleanId = id.Trim().ToUpperInvariant();
+		using SqlConnection sqlConnection = CreateConnection();
+		sqlConnection.Open();
+		using SqlCommand sqlCommand = new SqlCommand(@"
+            IF OBJECT_ID(N'dbo.Customer', N'U') IS NOT NULL
+            BEGIN
+                IF COL_LENGTH(N'dbo.Customer', N'DeletionRequested') IS NULL
+                    ALTER TABLE dbo.Customer ADD DeletionRequested bit NOT NULL CONSTRAINT DF_Customer_DeletionRequested DEFAULT 0;
+                IF COL_LENGTH(N'dbo.Customer', N'DeletionRequestedAt') IS NULL
+                    ALTER TABLE dbo.Customer ADD DeletionRequestedAt datetime2 NULL;
+
+                UPDATE dbo.Customer
+                SET DeletionRequested = 1,
+                    DeletionRequestedAt = SYSUTCDATETIME()
+                WHERE UPPER(CustomerID) = @Id;
+            END", sqlConnection);
+		sqlCommand.Parameters.AddWithValue("@Id", cleanId);
+		var updated = sqlCommand.ExecuteNonQuery() > 0;
+		if (updated)
+		{
+			LogActivity("STATUS_CHANGE", "Customer", cleanId, "Customer requested account deletion", cleanId);
+		}
+		return updated;
+	}
+
 	public bool DeleteCustomer(string id)
 
 	{
@@ -1648,15 +1720,30 @@ public class UserService : IUserService
 
 		}
 
+		var cleanId = id.Trim().ToUpperInvariant();
+
 		using SqlConnection sqlConnection = CreateConnection();
 
 		sqlConnection.Open();
 
-		using SqlCommand sqlCommand = new SqlCommand("DELETE FROM dbo.Customer WHERE UPPER(CustomerID) = @Id;", sqlConnection);
+		using SqlCommand sqlCommand = new SqlCommand(@"
+            IF OBJECT_ID(N'dbo.HistoryLog', N'U') IS NOT NULL
+            BEGIN
+                UPDATE dbo.HistoryLog SET CustomerID = NULL WHERE UPPER(CustomerID) = @Id;
+                UPDATE dbo.HistoryLog SET ChangedByCustomerID = NULL WHERE UPPER(ChangedByCustomerID) = @Id;
+            END
+            IF OBJECT_ID(N'dbo.AspNetUsers', N'U') IS NOT NULL
+                DELETE FROM dbo.AspNetUsers WHERE UPPER(StudioId) = @Id OR UPPER(UserName) = @Id;
+            DELETE FROM dbo.Customer WHERE UPPER(CustomerID) = @Id;", sqlConnection);
 
-		sqlCommand.Parameters.AddWithValue("@Id", id.Trim().ToUpperInvariant());
+		sqlCommand.Parameters.AddWithValue("@Id", cleanId);
 
-		return sqlCommand.ExecuteNonQuery() > 0;
+		var deleted = sqlCommand.ExecuteNonQuery() > 0;
+		if (deleted)
+		{
+			LogActivity("DELETE", "Customer", cleanId, "Admin permanently deleted client account after deletion request", "Admin");
+		}
+		return deleted;
 
 	}
 
@@ -1806,7 +1893,9 @@ public class UserService : IUserService
 
 		sqlCommand.Parameters.AddWithValue("@Id", id.Trim());
 
-		return sqlCommand.ExecuteNonQuery() > 0;
+		var deleted = sqlCommand.ExecuteNonQuery() > 0;
+		if (deleted) InvalidateServiceCatalogCache();
+		return deleted;
 
 	}
 
@@ -2916,11 +3005,87 @@ public class UserService : IUserService
 
 
 	public IReadOnlyList<MainServiceItem> GetMainServicesSummary()
-
 	{
+		lock (_catalogCacheLock)
+		{
+			if (_cachedMainServicesSummary.HasValue &&
+				DateTime.UtcNow - _cachedMainServicesSummary.Value.FetchedAt < CatalogCacheDuration)
+			{
+				return _cachedMainServicesSummary.Value.Items.ToList();
+			}
+		}
 
-		return GetMainServices();
+		List<MainServiceItem> list = new List<MainServiceItem>();
+		using SqlConnection sqlConnection = CreateConnection();
+		sqlConnection.Open();
+		using SqlCommand sqlCommand = new SqlCommand(@"
+            IF OBJECT_ID(N'dbo.Services', N'U') IS NOT NULL
+            BEGIN
+                SELECT
+                    s.ServicesID,
+                    s.ServiceName,
+                    s.ServicesDescription,
+                    ISNULL(s.ServicePrice, 0) AS ServicePrice,
+                    ISNULL(sc.ServiceCategoryName, 'Portrait Photography') AS ServiceCategoryName,
+                    ISNULL(s.RateType, 'per hour') AS RateType,
+                    s.ImageFileName
+                FROM dbo.Services s
+                LEFT JOIN (
+                    SELECT ServicesID, MIN(ServiceCategoryID) AS ServiceCategoryID
+                    FROM dbo.ServiceCategoryJoins
+                    WHERE ServicesID IS NOT NULL
+                    GROUP BY ServicesID
+                ) scj ON s.ServicesID = scj.ServicesID
+                LEFT JOIN dbo.ServiceCategory sc ON scj.ServiceCategoryID = sc.ServiceCategoryID
+                ORDER BY s.ServicesID;
+            END", sqlConnection);
 
+		using SqlDataReader reader = sqlCommand.ExecuteReader();
+		while (reader.Read())
+		{
+			string code = reader.GetString(0);
+			string title = reader.GetString(1);
+			string? description = reader.IsDBNull(2) ? null : reader.GetString(2);
+			decimal price = reader.IsDBNull(3) ? 0m : reader.GetDecimal(3);
+			string category = reader.IsDBNull(4) ? "Portrait Photography" : reader.GetString(4);
+			string rateType = reader.IsDBNull(5) ? "per hour" : reader.GetString(5);
+			string? imageFileName = reader.FieldCount > 6 && !reader.IsDBNull(6) ? reader.GetString(6) : null;
+			string? imageUrl = null;
+			if (_r2Configured && _r2Client != null && !string.IsNullOrWhiteSpace(imageFileName))
+			{
+				try
+				{
+					imageUrl = _r2Client.GetPreSignedURL(new GetPreSignedUrlRequest
+					{
+						BucketName = _servicesBucket,
+						Key = imageFileName.TrimStart('/'),
+						Expires = DateTime.UtcNow.AddHours(24)
+					});
+				}
+				catch { }
+			}
+
+			list.Add(new MainServiceItem
+			{
+				Code = code,
+				Title = title,
+				Category = category,
+				CategorySpec = category,
+				Deliverables = new List<(string, string)>(),
+				Duration = "1 hr",
+				BasePrice = price,
+				Description = description,
+				ImageBase64 = imageUrl,
+				Status = "Active",
+				RateType = rateType
+			});
+		}
+
+		lock (_catalogCacheLock)
+		{
+			_cachedMainServicesSummary = (DateTime.UtcNow, list);
+		}
+		return list.ToList();
 	}
 
 
@@ -2928,6 +3093,15 @@ public class UserService : IUserService
 	public IReadOnlyList<ServiceCategoryItem> GetServiceCategories()
 
 	{
+
+		lock (_catalogCacheLock)
+		{
+			if (_cachedCategories.HasValue &&
+				DateTime.UtcNow - _cachedCategories.Value.FetchedAt < CatalogCacheDuration)
+			{
+				return _cachedCategories.Value.Items.ToList();
+			}
+		}
 
 		var list = new List<ServiceCategoryItem>();
 
@@ -3074,6 +3248,11 @@ public class UserService : IUserService
 		}
 
 
+
+		lock (_catalogCacheLock)
+		{
+			_cachedCategories = (DateTime.UtcNow, list);
+		}
 
 		return list;
 
@@ -3253,6 +3432,7 @@ public class UserService : IUserService
 
 		category.Code = categoryId;
 
+		InvalidateServiceCatalogCache();
 		return category;
 
 	}
@@ -3277,7 +3457,9 @@ public class UserService : IUserService
 
 		sqlCommand.Parameters.AddWithValue("@Id", id.Trim());
 
-		return sqlCommand.ExecuteNonQuery() > 0;
+		var deleted = sqlCommand.ExecuteNonQuery() > 0;
+		if (deleted) InvalidateServiceCatalogCache();
+		return deleted;
 
 	}
 
@@ -3511,6 +3693,7 @@ public class UserService : IUserService
 
 
 
+		InvalidateServiceCatalogCache();
 		return new MainServiceItem
 
 		{
@@ -3678,6 +3861,7 @@ public class UserService : IUserService
 
 
 		LogActivity("UPDATE", "Services", item.Code, $"Updated main service '{item.Title}'", requestingAdminId);
+		InvalidateServiceCatalogCache();
 
 		return rows > 0;
 
@@ -3688,6 +3872,15 @@ public class UserService : IUserService
 	public IReadOnlyList<PackageServiceItem> GetPackageServices()
 
 	{
+
+		lock (_catalogCacheLock)
+		{
+			if (_cachedPackages.HasValue &&
+				DateTime.UtcNow - _cachedPackages.Value.FetchedAt < CatalogCacheDuration)
+			{
+				return _cachedPackages.Value.Items.ToList();
+			}
+		}
 
 		List<PackageServiceItem> list = new List<PackageServiceItem>();
 
@@ -3737,6 +3930,11 @@ public class UserService : IUserService
 
 			});
 
+		}
+
+		lock (_catalogCacheLock)
+		{
+			_cachedPackages = (DateTime.UtcNow, list);
 		}
 
 		return list;
@@ -4024,6 +4222,7 @@ public class UserService : IUserService
 
 
 		LogActivity("UPDATE", "ComboPackage", item.Code, $"Updated package service '{item.Title}'", requestingAdminId);
+		InvalidateServiceCatalogCache();
 
 		return rows > 0;
 
@@ -5055,6 +5254,15 @@ public class UserService : IUserService
 
 	{
 
+		lock (_catalogCacheLock)
+		{
+			if (_cachedAddOns.HasValue &&
+				DateTime.UtcNow - _cachedAddOns.Value.FetchedAt < CatalogCacheDuration)
+			{
+				return _cachedAddOns.Value.Items.ToList();
+			}
+		}
+
 		List<AddOnServiceItem> list = new List<AddOnServiceItem>();
 
 		using SqlConnection sqlConnection = CreateConnection();
@@ -5105,6 +5313,11 @@ public class UserService : IUserService
 
 			});
 
+		}
+
+		lock (_catalogCacheLock)
+		{
+			_cachedAddOns = (DateTime.UtcNow, list);
 		}
 
 		return list;
@@ -5396,6 +5609,7 @@ public class UserService : IUserService
 
 
 		LogActivity("UPDATE", "AdditionalServices", item.Code, $"Updated additional service '{item.Title}'", requestingAdminId);
+		InvalidateServiceCatalogCache();
 
 		return rows > 0;
 
@@ -5515,9 +5729,9 @@ public class UserService : IUserService
 
             BEGIN
 
-                INSERT INTO dbo.HistoryLog (ActionType, EntityName, EntityID, ChangedBy, ActionDetails, LoggedAt)
+                INSERT INTO dbo.HistoryLog (ActionType, EntityName, EntityID, ChangedByType, ActionDetails, LoggedAt)
 
-                VALUES ('Create', 'Equipment', @Id, 'Admin', @Details, SYSUTCDATETIME());
+                VALUES ('CREATE', 'Equipment', @Id, 'Admin', @Details, SYSUTCDATETIME());
 
             END", sqlConnection))
 
@@ -5538,6 +5752,40 @@ public class UserService : IUserService
 	}
 
 
+
+	public int GetBookingsCount()
+	{
+		lock (_catalogCacheLock)
+		{
+			if (_cachedBookingsCount.HasValue &&
+				DateTime.UtcNow - _cachedBookingsCount.Value.FetchedAt < CatalogCacheDuration)
+			{
+				return _cachedBookingsCount.Value.Count;
+			}
+		}
+
+		int count = 0;
+		try
+		{
+			using SqlConnection sqlConnection = CreateConnection();
+			sqlConnection.Open();
+			using SqlCommand cmd = new SqlCommand(@"
+                IF OBJECT_ID(N'dbo.EventAppointment', N'U') IS NOT NULL
+                    SELECT COUNT(*) FROM dbo.EventAppointment;
+                ELSE
+                    SELECT 0;", sqlConnection);
+			var scalar = cmd.ExecuteScalar();
+			if (scalar != null && scalar != DBNull.Value)
+				count = Convert.ToInt32(scalar);
+		}
+		catch { }
+
+		lock (_catalogCacheLock)
+		{
+			_cachedBookingsCount = (DateTime.UtcNow, count);
+		}
+		return count;
+	}
 
 	public List<BookingRowDto> GetBookings(string? customerId = null)
 
@@ -5613,9 +5861,9 @@ public class UserService : IUserService
 
             BEGIN
 
-                INSERT INTO dbo.HistoryLog (ActionType, EntityName, EntityID, ChangedBy, ActionDetails, LoggedAt)
+                INSERT INTO dbo.HistoryLog (ActionType, EntityName, EntityID, ChangedByType, ActionDetails, LoggedAt)
 
-                VALUES ('Update', 'EventAppointment', @Id, 'Staff', @Details, SYSUTCDATETIME());
+                VALUES ('UPDATE', 'EventAppointment', @Id, 'Employee', @Details, SYSUTCDATETIME());
 
             END", sqlConnection))
 
@@ -6100,7 +6348,7 @@ public class UserService : IUserService
 
                         INSERT INTO dbo.HistoryLog (ActionType, EntityName, EntityID, ChangedByType, ActionDetails, LoggedAt)
 
-                        VALUES (@ActionType, @EntityName, @EntityID, COALESCE(@ChangedBy, 'System'), @ActionDetails, SYSUTCDATETIME());
+                        VALUES (@ActionType, @EntityName, @EntityID, @ChangedByType, @ActionDetails, SYSUTCDATETIME());
 
                     END
 
@@ -6132,7 +6380,15 @@ public class UserService : IUserService
 
 			sqlCommand.Parameters.AddWithValue("@EntityID", ((object)entityId) ?? ((object)DBNull.Value));
 
-			sqlCommand.Parameters.AddWithValue("@ChangedBy", string.IsNullOrWhiteSpace(changedBy) ? "System" : changedBy.Trim());
+			var rawActor = string.IsNullOrWhiteSpace(changedBy) ? "System" : changedBy.Trim();
+			var actorType = rawActor.StartsWith("SADM-", StringComparison.OrdinalIgnoreCase) ? "SystemAdmin"
+				: rawActor.StartsWith("ADM-", StringComparison.OrdinalIgnoreCase) || rawActor.Equals("Admin", StringComparison.OrdinalIgnoreCase) ? "Admin"
+				: rawActor.StartsWith("EMP-", StringComparison.OrdinalIgnoreCase) || rawActor.Equals("Employee", StringComparison.OrdinalIgnoreCase) ? "Employee"
+				: rawActor.StartsWith("CUST-", StringComparison.OrdinalIgnoreCase) || rawActor.Equals("Customer", StringComparison.OrdinalIgnoreCase) ? "Customer"
+				: "System";
+
+			sqlCommand.Parameters.AddWithValue("@ChangedBy", rawActor);
+			sqlCommand.Parameters.AddWithValue("@ChangedByType", actorType);
 
 			sqlCommand.Parameters.AddWithValue("@ActionDetails", ((object)details) ?? ((object)DBNull.Value));
 

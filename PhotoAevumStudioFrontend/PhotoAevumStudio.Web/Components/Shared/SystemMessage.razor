@@ -1,0 +1,162 @@
+@if (IsVisible && !string.IsNullOrWhiteSpace(Message))
+{
+    @if (NormalizedMode == "popup")
+    {
+        <div class="fixed inset-0 z-50 bg-slate-900/50 backdrop-blur-xs flex items-center justify-center p-4"
+             role="dialog" aria-modal="true" aria-live="polite"
+             @onclick="HandleDismissAsync">
+            <div class="bg-white rounded-2xl shadow-2xl border border-slate-200 max-w-md w-full p-6 space-y-4 @CssClass"
+                 @onclick:stopPropagation="true">
+                <div class="flex items-start gap-3">
+                    <span class="w-9 h-9 rounded-xl flex items-center justify-center shrink-0 @IconContainerClasses">
+                        @RenderIcon()
+                    </span>
+                    <div class="flex-1 min-w-0">
+                        <h3 class="text-sm font-bold text-slate-900">@EffectiveTitle</h3>
+                        <p class="text-xs text-slate-600 mt-1 leading-relaxed">@Message</p>
+                    </div>
+                </div>
+                <div class="flex justify-end pt-2 border-t border-slate-100">
+                    <button type="button"
+                            @onclick="HandleDismissAsync"
+                            class="px-4 py-2 text-xs font-semibold rounded-lg bg-slate-900 hover:bg-black text-white cursor-pointer">
+                        OK
+                    </button>
+                </div>
+            </div>
+        </div>
+    }
+    else if (NormalizedMode == "toast")
+    {
+        <div class="fixed bottom-4 right-4 z-50 max-w-sm w-full transition-all duration-200 @CssClass"
+             role="status" aria-live="polite">
+            <div class="px-4 py-3 rounded-xl shadow-lg border flex items-start justify-between gap-3 @BannerClasses">
+                <div class="flex items-start gap-2.5 min-w-0">
+                    <span class="w-6 h-6 rounded-full flex items-center justify-center shrink-0 @IconContainerClasses">
+                        @RenderIcon()
+                    </span>
+                    <div class="min-w-0">
+                        @if (!string.IsNullOrWhiteSpace(Title))
+                        {
+                            <p class="text-xs font-bold leading-tight">@Title</p>
+                        }
+                        <p class="text-xs leading-snug">@Message</p>
+                    </div>
+                </div>
+                @if (Dismissible)
+                {
+                    <button type="button"
+                            @onclick="HandleDismissAsync"
+                            aria-label="Dismiss notification"
+                            class="text-xs font-bold opacity-70 hover:opacity-100 px-1 cursor-pointer shrink-0">
+                        ✕
+                    </button>
+                }
+            </div>
+        </div>
+    }
+    else
+    {
+        <div class="p-4 rounded-xl border flex items-center justify-between gap-3 shadow-2xs transition-all duration-200 @BannerClasses @CssClass"
+             role="@(NormalizedSeverity == "error" ? "alert" : "status")"
+             aria-live="polite">
+            <div class="flex items-center gap-3 min-w-0">
+                <span class="w-7 h-7 rounded-full flex items-center justify-center shrink-0 @IconContainerClasses">
+                    @RenderIcon()
+                </span>
+                <div class="min-w-0">
+                    @if (!string.IsNullOrWhiteSpace(Title))
+                    {
+                        <p class="text-xs font-bold leading-tight">@Title</p>
+                    }
+                    <p class="text-xs font-medium leading-snug">@Message</p>
+                </div>
+            </div>
+            @if (Dismissible)
+            {
+                <button type="button"
+                        @onclick="HandleDismissAsync"
+                        aria-label="Dismiss message"
+                        class="text-xs font-bold opacity-70 hover:opacity-100 p-1 cursor-pointer shrink-0">
+                    ✕
+                </button>
+            }
+        </div>
+    }
+}
+
+@code {
+    [Parameter] public string? Message { get; set; }
+    [Parameter] public string? Title { get; set; }
+    [Parameter] public string Severity { get; set; } = "info";
+    [Parameter] public string Mode { get; set; } = "banner";
+    [Parameter] public bool IsVisible { get; set; } = true;
+    [Parameter] public bool Dismissible { get; set; } = true;
+    [Parameter] public string? CssClass { get; set; }
+    [Parameter] public EventCallback OnDismiss { get; set; }
+
+    private string NormalizedSeverity => (Severity ?? "info").Trim().ToLowerInvariant() switch
+    {
+        "success" or "ok" => "success",
+        "error" or "danger" or "fail" => "error",
+        "warning" or "warn" => "warning",
+        _ => "info"
+    };
+
+    private string NormalizedMode => (Mode ?? "banner").Trim().ToLowerInvariant() switch
+    {
+        "toast" => "toast",
+        "popup" or "modal" or "dialog" => "popup",
+        _ => "banner"
+    };
+
+    private string EffectiveTitle => !string.IsNullOrWhiteSpace(Title)
+        ? Title!
+        : NormalizedSeverity switch
+        {
+            "success" => "Success",
+            "error" => "Error",
+            "warning" => "Notice",
+            _ => "Information"
+        };
+
+    private string BannerClasses => NormalizedSeverity switch
+    {
+        "success" => "bg-emerald-50 border-emerald-200 text-emerald-900",
+        "error" => "bg-rose-50 border-rose-200 text-rose-900",
+        "warning" => "bg-amber-50 border-amber-200 text-amber-900",
+        _ => "bg-slate-50 border-slate-200 text-slate-800"
+    };
+
+    private string IconContainerClasses => NormalizedSeverity switch
+    {
+        "success" => "bg-emerald-600 text-white",
+        "error" => "bg-rose-600 text-white",
+        "warning" => "bg-amber-500 text-white",
+        _ => "bg-slate-700 text-white"
+    };
+
+    private RenderFragment RenderIcon() => NormalizedSeverity switch
+    {
+        "success" => @<svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden="true">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M5 13l4 4L19 7" />
+        </svg>,
+        "error" => @<svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden="true">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+        </svg>,
+        "warning" => @<svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden="true">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z" />
+        </svg>,
+        _ => @<svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden="true">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+        </svg>
+    };
+
+    private async Task HandleDismissAsync()
+    {
+        if (OnDismiss.HasDelegate)
+        {
+            await OnDismiss.InvokeAsync();
+        }
+    }
+}

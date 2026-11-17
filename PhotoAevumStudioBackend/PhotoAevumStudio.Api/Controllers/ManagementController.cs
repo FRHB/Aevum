@@ -61,6 +61,22 @@ public class ManagementController : ControllerBase
         return Ok(new { Success = true, EmployeeId = employeeId, DaysOff = dto.DaysOff });
     }
 
+    [HttpPost("employees/{employeeId}/reset-password")]
+    [Authorize(Policy = "AdminOrAbove")]
+    public async Task<IActionResult> ResetEmployeePassword(string employeeId, CancellationToken ct)
+    {
+        var adminId = User.FindFirstValue("studio_id")
+                      ?? User.FindFirstValue(ClaimTypes.NameIdentifier)
+                      ?? User.Identity?.Name
+                      ?? "Admin";
+
+        var (success, message) = await _service.ResetEmployeePasswordToInitialAsync(employeeId, adminId, ct);
+        if (!success)
+            return BadRequest(new { Success = false, Message = message });
+
+        return Ok(new { Success = true, Message = message, EmployeeId = employeeId });
+    }
+
     [HttpGet("departments")]
     public async Task<IActionResult> GetDepartments(CancellationToken ct)
     {

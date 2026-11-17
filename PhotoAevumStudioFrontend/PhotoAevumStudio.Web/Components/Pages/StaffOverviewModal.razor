@@ -1,0 +1,154 @@
+@using PhotoAevumStudio.Web.Models
+
+@if (IsOpen && Employee != null)
+{
+    <div class="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4"
+         role="dialog" aria-modal="true" aria-labelledby="staff-overview-title"
+         @onclick="CloseAsync">
+        <div class="bg-white rounded-2xl shadow-2xl border border-slate-200 max-w-lg w-full overflow-hidden"
+             @onclick:stopPropagation="true">
+            <div class="px-6 py-4 bg-slate-900 text-white flex items-center justify-between">
+                <div class="flex items-center gap-3">
+                    <div class="w-10 h-10 rounded-full bg-white/15 text-white font-bold text-sm flex items-center justify-center uppercase">
+                        @Employee.Initials
+                    </div>
+                    <div>
+                        <h3 id="staff-overview-title" class="text-base font-bold leading-tight">@Employee.FullName</h3>
+                        <p class="text-xs text-slate-300 font-mono">@Employee.EmployeeId</p>
+                    </div>
+                </div>
+                <button type="button"
+                        @onclick="CloseAsync"
+                        aria-label="Close staff overview"
+                        class="text-slate-300 hover:text-white text-sm font-bold px-2 py-1 cursor-pointer">
+                    ✕
+                </button>
+            </div>
+
+            <div class="p-6 space-y-4 text-xs">
+                <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 bg-slate-50 rounded-xl p-4 border border-slate-200">
+                    <div>
+                        <span class="text-slate-500 block">Email</span>
+                        <span class="font-semibold text-slate-900 break-all">@(string.IsNullOrWhiteSpace(Employee.Email) ? "—" : Employee.Email)</span>
+                    </div>
+                    <div>
+                        <span class="text-slate-500 block">Department</span>
+                        <span class="font-semibold text-slate-900">@(string.IsNullOrWhiteSpace(Employee.Department) ? "General" : Employee.Department)</span>
+                    </div>
+                    <div>
+                        <span class="text-slate-500 block">Status</span>
+                        <span class="font-semibold text-slate-900">@Employee.Status</span>
+                    </div>
+                    <div>
+                        <span class="text-slate-500 block">Scheduled Days Off</span>
+                        <span class="font-semibold text-slate-900">@(string.IsNullOrWhiteSpace(Employee.DaysOff) ? "Sunday" : Employee.DaysOff)</span>
+                    </div>
+                    <div>
+                        <span class="text-slate-500 block">Birth Date / Year</span>
+                        <span class="font-semibold text-slate-900">
+                            @(Employee.BirthDate != null ? Employee.BirthDate.Value.ToString("MMM dd, yyyy") : (Employee.BirthYear != null ? Employee.BirthYear.ToString() : "—"))
+                        </span>
+                    </div>
+                    <div>
+                        <span class="text-slate-500 block">Address</span>
+                        <span class="font-semibold text-slate-900">@(string.IsNullOrWhiteSpace(Employee.Address) ? "No address recorded" : Employee.Address)</span>
+                    </div>
+                </div>
+
+                <div>
+                    <span class="text-slate-500 font-semibold uppercase tracking-wider text-[11px] block mb-1.5">Specializations</span>
+                    @if (Employee.Specializations != null && Employee.Specializations.Count > 0)
+                    {
+                        <div class="flex flex-wrap gap-1.5">
+                            @foreach (var spec in Employee.Specializations)
+                            {
+                                <span class="px-2.5 py-1 rounded-md bg-slate-100 text-slate-800 border border-slate-200 font-medium">@spec</span>
+                            }
+                        </div>
+                    }
+                    else
+                    {
+                        <span class="text-slate-400 italic">No specialization assigned</span>
+                    }
+                </div>
+
+                @if (CanResetPassword && _confirmReset)
+                {
+                    <div class="p-3.5 rounded-xl bg-amber-50 border border-amber-200 text-amber-900 space-y-2">
+                        <p class="font-semibold">
+                            Reset @Employee.FullName's password back to their initial creation password?
+                        </p>
+                        <p class="text-[11px] text-amber-800">
+                            An email notification will be dispatched and the staff member will be forced to change their password on next login.
+                        </p>
+                        <div class="flex justify-end gap-2 pt-1">
+                            <button type="button"
+                                    @onclick="() => _confirmReset = false"
+                                    disabled="@IsResettingPassword"
+                                    class="px-3 py-1.5 rounded-lg border border-amber-300 bg-white text-amber-900 font-semibold cursor-pointer">
+                                Cancel
+                            </button>
+                            <button type="button"
+                                    @onclick="ConfirmResetPasswordAsync"
+                                    disabled="@IsResettingPassword"
+                                    class="px-3.5 py-1.5 rounded-lg bg-amber-600 hover:bg-amber-700 text-white font-semibold cursor-pointer disabled:opacity-50">
+                                @(IsResettingPassword ? "Resetting..." : "Confirm Reset Password")
+                            </button>
+                        </div>
+                    </div>
+                }
+            </div>
+
+            <div class="px-6 py-4 bg-slate-50 border-t border-slate-200 flex items-center justify-between gap-2">
+                <div>
+                    @if (CanResetPassword && !_confirmReset)
+                    {
+                        <button type="button"
+                                @onclick="() => _confirmReset = true"
+                                disabled="@IsResettingPassword"
+                                class="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg bg-amber-600 hover:bg-amber-700 text-white text-xs font-semibold shadow-2xs transition-colors cursor-pointer disabled:opacity-50">
+                            Reset Password
+                        </button>
+                    }
+                </div>
+                <button type="button"
+                        @onclick="CloseAsync"
+                        class="px-4 py-2 rounded-lg border border-slate-300 bg-white hover:bg-slate-100 text-slate-700 text-xs font-semibold cursor-pointer">
+                    Close
+                </button>
+            </div>
+        </div>
+    </div>
+}
+
+@code {
+    [Parameter] public bool IsOpen { get; set; }
+    [Parameter] public EmployeeViewModel? Employee { get; set; }
+    [Parameter] public bool CanResetPassword { get; set; }
+    [Parameter] public bool IsResettingPassword { get; set; }
+    [Parameter] public EventCallback OnClose { get; set; }
+    [Parameter] public EventCallback<EmployeeViewModel> OnResetPassword { get; set; }
+
+    private bool _confirmReset;
+
+    protected override void OnParametersSet()
+    {
+        if (!IsOpen)
+        {
+            _confirmReset = false;
+        }
+    }
+
+    private async Task CloseAsync()
+    {
+        _confirmReset = false;
+        await OnClose.InvokeAsync();
+    }
+
+    private async Task ConfirmResetPasswordAsync()
+    {
+        if (Employee == null || !CanResetPassword) return;
+        await OnResetPassword.InvokeAsync(Employee);
+        _confirmReset = false;
+    }
+}

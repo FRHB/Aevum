@@ -2,6 +2,7 @@ using System.ComponentModel.DataAnnotations;
 using System.Security.Claims;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.OutputCaching;
 using PhotoAevumStudio.Application.DTOs;
 using PhotoAevumStudio.Application.Interfaces;
 
@@ -35,6 +36,7 @@ public class AdditionalServicesController : ControllerBase
 {
     private readonly IStudioManagementService _service;
     private readonly ILogger<AdditionalServicesController> _logger;
+    private readonly IOutputCacheStore? _outputCache;
 
     private static readonly HashSet<string> AllowedMimeTypes = new(StringComparer.OrdinalIgnoreCase)
     {
@@ -46,10 +48,12 @@ public class AdditionalServicesController : ControllerBase
 
     public AdditionalServicesController(
         IStudioManagementService service,
-        ILogger<AdditionalServicesController> logger)
+        ILogger<AdditionalServicesController> logger,
+        IOutputCacheStore? outputCache = null)
     {
         _service = service;
         _logger = logger;
+        _outputCache = outputCache;
     }
 
     /// <summary>
@@ -70,6 +74,7 @@ public class AdditionalServicesController : ControllerBase
     /// </summary>
     [HttpGet("categories")]
     [AllowAnonymous]
+    [OutputCache(PolicyName = "CatalogCache")]
     [ProducesResponseType(typeof(IEnumerable<string>), StatusCodes.Status200OK)]
     public async Task<IActionResult> GetCategories(CancellationToken ct)
     {
@@ -89,6 +94,7 @@ public class AdditionalServicesController : ControllerBase
     /// Gets all Additional Services (Add-Ons) summary items.
     /// </summary>
     [HttpGet]
+    [OutputCache(PolicyName = "CatalogCache")]
     [ProducesResponseType(typeof(IReadOnlyList<ServiceSummaryDto>), StatusCodes.Status200OK)]
     public async Task<IActionResult> GetAll(CancellationToken ct)
     {
@@ -220,6 +226,7 @@ public class AdditionalServicesController : ControllerBase
             );
 
             var result = await _service.CreateAdditionalServiceAsync(dto, requestingAdminId, ct);
+            if (_outputCache != null) await _outputCache.EvictByTagAsync("catalog", ct);
 
             _logger.LogInformation("Successfully created Additional Service Add-On '{Id}' ({Name}) with price {Price:C}.",
                 result.Id, result.Name, result.Price);

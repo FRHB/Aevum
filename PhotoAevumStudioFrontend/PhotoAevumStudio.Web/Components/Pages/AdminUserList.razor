@@ -6,14 +6,8 @@
         <h2 class="aev-card__heading">Admin Accounts</h2>
     </header>
 
-    @if (!string.IsNullOrEmpty(_errorMessage))
-    {
-        <div class="alert" role="alert">@_errorMessage</div>
-    }
-    @if (!string.IsNullOrEmpty(_successMessage))
-    {
-        <div class="aev-alert-banner" role="status">@_successMessage</div>
-    }
+    <SystemMessage Message="@_errorMessage" Severity="error" Mode="banner" OnDismiss="() => _errorMessage = string.Empty" />
+    <SystemMessage Message="@_successMessage" Severity="success" Mode="banner" OnDismiss="() => _successMessage = string.Empty" />
 
     <div class="aev-table-wrap">
         <table class="aev-table">
@@ -37,7 +31,7 @@
                 }
                 else
                 {
-                    @foreach (var admin in _admins)
+                    @foreach (var admin in PagedAdmins)
                     {
                         <tr>
                             <td>
@@ -71,12 +65,15 @@
             </tbody>
         </table>
     </div>
+    <TablePagination TotalItems="_admins.Count" PageSize="10" @bind-CurrentPage="_currentPage" ItemLabel="admins" />
 </section>
 
 @code {
     [Parameter] public string RequestingUserId { get; set; } = string.Empty;
 
     private IReadOnlyList<Admin> _admins = Array.Empty<Admin>();
+    private int _currentPage = 1;
+    private List<Admin> PagedAdmins => TablePagination.Paginate(_admins, _currentPage, 10);
     private string _errorMessage   = string.Empty;
     private string _successMessage = string.Empty;
 

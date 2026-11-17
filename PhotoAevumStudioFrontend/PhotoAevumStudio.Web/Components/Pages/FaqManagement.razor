@@ -27,27 +27,8 @@
     </div>
 </header>
 
-@if (!string.IsNullOrWhiteSpace(_actionSuccessMessage))
-{
-    <div class="mb-4 p-4 bg-emerald-50 border border-emerald-200 text-emerald-800 rounded-xl text-sm font-semibold flex items-center justify-between shadow-xs animate-in fade-in duration-200">
-        <div class="flex items-center gap-2">
-            <span class="text-emerald-600 font-bold text-base">✓</span>
-            <span>@_actionSuccessMessage</span>
-        </div>
-        <button type="button" @onclick="() => _actionSuccessMessage = null" class="text-emerald-700 hover:text-emerald-900 text-xs font-bold">Dismiss</button>
-    </div>
-}
-
-@if (!string.IsNullOrWhiteSpace(_errorMessage))
-{
-    <div class="mb-4 p-4 bg-rose-50 border border-rose-200 text-rose-800 rounded-xl text-sm font-semibold flex items-center justify-between shadow-xs animate-in fade-in duration-200">
-        <div class="flex items-center gap-2">
-            <span class="text-rose-600 font-bold text-base">⚠️</span>
-            <span>@_errorMessage</span>
-        </div>
-        <button type="button" @onclick="() => _errorMessage = null" class="text-rose-700 hover:text-rose-900 text-xs font-bold">Dismiss</button>
-    </div>
-}
+<SystemMessage Message="@_actionSuccessMessage" Severity="success" Mode="banner" CssClass="mb-4" OnDismiss="() => _actionSuccessMessage = null" />
+<SystemMessage Message="@_errorMessage" Severity="error" Mode="banner" CssClass="mb-4" OnDismiss="() => _errorMessage = null" />
 
 @* ── FAQ Metrics / Quick Summary ───────────────────────────────────────────── *@
 <section class="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-6">
@@ -108,7 +89,7 @@
                     </tr>
                 </thead>
                 <tbody class="divide-y divide-gray-100">
-                    @foreach (var faq in _faqs)
+                    @foreach (var faq in PagedFaqs)
                     {
                         <tr class="hover:bg-slate-50/50 transition-colors">
                             <td class="py-3 px-4 text-center font-mono font-bold text-gray-500">
@@ -160,6 +141,7 @@
                 </tbody>
             </table>
         </div>
+        <TablePagination TotalItems="_faqs.Count" PageSize="10" @bind-CurrentPage="_currentPage" ItemLabel="FAQs" />
     }
 </section>
 
@@ -246,6 +228,8 @@
 
 @code {
     private List<FaqItem> _faqs = new();
+    private int _currentPage = 1;
+    private List<FaqItem> PagedFaqs => TablePagination.Paginate(_faqs, _currentPage, 10);
     private bool _isFaqModalOpen = false;
     private FaqItem _editingFaq = new();
     private string? _faqModalError;
