@@ -113,6 +113,87 @@ public class UserService : IUserService
 		return null;
 	}
 
+	private static bool TryGetOrdinal(IDataRecord record, string columnName, out int ordinal)
+	{
+		for (int i = 0; i < record.FieldCount; i++)
+		{
+			if (string.Equals(record.GetName(i), columnName, StringComparison.OrdinalIgnoreCase))
+			{
+				ordinal = i;
+				return true;
+			}
+		}
+		ordinal = -1;
+		return false;
+	}
+
+	private static string? ReadSafeString(IDataRecord record, int ordinal)
+	{
+		if (ordinal < 0 || ordinal >= record.FieldCount || record.IsDBNull(ordinal))
+			return null;
+
+		var value = record.GetValue(ordinal);
+		return value switch
+		{
+			null or DBNull => null,
+			string s => s,
+			byte[] bytes => bytes.Length > 0 ? $"data:image/jpeg;base64,{Convert.ToBase64String(bytes)}" : null,
+			_ => value.ToString()
+		};
+	}
+
+	/// <summary>
+	/// Reads a service/package/add-on binary image and its MIME type from either a detail stored
+	/// procedure result set or a 2-column fallback query without relying on fragile fixed ordinals.
+	/// </summary>
+	public static (byte[]? Image, string? MimeType) ReadServiceImageAndMime(IDataRecord record, string imageColumn, string mimeColumn)
+	{
+		byte[]? image = null;
+		string mime = "image/jpeg";
+
+		if (TryGetOrdinal(record, imageColumn, out int imgOrd) && !record.IsDBNull(imgOrd))
+		{
+			image = record.GetValue(imgOrd) as byte[];
+		}
+		else if (record.FieldCount == 2 && !record.IsDBNull(0))
+		{
+			image = record.GetValue(0) as byte[];
+		}
+
+		if (TryGetOrdinal(record, mimeColumn, out int mimeOrd) && !record.IsDBNull(mimeOrd))
+		{
+			mime = record.GetValue(mimeOrd) as string ?? "image/jpeg";
+		}
+		else if (record.FieldCount == 2 && !record.IsDBNull(1))
+		{
+			mime = record.GetValue(1) as string ?? "image/jpeg";
+		}
+
+		return (Image: image, MimeType: mime);
+	}
+
+	/// <summary>
+	/// Maps a row from dbo.Equipment into an <see cref="EquipmentRowDto"/> without casting varbinary
+	/// image columns via <see cref="IDataRecord.GetString"/>.
+	/// </summary>
+	public static EquipmentRowDto MapEquipmentRow(IDataRecord record)
+	{
+		string id = ReadSafeString(record, 0) ?? string.Empty;
+		string name = ReadSafeString(record, 1) ?? string.Empty;
+		string typeId = ReadSafeString(record, 2) ?? string.Empty;
+		string typeName = ReadSafeString(record, 3) ?? "General";
+		string serialNo = ReadSafeString(record, 4) ?? string.Empty;
+		string status = ReadSafeString(record, 5) ?? "Available";
+
+		string? image = ReadSafeString(record, 6);
+		if (string.IsNullOrWhiteSpace(image) && record.FieldCount > 7 && !record.IsDBNull(7))
+		{
+			image = ReadSafeString(record, 7);
+		}
+
+		return new EquipmentRowDto(id, name, typeId, typeName, serialNo, status, image);
+	}
+
 	public UserService(IConfiguration? configuration = null, IHttpClientFactory? httpClientFactory = null, IWebHostEnvironment? env = null)
 	{
 		_connectionString = FirstNonEmpty(
@@ -3495,23 +3576,7 @@ public class UserService : IUserService
 
 			{
 
-				if (sqlDataReader.FieldCount >= 5)
-
-				{
-
-					byte[] item = (sqlDataReader.IsDBNull(3) ? null : ((byte[])sqlDataReader[3]));
-
-					string item2 = (sqlDataReader.IsDBNull(4) ? "image/jpeg" : sqlDataReader.GetString(4));
-
-					return (Image: item, MimeType: item2);
-
-				}
-
-				byte[] item3 = (sqlDataReader.IsDBNull(0) ? null : ((byte[])sqlDataReader[0]));
-
-				string item4 = (sqlDataReader.IsDBNull(1) ? "image/jpeg" : sqlDataReader.GetString(1));
-
-				return (Image: item3, MimeType: item4);
+				return ReadServiceImageAndMime(sqlDataReader, "ServiceImage", "ServiceImageMimeType");
 
 			}
 
@@ -3981,23 +4046,7 @@ public class UserService : IUserService
 
 			{
 
-				if (sqlDataReader.FieldCount >= 5)
-
-				{
-
-					byte[] item = (sqlDataReader.IsDBNull(3) ? null : ((byte[])sqlDataReader[3]));
-
-					string item2 = (sqlDataReader.IsDBNull(4) ? "image/jpeg" : sqlDataReader.GetString(4));
-
-					return (Image: item, MimeType: item2);
-
-				}
-
-				byte[] item3 = (sqlDataReader.IsDBNull(0) ? null : ((byte[])sqlDataReader[0]));
-
-				string item4 = (sqlDataReader.IsDBNull(1) ? "image/jpeg" : sqlDataReader.GetString(1));
-
-				return (Image: item3, MimeType: item4);
+				return ReadServiceImageAndMime(sqlDataReader, "ComboPackageImage", "ComboPackageImageMimeType");
 
 			}
 
@@ -5364,23 +5413,7 @@ public class UserService : IUserService
 
 			{
 
-				if (sqlDataReader.FieldCount >= 5)
-
-				{
-
-					byte[] item = (sqlDataReader.IsDBNull(3) ? null : ((byte[])sqlDataReader[3]));
-
-					string item2 = (sqlDataReader.IsDBNull(4) ? "image/jpeg" : sqlDataReader.GetString(4));
-
-					return (Image: item, MimeType: item2);
-
-				}
-
-				byte[] item3 = (sqlDataReader.IsDBNull(0) ? null : ((byte[])sqlDataReader[0]));
-
-				string item4 = (sqlDataReader.IsDBNull(1) ? "image/jpeg" : sqlDataReader.GetString(1));
-
-				return (Image: item3, MimeType: item4);
+				return ReadServiceImageAndMime(sqlDataReader, "AdditionalServiceImage", "AdditionalServiceImageMimeType");
 
 			}
 
@@ -5627,7 +5660,7 @@ public class UserService : IUserService
 
 		sqlConnection.Open();
 
-		using SqlCommand sqlCommand = new SqlCommand("\n            IF OBJECT_ID(N'dbo.Equipment', N'U') IS NOT NULL\n            BEGIN\n                SELECT eq.EquipmentID,\n                       eq.EquipmentName,\n                       eq.EquipmentTypeID,\n                       COALESCE(et.EquipmentTypeName, eq.EquipmentTypeID) AS TypeName,\n                       COALESCE(eq.SerialNo, eq.EquipmentID) AS SerialNo,\n                       eq.EquipmentStatus,\n                       eq.EquipmentImage\n                FROM dbo.Equipment eq\n                LEFT JOIN dbo.EquipmentType et ON et.EquipmentTypeID = eq.EquipmentTypeID\n                ORDER BY eq.EquipmentID;\n            END", sqlConnection);
+		using SqlCommand sqlCommand = new SqlCommand("\n            IF OBJECT_ID(N'dbo.Equipment', N'U') IS NOT NULL\n            BEGIN\n                SELECT eq.EquipmentID,\n                       eq.EquipmentName,\n                       eq.EquipmentTypeID,\n                       COALESCE(et.EquipmentTypeName, eq.EquipmentTypeID) AS TypeName,\n                       COALESCE(eq.SerialNo, eq.EquipmentID) AS SerialNo,\n                       eq.EquipmentStatus,\n                       CASE WHEN COL_LENGTH(N'dbo.Equipment', N'ImagePath') IS NOT NULL THEN eq.ImagePath ELSE NULL END AS ImagePath,\n                       eq.EquipmentImage\n                FROM dbo.Equipment eq\n                LEFT JOIN dbo.EquipmentType et ON et.EquipmentTypeID = eq.EquipmentTypeID\n                ORDER BY eq.EquipmentID;\n            END", sqlConnection);
 
 		using SqlDataReader sqlDataReader = sqlCommand.ExecuteReader();
 
@@ -5635,7 +5668,7 @@ public class UserService : IUserService
 
 		{
 
-			list.Add(new EquipmentRowDto(sqlDataReader.GetString(0), sqlDataReader.GetString(1), sqlDataReader.GetString(2), sqlDataReader.IsDBNull(3) ? "General" : sqlDataReader.GetString(3), sqlDataReader.IsDBNull(4) ? string.Empty : sqlDataReader.GetString(4), sqlDataReader.IsDBNull(5) ? "Available" : sqlDataReader.GetString(5), sqlDataReader.IsDBNull(6) ? null : sqlDataReader.GetString(6)));
+			list.Add(MapEquipmentRow(sqlDataReader));
 
 		}
 
