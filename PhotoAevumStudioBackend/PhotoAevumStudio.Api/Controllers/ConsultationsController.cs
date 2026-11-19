@@ -125,16 +125,39 @@ public class ConsultationsController : ControllerBase
 
     // PUT api/consultations/appointments/{id}/roster
     [HttpPut("appointments/{id}/roster")]
-    [Authorize(Roles = $"{AppRoles.Admin},{AppRoles.SystemAdmin},{AppRoles.Employee},{AppRoles.OfficeClerk}")]
+    [Authorize(Policy = "ClerkOrAdmin")]
     public async Task<IActionResult> UpdateRoster(
         string id,
         [FromBody] UpdateAppointmentRosterRequest request,
         CancellationToken cancellationToken)
     {
+        if (User?.Identity?.IsAuthenticated == true)
+        {
+            request.ActorId = User.FindFirstValue("studio_id")
+                              ?? User.FindFirstValue(ClaimTypes.NameIdentifier)
+                              ?? User.FindFirstValue("sub")
+                              ?? request.ActorId;
+            request.ActorName = User.FindFirstValue("full_name")
+                                ?? User.FindFirstValue(ClaimTypes.Name)
+                                ?? request.ActorName;
+            request.ActorRole = User.IsInRole(AppRoles.SystemAdmin) ? "SystemAdmin"
+                : User.IsInRole(AppRoles.Admin) ? "Admin"
+                : User.IsInRole(AppRoles.OfficeClerk) ? "Employee"
+                : (string.IsNullOrWhiteSpace(request.ActorRole) ? "System" : request.ActorRole);
+        }
+        else if (string.IsNullOrWhiteSpace(request.ActorRole))
+        {
+            request.ActorRole = "System";
+        }
+
         try
         {
             var success = await _consultationService.UpdateAppointmentRosterAsync(id, request, cancellationToken);
-            return Ok(new { success = true, appointmentId = id });
+            return Ok(new { success, appointmentId = id });
+        }
+        catch (KeyNotFoundException ex)
+        {
+            return NotFound(new { message = ex.Message });
         }
         catch (InvalidOperationException ex)
         {

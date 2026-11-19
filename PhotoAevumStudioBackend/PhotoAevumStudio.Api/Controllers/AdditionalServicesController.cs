@@ -26,6 +26,30 @@ public class CreateAdditionalServiceApiRequest
     [Range(0.00, 100000.00, ErrorMessage = "Price must be a valid non-negative decimal value.")]
     public decimal ServicePrice { get; set; } = 0.00m;
 
+    public string RateType { get; set; } = "per hour";
+
+    public IFormFile? ImageFile { get; set; }
+}
+
+/// <summary>
+/// Form request payload for updating an Additional Service Add-On via multipart/form-data.
+/// </summary>
+public class UpdateAdditionalServiceApiRequest
+{
+    [Required(ErrorMessage = "Service category name (Add-On name) is required.")]
+    [StringLength(100, MinimumLength = 2, ErrorMessage = "Name must be between 2 and 100 characters.")]
+    public string ServiceName { get; set; } = string.Empty;
+
+    [StringLength(500, ErrorMessage = "Description cannot exceed 500 characters.")]
+    public string? ServiceCategoryDescription { get; set; }
+
+    public string ServiceCategory { get; set; } = "Add-On";
+
+    [Range(0.00, 100000.00, ErrorMessage = "Price must be a valid non-negative decimal value.")]
+    public decimal ServicePrice { get; set; } = 0.00m;
+
+    public string RateType { get; set; } = "per hour";
+
     public IFormFile? ImageFile { get; set; }
 }
 
@@ -215,6 +239,7 @@ public class AdditionalServicesController : ControllerBase
         // 3. Atomically persist via backend Stored Procedure & SQL Sequence
         try
         {
+            var effectiveRateType = string.IsNullOrWhiteSpace(request.RateType) ? "per hour" : request.RateType.Trim();
             var dto = new CreateAdditionalServiceDto(
                 ServiceName: request.ServiceName.Trim(),
                 ServiceDescription: request.ServiceCategoryDescription?.Trim() ?? string.Empty,
@@ -222,14 +247,15 @@ public class AdditionalServicesController : ControllerBase
                 ServicePrice: request.ServicePrice,
                 ImageBytes: imageBytes,
                 ImageMimeType: mimeType ?? "image/jpeg",
-                ImageFileName: request.ImageFile?.FileName
+                ImageFileName: request.ImageFile?.FileName,
+                RateType: effectiveRateType
             );
 
             var result = await _service.CreateAdditionalServiceAsync(dto, requestingAdminId, ct);
             if (_outputCache != null) await _outputCache.EvictByTagAsync("catalog", ct);
 
-            _logger.LogInformation("Successfully created Additional Service Add-On '{Id}' ({Name}) with price {Price:C}.",
-                result.Id, result.Name, result.Price);
+            _logger.LogInformation("Successfully created Additional Service Add-On '{Id}' ({Name}) with price {Price:C} ({RateType}).",
+                result.Id, result.Name, result.Price, result.RateType);
 
             return CreatedAtAction(nameof(GetById), new { id = result.Id }, result);
         }
@@ -242,6 +268,90 @@ public class AdditionalServicesController : ControllerBase
                 Detail = $"Failed to create Add-On service: {ex.Message}"
             });
         }
+    }
+
+    /// <summary>
+    /// Updates an existing Additional Service (Add-On), including RateType and optional image.
+    /// </summary>
+    [HttpPut("{id}")]
+    [Consumes("multipart/form-data")]
+    [ProducesResponseType(typeof(AdditionalServiceResponseDto), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    public async Task<IActionResult> Update(
+        string id,
+        [FromForm] UpdateAdditionalServiceApiRequest request,
+        CancellationToken ct)
+    {
+        if (string.IsNullOrWhiteSpace(id))
+            return BadRequest(new ProblemDetails { Title = "Invalid ID", Detail = "Additional Service ID is required." });
+
+        if (!ModelState.IsValid)
+            return ValidationProblem(ModelState);
+
+        byte[]? imageBytes = null;
+        string? mimeType = null;
+
+        if (request.ImageFile != null && request.ImageFile.Length > 0)
+        {
+            const long maxBytes = 5 * 1024 * 1024;
+            if (request.ImageFile.Length > maxBytes)
+            {
+                return BadRequest(new ProblemDetails
+                {
+                    Title = "File Size Limit Exceeded",
+                    Detail = "Uploaded image exceeds the maximum allowed size of 5 MB."
+                });
+            }
+
+            mimeType = request.ImageFile.ContentType?.Trim().ToLowerInvariant() ?? string.Empty;
+            if (!AllowedMimeTypes.Contains(mimeType))
+            {
+                return BadRequest(new ProblemDetails
+                {
+                    Title = "Invalid Media Format",
+                    Detail = "Only image formats (.jpg, .jpeg, .png, .webp) are supported."
+                });
+            }
+
+            await using var stream = request.ImageFile.OpenReadStream();
+            using var ms = new MemoryStream();
+            await stream.CopyToAsync(ms, ct);
+            imageBytes = ms.ToArray();
+
+            if (!ValidateImageSignature(imageBytes, mimeType))
+            {
+                return BadRequest(new ProblemDetails
+                {
+                    Title = "Invalid File Content",
+                    Detail = "The file payload does not contain a valid image header signature."
+                });
+            }
+        }
+
+        string? requestingAdminId = User.FindFirstValue("studio_id")
+                                   ?? User.FindFirstValue(ClaimTypes.NameIdentifier)
+                                   ?? User.FindFirstValue(ClaimTypes.Name)
+                                   ?? "SADM-001";
+
+        var effectiveRateType = string.IsNullOrWhiteSpace(request.RateType) ? "per hour" : request.RateType.Trim();
+        var dto = new UpdateAdditionalServiceDto(
+            ServiceName: request.ServiceName.Trim(),
+            ServiceDescription: request.ServiceCategoryDescription?.Trim() ?? string.Empty,
+            ServiceCategory: string.IsNullOrWhiteSpace(request.ServiceCategory) ? "Add-On" : request.ServiceCategory.Trim(),
+            ServicePrice: request.ServicePrice,
+            ImageBytes: imageBytes,
+            ImageMimeType: mimeType,
+            ImageFileName: request.ImageFile?.FileName,
+            RateType: effectiveRateType
+        );
+
+        var updated = await _service.UpdateAdditionalServiceAsync(id, dto, requestingAdminId, ct);
+        if (updated == null)
+            return NotFound(new { Message = $"Additional Service '{id}' was not found." });
+
+        if (_outputCache != null) await _outputCache.EvictByTagAsync("catalog", ct);
+        return Ok(updated);
     }
 
     /// <summary>

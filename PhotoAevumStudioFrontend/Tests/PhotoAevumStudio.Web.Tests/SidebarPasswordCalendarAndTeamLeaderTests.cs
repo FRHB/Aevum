@@ -188,16 +188,25 @@ public class SidebarPasswordCalendarAndTeamLeaderTests
         var webRoot = Path.Combine(root, "PhotoAevumStudioFrontend", "PhotoAevumStudio.Web");
         var staffDashboard = File.ReadAllText(Path.Combine(webRoot, "Components", "Pages", "StaffDashboard.razor"));
         var confirmPayment = File.ReadAllText(Path.Combine(webRoot, "Components", "Pages", "ConfirmPayment.razor"));
+        var paymentsPage = File.ReadAllText(Path.Combine(webRoot, "Components", "Pages", "Payments.razor"));
 
-        foreach (var stage in new[] { "\"Preparing\"", "\"On Going\"", "\"Post Event\"", "\"Pending Payment\"" })
+        foreach (var stage in new[] { "\"Preparing\"", "\"Ongoing\"", "\"Event Done\"", "\"Pending Payment\"" })
         {
             Assert.Contains(stage, staffDashboard);
         }
 
-        Assert.Contains("Pending Verification", staffDashboard);
+        Assert.Contains("Early (Preparing)", staffDashboard);
+        Assert.Contains("Late (Preparing)", staffDashboard);
+        Assert.Contains("Event Started", staffDashboard);
+        Assert.Contains("Event Done", staffDashboard);
+        Assert.Contains("Payment Verification (Cash)", staffDashboard);
+        Assert.Contains("Payment Verification (QR:Paid)", staffDashboard);
+        Assert.Contains("Payment Verification (QR:Pending Payment)", staffDashboard);
         Assert.Contains("SvgQRCode", staffDashboard);
         Assert.Contains("SimulateTeamLeaderQrPaidAsync", staffDashboard);
         Assert.Contains("IsFinalPayment", confirmPayment);
+        Assert.Contains("\"Completed\"", confirmPayment);
+        Assert.Contains("\"Completed\"", paymentsPage);
 
         // Verify runtime QRCoder SVG generation for Team Leader final QR checkout URL
         using var qrGen = new QRCodeGenerator();
@@ -221,7 +230,7 @@ public class SidebarPasswordCalendarAndTeamLeaderTests
         {
             EventAppointmentId = "EVT-2026",
             FinalPaymentMethod = "Xendit_QR",
-            FinalPaymentStatus = "Pending",
+            FinalPaymentStatus = "Payment Verification (QR:Pending Payment)",
             FinalPaymentReferenceId = "EVT-2026-FINAL"
         };
         Assert.Equal("EVT-2026-FINAL", tlDto.FinalPaymentReferenceId);
@@ -239,32 +248,49 @@ public class SidebarPasswordCalendarAndTeamLeaderTests
         var myBookings = File.ReadAllText(Path.Combine(webRoot, "Components", "Pages", "MyBookings.razor"));
         var adminDashboard = File.ReadAllText(Path.Combine(webRoot, "Components", "Pages", "AdminDashboard.razor"));
         var livePanel = File.ReadAllText(Path.Combine(webRoot, "Components", "Shared", "LiveEventsOverviewPanel.razor"));
+        var backendService = File.ReadAllText(Path.Combine(root, "PhotoAevumStudioBackend", "PhotoAevumStudio.Infrastructure", "Services", "ConsultationNegotiationService.cs"));
+        var paymentsController = File.ReadAllText(Path.Combine(root, "PhotoAevumStudioBackend", "PhotoAevumStudio.Api", "Controllers", "PaymentsController.cs"));
 
-        // 1. Team Leader toggles, equipment checklist, Dispatch transition, and Cash Received
-        Assert.Contains("Preparation", staffDashboard);
-        Assert.Contains("Dispatch", staffDashboard);
-        Assert.Contains("Ongoing", staffDashboard);
-        Assert.Contains("Post Event", staffDashboard);
+        // 1. Sequential Team Leader controls, equipment checklist, Event Done settlement gate, Cash & QR settlement
+        Assert.Contains("Early", staffDashboard);
+        Assert.Contains("Late", staffDashboard);
+        Assert.Contains("Preparing", staffDashboard);
+        Assert.Contains("Event Started", staffDashboard);
+        Assert.Contains("Event Done", staffDashboard);
+        Assert.Contains("to unlock <strong>Settlement</strong>", staffDashboard);
         Assert.Contains("Preparation Equipment Checklist", staffDashboard);
         Assert.Contains("MarkAllEquipmentTakenAsync", staffDashboard);
         Assert.Contains("AddAdditionalEquipmentAsync", staffDashboard);
         Assert.Contains("Cash Received", staffDashboard);
         Assert.Contains("QuickCashReceivedAsync", staffDashboard);
+        Assert.Contains("QR Payment", staffDashboard);
 
-        // 2. Customer Dashboard & MyBookings immediately mark cash pending verification as Complete
+        // 2. Customer Dashboard & MyBookings immediately mark cash pending verification & QR paid as Completed
         Assert.Contains("GetCustomerDisplayStatus", customerDashboard);
         Assert.Contains("GetCustomerEventDisplayStatus", myBookings);
-        Assert.Contains("Pending Verification", customerDashboard);
-        Assert.Contains("\"Complete\"", customerDashboard);
+        Assert.Contains("Payment Verification (Cash)", customerDashboard);
+        Assert.Contains("Payment Verification (QR:Paid)", customerDashboard);
+        Assert.Contains("\"Completed\"", customerDashboard);
+        Assert.Contains("\"Completed\"", myBookings);
 
-        // 3. Office Clerk & Admin Overview stacked concurrent events & Verify Cash button
+        // 3. Office Clerk & Admin Live Event Monitor standardized payment labels (no legacy strings)
         Assert.Contains("LiveEventsOverviewPanel", adminDashboard);
         Assert.Contains("LiveEventsOverviewPanel", staffDashboard);
         Assert.Contains("Verify Cash", livePanel);
-        Assert.Contains("Paid Cash Pending Verification", livePanel);
         Assert.Contains("VerifyCashAsync", livePanel);
+        Assert.Contains("Payment Verification (Cash)", livePanel);
+        Assert.Contains("Payment Verification (QR:Paid)", livePanel);
+        Assert.Contains("Payment Verification (QR:Pending Payment)", livePanel);
+        Assert.DoesNotContain("Pending Cash Verification", livePanel);
+        Assert.DoesNotContain("Paid Cash Pending Verification", livePanel);
 
-        // 4. API Controller endpoints & authorization
+        // 4. Dual email confirmation hooks (Team Leader + Customer) on final QR payment completion
+        Assert.Contains("TeamLeaderQrPaymentPaidNotification", backendService);
+        Assert.Contains("CustomerFinalQrPaymentConfirmation", backendService);
+        Assert.Contains("NotifyTeamLeaderFinalQrPaidAsync", paymentsController);
+        Assert.Contains("HandlePostPaymentConfirmationAsync", paymentsController);
+
+        // 5. API Controller endpoints & authorization
         var markTaken = typeof(PaymentsController).GetMethod(nameof(PaymentsController.MarkEquipmentTaken));
         var addEquip = typeof(PaymentsController).GetMethod(nameof(PaymentsController.AddAdditionalEquipment));
         var liveOverview = typeof(PaymentsController).GetMethod(nameof(PaymentsController.GetLiveEventsOverview));

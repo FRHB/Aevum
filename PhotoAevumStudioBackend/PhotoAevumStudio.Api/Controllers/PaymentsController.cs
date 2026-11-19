@@ -356,6 +356,64 @@ public class PaymentsController : ControllerBase
 
     }
 
+    // POST api/payments/customer-appointments/{appointmentId}/cancel
+    [HttpPost("customer-appointments/{appointmentId}/cancel")]
+    [Authorize(Roles = $"{AppRoles.Customer},{AppRoles.Admin},{AppRoles.SystemAdmin},{AppRoles.Employee},{AppRoles.OfficeClerk}")]
+    public async Task<IActionResult> CustomerCancelAppointment(
+        string appointmentId,
+        [FromBody] CustomerCancelAppointmentRequest? request,
+        CancellationToken cancellationToken)
+    {
+        var userId = User.FindFirstValue(ClaimTypes.NameIdentifier) ?? User.FindFirstValue("sub") ?? User.FindFirstValue("studio_id") ?? string.Empty;
+        var isPrivileged = User.IsInRole(AppRoles.Admin) || User.IsInRole(AppRoles.SystemAdmin) || User.IsInRole(AppRoles.OfficeClerk);
+        try
+        {
+            var result = await _consultationService.CustomerCancelAppointmentAsync(appointmentId, userId, request?.Reason, isPrivileged, cancellationToken);
+            return Ok(result);
+        }
+        catch (KeyNotFoundException ex)
+        {
+            return Problem(ex.Message, statusCode: StatusCodes.Status404NotFound, title: "NOT_FOUND");
+        }
+        catch (UnauthorizedAccessException ex)
+        {
+            return Problem(ex.Message, statusCode: StatusCodes.Status403Forbidden, title: "FORBIDDEN");
+        }
+        catch (InvalidOperationException ex)
+        {
+            return Problem(ex.Message, statusCode: StatusCodes.Status400BadRequest, title: "RESCHEDULE_OR_CANCEL_FAILED");
+        }
+    }
+
+    // POST api/payments/customer-appointments/{appointmentId}/reschedule
+    [HttpPost("customer-appointments/{appointmentId}/reschedule")]
+    [Authorize(Roles = $"{AppRoles.Customer},{AppRoles.Admin},{AppRoles.SystemAdmin},{AppRoles.Employee},{AppRoles.OfficeClerk}")]
+    public async Task<IActionResult> CustomerRescheduleAppointment(
+        string appointmentId,
+        [FromBody] CustomerRescheduleAppointmentRequest request,
+        CancellationToken cancellationToken)
+    {
+        var userId = User.FindFirstValue(ClaimTypes.NameIdentifier) ?? User.FindFirstValue("sub") ?? User.FindFirstValue("studio_id") ?? string.Empty;
+        var isPrivileged = User.IsInRole(AppRoles.Admin) || User.IsInRole(AppRoles.SystemAdmin) || User.IsInRole(AppRoles.OfficeClerk);
+        try
+        {
+            var result = await _consultationService.CustomerRescheduleAppointmentAsync(appointmentId, request, userId, isPrivileged, cancellationToken);
+            return Ok(result);
+        }
+        catch (KeyNotFoundException ex)
+        {
+            return Problem(ex.Message, statusCode: StatusCodes.Status404NotFound, title: "NOT_FOUND");
+        }
+        catch (UnauthorizedAccessException ex)
+        {
+            return Problem(ex.Message, statusCode: StatusCodes.Status403Forbidden, title: "FORBIDDEN");
+        }
+        catch (InvalidOperationException ex)
+        {
+            return Problem(ex.Message, statusCode: StatusCodes.Status400BadRequest, title: "RESCHEDULE_OR_CANCEL_FAILED");
+        }
+    }
+
 
 
     // POST api/payments/verify-downpayment/{appointmentId}
@@ -447,9 +505,20 @@ public class PaymentsController : ControllerBase
             return Forbid();
         }
 
-        var result = await _consultationService.CompleteEventSettlementAsync(request, cancellationToken);
+        try
+        {
+            var result = await _consultationService.CompleteEventSettlementAsync(request, cancellationToken);
 
-        return Ok(result);
+            return Ok(result);
+        }
+        catch (KeyNotFoundException ex)
+        {
+            return NotFound(new { message = ex.Message });
+        }
+        catch (InvalidOperationException ex)
+        {
+            return BadRequest(new { message = ex.Message });
+        }
 
     }
 
@@ -612,6 +681,16 @@ public class PaymentsController : ControllerBase
         try
         {
             var updated = await _consultationService.VerifyCashSettlementAsync(appointmentId, verifierId, verifierName, request?.Notes, cancellationToken);
+            try
+            {
+                var dropbox = HttpContext?.RequestServices.GetService<ICustomerDropboxService>();
+                if (dropbox != null)
+                    await dropbox.EnsureFolderForCompletedEventAsync(appointmentId, cancellationToken);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Customer Dropbox folder auto-generation failed after cash verification for {AppointmentId}", appointmentId);
+            }
             return Ok(updated);
         }
         catch (KeyNotFoundException ex)
@@ -971,14 +1050,16 @@ public class PaymentsController : ControllerBase
             var appt = await _consultationService.GetAppointmentByIdAsync(externalId, cancellationToken);
             if (appt != null && (string.Equals(appt.EventStatus, "Confirmed", StringComparison.OrdinalIgnoreCase)
                                   || string.Equals(appt.EventStatus, "Shot", StringComparison.OrdinalIgnoreCase)
-                                  || string.Equals(appt.EventStatus, "Complete", StringComparison.OrdinalIgnoreCase)))
+                                  || string.Equals(appt.EventStatus, "Complete", StringComparison.OrdinalIgnoreCase)
+                                  || string.Equals(appt.EventStatus, "Completed", StringComparison.OrdinalIgnoreCase)))
             {
                 return true;
             }
 
             var qrInfo = await _pendingPayments.GetQrPaymentAsync(externalId, cancellationToken);
             if (qrInfo != null && (string.Equals(qrInfo.EventStatus, "Shot", StringComparison.OrdinalIgnoreCase)
-                                    || string.Equals(qrInfo.EventStatus, "Complete", StringComparison.OrdinalIgnoreCase)))
+                                    || string.Equals(qrInfo.EventStatus, "Complete", StringComparison.OrdinalIgnoreCase)
+                                    || string.Equals(qrInfo.EventStatus, "Completed", StringComparison.OrdinalIgnoreCase)))
             {
                 return true;
             }

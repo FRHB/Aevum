@@ -35,7 +35,9 @@ public class PendingPaymentService : IPendingPaymentService
           IF COL_LENGTH(N'dbo.EventAppointment', N'FinalPaymentMethod') IS NULL
               ALTER TABLE dbo.EventAppointment ADD FinalPaymentMethod nvarchar(30) NULL;
           IF COL_LENGTH(N'dbo.EventAppointment', N'FinalPaymentStatus') IS NULL
-              ALTER TABLE dbo.EventAppointment ADD FinalPaymentStatus nvarchar(30) NULL;
+              ALTER TABLE dbo.EventAppointment ADD FinalPaymentStatus nvarchar(60) NULL;
+          ELSE IF COL_LENGTH(N'dbo.EventAppointment', N'FinalPaymentStatus') < 120
+              ALTER TABLE dbo.EventAppointment ALTER COLUMN FinalPaymentStatus nvarchar(60) NULL;
           IF COL_LENGTH(N'dbo.EventAppointment', N'FinalQrString') IS NULL
               ALTER TABLE dbo.EventAppointment ADD FinalQrString nvarchar(1000) NULL;
           IF COL_LENGTH(N'dbo.EventAppointment', N'FinalPaymentReferenceId') IS NULL
@@ -60,12 +62,17 @@ public class PendingPaymentService : IPendingPaymentService
                          WHERE name = N'CK_EventAppointment_Status'
                            AND definition LIKE N'%Pending Verification%'
                            AND definition LIKE N'%Dispatch%'
-                           AND definition LIKE N'%Complete%')
+                           AND definition LIKE N'%Complete%'
+                           AND definition LIKE N'%Completed%'
+                           AND definition LIKE N'%In Execution%'
+                           AND definition LIKE N'%Ready%'
+                           AND definition LIKE N'%Event Done%'
+                           AND definition LIKE N'%Payment Verification (Cash)%')
           BEGIN
               IF EXISTS (SELECT 1 FROM sys.check_constraints WHERE name = N'CK_EventAppointment_Status')
                   ALTER TABLE dbo.EventAppointment DROP CONSTRAINT CK_EventAppointment_Status;
               ALTER TABLE dbo.EventAppointment ADD CONSTRAINT CK_EventAppointment_Status
-                  CHECK (EventStatus IN ('Pending','Awaiting_Downpayment','Pending Payment','Preparation','Preparing','Dispatch','Ongoing','On Going','Post Event','Pending Verification','Paid Cash Pending Verification','Confirmed','Complete','Shot','Editing','Delivered','Cancelled','Expired'));
+                  CHECK (EventStatus IN ('Pending','Awaiting_Downpayment','Pending Payment','Ready','In Execution','Preparation','Preparing','Dispatch','Ongoing','On Going','Event Done','Post Event','Pending Verification','Paid Cash Pending Verification','Payment Verification (Cash)','Confirmed','Complete','Completed','Shot','Editing','Delivered','Cancelled','Expired'));
           END;
           IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = N'IX_EventAppointment_Status_LockExpiresAt' AND object_id = OBJECT_ID(N'dbo.EventAppointment'))
               CREATE INDEX IX_EventAppointment_Status_LockExpiresAt ON dbo.EventAppointment (EventStatus, LockExpiresAt);",
@@ -196,15 +203,15 @@ public class PendingPaymentService : IPendingPaymentService
             {
                 const string confirmFinalSql = @"
                     UPDATE dbo.EventAppointment
-                    SET EventStatus = 'Complete',
-                        FinalPaymentStatus = 'Paid',
+                    SET EventStatus = 'Completed',
+                        FinalPaymentStatus = 'Payment Verification (QR:Paid)',
                         FinalPaymentPaidAt = SYSUTCDATETIME(),
                         LockExpiresAt = NULL,
                         HoldExpiresAt = NULL
                     OUTPUT inserted.EventAppointmentID, inserted.CustomerID, inserted.FinalBalanceAmount
                     WHERE (EventAppointmentID = @BaseId OR FinalPaymentReferenceId = @Ref)
-                      AND ISNULL(FinalPaymentStatus, 'Pending') <> 'Paid'
-                      AND EventStatus IN ('Pending Payment', 'Post Event', 'Pending Verification', 'Paid Cash Pending Verification', 'Ongoing', 'On Going', 'Dispatch', 'Preparation', 'Preparing', 'Confirmed');";
+                      AND ISNULL(FinalPaymentStatus, 'Pending') NOT IN ('Paid', 'Payment Verification (QR:Paid)')
+                      AND EventStatus IN ('Pending Payment', 'Event Done', 'Post Event', 'Pending Verification', 'Paid Cash Pending Verification', 'Payment Verification (Cash)', 'Ongoing', 'On Going', 'In Execution', 'Ready', 'Dispatch', 'Preparation', 'Preparing', 'Confirmed');";
 
                 string? finalApptId = null, finalCustId = null;
                 decimal finalBal = 0m;
@@ -256,7 +263,7 @@ public class PendingPaymentService : IPendingPaymentService
                     IF OBJECT_ID(N'dbo.HistoryLog', N'U') IS NOT NULL
                         INSERT INTO dbo.HistoryLog (ActionType, EntityName, EntityID, ActionDetails, EventAppointmentID, ChangedByType, LoggedAt)
                         VALUES ('STATUS_CHANGE', 'EventAppointment', @ApptId,
-                                'Final balance QR payment received via Xendit webhook. Event marked Shot / Paid.',
+                                'Final balance QR payment received via Xendit webhook. Status: Payment Verification (QR:Paid). Event marked Completed.',
                                 @ApptId, 'System', SYSUTCDATETIME());";
 
                 await using (var cmd = new SqlCommand(finalFollowUpSql, conn, tx))
@@ -308,7 +315,10 @@ public class PendingPaymentService : IPendingPaymentService
 
             const string followUpSql = @"
                 IF OBJECT_ID(N'dbo.BookingNegotiation', N'U') IS NOT NULL
-                    UPDATE dbo.BookingNegotiation SET NegotiationStatus = 'Deal_Won' WHERE EventAppointmentID = @Ref;
+                    UPDATE dbo.BookingNegotiation
+                    SET NegotiationStatus = 'Appointment Booked',
+                        EventAppointmentID = COALESCE(EventAppointmentID, @Ref)
+                    WHERE EventAppointmentID = @Ref;
 
                 IF OBJECT_ID(N'dbo.PaymentTransactions', N'U') IS NOT NULL
                 BEGIN
@@ -389,7 +399,8 @@ public class PendingPaymentService : IPendingPaymentService
         {
             var finalStatus = r.IsDBNull(11) ? null : r.GetString(11);
             var effectiveStatus = string.Equals(finalStatus, "Paid", StringComparison.OrdinalIgnoreCase)
-                ? "Complete"
+                                  || string.Equals(finalStatus, "Payment Verification (QR:Paid)", StringComparison.OrdinalIgnoreCase)
+                ? "Completed"
                 : eventStatus;
             return new QrPaymentInfoDto
             {

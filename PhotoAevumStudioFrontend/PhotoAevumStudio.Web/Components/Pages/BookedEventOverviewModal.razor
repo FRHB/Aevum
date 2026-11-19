@@ -1,0 +1,1076 @@
+@using PhotoAevumStudio.Web.Models
+@using PhotoAevumStudio.Web.Services
+@inject IConsultationClient ConsultationApi
+@inject IEmployeeService EmployeeService
+@inject IEquipmentService EquipmentService
+@inject IScheduleService ScheduleService
+
+@if (Booking != null)
+{
+    <div class="booked-modal-backdrop" @onclick="CloseAsync">
+        <div class="booked-modal-dialog"
+             role="dialog"
+             aria-modal="true"
+             aria-labelledby="booked-overview-title"
+             @onclick:stopPropagation="true">
+
+            @* ── MODAL HEADER ─────────────────────────────────────────────── *@
+            <div class="booked-modal-header">
+                <div class="min-w-0">
+                    <div class="flex items-center gap-2 flex-wrap">
+                        <span class="font-mono text-[11px] font-extrabold px-2 py-0.5 rounded bg-slate-900 text-white">
+                            #@Booking.Id
+                        </span>
+                        <span class="status-pill text-xs @GetStatusClass(Booking.Status)">
+                            @Booking.DisplayStatus
+                        </span>
+                        @if (Booking.HasConflict)
+                        {
+                            <span class="badge-conflict" title="@Booking.ConflictMessage">⚠️ Conflict</span>
+                        }
+                    </div>
+                    <h2 id="booked-overview-title" class="text-lg font-extrabold text-slate-900 mt-1.5 truncate">
+                        @Booking.ClientName
+                    </h2>
+                    @if (!string.IsNullOrWhiteSpace(Booking.ClientEmail) || !string.IsNullOrWhiteSpace(Booking.ClientPhone))
+                    {
+                        <div class="text-xs text-slate-500 flex flex-wrap items-center gap-x-3 gap-y-0.5 mt-0.5">
+                            @if (!string.IsNullOrWhiteSpace(Booking.ClientEmail))
+                            {
+                                <span>@Booking.ClientEmail</span>
+                            }
+                            @if (!string.IsNullOrWhiteSpace(Booking.ClientPhone))
+                            {
+                                <span>@Booking.ClientPhone</span>
+                            }
+                        </div>
+                    }
+                </div>
+
+                <button type="button"
+                        @onclick="CloseAsync"
+                        class="booked-modal-close-btn"
+                        aria-label="Close event overview">
+                    ✕
+                </button>
+            </div>
+
+            @* ── MODAL BODY ───────────────────────────────────────────────── *@
+            <div class="booked-modal-body">
+                @if (Booking.IsConsultation)
+                {
+                    <div class="overview-section-card bg-teal-50/60 border-teal-200 space-y-2.5">
+                        <div class="flex items-center justify-between gap-2 flex-wrap">
+                            <span class="inline-flex items-center gap-1.5 font-bold text-xs text-teal-800 bg-teal-100 px-2.5 py-1 rounded-full">
+                                <span>💬</span> Consultation &amp; Inquiry Call
+                            </span>
+                            <span class="text-xs font-semibold text-slate-700">
+                                @Booking.Date.ToString("ddd, MMM d, yyyy") (@Booking.FormattedTimeRange)
+                            </span>
+                        </div>
+                        <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs pt-1">
+                            <div>
+                                <span class="overview-label">Customer Name</span>
+                                <span class="overview-val font-bold">@Booking.ClientName</span>
+                            </div>
+                            <div>
+                                <span class="overview-label">Assigned Office Clerk</span>
+                                <span class="overview-val font-semibold">@Booking.AssignedPhotographer</span>
+                            </div>
+                        </div>
+                        @if (!string.IsNullOrWhiteSpace(Booking.MeetingLink))
+                        {
+                            <div class="pt-1">
+                                <a href="@Booking.MeetingLink"
+                                   target="_blank"
+                                   rel="noopener noreferrer"
+                                   class="inline-flex items-center gap-1.5 px-3 py-1.5 bg-teal-700 hover:bg-teal-800 text-white text-xs font-bold rounded-lg transition-colors shadow-2xs">
+                                    <span>📹</span> Join Video Call
+                                </a>
+                            </div>
+                        }
+                        @if (!string.IsNullOrWhiteSpace(Booking.LinkedEventAppointmentId))
+                        {
+                            <div class="pt-2 border-t border-teal-200/70 flex items-center justify-between gap-2 flex-wrap">
+                                <div>
+                                    <span class="overview-label">Resulting Event Appointment</span>
+                                    <span class="overview-val font-mono font-bold text-emerald-800">#@Booking.LinkedEventAppointmentId</span>
+                                </div>
+                                <button type="button"
+                                        @onclick="() => OpenLinkedEventAsync(Booking.LinkedEventAppointmentId!)"
+                                        class="inline-flex items-center gap-1 px-3 py-1.5 bg-emerald-700 hover:bg-emerald-800 text-white text-xs font-bold rounded-lg transition-colors shadow-2xs">
+                                    Open Event Appointment →
+                                </button>
+                            </div>
+                        }
+                        @if (!string.IsNullOrWhiteSpace(Booking.Notes))
+                        {
+                            <div class="pt-1 border-t border-teal-200/70">
+                                <span class="overview-label">Inquiry Notes</span>
+                                <p class="text-xs text-slate-700 italic mt-0.5">@Booking.Notes</p>
+                            </div>
+                        }
+                    </div>
+                }
+                else
+                {
+                    @if (!string.IsNullOrWhiteSpace(_feedbackMessage))
+                    {
+                        <SystemMessage Message="@_feedbackMessage"
+                                       Severity="@(_feedbackIsError ? "error" : "success")"
+                                       Mode="banner"
+                                       OnDismiss="() => _feedbackMessage = null" />
+                    }
+
+                    @if (_isLoadingDetails)
+                    {
+                        <div class="text-[11px] text-slate-500 flex items-center gap-2">
+                            <span class="animate-spin inline-block w-3 h-3 border-2 border-slate-400 border-t-transparent rounded-full"></span>
+                            <span>Refreshing full appointment details...</span>
+                        </div>
+                    }
+
+                    @* ── 1. Core Event Overview Summary Grid ─────────────── *@
+                    <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                        <div class="overview-section-card">
+                            <span class="overview-label">Customer Name</span>
+                            <div class="overview-val font-bold text-slate-900">@EffectiveCustomerName</div>
+                            <div class="text-[11px] text-slate-500 mt-1">
+                                Event: <strong class="text-slate-700">@EffectiveEventTitle</strong>
+                            </div>
+                        </div>
+
+                        <div class="overview-section-card">
+                            <span class="overview-label">Event Location</span>
+                            <div class="overview-val font-bold text-slate-900">📍 @EffectiveLocation</div>
+                            <div class="text-[11px] text-slate-500 mt-1">
+                                @Booking.Date.ToString("ddd, MMM d, yyyy") &bull; @Booking.FormattedTimeRange
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="overview-section-card">
+                        <div class="flex items-center justify-between flex-wrap gap-2">
+                            <div>
+                                <span class="overview-label">Buffer Window</span>
+                                <span class="text-xs text-slate-600">
+                                    Prep: @DateTime.Today.Add(Booking.CombinedStartTime).ToString("h:mm tt") – @DateTime.Today.Add(Booking.StartTime).ToString("h:mm tt") (2h)
+                                    &bull;
+                                    Post: @DateTime.Today.Add(Booking.EffectiveEndTime).ToString("h:mm tt") – @DateTime.Today.Add(Booking.CombinedEndTime).ToString("h:mm tt") (1h)
+                                </span>
+                            </div>
+                            @if (!HidePricing)
+                            {
+                                <div class="text-right">
+                                    <span class="overview-label">Package Total</span>
+                                    <span class="text-sm font-extrabold font-mono text-slate-900">₱@EffectivePrice.ToString("N2")</span>
+                                </div>
+                            }
+                        </div>
+                    </div>
+
+                    @* ── 2. Services Section ─────────────────────────────── *@
+                    <div class="overview-section-card space-y-2">
+                        <div class="flex items-center justify-between">
+                            <span class="overview-label">Services</span>
+                            <span class="text-[10px] font-bold text-slate-400 uppercase">@EffectiveServiceItems.Count selected</span>
+                        </div>
+
+                        @if (EffectiveServiceItems.Count > 0)
+                        {
+                            <div class="flex flex-wrap gap-1.5">
+                                @foreach (var svc in EffectiveServiceItems)
+                                {
+                                    <span class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-slate-100 border border-slate-200 text-xs font-semibold text-slate-800">
+                                        <span>@svc.Name</span>
+                                        @if (!string.IsNullOrWhiteSpace(svc.Meta))
+                                        {
+                                            <span class="text-[10px] font-normal text-slate-500">(@svc.Meta)</span>
+                                        }
+                                    </span>
+                                }
+                            </div>
+                        }
+                        else
+                        {
+                            <div class="text-xs text-slate-400 italic">No services recorded.</div>
+                        }
+                    </div>
+
+                    @* ── 3. Assigned Crew Section (+ Inline Controls) ────── *@
+                    <div class="overview-section-card space-y-3">
+                        <div class="flex items-center justify-between flex-wrap gap-2">
+                            <div>
+                                <span class="overview-label">Assigned Crew (@_stagedCrew.Count)</span>
+                                @if (CanManageRoster && !IsInactiveEvent)
+                                {
+                                    <p class="text-[11px] text-slate-500 mt-0.5">
+                                        Add, remove, or replace crew members. Office Clerks are excluded from crew dispatch.
+                                    </p>
+                                }
+                            </div>
+                        </div>
+
+                        @if (_stagedCrew.Count == 0)
+                        {
+                            <div class="text-xs text-slate-400 italic">No crew currently assigned.</div>
+                        }
+                        else
+                        {
+                            <div class="space-y-2">
+                                @foreach (var crew in _stagedCrew)
+                                {
+                                    var isLead = string.Equals(crew.EmployeeId, _stagedTeamLeaderId, StringComparison.OrdinalIgnoreCase);
+                                    var isReplacingThisCrew = string.Equals(_replacingCrewId, crew.EmployeeId, StringComparison.OrdinalIgnoreCase);
+
+                                    <div class="roster-item-row @(isLead ? "is-leader" : "")">
+                                        <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                                            <div class="min-w-0">
+                                                <div class="flex items-center gap-2 flex-wrap">
+                                                    <span class="text-xs font-bold text-slate-900">@crew.FullName</span>
+                                                    <span class="font-mono text-[10px] text-slate-500">@crew.EmployeeId</span>
+                                                    @if (isLead)
+                                                    {
+                                                        <span class="px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-200 text-amber-950 border border-amber-300">
+                                                            Team Leader
+                                                        </span>
+                                                    }
+                                                </div>
+                                                @if (!string.IsNullOrWhiteSpace(crew.Specialization))
+                                                {
+                                                    <div class="text-[11px] text-slate-500 mt-0.5">@crew.Specialization</div>
+                                                }
+                                            </div>
+
+                                            @if (CanManageRoster && !IsInactiveEvent)
+                                            {
+                                                <div class="flex items-center gap-1.5 flex-wrap shrink-0">
+                                                    @if (!isLead)
+                                                    {
+                                                        <button type="button"
+                                                                @onclick="() => SetTeamLeader(crew.EmployeeId)"
+                                                                class="px-2 py-1 rounded border border-amber-300 bg-amber-50 hover:bg-amber-100 text-amber-900 text-[11px] font-semibold">
+                                                            Set Lead
+                                                        </button>
+                                                    }
+                                                    <button type="button"
+                                                            @onclick="() => BeginReplaceCrew(crew.EmployeeId)"
+                                                            class="px-2 py-1 rounded border border-slate-300 bg-white hover:bg-slate-100 text-slate-700 text-[11px] font-semibold">
+                                                        Replace
+                                                    </button>
+                                                    <button type="button"
+                                                            disabled="@(_stagedCrew.Count <= 1)"
+                                                            title="@(_stagedCrew.Count <= 1 ? "At least one crew member is required" : "Remove crew member")"
+                                                            @onclick="() => RemoveCrew(crew.EmployeeId)"
+                                                            class="px-2 py-1 rounded border border-rose-200 bg-rose-50 hover:bg-rose-100 text-rose-700 text-[11px] font-semibold disabled:opacity-40 disabled:cursor-not-allowed">
+                                                        Remove
+                                                    </button>
+                                                </div>
+                                            }
+                                        </div>
+
+                                        @if (CanManageRoster && !IsInactiveEvent && isReplacingThisCrew)
+                                        {
+                                            var swapOptions = GetSelectableCrewOptions(excludeStaged: true);
+                                            <div class="mt-2 pt-2 border-t border-slate-200 flex flex-col sm:flex-row items-stretch sm:items-center gap-2">
+                                                <select @bind="_replaceCrewTargetId"
+                                                        aria-label="Select replacement crew member"
+                                                        class="flex-1 px-2.5 py-1.5 text-xs bg-white border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-slate-900">
+                                                    <option value="">Select available replacement crew...</option>
+                                                    @foreach (var opt in swapOptions)
+                                                    {
+                                                        <option value="@opt.Employee.EmployeeId">
+                                                            @opt.Employee.FullName (@opt.Employee.EmployeeId) — @opt.AvailabilityText
+                                                        </option>
+                                                    }
+                                                </select>
+                                                <div class="flex items-center gap-1.5 shrink-0">
+                                                    <button type="button"
+                                                            disabled="@string.IsNullOrWhiteSpace(_replaceCrewTargetId)"
+                                                            @onclick="() => ConfirmReplaceCrew(crew.EmployeeId)"
+                                                            class="px-3 py-1.5 rounded-lg bg-slate-900 hover:bg-black text-white text-[11px] font-bold disabled:opacity-40">
+                                                        Swap
+                                                    </button>
+                                                    <button type="button"
+                                                            @onclick="CancelReplaceCrew"
+                                                            class="px-2.5 py-1.5 rounded-lg border border-slate-300 bg-white text-slate-600 text-[11px] font-semibold">
+                                                        Cancel
+                                                    </button>
+                                                </div>
+                                            </div>
+                                        }
+                                    </div>
+                                }
+                            </div>
+                        }
+
+                        @if (CanManageRoster && !IsInactiveEvent)
+                        {
+                            var addCrewOptions = GetSelectableCrewOptions(excludeStaged: true);
+                            <div class="pt-2 border-t border-slate-100 flex flex-col sm:flex-row items-stretch sm:items-center gap-2">
+                                <select @bind="_selectedAddCrewId"
+                                        aria-label="Add crew member"
+                                        class="flex-1 px-2.5 py-1.5 text-xs bg-white border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-slate-900">
+                                    <option value="">+ Add available crew (Office Clerks excluded)...</option>
+                                    @foreach (var opt in addCrewOptions)
+                                    {
+                                        <option value="@opt.Employee.EmployeeId">
+                                            @opt.Employee.FullName (@opt.Employee.EmployeeId) — @opt.AvailabilityText
+                                        </option>
+                                    }
+                                </select>
+                                <button type="button"
+                                        disabled="@string.IsNullOrWhiteSpace(_selectedAddCrewId)"
+                                        @onclick="AddCrew"
+                                        class="px-3.5 py-1.5 rounded-lg bg-slate-900 hover:bg-black text-white text-xs font-bold disabled:opacity-40 shrink-0">
+                                    + Add Crew
+                                </button>
+                            </div>
+                        }
+                    </div>
+
+                    @* ── 4. Assigned Equipment Section (+ Inline Controls) ─ *@
+                    <div class="overview-section-card space-y-3">
+                        <div class="flex items-center justify-between flex-wrap gap-2">
+                            <div>
+                                <span class="overview-label">Assigned Equipment (@_stagedEquipment.Count)</span>
+                                @if (CanManageRoster && !IsInactiveEvent)
+                                {
+                                    <p class="text-[11px] text-slate-500 mt-0.5">
+                                        Equipment booked on any active event on @Booking.Date.ToString("MMM d, yyyy") is locked for the entire calendar day.
+                                    </p>
+                                }
+                            </div>
+                        </div>
+
+                        @if (_stagedEquipment.Count == 0)
+                        {
+                            <div class="text-xs text-slate-400 italic">No equipment assigned to this event.</div>
+                        }
+                        else
+                        {
+                            <div class="space-y-2">
+                                @foreach (var eq in _stagedEquipment)
+                                {
+                                    var isReplacingThisEq = string.Equals(_replacingEquipmentId, eq.EquipmentId, StringComparison.OrdinalIgnoreCase);
+
+                                    <div class="roster-item-row">
+                                        <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                                            <div class="min-w-0">
+                                                <div class="flex items-center gap-2 flex-wrap">
+                                                    <span class="text-xs font-bold text-slate-900">@eq.EquipmentName</span>
+                                                    <span class="font-mono text-[10px] text-slate-500">@eq.EquipmentId</span>
+                                                    @if (!string.IsNullOrWhiteSpace(eq.EquipmentType))
+                                                    {
+                                                        <span class="px-1.5 py-0.5 rounded bg-slate-100 text-slate-600 text-[10px] font-medium">
+                                                            @eq.EquipmentType
+                                                        </span>
+                                                    }
+                                                    @if (eq.IsTaken)
+                                                    {
+                                                        <span class="px-1.5 py-0.5 rounded bg-emerald-100 text-emerald-800 text-[10px] font-bold">
+                                                            ✓ Taken
+                                                        </span>
+                                                    }
+                                                </div>
+                                            </div>
+
+                                            @if (CanManageRoster && !IsInactiveEvent)
+                                            {
+                                                <div class="flex items-center gap-1.5 shrink-0">
+                                                    <button type="button"
+                                                            @onclick="() => BeginReplaceEquipment(eq.EquipmentId)"
+                                                            class="px-2 py-1 rounded border border-slate-300 bg-white hover:bg-slate-100 text-slate-700 text-[11px] font-semibold">
+                                                        Replace
+                                                    </button>
+                                                    <button type="button"
+                                                            @onclick="() => RemoveEquipment(eq.EquipmentId)"
+                                                            class="px-2 py-1 rounded border border-rose-200 bg-rose-50 hover:bg-rose-100 text-rose-700 text-[11px] font-semibold">
+                                                        Remove
+                                                    </button>
+                                                </div>
+                                            }
+                                        </div>
+
+                                        @if (CanManageRoster && !IsInactiveEvent && isReplacingThisEq)
+                                        {
+                                            var eqOptions = GetEquipmentSelectorOptions();
+                                            <div class="mt-2 pt-2 border-t border-slate-200 flex flex-col sm:flex-row items-stretch sm:items-center gap-2">
+                                                <select @bind="_replaceEquipmentTargetId"
+                                                        aria-label="Select replacement equipment"
+                                                        class="flex-1 px-2.5 py-1.5 text-xs bg-white border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-slate-900">
+                                                    <option value="">Select replacement equipment...</option>
+                                                    @foreach (var opt in eqOptions)
+                                                    {
+                                                        <option value="@opt.Item.EquipmentID" disabled="@opt.IsDisabled">
+                                                            @opt.Label
+                                                        </option>
+                                                    }
+                                                </select>
+                                                <div class="flex items-center gap-1.5 shrink-0">
+                                                    <button type="button"
+                                                            disabled="@string.IsNullOrWhiteSpace(_replaceEquipmentTargetId)"
+                                                            @onclick="() => ConfirmReplaceEquipment(eq.EquipmentId)"
+                                                            class="px-3 py-1.5 rounded-lg bg-slate-900 hover:bg-black text-white text-[11px] font-bold disabled:opacity-40">
+                                                        Swap
+                                                    </button>
+                                                    <button type="button"
+                                                            @onclick="CancelReplaceEquipment"
+                                                            class="px-2.5 py-1.5 rounded-lg border border-slate-300 bg-white text-slate-600 text-[11px] font-semibold">
+                                                        Cancel
+                                                    </button>
+                                                </div>
+                                            </div>
+                                        }
+                                    </div>
+                                }
+                            </div>
+                        }
+
+                        @if (CanManageRoster && !IsInactiveEvent)
+                        {
+                            var addEqOptions = GetEquipmentSelectorOptions();
+                            <div class="pt-2 border-t border-slate-100 flex flex-col sm:flex-row items-stretch sm:items-center gap-2">
+                                <select @bind="_selectedAddEquipmentId"
+                                        aria-label="Add equipment"
+                                        class="flex-1 px-2.5 py-1.5 text-xs bg-white border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-slate-900">
+                                    <option value="">+ Add studio equipment...</option>
+                                    @foreach (var opt in addEqOptions)
+                                    {
+                                        <option value="@opt.Item.EquipmentID" disabled="@opt.IsDisabled">
+                                            @opt.Label
+                                        </option>
+                                    }
+                                </select>
+                                <button type="button"
+                                        disabled="@string.IsNullOrWhiteSpace(_selectedAddEquipmentId)"
+                                        @onclick="AddEquipment"
+                                        class="px-3.5 py-1.5 rounded-lg bg-slate-900 hover:bg-black text-white text-xs font-bold disabled:opacity-40 shrink-0">
+                                    + Add Equipment
+                                </button>
+                            </div>
+                        }
+                    </div>
+
+                    @if (!string.IsNullOrWhiteSpace(EffectiveNotes))
+                    {
+                        <div class="overview-section-card">
+                            <span class="overview-label">Notes</span>
+                            <p class="text-xs text-slate-600 italic mt-0.5">@EffectiveNotes</p>
+                        </div>
+                    }
+                }
+            </div>
+
+            @* ── MODAL FOOTER ─────────────────────────────────────────────── *@
+            <div class="booked-modal-footer">
+                @if (CanManageRoster && !Booking.IsConsultation && !IsInactiveEvent)
+                {
+                    <div class="text-[11px] text-slate-500">
+                        @if (_hasUnsavedChanges)
+                        {
+                            <span class="text-amber-700 font-semibold">Unsaved crew/equipment changes</span>
+                        }
+                        else
+                        {
+                            <span>Changes are persisted &amp; logged to HistoryLog.</span>
+                        }
+                    </div>
+                    <div class="flex items-center gap-2">
+                        @if (_hasUnsavedChanges)
+                        {
+                            <button type="button"
+                                    disabled="@_isSaving"
+                                    @onclick="DiscardChanges"
+                                    class="px-3.5 py-2 rounded-lg border border-slate-300 bg-white hover:bg-slate-50 text-xs font-semibold text-slate-700 disabled:opacity-50">
+                                Discard Changes
+                            </button>
+                        }
+                        <button type="button"
+                                disabled="@(!_hasUnsavedChanges || _isSaving)"
+                                @onclick="SaveRosterChangesAsync"
+                                class="px-4 py-2 rounded-lg bg-slate-900 hover:bg-black text-white text-xs font-bold disabled:opacity-40 transition-colors">
+                            @(_isSaving ? "Saving..." : "Save Roster Changes")
+                        </button>
+                        <button type="button"
+                                @onclick="CloseAsync"
+                                class="px-3.5 py-2 rounded-lg border border-slate-300 bg-white hover:bg-slate-50 text-xs font-semibold text-slate-700">
+                            Close
+                        </button>
+                    </div>
+                }
+                else
+                {
+                    <div></div>
+                    <button type="button"
+                            @onclick="CloseAsync"
+                            class="px-4 py-2 rounded-lg bg-slate-900 hover:bg-black text-white text-xs font-bold">
+                        Close
+                    </button>
+                }
+            </div>
+        </div>
+    </div>
+}
+
+@code {
+    [Parameter] public EventBookingModel? Booking { get; set; }
+    [Parameter] public bool CanManageRoster { get; set; }
+    [Parameter] public bool HidePricing { get; set; }
+    [Parameter] public List<EventBookingModel> AllBookings { get; set; } = new();
+    [Parameter] public List<EquipmentReservationModel> EquipmentReservations { get; set; } = new();
+    [Parameter] public EventCallback OnClose { get; set; }
+    [Parameter] public EventCallback OnRosterUpdated { get; set; }
+    [Parameter] public EventCallback<string> OnOpenLinkedEvent { get; set; }
+
+    private sealed record StagedCrewItem(string EmployeeId, string FullName, string Specialization);
+    private sealed record StagedEquipmentItem(string EquipmentId, string EquipmentName, string EquipmentType, bool IsTaken);
+    private sealed record ServiceBadgeItem(string Name, string? Meta);
+    private sealed record EquipmentSelectOption(EquipmentItemModel Item, string Label, bool IsDisabled);
+
+    private string? _loadedBookingId;
+    private EventAppointmentDto? _appointmentDetail;
+    private List<EmployeeViewModel> _allEmployees = new();
+    private List<LeaveItemViewModel> _approvedLeaves = new();
+    private List<EquipmentItemModel> _allEquipment = new();
+
+    private List<StagedCrewItem> _stagedCrew = new();
+    private string _stagedTeamLeaderId = string.Empty;
+    private List<StagedEquipmentItem> _stagedEquipment = new();
+
+    private string _selectedAddCrewId = string.Empty;
+    private string? _replacingCrewId;
+    private string _replaceCrewTargetId = string.Empty;
+
+    private string _selectedAddEquipmentId = string.Empty;
+    private string? _replacingEquipmentId;
+    private string _replaceEquipmentTargetId = string.Empty;
+
+    private bool _isLoadingDetails;
+    private bool _isSaving;
+    private bool _hasUnsavedChanges;
+    private string? _feedbackMessage;
+    private bool _feedbackIsError;
+
+    private bool IsInactiveEvent => Booking != null &&
+        (string.Equals(Booking.Status, "Cancelled", StringComparison.OrdinalIgnoreCase) ||
+         string.Equals(Booking.Status, "Expired", StringComparison.OrdinalIgnoreCase) ||
+         string.Equals(Booking.Status, "Deal_Lost", StringComparison.OrdinalIgnoreCase));
+
+    private string EffectiveCustomerName =>
+        !string.IsNullOrWhiteSpace(_appointmentDetail?.CustomerName) ? _appointmentDetail!.CustomerName : (Booking?.ClientName ?? string.Empty);
+
+    private string EffectiveEventTitle =>
+        !string.IsNullOrWhiteSpace(_appointmentDetail?.EventName) ? _appointmentDetail!.EventName : (Booking?.ServiceType ?? string.Empty);
+
+    private string EffectiveLocation =>
+        !string.IsNullOrWhiteSpace(_appointmentDetail?.EventLocation)
+            ? _appointmentDetail!.EventLocation!
+            : (!string.IsNullOrWhiteSpace(Booking?.EventLocation)
+                ? Booking!.EventLocation!
+                : (!string.IsNullOrWhiteSpace(Booking?.StudioSpaceName) ? Booking!.StudioSpaceName : "Studio A (Main Hall)"));
+
+    private decimal EffectivePrice =>
+        _appointmentDetail is { TotalAmount: > 0 } ? _appointmentDetail.TotalAmount : (Booking?.EstimatedPrice ?? 0m);
+
+    private string EffectiveNotes =>
+        !string.IsNullOrWhiteSpace(_appointmentDetail?.EventDescription) ? _appointmentDetail!.EventDescription : (Booking?.Notes ?? string.Empty);
+
+    private List<ServiceBadgeItem> EffectiveServiceItems
+    {
+        get
+        {
+            if (_appointmentDetail?.SelectedServices != null && _appointmentDetail.SelectedServices.Count > 0)
+            {
+                return _appointmentDetail.SelectedServices
+                    .Select(s => new ServiceBadgeItem(s.ServiceName, $"{s.Quantity}x • {s.RateType}"))
+                    .ToList();
+            }
+
+            if (Booking?.AssignedServices != null && Booking.AssignedServices.Count > 0)
+            {
+                return Booking.AssignedServices.Select(s => new ServiceBadgeItem(s, null)).ToList();
+            }
+
+            if (!string.IsNullOrWhiteSpace(Booking?.ServiceType))
+            {
+                return new List<ServiceBadgeItem> { new(Booking!.ServiceType, null) };
+            }
+
+            return new List<ServiceBadgeItem>();
+        }
+    }
+
+    protected override async Task OnParametersSetAsync()
+    {
+        if (Booking == null)
+        {
+            _loadedBookingId = null;
+            _appointmentDetail = null;
+            ResetEditState();
+            return;
+        }
+
+        if (string.Equals(_loadedBookingId, Booking.Id, StringComparison.OrdinalIgnoreCase))
+            return;
+
+        _loadedBookingId = Booking.Id;
+        _appointmentDetail = null;
+        _feedbackMessage = null;
+        _feedbackIsError = false;
+        ResetEditState();
+        SeedStagedRosterFromBooking(Booking);
+
+        if (Booking.IsConsultation)
+            return;
+
+        await LoadAppointmentAndCatalogsAsync(Booking.Id);
+    }
+
+    private void ResetEditState()
+    {
+        _hasUnsavedChanges = false;
+        _selectedAddCrewId = string.Empty;
+        _replacingCrewId = null;
+        _replaceCrewTargetId = string.Empty;
+        _selectedAddEquipmentId = string.Empty;
+        _replacingEquipmentId = null;
+        _replaceEquipmentTargetId = string.Empty;
+    }
+
+    private void SeedStagedRosterFromBooking(EventBookingModel booking)
+    {
+        if (booking.AssignedCrew != null && booking.AssignedCrew.Count > 0)
+        {
+            _stagedCrew = booking.AssignedCrew
+                .Select(c => new StagedCrewItem(c.EmployeeId, c.FullName, c.Specialization))
+                .ToList();
+            _stagedTeamLeaderId = booking.AssignedCrew.FirstOrDefault(c => c.IsTeamLeader)?.EmployeeId
+                                  ?? _stagedCrew.FirstOrDefault()?.EmployeeId
+                                  ?? string.Empty;
+        }
+        else if (booking.AssignedCrewIds != null && booking.AssignedCrewIds.Count > 0)
+        {
+            var names = (booking.AssignedPhotographer ?? string.Empty)
+                .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+
+            _stagedCrew = booking.AssignedCrewIds
+                .Select((id, idx) => new StagedCrewItem(id, idx < names.Length ? names[idx] : id, "Crew"))
+                .ToList();
+            _stagedTeamLeaderId = _stagedCrew.FirstOrDefault()?.EmployeeId ?? string.Empty;
+        }
+        else
+        {
+            _stagedCrew = new List<StagedCrewItem>();
+            _stagedTeamLeaderId = string.Empty;
+        }
+
+        if (booking.AssignedEquipment != null && booking.AssignedEquipment.Count > 0)
+        {
+            _stagedEquipment = booking.AssignedEquipment
+                .Select(e => new StagedEquipmentItem(e.EquipmentId, e.EquipmentName, e.EquipmentType, false))
+                .ToList();
+        }
+        else if (booking.AssignedEquipmentIds != null && booking.AssignedEquipmentIds.Count > 0)
+        {
+            _stagedEquipment = booking.AssignedEquipmentIds
+                .Select((id, idx) => new StagedEquipmentItem(
+                    id,
+                    idx < (booking.AssignedEquipmentNames?.Count ?? 0) ? booking.AssignedEquipmentNames![idx] : id,
+                    "Equipment",
+                    false))
+                .ToList();
+        }
+        else
+        {
+            _stagedEquipment = new List<StagedEquipmentItem>();
+        }
+    }
+
+    private void SyncStagedRosterFromDetail(EventAppointmentDto detail)
+    {
+        if (detail.AssignedEmployees != null)
+        {
+            _stagedCrew = detail.AssignedEmployees
+                .Select(e => new StagedCrewItem(e.EmployeeId, e.EmployeeName, e.Specialization))
+                .ToList();
+            _stagedTeamLeaderId = detail.AssignedEmployees.FirstOrDefault(e => e.IsTeamLeader)?.EmployeeId
+                                  ?? _stagedCrew.FirstOrDefault()?.EmployeeId
+                                  ?? string.Empty;
+        }
+
+        if (detail.AssignedEquipment != null)
+        {
+            _stagedEquipment = detail.AssignedEquipment
+                .Select(e => new StagedEquipmentItem(e.EquipmentId, e.EquipmentName, e.EquipmentType, e.IsTaken))
+                .ToList();
+        }
+
+        _hasUnsavedChanges = false;
+    }
+
+    private async Task LoadAppointmentAndCatalogsAsync(string appointmentId)
+    {
+        _isLoadingDetails = true;
+        try
+        {
+            Task<ApiResult<EventAppointmentDto>>? apptTask = null;
+            try
+            {
+                apptTask = ConsultationApi.GetAppointmentByIdAsync(appointmentId);
+            }
+            catch { }
+
+            Task<IReadOnlyList<EmployeeViewModel>>? empTask = null;
+            Task<IReadOnlyList<LeaveItemViewModel>>? leavesTask = null;
+            Task<IReadOnlyList<EquipmentItemModel>>? eqTask = null;
+
+            if (CanManageRoster)
+            {
+                try { empTask = EmployeeService.GetEmployeesAsync(); } catch { }
+                try { leavesTask = EmployeeService.GetAllLeavesAsync("Approved"); } catch { }
+                try { eqTask = EquipmentService.GetEquipmentsAsync(); } catch { }
+            }
+
+            if (apptTask != null)
+            {
+                try
+                {
+                    var apptRes = await apptTask;
+                    if (apptRes is { IsSuccess: true, Value: not null })
+                    {
+                        _appointmentDetail = apptRes.Value;
+                        if (!_hasUnsavedChanges)
+                        {
+                            SyncStagedRosterFromDetail(apptRes.Value);
+                        }
+                    }
+                }
+                catch { }
+            }
+
+            if (CanManageRoster)
+            {
+                if (empTask != null)
+                {
+                    try { _allEmployees = (await empTask)?.Where(e => e.IsActive).ToList() ?? new(); } catch { }
+                }
+                if (leavesTask != null)
+                {
+                    try { _approvedLeaves = (await leavesTask)?.ToList() ?? new(); } catch { }
+                }
+                if (eqTask != null)
+                {
+                    try { _allEquipment = (await eqTask)?.ToList() ?? new(); } catch { }
+                }
+            }
+        }
+        finally
+        {
+            _isLoadingDetails = false;
+        }
+    }
+
+    private List<AvailableCrewOption> GetSelectableCrewOptions(bool excludeStaged)
+    {
+        if (Booking == null || _allEmployees.Count == 0)
+            return new List<AvailableCrewOption>();
+
+        var avail = BookingWizardEngine.GetAvailableCrews(
+            _allEmployees,
+            Booking.Date,
+            Booking.StartTime,
+            Booking.EffectiveEndTime,
+            AllBookings,
+            null,
+            Booking.Id,
+            _approvedLeaves);
+
+        if (excludeStaged)
+        {
+            var stagedIds = _stagedCrew.Select(c => c.EmployeeId).ToHashSet(StringComparer.OrdinalIgnoreCase);
+            avail = avail.Where(a => !stagedIds.Contains(a.Employee.EmployeeId)).ToList();
+        }
+
+        return avail;
+    }
+
+    private List<EquipmentSelectOption> GetEquipmentSelectorOptions()
+    {
+        if (Booking == null || _allEquipment.Count == 0)
+            return new List<EquipmentSelectOption>();
+
+        var stagedIds = _stagedEquipment.Select(e => e.EquipmentId).ToHashSet(StringComparer.OrdinalIgnoreCase);
+        var lockedIds = BookingWizardEngine.GetBookedEquipmentIdsForDate(
+            Booking.Date,
+            AllBookings,
+            EquipmentReservations,
+            null,
+            Booking.Id);
+
+        var options = new List<EquipmentSelectOption>();
+        foreach (var eq in _allEquipment.Where(e => !stagedIds.Contains(e.EquipmentID)))
+        {
+            if (eq.IsMaintenance || eq.IsRetired)
+            {
+                options.Add(new EquipmentSelectOption(eq, $"{eq.EquipmentName} ({eq.EquipmentID}) — Unavailable ({eq.EquipmentStatus})", true));
+                continue;
+            }
+
+            var isBookedToday = lockedIds.Contains(eq.EquipmentID);
+            var label = isBookedToday
+                ? $"{eq.EquipmentName} ({eq.EquipmentID}) — Unavailable (Booked Today)"
+                : $"{eq.EquipmentName} ({eq.EquipmentID}) — {eq.EquipmentTypeName}";
+            options.Add(new EquipmentSelectOption(eq, label, isBookedToday));
+        }
+
+        return options;
+    }
+
+    private void SetTeamLeader(string empId)
+    {
+        _stagedTeamLeaderId = empId;
+        _hasUnsavedChanges = true;
+    }
+
+    private void AddCrew()
+    {
+        if (string.IsNullOrWhiteSpace(_selectedAddCrewId)) return;
+        var emp = BookingWizardEngine.FilterDispatchableCrew(_allEmployees)
+            .FirstOrDefault(e => string.Equals(e.EmployeeId, _selectedAddCrewId, StringComparison.OrdinalIgnoreCase));
+        if (emp == null) return;
+
+        if (!_stagedCrew.Any(c => string.Equals(c.EmployeeId, emp.EmployeeId, StringComparison.OrdinalIgnoreCase)))
+        {
+            var spec = emp.Specializations != null && emp.Specializations.Count > 0 ? string.Join(", ", emp.Specializations) : "Crew";
+            _stagedCrew.Add(new StagedCrewItem(emp.EmployeeId, emp.FullName, spec));
+            if (string.IsNullOrWhiteSpace(_stagedTeamLeaderId))
+                _stagedTeamLeaderId = emp.EmployeeId;
+            _hasUnsavedChanges = true;
+            _feedbackMessage = null;
+        }
+        _selectedAddCrewId = string.Empty;
+    }
+
+    private void RemoveCrew(string empId)
+    {
+        if (_stagedCrew.Count <= 1) return;
+        _stagedCrew.RemoveAll(c => string.Equals(c.EmployeeId, empId, StringComparison.OrdinalIgnoreCase));
+        if (string.Equals(_stagedTeamLeaderId, empId, StringComparison.OrdinalIgnoreCase))
+            _stagedTeamLeaderId = _stagedCrew.FirstOrDefault()?.EmployeeId ?? string.Empty;
+        if (string.Equals(_replacingCrewId, empId, StringComparison.OrdinalIgnoreCase))
+            CancelReplaceCrew();
+        _hasUnsavedChanges = true;
+        _feedbackMessage = null;
+    }
+
+    private void BeginReplaceCrew(string empId)
+    {
+        _replacingCrewId = empId;
+        _replaceCrewTargetId = string.Empty;
+    }
+
+    private void CancelReplaceCrew()
+    {
+        _replacingCrewId = null;
+        _replaceCrewTargetId = string.Empty;
+    }
+
+    private void ConfirmReplaceCrew(string oldEmpId)
+    {
+        if (string.IsNullOrWhiteSpace(_replaceCrewTargetId)) return;
+        var emp = BookingWizardEngine.FilterDispatchableCrew(_allEmployees)
+            .FirstOrDefault(e => string.Equals(e.EmployeeId, _replaceCrewTargetId, StringComparison.OrdinalIgnoreCase));
+        if (emp == null) return;
+
+        var idx = _stagedCrew.FindIndex(c => string.Equals(c.EmployeeId, oldEmpId, StringComparison.OrdinalIgnoreCase));
+        if (idx >= 0)
+        {
+            var spec = emp.Specializations != null && emp.Specializations.Count > 0 ? string.Join(", ", emp.Specializations) : "Crew";
+            _stagedCrew[idx] = new StagedCrewItem(emp.EmployeeId, emp.FullName, spec);
+            if (string.Equals(_stagedTeamLeaderId, oldEmpId, StringComparison.OrdinalIgnoreCase))
+                _stagedTeamLeaderId = emp.EmployeeId;
+            _hasUnsavedChanges = true;
+            _feedbackMessage = null;
+        }
+        CancelReplaceCrew();
+    }
+
+    private void AddEquipment()
+    {
+        if (string.IsNullOrWhiteSpace(_selectedAddEquipmentId) || Booking == null) return;
+        var eq = _allEquipment.FirstOrDefault(e => string.Equals(e.EquipmentID, _selectedAddEquipmentId, StringComparison.OrdinalIgnoreCase));
+        if (eq == null) return;
+
+        var lockedIds = BookingWizardEngine.GetBookedEquipmentIdsForDate(Booking.Date, AllBookings, EquipmentReservations, null, Booking.Id);
+        if (lockedIds.Contains(eq.EquipmentID) || eq.IsMaintenance || eq.IsRetired)
+        {
+            _feedbackIsError = true;
+            _feedbackMessage = $"Equipment '{eq.EquipmentName}' is unavailable on {Booking.Date:MMM d, yyyy}.";
+            return;
+        }
+
+        if (!_stagedEquipment.Any(e => string.Equals(e.EquipmentId, eq.EquipmentID, StringComparison.OrdinalIgnoreCase)))
+        {
+            _stagedEquipment.Add(new StagedEquipmentItem(eq.EquipmentID, eq.EquipmentName, eq.EquipmentTypeName, false));
+            _hasUnsavedChanges = true;
+            _feedbackMessage = null;
+        }
+        _selectedAddEquipmentId = string.Empty;
+    }
+
+    private void RemoveEquipment(string eqId)
+    {
+        _stagedEquipment.RemoveAll(e => string.Equals(e.EquipmentId, eqId, StringComparison.OrdinalIgnoreCase));
+        if (string.Equals(_replacingEquipmentId, eqId, StringComparison.OrdinalIgnoreCase))
+            CancelReplaceEquipment();
+        _hasUnsavedChanges = true;
+        _feedbackMessage = null;
+    }
+
+    private void BeginReplaceEquipment(string eqId)
+    {
+        _replacingEquipmentId = eqId;
+        _replaceEquipmentTargetId = string.Empty;
+    }
+
+    private void CancelReplaceEquipment()
+    {
+        _replacingEquipmentId = null;
+        _replaceEquipmentTargetId = string.Empty;
+    }
+
+    private void ConfirmReplaceEquipment(string oldEqId)
+    {
+        if (string.IsNullOrWhiteSpace(_replaceEquipmentTargetId) || Booking == null) return;
+        var eq = _allEquipment.FirstOrDefault(e => string.Equals(e.EquipmentID, _replaceEquipmentTargetId, StringComparison.OrdinalIgnoreCase));
+        if (eq == null) return;
+
+        var lockedIds = BookingWizardEngine.GetBookedEquipmentIdsForDate(Booking.Date, AllBookings, EquipmentReservations, null, Booking.Id);
+        if (lockedIds.Contains(eq.EquipmentID) || eq.IsMaintenance || eq.IsRetired)
+        {
+            _feedbackIsError = true;
+            _feedbackMessage = $"Equipment '{eq.EquipmentName}' is unavailable on {Booking.Date:MMM d, yyyy}.";
+            return;
+        }
+
+        var idx = _stagedEquipment.FindIndex(e => string.Equals(e.EquipmentId, oldEqId, StringComparison.OrdinalIgnoreCase));
+        if (idx >= 0)
+        {
+            _stagedEquipment[idx] = new StagedEquipmentItem(eq.EquipmentID, eq.EquipmentName, eq.EquipmentTypeName, false);
+            _hasUnsavedChanges = true;
+            _feedbackMessage = null;
+        }
+        CancelReplaceEquipment();
+    }
+
+    private void DiscardChanges()
+    {
+        _feedbackMessage = null;
+        _feedbackIsError = false;
+        ResetEditState();
+        if (_appointmentDetail != null)
+            SyncStagedRosterFromDetail(_appointmentDetail);
+        else if (Booking != null)
+            SeedStagedRosterFromBooking(Booking);
+    }
+
+    private async Task SaveRosterChangesAsync()
+    {
+        if (Booking == null || _isSaving) return;
+
+        if (_stagedCrew.Count == 0)
+        {
+            _feedbackIsError = true;
+            _feedbackMessage = "At least one crew member must be assigned to the event.";
+            return;
+        }
+
+        _isSaving = true;
+        _feedbackMessage = null;
+        _feedbackIsError = false;
+
+        try
+        {
+            var effectiveLead = !string.IsNullOrWhiteSpace(_stagedTeamLeaderId) &&
+                                _stagedCrew.Any(c => string.Equals(c.EmployeeId, _stagedTeamLeaderId, StringComparison.OrdinalIgnoreCase))
+                ? _stagedTeamLeaderId
+                : _stagedCrew[0].EmployeeId;
+
+            var req = new UpdateAppointmentRosterRequest
+            {
+                EmployeeIds = _stagedCrew.Select(c => c.EmployeeId).Distinct(StringComparer.OrdinalIgnoreCase).ToList(),
+                TeamLeaderEmployeeId = effectiveLead,
+                EquipmentIds = _stagedEquipment.Select(e => e.EquipmentId).Distinct(StringComparer.OrdinalIgnoreCase).ToList()
+            };
+
+            var res = await ConsultationApi.UpdateAppointmentRosterAsync(Booking.Id, req);
+            if (res.IsSuccess)
+            {
+                ScheduleService.InvalidateCache();
+
+                // Update local booking snapshot immediately so callers reflect changes even before reload
+                Booking.AssignedCrewIds = req.EmployeeIds.ToList();
+                Booking.AssignedCrew = _stagedCrew.Select(c => new EventCrewSummary(
+                    c.EmployeeId,
+                    c.FullName,
+                    c.Specialization,
+                    string.Equals(c.EmployeeId, effectiveLead, StringComparison.OrdinalIgnoreCase))).ToList();
+                Booking.AssignedPhotographer = string.Join(", ", _stagedCrew.Select(c => c.FullName));
+                Booking.AssignedEquipmentIds = req.EquipmentIds.ToList();
+                Booking.AssignedEquipmentNames = _stagedEquipment.Select(e => e.EquipmentName).ToList();
+                Booking.AssignedEquipment = _stagedEquipment.Select(e => new EventEquipmentSummary(e.EquipmentId, e.EquipmentName, e.EquipmentType)).ToList();
+
+                try
+                {
+                    var refreshed = await ConsultationApi.GetAppointmentByIdAsync(Booking.Id);
+                    if (refreshed is { IsSuccess: true, Value: not null })
+                    {
+                        _appointmentDetail = refreshed.Value;
+                        SyncStagedRosterFromDetail(refreshed.Value);
+                    }
+                }
+                catch { }
+
+                _hasUnsavedChanges = false;
+                _feedbackIsError = false;
+                _feedbackMessage = "Crew and equipment assignments saved and logged to HistoryLog.";
+
+                if (OnRosterUpdated.HasDelegate)
+                    await OnRosterUpdated.InvokeAsync();
+            }
+            else
+            {
+                _feedbackIsError = true;
+                _feedbackMessage = res.Error?.Message ?? "Could not update event crew and equipment assignments.";
+            }
+        }
+        catch (Exception ex)
+        {
+            _feedbackIsError = true;
+            _feedbackMessage = ex.Message;
+        }
+        finally
+        {
+            _isSaving = false;
+        }
+    }
+
+    private Task CloseAsync() => OnClose.InvokeAsync();
+
+    private async Task OpenLinkedEventAsync(string linkedId)
+    {
+        if (OnOpenLinkedEvent.HasDelegate)
+        {
+            await OnOpenLinkedEvent.InvokeAsync(linkedId);
+        }
+    }
+
+    private static string GetStatusClass(string status) => (status ?? string.Empty).ToLowerInvariant() switch
+    {
+        "confirmed" or "appointment booked" or "deal_won" or "complete" or "completed" or "shot" or "delivered" or "payment verification (qr:paid)" => "confirmed",
+        "pending payment" or "pending_payment" or "awaiting_downpayment" or "pending" or "paid cash pending verification" or "payment verification (cash)" or "payment verification (qr:pending payment)" => "pending",
+        "cancelled" or "expired" or "deal_lost" => "cancelled",
+        _ => ""
+    };
+}

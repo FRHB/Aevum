@@ -338,4 +338,39 @@ public class BookingScheduleBufferAndDealWizardTests
         Assert.True(loaded1After.HasConflict);
         Assert.True(loaded3After.HasConflict);
     }
+
+    [Fact]
+    public void BookingWizardEngine_RespectsRateType_OnAdditionalAndPackageServices()
+    {
+        var addOnPic = new ScheduleServiceOption("ADD-0001", "Retouched High-Res Portrait", "Extra retouched portraits", 150m, "per picture");
+        var addOnHourly = new ScheduleServiceOption("ADD-0002", "Extra Lighting Assistant", "Lighting crew add-on", 400m, "per hour");
+        var pkgMulti = new ScheduleServiceOption("PKG-0001", "Lookbook Multi-Shot Bundle", "Full lookbook package", 2500m, "multi-shot");
+
+        var item1 = BookingWizardEngine.CreateCustomizationItem(addOnPic);
+        item1.Quantity = 4; // 4 pictures * 150 = 600
+        item1.IsConfirmed = true;
+
+        var item2 = BookingWizardEngine.CreateCustomizationItem(addOnHourly);
+        item2.Quantity = 3; // 3 hours * 400 = 1200
+        item2.IsConfirmed = true;
+
+        var item3 = BookingWizardEngine.CreateCustomizationItem(pkgMulti);
+        item3.Quantity = 2; // 2 multi-shot bundles * 2500 = 5000
+        item3.IsConfirmed = true;
+
+        var selections = new List<ServiceCustomizationItem> { item1, item2, item3 };
+
+        Assert.Equal("per picture", item1.RateType);
+        Assert.Equal(600m, item1.LineTotal);
+
+        Assert.Equal("per hour", item2.RateType);
+        Assert.Equal(1200m, item2.LineTotal);
+
+        Assert.Equal("multi-shot", item3.RateType);
+        Assert.Equal(5000m, item3.LineTotal);
+
+        Assert.Equal(6800m, selections.Sum(s => s.LineTotal));
+        // Only the 3-hour per-hour add-on contributes to shoot duration (180 mins), not the 4 pictures or 2 multi-shot bundles
+        Assert.Equal(180, BookingWizardEngine.ComputeCombinedShootDurationMinutes(selections));
+    }
 }

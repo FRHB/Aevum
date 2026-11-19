@@ -177,17 +177,19 @@ public class PackagesController : ControllerBase
 
         try
         {
+            var effectiveRateType = string.IsNullOrWhiteSpace(request.RateType) ? "per hour" : request.RateType.Trim();
             var model = new CreateComboPackageModel(
                 Name: request.Name.Trim(),
                 Description: request.Description?.Trim(),
                 CategoryId: request.CategoryId.Trim(),
                 Price: request.Price,
-                SelectedServiceIds: parsedServiceIds.ToList()
+                SelectedServiceIds: parsedServiceIds.ToList(),
+                RateType: effectiveRateType
             );
 
             var result = await _service.CreateComboPackageWithServicesAsync(model, imageBytes, mimeType, adminId, ct);
             if (_outputCache != null) await _outputCache.EvictByTagAsync("catalog", ct);
-            _logger.LogInformation("Successfully created Combo Package {PackageId} with {ServiceCount} bundled services.", result.PackageId, result.BundledServicesCount);
+            _logger.LogInformation("Successfully created Combo Package {PackageId} with {ServiceCount} bundled services ({RateType}).", result.PackageId, result.BundledServicesCount, result.RateType);
 
             return StatusCode(StatusCodes.Status201Created, result);
         }
@@ -196,6 +198,140 @@ public class PackagesController : ControllerBase
             _logger.LogError(ex, "Failed to create Combo Package: {Message}", ex.Message);
             return StatusCode(StatusCodes.Status500InternalServerError, new { Message = $"An error occurred while creating the package: {ex.Message}" });
         }
+    }
+
+    /// <summary>
+    /// Gets all Combo Packages summary items.
+    /// </summary>
+    [HttpGet]
+    [OutputCache(PolicyName = "CatalogCache")]
+    [ProducesResponseType(typeof(IReadOnlyList<ServiceSummaryDto>), StatusCodes.Status200OK)]
+    public async Task<IActionResult> GetAll(CancellationToken ct)
+    {
+        var items = await _service.GetComboPackagesSummaryAsync(ct);
+        return Ok(items);
+    }
+
+    /// <summary>
+    /// Gets a specific Combo Package by ID (including RateType and image metadata).
+    /// </summary>
+    [HttpGet("{id}")]
+    [OutputCache(PolicyName = "CatalogCache")]
+    [ProducesResponseType(typeof(ServiceDetailDto), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    public async Task<IActionResult> GetById(string id, CancellationToken ct)
+    {
+        if (string.IsNullOrWhiteSpace(id))
+            return BadRequest(new { Message = "Package ID is required." });
+
+        var detail = await _service.GetComboPackageDetailWithImageAsync(id, ct);
+        if (detail == null)
+            return NotFound(new { Message = $"Combo Package '{id}' was not found." });
+
+        return Ok(detail);
+    }
+
+    /// <summary>
+    /// Updates an existing Combo Package, including RateType, bundled services, and optional image.
+    /// </summary>
+    [HttpPut("{id}")]
+    [Consumes("multipart/form-data")]
+    [ProducesResponseType(typeof(ComboPackageCreatedResponseDto), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    public async Task<IActionResult> UpdatePackage(string id, [FromForm] UpdatePackageApiFormRequest request, CancellationToken ct)
+    {
+        if (string.IsNullOrWhiteSpace(id))
+            return BadRequest(new { Message = "Package ID is required." });
+
+        if (request is null || string.IsNullOrWhiteSpace(request.Name))
+            return BadRequest(new { Message = "Combo Package Name is required." });
+
+        if (request.Price <= 0)
+            return BadRequest(new { Message = "Package price must be greater than zero." });
+
+        var parsedServiceIds = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        if (request.SelectedServiceIds != null)
+        {
+            foreach (var sid in request.SelectedServiceIds)
+            {
+                if (!string.IsNullOrWhiteSpace(sid))
+                    parsedServiceIds.Add(sid.Trim());
+            }
+        }
+
+        if (!string.IsNullOrWhiteSpace(request.SelectedServiceIdsRaw))
+        {
+            if (request.SelectedServiceIdsRaw.TrimStart().StartsWith("["))
+            {
+                try
+                {
+                    var deserialized = System.Text.Json.JsonSerializer.Deserialize<List<string>>(request.SelectedServiceIdsRaw);
+                    if (deserialized != null)
+                    {
+                        foreach (var s in deserialized)
+                        {
+                            if (!string.IsNullOrWhiteSpace(s))
+                                parsedServiceIds.Add(s.Trim());
+                        }
+                    }
+                }
+                catch { }
+            }
+            else
+            {
+                var split = request.SelectedServiceIdsRaw.Split(new[] { ',', ';' }, StringSplitOptions.RemoveEmptyEntries);
+                foreach (var s in split)
+                {
+                    if (!string.IsNullOrWhiteSpace(s))
+                        parsedServiceIds.Add(s.Trim());
+                }
+            }
+        }
+
+        byte[]? imageBytes = null;
+        string? mimeType = null;
+        if (request.ImageFile != null && request.ImageFile.Length > 0)
+        {
+            const long maxFileSize = 5 * 1024 * 1024;
+            if (request.ImageFile.Length > maxFileSize)
+                return BadRequest(new { Message = "Selected image file exceeds the maximum 5MB size limit." });
+
+            var allowedMimeTypes = new[] { "image/jpeg", "image/jpg", "image/png", "image/webp" };
+            var fileMime = request.ImageFile.ContentType?.ToLowerInvariant() ?? string.Empty;
+            var ext = Path.GetExtension(request.ImageFile.FileName).ToLowerInvariant();
+            if (!allowedMimeTypes.Contains(fileMime) && ext is not (".jpg" or ".jpeg" or ".png" or ".webp"))
+                return BadRequest(new { Message = "Only JPG, PNG, and WEBP image formats are supported." });
+
+            using var ms = new MemoryStream();
+            await request.ImageFile.CopyToAsync(ms, ct);
+            imageBytes = ms.ToArray();
+            mimeType = string.IsNullOrWhiteSpace(fileMime) ? "image/jpeg" : fileMime;
+        }
+
+        string? adminId = User.FindFirstValue("studio_id")
+                          ?? User.FindFirstValue(ClaimTypes.NameIdentifier)
+                          ?? User.FindFirstValue(ClaimTypes.Name)
+                          ?? "SADM-001";
+
+        var effectiveRateType = string.IsNullOrWhiteSpace(request.RateType) ? "per hour" : request.RateType.Trim();
+        var model = new UpdateComboPackageModel(
+            Name: request.Name.Trim(),
+            Description: request.Description?.Trim(),
+            CategoryId: request.CategoryId?.Trim() ?? string.Empty,
+            Price: request.Price,
+            SelectedServiceIds: parsedServiceIds.ToList(),
+            RateType: effectiveRateType
+        );
+
+        var updated = await _service.UpdateComboPackageWithServicesAsync(
+            id, model, imageBytes, mimeType, adminId, request.ImageFile?.FileName, null, ct);
+
+        if (updated == null)
+            return NotFound(new { Message = $"Combo Package '{id}' was not found." });
+
+        if (_outputCache != null) await _outputCache.EvictByTagAsync("catalog", ct);
+        return Ok(updated);
     }
 }
 
@@ -218,6 +354,8 @@ public class CreatePackageApiFormRequest
     [Range(0.01, 1000000, ErrorMessage = "Price must be greater than zero.")]
     public decimal Price { get; set; }
 
+    public string RateType { get; set; } = "per hour";
+
     /// <summary>
     /// Bundled service IDs passed as repeated form keys (e.g., SelectedServiceIds=SRV-001&SelectedServiceIds=ADD-002)
     /// </summary>
@@ -231,5 +369,29 @@ public class CreatePackageApiFormRequest
     /// <summary>
     /// The binary image payload for multipart/form-data upload.
     /// </summary>
+    public IFormFile? ImageFile { get; set; }
+}
+
+public class UpdatePackageApiFormRequest
+{
+    [Required(ErrorMessage = "Combo Package Name is required.")]
+    [StringLength(100, MinimumLength = 3, ErrorMessage = "Package Name must be between 3 and 100 characters.")]
+    public string Name { get; set; } = string.Empty;
+
+    [StringLength(1000, ErrorMessage = "Description cannot exceed 1000 characters.")]
+    public string? Description { get; set; }
+
+    public string? CategoryId { get; set; }
+
+    [Required(ErrorMessage = "Price is required.")]
+    [Range(0.01, 1000000, ErrorMessage = "Price must be greater than zero.")]
+    public decimal Price { get; set; }
+
+    public string RateType { get; set; } = "per hour";
+
+    public List<string>? SelectedServiceIds { get; set; }
+
+    public string? SelectedServiceIdsRaw { get; set; }
+
     public IFormFile? ImageFile { get; set; }
 }

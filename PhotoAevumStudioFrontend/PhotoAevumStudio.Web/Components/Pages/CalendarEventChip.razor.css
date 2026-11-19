@@ -64,6 +64,16 @@
     background: #f0fdfa;
 }
 
+.compact-event-chip.appointment-booked {
+    border-left-color: #059669;
+    background: #ecfdf5;
+}
+
+.compact-event-chip.completed {
+    border-left-color: #10b981;
+    background: #f0fdf4;
+}
+
 .chip-client {
     font-weight: 700;
     color: #111827;

@@ -24,6 +24,9 @@ public class AdditionalServiceWizardFormModel
     [Range(0.00, 100000.00, ErrorMessage = "Price must be a valid non-negative amount.")]
     public decimal ServicePrice { get; set; } = 75.00m;
 
+    [Required(ErrorMessage = "Rate type is required.")]
+    public string RateType { get; set; } = "per hour";
+
     // ── Page 2: Media ────────────────────────────────────────────────────────
     public byte[]? ImageBytes { get; set; }
     public string? ImageMimeType { get; set; }
@@ -41,6 +44,7 @@ public class AdditionalServiceWizardFormModel
         ServiceCategoryDescription = string.Empty;
         ServiceCategory = "Portrait Photography";
         ServicePrice = 75.00m;
+        RateType = "per hour";
         ImageBytes = null;
         ImageMimeType = null;
         ImageFileName = null;

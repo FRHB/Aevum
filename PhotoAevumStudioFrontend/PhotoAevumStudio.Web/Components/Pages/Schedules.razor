@@ -3,6 +3,7 @@
 @using PhotoAevumStudio.Web.Models
 @using PhotoAevumStudio.Web.Services
 @inject IUserService UserService
+@inject IScheduleService ScheduleService
 @rendermode InteractiveServer
 @attribute [Authorize(Roles = "Admin")]
 
@@ -50,7 +51,7 @@
                 {
                     @foreach (var schedule in PagedSchedules)
                     {
-                        <tr class="hover:bg-gray-50 transition-colors group">
+                        <tr @onclick="() => OpenBookingOverview(schedule)" class="hover:bg-gray-50 transition-colors group cursor-pointer">
                             <td class="px-6 py-4 text-gray-500">#@schedule.BookingId</td>
                             <td class="px-6 py-4 font-medium text-neutral-900 flex items-center gap-3">
                                 <div class="w-8 h-8 rounded-full bg-slate-100 flex items-center justify-center text-slate-600 text-xs font-bold">
@@ -70,9 +71,11 @@
                                     @schedule.Status
                                 </span>
                             </td>
-                            <td class="px-6 py-4 text-right">
-                                <button class="text-gray-400 hover:text-teal-600 transition-colors p-1">
-                                    <i data-lucide="edit" class="w-4 h-4"></i>
+                            <td class="px-6 py-4 text-right" @onclick:stopPropagation="true">
+                                <button type="button"
+                                        @onclick="() => OpenBookingOverview(schedule)"
+                                        class="text-gray-500 hover:text-teal-700 transition-colors px-2.5 py-1 rounded border border-gray-200 hover:border-teal-300 text-xs font-semibold">
+                                    Overview &amp; Roster
                                 </button>
                             </td>
                         </tr>
@@ -88,8 +91,18 @@
                      ItemLabel="bookings" />
 </div>
 
+<BookedEventOverviewModal Booking="_selectedBooking"
+                          CanManageRoster="true"
+                          AllBookings="_allBookings"
+                          EquipmentReservations="_equipmentReservations"
+                          OnClose="CloseBookingOverview"
+                          OnRosterUpdated="HandleRosterUpdatedAsync" />
+
 @code {
     private List<BookingRow> SchedulesList = new();
+    private List<EventBookingModel> _allBookings = new();
+    private List<EquipmentReservationModel> _equipmentReservations = new();
+    private EventBookingModel? _selectedBooking;
     private string _searchQuery = string.Empty;
     private int _currentPage = 1;
 
@@ -112,5 +125,61 @@
     protected override void OnInitialized()
     {
         SchedulesList = UserService.GetBookings();
+        LoadScheduleContext();
+    }
+
+    private void LoadScheduleContext()
+    {
+        try
+        {
+            _allBookings = ScheduleService.GetEventBookings();
+            _equipmentReservations = ScheduleService.GetEquipmentReservations();
+        }
+        catch
+        {
+            _allBookings = new();
+            _equipmentReservations = new();
+        }
+    }
+
+    private void OpenBookingOverview(BookingRow schedule)
+    {
+        var matched = _allBookings.FirstOrDefault(b =>
+            string.Equals(b.Id, schedule.BookingId, StringComparison.OrdinalIgnoreCase));
+
+        _selectedBooking = matched ?? new EventBookingModel
+        {
+            Id = schedule.BookingId,
+            ClientName = schedule.ClientName,
+            ServiceType = schedule.ServiceTitle,
+            AssignedServices = string.IsNullOrWhiteSpace(schedule.ServiceTitle) ? new() : new() { schedule.ServiceTitle },
+            Date = schedule.EventDate.Date,
+            StartTime = schedule.EventTime,
+            EndTime = schedule.EventTime.Add(TimeSpan.FromHours(1)),
+            Status = schedule.Status,
+            EstimatedPrice = schedule.TotalPrice,
+            Notes = schedule.EventDescription,
+            EventLocation = "Studio A (Main Hall)",
+            AssignedPhotographer = "Unassigned"
+        };
+    }
+
+    private void CloseBookingOverview()
+    {
+        _selectedBooking = null;
+    }
+
+    private Task HandleRosterUpdatedAsync()
+    {
+        var activeId = _selectedBooking?.Id;
+        ScheduleService.InvalidateCache();
+        SchedulesList = UserService.GetBookings();
+        LoadScheduleContext();
+        if (!string.IsNullOrWhiteSpace(activeId))
+        {
+            _selectedBooking = _allBookings.FirstOrDefault(b =>
+                string.Equals(b.Id, activeId, StringComparison.OrdinalIgnoreCase)) ?? _selectedBooking;
+        }
+        return Task.CompletedTask;
     }
 }

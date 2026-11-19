@@ -1103,17 +1103,53 @@ public sealed class EquipmentService : IEquipmentService
                 await using var checkCmd = new SqlCommand(
                     "SELECT EquipmentName, EquipmentStatus FROM dbo.Equipment WHERE EquipmentID = @EqId;", conn);
                 checkCmd.Parameters.AddWithValue("@EqId", equipmentId.Trim());
+                string eqName;
                 await using (var r = await checkCmd.ExecuteReaderAsync(ct))
                 {
                     if (!await r.ReadAsync(ct))
                         return (false, $"Equipment '{equipmentId}' not found.");
 
-                    var eqName = r.GetString(0);
+                    eqName = r.GetString(0);
                     var eqStatus = r.GetString(1);
                     if (eqStatus.Equals("Maintenance", StringComparison.OrdinalIgnoreCase))
                         return (false, $"Cannot dispatch '{eqName}' ({equipmentId}). It is currently flagged in MAINTENANCE.");
                     if (eqStatus.Equals("Retired", StringComparison.OrdinalIgnoreCase))
                         return (false, $"Cannot dispatch '{eqName}'. It has been retired from active studio inventory.");
+                }
+
+                // Enforce full calendar-day lock across non-cancelled/non-expired events
+                const string sameDayLockSql = @"
+                    DECLARE @TargetDate date;
+                    SELECT @TargetDate = CAST(EventDate AS date) FROM dbo.EventAppointment WHERE EventAppointmentID = @EvtId;
+
+                    IF @TargetDate IS NOT NULL
+                    BEGIN
+                        SELECT TOP 1 ea.EventAppointmentID, COALESCE(NULLIF(ea.EventName, ''), ea.EventAppointmentID) AS EventName, @TargetDate AS EventDate
+                        FROM dbo.EventEquipment eeq
+                        INNER JOIN dbo.EventAppointment ea ON ea.EventAppointmentID = eeq.EventAppointmentID
+                        WHERE eeq.EquipmentID = @EqId
+                          AND eeq.EventAppointmentID <> @EvtId
+                          AND CAST(ea.EventDate AS date) = @TargetDate
+                          AND ISNULL(ea.EventStatus, '') NOT IN ('Cancelled', 'Expired')
+                          AND NOT EXISTS (
+                              SELECT 1 FROM dbo.BookingNegotiation bn
+                              WHERE bn.EventAppointmentID = ea.EventAppointmentID
+                                AND bn.NegotiationStatus IN ('Deal_Lost', 'Cancelled')
+                          );
+                    END;";
+
+                await using (var lockCmd = new SqlCommand(sameDayLockSql, conn))
+                {
+                    lockCmd.Parameters.AddWithValue("@EvtId", eventId.Trim());
+                    lockCmd.Parameters.AddWithValue("@EqId", equipmentId.Trim());
+                    await using var lr = await lockCmd.ExecuteReaderAsync(ct);
+                    if (await lr.ReadAsync(ct))
+                    {
+                        var conflictEvtId = lr.GetString(0);
+                        var conflictEvtName = lr.GetString(1);
+                        var conflictDate = lr.GetDateTime(2);
+                        return (false, $"Cannot dispatch '{eqName}' ({equipmentId}): It is already booked on {conflictDate:yyyy-MM-dd} for '{conflictEvtName}' ({conflictEvtId}) and is unavailable for the entire day.");
+                    }
                 }
 
                 await using var cmd = new SqlCommand("dbo.sp_AssignEquipmentToEvent", conn)
@@ -1158,6 +1194,15 @@ public sealed class EquipmentService : IEquipmentService
 
             if (eq.IsRetired)
                 return (false, $"Cannot dispatch '{eq.EquipmentName}'. It has been retired from the active studio inventory.");
+
+            var sameDayConflict = _dispatches.FirstOrDefault(d =>
+                d.EquipmentID.Equals(equipmentId, StringComparison.OrdinalIgnoreCase) &&
+                !d.EventAppointmentID.Equals(evt.EventAppointmentID, StringComparison.OrdinalIgnoreCase) &&
+                d.EventDate.Date == evt.EventDate.Date &&
+                !string.Equals(d.DispatchStatus, "Returned", StringComparison.OrdinalIgnoreCase));
+
+            if (sameDayConflict != null)
+                return (false, $"Cannot dispatch '{eq.EquipmentName}' ({eq.EquipmentID}): It is already booked on {evt.EventDate:yyyy-MM-dd} for '{sameDayConflict.EventName}' ({sameDayConflict.EventAppointmentID}) and is unavailable for the entire day.");
 
             var dispatch = new DispatchItemModel
             {

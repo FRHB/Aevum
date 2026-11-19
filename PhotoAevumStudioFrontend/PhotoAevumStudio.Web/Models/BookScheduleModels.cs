@@ -112,13 +112,45 @@ public sealed record MyBooking(
     decimal TotalPrice,
     string Platform,
     string? MeetingLink,
-    string? EventLocation)
+    string? EventLocation,
+    string? AssignedClerkId = null,
+    string? AssignedClerkName = null,
+    string? NegotiationId = null)
 {
     public DateTime Start => Date.ToDateTime(SlotStart);
     public decimal DepositFee => Math.Round(TotalPrice * 0.15m, 2);
     public decimal BalanceFee => Math.Round(TotalPrice - DepositFee, 2);
     public string PaymentStatus => "Pending Negotiation";
 }
+
+public sealed record CustomerCancelBookingRequest(string? Reason = null);
+
+public sealed record CustomerCancelBookingResult(
+    bool Success,
+    int AppointmentId,
+    string? NegotiationId,
+    bool SlotReleased,
+    bool ClerkReleased,
+    bool EquipmentReleased,
+    string Message);
+
+public sealed record CustomerRescheduleBookingRequest(
+    DateOnly NewDate,
+    TimeOnly NewSlotStart,
+    string? Reason = null);
+
+public sealed record CustomerRescheduleBookingResult(
+    bool Success,
+    int AppointmentId,
+    string? NegotiationId,
+    DateOnly NewDate,
+    TimeOnly NewSlotStart,
+    TimeOnly NewSlotEnd,
+    string AssignedClerkId,
+    string AssignedClerkName,
+    bool RetainedOriginalClerk,
+    string Status,
+    string Message);
 
 public enum ApiErrorKind { SlotTaken, Validation, Unauthorized, Network, Server }
 

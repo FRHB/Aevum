@@ -54,6 +54,8 @@ public interface IStudioManagementService
     Task<ServiceCreatedResponseDto> CreateServiceAsync(CreateServiceDto dto, string? requestingAdminId = null, CancellationToken cancellationToken = default);
     Task<CategoryDto> CreateCategoryAsync(CreateCategoryDto dto, string? requestingAdminId = null, CancellationToken cancellationToken = default);
     Task<AdditionalServiceResponseDto> CreateAdditionalServiceAsync(CreateAdditionalServiceDto dto, string? requestingAdminId = null, CancellationToken cancellationToken = default);
+    Task<AdditionalServiceResponseDto?> UpdateAdditionalServiceAsync(string id, UpdateAdditionalServiceDto dto, string? requestingAdminId = null, CancellationToken cancellationToken = default) =>
+        Task.FromResult<AdditionalServiceResponseDto?>(null);
 
     // Combo Package Wizard Methods
     Task<string> GetNextComboPackageIdAsync(CancellationToken cancellationToken = default);
@@ -64,4 +66,14 @@ public interface IStudioManagementService
         string? imageMimeType,
         string? requestingAdminId = null,
         CancellationToken cancellationToken = default);
+    Task<ComboPackageCreatedResponseDto?> UpdateComboPackageWithServicesAsync(
+        string id,
+        UpdateComboPackageModel model,
+        byte[]? imageBytes,
+        string? imageMimeType,
+        string? requestingAdminId = null,
+        string? imageFileName = null,
+        string? imageUrl = null,
+        CancellationToken cancellationToken = default) =>
+        Task.FromResult<ComboPackageCreatedResponseDto?>(null);
 }

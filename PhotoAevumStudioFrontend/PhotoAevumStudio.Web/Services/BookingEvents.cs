@@ -9,4 +9,5 @@ public sealed class BookingEvents
 {
     public event Action? Changed;
     public void NotifyBookingsChanged() => Changed?.Invoke();
+    public void NotifyBookingChanged() => Changed?.Invoke();
 }

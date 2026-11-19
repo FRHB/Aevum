@@ -27,6 +27,9 @@ public class StudioSpaceResource
     public string IconType { get; set; } = "studio"; // studio, outdoor, venue, commercial
 }
 
+public sealed record EventCrewSummary(string EmployeeId, string FullName, string Specialization, bool IsTeamLeader);
+public sealed record EventEquipmentSummary(string EquipmentId, string EquipmentName, string EquipmentType);
+
 public class EventBookingModel
 {
     public string Id { get; set; } = Guid.NewGuid().ToString("N")[..8];
@@ -49,9 +52,15 @@ public class EventBookingModel
     public string? MeetingLink { get; set; }
     public List<string> AssignedCrewIds { get; set; } = new();
     public List<string> AssignedEquipmentIds { get; set; } = new();
+    public List<string> AssignedEquipmentNames { get; set; } = new();
+    public List<EventEquipmentSummary> AssignedEquipment { get; set; } = new();
+    public List<EventCrewSummary> AssignedCrew { get; set; } = new();
+    public List<string> AssignedServices { get; set; } = new();
     public int PrepBufferMinutes { get; set; } = 120;
     public int PostBufferMinutes { get; set; } = 60;
     public string? EventLocation { get; set; }
+    public string? LinkedEventAppointmentId { get; set; }
+    public string? LinkedNegotiationId { get; set; }
 
     public double DurationHours => (EndTime - StartTime).TotalHours;
 
@@ -71,11 +80,32 @@ public class EventBookingModel
         }
     }
 
-    public string DisplayStatus => Status switch
+    public bool IsCompleted =>
+        Status.Equals("Completed", StringComparison.OrdinalIgnoreCase) ||
+        Status.Equals("Complete", StringComparison.OrdinalIgnoreCase) ||
+        Status.Equals("Shot", StringComparison.OrdinalIgnoreCase) ||
+        Status.Equals("Delivered", StringComparison.OrdinalIgnoreCase);
+
+    public bool IsPendingPayment =>
+        Status.Equals("Pending Payment", StringComparison.OrdinalIgnoreCase) ||
+        Status.Equals("Pending_Payment", StringComparison.OrdinalIgnoreCase) ||
+        Status.Equals("Awaiting_Downpayment", StringComparison.OrdinalIgnoreCase);
+
+    public bool IsAppointmentBooked =>
+        Status.Equals("Appointment Booked", StringComparison.OrdinalIgnoreCase) ||
+        Status.Equals("Deal_Won", StringComparison.OrdinalIgnoreCase);
+
+    public string DisplayStatus
     {
-        "Pending Payment" or "Pending_Payment" or "Awaiting_Downpayment" => "Awaiting Reserve Fee Payment",
-        _ => Status
-    };
+        get
+        {
+            if (IsCompleted) return "Completed";
+            if (IsPendingPayment) return IsConsultation ? "Pending Payment" : "Awaiting Reserve Fee Payment";
+            if (IsAppointmentBooked) return "Appointment Booked";
+            if (Status.Equals("Pending_Call", StringComparison.OrdinalIgnoreCase)) return "Pending Call";
+            return Status;
+        }
+    }
 
     public string FormattedTimeRange =>
         $"{DateTime.Today.Add(StartTime):h:mm tt} - {DateTime.Today.Add(EffectiveEndTime):h:mm tt}";
@@ -96,10 +126,14 @@ public class EventBookingModel
         if (Id == other.Id || Date.Date != other.Date.Date)
             return false;
 
+        // Same-day equipment lock: sharing any equipment on the same calendar date is always a conflict, regardless of time slot.
+        if (SharesEquipmentWith(other))
+            return true;
+
         if (!CombinedWindowOverlapsWith(other))
             return false;
 
-        return SharesCrewWith(other) || SharesEquipmentWith(other);
+        return SharesCrewWith(other);
     }
 
     public bool SharesCrewWith(EventBookingModel other)
@@ -202,6 +236,8 @@ public class EquipmentItemResource
 public class EquipmentReservationModel
 {
     public string Id { get; set; } = Guid.NewGuid().ToString("N")[..8];
+    public string? EventAppointmentId { get; set; }
+    public string EventStatus { get; set; } = "Confirmed";
     public string EquipmentId { get; set; } = string.Empty;
     public string EquipmentName { get; set; } = string.Empty;
     public string Category { get; set; } = string.Empty;
@@ -226,6 +262,7 @@ public class EquipmentReservationModel
         if (Id == other.Id || EquipmentId != other.EquipmentId || Date.Date != other.Date.Date)
             return false;
 
-        return StartTime < other.EndTime && EndTime > other.StartTime;
+        // Same-day calendar lock: booked equipment is unavailable for the entire calendar day.
+        return true;
     }
 }

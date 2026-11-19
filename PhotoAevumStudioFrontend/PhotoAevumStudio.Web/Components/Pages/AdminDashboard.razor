@@ -216,13 +216,23 @@
             <div>
                 <h3 class="text-xs font-bold uppercase tracking-wider text-slate-500 mb-3 flex items-center justify-between">
                     <span>Upcoming Scheduled Sessions</span>
-                    <span class="text-[10px] font-normal text-slate-400">Next @Math.Min(4, _upcomingEvents.Count) events</span>
+                    <span class="text-[10px] font-normal text-slate-400">
+                        @(_liveEvents.Any()
+                            ? $"{_liveEvents.Count} active in execution"
+                            : (_upcomingEvents.Any() ? "Closest upcoming event" : "No upcoming events"))
+                    </span>
                 </h3>
 
-                @if (!_upcomingEvents.Any())
+                @if (_liveEvents.Any() && !_upcomingEvents.Any())
+                {
+                    <div class="p-8 text-center text-xs text-emerald-700 bg-emerald-50/60 rounded-xl border border-dashed border-emerald-200">
+                        ⚡ @_liveEvents.Count event@(_liveEvents.Count == 1 ? "" : "s") currently in execution in the Live Status panel.
+                    </div>
+                }
+                else if (!_upcomingEvents.Any())
                 {
                     <div class="p-8 text-center text-xs text-gray-400 bg-slate-50 rounded-xl border border-dashed border-gray-200">
-                        ✨ No upcoming events scheduled for the rest of today or tomorrow.
+                        ✨ No upcoming events scheduled for the rest of today or upcoming days.
                     </div>
                 }
                 else
@@ -559,24 +569,52 @@
         try
         {
             _allEvents = ScheduleService.GetEventBookings();
-            _activeConsultations = _allEvents.Count(e => e.IsConsultation && !string.Equals(e.Status, "Cancelled", StringComparison.OrdinalIgnoreCase) && !string.Equals(e.Status, "Deal_Lost", StringComparison.OrdinalIgnoreCase));
+            _activeConsultations = _allEvents.Count(e =>
+                e.IsConsultation &&
+                !e.IsAppointmentBooked &&
+                !e.IsCompleted &&
+                !string.Equals(e.Status, "Cancelled", StringComparison.OrdinalIgnoreCase) &&
+                !string.Equals(e.Status, "Deal_Lost", StringComparison.OrdinalIgnoreCase));
 
             var today = DateTime.Today;
             var nowTime = DateTime.Now.TimeOfDay;
 
-            _liveEvents = _allEvents.Where(e =>
-                e.Date.Date == today &&
-                nowTime >= e.StartTime &&
-                nowTime < e.EndTime &&
-                !string.Equals(e.Status, "Cancelled", StringComparison.OrdinalIgnoreCase)).ToList();
+            static bool IsExecutingStatus(EventBookingModel e) =>
+                e.Status.Equals("Ongoing", StringComparison.OrdinalIgnoreCase) ||
+                e.Status.Equals("On Going", StringComparison.OrdinalIgnoreCase) ||
+                e.Status.Equals("In Execution", StringComparison.OrdinalIgnoreCase) ||
+                e.Status.Equals("Ready", StringComparison.OrdinalIgnoreCase) ||
+                e.Status.Equals("Preparation", StringComparison.OrdinalIgnoreCase) ||
+                e.Status.Equals("Preparing", StringComparison.OrdinalIgnoreCase) ||
+                e.Status.Equals("Dispatch", StringComparison.OrdinalIgnoreCase) ||
+                e.Status.Equals("Post Event", StringComparison.OrdinalIgnoreCase) ||
+                e.Status.Equals("Event Done", StringComparison.OrdinalIgnoreCase) ||
+                e.Status.Equals("Payment Verification (Cash)", StringComparison.OrdinalIgnoreCase) ||
+                e.Status.Equals("Paid Cash Pending Verification", StringComparison.OrdinalIgnoreCase) ||
+                e.Status.Equals("Pending Verification", StringComparison.OrdinalIgnoreCase);
 
-            _upcomingEvents = _allEvents
-                .Where(e => (e.Date.Date == today && e.StartTime > nowTime) || (e.Date.Date > today))
-                .Where(e => !string.Equals(e.Status, "Cancelled", StringComparison.OrdinalIgnoreCase))
+            static bool IsInactiveOrFinished(EventBookingModel e) =>
+                e.IsCompleted ||
+                string.Equals(e.Status, "Cancelled", StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(e.Status, "Expired", StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(e.Status, "Deal_Lost", StringComparison.OrdinalIgnoreCase);
+
+            _liveEvents = _allEvents
+                .Where(e => !IsInactiveOrFinished(e))
+                .Where(e => IsExecutingStatus(e) || (e.Date.Date == today && nowTime >= e.StartTime && nowTime < e.EffectiveEndTime))
                 .OrderBy(e => e.Date.Date)
                 .ThenBy(e => e.StartTime)
-                .Take(4)
                 .ToList();
+
+            _upcomingEvents = _liveEvents.Any()
+                ? new List<EventBookingModel>()
+                : _allEvents
+                    .Where(e => !IsInactiveOrFinished(e))
+                    .Where(e => (e.Date.Date == today && e.StartTime > nowTime) || (e.Date.Date > today))
+                    .OrderBy(e => e.Date.Date)
+                    .ThenBy(e => e.StartTime)
+                    .Take(1)
+                    .ToList();
         }
         catch
         {

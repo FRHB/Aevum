@@ -24,6 +24,10 @@ public class PackageWizardFormModel : IValidatableObject
     [Required(ErrorMessage = "Package price is required.")]
     [Range(0.01, 1000000.00, ErrorMessage = "Package price must be greater than zero.")]
     public decimal Price { get; set; } = 499.00m;
+
+    [Required(ErrorMessage = "Rate type is required.")]
+    public string RateType { get; set; } = "per hour";
+
     public string Category { get; set; } = "Main Services";
 
     // ── Step 2: Service Selection (Many-to-Many) ─────────────────────────────
@@ -75,6 +79,7 @@ public class BundleServiceOption
     public string? Description { get; set; }
     public decimal Price { get; set; }
     public string ServiceType { get; set; } = "Main"; // "Main" or "Additional"
+    public string RateType { get; set; } = "per hour";
     public bool HasImage { get; set; }
     public bool IsSelected { get; set; }
 }
@@ -86,5 +91,6 @@ public class CreateComboPackageModel
     public string Description { get; set; } = string.Empty;
     public string CategoryId { get; set; } = string.Empty;
     public decimal Price { get; set; }
+    public string RateType { get; set; } = "per hour";
     public List<string> SelectedServiceIds { get; set; } = new();
 }

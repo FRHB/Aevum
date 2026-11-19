@@ -66,11 +66,37 @@ public sealed class ScheduleController(IScheduleBookingService schedule, ILogger
             return StatusCode(StatusCodes.Status201Created, result);
         });
 
+    [HttpPost("bookings/{appointmentId:int}/cancel")]
+    public Task<IActionResult> CancelBooking(int appointmentId, [FromBody] CustomerCancelBookingRequest? request, CancellationToken ct) =>
+        Handle(async () =>
+        {
+            var userId = User.FindFirstValue(ClaimTypes.NameIdentifier) ?? User.FindFirstValue("sub") ?? User.FindFirstValue("studio_id") ?? string.Empty;
+            var isPrivileged = User.IsInRole(AppRoles.Admin) || User.IsInRole(AppRoles.SystemAdmin) || User.IsInRole(AppRoles.OfficeClerk);
+            return Ok(await schedule.CancelBookingAsync(appointmentId, userId, request?.Reason, isPrivileged, ct));
+        });
+
+    [HttpPost("bookings/{appointmentId:int}/reschedule")]
+    public Task<IActionResult> RescheduleBooking(int appointmentId, [FromBody] CustomerRescheduleBookingRequest request, CancellationToken ct) =>
+        Handle(async () =>
+        {
+            var userId = User.FindFirstValue(ClaimTypes.NameIdentifier) ?? User.FindFirstValue("sub") ?? User.FindFirstValue("studio_id") ?? string.Empty;
+            var isPrivileged = User.IsInRole(AppRoles.Admin) || User.IsInRole(AppRoles.SystemAdmin) || User.IsInRole(AppRoles.OfficeClerk);
+            return Ok(await schedule.RescheduleBookingAsync(appointmentId, request, userId, isPrivileged, ct));
+        });
+
     private async Task<IActionResult> Handle(Func<Task<IActionResult>> action)
     {
         try
         {
             return await action();
+        }
+        catch (KeyNotFoundException ex)
+        {
+            return Problem(ex.Message, statusCode: StatusCodes.Status404NotFound, title: "NOT_FOUND");
+        }
+        catch (UnauthorizedAccessException ex)
+        {
+            return Problem(ex.Message, statusCode: StatusCodes.Status403Forbidden, title: "FORBIDDEN");
         }
         catch (SlotUnavailableException ex)
         {

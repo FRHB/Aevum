@@ -210,6 +210,85 @@ public class ComboPackageWizardTests
 
         Assert.Equal("Corporate Headshot & Event Tier", dto.Name);
         Assert.Equal(1200.00m, dto.Price);
+        Assert.Equal("per hour", dto.RateType);
         Assert.Equal(2, dto.SelectedServiceIds.Count);
+    }
+
+    [Fact]
+    public async Task PackagesController_CreateUpdateAndGet_PersistsAndReturnsRateType()
+    {
+        var mockSvc = new Moq.Mock<PhotoAevumStudio.Application.Interfaces.IStudioManagementService>();
+        PhotoAevumStudio.Application.DTOs.CreateComboPackageModel? capturedCreate = null;
+        PhotoAevumStudio.Application.DTOs.UpdateComboPackageModel? capturedUpdate = null;
+
+        mockSvc
+            .Setup(s => s.CreateComboPackageWithServicesAsync(
+                Moq.It.IsAny<PhotoAevumStudio.Application.DTOs.CreateComboPackageModel>(),
+                Moq.It.IsAny<byte[]?>(),
+                Moq.It.IsAny<string?>(),
+                Moq.It.IsAny<string?>(),
+                Moq.It.IsAny<CancellationToken>()))
+            .Callback<PhotoAevumStudio.Application.DTOs.CreateComboPackageModel, byte[]?, string?, string?, CancellationToken>((m, _, _, _, _) => capturedCreate = m)
+            .Returns((PhotoAevumStudio.Application.DTOs.CreateComboPackageModel m, byte[]? _, string? _, string? _, CancellationToken _) =>
+                Task.FromResult(new PhotoAevumStudio.Application.DTOs.ComboPackageCreatedResponseDto(
+                    "PKG-0010", m.Name, m.Description, m.Price, m.CategoryId, "Events", m.SelectedServiceIds.Count, m.SelectedServiceIds, false, DateTime.UtcNow, null, null, m.RateType)));
+
+        mockSvc
+            .Setup(s => s.UpdateComboPackageWithServicesAsync(
+                "PKG-0010",
+                Moq.It.IsAny<PhotoAevumStudio.Application.DTOs.UpdateComboPackageModel>(),
+                Moq.It.IsAny<byte[]?>(),
+                Moq.It.IsAny<string?>(),
+                Moq.It.IsAny<string?>(),
+                Moq.It.IsAny<string?>(),
+                Moq.It.IsAny<string?>(),
+                Moq.It.IsAny<CancellationToken>()))
+            .Callback<string, PhotoAevumStudio.Application.DTOs.UpdateComboPackageModel, byte[]?, string?, string?, string?, string?, CancellationToken>((_, m, _, _, _, _, _, _) => capturedUpdate = m)
+            .Returns((string id, PhotoAevumStudio.Application.DTOs.UpdateComboPackageModel m, byte[]? _, string? _, string? _, string? _, string? _, CancellationToken _) =>
+                Task.FromResult<PhotoAevumStudio.Application.DTOs.ComboPackageCreatedResponseDto?>(new PhotoAevumStudio.Application.DTOs.ComboPackageCreatedResponseDto(
+                    id, m.Name, m.Description, m.Price, m.CategoryId, "Events", m.SelectedServiceIds?.Count ?? 0, m.SelectedServiceIds ?? Array.Empty<string>(), false, DateTime.UtcNow, null, null, m.RateType)));
+
+        var controller = new PhotoAevumStudio.Api.Controllers.PackagesController(
+            mockSvc.Object,
+            Microsoft.Extensions.Logging.Abstractions.NullLogger<PhotoAevumStudio.Api.Controllers.PackagesController>.Instance)
+        {
+            ControllerContext = new Microsoft.AspNetCore.Mvc.ControllerContext
+            {
+                HttpContext = new Microsoft.AspNetCore.Http.DefaultHttpContext()
+            }
+        };
+
+        var createRes = await controller.CreatePackage(new PhotoAevumStudio.Api.Controllers.CreatePackageApiFormRequest
+        {
+            Name = "Editorial Multi-Shot Bundle",
+            Description = "Lookbook multi-shot bundle",
+            CategoryId = "CAT-0001",
+            Price = 1800.00m,
+            RateType = "multi-shot",
+            SelectedServiceIds = new List<string> { "SRV-0001", "ADD-0001" }
+        }, CancellationToken.None);
+
+        var createdObj = Assert.IsType<Microsoft.AspNetCore.Mvc.ObjectResult>(createRes);
+        Assert.Equal(201, createdObj.StatusCode);
+        var createdDto = Assert.IsType<PhotoAevumStudio.Application.DTOs.ComboPackageCreatedResponseDto>(createdObj.Value);
+        Assert.NotNull(capturedCreate);
+        Assert.Equal("multi-shot", capturedCreate!.RateType);
+        Assert.Equal("multi-shot", createdDto.RateType);
+
+        var updateRes = await controller.UpdatePackage("PKG-0010", new PhotoAevumStudio.Api.Controllers.UpdatePackageApiFormRequest
+        {
+            Name = "Editorial Multi-Shot Bundle",
+            Description = "Updated bundle rate type",
+            CategoryId = "CAT-0001",
+            Price = 1950.00m,
+            RateType = "per hour",
+            SelectedServiceIds = new List<string> { "SRV-0001" }
+        }, CancellationToken.None);
+
+        var okObj = Assert.IsType<Microsoft.AspNetCore.Mvc.OkObjectResult>(updateRes);
+        var updatedDto = Assert.IsType<PhotoAevumStudio.Application.DTOs.ComboPackageCreatedResponseDto>(okObj.Value);
+        Assert.NotNull(capturedUpdate);
+        Assert.Equal("per hour", capturedUpdate!.RateType);
+        Assert.Equal("per hour", updatedDto.RateType);
     }
 }

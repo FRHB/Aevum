@@ -2,15 +2,25 @@
 
 <div @onclick="OnClick"
      title="@Booking.ClientName (@Booking.ServiceType) with @Booking.AssignedPhotographer — @Booking.DisplayStatus"
-     class="compact-event-chip week-event-chip @(Booking.IsConsultation ? "is-consultation-chip" : "") @(Booking.HasConflict ? "conflict-chip" : "") @(Booking.Status is "Pending Payment" or "Awaiting_Downpayment" ? "pending" : Booking.Status.ToLowerInvariant())">
+     class="compact-event-chip week-event-chip @(Booking.IsConsultation ? "is-consultation-chip" : "") @(Booking.HasConflict ? "conflict-chip" : "") @GetStatusClass()">
     <div class="chip-top-row">
         <span class="chip-time">@(Booking.IsConsultation ? "💬 " : "")@Booking.StartTime.ToString(@"hh\:mm") - @Booking.EffectiveEndTime.ToString(@"hh\:mm")</span>
         <span class="chip-status-dot"></span>
     </div>
     <div class="chip-client">@Booking.ClientName</div>
-    @if (Booking.Status is "Pending Payment" or "Awaiting_Downpayment")
+    @if (Booking.IsCompleted)
     {
-        <div class="text-[10px] font-bold text-amber-700 truncate">⏳ Awaiting Reserve Fee Payment</div>
+        <div class="text-[10px] font-bold text-emerald-700 truncate">✓ Completed</div>
+    }
+    else if (Booking.IsPendingPayment)
+    {
+        <div class="text-[10px] font-bold text-amber-700 truncate">⏳ Pending Payment</div>
+    }
+    else if (Booking.IsAppointmentBooked)
+    {
+        <div class="text-[10px] font-bold text-emerald-700 truncate">
+            ✓ Appointment Booked@(!string.IsNullOrWhiteSpace(Booking.LinkedEventAppointmentId) ? $" • #{Booking.LinkedEventAppointmentId}" : "")
+        </div>
     }
     <div class="chip-photog">@(Booking.IsConsultation ? "Clerk: " : "📷 ")@Booking.AssignedPhotographer</div>
     @if (!string.IsNullOrWhiteSpace(Booking.StudioSpaceName))
@@ -22,4 +32,12 @@
 @code {
     [Parameter, EditorRequired] public EventBookingModel Booking { get; set; } = default!;
     [Parameter] public EventCallback OnClick { get; set; }
+
+    private string GetStatusClass()
+    {
+        if (Booking.IsAppointmentBooked) return "appointment-booked";
+        if (Booking.IsPendingPayment) return "pending";
+        if (Booking.IsCompleted) return "completed";
+        return Booking.Status.ToLowerInvariant();
+    }
 }

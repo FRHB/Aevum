@@ -31,4 +31,6 @@ public interface IConsultationClient
     Task<ApiResult<IReadOnlyList<PaymentSummaryModel>>> GetEmployeeLedgerAsync(string? employeeId = null, CancellationToken ct = default);
     Task<ApiResult<bool>> UpdateAppointmentRosterAsync(string appointmentId, UpdateAppointmentRosterRequest request, CancellationToken ct = default);
     Task<ApiResult<EventAppointmentDto>> UpdateBookingStatusAsync(string appointmentId, UpdatePaymentBookingStatusRequest request, CancellationToken ct = default);
+    Task<ApiResult<CustomerAppointmentActionResultDto>> CustomerCancelAppointmentAsync(string appointmentId, CustomerCancelAppointmentRequest? request = null, CancellationToken ct = default);
+    Task<ApiResult<CustomerAppointmentActionResultDto>> CustomerRescheduleAppointmentAsync(string appointmentId, CustomerRescheduleAppointmentRequest request, CancellationToken ct = default);
 }

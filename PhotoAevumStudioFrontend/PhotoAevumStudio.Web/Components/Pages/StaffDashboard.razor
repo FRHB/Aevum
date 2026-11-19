@@ -64,7 +64,7 @@
                     Team Leader Control &bull; Latest Ongoing / Upcoming Event
                 </span>
                 <h2 class="text-base font-extrabold text-slate-900">Event Execution Workflow &amp; Settlement</h2>
-                <p class="text-xs text-slate-500">Preparation (equipment checklist &rarr; taken &rarr; Dispatch) &rarr; Ongoing &rarr; Post Event (+1h) &rarr; Cash / QR Settlement.</p>
+                <p class="text-xs text-slate-500">Early / Late &rarr; Preparing (equipment checklist) &rarr; Ongoing (Event Started) &rarr; Event Done &rarr; Cash / QR Settlement.</p>
             </div>
             <button type="button" @onclick="RefreshTeamLeaderEventsAsync" class="px-3 py-1.5 rounded-lg border border-slate-200 hover:bg-slate-50 text-xs font-semibold text-slate-700">
                 Refresh Status
@@ -87,21 +87,40 @@
         <div class="space-y-4">
             @foreach (var (tlEv, idx) in teamLeaderEvents.Select((e, i) => (e, i)))
             {
-                var isPreparation = string.Equals(tlEv.EventStatus, "Preparation", StringComparison.OrdinalIgnoreCase)
-                                    || string.Equals(tlEv.EventStatus, "Preparing", StringComparison.OrdinalIgnoreCase);
-                var isDispatch = string.Equals(tlEv.EventStatus, "Dispatch", StringComparison.OrdinalIgnoreCase);
+                var isPreparing = string.Equals(tlEv.EventStatus, "Preparation", StringComparison.OrdinalIgnoreCase)
+                                  || string.Equals(tlEv.EventStatus, "Preparing", StringComparison.OrdinalIgnoreCase)
+                                  || string.Equals(tlEv.EventStatus, "Dispatch", StringComparison.OrdinalIgnoreCase);
                 var isOngoing = string.Equals(tlEv.EventStatus, "Ongoing", StringComparison.OrdinalIgnoreCase)
                                 || string.Equals(tlEv.EventStatus, "On Going", StringComparison.OrdinalIgnoreCase);
-                var isPostEvent = string.Equals(tlEv.EventStatus, "Post Event", StringComparison.OrdinalIgnoreCase);
-                var isCashPendingVerif = string.Equals(tlEv.EventStatus, "Pending Verification", StringComparison.OrdinalIgnoreCase)
+                var isEventDone = string.Equals(tlEv.EventStatus, "Event Done", StringComparison.OrdinalIgnoreCase)
+                                  || string.Equals(tlEv.EventStatus, "Post Event", StringComparison.OrdinalIgnoreCase);
+                var isCashPendingVerif = string.Equals(tlEv.EventStatus, "Payment Verification (Cash)", StringComparison.OrdinalIgnoreCase)
+                                         || string.Equals(tlEv.EventStatus, "Pending Verification", StringComparison.OrdinalIgnoreCase)
                                          || string.Equals(tlEv.EventStatus, "Paid Cash Pending Verification", StringComparison.OrdinalIgnoreCase)
+                                         || string.Equals(tlEv.FinalPaymentStatus, "Payment Verification (Cash)", StringComparison.OrdinalIgnoreCase)
                                          || string.Equals(tlEv.FinalPaymentStatus, "Pending Verification", StringComparison.OrdinalIgnoreCase);
-                var isFinalPaid = string.Equals(tlEv.FinalPaymentStatus, "Paid", StringComparison.OrdinalIgnoreCase)
+                var isQrPaid = string.Equals(tlEv.FinalPaymentStatus, "Payment Verification (QR:Paid)", StringComparison.OrdinalIgnoreCase)
+                               || (string.Equals(tlEv.FinalPaymentMethod, "Xendit_QR", StringComparison.OrdinalIgnoreCase)
+                                   && (string.Equals(tlEv.FinalPaymentStatus, "Paid", StringComparison.OrdinalIgnoreCase)
+                                       || string.Equals(tlEv.EventStatus, "Completed", StringComparison.OrdinalIgnoreCase)
+                                       || string.Equals(tlEv.EventStatus, "Complete", StringComparison.OrdinalIgnoreCase)
+                                       || string.Equals(tlEv.EventStatus, "Shot", StringComparison.OrdinalIgnoreCase)));
+                var isFinalPaid = isQrPaid
+                                  || string.Equals(tlEv.FinalPaymentStatus, "Paid", StringComparison.OrdinalIgnoreCase)
+                                  || string.Equals(tlEv.EventStatus, "Completed", StringComparison.OrdinalIgnoreCase)
                                   || string.Equals(tlEv.EventStatus, "Complete", StringComparison.OrdinalIgnoreCase)
                                   || string.Equals(tlEv.EventStatus, "Shot", StringComparison.OrdinalIgnoreCase);
                 var isQrPending = !isFinalPaid && !isCashPendingVerif
-                                  && string.Equals(tlEv.FinalPaymentMethod, "Xendit_QR", StringComparison.OrdinalIgnoreCase)
-                                  && !string.IsNullOrWhiteSpace(tlEv.FinalPaymentReferenceId);
+                                  && (string.Equals(tlEv.FinalPaymentStatus, "Payment Verification (QR:Pending Payment)", StringComparison.OrdinalIgnoreCase)
+                                      || (string.Equals(tlEv.FinalPaymentMethod, "Xendit_QR", StringComparison.OrdinalIgnoreCase)
+                                          && !string.IsNullOrWhiteSpace(tlEv.FinalPaymentReferenceId)));
+                var isPrePrep = !isPreparing && !isOngoing && !isEventDone && !isCashPendingVerif && !isQrPending && !isFinalPaid;
+                var isSettlementUnlocked = (isEventDone || string.Equals(tlEv.EventStatus, "Pending Payment", StringComparison.OrdinalIgnoreCase))
+                                           && !isCashPendingVerif && !isQrPending && !isFinalPaid;
+                var canSelectArrival = isPrePrep || isPreparing;
+                var canStartEvent = isPreparing;
+                var canMarkDone = isOngoing;
+                _selectedArrivalByEvent.TryGetValue(tlEv.EventAppointmentId, out var selectedArrival);
                 var finalRefId = string.IsNullOrWhiteSpace(tlEv.FinalPaymentReferenceId) ? $"{tlEv.EventAppointmentId}-FINAL" : tlEv.FinalPaymentReferenceId;
                 var postEventAt = tlEv.PostEventTriggerAt ?? tlEv.EventDate.ToDateTime(tlEv.EventTime).AddHours(1);
 
@@ -116,8 +135,14 @@
                                 <span class="font-mono text-[11px] font-bold px-2 py-0.5 rounded bg-slate-900 text-white">#@tlEv.EventAppointmentId</span>
                                 <h3 class="text-sm font-extrabold text-slate-900">@tlEv.EventName</h3>
                                 <span class="px-2.5 py-0.5 rounded-full text-[11px] font-bold @GetTeamLeaderStatusBadgeClass(tlEv)">
-                                    @GetTeamLeaderDisplayStatus(tlEv, isCashPendingVerif, isFinalPaid)
+                                    @GetTeamLeaderDisplayStatus(tlEv, isCashPendingVerif, isFinalPaid, isQrPending, isQrPaid)
                                 </span>
+                                @if (isQrPaid)
+                                {
+                                    <span class="px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-emerald-100 text-emerald-900 border border-emerald-200">
+                                        Payment Verification (QR:Paid)
+                                    </span>
+                                }
                             </div>
                             <div class="text-xs text-slate-600 mt-1.5 flex flex-wrap gap-x-4 gap-y-1">
                                 <span>Client: <strong class="text-slate-800">@tlEv.CustomerName</strong> @(!string.IsNullOrWhiteSpace(tlEv.CustomerEmail) ? $"({tlEv.CustomerEmail})" : "")</span>
@@ -147,46 +172,53 @@
                         </div>
                     </div>
 
-                    @if (!isCashPendingVerif && !isFinalPaid)
+                    @if (!isCashPendingVerif && !isQrPending && !isFinalPaid)
                     {
                         <div>
                             <div class="flex flex-wrap items-center justify-between gap-2 mb-2">
-                                <span class="text-[11px] font-bold uppercase tracking-wider text-slate-500">Event Execution Status Toggles</span>
+                                <span class="text-[11px] font-bold uppercase tracking-wider text-slate-500">Sequential Execution Controls</span>
                                 <span class="text-[10px] text-slate-500">
-                                    Post Event auto-triggers at <strong>@postEventAt.ToString("MMM d, h:mm tt")</strong> (1h after start)
+                                    Early / Late &rarr; Preparing &rarr; Event Started &rarr; Event Done &rarr; Settlement (auto-post @postEventAt.ToString("MMM d, h:mm tt"))
                                 </span>
                             </div>
                             <div class="grid grid-cols-2 sm:grid-cols-4 gap-2">
                                 <button type="button"
-                                        disabled="@isUpdatingTeamLeaderStage"
-                                        @onclick='() => HandleTeamLeaderStageClickAsync(tlEv, "Preparation")'
-                                        class="px-3 py-2 rounded-lg border text-xs font-bold transition-all text-center @(isPreparation ? "bg-sky-700 text-white border-sky-700 shadow-xs" : "bg-white text-slate-700 border-slate-200 hover:border-sky-400 hover:bg-sky-50/50")">
-                                    Preparation
+                                        disabled="@(isUpdatingTeamLeaderStage || !canSelectArrival)"
+                                        @onclick='() => HandleTeamLeaderStageClickAsync(tlEv, "Preparing", "Early")'
+                                        class="px-3 py-2 rounded-lg border text-xs font-bold transition-all text-center disabled:opacity-45 disabled:cursor-not-allowed @(isPreparing && selectedArrival != "Late" ? "bg-sky-700 text-white border-sky-700 shadow-xs" : "bg-white text-slate-700 border-slate-200 hover:border-sky-400 hover:bg-sky-50/50")">
+                                    Early (Preparing)
                                 </button>
                                 <button type="button"
-                                        disabled="@isUpdatingTeamLeaderStage"
-                                        @onclick='() => HandleTeamLeaderStageClickAsync(tlEv, "Dispatch")'
-                                        class="px-3 py-2 rounded-lg border text-xs font-bold transition-all text-center @(isDispatch ? "bg-indigo-700 text-white border-indigo-700 shadow-xs" : "bg-white text-slate-700 border-slate-200 hover:border-indigo-400 hover:bg-indigo-50/50")">
-                                    Dispatch
+                                        disabled="@(isUpdatingTeamLeaderStage || !canSelectArrival)"
+                                        @onclick='() => HandleTeamLeaderStageClickAsync(tlEv, "Preparing", "Late")'
+                                        class="px-3 py-2 rounded-lg border text-xs font-bold transition-all text-center disabled:opacity-45 disabled:cursor-not-allowed @(isPreparing && selectedArrival == "Late" ? "bg-amber-600 text-white border-amber-600 shadow-xs" : "bg-white text-slate-700 border-slate-200 hover:border-amber-400 hover:bg-amber-50/50")">
+                                    Late (Preparing)
                                 </button>
                                 <button type="button"
-                                        disabled="@isUpdatingTeamLeaderStage"
+                                        disabled="@(isUpdatingTeamLeaderStage || !canStartEvent)"
                                         @onclick='() => HandleTeamLeaderStageClickAsync(tlEv, "Ongoing")'
-                                        class="px-3 py-2 rounded-lg border text-xs font-bold transition-all text-center @(isOngoing ? "bg-teal-700 text-white border-teal-700 shadow-xs" : "bg-white text-slate-700 border-slate-200 hover:border-teal-400 hover:bg-teal-50/50")">
-                                    Ongoing
+                                        class="px-3 py-2 rounded-lg border text-xs font-bold transition-all text-center disabled:opacity-45 disabled:cursor-not-allowed @(isOngoing ? "bg-teal-700 text-white border-teal-700 shadow-xs" : "bg-white text-slate-700 border-slate-200 hover:border-teal-400 hover:bg-teal-50/50")">
+                                    Event Started
                                 </button>
                                 <button type="button"
-                                        disabled="@isUpdatingTeamLeaderStage"
-                                        @onclick='() => HandleTeamLeaderStageClickAsync(tlEv, "Post Event")'
-                                        class="px-3 py-2 rounded-lg border text-xs font-bold transition-all text-center @(isPostEvent ? "bg-purple-700 text-white border-purple-700 shadow-xs" : "bg-white text-slate-700 border-slate-200 hover:border-purple-400 hover:bg-purple-50/50")">
-                                    Post Event
+                                        disabled="@(isUpdatingTeamLeaderStage || !canMarkDone)"
+                                        @onclick='() => HandleTeamLeaderStageClickAsync(tlEv, "Event Done")'
+                                        class="px-3 py-2 rounded-lg border text-xs font-bold transition-all text-center disabled:opacity-45 disabled:cursor-not-allowed @(isEventDone ? "bg-purple-700 text-white border-purple-700 shadow-xs" : "bg-white text-slate-700 border-slate-200 hover:border-purple-400 hover:bg-purple-50/50")">
+                                    Event Done
                                 </button>
                             </div>
+                            @if (!isSettlementUnlocked)
+                            {
+                                <div class="mt-2 px-3 py-2 rounded-lg border border-dashed border-slate-300 bg-slate-100/70 text-[11px] font-semibold text-slate-600 flex items-center gap-2">
+                                    <span>🔒</span>
+                                    <span>Complete <strong>Event Done</strong> to unlock <strong>Settlement</strong> (Cash or QR Payment).</span>
+                                </div>
+                            }
                         </div>
                     }
 
                     @* ── Preparation Equipment Checklist & Additional Request ── *@
-                    @if (isPreparation && !isCashPendingVerif && !isFinalPaid)
+                    @if (isPreparing && !isCashPendingVerif && !isQrPending && !isFinalPaid)
                     {
                         <div class="p-4 rounded-xl border border-sky-200 bg-white space-y-4">
                             <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 border-b border-slate-100 pb-3">
@@ -275,12 +307,12 @@
                     {
                         <div class="p-4 rounded-xl border border-amber-300 bg-amber-50 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
                             <div>
-                                <div class="text-xs font-extrabold text-amber-950">Paid Cash — Pending Admin / Clerk Verification</div>
+                                <div class="text-xs font-extrabold text-amber-950">Payment Verification (Cash) — Awaiting Admin / Clerk Verification</div>
                                 <p class="text-[11px] text-amber-900 mt-0.5">
-                                    Cash payment of <strong>₱@tlEv.FinalBalanceAmount.ToString("N2")</strong> was received on-site. Customer sees <strong>Complete</strong>; your event will mark <strong>Complete</strong> once Admin/Clerk verifies the cash.
+                                    Cash payment of <strong>₱@tlEv.FinalBalanceAmount.ToString("N2")</strong> was received on-site. Payment verification status is set to <strong>Payment Verification (Cash)</strong>; event marks <strong>Completed</strong> once Admin/Clerk verifies the cash.
                                 </p>
                             </div>
-                            <span class="px-3 py-1 rounded-full bg-amber-200 text-amber-950 text-xs font-extrabold shrink-0">Pending Verification</span>
+                            <span class="px-3 py-1 rounded-full bg-amber-200 text-amber-950 text-xs font-extrabold shrink-0">Payment Verification (Cash)</span>
                         </div>
                     }
                     else if (isQrPending)
@@ -295,11 +327,11 @@
                             </div>
                             <div class="space-y-2 text-xs">
                                 <div class="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-sky-100 text-sky-900 font-bold text-[11px]">
-                                    QR Payment Generated &amp; Customer Emailed
+                                    Payment Verification (QR:Pending Payment)
                                 </div>
                                 <div class="font-bold text-slate-900 text-sm">Awaiting Customer Final Balance Scan (₱@tlEv.FinalBalanceAmount.ToString("N2"))</div>
                                 <p class="text-slate-600">
-                                    A final payment request email was sent to <strong>@(string.IsNullOrWhiteSpace(tlEv.CustomerEmail) ? "the customer" : tlEv.CustomerEmail)</strong> (Ref: <span class="font-mono">@finalRefId</span>). Once paid, you will be notified automatically via email.
+                                    A final payment request email was sent to <strong>@(string.IsNullOrWhiteSpace(tlEv.CustomerEmail) ? "the customer" : tlEv.CustomerEmail)</strong> (Ref: <span class="font-mono">@finalRefId</span>). Upon QR completion, status becomes <strong>Payment Verification (QR:Paid)</strong>, Event marks <strong>Completed</strong>, and confirmation emails go to both Team Leader and Customer.
                                 </p>
                                 <div class="flex flex-wrap items-center gap-2 pt-1">
                                     <a href="/payments/@finalRefId" target="_blank" class="px-3 py-1.5 rounded-lg border border-slate-300 hover:bg-slate-50 text-slate-800 font-bold">
@@ -322,20 +354,36 @@
                     {
                         <div class="p-4 rounded-xl border border-emerald-300 bg-emerald-50 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
                             <div>
-                                <div class="text-xs font-extrabold text-emerald-950">Complete — Final Payment Verified</div>
-                                <p class="text-[11px] text-emerald-900 mt-0.5">
-                                    Final balance of <strong>₱@tlEv.FinalBalanceAmount.ToString("N2")</strong> via @(tlEv.FinalPaymentMethod == "Xendit_QR" ? "QR Payment" : "Cash") is verified and settled.
-                                </p>
+                                @if (isQrPaid)
+                                {
+                                    <div class="text-xs font-extrabold text-emerald-950">Payment Successful — Event Completed</div>
+                                    <p class="text-[11px] text-emerald-900 mt-0.5">
+                                        Final QR balance of <strong>₱@tlEv.FinalBalanceAmount.ToString("N2")</strong> is verified. Payment status is <strong>Payment Verification (QR:Paid)</strong>, Event is marked <strong>Completed</strong>, and confirmation emails were sent to both the Team Leader and the Customer.
+                                    </p>
+                                }
+                                else
+                                {
+                                    <div class="text-xs font-extrabold text-emerald-950">Completed — Final Payment Verified</div>
+                                    <p class="text-[11px] text-emerald-900 mt-0.5">
+                                        Final balance of <strong>₱@tlEv.FinalBalanceAmount.ToString("N2")</strong> via Cash is verified and settled.
+                                    </p>
+                                }
                             </div>
-                            <span class="px-3 py-1 rounded-full bg-emerald-200 text-emerald-950 text-xs font-extrabold shrink-0">Complete</span>
+                            <div class="flex flex-wrap items-center gap-1.5 shrink-0">
+                                @if (isQrPaid)
+                                {
+                                    <span class="px-3 py-1 rounded-full bg-emerald-200 text-emerald-950 text-xs font-extrabold">Payment Verification (QR:Paid)</span>
+                                }
+                                <span class="px-3 py-1 rounded-full bg-emerald-700 text-white text-xs font-extrabold">Completed</span>
+                            </div>
                         </div>
                     }
-                    else if (isPostEvent || string.Equals(tlEv.EventStatus, "Pending Payment", StringComparison.OrdinalIgnoreCase))
+                    else if (isSettlementUnlocked)
                     {
                         <div class="p-4 rounded-xl border border-purple-200 bg-white flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                             <div>
-                                <div class="text-xs font-extrabold text-slate-900">Post Event Payment Settlement</div>
-                                <p class="text-[11px] text-slate-500">Collect final balance (₱@tlEv.FinalBalanceAmount.ToString("N2")) via Cash or QR.</p>
+                                <div class="text-xs font-extrabold text-slate-900">Event Settlement — Cash vs. QR Payment</div>
+                                <p class="text-[11px] text-slate-500">Event Done unlocked Settlement. Collect final balance (₱@tlEv.FinalBalanceAmount.ToString("N2")) via Cash or QR Payment.</p>
                             </div>
                             <div class="flex flex-wrap items-center gap-2">
                                 <button type="button"
@@ -876,10 +924,10 @@
                 {
                     <div class="p-3.5 rounded-xl border border-amber-200 bg-amber-50/70 text-xs text-amber-900 space-y-1">
                         <div class="font-bold flex items-center gap-1.5">
-                            <span>ℹ️</span> Cash Payment &rarr; Pending Verification
+                            <span>ℹ️</span> Cash Payment &rarr; Payment Verification (Cash)
                         </div>
                         <p class="text-[11px] leading-relaxed">
-                            Logging cash collected on-site moves the ongoing event status to <span class="font-bold text-amber-900 bg-amber-200 px-1.5 py-0.5 rounded">Pending Verification</span> until Admin verifies and clears the cash remittance.
+                            Logging cash collected on-site sets payment verification status to <span class="font-bold text-amber-900 bg-amber-200 px-1.5 py-0.5 rounded">Payment Verification (Cash)</span> until Admin verifies and clears the cash remittance.
                         </p>
                     </div>
                 }
@@ -932,10 +980,13 @@
     private List<LeaveItemViewModel> PagedLeaves => TablePagination.Paginate(myLeaves, leavesPage, 10);
     private List<TeamLeaderEventDto> teamLeaderEvents = new();
     private List<EquipmentItemModel> _studioEquipments = new();
+    private List<EventBookingModel> _staffBookings = new();
+    private List<EquipmentReservationModel> _staffEquipmentReservations = new();
     private readonly Dictionary<string, string> _addEquipmentSelections = new(StringComparer.OrdinalIgnoreCase);
     private readonly Dictionary<string, string> _addEquipmentNotes = new(StringComparer.OrdinalIgnoreCase);
-    // Keep canonical stage constants referenced for backward-compatible workflow support
-    private static readonly string[] TeamLeaderStages = { "Preparing", "On Going", "Post Event", "Pending Payment" };
+    private readonly Dictionary<string, string> _selectedArrivalByEvent = new(StringComparer.OrdinalIgnoreCase);
+    // Keep canonical stage constants referenced for sequential Team Leader execution workflow
+    private static readonly string[] TeamLeaderStages = { "Preparing", "Ongoing", "Event Done", "Pending Payment" };
     private string? teamLeaderActionMessage;
     private string? teamLeaderErrorMessage;
     private bool isUpdatingTeamLeaderStage = false;
@@ -1035,8 +1086,8 @@
             ScheduleService.InvalidateCache();
             isFinishModalOpen = false;
             teamLeaderActionMessage = selectedPaymentMethod == "Xendit_QR"
-                ? $"QR payment code generated on Team Leader panel and final payment email sent to {res.Value.CustomerEmail}."
-                : $"Cash settlement of ₱{res.Value.FinalBalanceAmount:N2} logged. Status: Pending Verification.";
+                ? $"QR payment code generated (Status: Payment Verification (QR:Pending Payment)) and final payment email sent to {res.Value.CustomerEmail}."
+                : $"Cash settlement of ₱{res.Value.FinalBalanceAmount:N2} logged. Status: Payment Verification (Cash).";
 
             await RefreshTeamLeaderEventsAsync();
             await SubscribeActiveQrHubAsync();
@@ -1162,6 +1213,11 @@
                 .Where(e => !string.Equals(e.EquipmentStatus, "Maintenance", StringComparison.OrdinalIgnoreCase)
                          && !string.Equals(e.EquipmentStatus, "Retired", StringComparison.OrdinalIgnoreCase))
                 .ToList();
+
+            var (bookings, reservations) = await Task.Run(() =>
+                (ScheduleService.GetEventBookings(), ScheduleService.GetEquipmentReservations()));
+            _staffBookings = bookings;
+            _staffEquipmentReservations = reservations;
         }
         catch
         {
@@ -1293,6 +1349,7 @@
                 _addEquipmentSelections[tlEv.EventAppointmentId] = string.Empty;
                 _addEquipmentNotes[tlEv.EventAppointmentId] = string.Empty;
                 ScheduleService.InvalidateCache();
+                await LoadStudioEquipmentsAsync();
                 await RefreshTeamLeaderEventsAsync();
                 teamLeaderActionMessage = $"Added/requested additional equipment ({eqId}) for #{tlEv.EventAppointmentId}.";
             }
@@ -1335,7 +1392,7 @@
                 ScheduleService.InvalidateCache();
                 await RefreshTeamLeaderEventsAsync();
                 await SafeLoadEmployeeLedgerAsync();
-                teamLeaderActionMessage = $"Cash Received (₱{res.Value.FinalBalanceAmount:N2}) logged for #{tlEv.EventAppointmentId}. Pending Admin/Clerk verification.";
+                teamLeaderActionMessage = $"Cash Received (₱{res.Value.FinalBalanceAmount:N2}) logged for #{tlEv.EventAppointmentId}. Status: Payment Verification (Cash).";
             }
             else
             {
@@ -1367,10 +1424,18 @@
     private IEnumerable<EquipmentItemModel> GetAvailableEquipmentOptions(TeamLeaderEventDto tlEv)
     {
         var assignedIds = tlEv.AssignedEquipment.Select(e => e.EquipmentId).ToHashSet(StringComparer.OrdinalIgnoreCase);
-        return _studioEquipments.Where(e => !assignedIds.Contains(e.EquipmentID));
+        var lockedSameDayIds = BookingWizardEngine.GetBookedEquipmentIdsForDate(
+            tlEv.EventDate.ToDateTime(TimeOnly.MinValue),
+            _staffBookings,
+            _staffEquipmentReservations,
+            null,
+            tlEv.EventAppointmentId);
+        return _studioEquipments.Where(e =>
+            !assignedIds.Contains(e.EquipmentID) &&
+            !lockedSameDayIds.Contains(e.EquipmentID));
     }
 
-    private async Task HandleTeamLeaderStageClickAsync(TeamLeaderEventDto tlEv, string stage)
+    private async Task HandleTeamLeaderStageClickAsync(TeamLeaderEventDto tlEv, string stage, string? arrivalStatus = null)
     {
         if (string.Equals(stage, "Pending Payment", StringComparison.OrdinalIgnoreCase))
         {
@@ -1383,16 +1448,26 @@
         teamLeaderErrorMessage = null;
         try
         {
+            if (!string.IsNullOrWhiteSpace(arrivalStatus))
+            {
+                _selectedArrivalByEvent[tlEv.EventAppointmentId] = arrivalStatus;
+            }
+
             var res = await ConsultationApi.UpdateTeamLeaderEventStatusAsync(tlEv.EventAppointmentId, new UpdateTeamLeaderStatusRequest
             {
                 Status = stage,
+                ArrivalStatus = arrivalStatus,
                 EmployeeId = employeeId
             });
             if (res.IsSuccess && res.Value != null)
             {
                 tlEv.EventStatus = res.Value.EventStatus;
                 ScheduleService.InvalidateCache();
-                teamLeaderActionMessage = $"Event #{tlEv.EventAppointmentId} updated to '{res.Value.EventStatus}'.";
+                var arrivalLabel = string.IsNullOrWhiteSpace(arrivalStatus) ? string.Empty : $" ({arrivalStatus})";
+                var unlockNote = string.Equals(res.Value.EventStatus, "Event Done", StringComparison.OrdinalIgnoreCase)
+                    ? " Settlement is now unlocked."
+                    : string.Empty;
+                teamLeaderActionMessage = $"Event #{tlEv.EventAppointmentId} updated to '{res.Value.EventStatus}'{arrivalLabel}.{unlockNote}";
             }
             else
             {
@@ -1421,7 +1496,7 @@
             {
                 ScheduleService.InvalidateCache();
                 await RefreshTeamLeaderEventsAsync();
-                teamLeaderActionMessage = $"Final QR payment verified & Paid for {finalRefId}. Team Leader email notification dispatched.";
+                teamLeaderActionMessage = $"Payment successful! Status updated to Payment Verification (QR:Paid), Event #{finalRefId} marked Completed, and confirmation emails sent to both the Team Leader and the Customer.";
             }
             else
             {
@@ -1445,7 +1520,8 @@
             var refId = ev.FinalPaymentReferenceId;
             if (string.IsNullOrWhiteSpace(refId) || _subscribedHubRefs.Contains(refId))
                 continue;
-            if (string.Equals(ev.FinalPaymentStatus, "Paid", StringComparison.OrdinalIgnoreCase))
+            if (string.Equals(ev.FinalPaymentStatus, "Paid", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(ev.FinalPaymentStatus, "Payment Verification (QR:Paid)", StringComparison.OrdinalIgnoreCase))
                 continue;
 
             _subscribedHubRefs.Add(refId);
@@ -1457,7 +1533,7 @@
                     {
                         ScheduleService.InvalidateCache();
                         await RefreshTeamLeaderEventsAsync();
-                        teamLeaderActionMessage = $"Customer final QR payment confirmed for #{ev.EventAppointmentId}!";
+                        teamLeaderActionMessage = $"Payment successful! Status updated to Payment Verification (QR:Paid), Event #{ev.EventAppointmentId} marked Completed, and confirmation emails sent to both the Team Leader and the Customer.";
                         StateHasChanged();
                     }),
                     onBookingExpired: () => Task.CompletedTask);
@@ -1469,21 +1545,24 @@
         }
     }
 
-    private static string GetTeamLeaderDisplayStatus(TeamLeaderEventDto ev, bool isCashPendingVerif, bool isFinalPaid)
+    private static string GetTeamLeaderDisplayStatus(TeamLeaderEventDto ev, bool isCashPendingVerif, bool isFinalPaid, bool isQrPending, bool isQrPaid)
     {
-        if (isFinalPaid) return "Complete";
-        if (isCashPendingVerif) return "Paid Cash Pending Verification";
-        if (string.Equals(ev.EventStatus, "Preparing", StringComparison.OrdinalIgnoreCase)) return "Preparation";
-        if (string.Equals(ev.EventStatus, "On Going", StringComparison.OrdinalIgnoreCase)) return "Ongoing";
+        if (isFinalPaid) return "Completed";
+        if (isCashPendingVerif) return "Payment Verification (Cash)";
+        if (isQrPending) return "Payment Verification (QR:Pending Payment)";
+        if (string.Equals(ev.EventStatus, "Preparation", StringComparison.OrdinalIgnoreCase) || string.Equals(ev.EventStatus, "Preparing", StringComparison.OrdinalIgnoreCase) || string.Equals(ev.EventStatus, "Dispatch", StringComparison.OrdinalIgnoreCase)) return "Preparing";
+        if (string.Equals(ev.EventStatus, "On Going", StringComparison.OrdinalIgnoreCase) || string.Equals(ev.EventStatus, "Ongoing", StringComparison.OrdinalIgnoreCase)) return "Ongoing";
+        if (string.Equals(ev.EventStatus, "Post Event", StringComparison.OrdinalIgnoreCase) || string.Equals(ev.EventStatus, "Event Done", StringComparison.OrdinalIgnoreCase)) return "Event Done";
         return ev.EventStatus;
     }
 
     private static string FormatRegularEmployeeEventStatus(string? status) => (status ?? "Confirmed") switch
     {
-        var s when s.Equals("Preparing", StringComparison.OrdinalIgnoreCase) => "Preparation",
-        var s when s.Equals("On Going", StringComparison.OrdinalIgnoreCase) => "Ongoing",
-        var s when s.Equals("Pending Verification", StringComparison.OrdinalIgnoreCase) || s.Equals("Paid Cash Pending Verification", StringComparison.OrdinalIgnoreCase) => "Pending Verification",
-        var s when s.Equals("Shot", StringComparison.OrdinalIgnoreCase) || s.Equals("Complete", StringComparison.OrdinalIgnoreCase) || s.Equals("Completed", StringComparison.OrdinalIgnoreCase) => "Complete",
+        var s when s.Equals("Preparing", StringComparison.OrdinalIgnoreCase) || s.Equals("Preparation", StringComparison.OrdinalIgnoreCase) || s.Equals("Dispatch", StringComparison.OrdinalIgnoreCase) => "Preparing",
+        var s when s.Equals("On Going", StringComparison.OrdinalIgnoreCase) || s.Equals("Ongoing", StringComparison.OrdinalIgnoreCase) => "Ongoing",
+        var s when s.Equals("Post Event", StringComparison.OrdinalIgnoreCase) || s.Equals("Event Done", StringComparison.OrdinalIgnoreCase) => "Event Done",
+        var s when s.Equals("Pending Verification", StringComparison.OrdinalIgnoreCase) || s.Equals("Paid Cash Pending Verification", StringComparison.OrdinalIgnoreCase) || s.Equals("Payment Verification (Cash)", StringComparison.OrdinalIgnoreCase) => "Payment Verification (Cash)",
+        var s when s.Equals("Shot", StringComparison.OrdinalIgnoreCase) || s.Equals("Complete", StringComparison.OrdinalIgnoreCase) || s.Equals("Completed", StringComparison.OrdinalIgnoreCase) => "Completed",
         var s => s
     };
 
@@ -1492,11 +1571,10 @@
         var display = FormatRegularEmployeeEventStatus(status);
         return display switch
         {
-            "Complete" or "Confirmed" => "bg-emerald-100 text-emerald-800",
+            "Completed" or "Confirmed" => "bg-emerald-100 text-emerald-800",
             "Ongoing" => "bg-teal-100 text-teal-800",
-            "Preparation" => "bg-sky-100 text-sky-800",
-            "Dispatch" => "bg-indigo-100 text-indigo-800",
-            "Post Event" => "bg-purple-100 text-purple-800",
+            "Preparing" => "bg-sky-100 text-sky-800",
+            "Event Done" => "bg-purple-100 text-purple-800",
             _ => "bg-amber-100 text-amber-800"
         };
     }
@@ -1504,23 +1582,28 @@
     private static string GetTeamLeaderStatusBadgeClass(TeamLeaderEventDto ev)
     {
         if (string.Equals(ev.FinalPaymentStatus, "Paid", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(ev.FinalPaymentStatus, "Payment Verification (QR:Paid)", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(ev.EventStatus, "Completed", StringComparison.OrdinalIgnoreCase)
             || string.Equals(ev.EventStatus, "Complete", StringComparison.OrdinalIgnoreCase)
             || string.Equals(ev.EventStatus, "Shot", StringComparison.OrdinalIgnoreCase))
             return "bg-emerald-100 text-emerald-800";
-        if (string.Equals(ev.EventStatus, "Pending Verification", StringComparison.OrdinalIgnoreCase)
+        if (string.Equals(ev.EventStatus, "Payment Verification (Cash)", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(ev.EventStatus, "Pending Verification", StringComparison.OrdinalIgnoreCase)
             || string.Equals(ev.EventStatus, "Paid Cash Pending Verification", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(ev.FinalPaymentStatus, "Payment Verification (Cash)", StringComparison.OrdinalIgnoreCase)
             || string.Equals(ev.FinalPaymentStatus, "Pending Verification", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(ev.FinalPaymentStatus, "Payment Verification (QR:Pending Payment)", StringComparison.OrdinalIgnoreCase)
             || string.Equals(ev.EventStatus, "Pending Payment", StringComparison.OrdinalIgnoreCase))
             return "bg-amber-100 text-amber-800";
-        if (string.Equals(ev.EventStatus, "Dispatch", StringComparison.OrdinalIgnoreCase))
-            return "bg-indigo-100 text-indigo-800";
         if (string.Equals(ev.EventStatus, "Ongoing", StringComparison.OrdinalIgnoreCase)
             || string.Equals(ev.EventStatus, "On Going", StringComparison.OrdinalIgnoreCase))
             return "bg-teal-100 text-teal-800";
-        if (string.Equals(ev.EventStatus, "Post Event", StringComparison.OrdinalIgnoreCase))
+        if (string.Equals(ev.EventStatus, "Event Done", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(ev.EventStatus, "Post Event", StringComparison.OrdinalIgnoreCase))
             return "bg-purple-100 text-purple-800";
         if (string.Equals(ev.EventStatus, "Preparation", StringComparison.OrdinalIgnoreCase)
-            || string.Equals(ev.EventStatus, "Preparing", StringComparison.OrdinalIgnoreCase))
+            || string.Equals(ev.EventStatus, "Preparing", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(ev.EventStatus, "Dispatch", StringComparison.OrdinalIgnoreCase))
             return "bg-sky-100 text-sky-800";
         return "bg-slate-100 text-slate-700";
     }

@@ -232,6 +232,12 @@ public sealed class ConsultationClient(
     public Task<ApiResult<EventAppointmentDto>> UpdateBookingStatusAsync(string appointmentId, UpdatePaymentBookingStatusRequest request, CancellationToken ct = default) =>
         SendAsync<EventAppointmentDto>(() => _http.PostAsJsonAsync($"api/payments/{Uri.EscapeDataString(appointmentId)}/update-status", request, ct), ct);
 
+    public Task<ApiResult<CustomerAppointmentActionResultDto>> CustomerCancelAppointmentAsync(string appointmentId, CustomerCancelAppointmentRequest? request = null, CancellationToken ct = default) =>
+        SendAsync<CustomerAppointmentActionResultDto>(() => _http.PostAsJsonAsync($"api/payments/customer-appointments/{Uri.EscapeDataString(appointmentId)}/cancel", request ?? new(), ct), ct);
+
+    public Task<ApiResult<CustomerAppointmentActionResultDto>> CustomerRescheduleAppointmentAsync(string appointmentId, CustomerRescheduleAppointmentRequest request, CancellationToken ct = default) =>
+        SendAsync<CustomerAppointmentActionResultDto>(() => _http.PostAsJsonAsync($"api/payments/customer-appointments/{Uri.EscapeDataString(appointmentId)}/reschedule", request, ct), ct);
+
 
 
 
@@ -312,7 +318,9 @@ public sealed class ConsultationClient(
 
             var problem = await response.Content.ReadFromJsonAsync<ProblemPayload>(ct);
 
-            return string.IsNullOrWhiteSpace(problem?.Detail) ? problem?.Title : problem.Detail;
+            return !string.IsNullOrWhiteSpace(problem?.Detail)
+                ? problem.Detail
+                : (!string.IsNullOrWhiteSpace(problem?.Message) ? problem.Message : problem?.Title);
 
         }
 
@@ -328,7 +336,7 @@ public sealed class ConsultationClient(
 
 
 
-    private sealed record ProblemPayload(string? Title, string? Detail);
+    private sealed record ProblemPayload(string? Title, string? Detail, string? Message);
 
 }
 

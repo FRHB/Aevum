@@ -401,7 +401,8 @@ public class PaymentService : IPaymentService
                 IF OBJECT_ID(N'dbo.BookingNegotiation', N'U') IS NOT NULL
                 BEGIN
                     UPDATE dbo.BookingNegotiation
-                    SET NegotiationStatus = 'Deal_Won'
+                    SET NegotiationStatus = 'Appointment Booked',
+                        EventAppointmentID = COALESCE(EventAppointmentID, @EvtId)
                     WHERE EventAppointmentID = @EvtId;
                 END;
 
@@ -461,11 +462,11 @@ public class PaymentService : IPaymentService
                 IF OBJECT_ID(N'dbo.EventAppointment', N'U') IS NOT NULL AND @EvtId IS NOT NULL
                 BEGIN
                     UPDATE dbo.EventAppointment
-                    SET EventStatus = 'Complete',
+                    SET EventStatus = 'Completed',
                         FinalPaymentStatus = 'Paid',
                         FinalPaymentPaidAt = SYSUTCDATETIME()
                     WHERE EventAppointmentID = @EvtId
-                      AND EventStatus IN ('Pending Verification', 'Paid Cash Pending Verification');
+                      AND EventStatus IN ('Pending Verification', 'Paid Cash Pending Verification', 'Payment Verification (Cash)');
                 END;
 
                 IF OBJECT_ID(N'dbo.HistoryLog', N'U') IS NOT NULL

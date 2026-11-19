@@ -227,11 +227,11 @@
 
 
 
-            <div class="text-[11px] font-bold uppercase tracking-wider text-emerald-700">Deals Won</div>
+            <div class="text-[11px] font-bold uppercase tracking-wider text-emerald-700">Deals Won / Booked</div>
 
 
 
-            <div class="text-2xl font-black text-emerald-800 mt-1">@_negotiations.Count(n => n.NegotiationStatus == "Deal_Won")</div>
+            <div class="text-2xl font-black text-emerald-800 mt-1">@_negotiations.Count(n => n.NegotiationStatus is "Deal_Won" or "Appointment Booked")</div>
 
 
 
@@ -283,7 +283,7 @@
 
 
 
-            @foreach (var filter in new[] { "All", "Pending_Call", "Pending Payment", "Deal_Won", "Deal_Lost", "Rescheduled" })
+            @foreach (var filter in new[] { "All", "Pending_Call", "Pending Payment", "Appointment Booked", "Deal_Won", "Deal_Lost", "Rescheduled" })
 
 
 
@@ -634,6 +634,15 @@
 
 
                                     </span>
+                                    @if (!string.IsNullOrWhiteSpace(neg.EventAppointmentId))
+                                    {
+                                        <div class="mt-1">
+                                            <a href="/admin/calendar/events?eventId=@neg.EventAppointmentId"
+                                               class="inline-flex items-center gap-1 text-[10px] font-mono font-bold text-indigo-700 hover:underline">
+                                                📅 #@neg.EventAppointmentId →
+                                            </a>
+                                        </div>
+                                    }
 
 
 
@@ -705,7 +714,7 @@
 
 
 
-                                            @onclick="() => OpenFloatingPanel(neg)"
+                                            @onclick="() => OpenFloatingPanelAsync(neg)"
 
 
 
@@ -1091,21 +1100,64 @@
 
                         <div class="text-xs font-bold text-slate-900">#@_selectedNegotiation.Appointment.EventAppointmentId - @_selectedNegotiation.Appointment.EventName</div>
 
-
+                        <div class="text-[11px] text-slate-600 mt-1">
+                            📅 @_selectedNegotiation.Appointment.EventDate.ToString("MMM d, yyyy") &bull;
+                            🕒 @DateTime.Today.Add(_selectedNegotiation.Appointment.EventTime.ToTimeSpan()).ToString("h:mm tt")
+                            @if (!string.IsNullOrWhiteSpace(_selectedNegotiation.Appointment.EventLocation))
+                            {
+                                <span> &bull; 📍 @_selectedNegotiation.Appointment.EventLocation</span>
+                            }
+                        </div>
 
                         <div class="grid grid-cols-2 gap-2 text-xs text-slate-600 mt-2">
-
-
-
                             <div>Total: <strong>₱@_selectedNegotiation.Appointment.TotalAmount.ToString("N2")</strong></div>
-
-
-
                             <div>15% Deposit: <strong>₱@_selectedNegotiation.Appointment.DownpaymentAmount.ToString("N2")</strong> (@_selectedNegotiation.Appointment.DownpaymentStatus)</div>
-
-
-
                         </div>
+
+                        @if (_selectedNegotiation.Appointment.SelectedServices?.Count > 0)
+                        {
+                            <div class="pt-1.5">
+                                <span class="text-[10px] font-bold uppercase tracking-wider text-indigo-700 block mb-1">Services</span>
+                                <div class="flex flex-wrap gap-1">
+                                    @foreach (var svc in _selectedNegotiation.Appointment.SelectedServices)
+                                    {
+                                        <span class="px-2 py-0.5 rounded bg-white border border-indigo-200 text-[10px] font-semibold text-slate-700">
+                                            @svc.ServiceName (@svc.Quantity&times;)
+                                        </span>
+                                    }
+                                </div>
+                            </div>
+                        }
+
+                        @if (_selectedNegotiation.Appointment.AssignedEmployees?.Count > 0)
+                        {
+                            <div class="pt-1.5">
+                                <span class="text-[10px] font-bold uppercase tracking-wider text-indigo-700 block mb-1">Assigned Crew</span>
+                                <div class="flex flex-wrap gap-1">
+                                    @foreach (var emp in _selectedNegotiation.Appointment.AssignedEmployees)
+                                    {
+                                        <span class="px-2 py-0.5 rounded-full text-[10px] font-semibold @(emp.IsTeamLeader ? "bg-amber-100 text-amber-900 border border-amber-300" : "bg-white border border-indigo-200 text-slate-700")">
+                                            @emp.EmployeeName@(emp.IsTeamLeader ? " (Lead)" : "")
+                                        </span>
+                                    }
+                                </div>
+                            </div>
+                        }
+
+                        @if (_selectedNegotiation.Appointment.AssignedEquipment?.Count > 0)
+                        {
+                            <div class="pt-1.5">
+                                <span class="text-[10px] font-bold uppercase tracking-wider text-indigo-700 block mb-1">Booked Equipment</span>
+                                <div class="flex flex-wrap gap-1">
+                                    @foreach (var eq in _selectedNegotiation.Appointment.AssignedEquipment)
+                                    {
+                                        <span class="px-2 py-0.5 rounded bg-white border border-indigo-200 text-[10px] font-medium text-slate-700">
+                                            @eq.EquipmentName (@eq.EquipmentId)
+                                        </span>
+                                    }
+                                </div>
+                            </div>
+                        }
 
 
 
@@ -1829,7 +1881,7 @@
                         }
                         else
                         {
-                            var blockedByLeaveOrOff = _availableEmployees
+                            var blockedByLeaveOrOff = BookingWizardEngine.FilterDispatchableCrew(_availableEmployees)
                                 .Select(e => new { Emp = e, Reason = GetEmployeeBlockReason(e, _wizardEventDate) })
                                 .Where(x => x.Reason != null)
                                 .ToList();
@@ -1899,7 +1951,7 @@
                         <div class="flex items-center justify-between pb-2 border-b border-slate-100">
                             <div>
                                 <span class="text-xs font-bold text-slate-700">Equipment Allocation</span>
-                                <p class="text-[11px] text-slate-500 mt-0.5">Gear conflicting within @BookingWizardEngine.FormatTime(bufferedWindow.PrepStart) – @BookingWizardEngine.FormatTime(bufferedWindow.PostEnd) is disabled automatically.</p>
+                                <p class="text-[11px] text-slate-500 mt-0.5">Equipment booked on any active event for @_wizardEventDate.ToString("MMM d, yyyy") is locked and unavailable for the entire calendar day.</p>
                             </div>
                             <span class="text-xs font-bold text-teal-700">@_selectedEquipmentIds.Count items reserved</span>
                         </div>
@@ -1920,7 +1972,7 @@
                                             <span class="font-mono text-[10px] text-slate-400">@eq.EquipmentID</span>
                                             @if (isConflict)
                                             {
-                                                <span class="text-[9px] font-bold uppercase px-1.5 py-0.5 rounded bg-rose-100 text-rose-700">In Use (Buffer)</span>
+                                                <span class="text-[9px] font-bold uppercase px-1.5 py-0.5 rounded bg-rose-100 text-rose-700">Booked Today</span>
                                             }
                                         </div>
                                         <span class="truncate block">@eq.EquipmentName</span>
@@ -2830,7 +2882,8 @@
             _wizardEventEndTime.TimeOfDay,
             _studioBookings,
             _equipmentReservations,
-            _wizardCreatedAppointmentId);
+            _wizardCreatedAppointmentId,
+            _negotiations);
 
     private void PruneUnavailableCrewAndEquipment()
     {
@@ -3112,7 +3165,10 @@
 
 
 
-            (_selectedStatusFilter == "All" || n.NegotiationStatus == _selectedStatusFilter) &&
+            (_selectedStatusFilter == "All" ||
+             n.NegotiationStatus == _selectedStatusFilter ||
+             (_selectedStatusFilter is "Appointment Booked" or "Deal_Won" && n.NegotiationStatus is "Appointment Booked" or "Deal_Won") ||
+             (_selectedStatusFilter == "Pending Payment" && n.NegotiationStatus is "Pending Payment" or "Pending_Payment")) &&
 
 
 
@@ -3152,22 +3208,25 @@
 
 
 
-    private void OpenFloatingPanel(ConsultationNegotiationDto neg)
-
-
-
+    private async Task OpenFloatingPanelAsync(ConsultationNegotiationDto neg)
     {
-
-
-
         _selectedNegotiation = neg;
-
-
-
         _isPanelOpen = true;
 
-
-
+        if (!string.IsNullOrWhiteSpace(neg.EventAppointmentId))
+        {
+            try
+            {
+                var detailRes = await ConsultationApi.GetNegotiationByIdAsync(neg.NegotiationId);
+                if (detailRes.IsSuccess && detailRes.Value != null)
+                {
+                    _selectedNegotiation = detailRes.Value;
+                }
+            }
+            catch
+            {
+            }
+        }
     }
 
 
@@ -4378,6 +4437,10 @@
 
 
         "Pending Payment" or "Pending_Payment" => "bg-amber-100 text-amber-800 font-bold border border-amber-200",
+
+
+
+        "Appointment Booked" => "bg-emerald-100 text-emerald-800 font-bold border border-emerald-200",
 
 
 

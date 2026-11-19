@@ -76,6 +76,9 @@ public class UpdateAppointmentRosterRequest
     public List<string> EmployeeIds { get; set; } = new();
     public string TeamLeaderEmployeeId { get; set; } = string.Empty;
     public List<string> EquipmentIds { get; set; } = new();
+    public string? ActorId { get; set; }
+    public string? ActorRole { get; set; }
+    public string? ActorName { get; set; }
 }
 
 public class EventAppointmentDto
@@ -122,6 +125,7 @@ public class AssignedEmployeeDto
 {
     public string EmployeeId { get; set; } = string.Empty;
     public string EmployeeName { get; set; } = string.Empty;
+    public string FullName => EmployeeName;
     public string Specialization { get; set; } = string.Empty;
     public bool IsTeamLeader { get; set; }
 }
@@ -233,6 +237,7 @@ public class TeamLeaderEventDto : EventAppointmentDto
 public class UpdateTeamLeaderStatusRequest
 {
     public string Status { get; set; } = string.Empty;
+    public string? ArrivalStatus { get; set; }
     public string? EmployeeId { get; set; }
 }
 
@@ -255,5 +260,34 @@ public class LiveEventOverviewDto : EventAppointmentDto
 {
     public string? CustomerPhone { get; set; }
     public string DisplayStage { get; set; } = string.Empty;
+    public string PaymentVerificationStatus { get; set; } = string.Empty;
     public int? PendingRemittancePaymentId { get; set; }
+}
+
+public class CustomerCancelAppointmentRequest
+{
+    public string? Reason { get; set; }
+}
+
+public class CustomerRescheduleAppointmentRequest
+{
+    public DateOnly NewDate { get; set; }
+    public TimeOnly NewTime { get; set; }
+    public string? Reason { get; set; }
+}
+
+public class CustomerAppointmentActionResultDto
+{
+    public bool Success { get; set; }
+    public string EventAppointmentId { get; set; } = string.Empty;
+    public string? NegotiationId { get; set; }
+    public string EventStatus { get; set; } = string.Empty;
+    public string? AssignedClerkId { get; set; }
+    public string? AssignedClerkName { get; set; }
+    public bool RetainedOriginalClerk { get; set; }
+    public bool SlotReleased { get; set; }
+    public bool ClerkReleased { get; set; }
+    public bool EquipmentReleased { get; set; }
+    public string Message { get; set; } = string.Empty;
+    public EventAppointmentDto? Appointment { get; set; }
 }

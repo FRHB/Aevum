@@ -469,8 +469,14 @@
                                     @foreach (var s in _appointment.SelectedServices)
                                     {
                                         <div class="flex justify-between text-xs text-slate-600">
-                                            <span>• @s.ServiceName</span>
-                                            <span class="font-medium text-slate-800">₱@s.ServicePrice.ToString("N2")</span>
+                                            <span>
+                                                • @s.ServiceName
+                                                @if (!string.IsNullOrWhiteSpace(s.RateType))
+                                                {
+                                                    <span class="text-[11px] text-slate-400">(@(s.Quantity > 0 ? s.Quantity : 1) × @s.RateType)</span>
+                                                }
+                                            </span>
+                                            <span class="font-medium text-slate-800">₱@((s.LineTotal > 0 ? s.LineTotal : s.ServicePrice).ToString("N2"))</span>
                                         </div>
                                     }
                                 </div>

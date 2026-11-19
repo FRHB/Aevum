@@ -78,6 +78,9 @@ public class UpdateAppointmentRosterRequest
     public List<string> EmployeeIds { get; set; } = new();
     public string TeamLeaderEmployeeId { get; set; } = string.Empty;
     public List<string> EquipmentIds { get; set; } = new();
+    public string? ActorId { get; set; }
+    public string? ActorRole { get; set; }
+    public string? ActorName { get; set; }
 }
 
 public class EventAppointmentDto
@@ -260,7 +263,8 @@ public class TeamLeaderEventDto : EventAppointmentDto
 
 public class UpdateTeamLeaderStatusRequest
 {
-    public string Status { get; set; } = string.Empty; // "Preparation", "Dispatch", "Ongoing", "Post Event", "Pending Payment"
+    public string Status { get; set; } = string.Empty; // "Early", "Late", "Preparing", "Ongoing", "Event Done", "Pending Payment"
+    public string? ArrivalStatus { get; set; } // "Early", "Late"
     public string? EmployeeId { get; set; }
 }
 
@@ -283,5 +287,125 @@ public class LiveEventOverviewDto : EventAppointmentDto
 {
     public string? CustomerPhone { get; set; }
     public string DisplayStage { get; set; } = string.Empty;
+    public string PaymentVerificationStatus { get; set; } = string.Empty;
     public int? PendingRemittancePaymentId { get; set; }
+}
+
+public class CustomerCancelAppointmentRequest
+{
+    public string? Reason { get; set; }
+}
+
+public class CustomerRescheduleAppointmentRequest
+{
+    public DateOnly NewDate { get; set; }
+    public TimeOnly NewTime { get; set; }
+    public string? Reason { get; set; }
+}
+
+public class CustomerAppointmentActionResultDto
+{
+    public bool Success { get; set; }
+    public string EventAppointmentId { get; set; } = string.Empty;
+    public string? NegotiationId { get; set; }
+    public string EventStatus { get; set; } = string.Empty;
+    public string? AssignedClerkId { get; set; }
+    public string? AssignedClerkName { get; set; }
+    public bool RetainedOriginalClerk { get; set; }
+    public bool SlotReleased { get; set; }
+    public bool ClerkReleased { get; set; }
+    public bool EquipmentReleased { get; set; }
+    public string Message { get; set; } = string.Empty;
+    public EventAppointmentDto? Appointment { get; set; }
+}
+
+public static class LiveEventOverviewSelector
+{
+    private static readonly HashSet<string> ExecutingStages = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "Ongoing",
+        "On Going",
+        "In Execution",
+        "Ready",
+        "Preparation",
+        "Preparing",
+        "Dispatch",
+        "Post Event",
+        "Event Done",
+        "Paid Cash Pending Verification",
+        "Pending Verification",
+        "Payment Verification (Cash)",
+        "Payment Verification (QR:Pending Payment)"
+    };
+
+    private static readonly HashSet<string> FinishedOrCancelledStages = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "Complete",
+        "Completed",
+        "Shot",
+        "Delivered",
+        "Cancelled",
+        "Expired",
+        "Deal_Lost",
+        "Payment Verification (QR:Paid)"
+    };
+
+    public static bool IsExecuting(string? eventStatus, string? displayStage = null) =>
+        (!string.IsNullOrWhiteSpace(eventStatus) && ExecutingStages.Contains(eventStatus.Trim())) ||
+        (!string.IsNullOrWhiteSpace(displayStage) && ExecutingStages.Contains(displayStage.Trim()));
+
+    public static bool IsFinishedOrCancelled(string? eventStatus, string? displayStage = null) =>
+        (!string.IsNullOrWhiteSpace(eventStatus) && FinishedOrCancelledStages.Contains(eventStatus.Trim())) ||
+        (!string.IsNullOrWhiteSpace(displayStage) && FinishedOrCancelledStages.Contains(displayStage.Trim()));
+
+    public static IReadOnlyList<LiveEventOverviewDto> SelectForOverview(
+        IEnumerable<LiveEventOverviewDto> events,
+        DateTime studioNowLocal)
+    {
+        var list = (events ?? Enumerable.Empty<LiveEventOverviewDto>()).ToList();
+        var executing = list
+            .Where(e => IsExecuting(e.EventStatus, e.DisplayStage))
+            .OrderBy(e => GetStagePriority(e.EventStatus, e.DisplayStage))
+            .ThenBy(e => e.EventDate)
+            .ThenBy(e => e.EventTime)
+            .ToList();
+
+        if (executing.Count > 0)
+            return executing;
+
+        var candidates = list
+            .Where(e => !IsFinishedOrCancelled(e.EventStatus, e.DisplayStage))
+            .Where(e =>
+            {
+                var startDt = e.EventDate.ToDateTime(e.EventTime);
+                var endTime = e.EventEndTime.HasValue && e.EventEndTime.Value > e.EventTime
+                    ? e.EventEndTime.Value
+                    : e.EventTime.AddMinutes(Math.Max(15, e.DurationMinutes));
+                var endDt = e.EventDate.ToDateTime(endTime);
+                return startDt >= studioNowLocal || endDt >= studioNowLocal;
+            })
+            .OrderBy(e => e.EventDate.ToDateTime(e.EventTime) >= studioNowLocal ? 0 : 1)
+            .ThenBy(e => e.EventDate)
+            .ThenBy(e => e.EventTime)
+            .Take(1)
+            .ToList();
+
+        return candidates;
+    }
+
+    private static int GetStagePriority(string? eventStatus, string? displayStage)
+    {
+        var stage = !string.IsNullOrWhiteSpace(displayStage) ? displayStage.Trim() : (eventStatus ?? string.Empty).Trim();
+        return stage.ToUpperInvariant() switch
+        {
+            "PAID CASH PENDING VERIFICATION" or "PENDING VERIFICATION" or "PAYMENT VERIFICATION (CASH)" => 1,
+            "PAYMENT VERIFICATION (QR:PENDING PAYMENT)" => 2,
+            "ONGOING" or "ON GOING" or "IN EXECUTION" => 3,
+            "POST EVENT" or "EVENT DONE" => 4,
+            "DISPATCH" => 5,
+            "READY" => 6,
+            "PREPARATION" or "PREPARING" => 7,
+            _ => 8
+        };
+    }
 }

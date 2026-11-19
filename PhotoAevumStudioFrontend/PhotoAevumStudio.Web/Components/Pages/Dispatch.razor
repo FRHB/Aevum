@@ -676,8 +676,26 @@
     {
         get
         {
-            // Only available equipment NOT under maintenance and NOT currently checked out!
-            var query = allEquipments.Where(e => e.IsAvailable && !e.IsDispatched);
+            var targetEvent = upcomingEvents.FirstOrDefault(e =>
+                string.Equals(e.EventAppointmentID, selectedEventId, StringComparison.OrdinalIgnoreCase));
+
+            var lockedOnSameDay = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            if (targetEvent != null)
+            {
+                foreach (var d in dispatches.Where(d =>
+                             d.EventDate.Date == targetEvent.EventDate.Date &&
+                             !string.Equals(d.DispatchStatus, "Returned", StringComparison.OrdinalIgnoreCase)))
+                {
+                    if (!string.IsNullOrWhiteSpace(d.EquipmentID))
+                        lockedOnSameDay.Add(d.EquipmentID.Trim());
+                }
+            }
+
+            // Exclude maintenance, currently checked-out, and equipment already booked on the selected event's calendar day
+            var query = allEquipments.Where(e =>
+                e.IsAvailable &&
+                !e.IsDispatched &&
+                !lockedOnSameDay.Contains(e.EquipmentID));
 
             if (!string.IsNullOrWhiteSpace(modalGearSearch))
             {

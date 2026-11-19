@@ -642,10 +642,12 @@ public class ServicesApiClient : IServicesApiClient
         try
         {
             using var formData = new MultipartFormDataContent();
+            var effectiveRateType = string.IsNullOrWhiteSpace(model.RateType) ? "per hour" : model.RateType.Trim();
             formData.Add(new StringContent(model.ServiceCategoryName.Trim()), "ServiceName");
             formData.Add(new StringContent(model.ServiceCategoryDescription.Trim()), "ServiceCategoryDescription");
             formData.Add(new StringContent(model.ServiceCategory.Trim()), "ServiceCategory");
             formData.Add(new StringContent(model.ServicePrice.ToString(CultureInfo.InvariantCulture)), "ServicePrice");
+            formData.Add(new StringContent(effectiveRateType), "RateType");
 
             if (model.ImageBytes != null && model.ImageBytes.Length > 0)
             {
@@ -663,6 +665,7 @@ public class ServicesApiClient : IServicesApiClient
                 {
                     createdId = idProp.GetString();
                 }
+                UserService.InvalidateServiceCatalogCache();
                 return (true, null, createdId ?? model.GeneratedId);
             }
 
@@ -677,10 +680,13 @@ public class ServicesApiClient : IServicesApiClient
         // Direct database fallback with atomic sequence stored procedure
         try
         {
+            var effectiveRateType = string.IsNullOrWhiteSpace(model.RateType) ? "per hour" : model.RateType.Trim();
             await using var conn = SqlResilienceHelper.CreateConnection(_connectionString);
             await conn.OpenAsync(cancellationToken);
 
             const string ensureColsSql = @"
+                IF COL_LENGTH(N'dbo.AdditionalServices', N'RateType') IS NULL
+                    ALTER TABLE dbo.AdditionalServices ADD RateType nvarchar(50) NOT NULL CONSTRAINT DF_AdditionalServices_RateType DEFAULT 'Per Hour';
                 IF COL_LENGTH(N'dbo.AdditionalServices', N'ImageFileName') IS NULL
                     ALTER TABLE dbo.AdditionalServices ADD ImageFileName nvarchar(500) NULL;
                 IF COL_LENGTH(N'dbo.AdditionalServices', N'ImageUrl') IS NULL
@@ -692,7 +698,7 @@ public class ServicesApiClient : IServicesApiClient
 
             const string procSql = @"
                 IF OBJECT_ID(N'dbo.sp_CreateAdditionalService', N'P') IS NOT NULL AND EXISTS (
-                    SELECT 1 FROM sys.parameters WHERE object_id = OBJECT_ID(N'dbo.sp_CreateAdditionalService') AND name = '@ImageFileName'
+                    SELECT 1 FROM sys.parameters WHERE object_id = OBJECT_ID(N'dbo.sp_CreateAdditionalService') AND name = '@RateType'
                 )
                 BEGIN
                     DECLARE @OutID NVARCHAR(30);
@@ -706,7 +712,8 @@ public class ServicesApiClient : IServicesApiClient
                         @ImageFileName = @ImgFileName,
                         @ImageUrl = @ImgUrl,
                         @CreatedByAdminID = @AdminId,
-                        @GeneratedID = @OutID OUTPUT;
+                        @GeneratedID = @OutID OUTPUT,
+                        @RateType = @RateType;
                     SELECT @OutID;
                 END
                 ELSE
@@ -721,10 +728,10 @@ public class ServicesApiClient : IServicesApiClient
                     DECLARE @NewID NVARCHAR(30) = 'ADD-' + RIGHT('0000' + CAST(@NextVal AS VARCHAR(10)), 4);
 
                     INSERT INTO dbo.AdditionalServices (
-                        AdditionalServicesID, AdditionalServiceName, AdditionalServicesDescription, ServicePrice, CategoryName,
+                        AdditionalServicesID, AdditionalServiceName, AdditionalServicesDescription, ServicePrice, CategoryName, RateType,
                         AdditionalServiceImage, AdditionalServiceImageMimeType, ImageFileName, ImageUrl
                     )
-                    VALUES (@NewID, @Name, @Desc, @Price, @Category, @Img, @Mime, @ImgFileName, @ImgUrl);
+                    VALUES (@NewID, @Name, @Desc, @Price, @Category, @RateType, @Img, @Mime, @ImgFileName, @ImgUrl);
 
                     SELECT @NewID;
                 END";
@@ -734,6 +741,7 @@ public class ServicesApiClient : IServicesApiClient
             cmd.Parameters.AddWithValue("@Desc", model.ServiceCategoryDescription.Trim());
             cmd.Parameters.AddWithValue("@Price", model.ServicePrice);
             cmd.Parameters.AddWithValue("@Category", model.ServiceCategory.Trim());
+            cmd.Parameters.AddWithValue("@RateType", effectiveRateType);
             cmd.Parameters.Add("@Img", SqlDbType.VarBinary, -1).Value = (object?)model.ImageBytes ?? DBNull.Value;
             cmd.Parameters.AddWithValue("@Mime", (object?)model.ImageMimeType ?? "image/jpeg");
             cmd.Parameters.AddWithValue("@ImgFileName", (object?)imageFileName ?? DBNull.Value);
@@ -741,11 +749,111 @@ public class ServicesApiClient : IServicesApiClient
             cmd.Parameters.AddWithValue("@AdminId", "Admin");
 
             var resultId = (await cmd.ExecuteScalarAsync(cancellationToken))?.ToString() ?? model.GeneratedId;
+            UserService.InvalidateServiceCatalogCache();
             return (true, null, resultId);
         }
         catch (Exception dbEx)
         {
             _logger.LogError(dbEx, "Failed to create additional service in database fallback.");
+            return (false, dbEx.Message, null);
+        }
+    }
+
+    public async Task<(bool Success, string? ErrorMessage, string? UpdatedId)> UpdateAdditionalServiceAsync(
+        AdditionalServiceWizardFormModel model,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(model);
+        var targetId = string.IsNullOrWhiteSpace(model.GeneratedId) ? "ADD-0001" : model.GeneratedId.Trim();
+        var effectiveRateType = string.IsNullOrWhiteSpace(model.RateType) ? "per hour" : model.RateType.Trim();
+
+        var (imageFileName, imageUrl) = await UploadServiceImageToR2Async(
+            model.ImageBytes,
+            model.ImageFileName,
+            model.ImageMimeType,
+            "services/addons",
+            cancellationToken);
+
+        try
+        {
+            using var formData = new MultipartFormDataContent();
+            formData.Add(new StringContent(model.ServiceCategoryName.Trim()), "ServiceName");
+            formData.Add(new StringContent(model.ServiceCategoryDescription.Trim()), "ServiceCategoryDescription");
+            formData.Add(new StringContent(model.ServiceCategory.Trim()), "ServiceCategory");
+            formData.Add(new StringContent(model.ServicePrice.ToString(CultureInfo.InvariantCulture)), "ServicePrice");
+            formData.Add(new StringContent(effectiveRateType), "RateType");
+
+            if (model.ImageBytes != null && model.ImageBytes.Length > 0)
+            {
+                var byteContent = new ByteArrayContent(model.ImageBytes);
+                byteContent.Headers.ContentType = new MediaTypeHeaderValue(string.IsNullOrWhiteSpace(model.ImageMimeType) ? "image/jpeg" : model.ImageMimeType);
+                formData.Add(byteContent, "ImageFile", string.IsNullOrWhiteSpace(model.ImageFileName) ? "addon-image.jpg" : model.ImageFileName);
+            }
+
+            var response = await _http.PutAsync($"api/additionalservices/{Uri.EscapeDataString(targetId)}", formData, cancellationToken);
+            if (response.IsSuccessStatusCode)
+            {
+                UserService.InvalidateServiceCatalogCache();
+                return (true, null, targetId);
+            }
+
+            var errorDetail = await response.Content.ReadAsStringAsync(cancellationToken);
+            _logger.LogWarning("PUT api/additionalservices/{Id} returned status {StatusCode}: {ErrorDetail}", targetId, response.StatusCode, errorDetail);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "HTTP PUT to api/additionalservices/{Id} failed. Attempting database fallback.", targetId);
+        }
+
+        try
+        {
+            await using var conn = SqlResilienceHelper.CreateConnection(_connectionString);
+            await conn.OpenAsync(cancellationToken);
+
+            const string ensureColsSql = @"
+                IF COL_LENGTH(N'dbo.AdditionalServices', N'RateType') IS NULL
+                    ALTER TABLE dbo.AdditionalServices ADD RateType nvarchar(50) NOT NULL CONSTRAINT DF_AdditionalServices_RateType DEFAULT 'Per Hour';
+                IF COL_LENGTH(N'dbo.AdditionalServices', N'ImageFileName') IS NULL
+                    ALTER TABLE dbo.AdditionalServices ADD ImageFileName nvarchar(500) NULL;
+                IF COL_LENGTH(N'dbo.AdditionalServices', N'ImageUrl') IS NULL
+                    ALTER TABLE dbo.AdditionalServices ADD ImageUrl nvarchar(500) NULL;";
+            await using (var colCmd = new SqlCommand(ensureColsSql, conn))
+            {
+                await colCmd.ExecuteNonQueryAsync(cancellationToken);
+            }
+
+            const string updateSql = @"
+                UPDATE dbo.AdditionalServices
+                SET AdditionalServiceName = @Name,
+                    AdditionalServicesDescription = @Desc,
+                    ServicePrice = @Price,
+                    CategoryName = @Category,
+                    RateType = @RateType,
+                    AdditionalServiceImage = COALESCE(@Img, AdditionalServiceImage),
+                    AdditionalServiceImageMimeType = COALESCE(@Mime, AdditionalServiceImageMimeType),
+                    ImageFileName = COALESCE(@ImgFileName, ImageFileName),
+                    ImageUrl = COALESCE(@ImgUrl, ImageUrl)
+                WHERE AdditionalServicesID = @Id;";
+
+            await using var cmd = new SqlCommand(updateSql, conn);
+            cmd.Parameters.AddWithValue("@Id", targetId);
+            cmd.Parameters.AddWithValue("@Name", model.ServiceCategoryName.Trim());
+            cmd.Parameters.AddWithValue("@Desc", model.ServiceCategoryDescription.Trim());
+            cmd.Parameters.AddWithValue("@Price", model.ServicePrice);
+            cmd.Parameters.AddWithValue("@Category", model.ServiceCategory.Trim());
+            cmd.Parameters.AddWithValue("@RateType", effectiveRateType);
+            cmd.Parameters.Add("@Img", SqlDbType.VarBinary, -1).Value = (object?)model.ImageBytes ?? DBNull.Value;
+            cmd.Parameters.AddWithValue("@Mime", string.IsNullOrWhiteSpace(model.ImageMimeType) ? (object)DBNull.Value : model.ImageMimeType.Trim());
+            cmd.Parameters.AddWithValue("@ImgFileName", (object?)imageFileName ?? DBNull.Value);
+            cmd.Parameters.AddWithValue("@ImgUrl", (object?)imageUrl ?? DBNull.Value);
+            await cmd.ExecuteNonQueryAsync(cancellationToken);
+
+            UserService.InvalidateServiceCatalogCache();
+            return (true, null, targetId);
+        }
+        catch (Exception dbEx)
+        {
+            _logger.LogError(dbEx, "Failed to update additional service in database fallback.");
             return (false, dbEx.Message, null);
         }
     }

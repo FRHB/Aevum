@@ -387,6 +387,8 @@ public static class DatabaseSeeder
                         ALTER TABLE dbo.AdditionalServices ADD ImageFileName nvarchar(500) NULL;
                     IF COL_LENGTH(N'dbo.AdditionalServices', N'ImageUrl') IS NULL
                         ALTER TABLE dbo.AdditionalServices ADD ImageUrl nvarchar(500) NULL;
+                    IF COL_LENGTH(N'dbo.AdditionalServices', N'RateType') IS NULL
+                        ALTER TABLE dbo.AdditionalServices ADD RateType nvarchar(50) NOT NULL CONSTRAINT DF_AdditionalServices_RateType DEFAULT 'Per Hour';
                     ALTER TABLE dbo.AdditionalServices ALTER COLUMN AdditionalServicesDescription nvarchar(1000) NULL;
                 END;
 
@@ -402,6 +404,8 @@ public static class DatabaseSeeder
                         ALTER TABLE dbo.ComboPackage ADD ImageUrl nvarchar(500) NULL;
                     IF COL_LENGTH(N'dbo.ComboPackage', N'ComboPackagePrice') IS NULL
                         ALTER TABLE dbo.ComboPackage ADD ComboPackagePrice decimal(18,2) NOT NULL CONSTRAINT DF_ComboPackage_Price DEFAULT 0.00;
+                    IF COL_LENGTH(N'dbo.ComboPackage', N'RateType') IS NULL
+                        ALTER TABLE dbo.ComboPackage ADD RateType nvarchar(50) NOT NULL CONSTRAINT DF_ComboPackage_RateType DEFAULT 'Per Hour';
                     ALTER TABLE dbo.ComboPackage ALTER COLUMN ComboPackageDescription nvarchar(1000) NOT NULL;
                 END;
 

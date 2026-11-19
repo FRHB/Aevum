@@ -12,18 +12,39 @@
                     <span class="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
                     Live Execution Monitor
                 </span>
-                <span class="text-xs font-semibold text-slate-500">
-                    @_concurrentActiveCount concurrent / active event@(_concurrentActiveCount == 1 ? "" : "s")
-                </span>
+                @if (_isUpcomingFallback)
+                {
+                    <span class="px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-indigo-100 text-indigo-800 border border-indigo-200">
+                        Next Upcoming Event (No events currently in execution)
+                    </span>
+                }
+                else
+                {
+                    <span class="text-xs font-semibold text-slate-500">
+                        @_concurrentActiveCount concurrent / active event@(_concurrentActiveCount == 1 ? "" : "s")
+                    </span>
+                }
                 @if (_pendingCashCount > 0)
                 {
                     <span class="px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-100 text-amber-900 border border-amber-300">
-                        💵 @_pendingCashCount Pending Cash Verification
+                        💵 @_pendingCashCount Payment Verification (Cash)
+                    </span>
+                }
+                @if (_pendingQrCount > 0)
+                {
+                    <span class="px-2 py-0.5 rounded-full text-[10px] font-bold bg-sky-100 text-sky-900 border border-sky-300">
+                        📱 @_pendingQrCount Payment Verification (QR:Pending Payment)
+                    </span>
+                }
+                @if (_paidQrCount > 0)
+                {
+                    <span class="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-900 border border-emerald-300">
+                        ✓ @_paidQrCount Payment Verification (QR:Paid)
                     </span>
                 }
             </div>
             <h2 class="text-base font-extrabold text-slate-900 mt-1">Active &amp; Concurrent Events Live Progress</h2>
-            <p class="text-xs text-slate-500">Stacked real-time progress across Preparation, Ongoing, Post Event, Paid Cash Pending Verification, and Complete.</p>
+            <p class="text-xs text-slate-500">Stacked real-time progress across Preparing, Ready, Ongoing / In Execution, Event Done, Payment Verification (Cash / QR), and Completed.</p>
         </div>
 
         <button type="button"
@@ -79,20 +100,42 @@
         {
             @foreach (var ev in FilteredEvents)
             {
-                var stage = ev.DisplayStage;
-                var isCashPending = string.Equals(stage, "Paid Cash Pending Verification", StringComparison.OrdinalIgnoreCase);
-                var isComplete = string.Equals(stage, "Complete", StringComparison.OrdinalIgnoreCase);
+                var stage = NormalizeStage(ev.DisplayStage);
+                var paymentLabel = ResolvePaymentLabel(ev);
+                var isComplete = IsCompletedStage(stage);
+                var isCashPending = !isComplete && string.Equals(paymentLabel, "Payment Verification (Cash)", StringComparison.OrdinalIgnoreCase);
+                var isQrPending = !isComplete && string.Equals(paymentLabel, "Payment Verification (QR:Pending Payment)", StringComparison.OrdinalIgnoreCase);
                 var leader = ev.AssignedEmployees.FirstOrDefault(e => e.IsTeamLeader) ?? ev.AssignedEmployees.FirstOrDefault();
+                var cardSteps = new[]
+                {
+                    "Preparing",
+                    "Ongoing",
+                    "Event Done",
+                    string.IsNullOrWhiteSpace(paymentLabel) ? "Settlement" : paymentLabel,
+                    "Completed"
+                };
 
-                <article class="rounded-xl border @(isCashPending ? "border-amber-300 bg-amber-50/40" : isComplete ? "border-emerald-200 bg-emerald-50/20" : "border-slate-200 bg-slate-50/60") p-5 space-y-4 shadow-2xs">
+                <article class="rounded-xl border @(isCashPending ? "border-amber-300 bg-amber-50/40" : isQrPending ? "border-sky-300 bg-sky-50/30" : isComplete ? "border-emerald-200 bg-emerald-50/20" : "border-slate-200 bg-slate-50/60") p-5 space-y-4 shadow-2xs">
                     <div class="flex flex-col lg:flex-row lg:items-start lg:justify-between gap-3">
                         <div class="space-y-1">
                             <div class="flex flex-wrap items-center gap-2">
                                 <span class="font-mono text-[11px] font-bold px-2 py-0.5 rounded bg-slate-900 text-white">#@ev.EventAppointmentId</span>
                                 <h3 class="text-sm font-extrabold text-slate-900">@ev.EventName</h3>
+                                @if (_isUpcomingFallback)
+                                {
+                                    <span class="px-2 py-0.5 rounded-full text-[10px] font-bold bg-indigo-100 text-indigo-800 border border-indigo-200">
+                                        Closest Upcoming
+                                    </span>
+                                }
                                 <span class="px-2.5 py-0.5 rounded-full text-[11px] font-bold @GetStageBadgeClass(stage)">
                                     @stage
                                 </span>
+                                @if (!string.IsNullOrWhiteSpace(paymentLabel) && !string.Equals(paymentLabel, stage, StringComparison.OrdinalIgnoreCase))
+                                {
+                                    <span class="px-2.5 py-0.5 rounded-full text-[11px] font-bold @GetStageBadgeClass(paymentLabel)">
+                                        @paymentLabel
+                                    </span>
+                                }
                                 @if (string.Equals(ev.EventStatus, "Dispatch", StringComparison.OrdinalIgnoreCase))
                                 {
                                     <span class="px-2 py-0.5 rounded-full text-[10px] font-bold bg-indigo-100 text-indigo-800 border border-indigo-200">
@@ -132,9 +175,9 @@
 
                     @* ── 5-Step Live Workflow Stepper ───────────────────────────── *@
                     <div class="grid grid-cols-2 sm:grid-cols-5 gap-2">
-                        @foreach (var step in WorkflowSteps)
+                        @foreach (var step in cardSteps)
                         {
-                            var state = GetStepState(stage, step);
+                            var state = GetStepState(stage, step, cardSteps[3]);
                             var boxClass = state switch
                             {
                                 "done" => "bg-emerald-100 text-emerald-900 border-emerald-300",
@@ -165,41 +208,123 @@
     private static readonly string[] StageFilters =
     {
         "All",
-        "Preparation",
+        "Preparing",
         "Ongoing",
-        "Post Event",
-        "Paid Cash Pending Verification",
-        "Complete"
-    };
-
-    private static readonly string[] WorkflowSteps =
-    {
-        "Preparation",
-        "Ongoing",
-        "Post Event",
-        "Paid Cash Pending Verification",
-        "Complete"
+        "Event Done",
+        "Payment Verification (Cash)",
+        "Payment Verification (QR:Pending Payment)",
+        "Payment Verification (QR:Paid)",
+        "Completed"
     };
 
     private List<LiveEventOverviewDto> _events = new();
     private string _selectedFilter = "All";
     private bool _loading = true;
+    private bool _isUpcomingFallback;
     private string? _verifyingId;
     private string? _actionMessage;
     private string? _errorMessage;
     private System.Threading.Timer? _refreshTimer;
 
-    private int _concurrentActiveCount => _events.Count(e =>
-        !string.Equals(e.DisplayStage, "Complete", StringComparison.OrdinalIgnoreCase));
+    private int _concurrentActiveCount => _events.Count(e => !IsCompletedStage(e.DisplayStage));
 
     private int _pendingCashCount => _events.Count(e =>
-        string.Equals(e.DisplayStage, "Paid Cash Pending Verification", StringComparison.OrdinalIgnoreCase));
+        !IsCompletedStage(e.DisplayStage) &&
+        string.Equals(ResolvePaymentLabel(e), "Payment Verification (Cash)", StringComparison.OrdinalIgnoreCase));
+
+    private int _pendingQrCount => _events.Count(e =>
+        !IsCompletedStage(e.DisplayStage) &&
+        string.Equals(ResolvePaymentLabel(e), "Payment Verification (QR:Pending Payment)", StringComparison.OrdinalIgnoreCase));
+
+    private int _paidQrCount => _events.Count(e =>
+        string.Equals(ResolvePaymentLabel(e), "Payment Verification (QR:Paid)", StringComparison.OrdinalIgnoreCase));
 
     private IEnumerable<LiveEventOverviewDto> FilteredEvents => _selectedFilter == "All"
         ? _events
-        : _events.Where(e =>
-            string.Equals(e.DisplayStage, _selectedFilter, StringComparison.OrdinalIgnoreCase) ||
-            (_selectedFilter == "Preparation" && string.Equals(e.DisplayStage, "Dispatch", StringComparison.OrdinalIgnoreCase)));
+        : _events.Where(e => MatchesStageFilter(e, _selectedFilter));
+
+    public static bool IsExecutingEvent(LiveEventOverviewDto? ev)
+    {
+        if (ev == null) return false;
+        return IsExecutingStageName(ev.EventStatus) || IsExecutingStageName(ev.DisplayStage);
+    }
+
+    private static bool IsExecutingStageName(string? raw)
+    {
+        if (string.IsNullOrWhiteSpace(raw)) return false;
+        var s = raw.Trim();
+        return s.Equals("Ongoing", StringComparison.OrdinalIgnoreCase) ||
+               s.Equals("On Going", StringComparison.OrdinalIgnoreCase) ||
+               s.Equals("In Execution", StringComparison.OrdinalIgnoreCase) ||
+               s.Equals("Ready", StringComparison.OrdinalIgnoreCase) ||
+               s.Equals("Preparing", StringComparison.OrdinalIgnoreCase) ||
+               s.Equals("Preparation", StringComparison.OrdinalIgnoreCase) ||
+               s.Equals("Dispatch", StringComparison.OrdinalIgnoreCase) ||
+               s.Equals("Event Done", StringComparison.OrdinalIgnoreCase) ||
+               s.Equals("Post Event", StringComparison.OrdinalIgnoreCase) ||
+               s.Equals("Pending Verification", StringComparison.OrdinalIgnoreCase) ||
+               s.Equals("Payment Verification (Cash)", StringComparison.OrdinalIgnoreCase) ||
+               s.Equals("Payment Verification (QR:Pending Payment)", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static bool IsFinishedOrCancelledEvent(LiveEventOverviewDto ev) =>
+        IsCompletedStage(ev.EventStatus) ||
+        IsCompletedStage(ev.DisplayStage) ||
+        string.Equals(ev.EventStatus, "Delivered", StringComparison.OrdinalIgnoreCase) ||
+        string.Equals(ev.EventStatus, "Cancelled", StringComparison.OrdinalIgnoreCase) ||
+        string.Equals(ev.EventStatus, "Expired", StringComparison.OrdinalIgnoreCase) ||
+        string.Equals(ev.EventStatus, "Deal_Lost", StringComparison.OrdinalIgnoreCase) ||
+        string.Equals(ev.DisplayStage, "Payment Verification (QR:Paid)", StringComparison.OrdinalIgnoreCase);
+
+    public static IReadOnlyList<LiveEventOverviewDto> SelectOverviewEvents(
+        IEnumerable<LiveEventOverviewDto>? source,
+        DateTime? studioNow = null)
+    {
+        var list = (source ?? Enumerable.Empty<LiveEventOverviewDto>()).ToList();
+        var executing = list
+            .Where(IsExecutingEvent)
+            .OrderBy(e => GetExecutingPriority(e))
+            .ThenBy(e => e.EventDate)
+            .ThenBy(e => e.EventTime)
+            .ToList();
+
+        if (executing.Count > 0)
+            return executing;
+
+        var now = studioNow ?? DateTime.Now;
+        return list
+            .Where(e => !IsFinishedOrCancelledEvent(e))
+            .Where(e =>
+            {
+                var startDt = e.EventDate.ToDateTime(e.EventTime);
+                var endTime = e.EventEndTime.HasValue && e.EventEndTime.Value > e.EventTime
+                    ? e.EventEndTime.Value
+                    : e.EventTime.AddMinutes(Math.Max(15, e.DurationMinutes));
+                var endDt = e.EventDate.ToDateTime(endTime);
+                return startDt >= now || endDt >= now;
+            })
+            .OrderBy(e => e.EventDate.ToDateTime(e.EventTime) >= now ? 0 : 1)
+            .ThenBy(e => e.EventDate)
+            .ThenBy(e => e.EventTime)
+            .Take(1)
+            .ToList();
+    }
+
+    private static int GetExecutingPriority(LiveEventOverviewDto ev)
+    {
+        var stage = !string.IsNullOrWhiteSpace(ev.DisplayStage) ? ev.DisplayStage.Trim() : (ev.EventStatus ?? string.Empty).Trim();
+        return stage.ToUpperInvariant() switch
+        {
+            "PENDING VERIFICATION" or "PAYMENT VERIFICATION (CASH)" => 1,
+            "PAYMENT VERIFICATION (QR:PENDING PAYMENT)" => 2,
+            "ONGOING" or "ON GOING" or "IN EXECUTION" => 3,
+            "POST EVENT" or "EVENT DONE" => 4,
+            "DISPATCH" => 5,
+            "READY" => 6,
+            "PREPARATION" or "PREPARING" => 7,
+            _ => 8
+        };
+    }
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
@@ -224,7 +349,8 @@
             var res = await ConsultationApi.GetLiveEventsOverviewAsync();
             if (res.IsSuccess && res.Value != null)
             {
-                _events = res.Value.ToList();
+                _events = SelectOverviewEvents(res.Value).ToList();
+                _isUpcomingFallback = _events.Count == 1 && !IsExecutingEvent(_events[0]);
             }
         }
         catch
@@ -255,7 +381,7 @@
             if (res.IsSuccess)
             {
                 ScheduleService.InvalidateCache();
-                _actionMessage = $"Cash verified for #{ev.EventAppointmentId} ({ev.EventName}). Employee workflow finalized as Complete.";
+                _actionMessage = $"Cash verified for #{ev.EventAppointmentId} ({ev.EventName}). Employee workflow finalized as Completed.";
                 await RefreshAsync();
                 if (OnCashVerified.HasDelegate)
                 {
@@ -277,44 +403,101 @@
         }
     }
 
-    private int GetStageCount(string tab)
+    private static bool IsCompletedStage(string? stage) =>
+        string.Equals(stage, "Completed", StringComparison.OrdinalIgnoreCase) ||
+        string.Equals(stage, "Complete", StringComparison.OrdinalIgnoreCase) ||
+        string.Equals(stage, "Shot", StringComparison.OrdinalIgnoreCase);
+
+    private static string NormalizeStage(string? stage) => (stage ?? string.Empty).Trim() switch
     {
-        if (tab == "All") return _events.Count;
-        if (tab == "Preparation")
-            return _events.Count(e => string.Equals(e.DisplayStage, "Preparation", StringComparison.OrdinalIgnoreCase)
-                                   || string.Equals(e.DisplayStage, "Dispatch", StringComparison.OrdinalIgnoreCase));
-        return _events.Count(e => string.Equals(e.DisplayStage, tab, StringComparison.OrdinalIgnoreCase));
+        var s when IsCompletedStage(s) => "Completed",
+        var s when s.Equals("Post Event", StringComparison.OrdinalIgnoreCase) || s.Equals("Event Done", StringComparison.OrdinalIgnoreCase) => "Event Done",
+        var s when s.Equals("Preparation", StringComparison.OrdinalIgnoreCase) || s.Equals("Preparing", StringComparison.OrdinalIgnoreCase) || s.Equals("Dispatch", StringComparison.OrdinalIgnoreCase) => "Preparing",
+        var s when s.Equals("Ready", StringComparison.OrdinalIgnoreCase) => "Ready",
+        var s when s.Equals("In Execution", StringComparison.OrdinalIgnoreCase) => "In Execution",
+        var s when s.Equals("On Going", StringComparison.OrdinalIgnoreCase) || s.Equals("Ongoing", StringComparison.OrdinalIgnoreCase) => "Ongoing",
+        var s when s.Equals("Pending Verification", StringComparison.OrdinalIgnoreCase) || s.Equals("Payment Verification (Cash)", StringComparison.OrdinalIgnoreCase) => "Payment Verification (Cash)",
+        var s => s
+    };
+
+    private static string ResolvePaymentLabel(LiveEventOverviewDto ev)
+    {
+        if (!string.IsNullOrWhiteSpace(ev.PaymentVerificationStatus))
+            return ev.PaymentVerificationStatus;
+
+        if (string.Equals(ev.FinalPaymentStatus, "Payment Verification (QR:Paid)", StringComparison.OrdinalIgnoreCase) ||
+            (string.Equals(ev.FinalPaymentMethod, "Xendit_QR", StringComparison.OrdinalIgnoreCase) &&
+             (string.Equals(ev.FinalPaymentStatus, "Paid", StringComparison.OrdinalIgnoreCase) || IsCompletedStage(ev.DisplayStage))))
+            return "Payment Verification (QR:Paid)";
+
+        if (string.Equals(ev.DisplayStage, "Payment Verification (Cash)", StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(ev.EventStatus, "Payment Verification (Cash)", StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(ev.EventStatus, "Pending Verification", StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(ev.FinalPaymentStatus, "Payment Verification (Cash)", StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(ev.FinalPaymentStatus, "Pending Verification", StringComparison.OrdinalIgnoreCase))
+            return "Payment Verification (Cash)";
+
+        if (string.Equals(ev.DisplayStage, "Payment Verification (QR:Pending Payment)", StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(ev.FinalPaymentStatus, "Payment Verification (QR:Pending Payment)", StringComparison.OrdinalIgnoreCase) ||
+            (string.Equals(ev.FinalPaymentMethod, "Xendit_QR", StringComparison.OrdinalIgnoreCase) &&
+             (string.Equals(ev.EventStatus, "Pending Payment", StringComparison.OrdinalIgnoreCase) ||
+              string.Equals(ev.FinalPaymentStatus, "Pending", StringComparison.OrdinalIgnoreCase) ||
+              !string.IsNullOrWhiteSpace(ev.FinalPaymentReferenceId))))
+            return "Payment Verification (QR:Pending Payment)";
+
+        return string.Empty;
     }
+
+    private static bool MatchesStageFilter(LiveEventOverviewDto ev, string filter)
+    {
+        if (filter == "All") return true;
+        var stage = NormalizeStage(ev.DisplayStage);
+        var paymentLabel = ResolvePaymentLabel(ev);
+        return filter switch
+        {
+            "Preparing" => string.Equals(stage, "Preparing", StringComparison.OrdinalIgnoreCase) || string.Equals(stage, "Ready", StringComparison.OrdinalIgnoreCase),
+            "Ongoing" => string.Equals(stage, "Ongoing", StringComparison.OrdinalIgnoreCase) || string.Equals(stage, "In Execution", StringComparison.OrdinalIgnoreCase),
+            "Event Done" => string.Equals(stage, "Event Done", StringComparison.OrdinalIgnoreCase),
+            "Payment Verification (Cash)" => !IsCompletedStage(stage) && string.Equals(paymentLabel, "Payment Verification (Cash)", StringComparison.OrdinalIgnoreCase),
+            "Payment Verification (QR:Pending Payment)" => !IsCompletedStage(stage) && string.Equals(paymentLabel, "Payment Verification (QR:Pending Payment)", StringComparison.OrdinalIgnoreCase),
+            "Payment Verification (QR:Paid)" => string.Equals(paymentLabel, "Payment Verification (QR:Paid)", StringComparison.OrdinalIgnoreCase),
+            "Completed" => IsCompletedStage(stage),
+            _ => string.Equals(stage, filter, StringComparison.OrdinalIgnoreCase)
+        };
+    }
+
+    private int GetStageCount(string tab) => _events.Count(e => MatchesStageFilter(e, tab));
 
     private static string GetStageBadgeClass(string stage) => stage switch
     {
-        "Complete" => "bg-emerald-100 text-emerald-800 border border-emerald-200",
-        "Paid Cash Pending Verification" => "bg-amber-100 text-amber-950 border border-amber-300",
-        "Post Event" => "bg-purple-100 text-purple-800 border border-purple-200",
-        "Ongoing" => "bg-teal-100 text-teal-800 border border-teal-200",
+        "Completed" or "Complete" or "Payment Verification (QR:Paid)" => "bg-emerald-100 text-emerald-800 border border-emerald-200",
+        "Payment Verification (Cash)" => "bg-amber-100 text-amber-950 border border-amber-300",
+        "Payment Verification (QR:Pending Payment)" => "bg-sky-100 text-sky-900 border border-sky-300",
+        "Event Done" or "Post Event" => "bg-purple-100 text-purple-800 border border-purple-200",
+        "Ongoing" or "In Execution" => "bg-teal-100 text-teal-800 border border-teal-200",
         "Dispatch" => "bg-indigo-100 text-indigo-800 border border-indigo-200",
-        "Preparation" => "bg-sky-100 text-sky-800 border border-sky-200",
+        "Ready" or "Preparing" or "Preparation" => "bg-sky-100 text-sky-800 border border-sky-200",
         _ => "bg-slate-100 text-slate-700 border border-slate-200"
     };
 
-    private static string GetStepState(string currentStage, string step)
+    private static string GetStepState(string currentStage, string step, string settlementLabel)
     {
         int currentRank = currentStage switch
         {
-            "Preparation" or "Dispatch" => 1,
-            "Ongoing" => 2,
-            "Post Event" => 3,
-            "Paid Cash Pending Verification" => 4,
-            "Complete" => 5,
+            "Preparing" or "Preparation" or "Dispatch" or "Ready" => 1,
+            "Ongoing" or "On Going" or "In Execution" => 2,
+            "Event Done" or "Post Event" => 3,
+            "Payment Verification (Cash)" or "Payment Verification (QR:Pending Payment)" => 4,
+            "Completed" or "Complete" or "Shot" => 5,
             _ => 0
         };
         int stepRank = step switch
         {
-            "Preparation" => 1,
+            "Preparing" => 1,
             "Ongoing" => 2,
-            "Post Event" => 3,
-            "Paid Cash Pending Verification" => 4,
-            "Complete" => 5,
+            "Event Done" => 3,
+            "Completed" => 5,
+            _ when string.Equals(step, settlementLabel, StringComparison.OrdinalIgnoreCase) => 4,
             _ => 0
         };
 

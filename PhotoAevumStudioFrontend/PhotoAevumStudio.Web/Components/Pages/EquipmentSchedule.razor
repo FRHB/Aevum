@@ -169,7 +169,7 @@ else
                                             {
                                                 <div @onclick="() => OpenDetailDrawer(res)"
                                                      class="p-1.5 rounded border text-[11px] cursor-pointer transition-all @GetReservationCardStyle(res)">
-                                                    <div class="flex items-center justify-between font-bold">
+                                                    <div class="flex items-center justify-between font-bold gap-1">
                                                         <span>@res.FormattedTimeRange</span>
                                                         @if (res.HasConflict)
                                                         {
@@ -177,7 +177,7 @@ else
                                                         }
                                                         else
                                                         {
-                                                            <span class="text-emerald-700 font-bold text-[10px]" title="Verified Booking">✓</span>
+                                                            <span class="text-emerald-700 font-bold text-[10px]" title="Booked All Day">🔒 All Day</span>
                                                         }
                                                     </div>
                                                     <div class="text-[10px] truncate">@res.ProjectOrClient &bull; 👤 @res.TechnicianInCharge</div>
@@ -195,21 +195,32 @@ else
     }
     else
     {
+        var listReservations = GetReservationsForActiveView().ToList();
         <div class="bg-white p-4 rounded-lg border border-gray-200">
             <h3 class="font-bold text-sm mb-3">Reservations for @FormattedDateRangeHeader</h3>
-            <div class="space-y-2">
-                @foreach (var res in FilteredReservations.Where(r => r.Date.Date == _selectedDate.Date))
-                {
-                    <div @onclick="() => OpenDetailDrawer(res)" class="p-2 border rounded flex items-center justify-between cursor-pointer hover:bg-gray-50">
-                        <div class="flex items-center gap-3">
-                            <span class="font-bold text-xs">@res.FormattedTimeRange</span>
-                            <span class="font-bold text-xs">@res.EquipmentName</span>
-                            <span class="text-xs text-gray-500">@res.ProjectOrClient &bull; 👤 @res.TechnicianInCharge</span>
+            @if (listReservations.Count == 0)
+            {
+                <div class="py-8 text-center text-xs text-gray-400 italic">No equipment reservations scheduled for this period.</div>
+            }
+            else
+            {
+                <div class="space-y-2">
+                    @foreach (var res in listReservations)
+                    {
+                        <div @onclick="() => OpenDetailDrawer(res)" class="p-2.5 border rounded-lg flex flex-wrap items-center justify-between gap-2 cursor-pointer hover:bg-gray-50 @(res.HasConflict ? "border-rose-300 bg-rose-50/40" : "border-gray-200")">
+                            <div class="flex flex-wrap items-center gap-3">
+                                <span class="font-mono text-[11px] px-2 py-0.5 rounded bg-gray-100 text-gray-700 font-semibold">@res.Date.ToString("MMM d")</span>
+                                <span class="font-bold text-xs">@res.FormattedTimeRange</span>
+                                <span class="font-bold text-xs text-slate-900">@res.EquipmentName</span>
+                                <span class="text-xs text-gray-500">@res.ProjectOrClient &bull; 👤 @res.TechnicianInCharge &bull; 📍 @res.Location</span>
+                            </div>
+                            <span class="text-xs px-2 py-0.5 rounded @(res.HasConflict ? "bg-rose-100 text-rose-800" : "bg-emerald-50 text-emerald-800") font-semibold">
+                                @(res.HasConflict ? "⚠️ Same-Day Conflict" : "🔒 Booked All Day")
+                            </span>
                         </div>
-                        <span class="text-xs px-2 py-0.5 rounded bg-emerald-50 text-emerald-800 font-semibold">✓ Dispatched</span>
-                    </div>
-                }
-            </div>
+                    }
+                </div>
+            }
         </div>
     }
 
@@ -224,11 +235,22 @@ else
                         <button type="button" @onclick="CloseDetailDrawer" class="text-gray-400 font-bold">✕</button>
                     </div>
                     <div class="space-y-2 text-xs">
-                        <div><strong class="text-gray-500">Equipment:</strong> @_selectedReservation.EquipmentName</div>
+                        <div>
+                            <span class="inline-block px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-100 text-amber-900 border border-amber-200">
+                                🔒 Unavailable All Day (@_selectedReservation.Date.ToString("MMM d, yyyy"))
+                            </span>
+                        </div>
+                        <div><strong class="text-gray-500">Equipment:</strong> @_selectedReservation.EquipmentName (<code class="text-[11px]">@_selectedReservation.EquipmentId</code>)</div>
+                        <div><strong class="text-gray-500">Category:</strong> @_selectedReservation.Category</div>
                         <div><strong class="text-gray-500">Project / Client:</strong> @_selectedReservation.ProjectOrClient</div>
                         <div><strong class="text-gray-500">Technician:</strong> @_selectedReservation.TechnicianInCharge</div>
-                        <div><strong class="text-gray-500">Schedule:</strong> @_selectedReservation.Date.ToString("ddd, MMM d") (@_selectedReservation.FormattedTimeRange)</div>
+                        <div><strong class="text-gray-500">Schedule:</strong> @_selectedReservation.Date.ToString("ddd, MMM d, yyyy") (@_selectedReservation.FormattedTimeRange)</div>
                         <div><strong class="text-gray-500">Location:</strong> @_selectedReservation.Location</div>
+                        <div><strong class="text-gray-500">Event Status:</strong> @_selectedReservation.EventStatus</div>
+                        @if (!string.IsNullOrWhiteSpace(_selectedReservation.Notes))
+                        {
+                            <div><strong class="text-gray-500">Notes:</strong> <span class="italic text-gray-600">@_selectedReservation.Notes</span></div>
+                        }
                     </div>
                 </div>
                 <div class="pt-3 border-t">
@@ -251,11 +273,16 @@ else
                     <div>
                         <label class="block font-semibold mb-1">Equipment Unit</label>
                         <select @bind="_newReservation.EquipmentId" class="w-full p-1.5 border rounded">
+                            <option value="">Select available equipment...</option>
                             @foreach (var eq in EquipmentResources)
                             {
-                                <option value="@eq.Id">@eq.Name (@eq.SerialNumber)</option>
+                                var isBooked = IsEquipmentBookedOnDate(eq.Id, _newReservationDate);
+                                <option value="@eq.Id" disabled="@isBooked">
+                                    @eq.Name (@eq.SerialNumber)@(isBooked ? " — Unavailable (Booked Today)" : "")
+                                </option>
                             }
                         </select>
+                        <p class="text-[10px] text-gray-400 mt-0.5">Equipment booked on any active event for @_newReservationDate.ToString("MMM d, yyyy") is locked all day.</p>
                     </div>
                     <div>
                         <label class="block font-semibold mb-1">Project / Production</label>
@@ -468,16 +495,43 @@ else
         }
     }
 
+    private IEnumerable<EquipmentReservationModel> GetReservationsForActiveView() => _currentView switch
+    {
+        ScheduleViewMode.Day => FilteredReservations
+            .Where(r => r.Date.Date == _selectedDate.Date)
+            .OrderBy(r => r.StartTime),
+        ScheduleViewMode.Month => FilteredReservations
+            .Where(r => r.Date.Year == _selectedDate.Year && r.Date.Month == _selectedDate.Month)
+            .OrderBy(r => r.Date)
+            .ThenBy(r => r.StartTime),
+        ScheduleViewMode.Agenda => FilteredReservations
+            .Where(r => r.Date.Date >= _selectedDate.Date && r.Date.Date <= _selectedDate.Date.AddDays(14))
+            .OrderBy(r => r.Date)
+            .ThenBy(r => r.StartTime),
+        _ => FilteredReservations
+            .Where(r => r.Date.Date == _selectedDate.Date)
+            .OrderBy(r => r.StartTime)
+    };
+
+    private bool IsEquipmentBookedOnDate(string? equipmentId, DateTime date) =>
+        !string.IsNullOrWhiteSpace(equipmentId) &&
+        AllReservations.Any(r =>
+            string.Equals(r.EquipmentId, equipmentId, StringComparison.OrdinalIgnoreCase) &&
+            r.Date.Date == date.Date &&
+            !string.Equals(r.EventStatus, "Cancelled", StringComparison.OrdinalIgnoreCase) &&
+            !string.Equals(r.EventStatus, "Expired", StringComparison.OrdinalIgnoreCase));
+
     private void OpenCreateModal()
     {
+        _newReservationDate = _selectedDate;
+        var firstAvailable = EquipmentResources.FirstOrDefault(e => !IsEquipmentBookedOnDate(e.Id, _newReservationDate));
         _newReservation = new EquipmentReservationModel
         {
-            EquipmentId = EquipmentResources.FirstOrDefault()?.Id ?? string.Empty,
+            EquipmentId = firstAvailable?.Id ?? string.Empty,
             TechnicianInCharge = string.Empty,
             Location = string.Empty,
             MaintenanceStatus = "Ready"
         };
-        _newReservationDate = _selectedDate;
         _newStartTime = new TimeOnly(9, 0);
         _newEndTime = new TimeOnly(14, 0);
         _modalErrorMessage = null;
@@ -492,9 +546,21 @@ else
 
     private async Task SaveNewReservation()
     {
+        if (string.IsNullOrWhiteSpace(_newReservation.EquipmentId))
+        {
+            _modalErrorMessage = "Please select an available equipment unit.";
+            return;
+        }
+
         if (_newEndTime <= _newStartTime)
         {
             _modalErrorMessage = "Reservation end time must be after start time.";
+            return;
+        }
+
+        if (IsEquipmentBookedOnDate(_newReservation.EquipmentId, _newReservationDate))
+        {
+            _modalErrorMessage = $"Selected equipment is already booked on {_newReservationDate:MMM d, yyyy} and is unavailable for the entire calendar day.";
             return;
         }
 
@@ -502,7 +568,16 @@ else
         _newReservation.StartTime = _newStartTime.ToTimeSpan();
         _newReservation.EndTime = _newEndTime.ToTimeSpan();
 
-        ScheduleService.AddEquipmentReservation(_newReservation);
+        try
+        {
+            ScheduleService.AddEquipmentReservation(_newReservation);
+        }
+        catch (InvalidOperationException ex)
+        {
+            _modalErrorMessage = ex.Message;
+            return;
+        }
+
         _isCreateModalOpen = false;
         _modalErrorMessage = null;
         await RefreshEquipmentDataAsync();

@@ -117,3 +117,32 @@ public sealed class SlotUnavailableException : Exception
 /// <summary>Request failed business validation. Message is safe to show to the user.</summary>
 public sealed class ScheduleValidationException(string message) : Exception(message);
 
+public sealed record CustomerCancelBookingRequest(string? Reason = null);
+
+public sealed record CustomerCancelBookingResultDto(
+    bool Success,
+    int AppointmentId,
+    string? NegotiationId,
+    bool SlotReleased,
+    bool ClerkReleased,
+    bool EquipmentReleased,
+    string Message);
+
+public sealed record CustomerRescheduleBookingRequest(
+    DateOnly NewDate,
+    TimeOnly NewSlotStart,
+    string? Reason = null);
+
+public sealed record CustomerRescheduleBookingResultDto(
+    bool Success,
+    int AppointmentId,
+    string? NegotiationId,
+    DateOnly NewDate,
+    TimeOnly NewSlotStart,
+    TimeOnly NewSlotEnd,
+    string AssignedClerkId,
+    string AssignedClerkName,
+    bool RetainedOriginalClerk,
+    string Status,
+    string Message);
+

@@ -47,10 +47,19 @@ public sealed record BufferedTimeWindow(TimeSpan PrepStart, TimeSpan EventStart,
     public TimeSpan PostDuration => PostEnd - EventEnd;
 }
 
+public sealed class ScheduleServiceItem
+{
+    public string Id { get; set; } = string.Empty;
+    public string Name { get; set; } = string.Empty;
+    public string Description { get; set; } = string.Empty;
+    public decimal Price { get; set; }
+    public string RateType { get; set; } = "Per Session";
+}
+
 /// <summary>
 /// Pure scheduling, rate calculation, buffer conflict, and crew availability engine for the Booking Wizard.
 /// </summary>
-public static class BookingWizardEngine
+public class BookingWizardEngine
 {
     public static readonly TimeSpan PrepBuffer = TimeSpan.FromHours(2);
     public static readonly TimeSpan PostBuffer = TimeSpan.FromHours(1);
@@ -264,6 +273,29 @@ public static class BookingWizardEngine
         return null;
     }
 
+    public static bool IsOfficeClerk(EmployeeViewModel? emp)
+    {
+        if (emp == null) return false;
+
+        if (!string.IsNullOrWhiteSpace(emp.EmployeeId) &&
+            emp.EmployeeId.StartsWith("CLK-", StringComparison.OrdinalIgnoreCase))
+            return true;
+
+        if (!string.IsNullOrWhiteSpace(emp.Role) &&
+            emp.Role.Contains("clerk", StringComparison.OrdinalIgnoreCase))
+            return true;
+
+        if (emp.Specializations != null &&
+            emp.Specializations.Any(s => !string.IsNullOrWhiteSpace(s) && s.Contains("clerk", StringComparison.OrdinalIgnoreCase)))
+            return true;
+
+        return false;
+    }
+
+    public static IEnumerable<EmployeeViewModel> FilterDispatchableCrew(IEnumerable<EmployeeViewModel>? employees) =>
+        (employees ?? Enumerable.Empty<EmployeeViewModel>())
+            .Where(emp => emp != null && !IsOfficeClerk(emp));
+
     public static bool IsCrewAvailableForWindow(
         EmployeeViewModel emp,
         DateTime date,
@@ -274,6 +306,9 @@ public static class BookingWizardEngine
         string? excludeAppointmentId = null,
         IEnumerable<LeaveItemViewModel>? approvedLeaves = null)
     {
+        if (IsOfficeClerk(emp))
+            return false;
+
         if (GetEmployeeBlockReason(emp, date, approvedLeaves) != null)
             return false;
 
@@ -326,7 +361,7 @@ public static class BookingWizardEngine
         IEnumerable<LeaveItemViewModel>? approvedLeaves = null)
     {
         var available = new List<AvailableCrewOption>();
-        foreach (var emp in employees)
+        foreach (var emp in FilterDispatchableCrew(employees))
         {
             if (!IsCrewAvailableForWindow(emp, date, eventStart, eventEnd, bookings, negotiations, excludeAppointmentId, approvedLeaves))
                 continue;
@@ -338,16 +373,31 @@ public static class BookingWizardEngine
         return available;
     }
 
+    public static HashSet<string> GetBookedEquipmentIdsForDate(
+        DateTime date,
+        IEnumerable<EventBookingModel>? bookings,
+        IEnumerable<EquipmentReservationModel>? reservations,
+        IEnumerable<ConsultationNegotiationDto>? negotiations = null,
+        string? excludeAppointmentId = null) =>
+        GetConflictingEquipmentIds(
+            date,
+            TimeSpan.Zero,
+            new TimeSpan(23, 59, 0),
+            bookings,
+            reservations,
+            excludeAppointmentId,
+            negotiations);
+
     public static HashSet<string> GetConflictingEquipmentIds(
         DateTime date,
         TimeSpan eventStart,
         TimeSpan eventEnd,
         IEnumerable<EventBookingModel>? bookings,
         IEnumerable<EquipmentReservationModel>? reservations,
-        string? excludeAppointmentId = null)
+        string? excludeAppointmentId = null,
+        IEnumerable<ConsultationNegotiationDto>? negotiations = null)
     {
         var conflicting = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-        var candidate = ComputeBufferedWindow(eventStart, eventEnd);
 
         if (bookings != null)
         {
@@ -358,12 +408,9 @@ public static class BookingWizardEngine
                     string.Equals(b.Id, excludeAppointmentId, StringComparison.OrdinalIgnoreCase)) continue;
                 if (b.AssignedEquipmentIds == null || b.AssignedEquipmentIds.Count == 0) continue;
 
-                var win = ComputeBufferedWindow(b.StartTime, b.EffectiveEndTime);
-                if (WindowsOverlap(candidate.PrepStart, candidate.PostEnd, win.PrepStart, win.PostEnd))
-                {
-                    foreach (var eqId in b.AssignedEquipmentIds)
-                        conflicting.Add(eqId);
-                }
+                // Same-day calendar lock: booked equipment is unavailable for the entire calendar day.
+                foreach (var eqId in b.AssignedEquipmentIds.Where(id => !string.IsNullOrWhiteSpace(id)))
+                    conflicting.Add(eqId.Trim());
             }
         }
 
@@ -371,13 +418,30 @@ public static class BookingWizardEngine
         {
             foreach (var r in reservations)
             {
-                if (r.Date.Date != date.Date || string.IsNullOrWhiteSpace(r.EquipmentId)) continue;
+                if (r.Date.Date != date.Date || string.IsNullOrWhiteSpace(r.EquipmentId) || IsInactiveStatus(r.EventStatus)) continue;
                 if (!string.IsNullOrWhiteSpace(excludeAppointmentId) &&
-                    r.Id.StartsWith(excludeAppointmentId + "-", StringComparison.OrdinalIgnoreCase)) continue;
+                    (string.Equals(r.EventAppointmentId, excludeAppointmentId, StringComparison.OrdinalIgnoreCase) ||
+                     r.Id.StartsWith(excludeAppointmentId + "-", StringComparison.OrdinalIgnoreCase))) continue;
 
-                var win = ComputeBufferedWindow(r.StartTime, r.EndTime);
-                if (WindowsOverlap(candidate.PrepStart, candidate.PostEnd, win.PrepStart, win.PostEnd))
-                    conflicting.Add(r.EquipmentId);
+                conflicting.Add(r.EquipmentId.Trim());
+            }
+        }
+
+        if (negotiations != null)
+        {
+            foreach (var neg in negotiations)
+            {
+                var appt = neg.Appointment;
+                if (appt == null || appt.EventDate.ToDateTime(TimeOnly.MinValue).Date != date.Date) continue;
+                if (IsInactiveStatus(appt.EventStatus) || IsInactiveStatus(neg.NegotiationStatus)) continue;
+                if (!string.IsNullOrWhiteSpace(excludeAppointmentId) &&
+                    string.Equals(appt.EventAppointmentId, excludeAppointmentId, StringComparison.OrdinalIgnoreCase)) continue;
+
+                if (appt.AssignedEquipment != null)
+                {
+                    foreach (var eq in appt.AssignedEquipment.Where(e => !string.IsNullOrWhiteSpace(e.EquipmentId)))
+                        conflicting.Add(eq.EquipmentId.Trim());
+                }
             }
         }
 
@@ -390,4 +454,65 @@ public static class BookingWizardEngine
         string.Equals(status, "Cancelled", StringComparison.OrdinalIgnoreCase) ||
         string.Equals(status, "Expired", StringComparison.OrdinalIgnoreCase) ||
         string.Equals(status, "Deal_Lost", StringComparison.OrdinalIgnoreCase);
+
+    private readonly Dictionary<string, ScheduleServiceItem> _catalog = new(StringComparer.OrdinalIgnoreCase);
+    private readonly Dictionary<string, ServiceCustomizationItem> _selectedServices = new(StringComparer.OrdinalIgnoreCase);
+
+    public void LoadCatalog(IEnumerable<ScheduleServiceItem>? items)
+    {
+        _catalog.Clear();
+        _selectedServices.Clear();
+        if (items == null) return;
+        foreach (var item in items.Where(i => i != null && !string.IsNullOrWhiteSpace(i.Id)))
+        {
+            _catalog[item.Id] = item;
+        }
+    }
+
+    public void ToggleService(string serviceId)
+    {
+        if (string.IsNullOrWhiteSpace(serviceId)) return;
+        if (_selectedServices.Remove(serviceId))
+            return;
+
+        if (_catalog.TryGetValue(serviceId, out var cat))
+        {
+            var opt = new ScheduleServiceOption(cat.Id, cat.Name, cat.Description, cat.Price, cat.RateType);
+            _selectedServices[serviceId] = CreateCustomizationItem(opt);
+        }
+    }
+
+    public void SetServiceQuantity(string serviceId, int quantity)
+    {
+        if (_selectedServices.TryGetValue(serviceId, out var item))
+        {
+            item.Quantity = Math.Max(1, quantity);
+        }
+    }
+
+    public void SetServiceDurationHours(string serviceId, int hours)
+    {
+        if (_selectedServices.TryGetValue(serviceId, out var item))
+        {
+            var h = Math.Max(1, hours);
+            item.DurationHours = h;
+            if (item.RateCategory == ServiceRateCategory.PerHour)
+            {
+                item.Quantity = h;
+            }
+        }
+    }
+
+    public decimal CalculatedSubtotal => _selectedServices.Values.Sum(s => s.LineTotal);
+
+    public List<EventServiceLineInput> BuildServiceSelections() =>
+        _selectedServices.Values
+            .Select(s => new EventServiceLineInput
+            {
+                ServicesId = s.ServicesId,
+                Quantity = s.Quantity,
+                DurationHours = s.EffectiveDurationHours,
+                RateType = s.RateType
+            })
+            .ToList();
 }

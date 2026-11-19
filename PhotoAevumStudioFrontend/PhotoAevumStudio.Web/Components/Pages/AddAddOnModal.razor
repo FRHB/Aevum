@@ -143,8 +143,8 @@
                                 <ValidationMessage For="@(() => formModel.ServiceCategoryName)" class="text-[11px] text-red-600 font-medium mt-1" />
                             </div>
 
-                            <!-- Service Category Dropdown & Price in 2-Column Grid -->
-                            <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                            <!-- Service Category, Price & Rate Type in 3-Column Grid -->
+                            <div class="grid grid-cols-1 sm:grid-cols-3 gap-4">
                                 <!-- Service Category Dropdown -->
                                 <div>
                                     <label for="addon-category" class="block text-xs font-bold text-gray-800 uppercase tracking-wider mb-1.5">
@@ -183,6 +183,22 @@
                                                      class="w-full pl-8 pr-3.5 py-2.5 text-sm bg-white border border-gray-300 rounded-lg text-gray-900 focus:outline-none focus:ring-2 focus:ring-gray-900 focus:border-transparent transition-all" />
                                     </div>
                                     <ValidationMessage For="@(() => formModel.ServicePrice)" class="text-[11px] text-red-600 font-medium mt-1" />
+                                </div>
+
+                                <!-- Rate Type -->
+                                <div>
+                                    <label for="addon-rate-type" class="block text-xs font-bold text-gray-800 uppercase tracking-wider mb-1.5">
+                                        Rate Type <span class="text-red-500">*</span>
+                                    </label>
+                                    <InputSelect id="addon-rate-type"
+                                                 @bind-Value="formModel.RateType"
+                                                 class="w-full px-3.5 py-2.5 text-sm bg-white border border-gray-300 rounded-lg text-gray-900 focus:outline-none focus:ring-2 focus:ring-gray-900 focus:border-transparent transition-all">
+                                        <option value="per hour">per hour</option>
+                                        <option value="per picture">per picture</option>
+                                        <option value="per single shot">per single shot</option>
+                                        <option value="multi-shot">multi-shot</option>
+                                    </InputSelect>
+                                    <ValidationMessage For="@(() => formModel.RateType)" class="text-[11px] text-red-600 font-medium mt-1" />
                                 </div>
                             </div>
 
@@ -326,11 +342,11 @@
                                 <!-- Price Row -->
                                 <div class="p-4 bg-white flex items-center justify-between">
                                     <div>
-                                        <p class="text-[11px] font-bold text-gray-500 uppercase tracking-wider">Service Price</p>
+                                        <p class="text-[11px] font-bold text-gray-500 uppercase tracking-wider">Service Price & Rate Type</p>
                                         <p class="text-xs text-gray-500">Standard rate added to base package</p>
                                     </div>
                                     <div class="text-right">
-                                        <p class="text-xl font-extrabold text-emerald-700">₱@formModel.ServicePrice.ToString("N2")</p>
+                                        <p class="text-xl font-extrabold text-emerald-700">₱@formModel.ServicePrice.ToString("N2") <span class="text-xs font-semibold text-gray-500">/ @formModel.RateType</span></p>
                                     </div>
                                 </div>
 
@@ -488,6 +504,7 @@
                 formModel.ServiceCategoryName = EditItem.Title;
                 formModel.ServiceCategory = string.IsNullOrWhiteSpace(EditItem.TypeCategory) ? "Photo Enhancement" : EditItem.TypeCategory;
                 formModel.ServiceCategoryDescription = EditItem.Description ?? string.Empty;
+                formModel.RateType = ServiceRateTypeHelper.Normalize(EditItem.RateType);
 
                 var digits = new string((EditItem.PriceText ?? "").Where(c => char.IsDigit(c) || c == '.').ToArray());
                 if (decimal.TryParse(digits, out var p))
@@ -709,13 +726,15 @@
                     FilterCategory = formModel.ServiceCategory.Trim(),
                     PriceText = $"₱{formModel.ServicePrice:N2}",
                     Description = formModel.ServiceCategoryDescription.Trim(),
-                    Status = EditItem.Status
+                    Status = EditItem.Status,
+                    RateType = formModel.RateType
                 };
 
-                var ok = UserService.UpdateAdditionalService(updatedItem);
+                var apiUpdate = await ServicesApi.UpdateAdditionalServiceAsync(formModel);
+                var ok = apiUpdate.Success || UserService.UpdateAdditionalService(updatedItem);
                 if (!ok)
                 {
-                    generalErrorMessage = "Failed to update additional service record.";
+                    generalErrorMessage = apiUpdate.ErrorMessage ?? "Failed to update additional service record.";
                     return;
                 }
 
@@ -755,7 +774,8 @@
                 FilterCategory = formModel.ServiceCategory.Trim(),
                 PriceText = $"₱{formModel.ServicePrice:N2}",
                 Description = formModel.ServiceCategoryDescription.Trim(),
-                Status = "Active"
+                Status = "Active",
+                RateType = formModel.RateType
             };
 
             InitializeForm();

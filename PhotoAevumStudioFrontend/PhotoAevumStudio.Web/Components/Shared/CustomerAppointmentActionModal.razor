@@ -1,0 +1,483 @@
+@using PhotoAevumStudio.Web.Models
+@using PhotoAevumStudio.Web.Services
+@inject IBookScheduleClient ScheduleApi
+@inject IConsultationClient ConsultationApi
+
+@if (IsOpen)
+{
+    <div class="fixed inset-0 bg-slate-950/60 backdrop-blur-xs z-50 flex items-center justify-center p-4"
+         role="dialog"
+         aria-modal="true"
+         aria-labelledby="customer-appt-action-title"
+         @onclick="HandleBackdropClick">
+        <div class="bg-white rounded-2xl shadow-2xl border border-slate-200 w-full max-w-2xl overflow-hidden flex flex-col max-h-[90vh]"
+             @onclick:stopPropagation="true">
+
+            @* ── Header ── *@
+            <div class="px-6 py-4 border-b border-slate-100 flex items-center justify-between bg-slate-50/80">
+                <div>
+                    <span class="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider @(IsCancelMode ? "bg-rose-100 text-rose-800" : "bg-teal-100 text-teal-800")">
+                        @(IsCancelMode ? "Cancel Appointment" : "Live Availability Reschedule")
+                    </span>
+                    <h3 id="customer-appt-action-title" class="text-base font-extrabold text-slate-900 mt-1">
+                        @AppointmentTitle
+                    </h3>
+                    <p class="text-xs text-slate-500">
+                        Current Schedule: <strong>@CurrentDateTime.ToString("MMM dd, yyyy • h:mm tt")</strong>
+                        @if (!string.IsNullOrWhiteSpace(CurrentClerkName))
+                        {
+                            <span> &bull; Office Clerk: <strong>@CurrentClerkName</strong></span>
+                        }
+                    </p>
+                </div>
+                <button type="button"
+                        @onclick="CloseModalAsync"
+                        disabled="@_submitting"
+                        class="text-slate-400 hover:text-slate-700 text-sm font-bold px-2 py-1 rounded-lg">
+                    ✕
+                </button>
+            </div>
+
+            @* ── Body ── *@
+            <div class="p-6 overflow-y-auto space-y-4 text-xs">
+                @if (!string.IsNullOrWhiteSpace(_errorMessage))
+                {
+                    <div class="p-3 rounded-xl bg-rose-50 border border-rose-200 text-rose-800 font-semibold">
+                        ⚠️ @_errorMessage
+                    </div>
+                }
+
+                @if (IsCancelMode)
+                {
+                    <div class="p-4 rounded-xl bg-amber-50 border border-amber-200 text-amber-900 space-y-1.5">
+                        <div class="font-bold text-sm">Are you sure you want to cancel this appointment?</div>
+                        <p class="text-xs text-amber-800 leading-relaxed">
+                            Cancelling will immediately release your locked time slot, assigned Office Clerk, photography crew, and reserved studio equipment so other clients may book the slot.
+                        </p>
+                    </div>
+
+                    <div>
+                        <label class="block font-bold text-slate-700 mb-1">Reason for Cancellation (Optional)</label>
+                        <textarea @bind="_reason"
+                                  rows="3"
+                                  placeholder="Let us know why you need to cancel..."
+                                  class="w-full px-3 py-2 border border-slate-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-rose-500"></textarea>
+                    </div>
+                }
+                else
+                {
+                    <div class="p-3.5 rounded-xl bg-teal-50/80 border border-teal-200 text-teal-900 flex items-start gap-2.5">
+                        <span class="text-base leading-none">🧑‍💼</span>
+                        <div class="space-y-0.5">
+                            <div class="font-bold">Smart Office Clerk Assignment</div>
+                            <p class="text-[11px] text-teal-800 leading-relaxed">
+                                If your originally assigned Office Clerk@(!string.IsNullOrWhiteSpace(CurrentClerkName) ? $" ({CurrentClerkName})" : "") is available on your new date and time, they will be retained automatically. If they are on Day Off, Approved Leave, or assisting another session, another available Office Clerk will be automatically assigned.
+                            </p>
+                        </div>
+                    </div>
+
+                    @* 2-Column Live Date & Time Slot Picker *@
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-5 pt-1">
+                        @* Left Column: Month Calendar *@
+                        <div class="border border-slate-200 rounded-xl p-3.5 bg-slate-50/50">
+                            <div class="flex items-center justify-between mb-3">
+                                <h4 class="text-xs font-extrabold text-slate-900 uppercase tracking-wider">
+                                    @_visibleMonth.ToString("MMMM yyyy")
+                                </h4>
+                                <div class="flex items-center gap-1">
+                                    <button type="button"
+                                            @onclick="() => ChangeMonthAsync(-1)"
+                                            disabled="@_loadingMonth"
+                                            class="px-2.5 py-1 rounded border border-slate-200 bg-white text-xs font-bold hover:bg-slate-100 disabled:opacity-40"
+                                            aria-label="Previous month">‹</button>
+                                    <button type="button"
+                                            @onclick="() => ChangeMonthAsync(1)"
+                                            disabled="@_loadingMonth"
+                                            class="px-2.5 py-1 rounded border border-slate-200 bg-white text-xs font-bold hover:bg-slate-100 disabled:opacity-40"
+                                            aria-label="Next month">›</button>
+                                </div>
+                            </div>
+
+                            <div class="grid grid-cols-7 text-center text-[10px] font-bold text-slate-400 mb-1">
+                                <span>Su</span><span>Mo</span><span>Tu</span><span>We</span><span>Th</span><span>Fr</span><span>Sa</span>
+                            </div>
+
+                            @if (_loadingMonth)
+                            {
+                                <div class="py-10 flex flex-col items-center justify-center text-xs text-slate-500 gap-2">
+                                    <span class="animate-spin inline-block w-5 h-5 border-2 border-teal-600 border-t-transparent rounded-full"></span>
+                                    <span>Checking live availability…</span>
+                                </div>
+                            }
+                            else
+                            {
+                                <div class="grid grid-cols-7 gap-1">
+                                    @for (var i = 0; i < LeadingBlankDays(); i++)
+                                    {
+                                        <span class="h-8"></span>
+                                    }
+                                    @foreach (var day in _monthDays)
+                                    {
+                                        var isSelected = _selectedDate == day.Date;
+                                        var isSelectable = day.HasAvailability && day.Date >= DateOnly.FromDateTime(DateTime.Today);
+                                        <button type="button"
+                                                disabled="@(!isSelectable)"
+                                                @onclick="() => SelectDateAsync(day.Date)"
+                                                class="h-8 rounded-lg text-xs font-bold transition-colors @(isSelected ? "bg-teal-600 text-white shadow-xs" : isSelectable ? "bg-white hover:bg-teal-50 text-slate-800 border border-slate-200" : "text-slate-300 bg-slate-100/60 cursor-not-allowed")">
+                                            @day.Date.Day
+                                        </button>
+                                    }
+                                </div>
+                            }
+                        </div>
+
+                        @* Right Column: Time Slots *@
+                        <div class="border border-slate-200 rounded-xl p-3.5 bg-slate-50/50 flex flex-col">
+                            <h4 class="text-xs font-extrabold text-slate-900 uppercase tracking-wider mb-2">
+                                @(_selectedDate.HasValue ? $"Available Times ({_selectedDate.Value:MMM d, yyyy})" : "Select a Date")
+                            </h4>
+
+                            @if (!_selectedDate.HasValue)
+                            {
+                                <div class="flex-1 flex items-center justify-center text-slate-400 text-center py-8">
+                                    Choose an available date on the calendar to view live time slots.
+                                </div>
+                            }
+                            else if (_loadingSlots)
+                            {
+                                <div class="flex-1 flex flex-col items-center justify-center text-slate-500 gap-2 py-8">
+                                    <span class="animate-spin inline-block w-5 h-5 border-2 border-teal-600 border-t-transparent rounded-full"></span>
+                                    <span>Loading time slots…</span>
+                                </div>
+                            }
+                            else if (!_daySlots.Any(s => s.IsAvailable))
+                            {
+                                <div class="flex-1 flex items-center justify-center text-rose-700 font-semibold text-center py-8">
+                                    No open time slots remaining on this date. Please select another date.
+                                </div>
+                            }
+                            else
+                            {
+                                <div class="grid grid-cols-2 gap-1.5 max-h-48 overflow-y-auto pr-1">
+                                    @foreach (var slot in _daySlots)
+                                    {
+                                        var isPicked = _selectedTime.HasValue && _selectedTime.Value == slot.Start;
+                                        <button type="button"
+                                                disabled="@(!slot.IsAvailable)"
+                                                @onclick="() => SelectSlot(slot)"
+                                                class="px-2.5 py-2 rounded-lg text-xs font-bold border text-center transition-colors @(isPicked ? "bg-teal-600 text-white border-teal-700 shadow-xs" : slot.IsAvailable ? "bg-white hover:bg-teal-50 text-slate-800 border-slate-200" : "bg-slate-100 text-slate-400 border-slate-200 line-through cursor-not-allowed")">
+                                            @DateTime.Today.Add(slot.Start.ToTimeSpan()).ToString("h:mm tt")
+                                        </button>
+                                    }
+                                </div>
+                            }
+                        </div>
+                    </div>
+
+                    <div>
+                        <label class="block font-bold text-slate-700 mb-1">Reschedule Note / Reason (Optional)</label>
+                        <input type="text"
+                               @bind="_reason"
+                               placeholder="e.g., Schedule adjustment requested via Customer Portal"
+                               class="w-full px-3 py-2 border border-slate-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-teal-600" />
+                    </div>
+                }
+            </div>
+
+            @* ── Footer ── *@
+            <div class="px-6 py-4 border-t border-slate-100 bg-slate-50/80 flex items-center justify-end gap-2.5">
+                <button type="button"
+                        @onclick="CloseModalAsync"
+                        disabled="@_submitting"
+                        class="px-4 py-2 rounded-xl border border-slate-300 bg-white hover:bg-slate-50 text-xs font-bold text-slate-700">
+                    Keep Current Schedule
+                </button>
+                @if (IsCancelMode)
+                {
+                    <button type="button"
+                            @onclick="SubmitCancelAsync"
+                            disabled="@_submitting"
+                            class="px-4 py-2 rounded-xl bg-rose-600 hover:bg-rose-700 text-white text-xs font-bold disabled:opacity-50">
+                        @(_submitting ? "Cancelling…" : "Confirm Cancellation")
+                    </button>
+                }
+                else
+                {
+                    <button type="button"
+                            @onclick="SubmitRescheduleAsync"
+                            disabled="@(_submitting || !_selectedDate.HasValue || !_selectedTime.HasValue)"
+                            class="px-4 py-2 rounded-xl bg-teal-600 hover:bg-teal-700 text-white text-xs font-bold disabled:opacity-50">
+                        @(_submitting ? "Rescheduling…" : "Confirm Reschedule")
+                    </button>
+                }
+            </div>
+        </div>
+    </div>
+}
+
+@code {
+    [Parameter] public bool IsOpen { get; set; }
+    [Parameter] public string Mode { get; set; } = "reschedule"; // "reschedule" | "cancel"
+    [Parameter] public bool IsEventAppointment { get; set; }
+    [Parameter] public string? EventAppointmentId { get; set; }
+    [Parameter] public int? ScheduleAppointmentId { get; set; }
+    [Parameter] public string AppointmentTitle { get; set; } = string.Empty;
+    [Parameter] public DateTime CurrentDateTime { get; set; } = DateTime.Today;
+    [Parameter] public string? CurrentClerkId { get; set; }
+    [Parameter] public string? CurrentClerkName { get; set; }
+    [Parameter] public EventCallback OnClose { get; set; }
+    [Parameter] public EventCallback<string> OnCompleted { get; set; }
+
+    private bool _wasOpen;
+    private string? _lastTargetKey;
+    private DateOnly _visibleMonth = new(DateTime.Today.Year, DateTime.Today.Month, 1);
+    private List<DayAvailability> _monthDays = new();
+    private List<SlotAvailability> _daySlots = new();
+    private DateOnly? _selectedDate;
+    private TimeOnly? _selectedTime;
+    private string _reason = string.Empty;
+    private bool _loadingMonth;
+    private bool _loadingSlots;
+    private bool _submitting;
+    private string? _errorMessage;
+
+    private bool IsCancelMode => string.Equals(Mode, "cancel", StringComparison.OrdinalIgnoreCase);
+
+    protected override async Task OnParametersSetAsync()
+    {
+        var key = $"{IsOpen}:{Mode}:{IsEventAppointment}:{EventAppointmentId}:{ScheduleAppointmentId}";
+        if (IsOpen && (!_wasOpen || key != _lastTargetKey))
+        {
+            _wasOpen = true;
+            _lastTargetKey = key;
+            _errorMessage = null;
+            _reason = string.Empty;
+            _selectedTime = null;
+            var baseDate = CurrentDateTime >= DateTime.Today ? DateOnly.FromDateTime(CurrentDateTime) : DateOnly.FromDateTime(DateTime.Today);
+            _visibleMonth = new DateOnly(baseDate.Year, baseDate.Month, 1);
+            _selectedDate = baseDate;
+
+            if (!IsCancelMode)
+            {
+                await LoadMonthAvailabilityAsync();
+                if (_selectedDate.HasValue)
+                {
+                    await LoadDaySlotsAsync(_selectedDate.Value);
+                }
+            }
+        }
+        else if (!IsOpen)
+        {
+            _wasOpen = false;
+        }
+    }
+
+    private async Task LoadMonthAvailabilityAsync()
+    {
+        _loadingMonth = true;
+        try
+        {
+            var res = await ScheduleApi.GetAvailabilityAsync(_visibleMonth.Year, _visibleMonth.Month, clerkId: null);
+            if (res.IsSuccess && res.Value != null)
+            {
+                _monthDays = res.Value.Days.ToList();
+            }
+            else
+            {
+                _monthDays = BuildFallbackMonthDays(_visibleMonth);
+            }
+        }
+        catch
+        {
+            _monthDays = BuildFallbackMonthDays(_visibleMonth);
+        }
+        finally
+        {
+            _loadingMonth = false;
+        }
+    }
+
+    private static List<DayAvailability> BuildFallbackMonthDays(DateOnly monthStart)
+    {
+        var daysInMonth = DateTime.DaysInMonth(monthStart.Year, monthStart.Month);
+        var today = DateOnly.FromDateTime(DateTime.Today);
+        var list = new List<DayAvailability>(daysInMonth);
+        for (int d = 1; d <= daysInMonth; d++)
+        {
+            var dt = new DateOnly(monthStart.Year, monthStart.Month, d);
+            var slots = dt >= today
+                ? new List<SlotAvailability> { new(SessionWindows.MorningStart, SessionWindows.MorningEnd, true) }
+                : new List<SlotAvailability>();
+            list.Add(new DayAvailability(dt, slots));
+        }
+        return list;
+    }
+
+    private async Task ChangeMonthAsync(int offset)
+    {
+        _visibleMonth = _visibleMonth.AddMonths(offset);
+        _selectedDate = null;
+        _selectedTime = null;
+        _daySlots.Clear();
+        await LoadMonthAvailabilityAsync();
+    }
+
+    private async Task SelectDateAsync(DateOnly date)
+    {
+        _selectedDate = date;
+        _selectedTime = null;
+        _errorMessage = null;
+        await LoadDaySlotsAsync(date);
+    }
+
+    private async Task LoadDaySlotsAsync(DateOnly date)
+    {
+        _loadingSlots = true;
+        try
+        {
+            var res = await ScheduleApi.GetDayAvailabilityAsync(date, clerkId: null);
+            if (res.IsSuccess && res.Value != null)
+            {
+                _daySlots = res.Value.Slots.ToList();
+            }
+            else
+            {
+                _daySlots = new();
+            }
+        }
+        catch
+        {
+            _daySlots = new();
+        }
+        finally
+        {
+            _loadingSlots = false;
+        }
+    }
+
+    private void SelectSlot(SlotAvailability slot)
+    {
+        if (!slot.IsAvailable) return;
+        _selectedTime = slot.Start;
+        _errorMessage = null;
+    }
+
+    private int LeadingBlankDays()
+    {
+        var first = new DateOnly(_visibleMonth.Year, _visibleMonth.Month, 1);
+        return (int)first.DayOfWeek;
+    }
+
+    private async Task SubmitCancelAsync()
+    {
+        if (_submitting) return;
+        _submitting = true;
+        _errorMessage = null;
+
+        try
+        {
+            if (IsEventAppointment && !string.IsNullOrWhiteSpace(EventAppointmentId))
+            {
+                var res = await ConsultationApi.CustomerCancelAppointmentAsync(
+                    EventAppointmentId,
+                    new CustomerCancelAppointmentRequest { Reason = _reason });
+                if (res.IsSuccess && res.Value != null)
+                {
+                    await OnCompleted.InvokeAsync(res.Value.Message);
+                    await CloseModalAsync();
+                }
+                else
+                {
+                    _errorMessage = res.Error?.Message ?? "Unable to cancel appointment.";
+                }
+            }
+            else if (ScheduleAppointmentId.HasValue)
+            {
+                var res = await ScheduleApi.CancelBookingAsync(
+                    ScheduleAppointmentId.Value,
+                    new CustomerCancelBookingRequest(_reason));
+                if (res.IsSuccess && res.Value != null)
+                {
+                    await OnCompleted.InvokeAsync(res.Value.Message);
+                    await CloseModalAsync();
+                }
+                else
+                {
+                    _errorMessage = res.Error?.Message ?? "Unable to cancel booking.";
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            _errorMessage = ex.Message;
+        }
+        finally
+        {
+            _submitting = false;
+        }
+    }
+
+    private async Task SubmitRescheduleAsync()
+    {
+        if (_submitting) return;
+        if (!_selectedDate.HasValue || !_selectedTime.HasValue)
+        {
+            _errorMessage = "Please select both an available date and time slot.";
+            return;
+        }
+
+        _submitting = true;
+        _errorMessage = null;
+
+        try
+        {
+            if (IsEventAppointment && !string.IsNullOrWhiteSpace(EventAppointmentId))
+            {
+                var res = await ConsultationApi.CustomerRescheduleAppointmentAsync(
+                    EventAppointmentId,
+                    new CustomerRescheduleAppointmentRequest
+                    {
+                        NewDate = _selectedDate.Value,
+                        NewTime = _selectedTime.Value,
+                        Reason = _reason
+                    });
+                if (res.IsSuccess && res.Value != null)
+                {
+                    await OnCompleted.InvokeAsync(res.Value.Message);
+                    await CloseModalAsync();
+                }
+                else
+                {
+                    _errorMessage = res.Error?.Message ?? "Selected slot is unavailable. Please choose another date or time.";
+                }
+            }
+            else if (ScheduleAppointmentId.HasValue)
+            {
+                var res = await ScheduleApi.RescheduleBookingAsync(
+                    ScheduleAppointmentId.Value,
+                    new CustomerRescheduleBookingRequest(_selectedDate.Value, _selectedTime.Value, _reason));
+                if (res.IsSuccess && res.Value != null)
+                {
+                    await OnCompleted.InvokeAsync(res.Value.Message);
+                    await CloseModalAsync();
+                }
+                else
+                {
+                    _errorMessage = res.Error?.Message ?? "Selected slot is unavailable. Please choose another date or time.";
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            _errorMessage = ex.Message;
+        }
+        finally
+        {
+            _submitting = false;
+        }
+    }
+
+    private Task HandleBackdropClick() => _submitting ? Task.CompletedTask : CloseModalAsync();
+
+    private Task CloseModalAsync() => OnClose.InvokeAsync();
+}

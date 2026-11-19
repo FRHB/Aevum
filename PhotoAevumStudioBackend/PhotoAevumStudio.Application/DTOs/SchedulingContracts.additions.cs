@@ -11,7 +11,10 @@ public sealed record MyBookingDto(
     decimal TotalPrice,
     string Platform,
     string? MeetingLink,
-    string? EventLocation);
+    string? EventLocation,
+    string? AssignedClerkId = null,
+    string? AssignedClerkName = null,
+    string? NegotiationId = null);
 
 // ── Application/Interfaces/IScheduleBookingService.cs: add these two members ──
 //

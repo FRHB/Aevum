@@ -13,6 +13,8 @@ public interface IServicesApiClient
     Task<string> GetNextAdditionalServiceIdAsync(CancellationToken cancellationToken = default);
     Task<IReadOnlyList<string>> GetAdditionalServiceCategoriesAsync(CancellationToken cancellationToken = default);
     Task<(bool Success, string? ErrorMessage, string? CreatedId)> CreateAdditionalServiceAsync(AdditionalServiceWizardFormModel model, CancellationToken cancellationToken = default);
+    Task<(bool Success, string? ErrorMessage, string? UpdatedId)> UpdateAdditionalServiceAsync(AdditionalServiceWizardFormModel model, CancellationToken cancellationToken = default) =>
+        Task.FromResult<(bool Success, string? ErrorMessage, string? UpdatedId)>((false, "Not implemented.", null));
     Task<IReadOnlySet<string>> GetFeaturedCodesAsync(string entityType, CancellationToken cancellationToken = default);
     Task<bool> SetFeaturedAsync(string entityType, string code, bool isFeatured, CancellationToken cancellationToken = default);
     Task<IReadOnlyList<PortfolioCategoryDto>> GetPortfolioCategoriesAsync(CancellationToken cancellationToken = default);

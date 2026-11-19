@@ -30,6 +30,10 @@
 
 
 
+@inject IScheduleService ScheduleService
+
+
+
 @inject BookingEvents Events
 
 
@@ -578,6 +582,13 @@
             <h2 class="aev-card__heading">My Photoshoot Events &amp; Live Status</h2>
             <a href="/my/bookings" class="aev-card__action-link">View Details</a>
         </header>
+        @if (!string.IsNullOrWhiteSpace(_customerActionFeedback))
+        {
+            <div class="mx-4 mt-3 p-3.5 rounded-xl bg-emerald-50 border border-emerald-200 text-emerald-900 text-xs font-semibold flex items-center justify-between gap-3">
+                <span>✓ @_customerActionFeedback</span>
+                <button type="button" @onclick="() => _customerActionFeedback = null" class="text-emerald-700 hover:text-emerald-950 font-bold">✕</button>
+            </div>
+        }
         <div class="aev-table-wrap">
             <table class="aev-table">
                 <thead>
@@ -586,6 +597,7 @@
                         <th>Date &amp; Time</th>
                         <th>Balance / Settlement</th>
                         <th>Status</th>
+                        <th>Actions</th>
                     </tr>
                 </thead>
                 <tbody>
@@ -599,7 +611,7 @@
                             </td>
                             <td>@ev.EventDate.ToString("MMM dd, yyyy") &bull; @DateTime.Today.Add(ev.EventTime.ToTimeSpan()).ToString("h:mm tt")</td>
                             <td class="text-xs font-mono text-slate-700">
-                                @if (custStatus == "Complete")
+                                @if (custStatus == "Completed" || custStatus == "Complete")
                                 {
                                     <span class="text-emerald-700 font-bold">Settled (₱@ev.FinalBalanceAmount.ToString("N2"))</span>
                                 }
@@ -609,9 +621,30 @@
                                 }
                             </td>
                             <td>
-                                <span class="aev-badge @(custStatus == "Complete" || custStatus == "Confirmed" ? "aev-badge--green" : "aev-badge--amber")">
+                                <span class="aev-badge @(custStatus == "Completed" || custStatus == "Complete" || custStatus == "Confirmed" ? "aev-badge--green" : "aev-badge--amber")">
                                     @custStatus
                                 </span>
+                            </td>
+                            <td>
+                                @if (CanCustomerModifyEvent(ev))
+                                {
+                                    <div class="flex items-center gap-1.5">
+                                        <button type="button"
+                                                @onclick='() => OpenEventActionModal(ev, "reschedule")'
+                                                class="px-2.5 py-1 rounded-lg border border-teal-300 bg-teal-50 hover:bg-teal-100 text-teal-800 text-[11px] font-bold transition-colors">
+                                            Reschedule
+                                        </button>
+                                        <button type="button"
+                                                @onclick='() => OpenEventActionModal(ev, "cancel")'
+                                                class="px-2.5 py-1 rounded-lg border border-rose-300 bg-rose-50 hover:bg-rose-100 text-rose-800 text-[11px] font-bold transition-colors">
+                                            Cancel
+                                        </button>
+                                    </div>
+                                }
+                                else
+                                {
+                                    <span class="text-[11px] text-slate-400">—</span>
+                                }
                             </td>
                         </tr>
                     }
@@ -671,6 +704,7 @@
 
 
                     <th>Status</th>
+                    <th>Actions</th>
 
 
 
@@ -698,7 +732,7 @@
 
 
 
-                        <td colspan="3" class="text-center text-gray-500 py-8">Loading appointments…</td>
+                        <td colspan="4" class="text-center text-gray-500 py-8">Loading appointments…</td>
 
 
 
@@ -722,7 +756,7 @@
 
 
 
-                        <td colspan="3" class="text-center text-gray-500 py-8">No upcoming appointments yet.</td>
+                        <td colspan="4" class="text-center text-gray-500 py-8">No upcoming appointments yet.</td>
 
 
 
@@ -754,7 +788,13 @@
 
 
 
-                            <td class="font-semibold text-slate-800">@booking.ServiceTitle</td>
+                            <td class="font-semibold text-slate-800">
+                                <div>@booking.ServiceTitle</div>
+                                @if (!string.IsNullOrWhiteSpace(booking.AssignedClerkName))
+                                {
+                                    <div class="text-[11px] font-normal text-slate-500">Office Clerk: @booking.AssignedClerkName</div>
+                                }
+                            </td>
 
 
 
@@ -766,7 +806,7 @@
 
 
 
-                                <span class="aev-badge @(booking.Status == "Confirmed" ? "aev-badge--green" : "aev-badge--amber")">
+                                <span class="aev-badge @(booking.Status == "Confirmed" || booking.Status == "Completed" ? "aev-badge--green" : "aev-badge--amber")">
 
 
 
@@ -778,6 +818,27 @@
 
 
 
+                            </td>
+                            <td>
+                                @if (CanCustomerModifyBooking(booking))
+                                {
+                                    <div class="flex items-center gap-1.5">
+                                        <button type="button"
+                                                @onclick='() => OpenBookingActionModal(booking, "reschedule")'
+                                                class="px-2.5 py-1 rounded-lg border border-teal-300 bg-teal-50 hover:bg-teal-100 text-teal-800 text-[11px] font-bold transition-colors">
+                                            Reschedule
+                                        </button>
+                                        <button type="button"
+                                                @onclick='() => OpenBookingActionModal(booking, "cancel")'
+                                                class="px-2.5 py-1 rounded-lg border border-rose-300 bg-rose-50 hover:bg-rose-100 text-rose-800 text-[11px] font-bold transition-colors">
+                                            Cancel
+                                        </button>
+                                    </div>
+                                }
+                                else
+                                {
+                                    <span class="text-[11px] text-slate-400">—</span>
+                                }
                             </td>
 
 
@@ -1497,9 +1558,17 @@
 
 </section>
 
-
-
-
+<CustomerAppointmentActionModal IsOpen="_isActionModalOpen"
+                                Mode="@_actionModalMode"
+                                IsEventAppointment="_actionModalIsEvent"
+                                EventAppointmentId="@_actionModalEventId"
+                                ScheduleAppointmentId="_actionModalBookingId"
+                                AppointmentTitle="@_actionModalTitle"
+                                CurrentDateTime="_actionModalDateTime"
+                                CurrentClerkId="@_actionModalClerkId"
+                                CurrentClerkName="@_actionModalClerkName"
+                                OnClose="CloseActionModal"
+                                OnCompleted="HandleCustomerActionCompletedAsync" />
 
 
 
@@ -1513,6 +1582,16 @@
     private int _bookingsPage = 1;
     private List<EventAppointmentDto> PagedCustomerEvents => TablePagination.Paginate(_customerEventAppointments, _eventsPage, 10);
     private List<MyBooking> PagedUpcomingBookings => TablePagination.Paginate(UpcomingBookings, _bookingsPage, 10);
+    private string? _customerActionFeedback;
+    private bool _isActionModalOpen;
+    private string _actionModalMode = "reschedule";
+    private bool _actionModalIsEvent;
+    private string? _actionModalEventId;
+    private int? _actionModalBookingId;
+    private string _actionModalTitle = string.Empty;
+    private DateTime _actionModalDateTime = DateTime.Today;
+    private string? _actionModalClerkId;
+    private string? _actionModalClerkName;
 
 
 
@@ -2071,17 +2150,97 @@
     {
         if (string.Equals(appt.EventStatus, "Pending Verification", StringComparison.OrdinalIgnoreCase) ||
             string.Equals(appt.EventStatus, "Paid Cash Pending Verification", StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(appt.EventStatus, "Payment Verification (Cash)", StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(appt.EventStatus, "Completed", StringComparison.OrdinalIgnoreCase) ||
             string.Equals(appt.EventStatus, "Complete", StringComparison.OrdinalIgnoreCase) ||
             string.Equals(appt.EventStatus, "Shot", StringComparison.OrdinalIgnoreCase) ||
             string.Equals(appt.EventStatus, "Delivered", StringComparison.OrdinalIgnoreCase) ||
             string.Equals(appt.FinalPaymentStatus, "Pending Verification", StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(appt.FinalPaymentStatus, "Payment Verification (Cash)", StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(appt.FinalPaymentStatus, "Payment Verification (QR:Paid)", StringComparison.OrdinalIgnoreCase) ||
             string.Equals(appt.FinalPaymentStatus, "Paid", StringComparison.OrdinalIgnoreCase))
         {
-            return "Complete";
+            return "Completed";
         }
-        if (string.Equals(appt.EventStatus, "Preparing", StringComparison.OrdinalIgnoreCase)) return "Preparation";
-        if (string.Equals(appt.EventStatus, "On Going", StringComparison.OrdinalIgnoreCase)) return "Ongoing";
+        if (string.Equals(appt.EventStatus, "Preparing", StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(appt.EventStatus, "Preparation", StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(appt.EventStatus, "Dispatch", StringComparison.OrdinalIgnoreCase)) return "Preparing";
+        if (string.Equals(appt.EventStatus, "Ready", StringComparison.OrdinalIgnoreCase)) return "Ready";
+        if (string.Equals(appt.EventStatus, "On Going", StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(appt.EventStatus, "Ongoing", StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(appt.EventStatus, "In Execution", StringComparison.OrdinalIgnoreCase)) return "Ongoing";
+        if (string.Equals(appt.EventStatus, "Post Event", StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(appt.EventStatus, "Event Done", StringComparison.OrdinalIgnoreCase)) return "Event Done";
         return appt.EventStatus;
+    }
+
+    private static bool CanCustomerModifyEvent(EventAppointmentDto ev)
+    {
+        var display = GetCustomerDisplayStatus(ev);
+        if (string.Equals(display, "Completed", StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(display, "Complete", StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(display, "Ongoing", StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(display, "Event Done", StringComparison.OrdinalIgnoreCase))
+            return false;
+
+        var raw = (ev.EventStatus ?? string.Empty).Trim();
+        return !raw.Equals("Cancelled", StringComparison.OrdinalIgnoreCase) &&
+               !raw.Equals("Expired", StringComparison.OrdinalIgnoreCase) &&
+               !raw.Equals("Deal_Lost", StringComparison.OrdinalIgnoreCase) &&
+               !raw.Equals("Shot", StringComparison.OrdinalIgnoreCase) &&
+               !raw.Equals("Delivered", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static bool CanCustomerModifyBooking(MyBooking b)
+    {
+        var raw = (b.Status ?? string.Empty).Trim();
+        return !raw.Equals("Cancelled", StringComparison.OrdinalIgnoreCase) &&
+               !raw.Equals("Completed", StringComparison.OrdinalIgnoreCase) &&
+               !raw.Equals("Complete", StringComparison.OrdinalIgnoreCase) &&
+               !raw.Equals("Delivered", StringComparison.OrdinalIgnoreCase) &&
+               !raw.Equals("Deal_Lost", StringComparison.OrdinalIgnoreCase) &&
+               !raw.Equals("Expired", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private void OpenEventActionModal(EventAppointmentDto ev, string mode)
+    {
+        _actionModalMode = mode;
+        _actionModalIsEvent = true;
+        _actionModalEventId = ev.EventAppointmentId;
+        _actionModalBookingId = null;
+        _actionModalTitle = $"{ev.EventName} (#{ev.EventAppointmentId})";
+        _actionModalDateTime = ev.EventDate.ToDateTime(ev.EventTime);
+        var clerk = ev.AssignedEmployees.FirstOrDefault(e =>
+            e.Specialization.Contains("Clerk", StringComparison.OrdinalIgnoreCase));
+        _actionModalClerkId = clerk?.EmployeeId;
+        _actionModalClerkName = clerk?.EmployeeName;
+        _isActionModalOpen = true;
+    }
+
+    private void OpenBookingActionModal(MyBooking booking, string mode)
+    {
+        _actionModalMode = mode;
+        _actionModalIsEvent = false;
+        _actionModalEventId = null;
+        _actionModalBookingId = booking.AppointmentId;
+        _actionModalTitle = $"{booking.ServiceTitle} (#{booking.AppointmentId})";
+        _actionModalDateTime = booking.Start;
+        _actionModalClerkId = booking.AssignedClerkId;
+        _actionModalClerkName = booking.AssignedClerkName;
+        _isActionModalOpen = true;
+    }
+
+    private void CloseActionModal()
+    {
+        _isActionModalOpen = false;
+    }
+
+    private async Task HandleCustomerActionCompletedAsync(string message)
+    {
+        _customerActionFeedback = message;
+        ScheduleService.InvalidateCache();
+        await LoadAsync();
+        StateHasChanged();
     }
 
         private string GetCheckoutUrl(EventAppointmentDto? appt)

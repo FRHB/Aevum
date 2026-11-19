@@ -159,6 +159,7 @@ CREATE TABLE dbo.ComboPackage (
     ComboPackageName nvarchar(255) NOT NULL,
     ComboPackageDescription nvarchar(1000) NOT NULL,
     ComboPackagePrice decimal(18,2) NOT NULL CONSTRAINT DF_ComboPackage_Price DEFAULT 0.00,
+    RateType nvarchar(50) NOT NULL CONSTRAINT DF_ComboPackage_RateType DEFAULT 'Per Hour',
     ComboPackageImage varbinary(max) NULL,
     ComboPackageImageMimeType nvarchar(100) NULL CONSTRAINT DF_ComboPackage_MimeType DEFAULT 'image/jpeg',
     ImageFileName nvarchar(500) NULL,
@@ -171,6 +172,7 @@ CREATE TABLE dbo.AdditionalServices (
     AdditionalServicesDescription nvarchar(1000),
     ServicePrice decimal(18,2) NOT NULL CONSTRAINT DF_AdditionalServices_Price DEFAULT 0.00,
     CategoryName nvarchar(100) NULL,
+    RateType nvarchar(50) NOT NULL CONSTRAINT DF_AdditionalServices_RateType DEFAULT 'Per Hour',
     AdditionalServiceImage varbinary(max) NULL,
     AdditionalServiceImageMimeType nvarchar(100) NULL CONSTRAINT DF_AdditionalServices_MimeType DEFAULT 'image/jpeg',
     ImageFileName nvarchar(500) NULL,
@@ -266,6 +268,7 @@ CREATE TABLE dbo.EventAppointment (
     EventAppointmentID nvarchar(30) NOT NULL PRIMARY KEY,
     EventName nvarchar(255) NOT NULL CONSTRAINT DF_EventAppointment_Name DEFAULT 'Photoshoot Event',
     EventDescription nvarchar(255) NULL,
+    EventLocation nvarchar(255) NULL,
     CustomerID nvarchar(30) NOT NULL,
     EmployeeID nvarchar(30) NULL,
     AssignedEmployeeName nvarchar(100) NULL,
@@ -286,13 +289,13 @@ CREATE TABLE dbo.EventAppointment (
     XenditExternalId nvarchar(100) NULL,
     XenditInvoiceUrl nvarchar(500) NULL,
     FinalPaymentMethod nvarchar(30) NULL,
-    FinalPaymentStatus nvarchar(30) NULL,
+    FinalPaymentStatus nvarchar(60) NULL,
     FinalQrString nvarchar(1000) NULL,
     FinalPaymentReferenceId nvarchar(100) NULL,
     FinalPaymentPaidAt datetime2 NULL,
     CreatedAt datetime2 NOT NULL CONSTRAINT DF_EventAppointment_Created DEFAULT SYSUTCDATETIME(),
     RowVer rowversion, 
-    CONSTRAINT CK_EventAppointment_Status CHECK (EventStatus IN ('Pending','Awaiting_Downpayment','Pending Payment','Preparation','Preparing','Dispatch','Ongoing','On Going','Post Event','Pending Verification','Paid Cash Pending Verification','Confirmed','Complete','Completed','Shot','Editing','Delivered','Cancelled','Expired'))
+    CONSTRAINT CK_EventAppointment_Status CHECK (EventStatus IN ('Pending','Awaiting_Downpayment','Pending Payment','Ready','In Execution','Preparation','Preparing','Dispatch','Ongoing','On Going','Event Done','Post Event','Pending Verification','Paid Cash Pending Verification','Payment Verification (Cash)','Confirmed','Complete','Completed','Shot','Editing','Delivered','Cancelled','Expired'))
 );
 
 CREATE TABLE dbo.BookingNegotiation (
@@ -305,6 +308,7 @@ CREATE TABLE dbo.BookingNegotiation (
     ConsultationTime time NULL,
     MeetingLink nvarchar(500) NULL,
     InquiryNotes nvarchar(1000) NULL,
+    -- Supported NegotiationStatus values: 'Pending_Call', 'Pending Payment', 'Appointment Booked', 'Deal_Won', 'Deal_Lost', 'Rescheduled', 'Cancelled'
     NegotiationStatus nvarchar(50) NOT NULL CONSTRAINT DF_BookingNegotiation_Status DEFAULT 'Pending_Call',
     CreatedAt datetime2 NOT NULL CONSTRAINT DF_BookingNegotiation_Created DEFAULT SYSUTCDATETIME()
 );
@@ -849,6 +853,16 @@ BEGIN
         FOREIGN KEY (RateTypeID) REFERENCES dbo.RateType(RateTypeID);
 END;
 
+IF OBJECT_ID(N'dbo.AdditionalServices', N'U') IS NOT NULL AND COL_LENGTH(N'dbo.AdditionalServices', N'RateType') IS NULL
+BEGIN
+    ALTER TABLE dbo.AdditionalServices ADD RateType nvarchar(50) NOT NULL CONSTRAINT DF_AdditionalServices_RateType DEFAULT 'Per Hour';
+END;
+
+IF OBJECT_ID(N'dbo.ComboPackage', N'U') IS NOT NULL AND COL_LENGTH(N'dbo.ComboPackage', N'RateType') IS NULL
+BEGIN
+    ALTER TABLE dbo.ComboPackage ADD RateType nvarchar(50) NOT NULL CONSTRAINT DF_ComboPackage_RateType DEFAULT 'Per Hour';
+END;
+
 -- AspNetUsers schema updates for ApplicationUser (Address, BirthYear, DepartmentId)
 IF OBJECT_ID(N'dbo.AspNetUsers', N'U') IS NOT NULL
 BEGIN
@@ -878,7 +892,9 @@ BEGIN
     IF COL_LENGTH(N'dbo.EventAppointment', N'FinalPaymentMethod') IS NULL
         ALTER TABLE dbo.EventAppointment ADD FinalPaymentMethod nvarchar(30) NULL;
     IF COL_LENGTH(N'dbo.EventAppointment', N'FinalPaymentStatus') IS NULL
-        ALTER TABLE dbo.EventAppointment ADD FinalPaymentStatus nvarchar(30) NULL;
+        ALTER TABLE dbo.EventAppointment ADD FinalPaymentStatus nvarchar(60) NULL;
+    ELSE IF COL_LENGTH(N'dbo.EventAppointment', N'FinalPaymentStatus') < 120
+        ALTER TABLE dbo.EventAppointment ALTER COLUMN FinalPaymentStatus nvarchar(60) NULL;
     IF COL_LENGTH(N'dbo.EventAppointment', N'FinalQrString') IS NULL
         ALTER TABLE dbo.EventAppointment ADD FinalQrString nvarchar(1000) NULL;
     IF COL_LENGTH(N'dbo.EventAppointment', N'FinalPaymentReferenceId') IS NULL
@@ -889,6 +905,8 @@ BEGIN
         ALTER TABLE dbo.EventAppointment ADD EventEndTime time NULL;
     IF COL_LENGTH(N'dbo.EventAppointment', N'DurationMinutes') IS NULL
         ALTER TABLE dbo.EventAppointment ADD DurationMinutes int NOT NULL CONSTRAINT DF_EventAppointment_DurationMinutes DEFAULT 60;
+    IF COL_LENGTH(N'dbo.EventAppointment', N'EventLocation') IS NULL
+        ALTER TABLE dbo.EventAppointment ADD EventLocation nvarchar(255) NULL;
 END;
 GO
 
@@ -928,13 +946,17 @@ IF OBJECT_ID(N'dbo.EventAppointment', N'U') IS NOT NULL
                      AND definition LIKE N'%Pending Verification%'
                      AND definition LIKE N'%Dispatch%'
                      AND definition LIKE N'%Complete%'
-                     AND definition LIKE N'%Completed%')
+                     AND definition LIKE N'%Completed%'
+                     AND definition LIKE N'%In Execution%'
+                     AND definition LIKE N'%Ready%'
+                     AND definition LIKE N'%Event Done%'
+                     AND definition LIKE N'%Payment Verification (Cash)%')
 BEGIN
     IF EXISTS (SELECT 1 FROM sys.check_constraints WHERE name = N'CK_EventAppointment_Status')
         ALTER TABLE dbo.EventAppointment DROP CONSTRAINT CK_EventAppointment_Status;
 
     ALTER TABLE dbo.EventAppointment ADD CONSTRAINT CK_EventAppointment_Status
-        CHECK (EventStatus IN ('Pending','Awaiting_Downpayment','Pending Payment','Preparation','Preparing','Dispatch','Ongoing','On Going','Post Event','Pending Verification','Paid Cash Pending Verification','Confirmed','Complete','Completed','Shot','Editing','Delivered','Cancelled','Expired'));
+        CHECK (EventStatus IN ('Pending','Awaiting_Downpayment','Pending Payment','Ready','In Execution','Preparation','Preparing','Dispatch','Ongoing','On Going','Event Done','Post Event','Pending Verification','Paid Cash Pending Verification','Payment Verification (Cash)','Confirmed','Complete','Completed','Shot','Editing','Delivered','Cancelled','Expired'));
 END;
 GO
 

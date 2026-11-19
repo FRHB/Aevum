@@ -29,6 +29,20 @@ public interface IScheduleBookingService
     Task<AvailabilityCheckResultDto> CheckAvailabilityAsync(DateOnly date, TimeOnly? targetTime = null, CancellationToken cancellationToken = default);
 
     Task<IReadOnlyList<MyBookingDto>> GetMyBookingsAsync(string customerId, CancellationToken cancellationToken = default);
+
+    Task<CustomerCancelBookingResultDto> CancelBookingAsync(
+        int appointmentId,
+        string customerId,
+        string? reason = null,
+        bool isPrivileged = false,
+        CancellationToken cancellationToken = default);
+
+    Task<CustomerRescheduleBookingResultDto> RescheduleBookingAsync(
+        int appointmentId,
+        CustomerRescheduleBookingRequest request,
+        string customerId,
+        bool isPrivileged = false,
+        CancellationToken cancellationToken = default);
 }
 
 /// <summary>Creates online meeting links. Swap the mock for a real Zoom / Graph / Calendar API client.</summary>

@@ -54,15 +54,30 @@
                     </div>
                 </div>
 
-                <div>
-                    <label class="block text-sm font-semibold text-gray-800 mb-1.5">
-                        Status
-                    </label>
-                    <select @bind="_editStatus"
-                            class="w-full px-3.5 py-2.5 text-sm bg-white border border-gray-300 rounded-lg text-gray-900 focus:outline-none focus:ring-2 focus:ring-gray-900">
-                        <option value="Active">Active</option>
-                        <option value="Inactive">Inactive</option>
-                    </select>
+                <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <div>
+                        <label class="block text-sm font-semibold text-gray-800 mb-1.5">
+                            Rate Type <span class="text-red-500">*</span>
+                        </label>
+                        <select @bind="_editRateType"
+                                class="w-full px-3.5 py-2.5 text-sm bg-white border border-gray-300 rounded-lg text-gray-900 focus:outline-none focus:ring-2 focus:ring-gray-900">
+                            <option value="per hour">per hour</option>
+                            <option value="per picture">per picture</option>
+                            <option value="per single shot">per single shot</option>
+                            <option value="multi-shot">multi-shot</option>
+                        </select>
+                    </div>
+
+                    <div>
+                        <label class="block text-sm font-semibold text-gray-800 mb-1.5">
+                            Status
+                        </label>
+                        <select @bind="_editStatus"
+                                class="w-full px-3.5 py-2.5 text-sm bg-white border border-gray-300 rounded-lg text-gray-900 focus:outline-none focus:ring-2 focus:ring-gray-900">
+                            <option value="Active">Active</option>
+                            <option value="Inactive">Inactive</option>
+                        </select>
+                    </div>
                 </div>
 
                 <div>
@@ -106,6 +121,7 @@
     private string _editTitle = string.Empty;
     private string _editCategory = "Portrait Bundles";
     private decimal _editPrice;
+    private string _editRateType = "per hour";
     private string _editStatus = "Active";
     private string? _editDescription;
 
@@ -120,6 +136,7 @@
             _editCategory = string.IsNullOrWhiteSpace(Package.BundleCategory) ? "Portrait Bundles" : Package.BundleCategory;
             var digits = new string((Package.Price ?? "").Where(c => char.IsDigit(c) || c == '.').ToArray());
             decimal.TryParse(digits, out _editPrice);
+            _editRateType = ServiceRateTypeHelper.Normalize(Package.RateType);
             _editStatus = string.IsNullOrWhiteSpace(Package.Status) ? "Active" : Package.Status;
             _editDescription = Package.Description;
             errorMessage = null;
@@ -155,6 +172,7 @@
             Package.Title = _editTitle.Trim();
             Package.BundleCategory = _editCategory.Trim();
             Package.Price = $"₱{_editPrice:N0}";
+            Package.RateType = _editRateType;
             Package.Status = _editStatus;
             Package.Description = _editDescription?.Trim();
 

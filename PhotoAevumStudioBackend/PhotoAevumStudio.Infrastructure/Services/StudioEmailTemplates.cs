@@ -1499,6 +1499,7 @@ public static class StudioEmailTemplates
       <div style=""margin-top:4px;""><strong>Event Date:</strong> {eventDate:MMMM d, yyyy}</div>
       <div style=""margin-top:4px;""><strong>Amount Paid:</strong> PHP {amountPaid:N2} ({WebUtility.HtmlEncode(paymentChannel)})</div>
       <div style=""margin-top:4px;""><strong>Reference:</strong> {WebUtility.HtmlEncode(referenceId)}</div>
+      <div style=""margin-top:4px;""><strong>Payment Status:</strong> Payment Verification (QR:Paid) &bull; <strong>Event Status:</strong> Completed</div>
     </td>
   </tr>
 </table>
@@ -1506,6 +1507,51 @@ public static class StudioEmailTemplates
   <a href=""{WebUtility.HtmlEncode(staffDashboardUrl)}""
      style=""display:inline-block;background-color:#059669;color:#ffffff;padding:12px 24px;border-radius:10px;text-decoration:none;font-weight:700;font-size:14px;"">
     Open Staff Dashboard &rarr;
+  </a>
+</div>";
+
+        return WrapLayout(preview, badge, "#059669", title, content);
+    }
+
+    /// <summary>
+    /// Transactional confirmation email sent to the Customer once their final QR payment clears and the event is marked Completed.
+    /// </summary>
+    public static string CustomerFinalQrPaymentConfirmation(
+        string customerName,
+        string appointmentId,
+        string referenceId,
+        string eventName,
+        DateOnly eventDate,
+        decimal amountPaid,
+        string paymentChannel,
+        string myBookingsUrl)
+    {
+        var preview = $"Payment Confirmed (PHP {amountPaid:N2}) & Event Completed for {eventName} (#{appointmentId})";
+        var badge = "Payment Verified & Event Completed";
+        var title = "Final QR Payment Confirmed";
+
+        var content = $@"
+<p style=""margin:0 0 16px;color:{TextSecondary};font-size:14px;line-height:1.6;"">
+  Dear <strong>{WebUtility.HtmlEncode(customerName)}</strong>,
+</p>
+<p style=""margin:0 0 20px;color:{TextSecondary};font-size:14px;line-height:1.6;"">
+  Thank you! Your final balance QR payment for <strong>{WebUtility.HtmlEncode(eventName)}</strong> has been verified and your event is now marked as <strong>Completed</strong>.
+</p>
+<table width=""100%"" cellpadding=""0"" cellspacing=""0"" style=""background-color:#ecfdf5;border:1px solid #a7f3d0;border-radius:10px;margin:0 0 20px;"">
+  <tr>
+    <td style=""padding:14px 16px;font-size:13px;color:#065f46;"">
+      <div><strong>Event:</strong> {WebUtility.HtmlEncode(eventName)} (#{WebUtility.HtmlEncode(appointmentId)})</div>
+      <div style=""margin-top:4px;""><strong>Event Date:</strong> {eventDate:MMMM d, yyyy}</div>
+      <div style=""margin-top:4px;""><strong>Amount Paid:</strong> PHP {amountPaid:N2} ({WebUtility.HtmlEncode(paymentChannel)})</div>
+      <div style=""margin-top:4px;""><strong>Reference:</strong> {WebUtility.HtmlEncode(referenceId)}</div>
+      <div style=""margin-top:4px;""><strong>Payment Status:</strong> Payment Verification (QR:Paid) &bull; <strong>Event Status:</strong> Completed</div>
+    </td>
+  </tr>
+</table>
+<div style=""text-align:center;margin:24px 0 12px;"">
+  <a href=""{WebUtility.HtmlEncode(myBookingsUrl)}""
+     style=""display:inline-block;background-color:#059669;color:#ffffff;padding:12px 24px;border-radius:10px;text-decoration:none;font-weight:700;font-size:14px;"">
+    View My Bookings &rarr;
   </a>
 </div>";
 

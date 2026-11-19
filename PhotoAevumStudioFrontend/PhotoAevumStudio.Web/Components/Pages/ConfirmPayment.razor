@@ -31,14 +31,14 @@
                 We couldn't find that reservation (#@AppointmentId). Please re-scan the QR code.
             </div>
         }
-        else if (_paid || _info.EventStatus == "Confirmed" || _info.EventStatus == "Shot" || _info.EventStatus == "Complete")
+        else if (_paid || _info.EventStatus == "Confirmed" || _info.EventStatus == "Shot" || _info.EventStatus == "Complete" || _info.EventStatus == "Completed")
         {
             <div class="rounded-2xl border border-emerald-200 bg-emerald-50 p-8 text-center shadow-sm" role="status">
                 <div class="text-5xl mb-3">&#10003;</div>
                 <h2 class="text-2xl font-black text-emerald-900">Payment Successful</h2>
                 <p class="mt-2 text-sm text-emerald-800">
                     @(_info.IsFinalPayment
-                        ? $"Your final balance payment for {_info.EventName} (#{_info.AppointmentId}) has been received and verified."
+                        ? $"Your final balance payment for {_info.EventName} (#{_info.AppointmentId}) is verified (Payment Verification (QR:Paid)). Event marked Completed, and confirmation emails have been sent to both you and the Team Leader."
                         : $"Your reservation fee for {_info.EventName} (#{_info.AppointmentId}) has been received.")
                 </p>
                 <a href="/my/bookings" class="inline-block mt-6 px-5 py-2.5 rounded-xl bg-emerald-700 text-white text-sm font-bold">View My Bookings</a>
@@ -136,11 +136,11 @@
                 }
             }
 
-            // Wait briefly for the booking to flip to Confirmed or Shot (for Final Balance).
+            // Wait briefly for the booking to flip to Confirmed or Completed (for Final Balance).
             for (var i = 0; i < 10 && !_paid; i++)
             {
                 await LoadAsync();
-                _paid = _info?.EventStatus == "Confirmed" || _info?.EventStatus == "Shot" || _info?.EventStatus == "Complete";
+                _paid = _info?.EventStatus == "Confirmed" || _info?.EventStatus == "Shot" || _info?.EventStatus == "Complete" || _info?.EventStatus == "Completed";
                 if (_paid) break;
                 await Task.Delay(1000);
             }
@@ -154,7 +154,7 @@
                 if (fallbackRes.IsSuccessStatusCode)
                 {
                     await LoadAsync();
-                    _paid = _info?.EventStatus == "Confirmed" || _info?.EventStatus == "Shot" || _info?.EventStatus == "Complete" || true;
+                    _paid = _info?.EventStatus == "Confirmed" || _info?.EventStatus == "Shot" || _info?.EventStatus == "Complete" || _info?.EventStatus == "Completed" || true;
                 }
             }
 

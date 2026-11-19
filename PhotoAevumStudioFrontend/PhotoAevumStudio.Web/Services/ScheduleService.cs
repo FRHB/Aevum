@@ -63,9 +63,15 @@ public class ScheduleService : IScheduleService
         MeetingLink = b.MeetingLink,
         AssignedCrewIds = b.AssignedCrewIds.ToList(),
         AssignedEquipmentIds = b.AssignedEquipmentIds.ToList(),
+        AssignedEquipmentNames = b.AssignedEquipmentNames.ToList(),
+        AssignedEquipment = b.AssignedEquipment.ToList(),
+        AssignedCrew = b.AssignedCrew.ToList(),
+        AssignedServices = b.AssignedServices.ToList(),
         PrepBufferMinutes = b.PrepBufferMinutes,
         PostBufferMinutes = b.PostBufferMinutes,
-        EventLocation = b.EventLocation
+        EventLocation = b.EventLocation,
+        LinkedEventAppointmentId = b.LinkedEventAppointmentId,
+        LinkedNegotiationId = b.LinkedNegotiationId
     };
 
     private static StaffMemberResource CloneStaffMember(StaffMemberResource s) => new()
@@ -111,6 +117,8 @@ public class ScheduleService : IScheduleService
     private static EquipmentReservationModel CloneReservation(EquipmentReservationModel r) => new()
     {
         Id = r.Id,
+        EventAppointmentId = r.EventAppointmentId,
+        EventStatus = r.EventStatus,
         EquipmentId = r.EquipmentId,
         EquipmentName = r.EquipmentName,
         Category = r.Category,
@@ -190,15 +198,19 @@ public class ScheduleService : IScheduleService
                 Id = "evt-101",
                 StudioSpaceId = "studio-a",
                 StudioSpaceName = "Studio A (Main Hall)",
+                EventLocation = "Studio A (Main Hall)",
                 ClientName = "Vogue Scandinavia",
                 ClientEmail = "production@voguescan.com",
                 ClientPhone = "+1 (555) 234-5678",
                 ServiceType = "Commercial Campaign",
+                AssignedServices = new List<string> { "Commercial Campaign" },
                 Date = monday,
                 StartTime = new TimeSpan(9, 0, 0),
                 EndTime = new TimeSpan(13, 0, 0),
                 Status = "Confirmed",
                 AssignedPhotographer = "Elena Rostova",
+                AssignedCrewIds = new List<string> { "staff-01" },
+                AssignedCrew = new List<EventCrewSummary> { new("staff-01", "Elena Rostova", "Senior Photographer", true) },
                 EstimatedPrice = 1200.00m,
                 Notes = "Autumn fashion editorial."
             },
@@ -207,17 +219,22 @@ public class ScheduleService : IScheduleService
                 Id = "evt-105",
                 StudioSpaceId = "studio-a",
                 StudioSpaceName = "Studio A (Main Hall)",
+                EventLocation = "Studio A (Main Hall)",
                 ClientName = "Horizon Luxury Apparel",
                 ClientEmail = "shoot@horizonapparel.com",
                 ClientPhone = "+1 (555) 678-9012",
                 ServiceType = "Commercial Campaign",
+                AssignedServices = new List<string> { "Commercial Campaign" },
                 Date = monday.AddDays(2),
                 StartTime = new TimeSpan(10, 0, 0),
                 EndTime = new TimeSpan(14, 0, 0),
                 Status = "Confirmed",
                 AssignedPhotographer = "Elena Rostova",
                 AssignedCrewIds = new List<string> { "staff-01" },
+                AssignedCrew = new List<EventCrewSummary> { new("staff-01", "Elena Rostova", "Senior Photographer", true) },
                 AssignedEquipmentIds = new List<string> { "eq-01" },
+                AssignedEquipmentNames = new List<string> { "Canon EOS R5 Mark II (#1)" },
+                AssignedEquipment = new List<EventEquipmentSummary> { new("eq-01", "Canon EOS R5 Mark II (#1)", "Camera Bodies") },
                 EstimatedPrice = 1400.00m,
                 Notes = "Winter outerwear collection lookbook."
             },
@@ -226,17 +243,22 @@ public class ScheduleService : IScheduleService
                 Id = "evt-106",
                 StudioSpaceId = "studio-a",
                 StudioSpaceName = "Studio A (Main Hall)",
+                EventLocation = "Studio A (Main Hall)",
                 ClientName = "Sterling Capital Partners",
                 ClientEmail = "partners@sterlingcap.com",
                 ClientPhone = "+1 (555) 789-0123",
                 ServiceType = "Express Headshot",
+                AssignedServices = new List<string> { "Express Headshot" },
                 Date = monday.AddDays(2),
                 StartTime = new TimeSpan(12, 30, 0),
                 EndTime = new TimeSpan(16, 0, 0),
                 Status = "Pending",
                 AssignedPhotographer = "Clara Oswald",
                 AssignedCrewIds = new List<string> { "staff-03" },
+                AssignedCrew = new List<EventCrewSummary> { new("staff-03", "Clara Oswald", "Photographer", true) },
                 AssignedEquipmentIds = new List<string> { "eq-01" },
+                AssignedEquipmentNames = new List<string> { "Canon EOS R5 Mark II (#1)" },
+                AssignedEquipment = new List<EventEquipmentSummary> { new("eq-01", "Canon EOS R5 Mark II (#1)", "Camera Bodies") },
                 EstimatedPrice = 850.00m,
                 Notes = "Board of Directors corporate portrait session."
             }
@@ -426,16 +448,29 @@ public class ScheduleService : IScheduleService
             conn.Open();
 
             bool hasGranularCols = false;
+            bool hasLocationCol = false;
             try
             {
-                using var chkCmd = new SqlCommand("SELECT CASE WHEN COL_LENGTH(N'dbo.EventAppointment', N'EventEndTime') IS NOT NULL AND COL_LENGTH(N'dbo.EventAppointment', N'DurationMinutes') IS NOT NULL THEN 1 ELSE 0 END;", conn);
-                hasGranularCols = Convert.ToInt32(chkCmd.ExecuteScalar()) == 1;
+                using var chkCmd = new SqlCommand(@"
+                    SELECT
+                        CASE WHEN COL_LENGTH(N'dbo.EventAppointment', N'EventEndTime') IS NOT NULL AND COL_LENGTH(N'dbo.EventAppointment', N'DurationMinutes') IS NOT NULL THEN 1 ELSE 0 END,
+                        CASE WHEN COL_LENGTH(N'dbo.EventAppointment', N'EventLocation') IS NOT NULL THEN 1 ELSE 0 END;", conn);
+                using var chkReader = chkCmd.ExecuteReader();
+                if (chkReader.Read())
+                {
+                    hasGranularCols = chkReader.GetInt32(0) == 1;
+                    hasLocationCol = chkReader.GetInt32(1) == 1;
+                }
             }
             catch { }
 
             var endTimeSelect = hasGranularCols
                 ? "ea.EventEndTime, ISNULL(ea.DurationMinutes, 120) AS DurationMinutes,"
                 : "CAST(NULL AS time) AS EventEndTime, CAST(120 AS int) AS DurationMinutes,";
+
+            var locationSelect = hasLocationCol
+                ? "ea.EventLocation,"
+                : "CAST(NULL AS nvarchar(255)) AS EventLocation,";
 
             string sql = $@"
                 SELECT ea.EventAppointmentID,
@@ -455,9 +490,21 @@ public class ScheduleService : IScheduleService
                        {endTimeSelect}
                        ISNULL(ea.TotalAmount, 0) AS TotalAmount,
                        crewIds.CrewIdList,
-                       eqIds.EquipIdList
+                       eqIds.EquipIdList,
+                       {locationSelect}
+                       equipDetails.EquipDetailList,
+                       crewDetails.CrewDetailList,
+                       serviceDetails.ServiceList,
+                       CAST(NULL AS nvarchar(30)) AS LinkedEventAppointmentId,
+                       linkedBn.NegotiationID AS LinkedNegotiationId
                 FROM dbo.EventAppointment ea
                 LEFT JOIN dbo.Customer c ON c.CustomerID = ea.CustomerID
+                OUTER APPLY (
+                    SELECT TOP 1 NegotiationID
+                    FROM dbo.BookingNegotiation
+                    WHERE EventAppointmentID = ea.EventAppointmentID
+                    ORDER BY CreatedAt DESC
+                ) linkedBn
                 OUTER APPLY (
                     SELECT STUFF((
                         SELECT ', ' + COALESCE(NULLIF(LTRIM(RTRIM(emp.EmployeeFirstName + ' ' + ISNULL(emp.EmployeeLastName, ''))), ''), emp.EmployeeID)
@@ -490,6 +537,38 @@ public class ScheduleService : IScheduleService
                         FOR XML PATH(''), TYPE
                     ).value('.', 'nvarchar(max)'), 1, 1, '') AS EquipIdList
                 ) eqIds
+                OUTER APPLY (
+                    SELECT STUFF((
+                        SELECT ';;' + eeq.EquipmentID + '|' + ISNULL(eq.EquipmentName, eeq.EquipmentID) + '|' + COALESCE(et.EquipmentTypeName, eq.EquipmentTypeID, 'Equipment')
+                        FROM dbo.EventEquipment eeq
+                        LEFT JOIN dbo.Equipment eq ON eq.EquipmentID = eeq.EquipmentID
+                        LEFT JOIN dbo.EquipmentType et ON et.EquipmentTypeID = eq.EquipmentTypeID
+                        WHERE eeq.EventAppointmentID = ea.EventAppointmentID AND eeq.EquipmentID IS NOT NULL
+                        ORDER BY eeq.EventEquipmentID ASC
+                        FOR XML PATH(''), TYPE
+                    ).value('.', 'nvarchar(max)'), 1, 2, '') AS EquipDetailList
+                ) equipDetails
+                OUTER APPLY (
+                    SELECT STUFF((
+                        SELECT ';;' + ee.EmployeeID + '|' + COALESCE(NULLIF(LTRIM(RTRIM(ISNULL(emp.EmployeeFirstName, '') + ' ' + ISNULL(emp.EmployeeLastName, ''))), ''), NULLIF(ee.AssignedEmployeeName, ''), ee.EmployeeID) + '|' + CASE WHEN ISNULL(ee.IsTeamLeader, 0) = 1 THEN '1' ELSE '0' END
+                        FROM dbo.EventEmployee ee
+                        LEFT JOIN dbo.Employees emp ON emp.EmployeeID = ee.EmployeeID
+                        WHERE ee.EventAppointmentID = ea.EventAppointmentID AND ee.EmployeeID IS NOT NULL
+                        ORDER BY ISNULL(ee.IsTeamLeader, 0) DESC, ee.EmployeeID ASC
+                        FOR XML PATH(''), TYPE
+                    ).value('.', 'nvarchar(max)'), 1, 2, '') AS CrewDetailList
+                ) crewDetails
+                OUTER APPLY (
+                    SELECT STUFF((
+                        SELECT ';;' + COALESCE(s.ServiceName, cp.ComboPackageName, ads.AdditionalServiceName, eli.EventLineItemID)
+                        FROM dbo.EventLineItem eli
+                        LEFT JOIN dbo.Services s ON s.ServicesID = eli.ServicesID
+                        LEFT JOIN dbo.ComboPackage cp ON cp.ComboPackageID = eli.ComboPackageID
+                        LEFT JOIN dbo.AdditionalServices ads ON ads.AdditionalServicesID = eli.AdditionalServicesID
+                        WHERE eli.EventAppointmentID = ea.EventAppointmentID
+                        FOR XML PATH(''), TYPE
+                    ).value('.', 'nvarchar(max)'), 1, 2, '') AS ServiceList
+                ) serviceDetails
                 WHERE ISNULL(ea.EventStatus, '') NOT IN ('Cancelled', 'Expired')
                 AND ea.EventAppointmentID NOT IN (
                     SELECT EventAppointmentID 
@@ -526,11 +605,17 @@ public class ScheduleService : IScheduleService
                        CAST(30 AS int) AS DurationMinutes,
                        CAST(0 AS decimal(18,2)) AS TotalAmount,
                        emp.EmployeeID AS CrewIdList,
-                       CAST(NULL AS nvarchar(max)) AS EquipIdList
+                       CAST(NULL AS nvarchar(max)) AS EquipIdList,
+                       CAST(NULL AS nvarchar(255)) AS EventLocation,
+                       CAST(NULL AS nvarchar(max)) AS EquipDetailList,
+                       CAST(NULL AS nvarchar(max)) AS CrewDetailList,
+                       CAST(NULL AS nvarchar(max)) AS ServiceList,
+                       bn.EventAppointmentID AS LinkedEventAppointmentId,
+                       CAST(NULL AS nvarchar(30)) AS LinkedNegotiationId
                 FROM dbo.BookingNegotiation bn
                 LEFT JOIN dbo.Customer c ON c.CustomerID = bn.CustomerID
                 LEFT JOIN dbo.Employees emp ON emp.EmployeeID = bn.EmployeeID
-                WHERE bn.NegotiationStatus IN ('Pending_Call', 'Rescheduled')
+                WHERE bn.NegotiationStatus IN ('Pending_Call', 'Rescheduled', 'Pending Payment', 'Pending_Payment', 'Appointment Booked', 'Deal_Won')
                   AND (@StartDate IS NULL OR CAST(bn.ConsultationDate AS date) >= @StartDate)
                   AND (@EndDate IS NULL OR CAST(bn.ConsultationDate AS date) <= @EndDate)
                 ORDER BY EventDate DESC, EventTime DESC;";
@@ -560,6 +645,12 @@ public class ScheduleService : IScheduleService
                 var totalAmount = reader.FieldCount > 16 && !reader.IsDBNull(16) ? reader.GetDecimal(16) : 0m;
                 var crewListRaw = reader.FieldCount > 17 && !reader.IsDBNull(17) ? reader.GetString(17) : string.Empty;
                 var equipListRaw = reader.FieldCount > 18 && !reader.IsDBNull(18) ? reader.GetString(18) : string.Empty;
+                var eventLocation = reader.FieldCount > 19 && !reader.IsDBNull(19) ? reader.GetString(19) : null;
+                var equipDetailsRaw = reader.FieldCount > 20 && !reader.IsDBNull(20) ? reader.GetString(20) : string.Empty;
+                var crewDetailsRaw = reader.FieldCount > 21 && !reader.IsDBNull(21) ? reader.GetString(21) : string.Empty;
+                var serviceListRaw = reader.FieldCount > 22 && !reader.IsDBNull(22) ? reader.GetString(22) : string.Empty;
+                var linkedEventApptId = reader.FieldCount > 23 && !reader.IsDBNull(23) ? reader.GetString(23) : null;
+                var linkedNegId = reader.FieldCount > 24 && !reader.IsDBNull(24) ? reader.GetString(24) : null;
 
                 var endTime = dbEndTime.HasValue && dbEndTime.Value > eventTime
                     ? dbEndTime.Value
@@ -570,26 +661,59 @@ public class ScheduleService : IScheduleService
 
                 var space = _defaultStudioSpaces[0];
 
+                var parsedEquip = equipDetailsRaw
+                    .Split(";;", StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+                    .Select(seg => seg.Split('|'))
+                    .Where(parts => parts.Length >= 2 && !string.IsNullOrWhiteSpace(parts[0]))
+                    .Select(parts => new EventEquipmentSummary(parts[0].Trim(), parts[1].Trim(), parts.Length > 2 ? parts[2].Trim() : "Equipment"))
+                    .ToList();
+
+                var parsedCrew = crewDetailsRaw
+                    .Split(";;", StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+                    .Select(seg => seg.Split('|'))
+                    .Where(parts => parts.Length >= 2 && !string.IsNullOrWhiteSpace(parts[0]))
+                    .Select(parts => new EventCrewSummary(parts[0].Trim(), parts[1].Trim(), "Crew", parts.Length > 2 && parts[2].Trim() == "1"))
+                    .ToList();
+
+                var parsedServices = serviceListRaw
+                    .Split(";;", StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+                    .Distinct(StringComparer.OrdinalIgnoreCase)
+                    .ToList();
+
+                var serviceDisplay = isConsultation
+                    ? "Online Consultation"
+                    : (parsedServices.Count > 0 ? string.Join(", ", parsedServices) : (string.IsNullOrWhiteSpace(eventName) ? "Studio Photography" : eventName));
+
+                if (!isConsultation && parsedServices.Count == 0 && !string.IsNullOrWhiteSpace(eventName))
+                    parsedServices.Add(eventName);
+
                 bookings.Add(new EventBookingModel
                 {
                     Id = id,
                     StudioSpaceId = space.Id,
                     StudioSpaceName = space.Name,
+                    EventLocation = string.IsNullOrWhiteSpace(eventLocation) ? space.Name : eventLocation,
                     ClientName = clientName,
                     ClientEmail = email,
                     ClientPhone = phone,
-                    ServiceType = isConsultation ? "Online Consultation" : (string.IsNullOrWhiteSpace(eventName) ? "Studio Photography" : eventName),
+                    ServiceType = serviceDisplay,
+                    AssignedServices = parsedServices,
                     Date = eventDate,
                     StartTime = eventTime,
                     EndTime = endTime,
                     Status = status,
                     AssignedPhotographer = empName,
                     AssignedCrewIds = crewListRaw.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).ToList(),
+                    AssignedCrew = parsedCrew,
                     AssignedEquipmentIds = equipListRaw.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).ToList(),
+                    AssignedEquipmentNames = parsedEquip.Select(e => e.EquipmentName).ToList(),
+                    AssignedEquipment = parsedEquip,
                     Notes = desc,
                     EstimatedPrice = isConsultation ? 0.00m : (totalAmount > 0 ? totalAmount : 350.00m),
                     IsConsultation = isConsultation,
-                    MeetingLink = meetingLink
+                    MeetingLink = meetingLink,
+                    LinkedEventAppointmentId = linkedEventApptId,
+                    LinkedNegotiationId = linkedNegId
                 });
             }
         }
@@ -643,6 +767,22 @@ public class ScheduleService : IScheduleService
 
                     IF @VId IS NOT NULL
                     BEGIN
+                        IF EXISTS (
+                            SELECT 1
+                            FROM dbo.Employees e
+                            LEFT JOIN dbo.EmployeeJointSpecialization ejs ON ejs.EmployeeID = e.EmployeeID
+                            LEFT JOIN dbo.EmployeeSpecialization es ON es.SpecializationID = ejs.SpecializationID
+                            WHERE e.EmployeeID = @VId
+                              AND (
+                                  e.EmployeeID LIKE 'CLK-%'
+                                  OR UPPER(LTRIM(RTRIM(COALESCE(NULLIF(es.SpecializationName, ''), es.Specialization, '')))) = 'OFFICE CLERK'
+                                  OR UPPER(ISNULL(e.Specializations, '')) LIKE '%OFFICE CLERK%'
+                              )
+                        )
+                        BEGIN
+                            THROW 50005, 'Cannot assign employee: Office Clerks cannot be dispatched as event crew.', 1;
+                        END;
+
                         IF OBJECT_ID(N'dbo.EmployeeLeaves', N'U') IS NOT NULL
                            AND EXISTS (
                                SELECT 1 FROM dbo.EmployeeLeaves el
@@ -743,7 +883,7 @@ public class ScheduleService : IScheduleService
             logCmd.Parameters.AddWithValue("@Details", $"Scheduled event {booking.Id}: {booking.ClientName} ({booking.ServiceType}) on {booking.Date:yyyy-MM-dd} at {booking.StartTime}");
             logCmd.ExecuteNonQuery();
         }
-        catch (SqlException ex) when (ex.Number == 50003 || ex.Number == 50004)
+        catch (SqlException ex) when (ex.Number == 50003 || ex.Number == 50004 || ex.Number == 50005)
         {
             throw new InvalidOperationException(ex.Message, ex);
         }
@@ -787,6 +927,22 @@ public class ScheduleService : IScheduleService
 
                     IF @VId IS NOT NULL
                     BEGIN
+                        IF EXISTS (
+                            SELECT 1
+                            FROM dbo.Employees e
+                            LEFT JOIN dbo.EmployeeJointSpecialization ejs ON ejs.EmployeeID = e.EmployeeID
+                            LEFT JOIN dbo.EmployeeSpecialization es ON es.SpecializationID = ejs.SpecializationID
+                            WHERE e.EmployeeID = @VId
+                              AND (
+                                  e.EmployeeID LIKE 'CLK-%'
+                                  OR UPPER(LTRIM(RTRIM(COALESCE(NULLIF(es.SpecializationName, ''), es.Specialization, '')))) = 'OFFICE CLERK'
+                                  OR UPPER(ISNULL(e.Specializations, '')) LIKE '%OFFICE CLERK%'
+                              )
+                        )
+                        BEGIN
+                            THROW 50005, 'Cannot assign employee: Office Clerks cannot be dispatched as event crew.', 1;
+                        END;
+
                         IF OBJECT_ID(N'dbo.EmployeeLeaves', N'U') IS NOT NULL
                            AND EXISTS (
                                SELECT 1 FROM dbo.EmployeeLeaves el
@@ -884,7 +1040,7 @@ public class ScheduleService : IScheduleService
             logCmd.Parameters.AddWithValue("@Details", $"Updated event {booking.Id}: Status={booking.Status}, Date={booking.Date:yyyy-MM-dd}");
             logCmd.ExecuteNonQuery();
         }
-        catch (SqlException ex) when (ex.Number == 50003 || ex.Number == 50004)
+        catch (SqlException ex) when (ex.Number == 50003 || ex.Number == 50004 || ex.Number == 50005)
         {
             throw new InvalidOperationException(ex.Message, ex);
         }
@@ -957,6 +1113,7 @@ public class ScheduleService : IScheduleService
         // Conflicts occur only when a crew member OR equipment item overlaps within combined Prep (2h) + Event + Post (1h).
         var dateGroups = bookings
             .Where(b => !b.IsConsultation &&
+                        !b.IsCompleted &&
                         !string.Equals(b.Status, "Cancelled", StringComparison.OrdinalIgnoreCase) &&
                         !string.Equals(b.Status, "Expired", StringComparison.OrdinalIgnoreCase) &&
                         !string.Equals(b.Status, "Deal_Lost", StringComparison.OrdinalIgnoreCase))
@@ -974,9 +1131,9 @@ public class ScheduleService : IScheduleService
 
                     if (b1.OverlapsWith(b2))
                     {
-                        var reason = b1.SharesCrewWith(b2)
-                            ? "Crew buffer overlap (2h prep + event + 1h post)"
-                            : "Equipment buffer overlap (2h prep + event + 1h post)";
+                        var reason = b1.SharesEquipmentWith(b2)
+                            ? "Same-day equipment double-booking"
+                            : "Crew buffer overlap (2h prep + event + 1h post)";
 
                         b1.HasConflict = true;
                         b1.ConflictMessage = $"Double-booked ({reason}) with '{b2.ClientName}' ({b2.FormattedTimeRange})";
@@ -1360,7 +1517,32 @@ public class ScheduleService : IScheduleService
             using var conn = CreateConnection();
             conn.Open();
 
-            const string sql = @"
+            bool hasGranularCols = false;
+            bool hasLocationCol = false;
+            try
+            {
+                using var chkCmd = new SqlCommand(@"
+                    SELECT
+                        CASE WHEN COL_LENGTH(N'dbo.EventAppointment', N'EventEndTime') IS NOT NULL AND COL_LENGTH(N'dbo.EventAppointment', N'DurationMinutes') IS NOT NULL THEN 1 ELSE 0 END,
+                        CASE WHEN COL_LENGTH(N'dbo.EventAppointment', N'EventLocation') IS NOT NULL THEN 1 ELSE 0 END;", conn);
+                using var chkReader = chkCmd.ExecuteReader();
+                if (chkReader.Read())
+                {
+                    hasGranularCols = chkReader.GetInt32(0) == 1;
+                    hasLocationCol = chkReader.GetInt32(1) == 1;
+                }
+            }
+            catch { }
+
+            var endTimeSelect = hasGranularCols
+                ? "ea.EventEndTime, ISNULL(ea.DurationMinutes, 120) AS DurationMinutes,"
+                : "CAST(NULL AS time) AS EventEndTime, CAST(120 AS int) AS DurationMinutes,";
+
+            var locationSelect = hasLocationCol
+                ? "COALESCE(NULLIF(ea.EventLocation, ''), N'Studio A (Main Hall)') AS EventLocation,"
+                : "N'Studio A (Main Hall)' AS EventLocation,";
+
+            string sql = $@"
                 SELECT eeq.EventAppointmentID,
                        eq.EquipmentID,
                        eq.EquipmentName,
@@ -1368,11 +1550,17 @@ public class ScheduleService : IScheduleService
                        ea.EventDate,
                        ea.EventTime,
                        ea.EventName,
-                       COALESCE(leadEmp.EmployeeName, 'Lead Technician') AS Technician
+                       COALESCE(leadEmp.EmployeeName, 'Lead Technician') AS Technician,
+                       {endTimeSelect}
+                       ISNULL(ea.EventStatus, 'Confirmed') AS EventStatus,
+                       {locationSelect}
+                       COALESCE(NULLIF(LTRIM(RTRIM(c.CustomerFirstName + ' ' + ISNULL(c.CustomerLastName, ''))), ''), ea.EventName) AS CustomerName,
+                       ISNULL(eq.EquipmentStatus, 'Ready') AS EquipmentStatus
                 FROM dbo.EventEquipment eeq
                 INNER JOIN dbo.EventAppointment ea ON ea.EventAppointmentID = eeq.EventAppointmentID
                 INNER JOIN dbo.Equipment eq ON eq.EquipmentID = eeq.EquipmentID
                 LEFT JOIN dbo.EquipmentType et ON et.EquipmentTypeID = eq.EquipmentTypeID
+                LEFT JOIN dbo.Customer c ON c.CustomerID = ea.CustomerID
                 OUTER APPLY (
                     SELECT TOP 1 COALESCE(NULLIF(LTRIM(RTRIM(emp.EmployeeFirstName + ' ' + ISNULL(emp.EmployeeLastName, ''))), ''), emp.EmployeeID) AS EmployeeName
                     FROM dbo.EventEmployee ee
@@ -1402,25 +1590,35 @@ public class ScheduleService : IScheduleService
                 var startTime = reader.GetFieldValue<TimeSpan>(5);
                 var eventName = reader.GetString(6);
                 var technician = reader.IsDBNull(7) ? "Studio Staff" : reader.GetString(7);
+                var dbEndTime = reader.FieldCount > 8 && !reader.IsDBNull(8) ? reader.GetFieldValue<TimeSpan>(8) : (TimeSpan?)null;
+                var durationMins = reader.FieldCount > 9 && !reader.IsDBNull(9) ? Math.Max(15, reader.GetInt32(9)) : 120;
+                var evtStatus = reader.FieldCount > 10 && !reader.IsDBNull(10) ? reader.GetString(10) : "Confirmed";
+                var evtLocation = reader.FieldCount > 11 && !reader.IsDBNull(11) ? reader.GetString(11) : "Studio A (Main Hall)";
+                var custName = reader.FieldCount > 12 && !reader.IsDBNull(12) ? reader.GetString(12) : eventName;
+                var eqStatus = reader.FieldCount > 13 && !reader.IsDBNull(13) ? reader.GetString(13) : "Ready";
 
-                var endTime = startTime.Add(TimeSpan.FromHours(2));
+                var endTime = dbEndTime.HasValue && dbEndTime.Value > startTime
+                    ? dbEndTime.Value
+                    : startTime.Add(TimeSpan.FromMinutes(durationMins));
                 if (endTime > new TimeSpan(23, 59, 0))
                     endTime = new TimeSpan(23, 59, 0);
 
                 reservations.Add(new EquipmentReservationModel
                 {
                     Id = $"{apptId}-{eqId}",
+                    EventAppointmentId = apptId,
+                    EventStatus = evtStatus,
                     EquipmentId = eqId,
                     EquipmentName = eqName,
                     Category = cat,
                     Date = eventDate,
                     StartTime = startTime,
                     EndTime = endTime,
-                    ProjectOrClient = eventName,
+                    ProjectOrClient = string.Equals(custName, eventName, StringComparison.OrdinalIgnoreCase) ? eventName : $"{custName} — {eventName}",
                     TechnicianInCharge = technician,
-                    Location = "Studio A",
-                    MaintenanceStatus = "Ready",
-                    Notes = $"Reserved for shoot: {eventName}"
+                    Location = evtLocation,
+                    MaintenanceStatus = eqStatus.Equals("Available", StringComparison.OrdinalIgnoreCase) ? "Ready" : eqStatus,
+                    Notes = $"Reserved for shoot: {eventName} (#{apptId})"
                 });
             }
         }
@@ -1463,6 +1661,34 @@ public class ScheduleService : IScheduleService
         {
             using var conn = CreateConnection();
             conn.Open();
+
+            // Enforce entire calendar-day lock across non-cancelled/non-expired events
+            const string sameDayCheckSql = @"
+                SELECT TOP 1 ea.EventAppointmentID, COALESCE(NULLIF(ea.EventName, ''), ea.EventAppointmentID) AS EventName
+                FROM dbo.EventEquipment eeq
+                INNER JOIN dbo.EventAppointment ea ON ea.EventAppointmentID = eeq.EventAppointmentID
+                WHERE eeq.EquipmentID = @EqId
+                  AND CAST(ea.EventDate AS date) = @TargetDate
+                  AND ISNULL(ea.EventStatus, '') NOT IN ('Cancelled', 'Expired')
+                  AND NOT EXISTS (
+                      SELECT 1 FROM dbo.BookingNegotiation bn
+                      WHERE bn.EventAppointmentID = ea.EventAppointmentID
+                        AND bn.NegotiationStatus IN ('Deal_Lost', 'Cancelled')
+                  );";
+
+            using (var lockCmd = new SqlCommand(sameDayCheckSql, conn))
+            {
+                lockCmd.Parameters.AddWithValue("@EqId", reservation.EquipmentId.Trim());
+                lockCmd.Parameters.AddWithValue("@TargetDate", reservation.Date.Date);
+                using var lockReader = lockCmd.ExecuteReader();
+                if (lockReader.Read())
+                {
+                    var conflictEvtId = lockReader.GetString(0);
+                    var conflictEvtName = lockReader.GetString(1);
+                    throw new InvalidOperationException(
+                        $"Equipment {reservation.EquipmentId} is already booked on {reservation.Date:yyyy-MM-dd} for '{conflictEvtName}' ({conflictEvtId}) and is unavailable for the entire day.");
+                }
+            }
 
             // Find or create an appointment for this reservation
             string apptId = reservation.Id;
@@ -1509,6 +1735,10 @@ public class ScheduleService : IScheduleService
             logCmd.Parameters.AddWithValue("@Details", $"Reserved equipment {reservation.EquipmentId} for {reservation.ProjectOrClient} on {reservation.Date:yyyy-MM-dd}");
             logCmd.ExecuteNonQuery();
         }
+        catch (InvalidOperationException)
+        {
+            throw;
+        }
         catch
         {
         }
@@ -1539,16 +1769,48 @@ public class ScheduleService : IScheduleService
             return;
         }
 
-        var parts = id.Split('-');
-        if (parts.Length >= 2)
+        try
         {
-            var apptId = parts[0];
-            var eqId = parts[1];
+            using var conn = CreateConnection();
+            conn.Open();
 
-            try
+            string apptId = string.Empty;
+            string eqId = string.Empty;
+
+            using (var lookupCmd = new SqlCommand(
+                "SELECT TOP 1 EventAppointmentID, EquipmentID FROM dbo.EventEquipment WHERE (EventAppointmentID + '-' + EquipmentID) = @CompositeId;",
+                conn))
             {
-                using var conn = CreateConnection();
-                conn.Open();
+                lookupCmd.Parameters.AddWithValue("@CompositeId", id.Trim());
+                using var r = lookupCmd.ExecuteReader();
+                if (r.Read())
+                {
+                    apptId = r.GetString(0);
+                    eqId = r.GetString(1);
+                }
+            }
+
+            if (string.IsNullOrWhiteSpace(apptId))
+            {
+                var eqBoundary = id.IndexOf("-EQ", StringComparison.OrdinalIgnoreCase);
+                if (eqBoundary > 0)
+                {
+                    apptId = id[..eqBoundary];
+                    eqId = id[(eqBoundary + 1)..];
+                }
+                else
+                {
+                    var parts = id.Split('-');
+                    if (parts.Length >= 2)
+                    {
+                        apptId = parts[0];
+                        eqId = parts[1];
+                    }
+                }
+            }
+
+            if (!string.IsNullOrWhiteSpace(apptId) && !string.IsNullOrWhiteSpace(eqId))
+            {
                 using var cmd = new SqlCommand("DELETE FROM dbo.EventEquipment WHERE EventAppointmentID = @ApptId AND EquipmentID = @EqId;", conn);
                 cmd.Parameters.AddWithValue("@ApptId", apptId);
                 cmd.Parameters.AddWithValue("@EqId", eqId);
@@ -1557,18 +1819,19 @@ public class ScheduleService : IScheduleService
                 const string logSql = @"
                     IF OBJECT_ID(N'dbo.HistoryLog', N'U') IS NOT NULL
                     BEGIN
-                        INSERT INTO dbo.HistoryLog (ActionType, EntityName, EntityID, ChangedByType, ActionDetails, LoggedAt)
-                        VALUES ('DELETE', 'EventEquipment', @EqId, 'System', @Details, SYSUTCDATETIME());
+                        INSERT INTO dbo.HistoryLog (ActionType, EntityName, EntityID, EventAppointmentID, ChangedByType, ActionDetails, LoggedAt)
+                        VALUES ('DELETE', 'EventEquipment', @EqId, @ApptId, 'System', @Details, SYSUTCDATETIME());
                     END";
 
                 using var logCmd = new SqlCommand(logSql, conn);
                 logCmd.Parameters.AddWithValue("@EqId", eqId);
+                logCmd.Parameters.AddWithValue("@ApptId", apptId);
                 logCmd.Parameters.AddWithValue("@Details", $"Cancelled reservation for equipment {eqId} in appointment {apptId}");
                 logCmd.ExecuteNonQuery();
             }
-            catch
-            {
-            }
+        }
+        catch
+        {
         }
     }
 

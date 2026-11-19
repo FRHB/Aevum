@@ -127,7 +127,19 @@ public record CreateAdditionalServiceDto(
     byte[]? ImageBytes,
     string? ImageMimeType,
     string? ImageFileName = null,
-    string? ImageUrl = null);
+    string? ImageUrl = null,
+    string RateType = "per hour");
+
+public record UpdateAdditionalServiceDto(
+    string ServiceName,
+    string ServiceDescription,
+    string ServiceCategory,
+    decimal ServicePrice,
+    byte[]? ImageBytes = null,
+    string? ImageMimeType = null,
+    string? ImageFileName = null,
+    string? ImageUrl = null,
+    string RateType = "per hour");
 
 public record AdditionalServiceResponseDto(
     string Id,
@@ -138,7 +150,8 @@ public record AdditionalServiceResponseDto(
     bool HasImage,
     string? ImageUrl,
     DateTime CreatedAt,
-    string? ImageFileName = null);
+    string? ImageFileName = null,
+    string RateType = "per hour");
 
 // History Log
 public record HistoryLogDto(
@@ -160,7 +173,16 @@ public record CreateComboPackageModel(
     string? Description,
     string CategoryId,
     decimal Price,
-    IReadOnlyList<string> SelectedServiceIds);
+    IReadOnlyList<string> SelectedServiceIds,
+    string RateType = "per hour");
+
+public record UpdateComboPackageModel(
+    string Name,
+    string? Description,
+    string CategoryId,
+    decimal Price,
+    IReadOnlyList<string> SelectedServiceIds,
+    string RateType = "per hour");
 
 public record BundledServiceSelectionItem(
     string Id,
@@ -168,7 +190,8 @@ public record BundledServiceSelectionItem(
     string? Description,
     decimal Price,
     string ServiceType, // "Main" or "Additional"
-    bool HasImage);
+    bool HasImage,
+    string RateType = "per hour");
 
 public record ComboPackageCreatedResponseDto(
     string PackageId,
@@ -182,7 +205,8 @@ public record ComboPackageCreatedResponseDto(
     bool HasImage,
     DateTime CreatedAt,
     string? ImageFileName = null,
-    string? ImageUrl = null);
+    string? ImageUrl = null,
+    string RateType = "per hour");
 
 public record PackageNextIdDto(string PackageId);
 

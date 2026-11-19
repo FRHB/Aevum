@@ -84,7 +84,8 @@
             <select value="@_selectedStatusFilter" @onchange="OnStatusFilterChanged" class="toolbar-select">
                 <option value="">All Statuses</option>
                 <option value="Confirmed">Confirmed</option>
-                <option value="Pending Payment">Awaiting Reserve Fee Payment</option>
+                <option value="Appointment Booked">Appointment Booked</option>
+                <option value="Pending Payment">Pending Payment</option>
                 <option value="Pending">Pending</option>
                 <option value="Completed">Completed</option>
             </select>
@@ -248,12 +249,17 @@
                                                 }
                                                 @b.ClientName
                                             </span>
-                                            <span class="status-pill text-[10px] @(b.Status is "Pending Payment" or "Awaiting_Downpayment" ? "pending" : b.Status.ToLowerInvariant())">@b.DisplayStatus</span>
+                                            <span class="status-pill text-[10px] @GetDayRowStatusPillClass(b)">@b.DisplayStatus</span>
                                         </div>
                                         <div class="gantt-meta-sub">
                                             <span>@b.ServiceType</span>
                                             <span>&bull;</span>
                                             <span>@(b.IsConsultation ? "Clerk: " : "📷 ")@b.AssignedPhotographer</span>
+                                            @if (!b.IsConsultation && b.AssignedEquipmentIds.Count > 0)
+                                            {
+                                                <span>&bull;</span>
+                                                <span class="text-slate-600 font-semibold">🎒 @b.AssignedEquipmentIds.Count gear</span>
+                                            }
                                         </div>
                                         <div class="gantt-meta-time">
                                             <span>@b.FormattedTimeRange</span>
@@ -598,8 +604,15 @@
         </section>
     }
 
-    @* ── MODULAR DETAIL DRAWER ────────────────────────────────────────── *@
-    <CalendarDetailDrawer Booking="_selectedBooking" HidePricing="_isPhotographerOrCreative" OnClose="CloseDetailDrawer" />
+    @* ── BOOKED EVENT OVERVIEW MODAL ──────────────────────────────────── *@
+    <BookedEventOverviewModal Booking="_selectedBooking"
+                              CanManageRoster="_canManageRoster"
+                              HidePricing="_isPhotographerOrCreative"
+                              AllBookings="_loadedBookings"
+                              EquipmentReservations="_equipmentReservations"
+                              OnClose="CloseDetailDrawer"
+                              OnRosterUpdated="HandleRosterUpdatedAsync"
+                              OnOpenLinkedEvent="OpenLinkedEventAsync" />
 
     @* ── MODULAR CREATE NEW EVENT MODAL ───────────────────────────────── *@
     @* Fallback state for services: No services currently available *@
@@ -660,11 +673,14 @@
 
 @code {
     [CascadingParameter] Task<AuthenticationState>? AuthState { get; set; }
+    [SupplyParameterFromQuery(Name = "eventId")] public string? QueryEventId { get; set; }
+    private string? _lastHandledQueryEventId;
     private ClaimsPrincipal? _currentUser;
     private string _currentEmployeeName = string.Empty;
     private string _currentEmployeeId = string.Empty;
     private bool _isPhotographerOrCreative;
     private bool _isOfficeClerk;
+    private bool _canManageRoster;
 
     private ScheduleViewMode _currentView = ScheduleViewMode.Week;
     private DateTime _selectedDate = DateTime.Today;
@@ -687,6 +703,7 @@
 
     // In-memory window cache and indexed lookups for $O(1)$ fast rendering
     private List<EventBookingModel> _loadedBookings = new();
+    private List<EquipmentReservationModel> _equipmentReservations = new();
     private List<EventBookingModel> _filteredBookings = new();
     private ILookup<DateTime, EventBookingModel> _bookingsByDateLookup = Enumerable.Empty<EventBookingModel>().ToLookup(b => b.Date.Date);
 
@@ -743,6 +760,7 @@
 
         _isOfficeClerk = EmployeeRoleHelper.IsOfficeClerk(_currentUser, UserService);
         _isPhotographerOrCreative = EmployeeRoleHelper.IsPhotographerOrCreative(_currentUser, UserService);
+        _canManageRoster = EmployeeRoleHelper.IsAdmin(_currentUser) || _isOfficeClerk;
         _currentEmployeeName = EmployeeRoleHelper.GetCurrentEmployeeName(_currentUser, UserService);
         _currentEmployeeId = EmployeeRoleHelper.GetCurrentEmployeeId(_currentUser);
 
@@ -771,6 +789,12 @@
             if (!_isPhotographerOrCreative)
             {
                 await LoadStaffScheduleDataAsync();
+            }
+            if (!string.IsNullOrWhiteSpace(QueryEventId) &&
+                !string.Equals(_lastHandledQueryEventId, QueryEventId, StringComparison.OrdinalIgnoreCase))
+            {
+                _lastHandledQueryEventId = QueryEventId;
+                await OpenLinkedEventAsync(QueryEventId);
             }
             await InvokeAsync(StateHasChanged);
         }
@@ -843,7 +867,10 @@
         var queryStart = rangeStart.AddDays(-7);
         var queryEnd = rangeEnd.AddDays(7);
 
-        var rawBookings = await Task.Run(() => ScheduleService.GetEventBookings(queryStart, queryEnd));
+        var (rawBookings, rawEqReservations) = await Task.Run(() =>
+            (ScheduleService.GetEventBookings(queryStart, queryEnd), ScheduleService.GetEquipmentReservations()));
+
+        _equipmentReservations = rawEqReservations;
 
         if (_isPhotographerOrCreative)
         {
@@ -881,7 +908,10 @@
         if (!string.IsNullOrEmpty(_selectedStatusFilter))
             query = query.Where(b =>
                 b.Status.Equals(_selectedStatusFilter, StringComparison.OrdinalIgnoreCase) ||
-                b.DisplayStatus.Equals(_selectedStatusFilter, StringComparison.OrdinalIgnoreCase));
+                b.DisplayStatus.Equals(_selectedStatusFilter, StringComparison.OrdinalIgnoreCase) ||
+                (_selectedStatusFilter.Equals("Completed", StringComparison.OrdinalIgnoreCase) && b.IsCompleted) ||
+                (_selectedStatusFilter.Equals("Pending Payment", StringComparison.OrdinalIgnoreCase) && b.IsPendingPayment) ||
+                (_selectedStatusFilter.Equals("Appointment Booked", StringComparison.OrdinalIgnoreCase) && b.IsAppointmentBooked));
 
         if (!string.IsNullOrEmpty(_selectedServiceTypeFilter))
             query = query.Where(b => b.ServiceType.Equals(_selectedServiceTypeFilter, StringComparison.OrdinalIgnoreCase));
@@ -979,6 +1009,9 @@
     private string GetMiniEventBadgeClass(EventBookingModel ev)
     {
         if (ev.HasConflict) return "conflict";
+        if (ev.IsAppointmentBooked) return "appointment-booked";
+        if (ev.IsPendingPayment) return "pending";
+        if (ev.IsCompleted) return "completed";
         if (ev.IsConsultation) return "consultation";
         return ev.Status.ToLowerInvariant() switch
         {
@@ -987,6 +1020,14 @@
             "completed" => "completed",
             _ => ""
         };
+    }
+
+    private static string GetDayRowStatusPillClass(EventBookingModel b)
+    {
+        if (b.IsAppointmentBooked) return "appointment-booked";
+        if (b.IsPendingPayment) return "pending";
+        if (b.IsCompleted) return "completed";
+        return b.Status.ToLowerInvariant();
     }
 
     private string FormattedDateRangeHeader => _currentView switch
@@ -1015,6 +1056,7 @@
         _selectedDate = booking.Date.Date;
         _highlightedEventId = booking.Id;
         _pendingHighlightEventId = booking.Id;
+        _selectedBooking = booking;
 
         _highlightTimer?.Dispose();
         _highlightTimer = new System.Threading.Timer(_ =>
@@ -1228,6 +1270,51 @@
     private void CloseDetailDrawer()
     {
         _selectedBooking = null;
+    }
+
+    private async Task OpenLinkedEventAsync(string eventAppointmentId)
+    {
+        if (string.IsNullOrWhiteSpace(eventAppointmentId)) return;
+        var cleanId = eventAppointmentId.Trim();
+
+        var match = _loadedBookings.FirstOrDefault(b =>
+            string.Equals(b.Id, cleanId, StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(b.LinkedEventAppointmentId, cleanId, StringComparison.OrdinalIgnoreCase));
+
+        if (match == null)
+        {
+            var all = ScheduleService.GetEventBookings(null, null);
+            match = all.FirstOrDefault(b =>
+                string.Equals(b.Id, cleanId, StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(b.LinkedEventAppointmentId, cleanId, StringComparison.OrdinalIgnoreCase));
+        }
+
+        if (match != null)
+        {
+            _selectedDate = match.Date.Date;
+            await LoadBookingsForCurrentViewAsync(forceReload: true);
+            var refreshed = _loadedBookings.FirstOrDefault(b =>
+                string.Equals(b.Id, match.Id, StringComparison.OrdinalIgnoreCase)) ?? match;
+            _selectedBooking = refreshed;
+            _highlightedEventId = refreshed.Id;
+            if (_currentView == ScheduleViewMode.Day)
+            {
+                _pendingHighlightEventId = refreshed.Id;
+            }
+            StateHasChanged();
+        }
+    }
+
+    private async Task HandleRosterUpdatedAsync()
+    {
+        var activeId = _selectedBooking?.Id;
+        ScheduleService.InvalidateCache();
+        await LoadBookingsForCurrentViewAsync(forceReload: true);
+        if (!string.IsNullOrWhiteSpace(activeId))
+        {
+            _selectedBooking = _loadedBookings.FirstOrDefault(b => string.Equals(b.Id, activeId, StringComparison.OrdinalIgnoreCase))
+                               ?? _selectedBooking;
+        }
     }
 
     private void OpenCreateModal()

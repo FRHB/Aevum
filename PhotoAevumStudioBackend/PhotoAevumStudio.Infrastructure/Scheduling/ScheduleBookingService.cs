@@ -42,15 +42,29 @@ public sealed class ScheduleBookingService(
             if (conn.State != ConnectionState.Open)
                 await conn.OpenAsync(cancellationToken);
 
+            try
+            {
+                await using var schemaCmd = conn.CreateCommand();
+                schemaCmd.CommandText = @"
+                    IF OBJECT_ID(N'dbo.Services', N'U') IS NOT NULL AND COL_LENGTH(N'dbo.Services', N'RateType') IS NULL
+                        ALTER TABLE dbo.Services ADD RateType nvarchar(50) NOT NULL CONSTRAINT DF_Services_RateType DEFAULT 'Per Hour';
+                    IF OBJECT_ID(N'dbo.ComboPackage', N'U') IS NOT NULL AND COL_LENGTH(N'dbo.ComboPackage', N'RateType') IS NULL
+                        ALTER TABLE dbo.ComboPackage ADD RateType nvarchar(50) NOT NULL CONSTRAINT DF_ComboPackage_RateType DEFAULT 'Per Hour';
+                    IF OBJECT_ID(N'dbo.AdditionalServices', N'U') IS NOT NULL AND COL_LENGTH(N'dbo.AdditionalServices', N'RateType') IS NULL
+                        ALTER TABLE dbo.AdditionalServices ADD RateType nvarchar(50) NOT NULL CONSTRAINT DF_AdditionalServices_RateType DEFAULT 'Per Hour';";
+                await schemaCmd.ExecuteNonQueryAsync(cancellationToken);
+            }
+            catch { }
+
             await using var cmd = conn.CreateCommand();
             cmd.CommandText = @"
                 SELECT ServicesID AS Id, ServiceName AS Name, ISNULL(ServicesDescription, '') AS [Desc], CAST(ServicePrice AS decimal(18,2)) AS Price, ISNULL(RateType, 'Per Hour') AS RateType
                 FROM dbo.Services
                 UNION ALL
-                SELECT ComboPackageID AS Id, ComboPackageName AS Name, ISNULL(ComboPackageDescription, '') AS [Desc], CAST(ComboPackagePrice AS decimal(18,2)) AS Price, N'Per Session' AS RateType
+                SELECT ComboPackageID AS Id, ComboPackageName AS Name, ISNULL(ComboPackageDescription, '') AS [Desc], CAST(ComboPackagePrice AS decimal(18,2)) AS Price, ISNULL(RateType, 'Per Hour') AS RateType
                 FROM dbo.ComboPackage
                 UNION ALL
-                SELECT AdditionalServicesID AS Id, AdditionalServiceName AS Name, ISNULL(AdditionalServicesDescription, '') AS [Desc], CAST(ServicePrice AS decimal(18,2)) AS Price, N'Per Session' AS RateType
+                SELECT AdditionalServicesID AS Id, AdditionalServiceName AS Name, ISNULL(AdditionalServicesDescription, '') AS [Desc], CAST(ServicePrice AS decimal(18,2)) AS Price, ISNULL(RateType, 'Per Hour') AS RateType
                 FROM dbo.AdditionalServices
                 ORDER BY Name ASC;
             ";
@@ -206,9 +220,489 @@ public sealed class ScheduleBookingService(
             })
             .ToListAsync(cancellationToken);
 
-        return rows.Select(r => new MyBookingDto(
-            r.AppointmentId, string.Join(", ", r.Services), r.SlotDate, r.SlotStart, r.SlotEnd,
-            r.Status.ToString(), r.TotalPrice, r.Platform, r.MeetingLink, r.EventLocation)).ToList();
+        var clerkLookup = new Dictionary<string, (string? ClerkId, string? ClerkName, string? NegotiationId)>(StringComparer.OrdinalIgnoreCase);
+        if (rows.Count > 0)
+        {
+            try
+            {
+                var conn = db.Database.GetDbConnection();
+                if (conn.State != ConnectionState.Open) await conn.OpenAsync(cancellationToken);
+                var negIds = rows.Select(r => $"NEG-{r.AppointmentId:D4}").ToList();
+                var pNames = string.Join(",", negIds.Select((_, i) => $"@n{i}"));
+
+                await using var cmd = conn.CreateCommand();
+                cmd.CommandText = $@"
+                    IF OBJECT_ID(N'dbo.BookingNegotiation', N'U') IS NOT NULL
+                    BEGIN
+                        SELECT bn.NegotiationID,
+                               bn.EmployeeID,
+                               COALESCE(
+                                   NULLIF(LTRIM(RTRIM(CONCAT(ISNULL(e.EmployeeFirstName, ''), ' ', ISNULL(e.EmployeeLastName, '')))), ''),
+                                   NULLIF(bn.AssignedEmployeeName, ''),
+                                   bn.EmployeeID
+                               ) AS ClerkName
+                        FROM dbo.BookingNegotiation bn
+                        LEFT JOIN dbo.Employees e ON e.EmployeeID = bn.EmployeeID
+                        WHERE bn.NegotiationID IN ({pNames});
+                    END";
+                for (var i = 0; i < negIds.Count; i++)
+                {
+                    var p = cmd.CreateParameter();
+                    p.ParameterName = $"@n{i}";
+                    p.Value = negIds[i];
+                    cmd.Parameters.Add(p);
+                }
+
+                await using var reader = await cmd.ExecuteReaderAsync(cancellationToken);
+                while (await reader.ReadAsync(cancellationToken))
+                {
+                    var nid = reader.GetString(0);
+                    var cid = reader.IsDBNull(1) ? null : reader.GetString(1);
+                    var cname = reader.IsDBNull(2) ? null : reader.GetString(2);
+                    clerkLookup[nid] = (cid, cname, nid);
+                }
+            }
+            catch (Exception ex)
+            {
+                logger.LogDebug(ex, "Optional BookingNegotiation clerk enrichment skipped for customer {CustomerId}.", customerId);
+            }
+        }
+
+        return rows.Select(r =>
+        {
+            var negKey = $"NEG-{r.AppointmentId:D4}";
+            clerkLookup.TryGetValue(negKey, out var info);
+            return new MyBookingDto(
+                r.AppointmentId,
+                string.Join(", ", r.Services),
+                r.SlotDate,
+                r.SlotStart,
+                r.SlotEnd,
+                r.Status.ToString(),
+                r.TotalPrice,
+                r.Platform,
+                r.MeetingLink,
+                r.EventLocation,
+                info.ClerkId,
+                info.ClerkName,
+                info.NegotiationId ?? negKey);
+        }).ToList();
+    }
+
+    public async Task<CustomerCancelBookingResultDto> CancelBookingAsync(
+        int appointmentId,
+        string customerId,
+        string? reason = null,
+        bool isPrivileged = false,
+        CancellationToken cancellationToken = default)
+    {
+        var negId = $"NEG-{appointmentId:D4}";
+        var equipmentReleased = false;
+        var clerkReleased = false;
+
+        var strategy = db.Database.CreateExecutionStrategy();
+        await strategy.ExecuteAsync(async ct =>
+        {
+            db.ChangeTracker.Clear();
+            await using var tx = await db.Database.BeginTransactionAsync(IsolationLevel.Serializable, ct);
+
+            var entity = await db.Appointments
+                .FirstOrDefaultAsync(a => a.AppointmentId == appointmentId, ct)
+                ?? throw new KeyNotFoundException($"Booking #{appointmentId} was not found.");
+
+            if (!isPrivileged && !string.Equals(entity.CustomerId, customerId, StringComparison.OrdinalIgnoreCase))
+                throw new UnauthorizedAccessException("You can only cancel your own appointments.");
+
+            if (string.Equals(entity.Status, AppointmentStatus.Cancelled, StringComparison.OrdinalIgnoreCase))
+                throw new ScheduleValidationException($"Booking #{appointmentId} is already cancelled.");
+
+            var slotDate = entity.SlotDate;
+            entity.Status = AppointmentStatus.Cancelled;
+            await db.SaveChangesAsync(ct);
+
+            var overview = await db.BookingOverviews
+                .FromSql($"SELECT * FROM dbo.BookingOverview WITH (UPDLOCK, HOLDLOCK) WHERE OverviewDate = {slotDate}")
+                .SingleOrDefaultAsync(ct);
+            if (overview is not null && overview.TotalAppointments > 0)
+            {
+                overview.TotalAppointments--;
+                overview.LastUpdatedAt = clock.GetUtcNow().UtcDateTime;
+                await db.SaveChangesAsync(ct);
+            }
+
+            var conn = db.Database.GetDbConnection();
+            if (conn.State != ConnectionState.Open) await conn.OpenAsync(ct);
+
+            string? linkedEventId = null;
+            await using (var findCmd = conn.CreateCommand())
+            {
+                findCmd.Transaction = tx.GetDbTransaction();
+                findCmd.CommandText = @"
+                    IF OBJECT_ID(N'dbo.BookingNegotiation', N'U') IS NOT NULL
+                    BEGIN
+                        SELECT TOP 1 EventAppointmentID
+                        FROM dbo.BookingNegotiation
+                        WHERE NegotiationID = @NegId;
+                    END";
+                var pNeg = findCmd.CreateParameter();
+                pNeg.ParameterName = "@NegId";
+                pNeg.Value = negId;
+                findCmd.Parameters.Add(pNeg);
+                linkedEventId = await findCmd.ExecuteScalarAsync(ct) as string;
+            }
+
+            await using (var relCmd = conn.CreateCommand())
+            {
+                relCmd.Transaction = tx.GetDbTransaction();
+                relCmd.CommandText = @"
+                    IF OBJECT_ID(N'dbo.BookingNegotiation', N'U') IS NOT NULL
+                    BEGIN
+                        UPDATE dbo.BookingNegotiation
+                        SET NegotiationStatus = 'Cancelled',
+                            EmployeeID = NULL,
+                            AssignedEmployeeName = NULL
+                        WHERE NegotiationID = @NegId;
+                    END;
+
+                    IF @EvtId IS NOT NULL AND OBJECT_ID(N'dbo.EventAppointment', N'U') IS NOT NULL
+                    BEGIN
+                        IF OBJECT_ID(N'dbo.EventEmployee', N'U') IS NOT NULL
+                            DELETE FROM dbo.EventEmployee WHERE EventAppointmentID = @EvtId;
+
+                        IF OBJECT_ID(N'dbo.EventEquipment', N'U') IS NOT NULL
+                            DELETE FROM dbo.EventEquipment WHERE EventAppointmentID = @EvtId;
+
+                        UPDATE dbo.EventAppointment
+                        SET EventStatus = 'Cancelled',
+                            DownpaymentStatus = CASE WHEN ISNULL(DownpaymentStatus, 'Pending') = 'Paid' THEN DownpaymentStatus ELSE 'Cancelled' END,
+                            EmployeeID = NULL,
+                            AssignedEmployeeName = NULL,
+                            LockExpiresAt = NULL,
+                            HoldExpiresAt = NULL,
+                            QrString = NULL
+                        WHERE EventAppointmentID = @EvtId;
+                    END;
+
+                    IF OBJECT_ID(N'dbo.HistoryLog', N'U') IS NOT NULL
+                    BEGIN
+                        INSERT INTO dbo.HistoryLog (ActionType, EntityName, EntityID, ActionDetails, NegotiationID, EventAppointmentID, CustomerID, ChangedByType, ChangedByCustomerID, LoggedAt)
+                        VALUES ('STATUS_CHANGE', 'BookingNegotiation', @NegId, @LogMsg, @NegId, @EvtId, @CustId, @ChangedByType, @ChangedCustId, SYSUTCDATETIME());
+                    END";
+
+                void AddParam(System.Data.Common.DbCommand cmd, string name, object? val)
+                {
+                    var p = cmd.CreateParameter();
+                    p.ParameterName = name;
+                    p.Value = val ?? DBNull.Value;
+                    cmd.Parameters.Add(p);
+                }
+
+                var msg = string.IsNullOrWhiteSpace(reason)
+                    ? $"Customer cancelled booking #{appointmentId} ({negId}). Locked slot, Office Clerk, and any linked equipment released."
+                    : $"Customer cancelled booking #{appointmentId} ({negId}). Reason: {reason.Trim()}. Locked slot, Office Clerk, and any linked equipment released.";
+
+                AddParam(relCmd, "@NegId", negId);
+                AddParam(relCmd, "@EvtId", linkedEventId);
+                AddParam(relCmd, "@LogMsg", msg);
+                AddParam(relCmd, "@CustId", entity.CustomerId);
+                AddParam(relCmd, "@ChangedByType", isPrivileged ? "Admin" : "Customer");
+                AddParam(relCmd, "@ChangedCustId", isPrivileged ? null : entity.CustomerId);
+                await relCmd.ExecuteNonQueryAsync(ct);
+
+                clerkReleased = true;
+                equipmentReleased = !string.IsNullOrWhiteSpace(linkedEventId);
+            }
+
+            await tx.CommitAsync(ct);
+        }, cancellationToken);
+
+        return new CustomerCancelBookingResultDto(
+            Success: true,
+            AppointmentId: appointmentId,
+            NegotiationId: negId,
+            SlotReleased: true,
+            ClerkReleased: clerkReleased,
+            EquipmentReleased: equipmentReleased,
+            Message: $"Appointment #{appointmentId} cancelled. Your locked time slot, assigned Office Clerk, and any reserved equipment have been released.");
+    }
+
+    public async Task<CustomerRescheduleBookingResultDto> RescheduleBookingAsync(
+        int appointmentId,
+        CustomerRescheduleBookingRequest request,
+        string customerId,
+        bool isPrivileged = false,
+        CancellationToken cancellationToken = default)
+    {
+        var slot = StudioSlots.Find(request.NewSlotStart)
+            ?? throw new ScheduleValidationException("Invalid time slot.");
+        if (!IsBookable(request.NewDate, slot.Start, StudioNow()))
+            throw new ScheduleValidationException("Selected date and time slot must be in the future within the booking window.");
+
+        var entityCheck = await db.Appointments.AsNoTracking()
+            .FirstOrDefaultAsync(a => a.AppointmentId == appointmentId, cancellationToken)
+            ?? throw new KeyNotFoundException($"Booking #{appointmentId} was not found.");
+
+        if (!isPrivileged && !string.Equals(entityCheck.CustomerId, customerId, StringComparison.OrdinalIgnoreCase))
+            throw new UnauthorizedAccessException("You can only reschedule your own appointments.");
+
+        if (string.Equals(entityCheck.Status, AppointmentStatus.Cancelled, StringComparison.OrdinalIgnoreCase))
+            throw new ScheduleValidationException($"Cancelled booking #{appointmentId} cannot be rescheduled.");
+
+        var negId = $"NEG-{appointmentId:D4}";
+        var originalClerkId = await GetAssignedClerkIdForNegotiationAsync(negId, cancellationToken);
+        var clerkCandidates = await GetActiveClerkCandidatesWithRecencyAsync(cancellationToken);
+        var leaves = (await GetApprovedLeavesRangeAsync(request.NewDate, request.NewDate, cancellationToken))
+            .Select(l => new ClerkLeaveWindow(l.EmployeeStudioId, l.StartDate, l.EndDate))
+            .ToList();
+        var busyWindows = await GetClerkBusyWindowsForDateAsync(request.NewDate, cancellationToken);
+
+        var selection = OfficeClerkAssignmentResolver.ResolveClerkForReschedule(
+            originalClerkId,
+            clerkCandidates,
+            leaves,
+            busyWindows,
+            request.NewDate,
+            slot.Start,
+            slot.End,
+            excludeSourceId: negId);
+
+        if (!selection.IsAvailable || string.IsNullOrWhiteSpace(selection.ClerkId))
+        {
+            throw new SlotUnavailableException(
+                request.NewDate,
+                slot.Start,
+                selection.FailureReason ?? $"No Office Clerk is available for {request.NewDate:MMM d, yyyy} at {slot.Start:h:mm tt}.");
+        }
+
+        var assignedClerkId = selection.ClerkId!;
+        var assignedClerkName = selection.ClerkName ?? assignedClerkId;
+
+        var strategy = db.Database.CreateExecutionStrategy();
+        try
+        {
+            await strategy.ExecuteAsync(async ct =>
+            {
+                db.ChangeTracker.Clear();
+                await using var tx = await db.Database.BeginTransactionAsync(IsolationLevel.Serializable, ct);
+
+                var slotTaken = await db.Appointments
+                    .FromSql($"""
+                        SELECT * FROM dbo.Appointment WITH (UPDLOCK, HOLDLOCK)
+                        WHERE SlotDate = {request.NewDate} AND SlotStart = {slot.Start} AND Status <> 'Cancelled' AND AppointmentID <> {appointmentId}
+                        """)
+                    .AnyAsync(ct);
+                if (slotTaken)
+                    throw new SlotUnavailableException(request.NewDate, slot.Start);
+
+                var entity = await db.Appointments
+                    .FirstOrDefaultAsync(a => a.AppointmentId == appointmentId, ct)
+                    ?? throw new KeyNotFoundException($"Booking #{appointmentId} was not found.");
+
+                var oldDate = entity.SlotDate;
+                entity.SlotDate = request.NewDate;
+                entity.SlotStart = slot.Start;
+                entity.SlotEnd = slot.End;
+                await db.SaveChangesAsync(ct);
+
+                if (oldDate != request.NewDate)
+                {
+                    var oldOverview = await db.BookingOverviews
+                        .FromSql($"SELECT * FROM dbo.BookingOverview WITH (UPDLOCK, HOLDLOCK) WHERE OverviewDate = {oldDate}")
+                        .SingleOrDefaultAsync(ct);
+                    if (oldOverview is not null && oldOverview.TotalAppointments > 0)
+                    {
+                        oldOverview.TotalAppointments--;
+                        oldOverview.LastUpdatedAt = clock.GetUtcNow().UtcDateTime;
+                        await db.SaveChangesAsync(ct);
+                    }
+                    await UpsertOverviewAsync(request.NewDate, 0m, ct);
+                }
+
+                var conn = db.Database.GetDbConnection();
+                if (conn.State != ConnectionState.Open) await conn.OpenAsync(ct);
+
+                await using (var updCmd = conn.CreateCommand())
+                {
+                    updCmd.Transaction = tx.GetDbTransaction();
+                    updCmd.CommandText = @"
+                        IF OBJECT_ID(N'dbo.BookingNegotiation', N'U') IS NOT NULL
+                        BEGIN
+                            UPDATE dbo.BookingNegotiation
+                            SET ConsultationDate = @NewDate,
+                                ConsultationTime = @NewTime,
+                                EmployeeID = @ClerkId,
+                                AssignedEmployeeName = @ClerkName,
+                                NegotiationStatus = 'Rescheduled',
+                                InquiryNotes = CASE
+                                    WHEN @Reason IS NOT NULL AND LEN(@Reason) > 0
+                                    THEN ISNULL(InquiryNotes, '') + CHAR(13) + CHAR(10) + '[Customer Reschedule]: ' + @Reason
+                                    ELSE InquiryNotes
+                                END
+                            WHERE NegotiationID = @NegId;
+                        END;
+
+                        IF OBJECT_ID(N'dbo.HistoryLog', N'U') IS NOT NULL
+                        BEGIN
+                            INSERT INTO dbo.HistoryLog (ActionType, EntityName, EntityID, ActionDetails, NegotiationID, CustomerID, ChangedByType, ChangedByCustomerID, LoggedAt)
+                            VALUES ('UPDATE', 'BookingNegotiation', @NegId, @LogMsg, @NegId, @CustId, @ChangedByType, @ChangedCustId, SYSUTCDATETIME());
+                        END";
+
+                    void AddParam(System.Data.Common.DbCommand cmd, string name, object? val)
+                    {
+                        var p = cmd.CreateParameter();
+                        p.ParameterName = name;
+                        p.Value = val ?? DBNull.Value;
+                        cmd.Parameters.Add(p);
+                    }
+
+                    var clerkMsg = selection.RetainedOriginalClerk
+                        ? $"Retained original Office Clerk {assignedClerkName} ({assignedClerkId})."
+                        : $"Original Office Clerk unavailable; automatically reassigned to {assignedClerkName} ({assignedClerkId}).";
+                    var logMsg = $"Customer rescheduled booking #{appointmentId} ({negId}) to {request.NewDate:yyyy-MM-dd} {slot.Start:HH:mm}. {clerkMsg}";
+
+                    AddParam(updCmd, "@NewDate", request.NewDate.ToDateTime(TimeOnly.MinValue));
+                    AddParam(updCmd, "@NewTime", slot.Start.ToTimeSpan());
+                    AddParam(updCmd, "@ClerkId", assignedClerkId);
+                    AddParam(updCmd, "@ClerkName", assignedClerkName);
+                    AddParam(updCmd, "@Reason", string.IsNullOrWhiteSpace(request.Reason) ? null : request.Reason.Trim());
+                    AddParam(updCmd, "@NegId", negId);
+                    AddParam(updCmd, "@LogMsg", logMsg);
+                    AddParam(updCmd, "@CustId", entity.CustomerId);
+                    AddParam(updCmd, "@ChangedByType", isPrivileged ? "Admin" : "Customer");
+                    AddParam(updCmd, "@ChangedCustId", isPrivileged ? null : entity.CustomerId);
+                    await updCmd.ExecuteNonQueryAsync(ct);
+                }
+
+                await tx.CommitAsync(ct);
+            }, cancellationToken);
+        }
+        catch (DbUpdateException ex) when (IsSlotUniqueViolation(ex))
+        {
+            throw new SlotUnavailableException(request.NewDate, slot.Start);
+        }
+
+        var message = selection.RetainedOriginalClerk
+            ? $"Rescheduled to {request.NewDate:MMM d, yyyy} at {slot.Start:h:mm tt}. Your originally assigned Office Clerk ({assignedClerkName}) remains assigned."
+            : $"Rescheduled to {request.NewDate:MMM d, yyyy} at {slot.Start:h:mm tt}. Your original clerk was unavailable, so {assignedClerkName} was automatically assigned.";
+
+        return new CustomerRescheduleBookingResultDto(
+            Success: true,
+            AppointmentId: appointmentId,
+            NegotiationId: negId,
+            NewDate: request.NewDate,
+            NewSlotStart: slot.Start,
+            NewSlotEnd: slot.End,
+            AssignedClerkId: assignedClerkId,
+            AssignedClerkName: assignedClerkName,
+            RetainedOriginalClerk: selection.RetainedOriginalClerk,
+            Status: "Rescheduled",
+            Message: message);
+    }
+
+    private async Task<string?> GetAssignedClerkIdForNegotiationAsync(string negId, CancellationToken ct)
+    {
+        var conn = db.Database.GetDbConnection();
+        if (conn.State != ConnectionState.Open) await conn.OpenAsync(ct);
+        await using var cmd = conn.CreateCommand();
+        cmd.CommandText = @"
+            IF OBJECT_ID(N'dbo.BookingNegotiation', N'U') IS NOT NULL
+                SELECT TOP 1 EmployeeID FROM dbo.BookingNegotiation WHERE NegotiationID = @NegId;";
+        var p = cmd.CreateParameter();
+        p.ParameterName = "@NegId";
+        p.Value = negId;
+        cmd.Parameters.Add(p);
+        return await cmd.ExecuteScalarAsync(ct) as string;
+    }
+
+    private async Task<List<ClerkCandidate>> GetActiveClerkCandidatesWithRecencyAsync(CancellationToken ct)
+    {
+        var clerks = await GetActiveClerksDataAsync(ct);
+        var recency = new Dictionary<string, DateTime>(StringComparer.OrdinalIgnoreCase);
+
+        var conn = db.Database.GetDbConnection();
+        if (conn.State != ConnectionState.Open) await conn.OpenAsync(ct);
+        await using var cmd = conn.CreateCommand();
+        cmd.CommandText = @"
+            IF OBJECT_ID(N'dbo.BookingNegotiation', N'U') IS NOT NULL
+            BEGIN
+                SELECT EmployeeID, MAX(CreatedAt)
+                FROM dbo.BookingNegotiation
+                WHERE EmployeeID IS NOT NULL
+                GROUP BY EmployeeID;
+            END";
+        await using var reader = await cmd.ExecuteReaderAsync(ct);
+        while (await reader.ReadAsync(ct))
+        {
+            if (!reader.IsDBNull(0) && !reader.IsDBNull(1))
+                recency[reader.GetString(0)] = reader.GetDateTime(1);
+        }
+
+        return clerks.Select(c => new ClerkCandidate(
+            c.EmployeeId,
+            c.FullName,
+            c.DaysOff,
+            recency.TryGetValue(c.EmployeeId, out var dt) ? dt : null)).ToList();
+    }
+
+    private async Task<List<ClerkBusyWindow>> GetClerkBusyWindowsForDateAsync(DateOnly date, CancellationToken ct)
+    {
+        var list = new List<ClerkBusyWindow>();
+        var conn = db.Database.GetDbConnection();
+        if (conn.State != ConnectionState.Open) await conn.OpenAsync(ct);
+
+        await using var cmd = conn.CreateCommand();
+        cmd.CommandText = @"
+            IF OBJECT_ID(N'dbo.BookingNegotiation', N'U') IS NOT NULL
+            BEGIN
+                SELECT EmployeeID, ConsultationDate, ConsultationTime, NegotiationID
+                FROM dbo.BookingNegotiation
+                WHERE ConsultationDate = @Date
+                  AND EmployeeID IS NOT NULL
+                  AND ConsultationTime IS NOT NULL
+                  AND NegotiationStatus NOT IN ('Cancelled', 'Deal_Lost');
+            END;
+            IF OBJECT_ID(N'dbo.EventEmployee', N'U') IS NOT NULL AND OBJECT_ID(N'dbo.EventAppointment', N'U') IS NOT NULL
+            BEGIN
+                SELECT ee.EmployeeID, ea.EventDate, ea.EventTime, ea.EventEndTime, ISNULL(ea.DurationMinutes, 60), ea.EventAppointmentID
+                FROM dbo.EventEmployee ee
+                JOIN dbo.EventAppointment ea ON ee.EventAppointmentID = ea.EventAppointmentID
+                WHERE ea.EventDate = @Date
+                  AND ee.EmployeeID IS NOT NULL
+                  AND ea.EventStatus NOT IN ('Cancelled', 'Expired');
+            END;";
+        var p = cmd.CreateParameter();
+        p.ParameterName = "@Date";
+        p.Value = date.ToDateTime(TimeOnly.MinValue);
+        cmd.Parameters.Add(p);
+
+        await using var reader = await cmd.ExecuteReaderAsync(ct);
+        while (await reader.ReadAsync(ct))
+        {
+            var start = TimeOnly.FromTimeSpan(reader.GetFieldValue<TimeSpan>(2));
+            list.Add(new ClerkBusyWindow(
+                reader.GetString(0),
+                DateOnly.FromDateTime(reader.GetDateTime(1)),
+                start,
+                start.AddHours(1),
+                reader.IsDBNull(3) ? null : reader.GetString(3)));
+        }
+        if (await reader.NextResultAsync(ct))
+        {
+            while (await reader.ReadAsync(ct))
+            {
+                var start = TimeOnly.FromTimeSpan(reader.GetFieldValue<TimeSpan>(2));
+                var dur = reader.IsDBNull(4) ? 60 : Math.Max(15, reader.GetInt32(4));
+                var end = !reader.IsDBNull(3) ? TimeOnly.FromTimeSpan(reader.GetFieldValue<TimeSpan>(3)) : start.AddMinutes(dur);
+                if (end <= start) end = start.AddMinutes(dur);
+                list.Add(new ClerkBusyWindow(
+                    reader.GetString(0),
+                    DateOnly.FromDateTime(reader.GetDateTime(1)),
+                    start,
+                    end,
+                    reader.IsDBNull(5) ? null : reader.GetString(5)));
+            }
+        }
+        return list;
     }
 
     public async Task<MeetingLinkDto> PreviewMeetingLinkAsync(MeetingPlatform platform, DateOnly date, TimeOnly slotStart, CancellationToken cancellationToken = default)

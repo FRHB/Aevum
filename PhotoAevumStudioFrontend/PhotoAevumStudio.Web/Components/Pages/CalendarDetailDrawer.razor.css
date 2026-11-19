@@ -105,9 +105,15 @@
 }
 
 .status-pill.completed {
-    background: #f3f4f6;
-    color: #4b5563;
-    border-color: #e5e7eb;
+    background: #ecfdf5;
+    color: #065f46;
+    border-color: #a7f3d0;
+}
+
+.status-pill.appointment-booked {
+    background: #ecfdf5;
+    color: #065f46;
+    border-color: #6ee7b7;
 }
 
 .badge-conflict {

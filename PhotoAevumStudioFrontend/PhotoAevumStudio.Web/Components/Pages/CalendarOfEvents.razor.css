@@ -466,7 +466,8 @@
         background: #eff6ff;
     }
 
-    .compact-event-chip.deal_won {
+    .compact-event-chip.deal_won,
+    .compact-event-chip.appointment-booked {
         border-left-color: #10b981;
         background: #f0fdf4;
     }
@@ -821,9 +822,16 @@
     }
 
     .mini-event-pill.completed {
-        background: #f3f4f6;
-        color: #4b5563;
-        border-color: #e5e7eb;
+        background: #f0fdf4;
+        color: #065f46;
+        border-color: #a7f3d0;
+    }
+
+    .mini-event-pill.appointment-booked {
+        background: #ecfdf5;
+        color: #065f46;
+        border-color: #6ee7b7;
+        font-weight: 700;
     }
 
     .mini-event-pill.consultation,

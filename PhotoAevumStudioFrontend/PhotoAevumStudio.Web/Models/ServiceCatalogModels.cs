@@ -131,6 +131,8 @@ public class PackageServiceModel
     [Range(0, 100000, ErrorMessage = "Package price must be a valid positive amount.")]
     public decimal Price { get; set; } = 499.00m;
 
+    public string RateType { get; set; } = "per hour";
+
     public string? SavingsNote { get; set; } = "Save $100 vs individual services";
 
     public List<(string Label, string ColorTag)> Inclusions { get; set; } = new();
@@ -197,12 +199,46 @@ public class AddOnServiceModel
 
     public string RateUnit { get; set; } = "/ session";
 
+    public string RateType { get; set; } = "per hour";
+
     [StringLength(300, ErrorMessage = "Description cannot exceed 300 characters.")]
     public string? Description { get; set; }
 
     public List<(string Label, string ColorTag)> CompatibleServices { get; set; } = new();
 
     public string Status { get; set; } = "Active";
+}
+
+/// <summary>
+/// Canonical helper for normalizing and listing Service RateType values across Main, Additional, and Package Services.
+/// </summary>
+public static class ServiceRateTypeHelper
+{
+    public static readonly IReadOnlyList<string> Options = new[]
+    {
+        "per hour",
+        "per picture",
+        "per single shot",
+        "multi-shot"
+    };
+
+    public static string Normalize(string? rateType)
+    {
+        if (string.IsNullOrWhiteSpace(rateType))
+            return "per hour";
+
+        var r = rateType.Trim();
+        if (r.Contains("single", StringComparison.OrdinalIgnoreCase))
+            return "per single shot";
+        if (r.Contains("multi", StringComparison.OrdinalIgnoreCase))
+            return "multi-shot";
+        if (r.Contains("picture", StringComparison.OrdinalIgnoreCase) || r.Contains("photo", StringComparison.OrdinalIgnoreCase))
+            return "per picture";
+        if (r.Contains("hour", StringComparison.OrdinalIgnoreCase))
+            return "per hour";
+
+        return r.ToLowerInvariant();
+    }
 }
 
 

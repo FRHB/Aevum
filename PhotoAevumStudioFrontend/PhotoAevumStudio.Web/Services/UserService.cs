@@ -90,7 +90,7 @@ public class UserService : IUserService
 	private static (DateTime FetchedAt, int Count)? _cachedBookingsCount;
 	private static readonly TimeSpan CatalogCacheDuration = TimeSpan.FromSeconds(60);
 
-	private static void InvalidateServiceCatalogCache()
+	public static void InvalidateServiceCatalogCache()
 	{
 		lock (_catalogCacheLock)
 		{
@@ -98,6 +98,26 @@ public class UserService : IUserService
 			_cachedCategories = null;
 			_cachedPackages = null;
 			_cachedAddOns = null;
+		}
+	}
+
+	private static volatile bool _rateTypeColsEnsured;
+
+	private static void EnsureAdditionalAndPackageRateTypeColumns(SqlConnection conn)
+	{
+		if (_rateTypeColsEnsured) return;
+		try
+		{
+			using SqlCommand cmd = new SqlCommand(@"
+                IF OBJECT_ID(N'dbo.ComboPackage', N'U') IS NOT NULL AND COL_LENGTH(N'dbo.ComboPackage', N'RateType') IS NULL
+                    ALTER TABLE dbo.ComboPackage ADD RateType nvarchar(50) NOT NULL CONSTRAINT DF_ComboPackage_RateType DEFAULT 'Per Hour';
+                IF OBJECT_ID(N'dbo.AdditionalServices', N'U') IS NOT NULL AND COL_LENGTH(N'dbo.AdditionalServices', N'RateType') IS NULL
+                    ALTER TABLE dbo.AdditionalServices ADD RateType nvarchar(50) NOT NULL CONSTRAINT DF_AdditionalServices_RateType DEFAULT 'Per Hour';", conn);
+			cmd.ExecuteNonQuery();
+			_rateTypeColsEnsured = true;
+		}
+		catch
+		{
 		}
 	}
 
@@ -3953,13 +3973,15 @@ public class UserService : IUserService
 
 		sqlConnection.Open();
 
+		EnsureAdditionalAndPackageRateTypeColumns(sqlConnection);
+
 		using SqlCommand sqlCommand = new SqlCommand(@"
 
             IF OBJECT_ID(N'dbo.ComboPackage', N'U') IS NOT NULL
 
             BEGIN
 
-                SELECT ComboPackageID, ComboPackageName, ComboPackageDescription, ISNULL(ComboPackagePrice, 0)
+                SELECT ComboPackageID, ComboPackageName, ComboPackageDescription, ISNULL(ComboPackagePrice, 0), ISNULL(RateType, 'Per Hour')
 
                 FROM dbo.ComboPackage
 
@@ -3974,6 +3996,7 @@ public class UserService : IUserService
 		{
 
 			decimal pkgPrice = sqlDataReader.IsDBNull(3) ? 0m : sqlDataReader.GetDecimal(3);
+			string pkgRateType = sqlDataReader.FieldCount > 4 && !sqlDataReader.IsDBNull(4) ? sqlDataReader.GetString(4) : "per hour";
 
 			list.Add(new PackageServiceItem
 
@@ -3991,7 +4014,9 @@ public class UserService : IUserService
 
 				Description = (sqlDataReader.IsDBNull(2) ? null : sqlDataReader.GetString(2)),
 
-				Status = "Active"
+				Status = "Active",
+
+				RateType = pkgRateType
 
 			});
 
@@ -4174,11 +4199,14 @@ public class UserService : IUserService
 
 		sqlConnection.Open();
 
+		EnsureAdditionalAndPackageRateTypeColumns(sqlConnection);
+
 		int count = GetPackageServices().Count;
 
 		string text = (string.IsNullOrWhiteSpace(model.Code) ? $"PKG-{count + 1:D3}" : model.Code.Trim());
+		string rateType = string.IsNullOrWhiteSpace(model.RateType) ? "per hour" : model.RateType.Trim();
 
-		using SqlCommand sqlCommand = new SqlCommand("\n            INSERT INTO dbo.ComboPackage (ComboPackageID, ComboPackageName, ComboPackageDescription)\n            VALUES (@Id, @Name, @Desc);", sqlConnection);
+		using SqlCommand sqlCommand = new SqlCommand("\n            INSERT INTO dbo.ComboPackage (ComboPackageID, ComboPackageName, ComboPackageDescription, ComboPackagePrice, RateType)\n            VALUES (@Id, @Name, @Desc, @Price, @RateType);", sqlConnection);
 
 		sqlCommand.Parameters.AddWithValue("@Id", text);
 
@@ -4186,7 +4214,12 @@ public class UserService : IUserService
 
 		sqlCommand.Parameters.AddWithValue("@Desc", string.IsNullOrWhiteSpace(model.Description) ? model.TargetCategory : model.Description.Trim());
 
+		sqlCommand.Parameters.AddWithValue("@Price", model.Price);
+
+		sqlCommand.Parameters.AddWithValue("@RateType", rateType);
+
 		sqlCommand.ExecuteNonQuery();
+		InvalidateServiceCatalogCache();
 
 		return new PackageServiceItem
 
@@ -4206,7 +4239,9 @@ public class UserService : IUserService
 
 			Description = model.Description,
 
-			Status = model.Status
+			Status = model.Status,
+
+			RateType = rateType
 
 		};
 
@@ -4240,6 +4275,9 @@ public class UserService : IUserService
 
 
 
+		EnsureAdditionalAndPackageRateTypeColumns(conn);
+		string effectiveRateType = string.IsNullOrWhiteSpace(item.RateType) ? "per hour" : item.RateType.Trim();
+
 		using SqlCommand cmd = new SqlCommand(@"
 
             IF OBJECT_ID(N'dbo.ComboPackage', N'U') IS NOT NULL
@@ -4252,7 +4290,9 @@ public class UserService : IUserService
 
                     ComboPackageDescription = @Desc,
 
-                    ComboPackagePrice = @Price
+                    ComboPackagePrice = @Price,
+
+                    RateType = @RateType
 
                 WHERE UPPER(ComboPackageID) = UPPER(@Id);
 
@@ -4265,6 +4305,8 @@ public class UserService : IUserService
 		cmd.Parameters.AddWithValue("@Desc", string.IsNullOrWhiteSpace(item.Description) ? item.BundleCategory : item.Description.Trim());
 
 		cmd.Parameters.AddWithValue("@Price", price);
+
+		cmd.Parameters.AddWithValue("@RateType", effectiveRateType);
 
 		int rows = cmd.ExecuteNonQuery();
 
@@ -4574,8 +4616,9 @@ public class UserService : IUserService
 			await using SqlConnection conn = CreateConnection();
 
 			await conn.OpenAsync(ct);
+			EnsureAdditionalAndPackageRateTypeColumns(conn);
 
-			await using SqlCommand cmd = new SqlCommand("\n                IF OBJECT_ID(N'dbo.sp_GetAvailableServicesForBundling', N'P') IS NOT NULL\n                BEGIN\n                    EXEC dbo.sp_GetAvailableServicesForBundling;\n                END\n                ELSE\n                BEGIN\n                    IF OBJECT_ID(N'dbo.Services', N'U') IS NOT NULL\n                    BEGIN\n                        SELECT ServicesID, ServiceName, ServicesDescription, ServicePrice, 'Main' AS ServiceType,\n                               CAST(CASE WHEN ServiceImage IS NOT NULL THEN 1 ELSE 0 END AS bit) AS HasImage\n                        FROM dbo.Services\n                    END\n                    UNION ALL\n                    IF OBJECT_ID(N'dbo.AdditionalServices', N'U') IS NOT NULL\n                    BEGIN\n                        SELECT AdditionalServicesID, AdditionalServiceName, AdditionalServicesDescription, 0.00 AS ServicePrice, 'Additional' AS ServiceType,\n                               CAST(CASE WHEN AdditionalServiceImage IS NOT NULL THEN 1 ELSE 0 END AS bit) AS HasImage\n                        FROM dbo.AdditionalServices\n                    END\n                    ORDER BY ServiceType DESC, ServiceName ASC;\n                END", conn);
+			await using SqlCommand cmd = new SqlCommand("\n                IF OBJECT_ID(N'dbo.sp_GetAvailableServicesForBundling', N'P') IS NOT NULL\n                BEGIN\n                    EXEC dbo.sp_GetAvailableServicesForBundling;\n                END\n                ELSE\n                BEGIN\n                    SELECT ServicesID, ServiceName, ServicesDescription, ServicePrice, 'Main' AS ServiceType,\n                           CAST(CASE WHEN ServiceImage IS NOT NULL THEN 1 ELSE 0 END AS bit) AS HasImage,\n                           ISNULL(RateType, 'Per Hour') AS RateType\n                    FROM dbo.Services\n                    UNION ALL\n                    SELECT AdditionalServicesID, AdditionalServiceName, AdditionalServicesDescription, ISNULL(ServicePrice, 0.00) AS ServicePrice, 'Additional' AS ServiceType,\n                           CAST(CASE WHEN AdditionalServiceImage IS NOT NULL THEN 1 ELSE 0 END AS bit) AS HasImage,\n                           ISNULL(RateType, 'Per Hour') AS RateType\n                    FROM dbo.AdditionalServices\n                    ORDER BY ServiceType DESC, ServiceName ASC;\n                END", conn);
 
 			await using SqlDataReader reader = await cmd.ExecuteReaderAsync(ct);
 
@@ -4597,7 +4640,9 @@ public class UserService : IUserService
 
 					ServiceType = reader.GetString(4),
 
-					HasImage = (!reader.IsDBNull(5) && reader.GetBoolean(5))
+					HasImage = (!reader.IsDBNull(5) && reader.GetBoolean(5)),
+
+					RateType = (reader.FieldCount > 6 && !reader.IsDBNull(6) ? reader.GetString(6) : "per hour")
 
 				});
 
@@ -4633,7 +4678,9 @@ public class UserService : IUserService
 
 					ServiceType = "Main",
 
-					HasImage = false
+					HasImage = false,
+
+					RateType = m.RateType
 
 				});
 
@@ -4657,7 +4704,9 @@ public class UserService : IUserService
 
 					ServiceType = "Additional",
 
-					HasImage = false
+					HasImage = false,
+
+					RateType = a.RateType
 
 				});
 
@@ -4695,6 +4744,7 @@ public class UserService : IUserService
 
 				using MultipartFormDataContent form = new MultipartFormDataContent();
 
+				var effectiveRateType = string.IsNullOrWhiteSpace(formModel.RateType) ? "per hour" : formModel.RateType.Trim();
 				form.Add(new StringContent(formModel.Name.Trim()), "Name");
 
 				form.Add(new StringContent(formModel.Description?.Trim() ?? string.Empty), "Description");
@@ -4702,6 +4752,8 @@ public class UserService : IUserService
 				form.Add(new StringContent(formModel.CategoryId.Trim()), "CategoryId");
 
 				form.Add(new StringContent(formModel.Price.ToString(CultureInfo.InvariantCulture)), "Price");
+
+				form.Add(new StringContent(effectiveRateType), "RateType");
 
 				if (formModel.SelectedServiceIds != null)
 
@@ -4746,6 +4798,7 @@ public class UserService : IUserService
 					string packageId = (created.TryGetProperty("packageId", out var pid) ? (pid.GetString() ?? formModel.GeneratedPackageId) : formModel.GeneratedPackageId);
 
 					string title = (created.TryGetProperty("name", out var ptitle) ? (ptitle.GetString() ?? formModel.Name) : formModel.Name);
+					InvalidateServiceCatalogCache();
 
 					return new PackageServiceItem
 
@@ -4761,7 +4814,9 @@ public class UserService : IUserService
 
 						Price = $"${formModel.Price:N0}",
 
-						Status = "Active"
+						Status = "Active",
+
+						RateType = effectiveRateType
 
 					};
 
@@ -4806,6 +4861,7 @@ public class UserService : IUserService
 		{
 
 			await conn.OpenAsync(ct);
+			EnsureAdditionalAndPackageRateTypeColumns(conn);
 
 			await using (SqlCommand prepCmd = new SqlCommand(@"
 
@@ -4816,6 +4872,10 @@ public class UserService : IUserService
                 IF COL_LENGTH(N'dbo.ComboPackage', N'ComboPackagePrice') IS NULL
 
                     ALTER TABLE dbo.ComboPackage ADD ComboPackagePrice decimal(18,2) NOT NULL CONSTRAINT DF_ComboPackage_Price DEFAULT 0.00;
+
+                IF COL_LENGTH(N'dbo.ComboPackage', N'RateType') IS NULL
+
+                    ALTER TABLE dbo.ComboPackage ADD RateType nvarchar(50) NOT NULL CONSTRAINT DF_ComboPackage_RateType DEFAULT 'Per Hour';
 
                 IF COL_LENGTH(N'dbo.ComboPackage', N'ImageFileName') IS NULL
 
@@ -4842,6 +4902,7 @@ public class UserService : IUserService
 			}
 
 			PackageServiceItem packageServiceItem;
+			var fallbackRateType = string.IsNullOrWhiteSpace(formModel.RateType) ? "per hour" : formModel.RateType.Trim();
 
 			await using (SqlTransaction trans = (SqlTransaction)(await conn.BeginTransactionAsync(IsolationLevel.Serializable, ct)))
 
@@ -4863,11 +4924,11 @@ public class UserService : IUserService
 
                 INSERT INTO dbo.ComboPackage (
 
-                    ComboPackageID, ComboPackageName, ComboPackageDescription, ComboPackagePrice, ComboPackageImage, ComboPackageImageMimeType, ImageFileName, ImageUrl
+                    ComboPackageID, ComboPackageName, ComboPackageDescription, ComboPackagePrice, RateType, ComboPackageImage, ComboPackageImageMimeType, ImageFileName, ImageUrl
 
                 )
 
-                VALUES (@Id, @Name, @Desc, @Price, @Img, @Mime, @ImgFileName, @ImgUrl);", conn, trans))
+                VALUES (@Id, @Name, @Desc, @Price, @RateType, @Img, @Mime, @ImgFileName, @ImgUrl);", conn, trans))
 
 					{
 
@@ -4878,6 +4939,8 @@ public class UserService : IUserService
 						cmd.Parameters.AddWithValue("@Desc", formModel.Description?.Trim() ?? string.Empty);
 
 						cmd.Parameters.AddWithValue("@Price", formModel.Price);
+
+						cmd.Parameters.AddWithValue("@RateType", fallbackRateType);
 
 						cmd.Parameters.Add("@Img", SqlDbType.VarBinary, -1).Value = ((object)formModel.ImageBytes) ?? ((object)DBNull.Value);
 
@@ -4932,6 +4995,7 @@ public class UserService : IUserService
 					}
 
 					await trans.CommitAsync(ct);
+					InvalidateServiceCatalogCache();
 
 					packageServiceItem = new PackageServiceItem
 
@@ -4947,7 +5011,9 @@ public class UserService : IUserService
 
 						Price = $"${formModel.Price:N0}",
 
-						Status = "Active"
+						Status = "Active",
+
+						RateType = fallbackRateType
 
 					};
 
@@ -5077,9 +5143,63 @@ public class UserService : IUserService
 
 
 
+		var effectiveRateType = string.IsNullOrWhiteSpace(formModel.RateType) ? "per hour" : formModel.RateType.Trim();
+
+		if (_httpClientFactory != null)
+		{
+			try
+			{
+				HttpClient client = _httpClientFactory.CreateClient("AevumApi.Authorized");
+				using MultipartFormDataContent form = new MultipartFormDataContent();
+				form.Add(new StringContent(formModel.Name.Trim()), "Name");
+				form.Add(new StringContent(formModel.Description?.Trim() ?? string.Empty), "Description");
+				form.Add(new StringContent(formModel.CategoryId?.Trim() ?? string.Empty), "CategoryId");
+				form.Add(new StringContent(formModel.Price.ToString(CultureInfo.InvariantCulture)), "Price");
+				form.Add(new StringContent(effectiveRateType), "RateType");
+
+				if (formModel.SelectedServiceIds != null)
+				{
+					foreach (string sId in formModel.SelectedServiceIds)
+					{
+						form.Add(new StringContent(sId), "SelectedServiceIds");
+					}
+					string json = JsonSerializer.Serialize(formModel.SelectedServiceIds);
+					form.Add(new StringContent(json), "SelectedServiceIdsRaw");
+				}
+
+				if (formModel.ImageBytes != null && formModel.ImageBytes.Length != 0)
+				{
+					ByteArrayContent fileContent = new ByteArrayContent(formModel.ImageBytes);
+					string mime = (string.IsNullOrWhiteSpace(formModel.ImageMimeType) ? "image/jpeg" : formModel.ImageMimeType);
+					fileContent.Headers.ContentType = new MediaTypeHeaderValue(mime);
+					form.Add(fileContent, "ImageFile", formModel.ImageFileName ?? "package-hero.jpg");
+				}
+
+				HttpResponseMessage response = await client.PutAsync($"api/packages/{Uri.EscapeDataString(packageCode.Trim())}", form, ct);
+				if (response.IsSuccessStatusCode)
+				{
+					InvalidateServiceCatalogCache();
+					return new PackageServiceItem
+					{
+						Code = packageCode,
+						Title = formModel.Name.Trim(),
+						BundleCategory = formModel.CategoryName,
+						Description = formModel.Description,
+						Price = $"₱{formModel.Price:N0}",
+						Status = "Active",
+						RateType = effectiveRateType
+					};
+				}
+			}
+			catch
+			{
+			}
+		}
+
 		await using var conn = CreateConnection();
 
 		await conn.OpenAsync(ct);
+		EnsureAdditionalAndPackageRateTypeColumns(conn);
 
 
 
@@ -5098,6 +5218,8 @@ public class UserService : IUserService
 					ComboPackageDescription = @Desc,
 
 					ComboPackagePrice = @Price,
+
+					RateType = @RateType,
 
 					ComboPackageImage = CASE WHEN @Img IS NOT NULL THEN @Img ELSE ComboPackageImage END,
 
@@ -5122,6 +5244,8 @@ public class UserService : IUserService
 				cmd.Parameters.AddWithValue("@Desc", formModel.Description?.Trim() ?? string.Empty);
 
 				cmd.Parameters.AddWithValue("@Price", formModel.Price);
+
+				cmd.Parameters.AddWithValue("@RateType", effectiveRateType);
 
 				cmd.Parameters.Add("@Img", SqlDbType.VarBinary, -1).Value = (object?)formModel.ImageBytes ?? DBNull.Value;
 
@@ -5277,6 +5401,8 @@ public class UserService : IUserService
 
 
 
+		InvalidateServiceCatalogCache();
+
 		return new PackageServiceItem
 
 		{
@@ -5291,7 +5417,9 @@ public class UserService : IUserService
 
 			Price = $"₱{formModel.Price:N0}",
 
-			Status = "Active"
+			Status = "Active",
+
+			RateType = effectiveRateType
 
 		};
 
@@ -5318,13 +5446,15 @@ public class UserService : IUserService
 
 		sqlConnection.Open();
 
+		EnsureAdditionalAndPackageRateTypeColumns(sqlConnection);
+
 		using SqlCommand sqlCommand = new SqlCommand(@"
 
             IF OBJECT_ID(N'dbo.AdditionalServices', N'U') IS NOT NULL
 
             BEGIN
 
-                SELECT AdditionalServicesID, AdditionalServiceName, AdditionalServicesDescription, ISNULL(ServicePrice, 0)
+                SELECT AdditionalServicesID, AdditionalServiceName, AdditionalServicesDescription, ISNULL(ServicePrice, 0), ISNULL(RateType, 'Per Hour'), ISNULL(CategoryName, 'Add-On')
 
                 FROM dbo.AdditionalServices
 
@@ -5339,6 +5469,8 @@ public class UserService : IUserService
 		{
 
 			decimal addPrice = sqlDataReader.IsDBNull(3) ? 0m : sqlDataReader.GetDecimal(3);
+			string addRateType = sqlDataReader.FieldCount > 4 && !sqlDataReader.IsDBNull(4) ? sqlDataReader.GetString(4) : "per hour";
+			string addCat = sqlDataReader.FieldCount > 5 && !sqlDataReader.IsDBNull(5) ? sqlDataReader.GetString(5) : "Add-On";
 
 			list.Add(new AddOnServiceItem
 
@@ -5348,9 +5480,9 @@ public class UserService : IUserService
 
 				Title = sqlDataReader.GetString(1),
 
-				TypeCategory = "Add-On",
+				TypeCategory = addCat,
 
-				FilterCategory = "Add-On",
+				FilterCategory = addCat,
 
 				PriceText = addPrice > 0 ? $"₱{addPrice:N2}" : "₱0.00",
 
@@ -5358,7 +5490,9 @@ public class UserService : IUserService
 
 				Description = (sqlDataReader.IsDBNull(2) ? null : sqlDataReader.GetString(2)),
 
-				Status = "Active"
+				Status = "Active",
+
+				RateType = addRateType
 
 			});
 
@@ -5541,11 +5675,14 @@ public class UserService : IUserService
 
 		sqlConnection.Open();
 
+		EnsureAdditionalAndPackageRateTypeColumns(sqlConnection);
+
 		int count = GetAdditionalServices().Count;
 
 		string text = (string.IsNullOrWhiteSpace(model.Code) ? $"ADD-{count + 1:D3}" : model.Code.Trim());
+		string rateType = string.IsNullOrWhiteSpace(model.RateType) ? "per hour" : model.RateType.Trim();
 
-		using SqlCommand sqlCommand = new SqlCommand("\n            INSERT INTO dbo.AdditionalServices (AdditionalServicesID, AdditionalServiceName, AdditionalServicesDescription)\n            VALUES (@Id, @Name, @Desc);", sqlConnection);
+		using SqlCommand sqlCommand = new SqlCommand("\n            INSERT INTO dbo.AdditionalServices (AdditionalServicesID, AdditionalServiceName, AdditionalServicesDescription, ServicePrice, CategoryName, RateType)\n            VALUES (@Id, @Name, @Desc, @Price, @Cat, @RateType);", sqlConnection);
 
 		sqlCommand.Parameters.AddWithValue("@Id", text);
 
@@ -5553,7 +5690,14 @@ public class UserService : IUserService
 
 		sqlCommand.Parameters.AddWithValue("@Desc", string.IsNullOrWhiteSpace(model.Description) ? model.TypeCategory : model.Description.Trim());
 
+		sqlCommand.Parameters.AddWithValue("@Price", model.Rate);
+
+		sqlCommand.Parameters.AddWithValue("@Cat", string.IsNullOrWhiteSpace(model.TypeCategory) ? "Add-On" : model.TypeCategory.Trim());
+
+		sqlCommand.Parameters.AddWithValue("@RateType", rateType);
+
 		sqlCommand.ExecuteNonQuery();
+		InvalidateServiceCatalogCache();
 
 		return new AddOnServiceItem
 
@@ -5573,7 +5717,9 @@ public class UserService : IUserService
 
 			Description = model.Description,
 
-			Status = model.Status
+			Status = model.Status,
+
+			RateType = rateType
 
 		};
 
@@ -5590,6 +5736,7 @@ public class UserService : IUserService
 		using SqlConnection conn = CreateConnection();
 
 		conn.Open();
+		EnsureAdditionalAndPackageRateTypeColumns(conn);
 
 
 
@@ -5605,7 +5752,7 @@ public class UserService : IUserService
 
 		}
 
-
+		string effectiveRateType = string.IsNullOrWhiteSpace(item.RateType) ? "per hour" : item.RateType.Trim();
 
 		using SqlCommand cmd = new SqlCommand(@"
 
@@ -5621,7 +5768,9 @@ public class UserService : IUserService
 
                     ServicePrice = @Price,
 
-                    CategoryName = @CatName
+                    CategoryName = @CatName,
+
+                    RateType = @RateType
 
                 WHERE UPPER(AdditionalServicesID) = UPPER(@Id);
 
@@ -5636,6 +5785,8 @@ public class UserService : IUserService
 		cmd.Parameters.AddWithValue("@Price", price);
 
 		cmd.Parameters.AddWithValue("@CatName", string.IsNullOrWhiteSpace(item.TypeCategory) ? "Add-On" : item.TypeCategory.Trim());
+
+		cmd.Parameters.AddWithValue("@RateType", effectiveRateType);
 
 		int rows = cmd.ExecuteNonQuery();
 
@@ -6287,25 +6438,25 @@ public class UserService : IUserService
 					IF OBJECT_ID(N'dbo.EventAppointment', N'U') IS NOT NULL
 					BEGIN
 						UPDATE ea
-						SET ea.EventStatus = 'Complete',
+						SET ea.EventStatus = 'Completed',
 						    ea.FinalPaymentStatus = 'Paid',
 						    ea.FinalPaymentPaidAt = SYSUTCDATETIME()
 						FROM dbo.EventAppointment ea
 						INNER JOIN dbo.PaymentTransactions pt ON pt.EventAppointmentID = ea.EventAppointmentID
 						WHERE (CAST(ABS(CHECKSUM(pt.PaymentTransactionID)) % 100000 AS int) = @PaymentId
 						    OR pt.PaymentTransactionID = CAST(@PaymentId AS nvarchar(50)))
-						  AND ea.EventStatus IN ('Pending Verification', 'Paid Cash Pending Verification');
+						  AND ea.EventStatus IN ('Pending Verification', 'Paid Cash Pending Verification', 'Payment Verification (Cash)');
 
 						IF OBJECT_ID(N'dbo.Payments', N'U') IS NOT NULL
 						BEGIN
 							UPDATE ea
-							SET ea.EventStatus = 'Complete',
+							SET ea.EventStatus = 'Completed',
 							    ea.FinalPaymentStatus = 'Paid',
 							    ea.FinalPaymentPaidAt = SYSUTCDATETIME()
 							FROM dbo.EventAppointment ea
 							INNER JOIN dbo.Payments p ON p.EventAppointmentId = ea.EventAppointmentID
 							WHERE p.Id = @PaymentId
-							  AND ea.EventStatus IN ('Pending Verification', 'Paid Cash Pending Verification');
+							  AND ea.EventStatus IN ('Pending Verification', 'Paid Cash Pending Verification', 'Payment Verification (Cash)');
 						END;
 					END;
 

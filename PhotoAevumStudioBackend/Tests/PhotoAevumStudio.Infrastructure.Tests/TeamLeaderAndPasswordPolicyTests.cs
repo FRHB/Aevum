@@ -123,7 +123,68 @@ public class TeamLeaderAndPasswordPolicyTests
         Assert.Contains("EVT-1001-FINAL", html);
         Assert.Contains("8,500.00", html);
         Assert.Contains("Xendit QR (GCash/Maya)", html);
+        Assert.Contains("Payment Verification (QR:Paid)", html);
+        Assert.Contains("Completed", html);
         Assert.Contains("https://photoaevum.studio/staff", html);
+    }
+
+    [Fact]
+    public void StudioEmailTemplates_CustomerFinalQrPaymentConfirmation_RendersVerifiedDetails()
+    {
+        var html = StudioEmailTemplates.CustomerFinalQrPaymentConfirmation(
+            customerName: "Maria Santos",
+            appointmentId: "EVT-1001",
+            referenceId: "EVT-1001-FINAL",
+            eventName: "Wedding Highlights",
+            eventDate: new DateOnly(2026, 12, 15),
+            amountPaid: 8500.00m,
+            paymentChannel: "QRPH",
+            myBookingsUrl: "https://photoaevum.studio/my/bookings");
+
+        Assert.Contains("Maria Santos", html);
+        Assert.Contains("EVT-1001", html);
+        Assert.Contains("EVT-1001-FINAL", html);
+        Assert.Contains("8,500.00", html);
+        Assert.Contains("QRPH", html);
+        Assert.Contains("Payment Verification (QR:Paid)", html);
+        Assert.Contains("Completed", html);
+        Assert.Contains("https://photoaevum.studio/my/bookings", html);
+    }
+
+    [Theory]
+    [InlineData("Payment Verification (Cash)", null, "Payment Verification (Cash)", null, "Payment Verification (Cash)")]
+    [InlineData("Pending Payment", "Xendit_QR", "Payment Verification (QR:Pending Payment)", "EVT-1-FINAL", "Payment Verification (QR:Pending Payment)")]
+    [InlineData("Completed", "Xendit_QR", "Payment Verification (QR:Paid)", "EVT-1-FINAL", "Payment Verification (QR:Paid)")]
+    [InlineData("Completed", "Xendit_QR", "Paid", "EVT-1-FINAL", "Payment Verification (QR:Paid)")]
+    [InlineData("Ongoing", null, null, null, "")]
+    public void ConsultationNegotiationService_MapPaymentVerificationStatus_StandardizesLabels(
+        string eventStatus,
+        string? finalMethod,
+        string? finalStatus,
+        string? finalRefId,
+        string expected)
+    {
+        var actual = ConsultationNegotiationService.MapPaymentVerificationStatus(eventStatus, finalMethod, finalStatus, finalRefId);
+        Assert.Equal(expected, actual);
+    }
+
+    [Theory]
+    [InlineData("Preparing", null, null, null, "Preparing")]
+    [InlineData("Ongoing", null, null, null, "Ongoing")]
+    [InlineData("Event Done", null, null, null, "Event Done")]
+    [InlineData("Post Event", null, null, null, "Event Done")]
+    [InlineData("Payment Verification (Cash)", "Cash_OnHand", "Payment Verification (Cash)", null, "Payment Verification (Cash)")]
+    [InlineData("Pending Payment", "Xendit_QR", "Payment Verification (QR:Pending Payment)", "EVT-1-FINAL", "Payment Verification (QR:Pending Payment)")]
+    [InlineData("Completed", "Xendit_QR", "Payment Verification (QR:Paid)", "EVT-1-FINAL", "Completed")]
+    public void ConsultationNegotiationService_MapDisplayStage_StandardizesExecutionAndPaymentStages(
+        string eventStatus,
+        string? finalMethod,
+        string? finalStatus,
+        string? finalRefId,
+        string expected)
+    {
+        var actual = ConsultationNegotiationService.MapDisplayStage(eventStatus, finalMethod, finalStatus, finalRefId);
+        Assert.Equal(expected, actual);
     }
 
     [Fact]
@@ -137,6 +198,7 @@ public class TeamLeaderAndPasswordPolicyTests
 
         Assert.Contains("FinalPaymentMethod", allSql);
         Assert.Contains("FinalPaymentStatus", allSql);
+        Assert.Contains("FinalPaymentStatus nvarchar(60)", allSql);
         Assert.Contains("FinalQrString", allSql);
         Assert.Contains("FinalPaymentReferenceId", allSql);
         Assert.Contains("FinalPaymentPaidAt", allSql);
@@ -146,9 +208,12 @@ public class TeamLeaderAndPasswordPolicyTests
         Assert.Contains("'Dispatch'", allSql);
         Assert.Contains("'Ongoing'", allSql);
         Assert.Contains("'On Going'", allSql);
+        Assert.Contains("'Event Done'", allSql);
         Assert.Contains("'Post Event'", allSql);
         Assert.Contains("'Pending Verification'", allSql);
+        Assert.Contains("'Payment Verification (Cash)'", allSql);
         Assert.Contains("'Complete'", allSql);
+        Assert.Contains("'Completed'", allSql);
         Assert.Contains("IsTaken", allSql);
         Assert.Contains("IsAdditionalRequest", allSql);
 
