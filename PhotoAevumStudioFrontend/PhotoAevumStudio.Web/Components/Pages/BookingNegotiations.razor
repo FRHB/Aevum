@@ -75,7 +75,7 @@
 
 
 
-<div class="px-6 py-6 max-w-7xl mx-auto space-y-6">
+<div class="space-y-6">
 
 
 
@@ -87,7 +87,7 @@
 
 
 
-    <div class="flex flex-col md:flex-row md:items-center md:justify-between gap-4 pb-4 border-b border-slate-200">
+    <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 pb-4 border-b border-slate-200">
 
 
 
@@ -119,11 +119,11 @@
 
 
 
-            <h1 class="text-2xl font-black text-slate-900 tracking-tight mt-1">Booking Negotiations &amp; Inquiries</h1>
+            <h1 class="text-2xl sm:text-3xl font-extrabold text-slate-900 tracking-tight mt-1">Booking Negotiations &amp; Inquiries</h1>
 
 
 
-            <p class="text-xs text-slate-500 mt-0.5">
+            <p class="text-xs text-slate-500 mt-1">
 
 
 
@@ -159,105 +159,85 @@
 
 
 
-    <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
+    <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
 
 
 
-        <div class="bg-white rounded-xl border border-slate-200 p-4 shadow-xs">
+        <div class="bg-white rounded-xl border border-slate-200 p-4 shadow-sm flex flex-col justify-between">
 
+            <div>
 
+                <div class="text-[11px] font-bold uppercase tracking-wider text-slate-400">Total Consultations</div>
 
-            <div class="text-[11px] font-bold uppercase tracking-wider text-slate-400">Total Consultations</div>
+                <div class="text-2xl font-black text-slate-900 mt-1">@_negotiations.Count</div>
 
+            </div>
 
-
-            <div class="text-2xl font-black text-slate-900 mt-1">@_negotiations.Count</div>
-
-
-
-            <div class="text-[11px] text-slate-500 mt-0.5">Inquiry sessions logged</div>
-
-
+            <div class="text-[11px] text-slate-500 mt-2">Inquiry sessions logged</div>
 
         </div>
 
 
 
-        <div class="bg-white rounded-xl border border-amber-200 bg-amber-50/30 p-4 shadow-xs">
+        <div class="bg-white rounded-xl border border-amber-200 bg-amber-50/30 p-4 shadow-sm flex flex-col justify-between">
 
+            <div>
 
+                <div class="text-[11px] font-bold uppercase tracking-wider text-amber-700">Pending Video Calls</div>
 
-            <div class="text-[11px] font-bold uppercase tracking-wider text-amber-700">Pending Video Calls</div>
+                <div class="text-2xl font-black text-amber-800 mt-1">@_negotiations.Count(n => n.NegotiationStatus == "Pending_Call")</div>
 
+            </div>
 
-
-            <div class="text-2xl font-black text-amber-800 mt-1">@_negotiations.Count(n => n.NegotiationStatus == "Pending_Call")</div>
-
-
-
-            <div class="text-[11px] text-amber-600 mt-0.5">Awaiting clerk negotiation</div>
-
-
+            <div class="text-[11px] text-amber-600 mt-2">Awaiting clerk negotiation</div>
 
         </div>
 
 
 
-        <div class="bg-white rounded-xl border border-amber-200 bg-amber-50/30 p-4 shadow-xs">
+        <div class="bg-white rounded-xl border border-amber-200 bg-amber-50/30 p-4 shadow-sm flex flex-col justify-between">
 
+            <div>
 
+                <div class="text-[11px] font-bold uppercase tracking-wider text-amber-700">Pending Payment</div>
 
-            <div class="text-[11px] font-bold uppercase tracking-wider text-amber-700">Pending Payment</div>
+                <div class="text-2xl font-black text-amber-800 mt-1">@_negotiations.Count(n => n.NegotiationStatus == "Pending Payment")</div>
 
+            </div>
 
-
-            <div class="text-2xl font-black text-amber-800 mt-1">@_negotiations.Count(n => n.NegotiationStatus == "Pending Payment")</div>
-
-
-
-            <div class="text-[11px] text-amber-600 mt-0.5">Awaiting reservation deposit</div>
-
-
+            <div class="text-[11px] text-amber-600 mt-2">Awaiting reservation deposit</div>
 
         </div>
 
 
 
-        <div class="bg-white rounded-xl border border-emerald-200 bg-emerald-50/30 p-4 shadow-xs">
+        <div class="bg-white rounded-xl border border-emerald-200 bg-emerald-50/30 p-4 shadow-sm flex flex-col justify-between">
 
+            <div>
 
+                <div class="text-[11px] font-bold uppercase tracking-wider text-emerald-700">Deals Won / Booked</div>
 
-            <div class="text-[11px] font-bold uppercase tracking-wider text-emerald-700">Deals Won / Booked</div>
+                <div class="text-2xl font-black text-emerald-800 mt-1">@_negotiations.Count(n => n.NegotiationStatus is "Deal_Won" or "Appointment Booked")</div>
 
+            </div>
 
-
-            <div class="text-2xl font-black text-emerald-800 mt-1">@_negotiations.Count(n => n.NegotiationStatus is "Deal_Won" or "Appointment Booked")</div>
-
-
-
-            <div class="text-[11px] text-emerald-600 mt-0.5">Converted to event shoots</div>
-
-
+            <div class="text-[11px] text-emerald-600 mt-2">Converted to event shoots</div>
 
         </div>
 
 
 
-        <div class="bg-white rounded-xl border border-indigo-200 bg-indigo-50/30 p-4 shadow-xs">
+        <div class="bg-white rounded-xl border border-indigo-200 bg-indigo-50/30 p-4 shadow-sm flex flex-col justify-between">
 
+            <div>
 
+                <div class="text-[11px] font-bold uppercase tracking-wider text-indigo-700">Active Shoot Events</div>
 
-            <div class="text-[11px] font-bold uppercase tracking-wider text-indigo-700">Active Shoot Events</div>
+                <div class="text-2xl font-black text-indigo-800 mt-1">@_negotiations.Count(n => !string.IsNullOrWhiteSpace(n.EventAppointmentId))</div>
 
+            </div>
 
-
-            <div class="text-2xl font-black text-indigo-800 mt-1">@_negotiations.Count(n => !string.IsNullOrWhiteSpace(n.EventAppointmentId))</div>
-
-
-
-            <div class="text-[11px] text-indigo-600 mt-0.5">Staff &amp; gear reserved</div>
-
-
+            <div class="text-[11px] text-indigo-600 mt-2">Staff &amp; gear reserved</div>
 
         </div>
 
@@ -275,7 +255,7 @@
 
 
 
-    <div class="bg-white rounded-xl border border-slate-200 p-3.5 shadow-xs flex flex-col sm:flex-row items-center justify-between gap-3">
+    <div class="bg-white rounded-xl border border-slate-200 p-3.5 sm:p-4 shadow-sm flex flex-col sm:flex-row items-center justify-between gap-4">
 
 
 
@@ -331,7 +311,7 @@
 
 
 
-        <div class="w-full sm:w-64">
+        <div class="w-full sm:w-72">
 
 
 
@@ -339,7 +319,7 @@
                    value="@_searchTerm"
                    @oninput="OnSearchInput"
                    placeholder="Search client, ID, notes…"
-                   class="w-full px-3 py-1.5 bg-slate-50 border border-slate-200 rounded-lg text-xs focus:outline-none focus:ring-1 focus:ring-slate-900" />
+                   class="w-full px-3 py-1.5 bg-slate-50 border border-slate-200 rounded-lg text-xs text-slate-800 placeholder-slate-400 focus:bg-white focus:outline-none focus:ring-2 focus:ring-slate-900" />
 
 
 
