@@ -20,9 +20,9 @@ public class AdminManagementTests
     // ══════════════════════════════════════════════════════════════════════════
 
     [Theory]
-    [InlineData("SystemAdmin", new string[] { }, "SADM-001")]
-    [InlineData("System Admin", new[] { "SADM-001", "SADM-002" }, "SADM-003")]
-    [InlineData("Super Admin", new[] { "SADM-001", "SADM-003" }, "SADM-002")] // Gaps filled sequentially
+    [InlineData("SystemAdmin", new string[] { }, "SADM-101")]
+    [InlineData("System Admin", new[] { "SADM-001", "SADM-101" }, "SADM-102")]
+    [InlineData("Super Admin", new[] { "SADM-001", "SADM-101", "SADM-103" }, "SADM-102")] // Gaps filled sequentially from 101+
     [InlineData("Admin", new string[] { }, "ADM-001")]
     [InlineData("Admin", new[] { "ADM-001", "ADM-002", "ADM-003" }, "ADM-004")]
     [InlineData("Admin", new[] { "ADM-001", "ADM-002", "ADM-005" }, "ADM-003")]
@@ -30,6 +30,28 @@ public class AdminManagementTests
     {
         var id = AdminCredentialGenerator.GenerateAdminId(role, existingIds);
         Assert.Equal(expectedId, id);
+    }
+
+    [Fact]
+    public async Task AdminsController_HidesAndLocksSadm001_ForNonSadm001AndOtherUsers()
+    {
+        var fakeService = new FakeAdminManagementService();
+        fakeService.Admins.AddRange(new[]
+        {
+            new AdminDto("SADM-001", "Root", "SuperAdmin", null, "Root SuperAdmin", "root@photoaevum.studio", "System Admin", true, false, "Active"),
+            new AdminDto("SADM-101", "Clara", "Oswald", null, "Clara Oswald", "clara@photoaevum.studio", "System Admin", true, false, "Active"),
+            new AdminDto("ADM-001", "Marcus", "Vance", null, "Marcus Vance", "marcus@photoaevum.studio", "Admin", false, false, "Active")
+        });
+
+        var otherSysAdminController = CreateController(fakeService, userId: "SADM-101", role: "System Admin");
+        var listResult = await otherSysAdminController.GetAdmins(CancellationToken.None);
+        var okResult = Assert.IsType<OkObjectResult>(listResult);
+        var visible = Assert.IsAssignableFrom<IEnumerable<AdminDto>>(okResult.Value).ToList();
+        Assert.DoesNotContain(visible, a => a.Id == "SADM-001");
+        Assert.Contains(visible, a => a.Id == "SADM-101");
+
+        var byIdResult = await otherSysAdminController.GetAdminById("SADM-001", CancellationToken.None);
+        Assert.IsType<NotFoundObjectResult>(byIdResult);
     }
 
     [Theory]
@@ -545,7 +567,9 @@ public class AdminManagementTests
 
         public Task<IReadOnlyList<AdminDto>> GetAdminsAsync(string requestingUserId, bool isSystemAdmin, CancellationToken cancellationToken = default)
         {
+            var canSeeRoot = isSystemAdmin && string.Equals(requestingUserId, "SADM-001", StringComparison.OrdinalIgnoreCase);
             var result = Admins
+                .Where(a => canSeeRoot || !string.Equals(a.Id, "SADM-001", StringComparison.OrdinalIgnoreCase))
                 .Where(a => isSystemAdmin || (!a.Role.Contains("System", StringComparison.OrdinalIgnoreCase) && !a.Id.StartsWith("SADM-", StringComparison.OrdinalIgnoreCase)))
                 .ToList();
             return Task.FromResult<IReadOnlyList<AdminDto>>(result);
@@ -560,7 +584,7 @@ public class AdminManagementTests
         public Task<string> GetNextAdminIdAsync(string role, CancellationToken cancellationToken = default)
         {
             bool isSys = AdminCredentialGenerator.IsSystemAdminRole(role);
-            return Task.FromResult(isSys ? "SADM-002" : "ADM-003");
+            return Task.FromResult(isSys ? "SADM-101" : "ADM-003");
         }
 
         public Task<AdminDto> CreateAdminAsync(CreateAdminDto dto, string requestingUserId, bool isSystemAdmin, CancellationToken cancellationToken = default)
@@ -571,7 +595,7 @@ public class AdminManagementTests
             }
 
             bool isSys = AdminCredentialGenerator.IsSystemAdminRole(dto.Role);
-            var id = dto.CustomId ?? (isSys ? "SADM-002" : "ADM-003");
+            var id = dto.CustomId ?? (isSys ? "SADM-101" : "ADM-003");
             var admin = new AdminDto(
                 Id: id,
                 FirstName: dto.FirstName,

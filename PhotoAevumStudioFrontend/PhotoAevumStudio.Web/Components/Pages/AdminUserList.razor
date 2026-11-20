@@ -45,7 +45,11 @@
                             <td>@admin.Email</td>
                             <td>@admin.Role</td>
                             <td>
-                                @if (admin.IsSuperAdmin)
+                                @if (string.Equals(admin.Id, "SADM-001", StringComparison.OrdinalIgnoreCase))
+                                {
+                                    <span class="aev-muted-text" title="SADM-001 is locked against modification">Locked</span>
+                                }
+                                else if (admin.IsSuperAdmin)
                                 {
                                     <span class="aev-muted-text" title="Super Admin cannot be deleted">Protected</span>
                                 }
@@ -85,7 +89,9 @@
     private void LoadAdmins()
     {
         bool isSysAdmin = RequestingUserId.StartsWith("SADM-", StringComparison.OrdinalIgnoreCase);
+        bool canSeeRoot = string.Equals(RequestingUserId, "SADM-001", StringComparison.OrdinalIgnoreCase);
         _admins = UserService.GetAdmins()
+            .Where(a => canSeeRoot || !string.Equals(a.Id, "SADM-001", StringComparison.OrdinalIgnoreCase))
             .Where(a => isSysAdmin || (!a.IsSuperAdmin && !a.Role.Contains("System", StringComparison.OrdinalIgnoreCase) && !a.Id.StartsWith("SADM-", StringComparison.OrdinalIgnoreCase)))
             .ToList();
     }

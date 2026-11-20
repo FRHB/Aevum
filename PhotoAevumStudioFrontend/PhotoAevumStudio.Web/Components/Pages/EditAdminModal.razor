@@ -34,6 +34,13 @@
                     <DataAnnotationsValidator />
 
                     <div class="space-y-4">
+                        @if (IsLockedAccount)
+                        {
+                            <div class="p-3 bg-amber-50 border border-amber-200 rounded-lg text-xs text-amber-800 font-medium" role="alert">
+                                Account <span class="font-mono font-bold">SADM-001</span> is locked and cannot be edited or modified.
+                            </div>
+                        }
+
                         <!-- Read-only Identifiers -->
                         <div class="grid grid-cols-2 gap-3 p-3 bg-slate-50 rounded-xl border border-slate-200 text-xs">
                             <div>
@@ -102,7 +109,7 @@
                 <button type="button" 
                         class="px-6 py-2.5 rounded-lg bg-slate-900 hover:bg-black text-white text-xs font-semibold uppercase tracking-wider shadow-sm transition-colors disabled:opacity-50 flex items-center gap-2" 
                         @onclick="SubmitUpdateAsync" 
-                        disabled="@isSaving">
+                        disabled="@(isSaving || IsLockedAccount)">
                     @if (isSaving)
                     {
                         <span class="w-3.5 h-3.5 border-2 border-white/30 border-t-white rounded-full animate-spin"></span>
@@ -136,6 +143,7 @@
     private string? saveError;
     private bool isSaving = false;
     private CancellationTokenSource? _cts;
+    private bool IsLockedAccount => Admin != null && string.Equals(Admin.Id, "SADM-001", StringComparison.OrdinalIgnoreCase);
 
     protected override void OnParametersSet()
     {
@@ -163,6 +171,11 @@
 
     private async Task SubmitUpdateAsync()
     {
+        if (IsLockedAccount)
+        {
+            saveError = "Account SADM-001 is locked and cannot be modified.";
+            return;
+        }
         if (!_editContext.Validate() || Admin == null) return;
 
         saveError = null;

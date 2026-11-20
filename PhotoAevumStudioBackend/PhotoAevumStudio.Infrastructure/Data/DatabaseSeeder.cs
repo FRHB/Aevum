@@ -150,9 +150,14 @@ public static class DatabaseSeeder
                         FirstName nvarchar(255) NOT NULL,
                         LastName nvarchar(255) NOT NULL,
                         MiddleName nvarchar(255) NULL,
+                        Email nvarchar(255) NULL,
                         PasswordHash nvarchar(255) NOT NULL,
                         CreatedAt datetime2 NOT NULL CONSTRAINT DF_SystemAdmin_CreatedAt DEFAULT SYSUTCDATETIME()
                     );
+                END
+                ELSE IF COL_LENGTH(N'dbo.SystemAdmin', N'Email') IS NULL
+                BEGIN
+                    ALTER TABLE dbo.SystemAdmin ADD Email nvarchar(255) NULL;
                 END;
 
                 IF OBJECT_ID(N'dbo.Employees', N'U') IS NOT NULL
@@ -445,6 +450,35 @@ public static class DatabaseSeeder
                         ALTER TABLE dbo.Equipment ADD ImagePath nvarchar(500) NULL;
                     IF COL_LENGTH(N'dbo.Equipment', N'CreatedAt') IS NULL
                         ALTER TABLE dbo.Equipment ADD CreatedAt datetime2 NOT NULL CONSTRAINT DF_Equipment_CreatedAt DEFAULT SYSUTCDATETIME();
+                    ALTER TABLE dbo.Equipment ALTER COLUMN EquipmentStatus nvarchar(30) NOT NULL;
+                    IF NOT EXISTS (SELECT 1 FROM sys.check_constraints
+                                   WHERE name = N'CK_Equipment_Status'
+                                     AND definition LIKE N'%Needs Replacement%')
+                    BEGIN
+                        IF EXISTS (SELECT 1 FROM sys.check_constraints WHERE name = N'CK_Equipment_Status')
+                            ALTER TABLE dbo.Equipment DROP CONSTRAINT CK_Equipment_Status;
+                        ALTER TABLE dbo.Equipment ADD CONSTRAINT CK_Equipment_Status
+                            CHECK (EquipmentStatus IN ('Available','Maintenance','Retired','Needs Replacement'));
+                    END;
+                END;
+
+                IF OBJECT_ID(N'dbo.MaintenanceSchedule', N'U') IS NULL AND OBJECT_ID(N'dbo.Equipment', N'U') IS NOT NULL
+                BEGIN
+                    CREATE TABLE dbo.MaintenanceSchedule (
+                        MaintenanceScheduleID int IDENTITY(1,1) NOT NULL PRIMARY KEY,
+                        EquipmentID nvarchar(30) NOT NULL,
+                        ServiceType nvarchar(100) NOT NULL CONSTRAINT DF_MaintenanceSchedule_ServiceType DEFAULT 'Repair',
+                        IssueDetails nvarchar(1000) NULL,
+                        Status nvarchar(50) NOT NULL CONSTRAINT DF_MaintenanceSchedule_Status DEFAULT 'In Maintenance',
+                        SubStatus nvarchar(50) NULL,
+                        ResolutionNotes nvarchar(1000) NULL,
+                        ScheduledDate datetime2 NOT NULL CONSTRAINT DF_MaintenanceSchedule_ScheduledDate DEFAULT SYSUTCDATETIME(),
+                        UpdatedAt datetime2 NOT NULL CONSTRAINT DF_MaintenanceSchedule_UpdatedAt DEFAULT SYSUTCDATETIME(),
+                        ResolvedAt datetime2 NULL,
+                        CreatedByAdminID nvarchar(30) NULL,
+                        UpdatedByAdminID nvarchar(30) NULL,
+                        CONSTRAINT FK_MaintenanceSchedule_Equipment FOREIGN KEY (EquipmentID) REFERENCES dbo.Equipment(EquipmentID) ON DELETE CASCADE
+                    );
                 END;
 
                 IF NOT EXISTS (SELECT 1 FROM sys.sequences WHERE name = 'EquipmentIdSequence' AND schema_id = SCHEMA_ID('dbo'))

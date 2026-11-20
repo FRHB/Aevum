@@ -6,6 +6,7 @@
 @using ZXingBlazor.Components
 @implements IAsyncDisposable
 @inject IConsultationClient ConsultationApi
+@inject IScheduleService ScheduleService
 @inject PaymentHubClient PaymentHub
 @inject IWebHostEnvironment Env
 @inject IConfiguration Config
@@ -167,8 +168,8 @@
             try
             {
                 await PaymentHub.StartAsync(AppointmentId,
-                    onPaymentCompleted: () => InvokeAsync(async () => { await LoadAsync(); _paid = true; StateHasChanged(); }),
-                    onBookingExpired: () => InvokeAsync(async () => { await LoadAsync(); _expired = true; StateHasChanged(); }));
+                    onPaymentCompleted: () => InvokeAsync(async () => { ScheduleService.InvalidateCache(); await LoadAsync(); _paid = true; StateHasChanged(); }),
+                    onBookingExpired: () => InvokeAsync(async () => { ScheduleService.InvalidateCache(); await LoadAsync(); _expired = true; StateHasChanged(); }));
                 _hubConnected = true;
             }
             catch
@@ -211,6 +212,12 @@
         }
         else
         {
+            if (string.Equals(_info?.EventStatus, "Confirmed", StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(_info?.EventStatus, "Completed", StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(_info?.EventStatus, "Complete", StringComparison.OrdinalIgnoreCase))
+            {
+                ScheduleService.InvalidateCache();
+            }
             _timer?.Dispose();
         }
     }
@@ -247,6 +254,7 @@
         {
             // Dev-only: the API rejects this once a live Xendit key is configured. Success arrives via SignalR.
             await ConsultationApi.SimulateWebhookPaymentAsync(AppointmentId, "QR Ph");
+            ScheduleService.InvalidateCache();
             if (!_hubConnected) { await LoadAsync(); }
         }
         finally { _busy = false; }

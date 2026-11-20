@@ -467,6 +467,7 @@
             var res = await ConsultationApi.SimulateWebhookPaymentAsync(appointmentId, "GCASH");
             if (res.IsSuccess)
             {
+                ScheduleService.InvalidateCache();
                 await LoadBookingsAsync();
             }
         }
@@ -483,6 +484,7 @@
         try
         {
             await ConsultationApi.VerifyDownpaymentAsync(appointmentId);
+            ScheduleService.InvalidateCache();
             await LoadBookingsAsync();
         }
         finally

@@ -215,6 +215,8 @@
 
                     <option value="Maintenance">In Maintenance</option>
 
+                    <option value="Needs Replacement">Needs Replacement</option>
+
                     <option value="Retired">Retired</option>
 
                 </select>
@@ -455,6 +457,20 @@
 
                                     }
 
+                                    else if (item.IsNeedsReplacement)
+
+                                    {
+
+                                        <span class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold bg-rose-50 text-rose-800 border border-rose-200">
+
+                                            <span class="w-1.5 h-1.5 rounded-full bg-rose-500"></span>
+
+                                            Needs Replacement
+
+                                        </span>
+
+                                    }
+
                                     else
 
                                     {
@@ -675,6 +691,46 @@
                         <option value="Routine Servicing">Routine Inspection & Cleaning</option>
 
                     </select>
+
+                </div>
+
+                <div>
+
+                    <label class="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1">
+
+                        Work Sub-Status
+
+                    </label>
+
+                    <select value="@maintenanceSubStatusChoice" @onchange="OnMaintenanceSubStatusChoiceChanged"
+
+                            class="w-full px-3 py-2 text-xs rounded-lg border border-slate-300 bg-white">
+
+                        @foreach (var sub in MaintenanceScheduleStatuses.DefaultSubStatuses)
+
+                        {
+
+                            <option value="@sub">@sub</option>
+
+                        }
+
+                        <option value="CUSTOM">Other (Custom sub-status...)</option>
+
+                    </select>
+
+                    @if (maintenanceSubStatusChoice == "CUSTOM")
+
+                    {
+
+                        <input type="text"
+
+                               @bind="maintenanceSubStatus"
+
+                               placeholder="Enter custom work sub-status"
+
+                               class="mt-2 w-full px-3 py-2 text-xs rounded-lg border border-slate-300 focus:outline-none focus:ring-1 focus:ring-slate-900" />
+
+                    }
 
                 </div>
 
@@ -934,7 +990,16 @@
 
     private string maintenanceServiceType = "Repair";
 
+    private string maintenanceSubStatusChoice = MaintenanceScheduleStatuses.SubUnderRepair;
+
+    private string maintenanceSubStatus = MaintenanceScheduleStatuses.SubUnderRepair;
+
     private string maintenanceIssueNotes = string.Empty;
+
+    private string GetCurrentActorId() =>
+        _currentUser?.FindFirst("studio_id")?.Value
+        ?? _currentUser?.FindFirst(ClaimTypes.NameIdentifier)?.Value
+        ?? "ADM-001";
 
 
 
@@ -1245,10 +1310,20 @@ private async Task LoadDataAsync()
 
         maintenanceServiceType = "Repair";
 
+        maintenanceSubStatusChoice = MaintenanceScheduleStatuses.SubUnderRepair;
+
+        maintenanceSubStatus = MaintenanceScheduleStatuses.SubUnderRepair;
+
         maintenanceIssueNotes = string.Empty;
 
         isMaintenanceModalOpen = true;
 
+    }
+
+    private void OnMaintenanceSubStatusChoiceChanged(ChangeEventArgs e)
+    {
+        maintenanceSubStatusChoice = e.Value?.ToString() ?? MaintenanceScheduleStatuses.SubUnderRepair;
+        maintenanceSubStatus = maintenanceSubStatusChoice == "CUSTOM" ? string.Empty : maintenanceSubStatusChoice;
     }
 
 
@@ -1271,9 +1346,11 @@ private async Task LoadDataAsync()
 
             maintenanceIssueNotes,
 
-            "ADM-001",
+            GetCurrentActorId(),
 
-            setUnderMaintenance: true);
+            true,
+
+            string.IsNullOrWhiteSpace(maintenanceSubStatus) ? MaintenanceScheduleStatuses.SubUnderRepair : maintenanceSubStatus.Trim());
 
 
 
@@ -1285,7 +1362,7 @@ private async Task LoadDataAsync()
 
         {
 
-            notificationMessage = $"Shifted '{selectedEquipmentForMaintenance.EquipmentName}' to Maintenance. Log entry created in dbo.HistoryLog.";
+            notificationMessage = $"Shifted '{selectedEquipmentForMaintenance.EquipmentName}' to Maintenance and created/updated its Maintenance Schedule entry.";
 
             await LoadDataAsync();
 
@@ -1305,7 +1382,7 @@ private async Task LoadDataAsync()
 
             "Quick resolution via hardware catalog. Bench diagnostics passed.",
 
-            "ADM-001");
+            GetCurrentActorId());
 
 
 

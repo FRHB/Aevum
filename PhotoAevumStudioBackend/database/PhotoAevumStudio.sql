@@ -73,6 +73,7 @@ CREATE TABLE dbo.SystemAdmin (
     FirstName nvarchar(255) NOT NULL,
     LastName nvarchar(255) NOT NULL,
     MiddleName nvarchar(255) NULL,
+    Email nvarchar(255) NULL,
     PasswordHash nvarchar(255) NOT NULL,
     CreatedAt datetime2 NOT NULL CONSTRAINT DF_SystemAdmin_CreatedAt DEFAULT SYSUTCDATETIME()
 );
@@ -251,14 +252,29 @@ CREATE TABLE dbo.Equipment (
     EquipmentName nvarchar(100) NOT NULL,
     EquipmentDescription nvarchar(1000) NULL,
     EquipmentTypeID nvarchar(30) NOT NULL,
-    EquipmentStatus nvarchar(20) NOT NULL CONSTRAINT DF_Equipment_Status DEFAULT 'Available',
+    EquipmentStatus nvarchar(30) NOT NULL CONSTRAINT DF_Equipment_Status DEFAULT 'Available',
     EquipmentImage varbinary(max) NULL, 
     ImagePath nvarchar(500) NULL,
     SerialNo nvarchar(30),
     CreatedAt datetime2 NOT NULL CONSTRAINT DF_Equipment_CreatedAt DEFAULT SYSUTCDATETIME(),
-    CONSTRAINT CK_Equipment_Status CHECK (EquipmentStatus IN ('Available','Maintenance','Retired'))
+    CONSTRAINT CK_Equipment_Status CHECK (EquipmentStatus IN ('Available','Maintenance','Retired','Needs Replacement'))
 );
 CREATE UNIQUE INDEX UX_Equipment_SerialNo ON dbo.Equipment(SerialNo) WHERE SerialNo IS NOT NULL;
+
+CREATE TABLE dbo.MaintenanceSchedule (
+    MaintenanceScheduleID int IDENTITY(1,1) NOT NULL PRIMARY KEY,
+    EquipmentID nvarchar(30) NOT NULL,
+    ServiceType nvarchar(100) NOT NULL CONSTRAINT DF_MaintenanceSchedule_ServiceType DEFAULT 'Repair',
+    IssueDetails nvarchar(1000) NULL,
+    Status nvarchar(50) NOT NULL CONSTRAINT DF_MaintenanceSchedule_Status DEFAULT 'In Maintenance',
+    SubStatus nvarchar(50) NULL,
+    ResolutionNotes nvarchar(1000) NULL,
+    ScheduledDate datetime2 NOT NULL CONSTRAINT DF_MaintenanceSchedule_ScheduledDate DEFAULT SYSUTCDATETIME(),
+    UpdatedAt datetime2 NOT NULL CONSTRAINT DF_MaintenanceSchedule_UpdatedAt DEFAULT SYSUTCDATETIME(),
+    ResolvedAt datetime2 NULL,
+    CreatedByAdminID nvarchar(30) NULL,
+    UpdatedByAdminID nvarchar(30) NULL
+);
 
 /* =====================================================================
    4. BOOKINGS AND APPOINTMENTS TABLES
@@ -541,6 +557,7 @@ GO
    8. FOREIGN KEY RELATIONSHIPS
    ===================================================================== */
 ALTER TABLE dbo.Equipment ADD CONSTRAINT FK_Equipment_EquipmentType FOREIGN KEY (EquipmentTypeID) REFERENCES dbo.EquipmentType(EquipmentTypeID);
+ALTER TABLE dbo.MaintenanceSchedule ADD CONSTRAINT FK_MaintenanceSchedule_Equipment FOREIGN KEY (EquipmentID) REFERENCES dbo.Equipment(EquipmentID) ON DELETE CASCADE;
 ALTER TABLE dbo.BookingNegotiation ADD CONSTRAINT FK_BookingNegotiation_Employee FOREIGN KEY (EmployeeID) REFERENCES dbo.Employees(EmployeeID) ON DELETE SET NULL;
 ALTER TABLE dbo.BookingNegotiation ADD CONSTRAINT FK_BookingNegotiation_Customer FOREIGN KEY (CustomerID) REFERENCES dbo.Customer(CustomerID);
 ALTER TABLE dbo.BookingNegotiation ADD CONSTRAINT FK_BookingNegotiation_EventAppointment FOREIGN KEY (EventAppointmentID) REFERENCES dbo.EventAppointment(EventAppointmentID) ON DELETE SET NULL;
@@ -607,6 +624,7 @@ CREATE INDEX IX_ComboPackageJoin_AddOn      ON dbo.ComboPackageJoin (AdditionalS
 CREATE INDEX IX_ServiceCategory_Name        ON dbo.ServiceCategory (ServiceCategoryName);
 CREATE INDEX IX_Services_Name               ON dbo.Services (ServiceName);
 CREATE INDEX IX_Equipment_EquipmentType     ON dbo.Equipment (EquipmentTypeID);
+CREATE INDEX IX_MaintenanceSchedule_EquipmentID_Status ON dbo.MaintenanceSchedule (EquipmentID, Status, UpdatedAt DESC);
 CREATE INDEX IX_EmployeeTimesheets_EmpDate ON dbo.EmployeeTimesheets (EmployeeStudioId, WorkDate);
 CREATE INDEX IX_EmployeeTimesheets_ClockIn ON dbo.EmployeeTimesheets (ClockIn DESC);
 CREATE INDEX IX_ServiceRate_Services       ON dbo.ServiceRate (ServicesID);
@@ -972,6 +990,28 @@ GO
 IF OBJECT_ID(N'dbo.EventAppointment', N'U') IS NOT NULL
    AND NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = N'IX_EventAppointment_Status_LockExpiresAt' AND object_id = OBJECT_ID(N'dbo.EventAppointment'))
     CREATE INDEX IX_EventAppointment_Status_LockExpiresAt ON dbo.EventAppointment (EventStatus, LockExpiresAt);
+GO
+
+IF OBJECT_ID(N'dbo.SystemAdmin', N'U') IS NOT NULL
+BEGIN
+    IF COL_LENGTH(N'dbo.SystemAdmin', N'Email') IS NULL
+        ALTER TABLE dbo.SystemAdmin ADD Email nvarchar(255) NULL;
+END;
+GO
+
+IF OBJECT_ID(N'dbo.Equipment', N'U') IS NOT NULL
+BEGIN
+    ALTER TABLE dbo.Equipment ALTER COLUMN EquipmentStatus nvarchar(30) NOT NULL;
+    IF NOT EXISTS (SELECT 1 FROM sys.check_constraints
+                   WHERE name = N'CK_Equipment_Status'
+                     AND definition LIKE N'%Needs Replacement%')
+    BEGIN
+        IF EXISTS (SELECT 1 FROM sys.check_constraints WHERE name = N'CK_Equipment_Status')
+            ALTER TABLE dbo.Equipment DROP CONSTRAINT CK_Equipment_Status;
+        ALTER TABLE dbo.Equipment ADD CONSTRAINT CK_Equipment_Status
+            CHECK (EquipmentStatus IN ('Available','Maintenance','Retired','Needs Replacement'));
+    END;
+END;
 GO
 /* =====================================================================
    HANGFIRE BACKGROUND JOB STORAGE SCHEMA (Version 9)

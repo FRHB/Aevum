@@ -251,7 +251,7 @@
     private string _actionFilter = string.Empty;
     private string _entityFilter = string.Empty;
     private int _currentPage = 1;
-    private string _requestingUserId = "SADM-001";
+    private string _requestingUserId = string.Empty;
     // True when the logged-in user is a System Admin (SADM-xxx) - unrestricted access.
     private bool _isSystemAdmin = false;
     // True when the logged-in user is an Employee or Office Clerk (EMP-xxx / CLK-xxx).
@@ -322,7 +322,7 @@
         _requestingUserId = user.FindFirst("studio_id")?.Value
             ?? user.FindFirst(ClaimTypes.NameIdentifier)?.Value
             ?? user.FindFirst(ClaimTypes.Name)?.Value
-            ?? "SADM-001";
+            ?? string.Empty;
 
         // Determine role flags so the UI can render contextual information.
         // Detection logic mirrors EmployeeRoleHelper and sp_GetHistoryLogs.

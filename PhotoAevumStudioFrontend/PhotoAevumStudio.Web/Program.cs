@@ -1,6 +1,7 @@
-using System.Reflection;
 using InfisicalConfiguration;
 using Microsoft.AspNetCore.Components.Authorization;
+using Microsoft.AspNetCore.Components.Server.Circuits;
+using Microsoft.AspNetCore.DataProtection;
 using PhotoAevumStudio.Web.Components;
 using PhotoAevumStudio.Web.Services;
 
@@ -43,10 +44,27 @@ if (!string.IsNullOrEmpty(infisicalClientId) && !string.IsNullOrEmpty(infisicalC
     }
 }
 
+var bootInfo = new AppBootInfo();
+builder.Services.AddSingleton(bootInfo);
+
+var dataProtectionKeysDir = Path.Combine(builder.Environment.ContentRootPath, "App_Data", "DataProtectionKeys");
+var dataProtectionBuilder = builder.Services.AddDataProtection()
+    .SetApplicationName("PhotoAevumStudio.Web");
+try
+{
+    Directory.CreateDirectory(dataProtectionKeysDir);
+    dataProtectionBuilder.PersistKeysToFileSystem(new DirectoryInfo(dataProtectionKeysDir));
+}
+catch
+{
+    // Fall back to default key ring if content root is read-only.
+}
+
 builder.Services.AddRazorComponents()
     .AddInteractiveServerComponents();
 
 builder.Services.AddScoped<ITokenStore, ProtectedSessionTokenStore>();
+builder.Services.AddScoped<CircuitHandler, TokenCircuitHandler>();
 builder.Services.AddScoped<AevumAuthenticationStateProvider>();
 builder.Services.AddScoped<AuthenticationStateProvider>(sp => sp.GetRequiredService<AevumAuthenticationStateProvider>());
 builder.Services.AddAuthentication(options =>
@@ -116,24 +134,44 @@ if (!app.Environment.IsDevelopment())
 app.UseStatusCodePagesWithReExecute("/not-found", createScopeForStatusCodePages: true);
 app.UseHttpsRedirection();
 app.UseAntiforgery();
+app.Use(async (context, next) =>
+{
+    if (HttpMethods.IsGet(context.Request.Method) || HttpMethods.IsHead(context.Request.Method))
+    {
+        context.Response.OnStarting(() =>
+        {
+            var contentType = context.Response.ContentType;
+            if (!string.IsNullOrEmpty(contentType) &&
+                contentType.StartsWith("text/html", StringComparison.OrdinalIgnoreCase))
+            {
+                context.Response.Headers.CacheControl = "no-cache, no-store, must-revalidate";
+                context.Response.Headers.Pragma = "no-cache";
+                context.Response.Headers.Expires = "0";
+                context.Response.Headers["X-Boot-Id"] = bootInfo.BootId;
+            }
+            return Task.CompletedTask;
+        });
+    }
+
+    await next();
+});
 app.MapStaticAssets();
-var informationalVersion = System.Reflection.Assembly.GetExecutingAssembly()
-    .GetCustomAttribute<System.Reflection.AssemblyInformationalVersionAttribute>()?
-    .InformationalVersion;
-var buildHash = informationalVersion?.Contains('+') == true 
-    ? informationalVersion.Split('+')[1] 
-    : (informationalVersion ?? "unknown");
 
 app.MapGet("/version", (HttpContext context) =>
 {
-    context.Response.Headers.Append("X-Build-Hash", buildHash);
-    context.Response.Headers.Append("X-Commit-Hash", buildHash);
+    context.Response.Headers.CacheControl = "no-cache, no-store, must-revalidate";
+    context.Response.Headers.Pragma = "no-cache";
+    context.Response.Headers.Expires = "0";
+    context.Response.Headers.Append("X-Build-Hash", bootInfo.BuildHash);
+    context.Response.Headers.Append("X-Commit-Hash", bootInfo.BuildHash);
+    context.Response.Headers.Append("X-Boot-Id", bootInfo.BootId);
     return Results.Ok(new
     {
         service = "Photo Aevum Studio Web",
-        version = informationalVersion,
-        buildHash = buildHash,
-        commitHash = buildHash,
+        version = bootInfo.InformationalVersion,
+        buildHash = bootInfo.BuildHash,
+        commitHash = bootInfo.BuildHash,
+        bootId = bootInfo.BootId,
         timestamp = DateTime.UtcNow
     });
 });

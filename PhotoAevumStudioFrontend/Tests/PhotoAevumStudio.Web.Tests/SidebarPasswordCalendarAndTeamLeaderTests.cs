@@ -329,4 +329,76 @@ public class SidebarPasswordCalendarAndTeamLeaderTests
         Assert.NotNull(authAttr);
         Assert.Equal("ClerkOrAdmin", authAttr!.Policy);
     }
+
+    [Fact]
+    public void EmployeeRoleHelper_IsEventAssignedToEmployee_MatchesByCrewIdsAndAssignedCrew()
+    {
+        var booking = new EventBookingModel
+        {
+            Id = "EVT-901",
+            AssignedPhotographer = "Unassigned",
+            AssignedCrewIds = new List<string> { "EMP-010", "EMP-020" },
+            AssignedCrew = new List<EventCrewSummary>
+            {
+                new("EMP-010", "Juan Dela Cruz", "Photographer", true),
+                new("EMP-020", "Maria Clara", "Videographer", false)
+            }
+        };
+
+        // Matches by EmployeeID even if display name differs or AssignedPhotographer is "Unassigned"
+        Assert.True(EmployeeRoleHelper.IsEventAssignedToEmployee(booking, "Juan D. Cruz", "EMP-010"));
+        Assert.True(EmployeeRoleHelper.IsEventAssignedToEmployee(booking, "", "EMP-020"));
+        Assert.False(EmployeeRoleHelper.IsEventAssignedToEmployee(booking, "Other Person", "EMP-999"));
+    }
+
+    [Fact]
+    public void TeamLeadMonitor_And_PaymentCalendarSync_AreWiredCorrectly()
+    {
+        var root = GetRepositoryRoot();
+        var webRoot = Path.Combine(root, "PhotoAevumStudioFrontend", "PhotoAevumStudio.Web");
+        var pagesDir = Path.Combine(webRoot, "Components", "Pages");
+
+        var monitorPage = File.ReadAllText(Path.Combine(pagesDir, "TeamLeadMonitor.razor"));
+        var sidebar = File.ReadAllText(Path.Combine(webRoot, "Components", "Layout", "Sidebar.razor"));
+        var payments = File.ReadAllText(Path.Combine(pagesDir, "Payments.razor"));
+        var confirmPayment = File.ReadAllText(Path.Combine(pagesDir, "ConfirmPayment.razor"));
+        var simulateCheckout = File.ReadAllText(Path.Combine(pagesDir, "SimulateCheckout.razor"));
+        var myBookings = File.ReadAllText(Path.Combine(pagesDir, "MyBookings.razor"));
+        var customerDashboard = File.ReadAllText(Path.Combine(pagesDir, "CustomerDashboard.razor"));
+        var staffDashboard = File.ReadAllText(Path.Combine(pagesDir, "StaffDashboard.razor"));
+
+        Assert.Contains("@page \"/staff/team-lead-monitor\"", monitorPage);
+        Assert.Contains("TeamLeaderMonitorSelector.SelectUpcomingAndOngoing", monitorPage);
+        Assert.Contains("TeamLeaderMonitorSelector.GetProcessSteps", monitorPage);
+        Assert.Contains("Event Process", monitorPage);
+
+        Assert.Contains("TeamLeaderMonitorSelector.SelectUpcomingAndOngoing", staffDashboard);
+        Assert.Contains("TeamLeaderMonitorSelector.GetProcessSteps", staffDashboard);
+        Assert.Contains("/staff/team-lead-monitor", staffDashboard);
+
+        Assert.Contains("/staff/team-lead-monitor", sidebar);
+        Assert.Contains("_teamLeadEventCount > 0", sidebar);
+
+        Assert.Contains("ScheduleService.InvalidateCache()", payments);
+        Assert.Contains("ScheduleService.InvalidateCache()", confirmPayment);
+        Assert.Contains("ScheduleService.InvalidateCache()", simulateCheckout);
+        Assert.Contains("ScheduleService.InvalidateCache()", myBookings);
+        Assert.Contains("ScheduleService.InvalidateCache()", customerDashboard);
+
+        // Frontend TeamLeaderMonitorSelector filters upcoming + ongoing and tracks 5 process steps
+        var now = new DateTime(2026, 11, 20, 10, 0, 0);
+        var today = DateOnly.FromDateTime(now.Date);
+        var filtered = PhotoAevumStudio.Web.Models.TeamLeaderMonitorSelector.SelectUpcomingAndOngoing(new[]
+        {
+            new PhotoAevumStudio.Web.Models.TeamLeaderEventDto { EventAppointmentId = "EVT-1", EventStatus = "Pending Payment", DownpaymentStatus = "Pending", EventDate = today },
+            new PhotoAevumStudio.Web.Models.TeamLeaderEventDto { EventAppointmentId = "EVT-2", EventStatus = "Completed", DownpaymentStatus = "Paid", EventDate = today },
+            new PhotoAevumStudio.Web.Models.TeamLeaderEventDto { EventAppointmentId = "EVT-3", EventStatus = "Confirmed", DownpaymentStatus = "Paid", EventDate = today.AddDays(1), EventTime = new TimeOnly(10, 0) },
+            new PhotoAevumStudio.Web.Models.TeamLeaderEventDto { EventAppointmentId = "EVT-4", EventStatus = "Ongoing", DownpaymentStatus = "Paid", EventDate = today, EventTime = new TimeOnly(9, 0) }
+        }, now);
+
+        Assert.Equal(2, filtered.Count);
+        Assert.Equal("EVT-4", filtered[0].EventAppointmentId);
+        Assert.Equal("EVT-3", filtered[1].EventAppointmentId);
+        Assert.Equal(5, PhotoAevumStudio.Web.Models.TeamLeaderMonitorSelector.GetProcessSteps(filtered[0]).Count);
+    }
 }

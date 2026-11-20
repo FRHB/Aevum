@@ -1,3 +1,4 @@
+using System.Security.Cryptography;
 using Microsoft.AspNetCore.Components.Server.ProtectedBrowserStorage;
 using Microsoft.JSInterop;
 
@@ -6,78 +7,120 @@ namespace PhotoAevumStudio.Web.Services;
 public sealed class ProtectedSessionTokenStore : ITokenStore
 {
     private readonly ProtectedSessionStorage _sessionStorage;
+    private readonly SemaphoreSlim _readLock = new(1, 1);
     private const string TokenKey = "jwt_token";
 
-    // Cached per-circuit and globally across scopes so IHttpClientFactory handler scopes
-    // and background HTTP calls can access the active circuit's JWT without failing.
+    // Scoped to the active Blazor Server circuit (never shared statically across users).
+    private string? _circuitToken;
+
+    // AsyncLocal flows across await boundaries into IHttpClientFactory's handler DI scopes.
+    private static readonly AsyncLocal<ITokenStore?> AmbientStore = new();
     private static readonly AsyncLocal<string?> AmbientToken = new();
-    private static volatile string? _cachedToken;
 
     public ProtectedSessionTokenStore(ProtectedSessionStorage sessionStorage)
     {
         _sessionStorage = sessionStorage;
     }
 
-    internal static string? GetAmbientToken() => AmbientToken.Value ?? _cachedToken;
+    internal static IDisposable BeginCircuitScope(ITokenStore store)
+    {
+        var previousStore = AmbientStore.Value;
+        var previousToken = AmbientToken.Value;
+        AmbientStore.Value = store;
+        if (store is ProtectedSessionTokenStore sessionStore && !string.IsNullOrWhiteSpace(sessionStore._circuitToken))
+        {
+            AmbientToken.Value = sessionStore._circuitToken;
+        }
+
+        return new CircuitScope(previousStore, previousToken);
+    }
+
+    internal static ITokenStore? GetAmbientStore() => AmbientStore.Value;
+
+    internal static string? GetAmbientToken()
+    {
+        if (AmbientStore.Value is ProtectedSessionTokenStore sessionStore &&
+            !string.IsNullOrWhiteSpace(sessionStore._circuitToken))
+        {
+            return sessionStore._circuitToken;
+        }
+
+        return AmbientToken.Value;
+    }
 
     public async Task<string?> GetTokenAsync(CancellationToken cancellationToken = default)
     {
+        if (!string.IsNullOrWhiteSpace(_circuitToken))
+        {
+            AmbientToken.Value = _circuitToken;
+            return _circuitToken;
+        }
+
         if (cancellationToken.IsCancellationRequested)
         {
-            return _cachedToken ?? AmbientToken.Value;
+            return null;
         }
 
-        if (!string.IsNullOrWhiteSpace(_cachedToken))
-        {
-            AmbientToken.Value = _cachedToken;
-            return _cachedToken;
-        }
-
-        if (!string.IsNullOrWhiteSpace(AmbientToken.Value))
-        {
-            _cachedToken = AmbientToken.Value;
-            return _cachedToken;
-        }
-
+        await _readLock.WaitAsync(cancellationToken);
         try
         {
-            if (cancellationToken.IsCancellationRequested)
+            if (!string.IsNullOrWhiteSpace(_circuitToken))
             {
-                return _cachedToken ?? AmbientToken.Value;
+                AmbientToken.Value = _circuitToken;
+                return _circuitToken;
             }
 
             var result = await _sessionStorage.GetAsync<string>(TokenKey);
             if (result.Success && !string.IsNullOrWhiteSpace(result.Value))
             {
-                _cachedToken = result.Value;
+                _circuitToken = result.Value;
                 AmbientToken.Value = result.Value;
                 return result.Value;
             }
 
-            return _cachedToken ?? AmbientToken.Value;
+            return null;
+        }
+        catch (CryptographicException)
+        {
+            // Data protection keys changed (e.g. legacy deployment without persisted keys); clear unreadable value.
+            _circuitToken = null;
+            AmbientToken.Value = null;
+            try
+            {
+                await _sessionStorage.DeleteAsync(TokenKey);
+            }
+            catch
+            {
+                // Best effort cleanup
+            }
+            return null;
         }
         catch (InvalidOperationException)
         {
             // Expected during Blazor Server static prerendering or when outside circuit JS interop.
-            return _cachedToken ?? AmbientToken.Value;
+            return null;
         }
         catch (JSDisconnectedException)
         {
-            return _cachedToken ?? AmbientToken.Value;
+            return null;
         }
         catch (OperationCanceledException)
         {
-            return _cachedToken ?? AmbientToken.Value;
+            return null;
         }
         catch
         {
-            return _cachedToken ?? AmbientToken.Value;
+            return null;
+        }
+        finally
+        {
+            _readLock.Release();
         }
     }
 
     public async Task SetTokenAsync(string token, CancellationToken cancellationToken = default)
     {
-        _cachedToken = token;
+        _circuitToken = token;
         AmbientToken.Value = token;
 
         if (cancellationToken.IsCancellationRequested) return;
@@ -88,7 +131,7 @@ public sealed class ProtectedSessionTokenStore : ITokenStore
         }
         catch (InvalidOperationException)
         {
-            // Prerendering guard: token remains cached in memory/AsyncLocal for the circuit.
+            // Prerendering guard: token remains cached in this circuit instance.
         }
         catch (JSDisconnectedException)
         {
@@ -104,7 +147,7 @@ public sealed class ProtectedSessionTokenStore : ITokenStore
 
     public async Task ClearAsync(CancellationToken cancellationToken = default)
     {
-        _cachedToken = null;
+        _circuitToken = null;
         AmbientToken.Value = null;
 
         if (cancellationToken.IsCancellationRequested) return;
@@ -125,6 +168,24 @@ public sealed class ProtectedSessionTokenStore : ITokenStore
         }
         catch (Exception)
         {
+        }
+    }
+
+    private sealed class CircuitScope : IDisposable
+    {
+        private readonly ITokenStore? _previousStore;
+        private readonly string? _previousToken;
+
+        public CircuitScope(ITokenStore? previousStore, string? previousToken)
+        {
+            _previousStore = previousStore;
+            _previousToken = previousToken;
+        }
+
+        public void Dispose()
+        {
+            AmbientStore.Value = _previousStore;
+            AmbientToken.Value = _previousToken;
         }
     }
 }

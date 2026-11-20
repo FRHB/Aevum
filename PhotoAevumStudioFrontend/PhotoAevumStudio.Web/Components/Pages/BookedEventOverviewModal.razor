@@ -811,7 +811,7 @@
         var options = new List<EquipmentSelectOption>();
         foreach (var eq in _allEquipment.Where(e => !stagedIds.Contains(e.EquipmentID)))
         {
-            if (eq.IsMaintenance || eq.IsRetired)
+            if (eq.IsMaintenance || eq.IsRetired || eq.IsNeedsReplacement)
             {
                 options.Add(new EquipmentSelectOption(eq, $"{eq.EquipmentName} ({eq.EquipmentID}) — Unavailable ({eq.EquipmentStatus})", true));
                 continue;
@@ -903,7 +903,7 @@
         if (eq == null) return;
 
         var lockedIds = BookingWizardEngine.GetBookedEquipmentIdsForDate(Booking.Date, AllBookings, EquipmentReservations, null, Booking.Id);
-        if (lockedIds.Contains(eq.EquipmentID) || eq.IsMaintenance || eq.IsRetired)
+        if (lockedIds.Contains(eq.EquipmentID) || eq.IsMaintenance || eq.IsRetired || eq.IsNeedsReplacement)
         {
             _feedbackIsError = true;
             _feedbackMessage = $"Equipment '{eq.EquipmentName}' is unavailable on {Booking.Date:MMM d, yyyy}.";
@@ -947,7 +947,7 @@
         if (eq == null) return;
 
         var lockedIds = BookingWizardEngine.GetBookedEquipmentIdsForDate(Booking.Date, AllBookings, EquipmentReservations, null, Booking.Id);
-        if (lockedIds.Contains(eq.EquipmentID) || eq.IsMaintenance || eq.IsRetired)
+        if (lockedIds.Contains(eq.EquipmentID) || eq.IsMaintenance || eq.IsRetired || eq.IsNeedsReplacement)
         {
             _feedbackIsError = true;
             _feedbackMessage = $"Equipment '{eq.EquipmentName}' is unavailable on {Booking.Date:MMM d, yyyy}.";

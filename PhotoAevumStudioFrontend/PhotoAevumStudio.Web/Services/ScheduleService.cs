@@ -570,17 +570,23 @@ public class ScheduleService : IScheduleService
                     ).value('.', 'nvarchar(max)'), 1, 2, '') AS ServiceList
                 ) serviceDetails
                 WHERE ISNULL(ea.EventStatus, '') NOT IN ('Cancelled', 'Expired')
-                AND ea.EventAppointmentID NOT IN (
-                    SELECT EventAppointmentID 
-                    FROM dbo.BookingNegotiation 
-                    WHERE EventAppointmentID IS NOT NULL 
-                      AND NegotiationStatus IN ('Pending_Call', 'Rescheduled', 'Deal_Lost', 'Cancelled')
-                )
-                AND ea.EventAppointmentID NOT IN (
-                    SELECT 'EVT-' + RIGHT(NegotiationID, 4)
-                    FROM dbo.BookingNegotiation
-                    WHERE EventAppointmentID IS NULL
-                      AND NegotiationStatus IN ('Pending_Call', 'Rescheduled', 'Deal_Lost', 'Cancelled')
+                AND (
+                    ISNULL(ea.DownpaymentStatus, 'Pending') = 'Paid'
+                    OR ea.EventStatus IN ('Confirmed', 'Ready', 'In Execution', 'Preparation', 'Preparing', 'Dispatch', 'Ongoing', 'On Going', 'Event Done', 'Post Event', 'Payment Verification (Cash)', 'Pending Verification', 'Paid Cash Pending Verification', 'Complete', 'Completed', 'Shot', 'Delivered')
+                    OR (
+                        ea.EventAppointmentID NOT IN (
+                            SELECT EventAppointmentID 
+                            FROM dbo.BookingNegotiation 
+                            WHERE EventAppointmentID IS NOT NULL 
+                              AND NegotiationStatus IN ('Pending_Call', 'Rescheduled', 'Deal_Lost', 'Cancelled')
+                        )
+                        AND ea.EventAppointmentID NOT IN (
+                            SELECT 'EVT-' + RIGHT(NegotiationID, 4)
+                            FROM dbo.BookingNegotiation
+                            WHERE EventAppointmentID IS NULL
+                              AND NegotiationStatus IN ('Pending_Call', 'Rescheduled', 'Deal_Lost', 'Cancelled')
+                        )
+                    )
                 )
                 AND (@StartDate IS NULL OR CAST(ea.EventDate AS date) >= @StartDate)
                 AND (@EndDate IS NULL OR CAST(ea.EventDate AS date) <= @EndDate)
@@ -1254,14 +1260,43 @@ public class ScheduleService : IScheduleService
             using var conn = CreateConnection();
             conn.Open();
 
-            const string sql = @"
+            bool hasGranularCols = false;
+            bool hasLocationCol = false;
+            try
+            {
+                using var chkCmd = new SqlCommand(@"
+                    SELECT
+                        CASE WHEN COL_LENGTH(N'dbo.EventAppointment', N'EventEndTime') IS NOT NULL AND COL_LENGTH(N'dbo.EventAppointment', N'DurationMinutes') IS NOT NULL THEN 1 ELSE 0 END,
+                        CASE WHEN COL_LENGTH(N'dbo.EventAppointment', N'EventLocation') IS NOT NULL THEN 1 ELSE 0 END;", conn);
+                using var chkReader = chkCmd.ExecuteReader();
+                if (chkReader.Read())
+                {
+                    hasGranularCols = chkReader.GetInt32(0) == 1;
+                    hasLocationCol = chkReader.GetInt32(1) == 1;
+                }
+            }
+            catch { }
+
+            var endTimeSelect = hasGranularCols
+                ? "ea.EventEndTime, ISNULL(ea.DurationMinutes, 120) AS DurationMinutes,"
+                : "CAST(NULL AS time) AS EventEndTime, CAST(120 AS int) AS DurationMinutes,";
+
+            var locationSelect = hasLocationCol
+                ? "COALESCE(NULLIF(ea.EventLocation, ''), N'Studio A (Main Hall)') AS EventLocation,"
+                : "N'Studio A (Main Hall)' AS EventLocation,";
+
+            string sql = $@"
                 SELECT ee.EventAppointmentID,
                        emp.EmployeeID,
                        COALESCE(NULLIF(LTRIM(RTRIM(emp.EmployeeFirstName + ' ' + ISNULL(emp.EmployeeLastName, ''))), ''), emp.EmployeeID) AS FullName,
                        ea.EventDate,
                        ea.EventTime,
                        ea.EventName,
-                       COALESCE(spec.SpecializationName, 'Photographer') AS Role
+                       COALESCE(spec.SpecializationName, 'Photographer') AS Role,
+                       {endTimeSelect}
+                       {locationSelect}
+                       ISNULL(ea.EventStatus, 'Confirmed') AS EventStatus,
+                       ISNULL(ee.IsTeamLeader, 0) AS IsTeamLeader
                 FROM dbo.EventEmployee ee
                 INNER JOIN dbo.EventAppointment ea ON ea.EventAppointmentID = ee.EventAppointmentID
                 INNER JOIN dbo.Employees emp ON emp.EmployeeID = ee.EmployeeID
@@ -1273,11 +1308,17 @@ public class ScheduleService : IScheduleService
                     ORDER BY es.SpecializationID
                 ) spec
                 WHERE ISNULL(ea.EventStatus, '') NOT IN ('Cancelled', 'Expired')
-                  AND ea.EventAppointmentID NOT IN (
-                      SELECT EventAppointmentID
-                      FROM dbo.BookingNegotiation
-                      WHERE EventAppointmentID IS NOT NULL
-                        AND NegotiationStatus IN ('Pending_Call', 'Rescheduled', 'Deal_Lost', 'Cancelled')
+                  AND (ISNULL(ea.EventStatus, '') NOT IN ('Pending Payment', 'Awaiting_Downpayment')
+                       OR ISNULL(ea.DownpaymentStatus, 'Pending') = 'Paid')
+                  AND (
+                      ISNULL(ea.DownpaymentStatus, 'Pending') = 'Paid'
+                      OR ea.EventStatus IN ('Confirmed', 'Ready', 'In Execution', 'Preparation', 'Preparing', 'Dispatch', 'Ongoing', 'On Going', 'Event Done', 'Post Event', 'Payment Verification (Cash)', 'Pending Verification', 'Paid Cash Pending Verification', 'Complete', 'Completed', 'Shot', 'Delivered')
+                      OR ea.EventAppointmentID NOT IN (
+                          SELECT EventAppointmentID
+                          FROM dbo.BookingNegotiation
+                          WHERE EventAppointmentID IS NOT NULL
+                            AND NegotiationStatus IN ('Pending_Call', 'Rescheduled', 'Deal_Lost', 'Cancelled')
+                      )
                   )
                 ORDER BY ea.EventDate DESC, ea.EventTime DESC;";
 
@@ -1293,8 +1334,15 @@ public class ScheduleService : IScheduleService
                 var startTime = reader.GetFieldValue<TimeSpan>(4);
                 var eventName = reader.GetString(5);
                 var role = reader.IsDBNull(6) ? "Photographer" : reader.GetString(6);
+                var dbEndTime = reader.FieldCount > 7 && !reader.IsDBNull(7) ? reader.GetFieldValue<TimeSpan>(7) : (TimeSpan?)null;
+                var durationMins = reader.FieldCount > 8 && !reader.IsDBNull(8) ? Math.Max(15, reader.GetInt32(8)) : 120;
+                var location = reader.FieldCount > 9 && !reader.IsDBNull(9) ? reader.GetString(9) : "Studio A";
+                var evtStatus = reader.FieldCount > 10 && !reader.IsDBNull(10) ? reader.GetString(10) : "Confirmed";
+                var isTeamLeader = reader.FieldCount > 11 && !reader.IsDBNull(11) && reader.GetBoolean(11);
 
-                var endTime = startTime.Add(TimeSpan.FromHours(2));
+                var endTime = dbEndTime.HasValue && dbEndTime.Value > startTime
+                    ? dbEndTime.Value
+                    : startTime.Add(TimeSpan.FromMinutes(durationMins));
                 if (endTime > new TimeSpan(23, 59, 0))
                     endTime = new TimeSpan(23, 59, 0);
 
@@ -1307,9 +1355,9 @@ public class ScheduleService : IScheduleService
                     Date = eventDate,
                     StartTime = startTime,
                     EndTime = endTime,
-                    Location = "Studio A",
-                    ShiftType = "Production Shoot",
-                    Notes = $"Assigned to event: {eventName}"
+                    Location = location,
+                    ShiftType = isTeamLeader ? "Team Leader" : "Production Shoot",
+                    Notes = $"{(isTeamLeader ? "[Team Lead] " : "")}{evtStatus} • {eventName}"
                 });
             }
         }
@@ -1569,11 +1617,15 @@ public class ScheduleService : IScheduleService
                     ORDER BY ISNULL(ee.IsTeamLeader, 0) DESC, ee.EmployeeID
                 ) leadEmp
                 WHERE ISNULL(ea.EventStatus, '') NOT IN ('Cancelled', 'Expired')
-                  AND ea.EventAppointmentID NOT IN (
-                      SELECT EventAppointmentID
-                      FROM dbo.BookingNegotiation
-                      WHERE EventAppointmentID IS NOT NULL
-                        AND NegotiationStatus IN ('Pending_Call', 'Rescheduled', 'Deal_Lost', 'Cancelled')
+                  AND (
+                      ISNULL(ea.DownpaymentStatus, 'Pending') = 'Paid'
+                      OR ea.EventStatus IN ('Confirmed', 'Ready', 'In Execution', 'Preparation', 'Preparing', 'Dispatch', 'Ongoing', 'On Going', 'Event Done', 'Post Event', 'Payment Verification (Cash)', 'Pending Verification', 'Paid Cash Pending Verification', 'Complete', 'Completed', 'Shot', 'Delivered')
+                      OR ea.EventAppointmentID NOT IN (
+                          SELECT EventAppointmentID
+                          FROM dbo.BookingNegotiation
+                          WHERE EventAppointmentID IS NOT NULL
+                            AND NegotiationStatus IN ('Pending_Call', 'Rescheduled', 'Deal_Lost', 'Cancelled')
+                      )
                   )
                 ORDER BY ea.EventDate DESC, ea.EventTime DESC;";
 

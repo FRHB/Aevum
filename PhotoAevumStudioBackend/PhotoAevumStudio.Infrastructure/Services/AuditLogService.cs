@@ -50,9 +50,16 @@ public class AuditLogService : IAuditLogService
 
         var query = _dbContext.AuditLogs.AsNoTracking().AsQueryable();
 
-        // 1. System Admin: full unrestricted access
+        // 1. System Admin: full unrestricted access (except SADM-001 hidden from other users)
         if (isSadm)
         {
+            bool callerIsRootSadm = string.Equals(requestingUserId?.Trim(), "SADM-001", StringComparison.OrdinalIgnoreCase);
+            if (!callerIsRootSadm)
+            {
+                query = query.Where(a =>
+                    !string.Equals(a.UserId, "SADM-001", StringComparison.OrdinalIgnoreCase) &&
+                    !string.Equals(a.ResourceId, "SADM-001", StringComparison.OrdinalIgnoreCase));
+            }
             return await query
                 .OrderByDescending(a => a.Timestamp)
                 .Take(top)

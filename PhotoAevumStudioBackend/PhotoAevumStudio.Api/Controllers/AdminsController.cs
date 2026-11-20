@@ -71,8 +71,10 @@ public class AdminsController : ControllerBase
             });
         }
 
-        // Enforce visibility restriction for regular admins
-        if (!isSystemAdmin && admin.IsSuperAdmin)
+        // Enforce visibility restriction for regular admins and SADM-001 lock/hiding
+        if ((!isSystemAdmin && admin.IsSuperAdmin) ||
+            (admin.Id.Equals("SADM-001", StringComparison.OrdinalIgnoreCase) &&
+             !string.Equals(requesterId, "SADM-001", StringComparison.OrdinalIgnoreCase)))
         {
             return NotFound(new ProblemDetails
             {
@@ -274,6 +276,15 @@ public class AdminsController : ControllerBase
         {
             var sent = await _adminService.ResendAdminCredentialsAsync(id, requesterId, isSystemAdmin, ct);
             return Ok(new { success = sent, message = $"Credentials successfully resent to administrator '{id}'." });
+        }
+        catch (UnauthorizedAccessException ex)
+        {
+            return StatusCode(StatusCodes.Status403Forbidden, new ProblemDetails
+            {
+                Title = "Forbidden",
+                Detail = ex.Message,
+                Status = StatusCodes.Status403Forbidden
+            });
         }
         catch (KeyNotFoundException ex)
         {

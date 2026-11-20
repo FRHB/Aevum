@@ -189,23 +189,41 @@ public static class EmployeeRoleHelper
     {
         if (booking == null) return false;
 
-        if (!string.IsNullOrWhiteSpace(employeeName))
+        if (!string.IsNullOrWhiteSpace(employeeId))
         {
-            if (string.Equals(booking.AssignedPhotographer, employeeName, StringComparison.OrdinalIgnoreCase))
+            if (booking.AssignedCrewIds.Any(id => string.Equals(id?.Trim(), employeeId.Trim(), StringComparison.OrdinalIgnoreCase)))
                 return true;
 
-            if (booking.AssignedPhotographer.Contains(employeeName, StringComparison.OrdinalIgnoreCase) ||
-                employeeName.Contains(booking.AssignedPhotographer, StringComparison.OrdinalIgnoreCase))
+            if (booking.AssignedCrew.Any(c => string.Equals(c.EmployeeId?.Trim(), employeeId.Trim(), StringComparison.OrdinalIgnoreCase)))
+                return true;
+
+            if (!string.IsNullOrWhiteSpace(booking.AssignedPhotographer) &&
+                booking.AssignedPhotographer.Contains(employeeId, StringComparison.OrdinalIgnoreCase))
+                return true;
+
+            if (!string.IsNullOrWhiteSpace(booking.Notes) &&
+                booking.Notes.Contains(employeeId, StringComparison.OrdinalIgnoreCase))
                 return true;
         }
 
-        if (!string.IsNullOrWhiteSpace(employeeId))
+        if (!string.IsNullOrWhiteSpace(employeeName))
         {
-            if (booking.AssignedPhotographer.Contains(employeeId, StringComparison.OrdinalIgnoreCase))
+            var trimmedName = employeeName.Trim();
+            if (booking.AssignedCrew.Any(c => !string.IsNullOrWhiteSpace(c.FullName) &&
+                (string.Equals(c.FullName.Trim(), trimmedName, StringComparison.OrdinalIgnoreCase) ||
+                 c.FullName.Contains(trimmedName, StringComparison.OrdinalIgnoreCase) ||
+                 trimmedName.Contains(c.FullName, StringComparison.OrdinalIgnoreCase))))
                 return true;
 
-            if (booking.Notes.Contains(employeeId, StringComparison.OrdinalIgnoreCase))
-                return true;
+            if (!string.IsNullOrWhiteSpace(booking.AssignedPhotographer))
+            {
+                if (string.Equals(booking.AssignedPhotographer.Trim(), trimmedName, StringComparison.OrdinalIgnoreCase))
+                    return true;
+
+                if (booking.AssignedPhotographer.Contains(trimmedName, StringComparison.OrdinalIgnoreCase) ||
+                    trimmedName.Contains(booking.AssignedPhotographer, StringComparison.OrdinalIgnoreCase))
+                    return true;
+            }
         }
 
         return false;

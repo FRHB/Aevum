@@ -107,6 +107,14 @@
             {
                 <button type="button" @onclick="ClearFilters" class="clear-filters-link">Reset</button>
             }
+
+            <button type="button"
+                    @onclick="RefreshCalendarAsync"
+                    disabled="@_isLoadingBookings"
+                    title="Refresh live calendar events"
+                    class="nav-today-btn">
+                @(_isLoadingBookings ? "Refreshing..." : "🔄 Refresh")
+            </button>
         </div>
     </div>
 
@@ -785,7 +793,8 @@
                 }
             });
 
-            await LoadBookingsForCurrentViewAsync();
+            ScheduleService.InvalidateCache();
+            await LoadBookingsForCurrentViewAsync(forceReload: true);
             if (!_isPhotographerOrCreative)
             {
                 await LoadStaffScheduleDataAsync();
@@ -1113,6 +1122,12 @@
         {
             await LoadStaffScheduleDataAsync();
         }
+    }
+
+    private async Task RefreshCalendarAsync()
+    {
+        ScheduleService.InvalidateCache();
+        await LoadBookingsForCurrentViewAsync(forceReload: true);
     }
 
     private async Task LoadStaffScheduleDataAsync()

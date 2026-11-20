@@ -21,6 +21,7 @@ public class EquipmentItemModel
     public bool IsAvailable => EquipmentStatus.Equals("Available", StringComparison.OrdinalIgnoreCase);
     public bool IsMaintenance => EquipmentStatus.Equals("Maintenance", StringComparison.OrdinalIgnoreCase);
     public bool IsRetired => EquipmentStatus.Equals("Retired", StringComparison.OrdinalIgnoreCase);
+    public bool IsNeedsReplacement => EquipmentStatus.Equals("Needs Replacement", StringComparison.OrdinalIgnoreCase);
 
     /// <summary>
     /// If currently checked out or dispatched, holds active event appointment information.
@@ -177,6 +178,51 @@ public class NewDispatchFormModel
     public string ActorID { get; set; } = "ADM-001";
 }
 
+public static class MaintenanceScheduleStatuses
+{
+    public const string InMaintenance = "In Maintenance";
+    public const string Available = "Available";
+    public const string NeedsReplacement = "Needs Replacement";
+
+    public const string SubCleaning = "Cleaning";
+    public const string SubUnderRepair = "Under Repair";
+    public const string SubChecking = "Checking";
+
+    public static readonly IReadOnlyList<string> DefaultSubStatuses = new[]
+    {
+        SubCleaning,
+        SubUnderRepair,
+        SubChecking
+    };
+}
+
+/// <summary>
+/// Data model representing dbo.MaintenanceSchedule entries joined with dbo.Equipment and dbo.EquipmentType.
+/// </summary>
+public class MaintenanceScheduleModel
+{
+    public int MaintenanceScheduleID { get; set; }
+    public string EquipmentID { get; set; } = string.Empty;
+    public string EquipmentName { get; set; } = string.Empty;
+    public string? SerialNo { get; set; }
+    public string EquipmentTypeName { get; set; } = string.Empty;
+    public string EquipmentStatus { get; set; } = "Maintenance";
+    public string ServiceType { get; set; } = "Repair";
+    public string IssueDetails { get; set; } = string.Empty;
+    public string Status { get; set; } = MaintenanceScheduleStatuses.InMaintenance;
+    public string? SubStatus { get; set; } = MaintenanceScheduleStatuses.SubChecking;
+    public string? ResolutionNotes { get; set; }
+    public DateTime ScheduledDate { get; set; } = DateTime.UtcNow;
+    public DateTime UpdatedAt { get; set; } = DateTime.UtcNow;
+    public DateTime? ResolvedAt { get; set; }
+    public string? CreatedByAdminID { get; set; }
+    public string? UpdatedByAdminID { get; set; }
+
+    public bool IsInMaintenance => Status.Equals(MaintenanceScheduleStatuses.InMaintenance, StringComparison.OrdinalIgnoreCase);
+    public bool IsResolvedAvailable => Status.Equals(MaintenanceScheduleStatuses.Available, StringComparison.OrdinalIgnoreCase);
+    public bool IsNeedsReplacement => Status.Equals(MaintenanceScheduleStatuses.NeedsReplacement, StringComparison.OrdinalIgnoreCase);
+}
+
 public class NewMaintenanceFormModel
 {
     [Required(ErrorMessage = "Please select an equipment item.")]
@@ -184,6 +230,8 @@ public class NewMaintenanceFormModel
 
     [Required(ErrorMessage = "Service category/type is required.")]
     public string ServiceType { get; set; } = "Repair"; // 'Repair', 'Calibration', 'Routine Servicing'
+
+    public string SubStatus { get; set; } = MaintenanceScheduleStatuses.SubUnderRepair;
 
     [Required(ErrorMessage = "Maintenance details and diagnosis are required.")]
     [StringLength(1000, MinimumLength = 5, ErrorMessage = "Details must be at least 5 characters.")]

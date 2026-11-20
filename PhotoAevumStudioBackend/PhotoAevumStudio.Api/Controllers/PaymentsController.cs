@@ -870,7 +870,16 @@ public class PaymentsController : ControllerBase
                     return BadRequest(new { message = "Payment channel not supported. Reservation fee must be paid via QR Ph or supported E-Wallet." });
                 }
 
-                await _consultationService.VerifyDownpaymentAsync(payload.ExternalId, payload.Id, channel, cancellationToken);
+                var confirmed = await _pendingPayments.ConfirmByReferenceAsync(
+                    payload.ExternalId, payload.Id, payload.Amount > 0 ? payload.Amount : null, channel, cancellationToken);
+                if (confirmed != null)
+                {
+                    await HandlePostPaymentConfirmationAsync(confirmed, payload.ExternalId, channel, cancellationToken);
+                }
+                else
+                {
+                    await _consultationService.VerifyDownpaymentAsync(payload.ExternalId, payload.Id, channel, cancellationToken);
+                }
 
             }
 

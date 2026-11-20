@@ -375,9 +375,14 @@
 
                             var classes = GetPillClasses(type.ColorTag);
 
+                            var isSelected = string.Equals(selectedTypeId, type.EquipmentTypeID, StringComparison.OrdinalIgnoreCase);
+
+                            var connectedItems = GetEquipmentForType(type.EquipmentTypeID);
 
 
-                            <tr class="hover:bg-slate-50/70 transition-colors">
+
+                            <tr @onclick="() => ToggleSelectType(type)"
+                                class="@($"transition-colors cursor-pointer {(isSelected ? "bg-slate-100/90" : "hover:bg-slate-50/70")}")">
 
                                 <!-- EQUIPMENT TYPE ID -->
 
@@ -473,7 +478,7 @@
 
                                 <!-- STATUS / ACTIONS -->
 
-                                <td class="px-5 py-3.5 text-right whitespace-nowrap">
+                                <td class="px-5 py-3.5 text-right whitespace-nowrap" @onclick:stopPropagation="true">
 
                                     <div class="inline-flex items-center gap-2">
 
@@ -499,6 +504,72 @@
                                 </td>
 
                             </tr>
+
+                            @if (isSelected)
+                            {
+                                <tr class="bg-slate-50/80 border-b border-slate-200">
+                                    <td colspan="5" class="px-6 py-4">
+                                        <div class="space-y-4">
+                                            <div class="flex flex-wrap items-center justify-between gap-3 pb-3 border-b border-slate-200">
+                                                <div>
+                                                    <h3 class="text-sm font-bold text-slate-900">@type.EquipmentTypeName — Category Details</h3>
+                                                    <p class="text-[11px] text-slate-500">Type ID: <span class="font-mono font-semibold text-slate-700">@type.EquipmentTypeID</span> · Color Tag: <span class="font-semibold text-slate-700">@type.ColorTag</span> · Total Hardware: <span class="font-semibold text-slate-900">@connectedItems.Count</span></p>
+                                                </div>
+                                                <div class="flex items-center gap-2 text-[11px]">
+                                                    <span class="px-2.5 py-1 rounded-full bg-emerald-50 text-emerald-800 border border-emerald-200 font-semibold">
+                                                        @type.AvailableCount Available
+                                                    </span>
+                                                    <span class="px-2.5 py-1 rounded-full bg-amber-50 text-amber-800 border border-amber-200 font-semibold">
+                                                        @type.MaintenanceCount Maintenance
+                                                    </span>
+                                                </div>
+                                            </div>
+
+                                            <div>
+                                                <h4 class="text-[11px] font-bold text-slate-600 uppercase tracking-wider mb-2">
+                                                    Connected Equipment (@connectedItems.Count)
+                                                </h4>
+                                                @if (!connectedItems.Any())
+                                                {
+                                                    <p class="text-xs text-slate-500 bg-white border border-slate-200 rounded-lg p-3">
+                                                        No equipment items are currently assigned to this Equipment Type.
+                                                    </p>
+                                                }
+                                                else
+                                                {
+                                                    <div class="bg-white rounded-lg border border-slate-200 overflow-hidden">
+                                                        <table class="w-full text-left border-collapse text-xs">
+                                                            <thead>
+                                                                <tr class="bg-slate-50 border-b border-slate-200 text-slate-500 uppercase tracking-wider text-[10px] font-semibold">
+                                                                    <th class="px-4 py-2">Equipment ID</th>
+                                                                    <th class="px-4 py-2">Name</th>
+                                                                    <th class="px-4 py-2">Serial No</th>
+                                                                    <th class="px-4 py-2">Status</th>
+                                                                </tr>
+                                                            </thead>
+                                                            <tbody class="divide-y divide-slate-100">
+                                                                @foreach (var eq in connectedItems)
+                                                                {
+                                                                    <tr class="hover:bg-slate-50/70">
+                                                                        <td class="px-4 py-2 font-mono text-slate-700">@eq.EquipmentID</td>
+                                                                        <td class="px-4 py-2 font-semibold text-slate-900">@eq.EquipmentName</td>
+                                                                        <td class="px-4 py-2 font-mono text-slate-500">@(string.IsNullOrWhiteSpace(eq.SerialNo) ? "N/A" : eq.SerialNo)</td>
+                                                                        <td class="px-4 py-2">
+                                                                            <span class="inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-semibold bg-slate-100 text-slate-700 border border-slate-200">
+                                                                                @eq.EquipmentStatus
+                                                                            </span>
+                                                                        </td>
+                                                                    </tr>
+                                                                }
+                                                            </tbody>
+                                                        </table>
+                                                    </div>
+                                                }
+                                            </div>
+                                        </div>
+                                    </td>
+                                </tr>
+                            }
 
                         }
 
@@ -546,6 +617,20 @@
     private bool isAddModalOpen = false;
     private bool isEditWizardOpen = false;
     private EquipmentTypeModel? selectedTypeForEdit;
+    private string? selectedTypeId;
+
+    private void ToggleSelectType(EquipmentTypeModel type)
+    {
+        selectedTypeId = string.Equals(selectedTypeId, type.EquipmentTypeID, StringComparison.OrdinalIgnoreCase)
+            ? null
+            : type.EquipmentTypeID;
+    }
+
+    private List<EquipmentItemModel> GetEquipmentForType(string typeId) =>
+        equipmentList
+            .Where(e => string.Equals(e.EquipmentTypeID, typeId, StringComparison.OrdinalIgnoreCase))
+            .OrderBy(e => e.EquipmentName)
+            .ToList();
 
 
 

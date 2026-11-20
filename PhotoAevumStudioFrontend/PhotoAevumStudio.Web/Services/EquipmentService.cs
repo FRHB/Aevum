@@ -24,8 +24,10 @@ public sealed class EquipmentService : IEquipmentService
     private readonly List<EventAppointmentModel> _events = new();
     private readonly List<DispatchItemModel> _dispatches = new();
     private readonly List<MaintenanceLogModel> _maintenanceLogs = new();
+    private readonly List<MaintenanceScheduleModel> _maintenanceSchedules = new();
 
     private int _nextEventEquipmentId = 1;
+    private int _nextMaintenanceScheduleId = 1;
     private long _nextHistoryLogId = 1;
 
     public event Action? OnChange;
@@ -902,19 +904,50 @@ public sealed class EquipmentService : IEquipmentService
                     SET EquipmentStatus = @NewStatus
                     WHERE EquipmentID = @Id;
 
+                    IF @NewStatus = 'Maintenance' AND OBJECT_ID(N'dbo.MaintenanceSchedule', N'U') IS NOT NULL
+                    BEGIN
+                        IF EXISTS (SELECT 1 FROM dbo.MaintenanceSchedule WHERE EquipmentID = @Id AND Status = 'In Maintenance')
+                        BEGIN
+                            UPDATE dbo.MaintenanceSchedule
+                            SET IssueDetails = COALESCE(NULLIF(@RawDetails, ''), IssueDetails),
+                                UpdatedAt = SYSUTCDATETIME(),
+                                UpdatedByAdminID = @ActorId
+                            WHERE EquipmentID = @Id AND Status = 'In Maintenance';
+                        END
+                        ELSE
+                        BEGIN
+                            INSERT INTO dbo.MaintenanceSchedule (EquipmentID, ServiceType, IssueDetails, Status, SubStatus, ScheduledDate, UpdatedAt, CreatedByAdminID, UpdatedByAdminID)
+                            VALUES (@Id, 'Repair', @RawDetails, 'In Maintenance', 'Checking', SYSUTCDATETIME(), SYSUTCDATETIME(), @ActorId, @ActorId);
+                        END
+                    END
+                    ELSE IF @NewStatus IN ('Available', 'Needs Replacement') AND OBJECT_ID(N'dbo.MaintenanceSchedule', N'U') IS NOT NULL
+                    BEGIN
+                        UPDATE dbo.MaintenanceSchedule
+                        SET Status = @NewStatus,
+                            SubStatus = NULL,
+                            ResolutionNotes = COALESCE(NULLIF(@RawDetails, ''), ResolutionNotes),
+                            UpdatedAt = SYSUTCDATETIME(),
+                            ResolvedAt = SYSUTCDATETIME(),
+                            UpdatedByAdminID = @ActorId
+                        WHERE EquipmentID = @Id AND Status = 'In Maintenance';
+                    END
+
                     INSERT INTO dbo.HistoryLog (ActionType, EntityName, EntityID, ActionDetails, ChangedByType, ChangedByAdminID, ChangedByEmployeeID)
                     VALUES ('STATUS_CHANGE', 'Equipment', @Id, @Details, @ActorType, @AdminId, @EmpId);";
 
                 await using var cmd = new SqlCommand(sql, conn);
                 cmd.Parameters.AddWithValue("@Id", equipmentId.Trim());
                 cmd.Parameters.AddWithValue("@NewStatus", newStatus.Trim());
+                cmd.Parameters.AddWithValue("@RawDetails", details ?? string.Empty);
                 cmd.Parameters.AddWithValue("@Details", $"Status changed to {newStatus}. Details: {details}");
                 cmd.Parameters.AddWithValue("@ActorType", actorType);
+                cmd.Parameters.AddWithValue("@ActorId", string.IsNullOrWhiteSpace(actorId) ? "ADM-001" : actorId.Trim());
                 cmd.Parameters.AddWithValue("@AdminId", actorType == "Admin" ? (object)actorId : DBNull.Value);
                 cmd.Parameters.AddWithValue("@EmpId", actorType == "Employee" ? (object)actorId : DBNull.Value);
 
                 await cmd.ExecuteNonQueryAsync(ct);
                 await GetEquipmentsAsync(ct);
+                await GetMaintenanceSchedulesAsync(ct);
                 NotifyStateChanged();
                 return (true, null);
             }
@@ -931,6 +964,15 @@ public sealed class EquipmentService : IEquipmentService
                 return (false, $"Equipment '{equipmentId}' was not found.");
 
             eq.EquipmentStatus = newStatus;
+            if (newStatus.Equals("Maintenance", StringComparison.OrdinalIgnoreCase))
+            {
+                UpsertInMemorySchedule(eq, "Repair", details, MaintenanceScheduleStatuses.SubChecking, actorId);
+            }
+            else if (newStatus.Equals("Available", StringComparison.OrdinalIgnoreCase) ||
+                     newStatus.Equals("Needs Replacement", StringComparison.OrdinalIgnoreCase))
+            {
+                ResolveInMemorySchedule(eq.EquipmentID, newStatus, details, actorId);
+            }
             NotifyStateChanged();
             return (true, null);
         }
@@ -1113,6 +1155,8 @@ public sealed class EquipmentService : IEquipmentService
                     var eqStatus = r.GetString(1);
                     if (eqStatus.Equals("Maintenance", StringComparison.OrdinalIgnoreCase))
                         return (false, $"Cannot dispatch '{eqName}' ({equipmentId}). It is currently flagged in MAINTENANCE.");
+                    if (eqStatus.Equals("Needs Replacement", StringComparison.OrdinalIgnoreCase))
+                        return (false, $"Cannot dispatch '{eqName}' ({equipmentId}). It is marked as Needs Replacement.");
                     if (eqStatus.Equals("Retired", StringComparison.OrdinalIgnoreCase))
                         return (false, $"Cannot dispatch '{eqName}'. It has been retired from active studio inventory.");
                 }
@@ -1192,6 +1236,9 @@ public sealed class EquipmentService : IEquipmentService
             if (eq.IsMaintenance)
                 return (false, $"Cannot dispatch '{eq.EquipmentName}' ({eq.EquipmentID}). It is currently flagged in MAINTENANCE.");
 
+            if (eq.IsNeedsReplacement)
+                return (false, $"Cannot dispatch '{eq.EquipmentName}' ({eq.EquipmentID}). It is marked as Needs Replacement.");
+
             if (eq.IsRetired)
                 return (false, $"Cannot dispatch '{eq.EquipmentName}'. It has been retired from the active studio inventory.");
 
@@ -1270,13 +1317,34 @@ public sealed class EquipmentService : IEquipmentService
                     SET EquipmentStatus = @NewStatus
                     WHERE EquipmentID = @EqId;
 
+                    IF @FlagMaintenance = 1 AND OBJECT_ID(N'dbo.MaintenanceSchedule', N'U') IS NOT NULL
+                    BEGIN
+                        IF EXISTS (SELECT 1 FROM dbo.MaintenanceSchedule WHERE EquipmentID = @EqId AND Status = 'In Maintenance')
+                        BEGIN
+                            UPDATE dbo.MaintenanceSchedule
+                            SET ServiceType = 'Return Inspection',
+                                IssueDetails = COALESCE(NULLIF(@Notes, ''), IssueDetails),
+                                SubStatus = 'Checking',
+                                UpdatedAt = SYSUTCDATETIME(),
+                                UpdatedByAdminID = @ActorId
+                            WHERE EquipmentID = @EqId AND Status = 'In Maintenance';
+                        END
+                        ELSE
+                        BEGIN
+                            INSERT INTO dbo.MaintenanceSchedule (EquipmentID, ServiceType, IssueDetails, Status, SubStatus, ScheduledDate, UpdatedAt, CreatedByAdminID, UpdatedByAdminID)
+                            VALUES (@EqId, 'Return Inspection', @Notes, 'In Maintenance', 'Checking', SYSUTCDATETIME(), SYSUTCDATETIME(), @ActorId, @ActorId);
+                        END
+                    END
+
                     INSERT INTO dbo.HistoryLog (ActionType, EntityName, EntityID, ActionDetails, ChangedByType, ChangedByAdminID)
                     VALUES (@ActionType, 'Equipment', @EqId, @Details, 'Admin', @ActorId);";
 
                 await using var cmd = new SqlCommand(sql, conn);
                 cmd.Parameters.AddWithValue("@EeId", eventEquipmentId);
+                cmd.Parameters.AddWithValue("@FlagMaintenance", flagMaintenance ? 1 : 0);
                 cmd.Parameters.AddWithValue("@NewStatus", flagMaintenance ? "Maintenance" : "Available");
                 cmd.Parameters.AddWithValue("@ActionType", flagMaintenance ? "STATUS_CHANGE" : "UPDATE");
+                cmd.Parameters.AddWithValue("@Notes", string.IsNullOrWhiteSpace(notes) ? "Flagged for maintenance upon return." : notes.Trim());
                 cmd.Parameters.AddWithValue("@Details", flagMaintenance
                     ? $"FLAGGED FOR MAINTENANCE upon return. Notes: {notes}"
                     : $"Gear return verified by {actorId}. Notes: {notes}");
@@ -1285,6 +1353,7 @@ public sealed class EquipmentService : IEquipmentService
                 await cmd.ExecuteNonQueryAsync(ct);
                 await GetDispatchesAsync(ct);
                 await GetEquipmentsAsync(ct);
+                await GetMaintenanceSchedulesAsync(ct);
                 NotifyStateChanged();
                 return (true, null);
             }
@@ -1312,6 +1381,15 @@ public sealed class EquipmentService : IEquipmentService
                 eq.CurrentEventId = null;
                 eq.CurrentEventName = null;
                 eq.EquipmentStatus = flagMaintenance ? "Maintenance" : "Available";
+                if (flagMaintenance)
+                {
+                    UpsertInMemorySchedule(
+                        eq,
+                        "Return Inspection",
+                        string.IsNullOrWhiteSpace(notes) ? "Flagged for maintenance upon return." : notes.Trim(),
+                        MaintenanceScheduleStatuses.SubChecking,
+                        actorId);
+                }
             }
 
             NotifyStateChanged();
@@ -1394,16 +1472,192 @@ public sealed class EquipmentService : IEquipmentService
         }
     }
 
-    public async Task<(bool Success, string? Error)> LogMaintenanceAsync(
+    private static string ResolveDefaultSubStatus(string? serviceType, string? explicitSubStatus)
+    {
+        if (!string.IsNullOrWhiteSpace(explicitSubStatus))
+            return explicitSubStatus.Trim();
+
+        if (!string.IsNullOrWhiteSpace(serviceType))
+        {
+            if (serviceType.Contains("Clean", StringComparison.OrdinalIgnoreCase) ||
+                serviceType.Contains("Routine", StringComparison.OrdinalIgnoreCase))
+                return MaintenanceScheduleStatuses.SubCleaning;
+            if (serviceType.Contains("Calibration", StringComparison.OrdinalIgnoreCase) ||
+                serviceType.Contains("Check", StringComparison.OrdinalIgnoreCase))
+                return MaintenanceScheduleStatuses.SubChecking;
+        }
+
+        return MaintenanceScheduleStatuses.SubUnderRepair;
+    }
+
+    private void UpsertInMemorySchedule(
+        EquipmentItemModel eq,
+        string serviceType,
+        string issueDetails,
+        string? subStatus,
+        string actorId)
+    {
+        var effectiveSub = ResolveDefaultSubStatus(serviceType, subStatus);
+        var existing = _maintenanceSchedules.FirstOrDefault(s =>
+            s.EquipmentID.Equals(eq.EquipmentID, StringComparison.OrdinalIgnoreCase) &&
+            s.IsInMaintenance);
+
+        if (existing != null)
+        {
+            existing.ServiceType = string.IsNullOrWhiteSpace(serviceType) ? existing.ServiceType : serviceType.Trim();
+            existing.IssueDetails = string.IsNullOrWhiteSpace(issueDetails) ? existing.IssueDetails : issueDetails.Trim();
+            existing.SubStatus = effectiveSub;
+            existing.EquipmentStatus = "Maintenance";
+            existing.UpdatedAt = DateTime.UtcNow;
+            existing.UpdatedByAdminID = actorId;
+        }
+        else
+        {
+            _maintenanceSchedules.Insert(0, new MaintenanceScheduleModel
+            {
+                MaintenanceScheduleID = _nextMaintenanceScheduleId++,
+                EquipmentID = eq.EquipmentID,
+                EquipmentName = eq.EquipmentName,
+                SerialNo = eq.SerialNo,
+                EquipmentTypeName = eq.EquipmentTypeName,
+                EquipmentStatus = "Maintenance",
+                ServiceType = string.IsNullOrWhiteSpace(serviceType) ? "Repair" : serviceType.Trim(),
+                IssueDetails = issueDetails.Trim(),
+                Status = MaintenanceScheduleStatuses.InMaintenance,
+                SubStatus = effectiveSub,
+                ScheduledDate = DateTime.UtcNow,
+                UpdatedAt = DateTime.UtcNow,
+                CreatedByAdminID = actorId,
+                UpdatedByAdminID = actorId
+            });
+        }
+    }
+
+    private void ResolveInMemorySchedule(string equipmentId, string status, string? notes, string actorId)
+    {
+        var existing = _maintenanceSchedules.FirstOrDefault(s =>
+            s.EquipmentID.Equals(equipmentId, StringComparison.OrdinalIgnoreCase) &&
+            s.IsInMaintenance);
+
+        if (existing != null)
+        {
+            existing.Status = status;
+            existing.SubStatus = null;
+            existing.EquipmentStatus = status.Equals(MaintenanceScheduleStatuses.Available, StringComparison.OrdinalIgnoreCase)
+                ? "Available"
+                : "Needs Replacement";
+            existing.ResolutionNotes = string.IsNullOrWhiteSpace(notes) ? existing.ResolutionNotes : notes.Trim();
+            existing.UpdatedAt = DateTime.UtcNow;
+            existing.ResolvedAt = DateTime.UtcNow;
+            existing.UpdatedByAdminID = actorId;
+        }
+    }
+
+    public async Task<IReadOnlyList<MaintenanceScheduleModel>> GetMaintenanceSchedulesAsync(CancellationToken ct = default)
+    {
+        if (HasDatabase)
+        {
+            try
+            {
+                var dbSchedules = new List<MaintenanceScheduleModel>();
+                await using var conn = new SqlConnection(_connectionString);
+                await conn.OpenAsync(ct);
+
+                const string sql = @"
+                    IF OBJECT_ID(N'dbo.MaintenanceSchedule', N'U') IS NOT NULL
+                    BEGIN
+                        SELECT 
+                            ms.MaintenanceScheduleID,
+                            ms.EquipmentID,
+                            ISNULL(e.EquipmentName, ms.EquipmentID) AS EquipmentName,
+                            e.SerialNo,
+                            ISNULL(et.EquipmentTypeName, ISNULL(e.EquipmentTypeID, '')) AS EquipmentTypeName,
+                            ISNULL(e.EquipmentStatus, 'Maintenance') AS EquipmentStatus,
+                            ms.ServiceType,
+                            ISNULL(ms.IssueDetails, '') AS IssueDetails,
+                            ms.Status,
+                            ms.SubStatus,
+                            ms.ResolutionNotes,
+                            ms.ScheduledDate,
+                            ms.UpdatedAt,
+                            ms.ResolvedAt,
+                            ms.CreatedByAdminID,
+                            ms.UpdatedByAdminID
+                        FROM dbo.MaintenanceSchedule ms
+                        LEFT JOIN dbo.Equipment e ON e.EquipmentID = ms.EquipmentID
+                        LEFT JOIN dbo.EquipmentType et ON et.EquipmentTypeID = e.EquipmentTypeID
+                        ORDER BY CASE WHEN ms.Status = 'In Maintenance' THEN 0 ELSE 1 END, ms.UpdatedAt DESC, ms.MaintenanceScheduleID DESC;
+                    END;";
+
+                await using var cmd = new SqlCommand(sql, conn);
+                await using var reader = await cmd.ExecuteReaderAsync(ct);
+                while (await reader.ReadAsync(ct))
+                {
+                    dbSchedules.Add(new MaintenanceScheduleModel
+                    {
+                        MaintenanceScheduleID = reader.GetInt32(0),
+                        EquipmentID = reader.GetString(1),
+                        EquipmentName = reader.GetString(2),
+                        SerialNo = reader.IsDBNull(3) ? null : reader.GetString(3),
+                        EquipmentTypeName = reader.GetString(4),
+                        EquipmentStatus = reader.GetString(5),
+                        ServiceType = reader.GetString(6),
+                        IssueDetails = reader.GetString(7),
+                        Status = reader.GetString(8),
+                        SubStatus = reader.IsDBNull(9) ? null : reader.GetString(9),
+                        ResolutionNotes = reader.IsDBNull(10) ? null : reader.GetString(10),
+                        ScheduledDate = reader.GetDateTime(11),
+                        UpdatedAt = reader.GetDateTime(12),
+                        ResolvedAt = reader.IsDBNull(13) ? null : reader.GetDateTime(13),
+                        CreatedByAdminID = reader.IsDBNull(14) ? null : reader.GetString(14),
+                        UpdatedByAdminID = reader.IsDBNull(15) ? null : reader.GetString(15)
+                    });
+                }
+
+                lock (_lock)
+                {
+                    _maintenanceSchedules.Clear();
+                    _maintenanceSchedules.AddRange(dbSchedules);
+                    return _maintenanceSchedules.ToList();
+                }
+            }
+            catch
+            {
+            }
+        }
+
+        lock (_lock)
+        {
+            return _maintenanceSchedules
+                .OrderBy(s => s.IsInMaintenance ? 0 : 1)
+                .ThenByDescending(s => s.UpdatedAt)
+                .ToList();
+        }
+    }
+
+    public Task<(bool Success, string? Error)> LogMaintenanceAsync(
         string equipmentId,
         string serviceType,
         string issueDetails,
         string actorId,
         bool setUnderMaintenance = true,
         CancellationToken ct = default)
+        => LogMaintenanceAsync(equipmentId, serviceType, issueDetails, actorId, setUnderMaintenance, null, ct);
+
+    public async Task<(bool Success, string? Error)> LogMaintenanceAsync(
+        string equipmentId,
+        string serviceType,
+        string issueDetails,
+        string actorId,
+        bool setUnderMaintenance,
+        string? subStatus,
+        CancellationToken ct = default)
     {
         if (string.IsNullOrWhiteSpace(equipmentId))
             return (false, "Equipment ID is required.");
+
+        var effectiveSubStatus = ResolveDefaultSubStatus(serviceType, subStatus);
+        var cleanActorId = string.IsNullOrWhiteSpace(actorId) ? "ADM-001" : actorId.Trim();
 
         if (HasDatabase)
         {
@@ -1413,12 +1667,46 @@ public sealed class EquipmentService : IEquipmentService
                 await conn.OpenAsync(ct);
 
                 const string sql = @"
+                    IF OBJECT_ID(N'dbo.MaintenanceSchedule', N'U') IS NULL AND OBJECT_ID(N'dbo.Equipment', N'U') IS NOT NULL
+                    BEGIN
+                        CREATE TABLE dbo.MaintenanceSchedule (
+                            MaintenanceScheduleID int IDENTITY(1,1) NOT NULL PRIMARY KEY,
+                            EquipmentID nvarchar(30) NOT NULL,
+                            ServiceType nvarchar(100) NOT NULL CONSTRAINT DF_MaintenanceSchedule_ServiceType DEFAULT 'Repair',
+                            IssueDetails nvarchar(1000) NULL,
+                            Status nvarchar(50) NOT NULL CONSTRAINT DF_MaintenanceSchedule_Status DEFAULT 'In Maintenance',
+                            SubStatus nvarchar(50) NULL,
+                            ResolutionNotes nvarchar(1000) NULL,
+                            ScheduledDate datetime2 NOT NULL CONSTRAINT DF_MaintenanceSchedule_ScheduledDate DEFAULT SYSUTCDATETIME(),
+                            UpdatedAt datetime2 NOT NULL CONSTRAINT DF_MaintenanceSchedule_UpdatedAt DEFAULT SYSUTCDATETIME(),
+                            ResolvedAt datetime2 NULL,
+                            CreatedByAdminID nvarchar(30) NULL,
+                            UpdatedByAdminID nvarchar(30) NULL
+                        );
+                    END;
+
                     IF NOT EXISTS (SELECT 1 FROM dbo.Equipment WHERE EquipmentID = @Id)
                         THROW 50001, 'Equipment not found.', 1;
 
                     IF @SetMaint = 1
                     BEGIN
                         UPDATE dbo.Equipment SET EquipmentStatus = 'Maintenance' WHERE EquipmentID = @Id;
+
+                        IF EXISTS (SELECT 1 FROM dbo.MaintenanceSchedule WHERE EquipmentID = @Id AND Status = 'In Maintenance')
+                        BEGIN
+                            UPDATE dbo.MaintenanceSchedule
+                            SET ServiceType = @ServiceType,
+                                IssueDetails = @IssueDetails,
+                                SubStatus = @SubStatus,
+                                UpdatedAt = SYSUTCDATETIME(),
+                                UpdatedByAdminID = @ActorId
+                            WHERE EquipmentID = @Id AND Status = 'In Maintenance';
+                        END
+                        ELSE
+                        BEGIN
+                            INSERT INTO dbo.MaintenanceSchedule (EquipmentID, ServiceType, IssueDetails, Status, SubStatus, ScheduledDate, UpdatedAt, CreatedByAdminID, UpdatedByAdminID)
+                            VALUES (@Id, @ServiceType, @IssueDetails, 'In Maintenance', @SubStatus, SYSUTCDATETIME(), SYSUTCDATETIME(), @ActorId, @ActorId);
+                        END
                     END
 
                     INSERT INTO dbo.HistoryLog (ActionType, EntityName, EntityID, ActionDetails, ChangedByType, ChangedByAdminID)
@@ -1427,12 +1715,16 @@ public sealed class EquipmentService : IEquipmentService
                 await using var cmd = new SqlCommand(sql, conn);
                 cmd.Parameters.AddWithValue("@Id", equipmentId.Trim());
                 cmd.Parameters.AddWithValue("@SetMaint", setUnderMaintenance ? 1 : 0);
+                cmd.Parameters.AddWithValue("@ServiceType", string.IsNullOrWhiteSpace(serviceType) ? "Repair" : serviceType.Trim());
+                cmd.Parameters.AddWithValue("@IssueDetails", issueDetails.Trim());
+                cmd.Parameters.AddWithValue("@SubStatus", effectiveSubStatus);
                 cmd.Parameters.AddWithValue("@ActionType", setUnderMaintenance ? "STATUS_CHANGE" : "UPDATE");
-                cmd.Parameters.AddWithValue("@Details", $"[{serviceType}] {issueDetails.Trim()}");
-                cmd.Parameters.AddWithValue("@ActorId", string.IsNullOrWhiteSpace(actorId) ? "ADM-001" : actorId.Trim());
+                cmd.Parameters.AddWithValue("@Details", $"[{serviceType}] ({effectiveSubStatus}) {issueDetails.Trim()}");
+                cmd.Parameters.AddWithValue("@ActorId", cleanActorId);
 
                 await cmd.ExecuteNonQueryAsync(ct);
                 await GetEquipmentsAsync(ct);
+                await GetMaintenanceSchedulesAsync(ct);
                 await GetMaintenanceLogsAsync(ct);
                 NotifyStateChanged();
                 return (true, null);
@@ -1454,6 +1746,7 @@ public sealed class EquipmentService : IEquipmentService
                 eq.EquipmentStatus = "Maintenance";
                 eq.CurrentEventId = null;
                 eq.CurrentEventName = null;
+                UpsertInMemorySchedule(eq, serviceType, issueDetails, effectiveSubStatus, cleanActorId);
             }
 
             _maintenanceLogs.Insert(0, new MaintenanceLogModel
@@ -1465,9 +1758,9 @@ public sealed class EquipmentService : IEquipmentService
                 EquipmentName = eq.EquipmentName,
                 SerialNo = eq.SerialNo,
                 EquipmentStatus = eq.EquipmentStatus,
-                ActionDetails = $"[{serviceType}] {issueDetails.Trim()}",
+                ActionDetails = $"[{serviceType}] ({effectiveSubStatus}) {issueDetails.Trim()}",
                 ChangedByType = "Admin",
-                ChangedByAdminID = actorId,
+                ChangedByAdminID = cleanActorId,
                 LoggedAt = DateTime.UtcNow
             });
 
@@ -1476,14 +1769,54 @@ public sealed class EquipmentService : IEquipmentService
         }
     }
 
-    public async Task<(bool Success, string? Error)> ResolveMaintenanceAsync(
+    public async Task<(bool Success, string? Error)> UpdateMaintenanceScheduleAsync(
+        int scheduleId,
         string equipmentId,
-        string resolutionNotes,
+        string status,
+        string? subStatus,
+        string? notes,
         string actorId,
         CancellationToken ct = default)
     {
         if (string.IsNullOrWhiteSpace(equipmentId))
             return (false, "Equipment ID is required.");
+
+        if (string.IsNullOrWhiteSpace(status))
+            return (false, "Status is required.");
+
+        var cleanStatus = status.Trim();
+        var cleanSubStatus = cleanStatus.Equals(MaintenanceScheduleStatuses.InMaintenance, StringComparison.OrdinalIgnoreCase)
+            ? (string.IsNullOrWhiteSpace(subStatus) ? MaintenanceScheduleStatuses.SubChecking : subStatus.Trim())
+            : null;
+        var cleanNotes = notes?.Trim();
+        var cleanActorId = string.IsNullOrWhiteSpace(actorId) ? "ADM-001" : actorId.Trim();
+
+        string targetEquipmentStatus;
+        string logDetails;
+        if (cleanStatus.Equals(MaintenanceScheduleStatuses.Available, StringComparison.OrdinalIgnoreCase))
+        {
+            cleanStatus = MaintenanceScheduleStatuses.Available;
+            targetEquipmentStatus = "Available";
+            logDetails = string.IsNullOrWhiteSpace(cleanNotes)
+                ? "MAINTENANCE RESOLVED: Equipment restored to Available."
+                : $"MAINTENANCE RESOLVED: Equipment restored to Available. Notes: {cleanNotes}";
+        }
+        else if (cleanStatus.Equals(MaintenanceScheduleStatuses.NeedsReplacement, StringComparison.OrdinalIgnoreCase))
+        {
+            cleanStatus = MaintenanceScheduleStatuses.NeedsReplacement;
+            targetEquipmentStatus = "Needs Replacement";
+            logDetails = string.IsNullOrWhiteSpace(cleanNotes)
+                ? "MAINTENANCE CLOSED: Equipment marked as Needs Replacement (unfixable)."
+                : $"MAINTENANCE CLOSED: Equipment marked as Needs Replacement. Notes: {cleanNotes}";
+        }
+        else
+        {
+            cleanStatus = MaintenanceScheduleStatuses.InMaintenance;
+            targetEquipmentStatus = "Maintenance";
+            logDetails = string.IsNullOrWhiteSpace(cleanNotes)
+                ? $"MAINTENANCE WORK UPDATE: Status set to {cleanStatus} ({cleanSubStatus})."
+                : $"MAINTENANCE WORK UPDATE: Status set to {cleanStatus} ({cleanSubStatus}). Notes: {cleanNotes}";
+        }
 
         if (HasDatabase)
         {
@@ -1493,21 +1826,71 @@ public sealed class EquipmentService : IEquipmentService
                 await conn.OpenAsync(ct);
 
                 const string sql = @"
-                    IF NOT EXISTS (SELECT 1 FROM dbo.Equipment WHERE EquipmentID = @Id)
+                    IF NOT EXISTS (SELECT 1 FROM dbo.Equipment WHERE EquipmentID = @EqId)
                         THROW 50001, 'Equipment not found.', 1;
 
-                    UPDATE dbo.Equipment SET EquipmentStatus = 'Available' WHERE EquipmentID = @Id;
+                    IF OBJECT_ID(N'dbo.Equipment', N'U') IS NOT NULL
+                    BEGIN
+                        ALTER TABLE dbo.Equipment ALTER COLUMN EquipmentStatus nvarchar(30) NOT NULL;
+                        IF NOT EXISTS (SELECT 1 FROM sys.check_constraints WHERE name = N'CK_Equipment_Status' AND definition LIKE N'%Needs Replacement%')
+                        BEGIN
+                            IF EXISTS (SELECT 1 FROM sys.check_constraints WHERE name = N'CK_Equipment_Status')
+                                ALTER TABLE dbo.Equipment DROP CONSTRAINT CK_Equipment_Status;
+                            ALTER TABLE dbo.Equipment ADD CONSTRAINT CK_Equipment_Status
+                                CHECK (EquipmentStatus IN ('Available','Maintenance','Retired','Needs Replacement'));
+                        END
+                    END;
+
+                    UPDATE dbo.Equipment SET EquipmentStatus = @EquipStatus WHERE EquipmentID = @EqId;
+
+                    IF OBJECT_ID(N'dbo.MaintenanceSchedule', N'U') IS NOT NULL
+                    BEGIN
+                        IF @ScheduleId > 0 AND EXISTS (SELECT 1 FROM dbo.MaintenanceSchedule WHERE MaintenanceScheduleID = @ScheduleId)
+                        BEGIN
+                            UPDATE dbo.MaintenanceSchedule
+                            SET Status = @Status,
+                                SubStatus = @SubStatus,
+                                ResolutionNotes = COALESCE(NULLIF(@Notes, ''), ResolutionNotes),
+                                UpdatedAt = SYSUTCDATETIME(),
+                                ResolvedAt = CASE WHEN @Status IN ('Available', 'Needs Replacement') THEN SYSUTCDATETIME() ELSE NULL END,
+                                UpdatedByAdminID = @ActorId
+                            WHERE MaintenanceScheduleID = @ScheduleId;
+                        END
+                        ELSE IF EXISTS (SELECT 1 FROM dbo.MaintenanceSchedule WHERE EquipmentID = @EqId AND Status = 'In Maintenance')
+                        BEGIN
+                            UPDATE dbo.MaintenanceSchedule
+                            SET Status = @Status,
+                                SubStatus = @SubStatus,
+                                ResolutionNotes = COALESCE(NULLIF(@Notes, ''), ResolutionNotes),
+                                UpdatedAt = SYSUTCDATETIME(),
+                                ResolvedAt = CASE WHEN @Status IN ('Available', 'Needs Replacement') THEN SYSUTCDATETIME() ELSE NULL END,
+                                UpdatedByAdminID = @ActorId
+                            WHERE EquipmentID = @EqId AND Status = 'In Maintenance';
+                        END
+                        ELSE
+                        BEGIN
+                            INSERT INTO dbo.MaintenanceSchedule (EquipmentID, ServiceType, IssueDetails, Status, SubStatus, ResolutionNotes, ScheduledDate, UpdatedAt, ResolvedAt, CreatedByAdminID, UpdatedByAdminID)
+                            VALUES (@EqId, 'Repair', @Notes, @Status, @SubStatus, @Notes, SYSUTCDATETIME(), SYSUTCDATETIME(), CASE WHEN @Status IN ('Available', 'Needs Replacement') THEN SYSUTCDATETIME() ELSE NULL END, @ActorId, @ActorId);
+                        END
+                    END;
 
                     INSERT INTO dbo.HistoryLog (ActionType, EntityName, EntityID, ActionDetails, ChangedByType, ChangedByAdminID)
-                    VALUES ('STATUS_CHANGE', 'Equipment', @Id, @Details, 'Admin', @ActorId);";
+                    VALUES (@ActionType, 'Equipment', @EqId, @LogDetails, 'Admin', @ActorId);";
 
                 await using var cmd = new SqlCommand(sql, conn);
-                cmd.Parameters.AddWithValue("@Id", equipmentId.Trim());
-                cmd.Parameters.AddWithValue("@Details", $"MAINTENANCE RESOLVED: Equipment tested and returned to active service. Resolution notes: {resolutionNotes.Trim()}");
-                cmd.Parameters.AddWithValue("@ActorId", string.IsNullOrWhiteSpace(actorId) ? "ADM-001" : actorId.Trim());
+                cmd.Parameters.AddWithValue("@ScheduleId", scheduleId);
+                cmd.Parameters.AddWithValue("@EqId", equipmentId.Trim());
+                cmd.Parameters.AddWithValue("@EquipStatus", targetEquipmentStatus);
+                cmd.Parameters.AddWithValue("@Status", cleanStatus);
+                cmd.Parameters.AddWithValue("@SubStatus", (object?)cleanSubStatus ?? DBNull.Value);
+                cmd.Parameters.AddWithValue("@Notes", (object?)cleanNotes ?? string.Empty);
+                cmd.Parameters.AddWithValue("@ActionType", cleanStatus == MaintenanceScheduleStatuses.InMaintenance ? "UPDATE" : "STATUS_CHANGE");
+                cmd.Parameters.AddWithValue("@LogDetails", logDetails);
+                cmd.Parameters.AddWithValue("@ActorId", cleanActorId);
 
                 await cmd.ExecuteNonQueryAsync(ct);
                 await GetEquipmentsAsync(ct);
+                await GetMaintenanceSchedulesAsync(ct);
                 await GetMaintenanceLogsAsync(ct);
                 NotifyStateChanged();
                 return (true, null);
@@ -1524,25 +1907,80 @@ public sealed class EquipmentService : IEquipmentService
             if (eq == null)
                 return (false, $"Equipment '{equipmentId}' not found.");
 
-            eq.EquipmentStatus = "Available";
+            eq.EquipmentStatus = targetEquipmentStatus;
+
+            var schedule = (scheduleId > 0
+                ? _maintenanceSchedules.FirstOrDefault(s => s.MaintenanceScheduleID == scheduleId)
+                : null)
+                ?? _maintenanceSchedules.FirstOrDefault(s => s.EquipmentID.Equals(eq.EquipmentID, StringComparison.OrdinalIgnoreCase) && s.IsInMaintenance);
+
+            if (schedule != null)
+            {
+                schedule.Status = cleanStatus;
+                schedule.SubStatus = cleanSubStatus;
+                schedule.EquipmentStatus = targetEquipmentStatus;
+                if (!string.IsNullOrWhiteSpace(cleanNotes))
+                    schedule.ResolutionNotes = cleanNotes;
+                schedule.UpdatedAt = DateTime.UtcNow;
+                schedule.ResolvedAt = cleanStatus == MaintenanceScheduleStatuses.InMaintenance ? null : DateTime.UtcNow;
+                schedule.UpdatedByAdminID = cleanActorId;
+            }
+            else
+            {
+                _maintenanceSchedules.Insert(0, new MaintenanceScheduleModel
+                {
+                    MaintenanceScheduleID = _nextMaintenanceScheduleId++,
+                    EquipmentID = eq.EquipmentID,
+                    EquipmentName = eq.EquipmentName,
+                    SerialNo = eq.SerialNo,
+                    EquipmentTypeName = eq.EquipmentTypeName,
+                    EquipmentStatus = targetEquipmentStatus,
+                    ServiceType = "Repair",
+                    IssueDetails = cleanNotes ?? string.Empty,
+                    Status = cleanStatus,
+                    SubStatus = cleanSubStatus,
+                    ResolutionNotes = cleanNotes,
+                    ScheduledDate = DateTime.UtcNow,
+                    UpdatedAt = DateTime.UtcNow,
+                    ResolvedAt = cleanStatus == MaintenanceScheduleStatuses.InMaintenance ? null : DateTime.UtcNow,
+                    CreatedByAdminID = cleanActorId,
+                    UpdatedByAdminID = cleanActorId
+                });
+            }
 
             _maintenanceLogs.Insert(0, new MaintenanceLogModel
             {
                 HistoryLogID = _nextHistoryLogId++,
-                ActionType = "STATUS_CHANGE",
+                ActionType = cleanStatus == MaintenanceScheduleStatuses.InMaintenance ? "UPDATE" : "STATUS_CHANGE",
                 EntityName = "Equipment",
                 EntityID = eq.EquipmentID,
                 EquipmentName = eq.EquipmentName,
                 SerialNo = eq.SerialNo,
-                EquipmentStatus = "Available",
-                ActionDetails = $"MAINTENANCE RESOLVED: Equipment tested and returned to active service. Resolution notes: {resolutionNotes.Trim()}",
+                EquipmentStatus = targetEquipmentStatus,
+                ActionDetails = logDetails,
                 ChangedByType = "Admin",
-                ChangedByAdminID = actorId,
+                ChangedByAdminID = cleanActorId,
                 LoggedAt = DateTime.UtcNow
             });
 
             NotifyStateChanged();
             return (true, null);
         }
+    }
+
+    public async Task<(bool Success, string? Error)> ResolveMaintenanceAsync(
+        string equipmentId,
+        string resolutionNotes,
+        string actorId,
+        CancellationToken ct = default)
+    {
+        return await UpdateMaintenanceScheduleAsync(
+            0,
+            equipmentId,
+            MaintenanceScheduleStatuses.Available,
+            null,
+            resolutionNotes,
+            actorId,
+            ct);
     }
 }

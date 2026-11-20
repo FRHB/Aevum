@@ -115,9 +115,16 @@ BEGIN
         FirstName nvarchar(255) NOT NULL,
         LastName nvarchar(255) NOT NULL,
         MiddleName nvarchar(255) NULL,
+        Email nvarchar(255) NULL,
         PasswordHash nvarchar(255) NOT NULL,
         CreatedAt datetime2 NOT NULL CONSTRAINT DF_SystemAdmin_CreatedAt DEFAULT SYSUTCDATETIME()
     );
+END;
+
+IF OBJECT_ID(N'dbo.SystemAdmin', N'U') IS NOT NULL
+BEGIN
+    IF COL_LENGTH(N'dbo.SystemAdmin', N'Email') IS NULL
+        ALTER TABLE dbo.SystemAdmin ADD Email nvarchar(255) NULL;
 END;
 
 IF OBJECT_ID(N'dbo.EmployeeTimesheets', N'U') IS NULL
@@ -370,12 +377,30 @@ BEGIN
         EquipmentName nvarchar(100) NOT NULL,
         EquipmentDescription nvarchar(1000) NULL,
         EquipmentTypeID nvarchar(30) NOT NULL,
-        EquipmentStatus nvarchar(20) NOT NULL CONSTRAINT DF_Equipment_Status DEFAULT 'Available',
+        EquipmentStatus nvarchar(30) NOT NULL CONSTRAINT DF_Equipment_Status DEFAULT 'Available',
         EquipmentImage varbinary(max) NULL, 
         ImagePath nvarchar(500) NULL,
         SerialNo nvarchar(30),
         CreatedAt datetime2 NOT NULL CONSTRAINT DF_Equipment_CreatedAt DEFAULT SYSUTCDATETIME(),
-        CONSTRAINT CK_Equipment_Status CHECK (EquipmentStatus IN ('Available','Maintenance','Retired'))
+        CONSTRAINT CK_Equipment_Status CHECK (EquipmentStatus IN ('Available','Maintenance','Retired','Needs Replacement'))
+    );
+END;
+
+IF OBJECT_ID(N'dbo.MaintenanceSchedule', N'U') IS NULL
+BEGIN
+    CREATE TABLE dbo.MaintenanceSchedule (
+        MaintenanceScheduleID int IDENTITY(1,1) NOT NULL PRIMARY KEY,
+        EquipmentID nvarchar(30) NOT NULL,
+        ServiceType nvarchar(100) NOT NULL CONSTRAINT DF_MaintenanceSchedule_ServiceType DEFAULT 'Repair',
+        IssueDetails nvarchar(1000) NULL,
+        Status nvarchar(50) NOT NULL CONSTRAINT DF_MaintenanceSchedule_Status DEFAULT 'In Maintenance',
+        SubStatus nvarchar(50) NULL,
+        ResolutionNotes nvarchar(1000) NULL,
+        ScheduledDate datetime2 NOT NULL CONSTRAINT DF_MaintenanceSchedule_ScheduledDate DEFAULT SYSUTCDATETIME(),
+        UpdatedAt datetime2 NOT NULL CONSTRAINT DF_MaintenanceSchedule_UpdatedAt DEFAULT SYSUTCDATETIME(),
+        ResolvedAt datetime2 NULL,
+        CreatedByAdminID nvarchar(30) NULL,
+        UpdatedByAdminID nvarchar(30) NULL
     );
 END;
 
@@ -1020,6 +1045,11 @@ ALTER TABLE dbo.CustomerDropbox ADD CONSTRAINT FK_CustomerDropbox_EventAppointme
 IF OBJECT_ID(N'dbo.FK_CustomerDropbox_Customer', N'F') IS NOT NULL
     ALTER TABLE dbo.CustomerDropbox DROP CONSTRAINT FK_CustomerDropbox_Customer;
 ALTER TABLE dbo.CustomerDropbox ADD CONSTRAINT FK_CustomerDropbox_Customer FOREIGN KEY (CustomerID) REFERENCES dbo.Customer(CustomerID) ON DELETE NO ACTION;
+
+-- 8.11 MaintenanceSchedule Constraints
+IF OBJECT_ID(N'dbo.FK_MaintenanceSchedule_Equipment', N'F') IS NOT NULL
+    ALTER TABLE dbo.MaintenanceSchedule DROP CONSTRAINT FK_MaintenanceSchedule_Equipment;
+ALTER TABLE dbo.MaintenanceSchedule ADD CONSTRAINT FK_MaintenanceSchedule_Equipment FOREIGN KEY (EquipmentID) REFERENCES dbo.Equipment(EquipmentID) ON DELETE CASCADE;
 GO
 
 /* =====================================================================
@@ -1075,6 +1105,9 @@ IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = N'IX_Services_Name' AND ob
 
 IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = N'IX_Equipment_EquipmentType' AND object_id = OBJECT_ID(N'dbo.Equipment'))
     CREATE INDEX IX_Equipment_EquipmentType     ON dbo.Equipment (EquipmentTypeID);
+
+IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = N'IX_MaintenanceSchedule_EquipmentID_Status' AND object_id = OBJECT_ID(N'dbo.MaintenanceSchedule'))
+    CREATE INDEX IX_MaintenanceSchedule_EquipmentID_Status ON dbo.MaintenanceSchedule (EquipmentID, Status, UpdatedAt DESC);
 
 IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = N'IX_EmployeeTimesheets_EmpDate' AND object_id = OBJECT_ID(N'dbo.EmployeeTimesheets'))
     CREATE INDEX IX_EmployeeTimesheets_EmpDate ON dbo.EmployeeTimesheets (EmployeeStudioId, WorkDate);
@@ -1327,6 +1360,21 @@ BEGIN
         ALTER TABLE dbo.Customer ADD DeletionRequested bit NOT NULL CONSTRAINT DF_Customer_DeletionRequested DEFAULT 0;
     IF COL_LENGTH(N'dbo.Customer', N'DeletionRequestedAt') IS NULL
         ALTER TABLE dbo.Customer ADD DeletionRequestedAt datetime2 NULL;
+END;
+GO
+
+IF OBJECT_ID(N'dbo.Equipment', N'U') IS NOT NULL
+BEGIN
+    ALTER TABLE dbo.Equipment ALTER COLUMN EquipmentStatus nvarchar(30) NOT NULL;
+    IF NOT EXISTS (SELECT 1 FROM sys.check_constraints
+                   WHERE name = N'CK_Equipment_Status'
+                     AND definition LIKE N'%Needs Replacement%')
+    BEGIN
+        IF EXISTS (SELECT 1 FROM sys.check_constraints WHERE name = N'CK_Equipment_Status')
+            ALTER TABLE dbo.Equipment DROP CONSTRAINT CK_Equipment_Status;
+        ALTER TABLE dbo.Equipment ADD CONSTRAINT CK_Equipment_Status
+            CHECK (EquipmentStatus IN ('Available','Maintenance','Retired','Needs Replacement'));
+    END;
 END;
 GO
 

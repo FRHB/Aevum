@@ -359,6 +359,7 @@ else
         }
 
         _isLoadingSchedule = true;
+        ScheduleService.InvalidateCache();
         var (equipment, reservations) = await Task.Run(() =>
             (ScheduleService.GetEquipmentResources(), ScheduleService.GetEquipmentReservations()));
         EquipmentResources = equipment;

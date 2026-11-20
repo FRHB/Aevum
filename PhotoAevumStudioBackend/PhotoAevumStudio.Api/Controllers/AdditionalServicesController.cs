@@ -234,7 +234,7 @@ public class AdditionalServicesController : ControllerBase
         string? requestingAdminId = User.FindFirstValue("studio_id")
                                    ?? User.FindFirstValue(ClaimTypes.NameIdentifier)
                                    ?? User.FindFirstValue(ClaimTypes.Name)
-                                   ?? "SADM-001";
+                                   ?? "ADM-001";
 
         // 3. Atomically persist via backend Stored Procedure & SQL Sequence
         try
@@ -332,7 +332,7 @@ public class AdditionalServicesController : ControllerBase
         string? requestingAdminId = User.FindFirstValue("studio_id")
                                    ?? User.FindFirstValue(ClaimTypes.NameIdentifier)
                                    ?? User.FindFirstValue(ClaimTypes.Name)
-                                   ?? "SADM-001";
+                                   ?? "ADM-001";
 
         var effectiveRateType = string.IsNullOrWhiteSpace(request.RateType) ? "per hour" : request.RateType.Trim();
         var dto = new UpdateAdditionalServiceDto(

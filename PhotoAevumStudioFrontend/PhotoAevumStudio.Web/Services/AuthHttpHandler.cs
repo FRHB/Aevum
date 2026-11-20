@@ -5,8 +5,8 @@ namespace PhotoAevumStudio.Web.Services;
 /// <summary>
 /// DelegatingHandler that injects the stored JWT bearer token into every
 /// outbound request made by the typed API HttpClients.
-/// Uses both the circuit-scoped ITokenStore and the ambient AsyncLocal token cache
-/// so that IHttpClientFactory's separate handler DI scope never causes token lookup failures.
+/// Uses the active circuit's ITokenStore bound via AsyncLocal so IHttpClientFactory's
+/// separate handler DI scope always resolves the calling circuit's JWT without static cross-user leakage.
 /// </summary>
 public sealed class AuthHttpHandler : DelegatingHandler
 {
@@ -25,7 +25,9 @@ public sealed class AuthHttpHandler : DelegatingHandler
         {
             try
             {
+                var ambientStore = ProtectedSessionTokenStore.GetAmbientStore();
                 var token = ProtectedSessionTokenStore.GetAmbientToken()
+                            ?? (ambientStore is not null ? await ambientStore.GetTokenAsync(cancellationToken) : null)
                             ?? await _tokenStore.GetTokenAsync(cancellationToken);
 
                 if (!string.IsNullOrWhiteSpace(token))

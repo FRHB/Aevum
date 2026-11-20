@@ -527,4 +527,6 @@ SqlAuthService.md
 ScheduleValidationException.md
 Dapper.md
 Cloudflare R2.md
+App_Data/
+
 

@@ -558,6 +558,7 @@ else
         }
 
         _isLoadingSchedule = true;
+        ScheduleService.InvalidateCache();
         var (staff, shifts) = await Task.Run(() =>
             (ScheduleService.GetStaffMembers(), ScheduleService.GetStaffShifts()));
         StaffMembers = staff;

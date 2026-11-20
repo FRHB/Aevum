@@ -219,4 +219,99 @@ public class TeamLeaderAndPasswordPolicyTests
 
         Assert.Contains("ISNULL(DownpaymentStatus, 'Pending') <> 'Paid'", allSql);
     }
+
+    [Fact]
+    public void TeamLeaderMonitorSelector_SelectUpcomingAndOngoing_FiltersToOnlyPaidUpcomingAndOngoingEvents()
+    {
+        var now = new DateTime(2026, 11, 20, 10, 0, 0);
+        var today = DateOnly.FromDateTime(now.Date);
+
+        var events = new[]
+        {
+            new PhotoAevumStudio.Application.TeamLeaderEventDto
+            {
+                EventAppointmentId = "EVT-UNPAID",
+                EventStatus = "Pending Payment",
+                DownpaymentStatus = "Pending",
+                EventDate = today.AddDays(1),
+                EventTime = new TimeOnly(9, 0)
+            },
+            new PhotoAevumStudio.Application.TeamLeaderEventDto
+            {
+                EventAppointmentId = "EVT-DONE",
+                EventStatus = "Completed",
+                DownpaymentStatus = "Paid",
+                EventDate = today,
+                EventTime = new TimeOnly(8, 0)
+            },
+            new PhotoAevumStudio.Application.TeamLeaderEventDto
+            {
+                EventAppointmentId = "EVT-CANCELLED",
+                EventStatus = "Cancelled",
+                DownpaymentStatus = "Paid",
+                EventDate = today.AddDays(1),
+                EventTime = new TimeOnly(10, 0)
+            },
+            new PhotoAevumStudio.Application.TeamLeaderEventDto
+            {
+                EventAppointmentId = "EVT-UPCOMING",
+                EventStatus = "Confirmed",
+                DownpaymentStatus = "Paid",
+                EventDate = today.AddDays(2),
+                EventTime = new TimeOnly(14, 0)
+            },
+            new PhotoAevumStudio.Application.TeamLeaderEventDto
+            {
+                EventAppointmentId = "EVT-ONGOING",
+                EventStatus = "Ongoing",
+                DownpaymentStatus = "Paid",
+                EventDate = today,
+                EventTime = new TimeOnly(9, 30)
+            },
+            new PhotoAevumStudio.Application.TeamLeaderEventDto
+            {
+                EventAppointmentId = "EVT-PREP",
+                EventStatus = "Preparing",
+                DownpaymentStatus = "Paid",
+                EventDate = today,
+                EventTime = new TimeOnly(13, 0)
+            }
+        };
+
+        var selected = PhotoAevumStudio.Application.TeamLeaderMonitorSelector.SelectUpcomingAndOngoing(events, now);
+        Assert.Equal(3, selected.Count);
+        Assert.Equal("EVT-ONGOING", selected[0].EventAppointmentId);
+        Assert.Equal("EVT-PREP", selected[1].EventAppointmentId);
+        Assert.Equal("EVT-UPCOMING", selected[2].EventAppointmentId);
+    }
+
+    [Fact]
+    public void TeamLeaderMonitorSelector_GetProcessSteps_ReflectsCurrentStageProgress()
+    {
+        var ongoingSteps = PhotoAevumStudio.Application.TeamLeaderMonitorSelector.GetProcessSteps(
+            new PhotoAevumStudio.Application.TeamLeaderEventDto
+            {
+                EventStatus = "Ongoing",
+                DownpaymentStatus = "Paid"
+            });
+
+        Assert.Equal(5, ongoingSteps.Count);
+        Assert.Equal("done", ongoingSteps[0].State);   // Booked
+        Assert.Equal("done", ongoingSteps[1].State);   // Preparing
+        Assert.Equal("active", ongoingSteps[2].State); // Ongoing
+        Assert.Equal("pending", ongoingSteps[3].State); // Event Done
+        Assert.Equal("pending", ongoingSteps[4].State); // Settlement
+
+        var cashPendingSteps = PhotoAevumStudio.Application.TeamLeaderMonitorSelector.GetProcessSteps(
+            new PhotoAevumStudio.Application.TeamLeaderEventDto
+            {
+                EventStatus = "Payment Verification (Cash)",
+                FinalPaymentStatus = "Payment Verification (Cash)",
+                DownpaymentStatus = "Paid"
+            });
+
+        Assert.Equal("done", cashPendingSteps[3].State);
+        Assert.Equal("active-amber", cashPendingSteps[4].State);
+        Assert.Equal("Payment Verification (Cash)", cashPendingSteps[4].Label);
+    }
 }

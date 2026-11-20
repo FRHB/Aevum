@@ -72,7 +72,7 @@
                 <div class="flex gap-6 text-xs text-gray-500 uppercase tracking-widest">
                     <NavLink href="/privacy" class="hover:text-white transition-colors" Match="NavLinkMatch.All">Privacy Policy</NavLink>
                      <p>|</p>
-                    <a href="/terms" @onclick="OpenTermsModal" @onclick:preventDefault class="hover:text-white transition-colors cursor-pointer">Terms &amp; Conditions</a>
+                    <a href="/terms" data-aevum-modal-link="true" @onclick="OpenTermsModal" @onclick:preventDefault class="hover:text-white transition-colors cursor-pointer">Terms &amp; Conditions</a>
                 </div>
             </div>
         </div>

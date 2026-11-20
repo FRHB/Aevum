@@ -1,12 +1,17 @@
+@inject AppBootInfo BootInfo
+
 <!DOCTYPE html>
 <html lang="en" class="scroll-smooth">
 <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="aevum-boot-id" content="@BootInfo.BootId" />
+    <meta name="aevum-build-hash" content="@BootInfo.BuildHash" />
     <base href="/" />
-    <link rel="stylesheet" href="app.css" />
+    <link rel="stylesheet" href="@Assets["app.css"]" />
     <!-- Blazor specific CSS isolation (adjust name to match your assembly) -->
-    <link rel="stylesheet" href="PhotoAevumStudio.Web.styles.css" />
+    <link rel="stylesheet" href="@Assets["PhotoAevumStudio.Web.styles.css"]" />
+    <ImportMap />
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" />
     
     <script src="https://cdn.tailwindcss.com"></script>
@@ -28,10 +33,190 @@
 </head>
 <body class="antialiased min-h-screen flex flex-col selection:bg-gray-200 selection:text-black">
     <Routes @rendermode="new InteractiveServerRenderMode(prerender: false)" />
+    <ReconnectModal />
     <script src="_content/ZXing.Blazor/lib/barcodereader/zxing.js"></script>
     <script src="_content/ZXing.Blazor/lib/barcodereader/barcode.js"></script>
-    <script src="_framework/blazor.web.js"></script>
+    <script src="@Assets["_framework/blazor.web.js"]"></script>
     <script>
+        // System Update, Refresh & Circuit Navigation Recovery
+        (function () {
+            const RECOVERY_KEY = '__aevum_nav_recovery';
+            const initialBootId = document.querySelector('meta[name="aevum-boot-id"]')?.getAttribute('content') || '';
+            const initialBuildHash = document.querySelector('meta[name="aevum-build-hash"]')?.getAttribute('content') || '';
+            let lastCheckAt = 0;
+
+            function readRecoveryState() {
+                try {
+                    const raw = sessionStorage.getItem(RECOVERY_KEY);
+                    return raw ? JSON.parse(raw) : null;
+                } catch {
+                    return null;
+                }
+            }
+
+            function writeRecoveryState(state) {
+                try {
+                    if (!state) {
+                        sessionStorage.removeItem(RECOVERY_KEY);
+                    } else {
+                        sessionStorage.setItem(RECOVERY_KEY, JSON.stringify(state));
+                    }
+                } catch { }
+            }
+
+            const navState = {
+                bootId: initialBootId,
+                buildHash: initialBuildHash,
+                updateAvailable: false,
+                circuitBroken: false,
+                pendingNav: null,
+                reloading: false,
+
+                markCircuitBroken: function (broken) {
+                    this.circuitBroken = !!broken;
+                    if (!broken) {
+                        writeRecoveryState(null);
+                    }
+                },
+
+                navigateHard: function (targetUrl) {
+                    if (this.reloading) return;
+                    const dest = targetUrl || window.location.href;
+                    this.reloading = true;
+                    writeRecoveryState(null);
+                    window.location.assign(dest);
+                },
+
+                reloadClean: function (targetUrl) {
+                    if (this.reloading) return;
+                    const dest = targetUrl || window.location.href;
+                    const now = Date.now();
+                    const prev = readRecoveryState();
+                    if (prev && prev.url === dest && (now - prev.ts) < 8000 && prev.count >= 2) {
+                        return;
+                    }
+                    const nextCount = (prev && prev.url === dest && (now - prev.ts) < 8000) ? (prev.count + 1) : 1;
+                    writeRecoveryState({ url: dest, count: nextCount, ts: now });
+                    this.reloading = true;
+                    window.location.replace(dest);
+                },
+
+                recoverNavigation: function () {
+                    const pending = this.pendingNav;
+                    this.pendingNav = null;
+                    if (pending && pending.url && (Date.now() - pending.at) <= 15000 && pending.url !== window.location.href) {
+                        this.reloadClean(pending.url);
+                        return;
+                    }
+                    this.reloadClean(window.location.href);
+                },
+
+                checkForUpdate: async function (force) {
+                    if (!this.bootId || this.reloading) return false;
+                    const now = Date.now();
+                    if (!force && (now - lastCheckAt) < 5000) return this.updateAvailable;
+                    lastCheckAt = now;
+                    try {
+                        const res = await fetch('/version?t=' + now, { cache: 'no-store', credentials: 'same-origin' });
+                        if (!res.ok) return false;
+                        const data = await res.json();
+                        const serverBootId = data?.bootId;
+                        const serverBuildHash = data?.buildHash;
+                        if ((serverBootId && serverBootId !== this.bootId) ||
+                            (serverBuildHash && this.buildHash && serverBuildHash !== this.buildHash)) {
+                            this.updateAvailable = true;
+                            return true;
+                        }
+                    } catch {
+                        // Server may be momentarily restarting during deployment
+                    }
+                    return false;
+                }
+            };
+
+            window.__aevumNav = navState;
+
+            document.addEventListener('click', function (e) {
+                if (e.defaultPrevented || e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) {
+                    return;
+                }
+                const anchor = e.target?.closest?.('a[href]');
+                if (!anchor) return;
+                if (anchor.hasAttribute('download') || anchor.hasAttribute('data-aevum-modal-link')) return;
+                if (anchor.target && anchor.target !== '_self') return;
+
+                const rawHref = anchor.getAttribute('href');
+                if (!rawHref || rawHref.startsWith('#') || rawHref.startsWith('mailto:') || rawHref.startsWith('tel:') || rawHref.startsWith('javascript:')) {
+                    return;
+                }
+
+                let targetUrl;
+                try {
+                    const parsed = new URL(anchor.href, window.location.href);
+                    if (parsed.origin !== window.location.origin) return;
+                    targetUrl = parsed.href;
+                } catch {
+                    return;
+                }
+
+                navState.pendingNav = { url: targetUrl, at: Date.now() };
+
+                if (navState.updateAvailable || navState.circuitBroken) {
+                    e.preventDefault();
+                    e.stopImmediatePropagation();
+                    navState.navigateHard(targetUrl);
+                }
+            }, true);
+
+            window.addEventListener('popstate', function () {
+                navState.pendingNav = null;
+                if (navState.updateAvailable || navState.circuitBroken) {
+                    navState.reloadClean(window.location.href);
+                }
+            });
+
+            window.addEventListener('pageshow', function (e) {
+                if (e.persisted) {
+                    navState.reloadClean(window.location.href);
+                }
+            });
+
+            document.addEventListener('visibilitychange', function () {
+                if (document.visibilityState === 'visible') {
+                    navState.checkForUpdate(false);
+                }
+            });
+
+            window.addEventListener('online', function () {
+                navState.checkForUpdate(true);
+            });
+
+            setInterval(function () {
+                if (document.visibilityState === 'visible') {
+                    navState.checkForUpdate(false);
+                }
+            }, 30000);
+
+            setTimeout(function () {
+                if (!navState.circuitBroken) {
+                    writeRecoveryState(null);
+                }
+            }, 10000);
+
+            if (typeof Blazor !== 'undefined' && typeof Blazor.addEventListener === 'function') {
+                Blazor.addEventListener('enhancedload', function () {
+                    const currentMetaBootId = document.querySelector('meta[name="aevum-boot-id"]')?.getAttribute('content') || '';
+                    if ((currentMetaBootId && initialBootId && currentMetaBootId !== initialBootId) || navState.updateAvailable) {
+                        navState.reloadClean(window.location.href);
+                        return;
+                    }
+                    if (typeof lucide !== 'undefined' && lucide.createIcons) {
+                        lucide.createIcons();
+                    }
+                });
+            }
+        })();
+
         // Global JS initialization
         if (typeof lucide !== 'undefined' && lucide.createIcons) {
             lucide.createIcons();

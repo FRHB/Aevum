@@ -29,7 +29,7 @@ BEGIN
         UNION ALL
         SELECT 1 FROM dbo.Admin WHERE UPPER(LTRIM(RTRIM(Email))) = UPPER(@CustomerEmail)
         UNION ALL
-        SELECT 1 FROM dbo.SystemAdmin WHERE UPPER(LTRIM(RTRIM(CONCAT(LOWER(SystemAdminID), '@photoaevum.studio')))) = UPPER(@CustomerEmail)
+        SELECT 1 FROM dbo.SystemAdmin WHERE UPPER(LTRIM(RTRIM(COALESCE(NULLIF(Email, ''), CONCAT(LOWER(SystemAdminID), '@photoaevum.studio'))))) = UPPER(@CustomerEmail)
     )
     BEGIN
         RAISERROR('This email address is already registered under another account role. Please use a different email.', 16, 1);
@@ -110,7 +110,7 @@ BEGIN
         UNION ALL
         SELECT 1 FROM dbo.Admin WHERE UPPER(LTRIM(RTRIM(Email))) = UPPER(@EmployeeEmail)
         UNION ALL
-        SELECT 1 FROM dbo.SystemAdmin WHERE UPPER(LTRIM(RTRIM(CONCAT(LOWER(SystemAdminID), '@photoaevum.studio')))) = UPPER(@EmployeeEmail)
+        SELECT 1 FROM dbo.SystemAdmin WHERE UPPER(LTRIM(RTRIM(COALESCE(NULLIF(Email, ''), CONCAT(LOWER(SystemAdminID), '@photoaevum.studio'))))) = UPPER(@EmployeeEmail)
     )
     BEGIN
         RAISERROR('This email address is already registered under another account role. Please use a different email.', 16, 1);
@@ -237,6 +237,12 @@ BEGIN
         RETURN;
     END
 
+    IF UPPER(LTRIM(RTRIM(@AdminID))) = 'SADM-001'
+    BEGIN
+        RAISERROR('Account SADM-001 is locked and reserved.', 16, 1);
+        RETURN;
+    END
+
     IF (@AdminRole <> 'SystemAdmin' AND @AdminID NOT LIKE 'SADM-%' AND (@AdminEmail IS NULL OR LTRIM(RTRIM(@AdminEmail)) = ''))
     BEGIN
         RAISERROR('Validation Error: Email address is required for regular Admin accounts.', 16, 1);
@@ -251,7 +257,7 @@ BEGIN
         UNION ALL
         SELECT 1 FROM dbo.Admin WHERE UPPER(LTRIM(RTRIM(Email))) = UPPER(@AdminEmail)
         UNION ALL
-        SELECT 1 FROM dbo.SystemAdmin WHERE UPPER(LTRIM(RTRIM(CONCAT(LOWER(SystemAdminID), '@photoaevum.studio')))) = UPPER(@AdminEmail)
+        SELECT 1 FROM dbo.SystemAdmin WHERE UPPER(LTRIM(RTRIM(COALESCE(NULLIF(Email, ''), CONCAT(LOWER(SystemAdminID), '@photoaevum.studio'))))) = UPPER(@AdminEmail)
     )
     BEGIN
         RAISERROR('This email address is already registered under another account role. Please use a different email.', 16, 1);
@@ -275,8 +281,8 @@ BEGIN
         BEGIN
             IF NOT EXISTS (SELECT 1 FROM dbo.SystemAdmin WHERE SystemAdminID = @AdminID)
             BEGIN
-                INSERT INTO dbo.SystemAdmin (SystemAdminID, FirstName, LastName, MiddleName, PasswordHash, CreatedAt)
-                VALUES (@AdminID, @AdminFirstName, @AdminLastName, @AdminMiddleName, @AdminPassword, SYSUTCDATETIME());
+                INSERT INTO dbo.SystemAdmin (SystemAdminID, FirstName, LastName, MiddleName, Email, PasswordHash, CreatedAt)
+                VALUES (@AdminID, @AdminFirstName, @AdminLastName, @AdminMiddleName, @AdminEmail, @AdminPassword, SYSUTCDATETIME());
             END
         END
 
@@ -347,6 +353,12 @@ BEGIN
         RETURN;
     END
 
+    IF UPPER(LTRIM(RTRIM(@AdminID))) = 'SADM-001'
+    BEGIN
+        RAISERROR('Account SADM-001 is locked and cannot be edited or modified.', 16, 1);
+        RETURN;
+    END
+
     DECLARE @TargetRole nvarchar(20) = NULL;
     SELECT @TargetRole = AdminRole FROM dbo.Admin WHERE AdminID = @AdminID;
 
@@ -371,7 +383,8 @@ BEGIN
         UPDATE dbo.SystemAdmin
         SET FirstName = @AdminFirstName,
             LastName = @AdminLastName,
-            MiddleName = @AdminMiddleName
+            MiddleName = @AdminMiddleName,
+            Email = COALESCE(@AdminEmail, Email)
         WHERE SystemAdminID = @AdminID;
     END
 
@@ -929,6 +942,122 @@ BEGIN
     BEGIN
         INSERT INTO dbo.EventEquipment (EventAppointmentID, EquipmentID)
         VALUES (@EventAppointmentID, @EquipmentID);
+    END
+END;
+GO
+
+CREATE OR ALTER PROCEDURE dbo.sp_UpsertMaintenanceSchedule
+    @EquipmentID      nvarchar(30),
+    @ServiceType      nvarchar(100) = 'Repair',
+    @IssueDetails     nvarchar(1000) = NULL,
+    @SubStatus        nvarchar(50) = 'Under Repair',
+    @ActorID          nvarchar(30) = NULL
+AS
+BEGIN
+    SET NOCOUNT ON;
+    SET XACT_ABORT ON;
+
+    IF NOT EXISTS (SELECT 1 FROM dbo.Equipment WHERE EquipmentID = @EquipmentID)
+        THROW 50001, 'Equipment not found.', 1;
+
+    UPDATE dbo.Equipment SET EquipmentStatus = 'Maintenance' WHERE EquipmentID = @EquipmentID;
+
+    DECLARE @EffectiveSubStatus nvarchar(50) = COALESCE(NULLIF(LTRIM(RTRIM(@SubStatus)), ''), 'Checking');
+
+    IF EXISTS (SELECT 1 FROM dbo.MaintenanceSchedule WHERE EquipmentID = @EquipmentID AND Status = 'In Maintenance')
+    BEGIN
+        UPDATE dbo.MaintenanceSchedule
+        SET ServiceType = COALESCE(NULLIF(LTRIM(RTRIM(@ServiceType)), ''), ServiceType),
+            IssueDetails = COALESCE(NULLIF(LTRIM(RTRIM(@IssueDetails)), ''), IssueDetails),
+            SubStatus = @EffectiveSubStatus,
+            UpdatedAt = SYSUTCDATETIME(),
+            UpdatedByAdminID = @ActorID
+        WHERE EquipmentID = @EquipmentID AND Status = 'In Maintenance';
+    END
+    ELSE
+    BEGIN
+        INSERT INTO dbo.MaintenanceSchedule (
+            EquipmentID, ServiceType, IssueDetails, Status, SubStatus,
+            ScheduledDate, UpdatedAt, CreatedByAdminID, UpdatedByAdminID
+        )
+        VALUES (
+            @EquipmentID,
+            COALESCE(NULLIF(LTRIM(RTRIM(@ServiceType)), ''), 'Repair'),
+            @IssueDetails,
+            'In Maintenance',
+            @EffectiveSubStatus,
+            SYSUTCDATETIME(),
+            SYSUTCDATETIME(),
+            @ActorID,
+            @ActorID
+        );
+    END
+END;
+GO
+
+CREATE OR ALTER PROCEDURE dbo.sp_UpdateMaintenanceSchedule
+    @MaintenanceScheduleID int = NULL,
+    @EquipmentID           nvarchar(30),
+    @Status                nvarchar(50),
+    @SubStatus             nvarchar(50) = NULL,
+    @ResolutionNotes       nvarchar(1000) = NULL,
+    @ActorID               nvarchar(30) = NULL
+AS
+BEGIN
+    SET NOCOUNT ON;
+    SET XACT_ABORT ON;
+
+    IF NOT EXISTS (SELECT 1 FROM dbo.Equipment WHERE EquipmentID = @EquipmentID)
+        THROW 50001, 'Equipment not found.', 1;
+
+    DECLARE @CleanStatus nvarchar(50) = LTRIM(RTRIM(@Status));
+    DECLARE @CleanSubStatus nvarchar(50) = NULLIF(LTRIM(RTRIM(@SubStatus)), '');
+    DECLARE @TargetEquipStatus nvarchar(30) = CASE
+        WHEN @CleanStatus = 'Available' THEN 'Available'
+        WHEN @CleanStatus = 'Needs Replacement' THEN 'Needs Replacement'
+        ELSE 'Maintenance'
+    END;
+
+    UPDATE dbo.Equipment SET EquipmentStatus = @TargetEquipStatus WHERE EquipmentID = @EquipmentID;
+
+    IF @MaintenanceScheduleID IS NOT NULL AND EXISTS (SELECT 1 FROM dbo.MaintenanceSchedule WHERE MaintenanceScheduleID = @MaintenanceScheduleID)
+    BEGIN
+        UPDATE dbo.MaintenanceSchedule
+        SET Status = @CleanStatus,
+            SubStatus = CASE WHEN @CleanStatus = 'In Maintenance' THEN COALESCE(@CleanSubStatus, SubStatus, 'Checking') ELSE NULL END,
+            ResolutionNotes = COALESCE(NULLIF(LTRIM(RTRIM(@ResolutionNotes)), ''), ResolutionNotes),
+            UpdatedAt = SYSUTCDATETIME(),
+            ResolvedAt = CASE WHEN @CleanStatus IN ('Available', 'Needs Replacement') THEN SYSUTCDATETIME() ELSE NULL END,
+            UpdatedByAdminID = @ActorID
+        WHERE MaintenanceScheduleID = @MaintenanceScheduleID;
+    END
+    ELSE IF EXISTS (SELECT 1 FROM dbo.MaintenanceSchedule WHERE EquipmentID = @EquipmentID AND Status = 'In Maintenance')
+    BEGIN
+        UPDATE dbo.MaintenanceSchedule
+        SET Status = @CleanStatus,
+            SubStatus = CASE WHEN @CleanStatus = 'In Maintenance' THEN COALESCE(@CleanSubStatus, SubStatus, 'Checking') ELSE NULL END,
+            ResolutionNotes = COALESCE(NULLIF(LTRIM(RTRIM(@ResolutionNotes)), ''), ResolutionNotes),
+            UpdatedAt = SYSUTCDATETIME(),
+            ResolvedAt = CASE WHEN @CleanStatus IN ('Available', 'Needs Replacement') THEN SYSUTCDATETIME() ELSE NULL END,
+            UpdatedByAdminID = @ActorID
+        WHERE EquipmentID = @EquipmentID AND Status = 'In Maintenance';
+    END
+    ELSE
+    BEGIN
+        INSERT INTO dbo.MaintenanceSchedule (
+            EquipmentID, ServiceType, IssueDetails, Status, SubStatus, ResolutionNotes,
+            ScheduledDate, UpdatedAt, ResolvedAt, CreatedByAdminID, UpdatedByAdminID
+        )
+        VALUES (
+            @EquipmentID, 'Repair', @ResolutionNotes, @CleanStatus,
+            CASE WHEN @CleanStatus = 'In Maintenance' THEN COALESCE(@CleanSubStatus, 'Checking') ELSE NULL END,
+            @ResolutionNotes,
+            SYSUTCDATETIME(),
+            SYSUTCDATETIME(),
+            CASE WHEN @CleanStatus IN ('Available', 'Needs Replacement') THEN SYSUTCDATETIME() ELSE NULL END,
+            @ActorID,
+            @ActorID
+        );
     END
 END;
 GO
@@ -1733,8 +1862,8 @@ BEGIN
 
         IF OBJECT_ID(N'dbo.HistoryLog', N'U') IS NOT NULL
         BEGIN
-            DECLARE @ActorAdminID nvarchar(30) = COALESCE(@CreatedByAdminID, 'SADM-001');
-            DECLARE @ActorRole nvarchar(20) = CASE WHEN @ActorAdminID LIKE 'SADM-%' THEN 'SystemAdmin' ELSE 'Admin' END;
+            DECLARE @ActorAdminID nvarchar(30) = NULLIF(LTRIM(RTRIM(@CreatedByAdminID)), '');
+            DECLARE @ActorRole nvarchar(20) = CASE WHEN @ActorAdminID IS NULL THEN 'System' WHEN @ActorAdminID LIKE 'SADM-%' THEN 'SystemAdmin' ELSE 'Admin' END;
 
             INSERT INTO dbo.HistoryLog (
                 ActionType, EntityName, EntityID, ActionDetails, ChangedByType, ChangedByAdminID, LoggedAt
@@ -1826,8 +1955,8 @@ BEGIN
 
         IF OBJECT_ID(N'dbo.HistoryLog', N'U') IS NOT NULL
         BEGIN
-            DECLARE @ActorAdminID nvarchar(30) = COALESCE(@UpdatedByAdminID, 'SADM-001');
-            DECLARE @ActorRole nvarchar(20) = CASE WHEN @ActorAdminID LIKE 'SADM-%' THEN 'SystemAdmin' ELSE 'Admin' END;
+            DECLARE @ActorAdminID nvarchar(30) = NULLIF(LTRIM(RTRIM(@UpdatedByAdminID)), '');
+            DECLARE @ActorRole nvarchar(20) = CASE WHEN @ActorAdminID IS NULL THEN 'System' WHEN @ActorAdminID LIKE 'SADM-%' THEN 'SystemAdmin' ELSE 'Admin' END;
 
             INSERT INTO dbo.HistoryLog (
                 ActionType, EntityName, EntityID, ActionDetails, ChangedByType, ChangedByAdminID, LoggedAt
@@ -1975,56 +2104,45 @@ BEGIN
         SET @IsEmployee = 1;
     END
 
-    -- System Admin: unrestricted full access to all logs
+    -- System Admin: unrestricted full access (except SADM-001 hidden from other users)
     IF @IsSystemAdmin = 1
-
     BEGIN
-
         SELECT TOP (@TopCount)
-
             HistoryLogID, ActionType, EntityName, EntityID, ActionDetails, EventAppointmentID, NegotiationID, CustomerID, EmployeeID, ChangedByType, ChangedBy, LoggedAt
-
         FROM dbo.HistoryLog
-
+        WHERE UPPER(LTRIM(RTRIM(@RequestingUserID))) = 'SADM-001'
+           OR (UPPER(ISNULL(EntityID, '')) <> 'SADM-001'
+               AND UPPER(ISNULL(ChangedByAdminID, '')) <> 'SADM-001'
+               AND UPPER(ISNULL(ChangedBy, '')) <> 'SADM-001')
         ORDER BY LoggedAt DESC;
-
     END
 
-    -- Employee / Office Clerk: logs they performed + logs about their assignments
+    -- Employee / Office Clerk: logs they performed + logs about their assignments (SADM-001 hidden)
     ELSE IF @IsEmployee = 1
-
     BEGIN
-
         SELECT TOP (@TopCount)
-
             HistoryLogID, ActionType, EntityName, EntityID, ActionDetails, EventAppointmentID, NegotiationID, CustomerID, EmployeeID, ChangedByType, ChangedBy, LoggedAt
-
         FROM dbo.HistoryLog
-
-        WHERE
-            ChangedByEmployeeID = @RequestingUserID
-            OR EmployeeID        = @RequestingUserID
-            OR EntityName IN ('Equipment', 'EventAppointment', 'Session')
-
+        WHERE (ChangedByEmployeeID = @RequestingUserID
+               OR EmployeeID = @RequestingUserID
+               OR EntityName IN ('Equipment', 'EventAppointment', 'Session'))
+          AND UPPER(ISNULL(EntityID, '')) <> 'SADM-001'
+          AND UPPER(ISNULL(ChangedByAdminID, '')) <> 'SADM-001'
+          AND UPPER(ISNULL(ChangedBy, '')) <> 'SADM-001'
         ORDER BY LoggedAt DESC;
-
     END
 
-    -- Administrator: logs they performed + admin-relevant entity types
+    -- Administrator: logs they performed + admin-relevant entity types (SADM-001 hidden)
     ELSE
-
     BEGIN
-
         SELECT TOP (@TopCount)
-
             HistoryLogID, ActionType, EntityName, EntityID, ActionDetails, EventAppointmentID, NegotiationID, CustomerID, EmployeeID, ChangedByType, ChangedBy, LoggedAt
-
         FROM dbo.HistoryLog
-
-        WHERE ChangedByAdminID = @RequestingUserID OR EntityName IN ('Services', 'AdditionalServices', 'ComboPackage', 'Equipment', 'EventAppointment')
-
+        WHERE (ChangedByAdminID = @RequestingUserID OR EntityName IN ('Services', 'AdditionalServices', 'ComboPackage', 'Equipment', 'EventAppointment'))
+          AND UPPER(ISNULL(EntityID, '')) <> 'SADM-001'
+          AND UPPER(ISNULL(ChangedByAdminID, '')) <> 'SADM-001'
+          AND UPPER(ISNULL(ChangedBy, '')) <> 'SADM-001'
         ORDER BY LoggedAt DESC;
-
     END
 
 END;

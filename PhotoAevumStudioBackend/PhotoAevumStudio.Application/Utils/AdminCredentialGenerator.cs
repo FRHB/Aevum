@@ -49,8 +49,8 @@ public static class AdminCredentialGenerator
             }
         }
 
-        // Find the lowest available number starting from 1 up to 999
-        int candidate = 1;
+        // System Admin IDs generated via creation flow start at SADM-101; regular Admins start at ADM-001
+        int candidate = isSysAdmin ? 101 : 1;
         while (usedNumbers.Contains(candidate))
         {
             candidate++;

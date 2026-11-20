@@ -150,7 +150,10 @@ public class MultiTrackFixesAndUiTests
 
         Assert.Contains("Elena Reyes", adminHtml);
         Assert.Contains("EMP-0042", adminHtml);
-        Assert.Contains("Reset Password", adminHtml);
+        Assert.Contains("STAFF ID", adminHtml);
+        Assert.Contains("aria-label=\"Reset Password\"", adminHtml);
+        Assert.DoesNotContain(">Reset Password<", adminHtml);
+        Assert.Contains("<svg", adminHtml);
 
         var staffHtml = await RenderComponentHtmlAsync<StaffOverviewModal>(new()
         {
@@ -161,6 +164,95 @@ public class MultiTrackFixesAndUiTests
 
         Assert.Contains("Elena Reyes", staffHtml);
         Assert.DoesNotContain("Reset Password", staffHtml);
+    }
+
+    [Fact]
+    public async Task EquipmentService_MaintenanceSchedule_CreateSubStatusAndResolveWorkflowWorks()
+    {
+        var config = new Microsoft.Extensions.Configuration.ConfigurationBuilder().Build();
+        var service = new PhotoAevumStudio.Web.Services.EquipmentService(config);
+
+        var (typeAdded, typeErr) = await service.AddEquipmentTypeAsync("ET-CAM", "Camera Body", "Blue");
+        Assert.True(typeAdded, typeErr);
+        var (eqAdded, eqErr, createdEq) = await service.CreateEquipmentAsync("Canon EOS R5", null, "ET-CAM", "SN-R5-003", null);
+        Assert.True(eqAdded, eqErr);
+        Assert.NotNull(createdEq);
+        var eqId = createdEq!.EquipmentID;
+
+        var (logged, err) = await service.LogMaintenanceAsync(
+            eqId,
+            "Routine Servicing",
+            "Mirror cleaning and firmware check",
+            "ADM-001",
+            setUnderMaintenance: true,
+            subStatus: PhotoAevumStudio.Web.Models.MaintenanceScheduleStatuses.SubChecking);
+
+        Assert.True(logged, err);
+        var schedules = await service.GetMaintenanceSchedulesAsync();
+        var active = Assert.Single(schedules, s => s.EquipmentID == eqId);
+        Assert.Equal(PhotoAevumStudio.Web.Models.MaintenanceScheduleStatuses.InMaintenance, active.Status);
+        Assert.Equal(PhotoAevumStudio.Web.Models.MaintenanceScheduleStatuses.SubChecking, active.SubStatus);
+
+        var (subUpdated, subErr) = await service.UpdateMaintenanceScheduleAsync(
+            active.MaintenanceScheduleID,
+            eqId,
+            PhotoAevumStudio.Web.Models.MaintenanceScheduleStatuses.InMaintenance,
+            PhotoAevumStudio.Web.Models.MaintenanceScheduleStatuses.SubCleaning,
+            "Deep optical cleaning",
+            "ADM-001");
+        Assert.True(subUpdated, subErr);
+
+        var (resolved, resErr) = await service.UpdateMaintenanceScheduleAsync(
+            active.MaintenanceScheduleID,
+            eqId,
+            PhotoAevumStudio.Web.Models.MaintenanceScheduleStatuses.NeedsReplacement,
+            null,
+            "Shutter assembly beyond repair",
+            "ADM-001");
+        Assert.True(resolved, resErr);
+
+        var equipment = (await service.GetEquipmentsAsync()).First(e => e.EquipmentID == eqId);
+        Assert.True(equipment.IsNeedsReplacement);
+        Assert.False(equipment.IsAvailable);
+
+        var (restored, restErr) = await service.UpdateMaintenanceScheduleAsync(
+            active.MaintenanceScheduleID,
+            eqId,
+            PhotoAevumStudio.Web.Models.MaintenanceScheduleStatuses.Available,
+            null,
+            "Replaced unit inspected",
+            "ADM-001");
+        Assert.True(restored, restErr);
+
+        var restoredEquipment = (await service.GetEquipmentsAsync()).First(e => e.EquipmentID == eqId);
+        Assert.True(restoredEquipment.IsAvailable);
+    }
+
+    [Fact]
+    public void RequestedFiveFeatureUiPages_ContainExpectedMarkupAndBindings()
+    {
+        var root = GetRepositoryRoot();
+        var webRoot = Path.Combine(root, "PhotoAevumStudioFrontend", "PhotoAevumStudio.Web");
+
+        var maintenance = File.ReadAllText(Path.Combine(webRoot, "Components", "Pages", "Maintenance.razor"));
+        Assert.Contains("Maintenance Schedule", maintenance);
+        Assert.Contains("OpenUpdateScheduleModal", maintenance);
+        Assert.Contains("Needs Replacement", maintenance);
+        Assert.Contains("DefaultSubStatuses", maintenance);
+
+        var equipmentTypes = File.ReadAllText(Path.Combine(webRoot, "Components", "Pages", "EquipmentTypes.razor"));
+        Assert.Contains("ToggleSelectType", equipmentTypes);
+        Assert.Contains("Connected Equipment", equipmentTypes);
+        Assert.Contains("GetEquipmentForType", equipmentTypes);
+
+        var specialization = File.ReadAllText(Path.Combine(webRoot, "Components", "Pages", "Specialization.razor"));
+        Assert.Contains("ToggleSelectSpecialization", specialization);
+        Assert.Contains("Assigned Employees", specialization);
+        Assert.Contains("GetEmployeesForSpecialization", specialization);
+
+        var adminManagement = File.ReadAllText(Path.Combine(webRoot, "Components", "Pages", "AdminManagement.razor"));
+        Assert.Contains("SADM-001", adminManagement);
+        Assert.Contains("Locked", adminManagement);
     }
 
     [Fact]

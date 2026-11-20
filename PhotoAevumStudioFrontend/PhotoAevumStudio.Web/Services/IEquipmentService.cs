@@ -12,6 +12,7 @@ public interface IEquipmentService
     Task<IReadOnlyList<DispatchItemModel>> GetDispatchesAsync(CancellationToken ct = default);
     Task<IReadOnlyList<EventAppointmentModel>> GetUpcomingEventsAsync(CancellationToken ct = default);
     Task<IReadOnlyList<MaintenanceLogModel>> GetMaintenanceLogsAsync(CancellationToken ct = default);
+    Task<IReadOnlyList<MaintenanceScheduleModel>> GetMaintenanceSchedulesAsync(CancellationToken ct = default);
 
     Task<string> GetNextEquipmentTypeIdAsync(CancellationToken ct = default);
     Task<string> GetNextEquipmentIdPreviewAsync(CancellationToken ct = default);
@@ -42,6 +43,8 @@ public interface IEquipmentService
     Task<(bool Success, string? Error)> AssignMultipleEquipmentToEventAsync(string eventId, IEnumerable<string> equipmentIds, string actorId = "ADM-001", CancellationToken ct = default);
     Task<(bool Success, string? Error)> VerifyReturnAsync(int eventEquipmentId, string notes, string actorId = "ADM-001", bool flagMaintenance = false, CancellationToken ct = default);
     Task<(bool Success, string? Error)> LogMaintenanceAsync(string equipmentId, string serviceType, string issueDetails, string actorId, bool setUnderMaintenance = true, CancellationToken ct = default);
+    Task<(bool Success, string? Error)> LogMaintenanceAsync(string equipmentId, string serviceType, string issueDetails, string actorId, bool setUnderMaintenance, string? subStatus, CancellationToken ct = default);
+    Task<(bool Success, string? Error)> UpdateMaintenanceScheduleAsync(int scheduleId, string equipmentId, string status, string? subStatus, string? notes, string actorId, CancellationToken ct = default);
     Task<(bool Success, string? Error)> ResolveMaintenanceAsync(string equipmentId, string resolutionNotes, string actorId, CancellationToken ct = default);
 
     void NotifyStateChanged();

@@ -5,53 +5,65 @@
     <div class="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4"
          role="dialog" aria-modal="true" aria-labelledby="staff-overview-title"
          @onclick="CloseAsync">
-        <div class="bg-white rounded-2xl shadow-2xl border border-slate-200 max-w-lg w-full overflow-hidden"
+        <div class="bg-white rounded-2xl shadow-2xl border border-slate-200 max-w-xl w-full overflow-hidden"
              @onclick:stopPropagation="true">
-            <div class="px-6 py-4 bg-slate-900 text-white flex items-center justify-between">
-                <div class="flex items-center gap-3">
-                    <div class="w-10 h-10 rounded-full bg-white/15 text-white font-bold text-sm flex items-center justify-center uppercase">
+            <!-- Profile Header Banner -->
+            <div class="relative bg-gradient-to-r from-slate-900 via-slate-800 to-slate-900 px-6 pt-5 pb-12 text-white">
+                <div class="flex items-center justify-between">
+                    <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-[11px] font-mono font-semibold bg-white/15 text-slate-100 border border-white/15">
+                        STAFF ID · @Employee.EmployeeId
+                    </span>
+                    <button type="button"
+                            @onclick="CloseAsync"
+                            aria-label="Close staff profile"
+                            class="text-slate-300 hover:text-white text-sm font-bold px-2 py-1 rounded-lg hover:bg-white/10 transition-colors cursor-pointer">
+                        ✕
+                    </button>
+                </div>
+            </div>
+
+            <!-- Overlapping Profile Avatar & Identity -->
+            <div class="px-6 -mt-8 pb-4 border-b border-slate-100 flex flex-col sm:flex-row sm:items-end justify-between gap-3">
+                <div class="flex items-end gap-4">
+                    <div class="w-16 h-16 rounded-2xl bg-slate-900 text-white font-bold text-lg flex items-center justify-center uppercase ring-4 ring-white shadow-md shrink-0">
                         @Employee.Initials
                     </div>
-                    <div>
-                        <h3 id="staff-overview-title" class="text-base font-bold leading-tight">@Employee.FullName</h3>
-                        <p class="text-xs text-slate-300 font-mono">@Employee.EmployeeId</p>
+                    <div class="pt-2">
+                        <h3 id="staff-overview-title" class="text-lg font-bold text-slate-900 leading-tight">@Employee.FullName</h3>
+                        <p class="text-xs text-slate-500 mt-0.5">
+                            @(string.IsNullOrWhiteSpace(Employee.Department) ? "General" : Employee.Department) · @(Employee.Specializations?.FirstOrDefault() ?? "Studio Staff")
+                        </p>
                     </div>
                 </div>
-                <button type="button"
-                        @onclick="CloseAsync"
-                        aria-label="Close staff overview"
-                        class="text-slate-300 hover:text-white text-sm font-bold px-2 py-1 cursor-pointer">
-                    ✕
-                </button>
+                <span class="inline-flex items-center gap-1.5 self-start sm:self-end px-2.5 py-1 rounded-full text-[11px] font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200">
+                    <span class="w-1.5 h-1.5 rounded-full bg-emerald-500"></span>
+                    @Employee.Status
+                </span>
             </div>
 
             <div class="p-6 space-y-4 text-xs">
-                <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 bg-slate-50 rounded-xl p-4 border border-slate-200">
+                <div class="grid grid-cols-1 sm:grid-cols-2 gap-3.5 bg-slate-50 rounded-xl p-4 border border-slate-200">
                     <div>
-                        <span class="text-slate-500 block">Email</span>
-                        <span class="font-semibold text-slate-900 break-all">@(string.IsNullOrWhiteSpace(Employee.Email) ? "—" : Employee.Email)</span>
+                        <span class="text-slate-500 text-[11px] uppercase tracking-wider font-semibold block">Email Address</span>
+                        <span class="font-semibold text-slate-900 break-all mt-0.5 block">@(string.IsNullOrWhiteSpace(Employee.Email) ? "—" : Employee.Email)</span>
                     </div>
                     <div>
-                        <span class="text-slate-500 block">Department</span>
-                        <span class="font-semibold text-slate-900">@(string.IsNullOrWhiteSpace(Employee.Department) ? "General" : Employee.Department)</span>
+                        <span class="text-slate-500 text-[11px] uppercase tracking-wider font-semibold block">Department</span>
+                        <span class="font-semibold text-slate-900 mt-0.5 block">@(string.IsNullOrWhiteSpace(Employee.Department) ? "General" : Employee.Department)</span>
                     </div>
                     <div>
-                        <span class="text-slate-500 block">Status</span>
-                        <span class="font-semibold text-slate-900">@Employee.Status</span>
+                        <span class="text-slate-500 text-[11px] uppercase tracking-wider font-semibold block">Scheduled Days Off</span>
+                        <span class="font-semibold text-slate-900 mt-0.5 block">@(string.IsNullOrWhiteSpace(Employee.DaysOff) ? "Sunday" : Employee.DaysOff)</span>
                     </div>
                     <div>
-                        <span class="text-slate-500 block">Scheduled Days Off</span>
-                        <span class="font-semibold text-slate-900">@(string.IsNullOrWhiteSpace(Employee.DaysOff) ? "Sunday" : Employee.DaysOff)</span>
-                    </div>
-                    <div>
-                        <span class="text-slate-500 block">Birth Date / Year</span>
-                        <span class="font-semibold text-slate-900">
+                        <span class="text-slate-500 text-[11px] uppercase tracking-wider font-semibold block">Birth Date / Year</span>
+                        <span class="font-semibold text-slate-900 mt-0.5 block">
                             @(Employee.BirthDate != null ? Employee.BirthDate.Value.ToString("MMM dd, yyyy") : (Employee.BirthYear != null ? Employee.BirthYear.ToString() : "—"))
                         </span>
                     </div>
-                    <div>
-                        <span class="text-slate-500 block">Address</span>
-                        <span class="font-semibold text-slate-900">@(string.IsNullOrWhiteSpace(Employee.Address) ? "No address recorded" : Employee.Address)</span>
+                    <div class="sm:col-span-2">
+                        <span class="text-slate-500 text-[11px] uppercase tracking-wider font-semibold block">Address</span>
+                        <span class="font-semibold text-slate-900 mt-0.5 block">@(string.IsNullOrWhiteSpace(Employee.Address) ? "No address recorded" : Employee.Address)</span>
                     </div>
                 </div>
 
@@ -106,8 +118,12 @@
                         <button type="button"
                                 @onclick="() => _confirmReset = true"
                                 disabled="@IsResettingPassword"
-                                class="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg bg-amber-600 hover:bg-amber-700 text-white text-xs font-semibold shadow-2xs transition-colors cursor-pointer disabled:opacity-50">
-                            Reset Password
+                                title="Reset Password"
+                                aria-label="Reset Password"
+                                class="inline-flex items-center justify-center w-9 h-9 rounded-lg bg-amber-600 hover:bg-amber-700 text-white shadow-2xs transition-colors cursor-pointer disabled:opacity-50">
+                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 7a2 2 0 012 2m4 0a6 6 0 01-7.743 5.743L11 17H9v2H7v2H4a1 1 0 01-1-1v-2.586a1 1 0 01.293-.707l5.964-5.964A6 6 0 1121 9z" />
+                            </svg>
                         </button>
                     }
                 </div>

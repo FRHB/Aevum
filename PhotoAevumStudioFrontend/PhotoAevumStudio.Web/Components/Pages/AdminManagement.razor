@@ -213,7 +213,17 @@
                                     </span>
                                 </td>
                                 <td class="px-5 py-3.5 text-right">
-                                    @if (isSystemAdmin)
+                                    @if (string.Equals(admin.Id, "SADM-001", StringComparison.OrdinalIgnoreCase))
+                                    {
+                                        <span class="inline-flex items-center gap-1 text-[11px] text-slate-400 font-medium px-2 py-1 rounded bg-slate-50 border border-slate-200/60 cursor-not-allowed"
+                                              title="SADM-001 is locked against edit, delete, or modification">
+                                            <svg class="w-3 h-3 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
+                                            </svg>
+                                            Locked
+                                        </span>
+                                    }
+                                    else if (isSystemAdmin)
                                     {
                                         @if (admin.IsSuperAdmin)
                                         {
@@ -369,7 +379,11 @@
         try
         {
             var data = await AdminService.GetAdminsAsync(_cts?.Token ?? CancellationToken.None);
-            admins = data?.ToList() ?? new List<AdminViewModel>();
+            var canSeeRoot = isSystemAdmin && string.Equals(currentUserId, "SADM-001", StringComparison.OrdinalIgnoreCase);
+            admins = (data ?? Enumerable.Empty<AdminViewModel>())
+                .Where(a => canSeeRoot || !string.Equals(a.Id, "SADM-001", StringComparison.OrdinalIgnoreCase))
+                .Where(a => isSystemAdmin || !a.IsSuperAdmin)
+                .ToList();
         }
         catch
         {
@@ -383,6 +397,11 @@
 
     private void OpenEditModal(AdminViewModel admin)
     {
+        if (string.Equals(admin.Id, "SADM-001", StringComparison.OrdinalIgnoreCase))
+        {
+            notificationMessage = "SADM-001 is locked and cannot be modified.";
+            return;
+        }
         selectedAdmin = admin;
         isEditModalOpen = true;
     }

@@ -1,10 +1,13 @@
 @using Microsoft.AspNetCore.Components.Authorization
 @using Microsoft.AspNetCore.Components.Routing
+@using Microsoft.Extensions.DependencyInjection
+@using PhotoAevumStudio.Web.Models
 @using PhotoAevumStudio.Web.Services
 @implements IDisposable
 @inject NavigationManager Nav
 @inject IAuthService AuthService
 @inject IUserService UserService
+@inject IServiceProvider ServiceProvider
 
 @* ── Mobile Hamburger Toggle ──────────────────────────────────────────────── *@
 <button type="button"
@@ -87,6 +90,8 @@
     private System.Security.Claims.ClaimsPrincipal? _currentUser;
     private bool? _cachedIsOfficeClerk;
     private bool? _cachedIsPhotographerOrCreative;
+    private int _teamLeadEventCount;
+    private bool _checkedTeamLeadEvents;
 
     public bool IsSystemAdmin => EmployeeRoleHelper.IsSystemAdmin(_currentUser) ||
         (_currentUser == null && ((UserRole ?? "").Trim().Equals("systemadmin", StringComparison.OrdinalIgnoreCase) ||
@@ -103,10 +108,22 @@
 
     public bool IsPhotographerOrCreative => _cachedIsPhotographerOrCreative ??= EmployeeRoleHelper.IsPhotographerOrCreative(_currentUser, UserService);
 
-    protected override void OnParametersSet()
+    protected override async Task OnParametersSetAsync()
     {
+        if (AuthState != null)
+        {
+            var state = await AuthState;
+            _currentUser = state.User;
+            if (string.IsNullOrWhiteSpace(UserRole))
+            {
+                var roleClaim = state.User.FindFirst(System.Security.Claims.ClaimTypes.Role) ?? state.User.FindFirst("role");
+                UserRole = roleClaim?.Value?.ToLower() ?? string.Empty;
+            }
+        }
+
         _cachedIsOfficeClerk = null;
         _cachedIsPhotographerOrCreative = null;
+        AutoExpandActiveAccordion();
     }
 
     protected override async Task OnInitializedAsync()
@@ -130,6 +147,46 @@
         _cachedIsOfficeClerk = null;
         _cachedIsPhotographerOrCreative = null;
         AutoExpandActiveAccordion();
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender || _checkedTeamLeadEvents) return;
+        _checkedTeamLeadEvents = true;
+        await RefreshTeamLeadEventCountAsync();
+    }
+
+    private async Task RefreshTeamLeadEventCountAsync()
+    {
+        try
+        {
+            if (_currentUser?.Identity?.IsAuthenticated != true || IsAdmin || IsSystemAdmin || IsOfficeClerk)
+            {
+                _teamLeadEventCount = 0;
+                return;
+            }
+
+            var consultationClient = ServiceProvider?.GetService<IConsultationClient>();
+            if (consultationClient == null) return;
+
+            var empId = EmployeeRoleHelper.GetCurrentEmployeeId(_currentUser);
+            if (string.IsNullOrWhiteSpace(empId)) return;
+
+            var res = await consultationClient.GetTeamLeaderEventsAsync(empId);
+            if (res.IsSuccess && res.Value != null)
+            {
+                var nextCount = TeamLeaderMonitorSelector.SelectUpcomingAndOngoing(res.Value).Count;
+                if (nextCount != _teamLeadEventCount)
+                {
+                    _teamLeadEventCount = nextCount;
+                    await InvokeAsync(StateHasChanged);
+                }
+            }
+        }
+        catch
+        {
+            // Ignore transient auth/prerender errors in sidebar
+        }
     }
 
     private void OnLocationChanged(object? sender, LocationChangedEventArgs e)
@@ -723,6 +780,23 @@
                 }
                 else
                 {
+                    @if (_teamLeadEventCount > 0)
+                    {
+                        <li>
+                            <NavLink href="/staff/team-lead-monitor" Match="NavLinkMatch.All"
+                                     class="aev-sidebar__link" ActiveClass="aev-sidebar__link--active">
+                                <span class="aev-sidebar__icon" aria-hidden="true">
+                                    <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                        <rect x="2" y="3" width="20" height="14" rx="2" ry="2"></rect>
+                                        <line x1="8" y1="21" x2="16" y2="21"></line>
+                                        <line x1="12" y1="17" x2="12" y2="21"></line>
+                                    </svg>
+                                </span>
+                                <span>Team Lead Monitor</span>
+                                <span class="ml-auto px-1.5 py-0.5 rounded-full text-[10px] font-bold bg-teal-600 text-white">@_teamLeadEventCount</span>
+                            </NavLink>
+                        </li>
+                    }
                     @* Regular Employee (Photographers / Videographers): Read-only My Schedule & Featured Services *@
                     <li>
                         <NavLink href="/staff/calendar/master" Match="NavLinkMatch.All"

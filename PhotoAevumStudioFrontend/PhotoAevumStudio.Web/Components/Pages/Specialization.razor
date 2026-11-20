@@ -232,9 +232,12 @@
                             @foreach (var spec in PagedMasterSpecializations)
                             {
                                 var classes = SpecializationColorHelper.GetClasses(spec.ColorTag);
-                                var staffCount = GetStaffCountForSpecialization(spec.Name, spec.Id);
+                                var assignedEmployees = GetEmployeesForSpecialization(spec.Name, spec.Id);
+                                var staffCount = assignedEmployees.Count;
+                                var isSelected = string.Equals(selectedSpecializationId, spec.Id, StringComparison.OrdinalIgnoreCase);
 
-                                <tr class="hover:bg-gray-50/60 transition-colors duration-100">
+                                <tr @onclick="() => ToggleSelectSpecialization(spec)"
+                                    class="@($"transition-colors duration-100 cursor-pointer {(isSelected ? "bg-gray-100/90" : "hover:bg-gray-50/60")}")">
                                     <td class="py-4 px-6 font-mono text-xs font-semibold text-gray-700">
                                         <span class="bg-gray-100 px-2 py-0.5 rounded text-[11px]">@spec.Id</span>
                                     </td>
@@ -258,7 +261,7 @@
                                             @staffCount @(staffCount == 1 ? "staff" : "staff")
                                         </span>
                                     </td>
-                                    <td class="py-4 px-6 text-right">
+                                    <td class="py-4 px-6 text-right" @onclick:stopPropagation="true">
                                         @if (!_isOfficeClerk)
                                         {
                                         <button type="button" 
@@ -273,6 +276,70 @@
                                         }
                                     </td>
                                 </tr>
+                                @if (isSelected)
+                                {
+                                    <tr class="bg-gray-50/90 border-b border-gray-200">
+                                        <td colspan="7" class="px-6 py-4">
+                                            <div class="space-y-4">
+                                                <div class="flex flex-wrap items-start justify-between gap-3 pb-3 border-b border-gray-200">
+                                                    <div>
+                                                        <h3 class="text-sm font-bold text-gray-900">@spec.Name — Specialization Details</h3>
+                                                        <p class="text-[11px] text-gray-500 mt-0.5">
+                                                            ID: <span class="font-mono font-semibold text-gray-700">@spec.Id</span> ·
+                                                            Department: <span class="font-semibold text-gray-700">@(string.IsNullOrWhiteSpace(spec.Department) ? "General" : spec.Department)</span> ·
+                                                            Color Tag: <span class="font-semibold text-gray-700">@(string.IsNullOrWhiteSpace(spec.ColorTag) ? "Blue" : spec.ColorTag)</span>
+                                                        </p>
+                                                        @if (!string.IsNullOrWhiteSpace(spec.Description))
+                                                        {
+                                                            <p class="text-xs text-gray-700 mt-1.5">@spec.Description</p>
+                                                        }
+                                                    </div>
+                                                    <span class="px-2.5 py-1 rounded-full text-xs font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200">
+                                                        @staffCount Assigned @(staffCount == 1 ? "Employee" : "Employees")
+                                                    </span>
+                                                </div>
+
+                                                <div>
+                                                    <h4 class="text-[11px] font-bold text-gray-600 uppercase tracking-wider mb-2">
+                                                        Assigned Employees (@staffCount)
+                                                    </h4>
+                                                    @if (!assignedEmployees.Any())
+                                                    {
+                                                        <p class="text-xs text-gray-500 bg-white border border-gray-200 rounded-lg p-3">
+                                                            No employees are currently assigned to this specialization.
+                                                        </p>
+                                                    }
+                                                    else
+                                                    {
+                                                        <div class="bg-white rounded-lg border border-gray-200 overflow-hidden">
+                                                            <table class="w-full text-left border-collapse text-xs">
+                                                                <thead>
+                                                                    <tr class="bg-gray-50 border-b border-gray-200 text-gray-500 uppercase tracking-wider text-[10px] font-semibold">
+                                                                        <th class="px-4 py-2">Employee ID</th>
+                                                                        <th class="px-4 py-2">Full Name</th>
+                                                                        <th class="px-4 py-2">Department</th>
+                                                                        <th class="px-4 py-2">Email</th>
+                                                                    </tr>
+                                                                </thead>
+                                                                <tbody class="divide-y divide-gray-100">
+                                                                    @foreach (var emp in assignedEmployees)
+                                                                    {
+                                                                        <tr class="hover:bg-gray-50/70">
+                                                                            <td class="px-4 py-2 font-mono text-gray-700">@emp.EmployeeId</td>
+                                                                            <td class="px-4 py-2 font-semibold text-gray-900">@emp.FullName</td>
+                                                                            <td class="px-4 py-2 text-gray-600">@(string.IsNullOrWhiteSpace(emp.Department) ? "General" : emp.Department)</td>
+                                                                            <td class="px-4 py-2 text-gray-500">@(string.IsNullOrWhiteSpace(emp.Email) ? "—" : emp.Email)</td>
+                                                                        </tr>
+                                                                    }
+                                                                </tbody>
+                                                            </table>
+                                                        </div>
+                                                    }
+                                                </div>
+                                            </div>
+                                        </td>
+                                    </tr>
+                                }
                             }
                         }
                         else
@@ -1069,16 +1136,31 @@
         staffPage = 1;
     }
 
-    private int GetStaffCountForSpecialization(string specializationName, string? specializationId = null)
-    {
-        if (string.IsNullOrWhiteSpace(specializationName) && string.IsNullOrWhiteSpace(specializationId)) return 0;
+    private string? selectedSpecializationId;
 
-        return employees.Count(e => e.Specializations.Any(s =>
+    private void ToggleSelectSpecialization(SpecializationLookupItem spec)
+    {
+        selectedSpecializationId = string.Equals(selectedSpecializationId, spec.Id, StringComparison.OrdinalIgnoreCase)
+            ? null
+            : spec.Id;
+    }
+
+    private List<EmployeeSpecializationDto> GetEmployeesForSpecialization(string specializationName, string? specializationId = null)
+    {
+        if (string.IsNullOrWhiteSpace(specializationName) && string.IsNullOrWhiteSpace(specializationId))
+            return new List<EmployeeSpecializationDto>();
+
+        return employees.Where(e => e.Specializations.Any(s =>
             (!string.IsNullOrWhiteSpace(specializationName) && s.Equals(specializationName.Trim(), StringComparison.OrdinalIgnoreCase)) ||
             (!string.IsNullOrWhiteSpace(specializationId) && s.Equals(specializationId.Trim(), StringComparison.OrdinalIgnoreCase)) ||
             (!string.IsNullOrWhiteSpace(specializationName) && specializationName.Trim().Length > 3 && s.Contains(specializationName.Trim(), StringComparison.OrdinalIgnoreCase)) ||
-            (!string.IsNullOrWhiteSpace(specializationName) && s.Length > 3 && specializationName.Trim().Contains(s, StringComparison.OrdinalIgnoreCase))));
+            (!string.IsNullOrWhiteSpace(specializationName) && s.Length > 3 && specializationName.Trim().Contains(s, StringComparison.OrdinalIgnoreCase))))
+            .OrderBy(e => e.FullName)
+            .ToList();
     }
+
+    private int GetStaffCountForSpecialization(string specializationName, string? specializationId = null) =>
+        GetEmployeesForSpecialization(specializationName, specializationId).Count;
 
     private int GetStaffCountForDepartment(string departmentName, string? departmentId = null)
     {

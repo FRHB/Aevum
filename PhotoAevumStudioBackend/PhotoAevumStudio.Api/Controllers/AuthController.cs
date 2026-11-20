@@ -434,7 +434,7 @@ public class AuthController : ControllerBase
                 request.MiddleName,
                 request.Email,
                 request.Password,
-                requesterId ?? "SADM-001");
+                requesterId ?? string.Empty);
 
             if (!adminSuccess)
                 return BadRequest(new ProblemDetails { Title = "Registration failed", Detail = adminMsg, Status = 400 });

@@ -44,6 +44,122 @@
     <!-- Alert / Toast Banner -->
     <SystemMessage Title="Audit Log Committed" Message="@notificationMessage" Severity="success" Mode="banner" OnDismiss="() => notificationMessage = null" />
 
+    <!-- Maintenance Schedule Section -->
+    <div class="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
+        <div class="px-5 py-3.5 border-b border-slate-200 bg-slate-50/75 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
+            <div>
+                <h2 class="text-sm font-bold text-slate-900">Maintenance Schedule</h2>
+                <p class="text-[11px] text-slate-500">Track active hardware work status (`In Maintenance` sub-statuses) or resolve equipment to `Available` / `Needs Replacement`.</p>
+            </div>
+            <div class="flex items-center gap-2 text-xs">
+                <span class="px-2.5 py-1 rounded-full bg-amber-50 text-amber-800 border border-amber-200 font-semibold">
+                    @maintenanceSchedules.Count(s => s.IsInMaintenance) Active
+                </span>
+                <span class="px-2.5 py-1 rounded-full bg-rose-50 text-rose-800 border border-rose-200 font-semibold">
+                    @maintenanceSchedules.Count(s => s.IsNeedsReplacement) Needs Replacement
+                </span>
+            </div>
+        </div>
+        <div class="overflow-x-auto">
+            <table class="w-full text-left border-collapse text-xs">
+                <thead>
+                    <tr class="bg-slate-50/50 border-b border-slate-200 text-slate-600 font-semibold uppercase tracking-wider text-[11px]">
+                        <th class="px-5 py-3">Equipment</th>
+                        <th class="px-5 py-3">Service &amp; Notes</th>
+                        <th class="px-5 py-3">Work Status</th>
+                        <th class="px-5 py-3">Updated</th>
+                        <th class="px-5 py-3 text-right">Actions</th>
+                    </tr>
+                </thead>
+                <tbody class="divide-y divide-slate-100">
+                    @if (!maintenanceSchedules.Any())
+                    {
+                        <tr>
+                            <td colspan="5" class="px-5 py-8 text-center text-slate-400">
+                                No maintenance schedule entries recorded yet. Send an item to Maintenance or log a service ticket to start tracking.
+                            </td>
+                        </tr>
+                    }
+                    else
+                    {
+                        @foreach (var sched in maintenanceSchedules)
+                        {
+                            <tr class="hover:bg-slate-50/70 transition-colors">
+                                <td class="px-5 py-3">
+                                    <p class="font-bold text-slate-900">@sched.EquipmentName</p>
+                                    <div class="flex items-center gap-2 mt-0.5 text-[11px] font-mono text-slate-500">
+                                        <span>@sched.EquipmentID</span>
+                                        @if (!string.IsNullOrEmpty(sched.SerialNo))
+                                        {
+                                            <span class="text-slate-300">•</span>
+                                            <span>SN: @sched.SerialNo</span>
+                                        }
+                                    </div>
+                                </td>
+                                <td class="px-5 py-3 max-w-md">
+                                    <p class="font-semibold text-slate-800">@sched.ServiceType</p>
+                                    @if (!string.IsNullOrEmpty(sched.IssueDetails))
+                                    {
+                                        <p class="text-[11px] text-slate-600 mt-0.5 line-clamp-2">@sched.IssueDetails</p>
+                                    }
+                                    @if (!string.IsNullOrEmpty(sched.ResolutionNotes))
+                                    {
+                                        <p class="text-[11px] text-slate-500 mt-0.5 italic line-clamp-2">Note: @sched.ResolutionNotes</p>
+                                    }
+                                </td>
+                                <td class="px-5 py-3">
+                                    @if (sched.IsInMaintenance)
+                                    {
+                                        <div class="flex flex-wrap items-center gap-1.5">
+                                            <span class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold bg-amber-50 text-amber-800 border border-amber-200">
+                                                <span class="w-1.5 h-1.5 rounded-full bg-amber-500 animate-pulse"></span>
+                                                In Maintenance
+                                            </span>
+                                            @if (!string.IsNullOrWhiteSpace(sched.SubStatus))
+                                            {
+                                                <span class="inline-flex items-center px-2 py-0.5 rounded-md text-[11px] font-semibold bg-slate-100 text-slate-700 border border-slate-200">
+                                                    @sched.SubStatus
+                                                </span>
+                                            }
+                                        </div>
+                                    }
+                                    else if (sched.IsNeedsReplacement)
+                                    {
+                                        <span class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold bg-rose-50 text-rose-800 border border-rose-200">
+                                            <span class="w-1.5 h-1.5 rounded-full bg-rose-500"></span>
+                                            Needs Replacement
+                                        </span>
+                                    }
+                                    else
+                                    {
+                                        <span class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold bg-emerald-50 text-emerald-800 border border-emerald-200">
+                                            <span class="w-1.5 h-1.5 rounded-full bg-emerald-500"></span>
+                                            Available
+                                        </span>
+                                    }
+                                </td>
+                                <td class="px-5 py-3 text-[11px] text-slate-600 whitespace-nowrap">
+                                    <div>@sched.UpdatedAt.ToLocalTime().ToString("MMM dd, yyyy")</div>
+                                    <div class="text-slate-400 text-[10px]">@sched.UpdatedAt.ToLocalTime().ToString("hh:mm tt")</div>
+                                </td>
+                                <td class="px-5 py-3 text-right whitespace-nowrap">
+                                    @if (!_isReadOnly)
+                                    {
+                                        <button type="button"
+                                                @onclick="() => OpenUpdateScheduleModal(sched)"
+                                                class="px-3 py-1.5 text-xs font-bold text-slate-800 bg-slate-100 hover:bg-slate-200 border border-slate-300 rounded-md transition-colors">
+                                            Update
+                                        </button>
+                                    }
+                                </td>
+                            </tr>
+                        }
+                    }
+                </tbody>
+            </table>
+        </div>
+    </div>
+
     <!-- Summary Cards (Top Row) -->
     <div class="grid grid-cols-1 sm:grid-cols-3 gap-4">
         <!-- Card 1: Total Equipment currently under Maintenance/Repair -->
@@ -207,6 +323,13 @@
                                             Maintenance
                                         </span>
                                     }
+                                    else if (log.EquipmentStatus.Equals("Needs Replacement", StringComparison.OrdinalIgnoreCase))
+                                    {
+                                        <span class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold bg-rose-50 text-rose-800 border border-rose-200">
+                                            <span class="w-1.5 h-1.5 rounded-full bg-rose-500"></span>
+                                            Needs Replacement
+                                        </span>
+                                    }
                                     else
                                     {
                                         <span class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold bg-emerald-50 text-emerald-800 border border-emerald-200">
@@ -344,6 +467,28 @@
                         </InputSelect>
                     </div>
 
+                    <!-- Work Sub-Status -->
+                    <div>
+                        <label class="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1">
+                            Schedule Sub-Status
+                        </label>
+                        <select value="@logSubStatusChoice" @onchange="OnLogSubStatusChoiceChanged"
+                                class="w-full px-3 py-2 text-xs rounded-lg border border-slate-300 bg-white text-slate-900 focus:outline-none focus:ring-1 focus:ring-slate-900">
+                            @foreach (var sub in MaintenanceScheduleStatuses.DefaultSubStatuses)
+                            {
+                                <option value="@sub">@sub</option>
+                            }
+                            <option value="CUSTOM">Other (Custom sub-status...)</option>
+                        </select>
+                        @if (logSubStatusChoice == "CUSTOM")
+                        {
+                            <input type="text"
+                                   @bind="maintenanceForm.SubStatus"
+                                   placeholder="Enter custom work sub-status"
+                                   class="mt-2 w-full px-3 py-2 text-xs rounded-lg border border-slate-300 focus:outline-none focus:ring-1 focus:ring-slate-900" />
+                        }
+                    </div>
+
                     <!-- Action Details / Diagnosis Notes -->
                     <div>
                         <label class="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1">
@@ -402,6 +547,99 @@
                     </button>
                 </div>
             </EditForm>
+        </div>
+    </div>
+}
+
+<!-- ══════════════════════════════════════════════════════════════════════════ -->
+<!-- MODAL: UPDATE MAINTENANCE SCHEDULE                                        -->
+<!-- ══════════════════════════════════════════════════════════════════════════ -->
+@if (isUpdateModalOpen && updateTargetSchedule != null)
+{
+    <div class="fixed inset-0 z-50 overflow-y-auto bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4">
+        <div class="relative bg-white rounded-2xl shadow-xl border border-slate-200 w-full max-w-md overflow-hidden animate-in fade-in zoom-in-95 duration-150">
+            <div class="px-6 py-4 bg-slate-900 text-white flex items-center justify-between">
+                <div>
+                    <h3 class="font-bold text-sm text-white">Update Maintenance Schedule</h3>
+                    <p class="text-[11px] text-slate-300">Update work status or resolve equipment condition</p>
+                </div>
+                <button type="button" @onclick="CloseUpdateScheduleModal" class="text-slate-300 hover:text-white font-bold">&times;</button>
+            </div>
+
+            <div class="p-6 space-y-4 text-xs">
+                @if (!string.IsNullOrEmpty(updateModalError))
+                {
+                    <div class="p-3 bg-rose-50 border border-rose-200 text-rose-800 rounded-lg text-xs">
+                        @updateModalError
+                    </div>
+                }
+
+                <div>
+                    <span class="text-slate-400 uppercase text-[10px] font-bold">Equipment</span>
+                    <p class="text-sm font-bold text-slate-900">@updateTargetSchedule.EquipmentName</p>
+                    <p class="font-mono text-slate-500">ID: @updateTargetSchedule.EquipmentID @(!string.IsNullOrEmpty(updateTargetSchedule.SerialNo) ? $"| SN: {updateTargetSchedule.SerialNo}" : "")</p>
+                </div>
+
+                <div>
+                    <label class="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1">
+                        Resolution / Status <span class="text-rose-500">*</span>
+                    </label>
+                    <select @bind="updateScheduleStatus"
+                            class="w-full px-3 py-2 text-xs rounded-lg border border-slate-300 bg-white text-slate-900 focus:outline-none focus:ring-1 focus:ring-slate-900">
+                        <option value="@MaintenanceScheduleStatuses.InMaintenance">In Maintenance</option>
+                        <option value="@MaintenanceScheduleStatuses.Available">Available (Restore availability)</option>
+                        <option value="@MaintenanceScheduleStatuses.NeedsReplacement">Needs Replacement (Unfixable)</option>
+                    </select>
+                </div>
+
+                @if (updateScheduleStatus == MaintenanceScheduleStatuses.InMaintenance)
+                {
+                    <div>
+                        <label class="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1">
+                            Work Sub-Status <span class="text-rose-500">*</span>
+                        </label>
+                        <select value="@updateSubStatusChoice" @onchange="OnUpdateSubStatusChoiceChanged"
+                                class="w-full px-3 py-2 text-xs rounded-lg border border-slate-300 bg-white text-slate-900 focus:outline-none focus:ring-1 focus:ring-slate-900">
+                            @foreach (var sub in MaintenanceScheduleStatuses.DefaultSubStatuses)
+                            {
+                                <option value="@sub">@sub</option>
+                            }
+                            <option value="CUSTOM">Other (Custom sub-status...)</option>
+                        </select>
+                        @if (updateSubStatusChoice == "CUSTOM")
+                        {
+                            <input type="text"
+                                   @bind="updateScheduleSubStatus"
+                                   placeholder="Enter custom work sub-status"
+                                   class="mt-2 w-full px-3 py-2 text-xs rounded-lg border border-slate-300 focus:outline-none focus:ring-1 focus:ring-slate-900" />
+                        }
+                    </div>
+                }
+
+                <div>
+                    <label class="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1">
+                        Update Notes
+                    </label>
+                    <textarea @bind="updateScheduleNotes"
+                              rows="3"
+                              placeholder="Optional diagnostic progress, repair details, or replacement reason..."
+                              class="w-full px-3 py-2 text-xs rounded-lg border border-slate-300 focus:outline-none focus:ring-1 focus:ring-slate-900"></textarea>
+                </div>
+            </div>
+
+            <div class="px-6 py-3.5 bg-slate-50 border-t border-slate-200 flex items-center justify-end gap-3">
+                <button type="button"
+                        @onclick="CloseUpdateScheduleModal"
+                        class="px-4 py-2 text-xs font-medium text-slate-600 hover:text-slate-900">
+                    Cancel
+                </button>
+                <button type="button"
+                        @onclick="ConfirmUpdateScheduleAsync"
+                        disabled="@isSubmitting"
+                        class="px-5 py-2 bg-slate-900 hover:bg-black text-white text-xs font-bold uppercase tracking-wider rounded-lg shadow-sm transition-all disabled:opacity-50">
+                    @(isSubmitting ? "Saving..." : "Save Update")
+                </button>
+            </div>
         </div>
     </div>
 }
@@ -526,12 +764,22 @@
     private bool _isReadOnly = true;
 
     private List<MaintenanceLogModel> maintenanceLogs = new();
+    private List<MaintenanceScheduleModel> maintenanceSchedules = new();
     private List<EquipmentItemModel> equipmentList = new();
 
     private bool isLoading = true;
     private bool isSubmitting = false;
     private bool isLogModalOpen = false;
     private bool isResolveModalOpen = false;
+    private bool isUpdateModalOpen = false;
+    private string logSubStatusChoice = MaintenanceScheduleStatuses.SubUnderRepair;
+
+    private MaintenanceScheduleModel? updateTargetSchedule;
+    private string updateScheduleStatus = MaintenanceScheduleStatuses.InMaintenance;
+    private string updateSubStatusChoice = MaintenanceScheduleStatuses.SubUnderRepair;
+    private string updateScheduleSubStatus = MaintenanceScheduleStatuses.SubUnderRepair;
+    private string updateScheduleNotes = string.Empty;
+    private string? updateModalError;
 
     private string searchQuery = string.Empty;
     private string selectedServiceFilter = "ALL";
@@ -593,9 +841,15 @@
     {
         isLoading = true;
         maintenanceLogs = (await EquipmentService.GetMaintenanceLogsAsync()).ToList();
+        maintenanceSchedules = (await EquipmentService.GetMaintenanceSchedulesAsync()).ToList();
         equipmentList = (await EquipmentService.GetEquipmentsAsync()).ToList();
         isLoading = false;
     }
+
+    private string GetCurrentActorId() =>
+        _currentUser?.FindFirst("studio_id")?.Value
+        ?? _currentUser?.FindFirst(ClaimTypes.NameIdentifier)?.Value
+        ?? "ADM-001";
 
     private void HandleExternalStateChange()
     {
@@ -662,11 +916,19 @@
         {
             EquipmentID = equipmentList.FirstOrDefault(e => e.IsAvailable)?.EquipmentID ?? string.Empty,
             ServiceType = "Repair",
-            ActorID = "ADM-001",
+            SubStatus = MaintenanceScheduleStatuses.SubUnderRepair,
+            ActorID = GetCurrentActorId(),
             SetUnderMaintenance = true
         };
+        logSubStatusChoice = MaintenanceScheduleStatuses.SubUnderRepair;
         formErrorMessage = null;
         isLogModalOpen = true;
+    }
+
+    private void OnLogSubStatusChoiceChanged(ChangeEventArgs e)
+    {
+        logSubStatusChoice = e.Value?.ToString() ?? MaintenanceScheduleStatuses.SubUnderRepair;
+        maintenanceForm.SubStatus = logSubStatusChoice == "CUSTOM" ? string.Empty : logSubStatusChoice;
     }
 
     private void CloseLogModal()
@@ -691,7 +953,8 @@
             maintenanceForm.ServiceType,
             maintenanceForm.IssueDetails,
             maintenanceForm.ActorID,
-            maintenanceForm.SetUnderMaintenance);
+            maintenanceForm.SetUnderMaintenance,
+            maintenanceForm.SubStatus);
 
         isSubmitting = false;
 
@@ -722,7 +985,7 @@
         var (success, _) = await EquipmentService.ResolveMaintenanceAsync(
             resolveTargetLog.EntityID,
             resolveNotes,
-            "ADM-001");
+            GetCurrentActorId());
 
         isResolveModalOpen = false;
 
@@ -730,6 +993,83 @@
         {
             notificationMessage = $"Equipment '{resolveTargetLog.EquipmentName}' restored to 'Available'. Resolution audit log recorded in dbo.HistoryLog.";
             await LoadDataAsync();
+        }
+    }
+
+    private void OpenUpdateScheduleModal(MaintenanceScheduleModel schedule)
+    {
+        updateTargetSchedule = schedule;
+        updateScheduleStatus = string.IsNullOrWhiteSpace(schedule.Status)
+            ? MaintenanceScheduleStatuses.InMaintenance
+            : schedule.Status;
+        var currentSub = string.IsNullOrWhiteSpace(schedule.SubStatus)
+            ? MaintenanceScheduleStatuses.SubUnderRepair
+            : schedule.SubStatus;
+        updateScheduleSubStatus = currentSub;
+        updateSubStatusChoice = MaintenanceScheduleStatuses.DefaultSubStatuses.Contains(currentSub, StringComparer.OrdinalIgnoreCase)
+            ? MaintenanceScheduleStatuses.DefaultSubStatuses.First(s => s.Equals(currentSub, StringComparison.OrdinalIgnoreCase))
+            : "CUSTOM";
+        updateScheduleNotes = schedule.ResolutionNotes ?? string.Empty;
+        updateModalError = null;
+        isUpdateModalOpen = true;
+    }
+
+    private void CloseUpdateScheduleModal()
+    {
+        isUpdateModalOpen = false;
+        updateTargetSchedule = null;
+        updateModalError = null;
+    }
+
+    private void OnUpdateSubStatusChoiceChanged(ChangeEventArgs e)
+    {
+        updateSubStatusChoice = e.Value?.ToString() ?? MaintenanceScheduleStatuses.SubUnderRepair;
+        updateScheduleSubStatus = updateSubStatusChoice == "CUSTOM" ? string.Empty : updateSubStatusChoice;
+    }
+
+    private async Task ConfirmUpdateScheduleAsync()
+    {
+        if (updateTargetSchedule == null)
+            return;
+
+        if (updateScheduleStatus == MaintenanceScheduleStatuses.InMaintenance && string.IsNullOrWhiteSpace(updateScheduleSubStatus))
+        {
+            updateModalError = "Please choose or enter a work sub-status.";
+            return;
+        }
+
+        isSubmitting = true;
+        updateModalError = null;
+
+        var subToSend = updateScheduleStatus == MaintenanceScheduleStatuses.InMaintenance
+            ? updateScheduleSubStatus.Trim()
+            : null;
+
+        var (success, error) = await EquipmentService.UpdateMaintenanceScheduleAsync(
+            updateTargetSchedule.MaintenanceScheduleID,
+            updateTargetSchedule.EquipmentID,
+            updateScheduleStatus,
+            subToSend,
+            updateScheduleNotes,
+            GetCurrentActorId());
+
+        isSubmitting = false;
+
+        if (success)
+        {
+            var equipmentLabel = updateTargetSchedule.EquipmentName;
+            isUpdateModalOpen = false;
+            updateTargetSchedule = null;
+            notificationMessage = updateScheduleStatus == MaintenanceScheduleStatuses.Available
+                ? $"Equipment '{equipmentLabel}' resolved and restored to 'Available'."
+                : updateScheduleStatus == MaintenanceScheduleStatuses.NeedsReplacement
+                    ? $"Equipment '{equipmentLabel}' marked as 'Needs Replacement'."
+                    : $"Maintenance schedule for '{equipmentLabel}' updated ({subToSend}).";
+            await LoadDataAsync();
+        }
+        else
+        {
+            updateModalError = error ?? "Failed to update maintenance schedule.";
         }
     }
 

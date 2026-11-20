@@ -409,3 +409,168 @@ public static class LiveEventOverviewSelector
         };
     }
 }
+
+public sealed record TeamLeaderProcessStep(string Key, string Label, string State);
+
+public static class TeamLeaderMonitorSelector
+{
+    private static readonly HashSet<string> FinishedOrInactiveStatuses = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "Complete",
+        "Completed",
+        "Shot",
+        "Delivered",
+        "Cancelled",
+        "Expired",
+        "Deal_Lost"
+    };
+
+    private static readonly HashSet<string> OngoingStages = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "Preparing",
+        "Preparation",
+        "Dispatch",
+        "Ready",
+        "Ongoing",
+        "On Going",
+        "In Execution",
+        "Event Done",
+        "Post Event",
+        "Pending Verification",
+        "Paid Cash Pending Verification",
+        "Payment Verification (Cash)",
+        "Payment Verification (QR:Pending Payment)"
+    };
+
+    public static bool IsCompletedOrInactive(EventAppointmentDto? ev)
+    {
+        if (ev == null) return true;
+        var status = (ev.EventStatus ?? string.Empty).Trim();
+        var finalStatus = (ev.FinalPaymentStatus ?? string.Empty).Trim();
+        return FinishedOrInactiveStatuses.Contains(status) ||
+               string.Equals(finalStatus, "Paid", StringComparison.OrdinalIgnoreCase) ||
+               string.Equals(finalStatus, "Payment Verification (QR:Paid)", StringComparison.OrdinalIgnoreCase);
+    }
+
+    public static bool IsPaidAndBooked(EventAppointmentDto? ev)
+    {
+        if (ev == null) return false;
+        if (string.Equals(ev.DownpaymentStatus, "Paid", StringComparison.OrdinalIgnoreCase))
+            return true;
+        if (!string.IsNullOrWhiteSpace(ev.FinalPaymentReferenceId))
+            return true;
+
+        var status = (ev.EventStatus ?? string.Empty).Trim();
+        return !string.Equals(status, "Pending Payment", StringComparison.OrdinalIgnoreCase) &&
+               !string.Equals(status, "Awaiting_Downpayment", StringComparison.OrdinalIgnoreCase) &&
+               !string.Equals(status, "Cancelled", StringComparison.OrdinalIgnoreCase) &&
+               !string.Equals(status, "Expired", StringComparison.OrdinalIgnoreCase) &&
+               !string.Equals(status, "Deal_Lost", StringComparison.OrdinalIgnoreCase);
+    }
+
+    public static bool IsOngoingOrInProcess(EventAppointmentDto? ev)
+    {
+        if (ev == null || IsCompletedOrInactive(ev)) return false;
+        var status = (ev.EventStatus ?? string.Empty).Trim();
+        var finalStatus = (ev.FinalPaymentStatus ?? string.Empty).Trim();
+
+        if (OngoingStages.Contains(status) || OngoingStages.Contains(finalStatus))
+            return true;
+
+        return string.Equals(status, "Pending Payment", StringComparison.OrdinalIgnoreCase) &&
+               !string.IsNullOrWhiteSpace(ev.FinalPaymentReferenceId);
+    }
+
+    public static bool IsUpcoming(EventAppointmentDto? ev, DateTime studioNowLocal)
+    {
+        if (ev == null || IsCompletedOrInactive(ev) || IsOngoingOrInProcess(ev))
+            return false;
+
+        if (!IsPaidAndBooked(ev))
+            return false;
+
+        return ev.EventDate >= DateOnly.FromDateTime(studioNowLocal.Date);
+    }
+
+    public static IReadOnlyList<T> SelectUpcomingAndOngoing<T>(
+        IEnumerable<T>? events,
+        DateTime? studioNowLocal = null) where T : EventAppointmentDto
+    {
+        var now = studioNowLocal ?? DateTime.Now;
+        return (events ?? Enumerable.Empty<T>())
+            .Where(e => IsOngoingOrInProcess(e) || IsUpcoming(e, now))
+            .OrderBy(e => IsOngoingOrInProcess(e) ? 0 : 1)
+            .ThenBy(e => GetOngoingPriority(e))
+            .ThenBy(e => e.EventDate)
+            .ThenBy(e => e.EventTime)
+            .ToList();
+    }
+
+    public static IReadOnlyList<TeamLeaderProcessStep> GetProcessSteps(EventAppointmentDto ev)
+    {
+        var status = (ev.EventStatus ?? string.Empty).Trim();
+        var finalStatus = (ev.FinalPaymentStatus ?? string.Empty).Trim();
+
+        var isCashPending = string.Equals(status, "Payment Verification (Cash)", StringComparison.OrdinalIgnoreCase)
+                            || string.Equals(status, "Pending Verification", StringComparison.OrdinalIgnoreCase)
+                            || string.Equals(status, "Paid Cash Pending Verification", StringComparison.OrdinalIgnoreCase)
+                            || string.Equals(finalStatus, "Payment Verification (Cash)", StringComparison.OrdinalIgnoreCase)
+                            || string.Equals(finalStatus, "Pending Verification", StringComparison.OrdinalIgnoreCase);
+
+        var isQrPending = string.Equals(finalStatus, "Payment Verification (QR:Pending Payment)", StringComparison.OrdinalIgnoreCase)
+                          || (string.Equals(ev.FinalPaymentMethod, "Xendit_QR", StringComparison.OrdinalIgnoreCase)
+                              && !string.IsNullOrWhiteSpace(ev.FinalPaymentReferenceId)
+                              && !IsCompletedOrInactive(ev));
+
+        int activeRank;
+        if (IsCompletedOrInactive(ev))
+            activeRank = 6;
+        else if (isCashPending || isQrPending || string.Equals(status, "Pending Payment", StringComparison.OrdinalIgnoreCase))
+            activeRank = 5;
+        else if (string.Equals(status, "Event Done", StringComparison.OrdinalIgnoreCase) || string.Equals(status, "Post Event", StringComparison.OrdinalIgnoreCase))
+            activeRank = 4;
+        else if (string.Equals(status, "Ongoing", StringComparison.OrdinalIgnoreCase) || string.Equals(status, "On Going", StringComparison.OrdinalIgnoreCase) || string.Equals(status, "In Execution", StringComparison.OrdinalIgnoreCase))
+            activeRank = 3;
+        else if (string.Equals(status, "Preparation", StringComparison.OrdinalIgnoreCase) || string.Equals(status, "Preparing", StringComparison.OrdinalIgnoreCase) || string.Equals(status, "Dispatch", StringComparison.OrdinalIgnoreCase) || string.Equals(status, "Ready", StringComparison.OrdinalIgnoreCase))
+            activeRank = 2;
+        else
+            activeRank = 1;
+
+        var settlementLabel = isCashPending
+            ? "Payment Verification (Cash)"
+            : isQrPending
+                ? "Payment Verification (QR:Pending Payment)"
+                : "Settlement";
+
+        string StateFor(int rank)
+        {
+            if (rank < activeRank) return "done";
+            if (rank == activeRank) return rank == 5 ? "active-amber" : "active";
+            return "pending";
+        }
+
+        return new[]
+        {
+            new TeamLeaderProcessStep("Booked", "Booked (Upcoming)", StateFor(1)),
+            new TeamLeaderProcessStep("Preparing", "Preparing & Gear", StateFor(2)),
+            new TeamLeaderProcessStep("Ongoing", "Ongoing", StateFor(3)),
+            new TeamLeaderProcessStep("Event Done", "Event Done", StateFor(4)),
+            new TeamLeaderProcessStep("Settlement", settlementLabel, StateFor(5))
+        };
+    }
+
+    private static int GetOngoingPriority(EventAppointmentDto ev)
+    {
+        var status = (ev.EventStatus ?? string.Empty).Trim().ToUpperInvariant();
+        return status switch
+        {
+            "ONGOING" or "ON GOING" or "IN EXECUTION" => 1,
+            "DISPATCH" => 2,
+            "PREPARATION" or "PREPARING" or "READY" => 3,
+            "EVENT DONE" or "POST EVENT" => 4,
+            "PENDING PAYMENT" or "PENDING VERIFICATION" or "PAID CASH PENDING VERIFICATION" or "PAYMENT VERIFICATION (CASH)" => 5,
+            "CONFIRMED" => 6,
+            _ => 7
+        };
+    }
+}

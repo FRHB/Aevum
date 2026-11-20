@@ -568,6 +568,7 @@
         // 3. Events & Consultations (ScheduleService)
         try
         {
+            ScheduleService.InvalidateCache();
             _allEvents = ScheduleService.GetEventBookings();
             _activeConsultations = _allEvents.Count(e =>
                 e.IsConsultation &&

@@ -2269,6 +2269,8 @@
 
             {
 
+                ScheduleService.InvalidateCache();
+
                 _countdownTimer?.Dispose();
 
                 _awaitingDepositAppointment = null;
@@ -2312,6 +2314,10 @@
 
 
             {
+
+
+
+                ScheduleService.InvalidateCache();
 
 
 

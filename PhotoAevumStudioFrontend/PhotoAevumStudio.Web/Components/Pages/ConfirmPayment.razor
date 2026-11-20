@@ -2,7 +2,9 @@
 @layout MainLayout
 @using System.Net.Http.Json
 @using PhotoAevumStudio.Web.Models
+@using PhotoAevumStudio.Web.Services
 @inject IHttpClientFactory HttpFactory
+@inject IScheduleService ScheduleService
 @inject NavigationManager Nav
 @rendermode InteractiveServer
 
@@ -161,6 +163,7 @@
             StateHasChanged();
             if (_paid)
             {
+                ScheduleService.InvalidateCache();
                 await Task.Delay(2500);
                 Nav.NavigateTo("/my/bookings");
             }

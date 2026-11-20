@@ -275,7 +275,7 @@ public class ManagementController : ControllerBase
         string? requestingUserId = User.FindFirstValue("studio_id")
                                    ?? User.FindFirstValue(ClaimTypes.NameIdentifier)
                                    ?? User.FindFirstValue(ClaimTypes.Name)
-                                   ?? "SADM-001";
+                                   ?? string.Empty;
 
         var logs = await _service.GetHistoryLogsAsync(requestingUserId, top, ct);
         return Ok(logs);

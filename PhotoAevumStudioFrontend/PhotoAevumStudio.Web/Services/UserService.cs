@@ -479,15 +479,11 @@ public class UserService : IUserService
 		using (SqlCommand sysCmd = new SqlCommand(@"
 
             IF OBJECT_ID(N'dbo.SystemAdmin', N'U') IS NOT NULL
-
             BEGIN
-
-                SELECT SystemAdminID, FirstName, LastName, MiddleName
-
-                FROM dbo.SystemAdmin
-
-                ORDER BY SystemAdminID;
-
+                IF COL_LENGTH(N'dbo.SystemAdmin', N'Email') IS NOT NULL
+                    EXEC sp_executesql N'SELECT SystemAdminID, FirstName, LastName, MiddleName, Email FROM dbo.SystemAdmin ORDER BY SystemAdminID;';
+                ELSE
+                    SELECT SystemAdminID, FirstName, LastName, MiddleName, NULL AS Email FROM dbo.SystemAdmin ORDER BY SystemAdminID;
             END", sqlConnection))
 
 		using (SqlDataReader sysReader = sysCmd.ExecuteReader())
@@ -506,6 +502,8 @@ public class UserService : IUserService
 
 				string middle = sysReader.IsDBNull(3) ? null : sysReader.GetString(3);
 
+				string? storedEmail = sysReader.IsDBNull(4) ? null : sysReader.GetString(4);
+
 				string name = string.Join(" ", new[] { first, middle, last }.Where(s => !string.IsNullOrWhiteSpace(s)));
 
 				list.Add(new Admin
@@ -516,7 +514,7 @@ public class UserService : IUserService
 
 					Name = name,
 
-					Email = $"{id.ToLowerInvariant()}@photoaevum.studio",
+					Email = !string.IsNullOrWhiteSpace(storedEmail) ? storedEmail.Trim() : $"{id.ToLowerInvariant()}@photoaevum.studio",
 
 					Role = "System Admin"
 
@@ -625,15 +623,11 @@ public class UserService : IUserService
 			using SqlCommand sysCmd = new SqlCommand(@"
 
                 IF OBJECT_ID(N'dbo.SystemAdmin', N'U') IS NOT NULL
-
                 BEGIN
-
-                    SELECT SystemAdminID, FirstName, LastName, MiddleName
-
-                    FROM dbo.SystemAdmin
-
-                    WHERE UPPER(SystemAdminID) = @Id;
-
+                    IF COL_LENGTH(N'dbo.SystemAdmin', N'Email') IS NOT NULL
+                        EXEC sp_executesql N'SELECT SystemAdminID, FirstName, LastName, MiddleName, Email FROM dbo.SystemAdmin WHERE UPPER(SystemAdminID) = @Id;', N'@Id nvarchar(100)', @Id = @Id;
+                    ELSE
+                        SELECT SystemAdminID, FirstName, LastName, MiddleName, NULL AS Email FROM dbo.SystemAdmin WHERE UPPER(SystemAdminID) = @Id;
                 END", sqlConnection);
 
 			sysCmd.Parameters.AddWithValue("@Id", value);
@@ -652,6 +646,8 @@ public class UserService : IUserService
 
 				string middle = sysReader.IsDBNull(3) ? null : sysReader.GetString(3);
 
+				string? storedEmail = sysReader.IsDBNull(4) ? null : sysReader.GetString(4);
+
 				string sysName = string.Join(" ", new[] { first, middle, last }.Where(s => !string.IsNullOrWhiteSpace(s)));
 
 				return new Admin
@@ -662,7 +658,7 @@ public class UserService : IUserService
 
 					Name = sysName,
 
-					Email = $"{sysId.ToLowerInvariant()}@photoaevum.studio",
+					Email = !string.IsNullOrWhiteSpace(storedEmail) ? storedEmail.Trim() : $"{sysId.ToLowerInvariant()}@photoaevum.studio",
 
 					Role = "System Admin"
 
@@ -746,6 +742,14 @@ public class UserService : IUserService
 
 		ArgumentNullException.ThrowIfNull(admin, "admin");
 
+		if (string.Equals(admin.Id?.Trim(), "SADM-001", StringComparison.OrdinalIgnoreCase))
+
+		{
+
+			throw new InvalidOperationException("Account 'SADM-001' is locked and reserved.");
+
+		}
+
 		if (!string.IsNullOrWhiteSpace(requestingUserId) && !requestingUserId.StartsWith("SADM-", StringComparison.OrdinalIgnoreCase))
 
 		{
@@ -798,9 +802,17 @@ public class UserService : IUserService
 
                 BEGIN
 
-                    INSERT INTO dbo.SystemAdmin (SystemAdminID, FirstName, LastName, MiddleName, PasswordHash, CreatedAt)
-
-                    VALUES (@Id, @First, @Last, @Middle, @Password, SYSUTCDATETIME());
+                    IF COL_LENGTH(N'dbo.SystemAdmin', N'Email') IS NOT NULL
+                    BEGIN
+                        EXEC sp_executesql N'INSERT INTO dbo.SystemAdmin (SystemAdminID, FirstName, LastName, MiddleName, Email, PasswordHash, CreatedAt) VALUES (@Id, @First, @Last, @Middle, @Email, @Password, SYSUTCDATETIME());',
+                            N'@Id nvarchar(50), @First nvarchar(100), @Last nvarchar(100), @Middle nvarchar(100), @Email nvarchar(255), @Password nvarchar(255)',
+                            @Id = @Id, @First = @First, @Last = @Last, @Middle = @Middle, @Email = @Email, @Password = @Password;
+                    END
+                    ELSE
+                    BEGIN
+                        INSERT INTO dbo.SystemAdmin (SystemAdminID, FirstName, LastName, MiddleName, PasswordHash, CreatedAt)
+                        VALUES (@Id, @First, @Last, @Middle, @Password, SYSUTCDATETIME());
+                    END
 
                 END", sqlConnection);
 
@@ -811,6 +823,8 @@ public class UserService : IUserService
 			sysInsertCmd.Parameters.AddWithValue("@Last", value2);
 
 			sysInsertCmd.Parameters.AddWithValue("@Middle", ((object)text) ?? ((object)DBNull.Value));
+
+			sysInsertCmd.Parameters.AddWithValue("@Email", value3);
 
 			sysInsertCmd.Parameters.AddWithValue("@Password", "AxiomBit@2026");
 
@@ -7153,19 +7167,21 @@ public class UserService : IUserService
 
 
             IF OBJECT_ID(N'dbo.SystemAdmin', N'U') IS NOT NULL AND @Found = 0
-
             BEGIN
-
-                IF EXISTS (
-
-                    SELECT 1 FROM dbo.SystemAdmin 
-
-                    WHERE UPPER(LTRIM(RTRIM(CONCAT(LOWER(SystemAdminID), '@photoaevum.studio')))) = UPPER(@Email)
-
+                IF COL_LENGTH(N'dbo.SystemAdmin', N'Email') IS NOT NULL
+                BEGIN
+                    DECLARE @SysFound bit = 0;
+                    EXEC sp_executesql
+                        N'IF EXISTS (SELECT 1 FROM dbo.SystemAdmin WHERE UPPER(LTRIM(RTRIM(COALESCE(NULLIF(Email, ''''), CONCAT(LOWER(SystemAdminID), ''@photoaevum.studio''))))) = UPPER(@Email) AND (@ExcludeUserId IS NULL OR UPPER(SystemAdminID) <> UPPER(@ExcludeUserId))) SET @SysFound = 1;',
+                        N'@Email nvarchar(255), @ExcludeUserId nvarchar(100), @SysFound bit OUTPUT',
+                        @Email = @Email, @ExcludeUserId = @ExcludeUserId, @SysFound = @SysFound OUTPUT;
+                    IF @SysFound = 1 SET @Found = 1;
+                END
+                ELSE IF EXISTS (
+                    SELECT 1 FROM dbo.SystemAdmin
+                    WHERE UPPER(CONCAT(LOWER(SystemAdminID), '@photoaevum.studio')) = UPPER(@Email)
                       AND (@ExcludeUserId IS NULL OR UPPER(SystemAdminID) <> UPPER(@ExcludeUserId))
-
                 ) SET @Found = 1;
-
             END
 
 
@@ -7297,19 +7313,21 @@ public class UserService : IUserService
 
 
             IF OBJECT_ID(N'dbo.SystemAdmin', N'U') IS NOT NULL AND @Found = 0
-
             BEGIN
-
-                IF EXISTS (
-
-                    SELECT 1 FROM dbo.SystemAdmin 
-
-                    WHERE UPPER(LTRIM(RTRIM(CONCAT(LOWER(SystemAdminID), '@photoaevum.studio')))) = UPPER(@Email)
-
+                IF COL_LENGTH(N'dbo.SystemAdmin', N'Email') IS NOT NULL
+                BEGIN
+                    DECLARE @SysFound bit = 0;
+                    EXEC sp_executesql
+                        N'IF EXISTS (SELECT 1 FROM dbo.SystemAdmin WHERE UPPER(LTRIM(RTRIM(COALESCE(NULLIF(Email, ''''), CONCAT(LOWER(SystemAdminID), ''@photoaevum.studio''))))) = UPPER(@Email) AND (@ExcludeUserId IS NULL OR UPPER(SystemAdminID) <> UPPER(@ExcludeUserId))) SET @SysFound = 1;',
+                        N'@Email nvarchar(255), @ExcludeUserId nvarchar(100), @SysFound bit OUTPUT',
+                        @Email = @Email, @ExcludeUserId = @ExcludeUserId, @SysFound = @SysFound OUTPUT;
+                    IF @SysFound = 1 SET @Found = 1;
+                END
+                ELSE IF EXISTS (
+                    SELECT 1 FROM dbo.SystemAdmin
+                    WHERE UPPER(CONCAT(LOWER(SystemAdminID), '@photoaevum.studio')) = UPPER(@Email)
                       AND (@ExcludeUserId IS NULL OR UPPER(SystemAdminID) <> UPPER(@ExcludeUserId))
-
                 ) SET @Found = 1;
-
             END
 
 

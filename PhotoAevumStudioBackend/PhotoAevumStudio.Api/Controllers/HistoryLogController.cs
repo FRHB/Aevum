@@ -24,7 +24,7 @@ public class HistoryLogController : ControllerBase
         string requestingUserId = User.FindFirstValue("studio_id")
             ?? User.FindFirstValue(ClaimTypes.NameIdentifier)
             ?? User.FindFirstValue(ClaimTypes.Name)
-            ?? "SADM-001";
+            ?? string.Empty;
 
         string? userRole = User.FindFirstValue(ClaimTypes.Role) ?? User.FindFirstValue("role");
 
@@ -38,7 +38,7 @@ public class HistoryLogController : ControllerBase
         string requestingUserId = User.FindFirstValue("studio_id")
             ?? User.FindFirstValue(ClaimTypes.NameIdentifier)
             ?? User.FindFirstValue(ClaimTypes.Name)
-            ?? "SADM-001";
+            ?? string.Empty;
 
         string? userRole = User.FindFirstValue(ClaimTypes.Role) ?? User.FindFirstValue("role");
 

@@ -173,7 +173,7 @@ public class PackagesController : ControllerBase
         string? adminId = User.FindFirstValue("studio_id")
                           ?? User.FindFirstValue(ClaimTypes.NameIdentifier)
                           ?? User.FindFirstValue(ClaimTypes.Name)
-                          ?? "SADM-001";
+                          ?? "ADM-001";
 
         try
         {
@@ -312,7 +312,7 @@ public class PackagesController : ControllerBase
         string? adminId = User.FindFirstValue("studio_id")
                           ?? User.FindFirstValue(ClaimTypes.NameIdentifier)
                           ?? User.FindFirstValue(ClaimTypes.Name)
-                          ?? "SADM-001";
+                          ?? "ADM-001";
 
         var effectiveRateType = string.IsNullOrWhiteSpace(request.RateType) ? "per hour" : request.RateType.Trim();
         var model = new UpdateComboPackageModel(
