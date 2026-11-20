@@ -97,6 +97,9 @@ builder.Services.AddScoped<ISalesReportsClient, SalesReportsClient>();
 builder.Services.AddScoped<BookingEvents>();
 builder.Services.AddScoped<PaymentHubClient>();
 
+var biConfig = builder.Configuration.GetSection(BiConfig.SectionName).Get<BiConfig>() ?? new BiConfig();
+builder.Services.AddSingleton(biConfig);
+
 var apiBaseUrl = builder.Configuration["Api:BaseUrl"]
     ?? builder.Configuration["ApiBaseUrl"]
     ?? "http://api-photoaevum.tryasp.net/";

@@ -9,6 +9,7 @@
 @inject ISalesReportsClient Client
 @inject NavigationManager Nav
 @inject IJSRuntime JS
+@inject BiConfig Bi
 
 <PageTitle>Sales &amp; Financials | Photo Aevum Studio</PageTitle>
 
@@ -88,7 +89,7 @@
             <div class="bg-white p-5 rounded-xl border border-slate-200 shadow-2xs flex items-center gap-4">
                 <div class="w-12 h-12 rounded-xl bg-emerald-50 text-emerald-700 flex items-center justify-center font-bold text-xl shrink-0">₱</div>
                 <div>
-                    <p class="text-xs font-medium text-slate-500 uppercase tracking-wider">Total Revenue (Gross)</p>
+                    <p class="text-xs font-medium text-slate-500 uppercase tracking-wider">@Bi.Kpis.GetLabel("sales", "sales-gross-revenue", "Total Revenue (Gross)")</p>
                     <h3 class="text-xl sm:text-2xl font-extrabold text-[var(--text)] mt-0.5">₱@s.TotalRevenue.ToString("N2")</h3>
                     @if (s.RevenueDeltaPercent is double d)
                     {
@@ -113,7 +114,7 @@
                     </svg>
                 </div>
                 <div>
-                    <p class="text-xs font-medium text-slate-500 uppercase tracking-wider">Average Sale Value</p>
+                    <p class="text-xs font-medium text-slate-500 uppercase tracking-wider">@Bi.Kpis.GetLabel("sales", "sales-average-value", "Average Sale Value")</p>
                     <h3 class="text-xl sm:text-2xl font-extrabold text-[var(--text)] mt-0.5">₱@s.AverageSaleValue.ToString("N2")</h3>
                     <p class="text-xs text-slate-400 font-normal mt-0.5">Per completed transaction</p>
                 </div>
@@ -127,7 +128,7 @@
                     </svg>
                 </div>
                 <div>
-                    <p class="text-xs font-medium text-slate-500 uppercase tracking-wider">Outstanding Invoices</p>
+                    <p class="text-xs font-medium text-slate-500 uppercase tracking-wider">@Bi.Kpis.GetLabel("sales", "sales-outstanding-invoices", "Outstanding Invoices")</p>
                     <h3 class="text-xl sm:text-2xl font-extrabold text-amber-700 mt-0.5">₱@s.PendingAmount.ToString("N2")</h3>
                     <p class="text-xs text-slate-400 font-normal mt-0.5">@s.PendingCount awaiting clearance</p>
                 </div>
@@ -141,7 +142,7 @@
                     </svg>
                 </div>
                 <div>
-                    <p class="text-xs font-medium text-slate-500 uppercase tracking-wider">Completed Transactions</p>
+                    <p class="text-xs font-medium text-slate-500 uppercase tracking-wider">@Bi.Kpis.GetLabel("sales", "sales-completed-transactions", "Completed Transactions")</p>
                     <h3 class="text-xl sm:text-2xl font-extrabold text-[var(--text)] mt-0.5">@s.CompletedCount</h3>
                     <p class="text-xs text-slate-400 font-normal mt-0.5">@s.TotalCount total recorded</p>
                 </div>
@@ -175,7 +176,7 @@
                         <select value="@SortBy" @onchange="OnSortByChanged" class="text-xs px-2.5 py-2 border border-slate-300 rounded-lg bg-white text-slate-700 focus:outline-none focus:ring-2 focus:ring-teal-500">
                             <option value="Date">Date</option>
                             <option value="Amount">Amount</option>
-                            <option value="Client">Client Name</option>
+                            <option value="Client">@Bi.EntityLabels.Client Name</option>
                             <option value="Invoice">Invoice #</option>
                         </select>
                     </div>
@@ -204,8 +205,8 @@
                             </th>
                             <th class="px-4 py-3.5">Invoice ID</th>
                             <th class="px-4 py-3.5">Date</th>
-                            <th class="px-4 py-3.5">Client Name</th>
-                            <th class="px-4 py-3.5">Service / Product</th>
+                            <th class="px-4 py-3.5">@Bi.EntityLabels.Client Name</th>
+                            <th class="px-4 py-3.5">@Bi.EntityLabels.Service</th>
                             <th class="px-4 py-3.5 text-right">Amount</th>
                             <th class="px-4 py-3.5">Payment Method</th>
                             <th class="px-4 py-3.5 text-center">Status</th>
@@ -262,7 +263,7 @@
             <div class="lg:col-span-5 bg-white p-5 rounded-xl border border-slate-200 shadow-2xs flex flex-col justify-between">
                 <div>
                     <h3 class="text-sm font-bold text-[var(--text)] mb-1">Revenue by Category</h3>
-                    <p class="text-xs text-slate-500 mb-4">Total revenue distribution across service categories</p>
+                    <p class="text-xs text-slate-500 mb-4">Total revenue distribution across @Bi.EntityLabels.Service categories</p>
 
                     @{
                         var catItems = _categoryReport?.RevenueByCategory ?? [];

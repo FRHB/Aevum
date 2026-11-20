@@ -12,6 +12,7 @@
 @inject IAnalyticsClient AnalyticsClient
 @inject NavigationManager Nav
 @inject IJSRuntime JS
+@inject BiConfig Bi
 
 <PageTitle>Business Intelligence Dashboard | Photo Aevum Studio</PageTitle>
 
@@ -223,7 +224,7 @@
                         <article class="bg-white p-5 rounded-xl border border-slate-200 shadow-2xs flex flex-col justify-between">
                             <div>
                                 <div class="flex items-center justify-between text-xs font-medium uppercase tracking-wider text-slate-500">
-                                    <span>Total Bookings</span>
+                                    <span>@Bi.Kpis.GetLabel("analytics", "analytics-total-bookings", "Total Bookings")</span>
                                     @if (d.BookingsDeltaPct.HasValue)
                                     {
                                         <span class="font-bold @(d.BookingsDeltaPct >= 0 ? "text-emerald-600" : "text-rose-600")">
@@ -238,14 +239,14 @@
                                 <div class="text-2xl sm:text-3xl font-extrabold text-[var(--text)] mt-1.5 aev-tabular">@d.TotalBookings</div>
                             </div>
                             <p class="text-xs text-slate-500 mt-2">
-                                @d.EventAppointmentsCount event shoots · @d.ConsultationBookingsCount consultations
+                                @d.EventAppointmentsCount event @(Bi.EntityLabels.Appointment.ToLower())s · @d.ConsultationBookingsCount consultations
                             </p>
                         </article>
 
                         <article class="bg-white p-5 rounded-xl border border-slate-200 shadow-2xs flex flex-col justify-between">
                             <div>
                                 <div class="flex items-center justify-between text-xs font-medium uppercase tracking-wider text-slate-500">
-                                    <span id="SessionCompletionRate">Completion Rate</span>
+                                    <span id="SessionCompletionRate">@Bi.Kpis.GetLabel("analytics", "analytics-completion-rate", "Completion Rate")</span>
                                     @if (d.CompletionRateDeltaPts.HasValue)
                                     {
                                         <span class="font-bold @(d.CompletionRateDeltaPts >= 0 ? "text-emerald-600" : "text-rose-600")">
@@ -267,7 +268,7 @@
                         <article class="bg-white p-5 rounded-xl border border-slate-200 shadow-2xs flex flex-col justify-between">
                             <div>
                                 <div class="flex items-center justify-between text-xs font-medium uppercase tracking-wider text-slate-500">
-                                    <span id="LoggedCrewHours">Logged Crew Hours</span>
+                                    <span id="LoggedCrewHours">@Bi.Kpis.GetLabel("analytics", "analytics-logged-hours", "Logged Crew Hours")</span>
                                     @if (d.CrewHoursDeltaPct.HasValue)
                                     {
                                         <span class="font-bold @(d.CrewHoursDeltaPct >= 0 ? "text-sky-600" : "text-amber-600")">
@@ -284,14 +285,14 @@
                                 </div>
                             </div>
                             <p class="text-xs text-slate-500 mt-2">
-                                @d.TimesheetEntriesCount shifts · @d.ActiveCrewLoggedCount crew · @d.DayOffShiftsCount leaves
+                                @d.TimesheetEntriesCount shifts · @d.ActiveCrewLoggedCount @(Bi.EntityLabels.Crew.ToLower()) · @d.DayOffShiftsCount leaves
                             </p>
                         </article>
 
                         <article class="bg-white p-5 rounded-xl border border-slate-200 shadow-2xs flex flex-col justify-between">
                             <div>
                                 <div class="flex items-center justify-between text-xs font-medium uppercase tracking-wider text-slate-500">
-                                    <span id="EquipmentMaintenanceHolds">Equipment Holds</span>
+                                    <span id="EquipmentMaintenanceHolds">@Bi.Kpis.GetLabel("analytics", "analytics-equipment-holds", "Equipment Holds")</span>
                                     <span class="font-semibold text-xs @(d.EquipmentMaintenanceHolds > 0 ? "text-amber-600" : "text-emerald-600")">
                                         @(d.EquipmentMaintenanceHolds > 0 ? "Attention" : "All Ready")
                                     </span>
@@ -953,7 +954,9 @@
                                 var prioBadge = rec.Priority >= 3 ? "bg-rose-50 text-rose-700 border border-rose-200" :
                                                 rec.Priority == 2 ? "bg-amber-50 text-amber-700 border border-amber-200" :
                                                 "bg-slate-100 text-slate-700 border border-slate-200";
-                                var prioLabel = rec.Priority >= 3 ? "High" : rec.Priority == 2 ? "Medium" : "Low";
+                                var prioLabel = Bi.Playbook.PriorityMapping.TryGetValue(rec.Priority, out var pl) ? pl : (rec.Priority >= 3 ? "High" : rec.Priority == 2 ? "Medium" : "Low");
+                                var effortLabel = Bi.Playbook.EffortMapping.TryGetValue(rec.EffortTag, out var ef) ? ef : rec.EffortTag;
+                                var recTitle = Bi.Playbook.RuleLabels.TryGetValue(rec.ActionKey, out var rl) ? rl : rec.Title;
 
                                 <label class="block p-4 rounded-xl border cursor-pointer transition-colors @(isChecked ? "border-teal-500 bg-teal-50/40" : "border-slate-200 bg-white hover:border-slate-300")">
                                     <div class="flex items-start gap-3.5">
@@ -965,14 +968,14 @@
                                         <div class="min-w-0 flex-1 space-y-2">
                                             <div class="flex flex-wrap items-center justify-between gap-2">
                                                 <div class="flex flex-wrap items-center gap-2">
-                                                    <span class="text-sm font-bold text-slate-700">@rec.Title</span>
+                                                    <span class="text-sm font-bold text-slate-700">@recTitle</span>
                                                     <span class="px-2 py-0.5 rounded-full text-[10px] font-bold @(rec.IsSignalTriggered ? "bg-amber-100 text-amber-800 border border-amber-200" : "bg-slate-100 text-slate-500 border border-slate-200")">
                                                         @rec.TriggerSignal
                                                     </span>
                                                 </div>
                                                 <div class="flex items-center gap-1.5">
                                                     <span class="px-2 py-0.5 rounded text-[10px] font-semibold bg-slate-100 text-slate-600 border border-slate-200">@rec.Category</span>
-                                                    <span class="px-2 py-0.5 rounded text-[10px] font-bold @GetEffortBadgeClass(rec.EffortTag)">@rec.EffortTag</span>
+                                                    <span class="px-2 py-0.5 rounded text-[10px] font-bold @GetEffortBadgeClass(rec.EffortTag)">@effortLabel</span>
                                                     <span class="px-2 py-0.5 rounded-full text-[10px] font-bold @prioBadge">@prioLabel</span>
                                                 </div>
                                             </div>
