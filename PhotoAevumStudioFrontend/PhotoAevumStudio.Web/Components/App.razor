@@ -325,6 +325,20 @@
                 requestAnimationFrame(() => attemptHighlight(8));
             }
         };
+
+        window.aevumAnalyticsDownload = function (fileName, content, mimeType) {
+            try {
+                const blob = new Blob([content], { type: mimeType || 'text/csv;charset=utf-8;' });
+                const url = URL.createObjectURL(blob);
+                const anchor = document.createElement('a');
+                anchor.href = url;
+                anchor.download = fileName || 'studio-analytics.csv';
+                document.body.appendChild(anchor);
+                anchor.click();
+                document.body.removeChild(anchor);
+                setTimeout(() => URL.revokeObjectURL(url), 1000);
+            } catch (e) { }
+        };
     </script>
 </body>
 </html>

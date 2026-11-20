@@ -41,6 +41,7 @@ public class ApplicationDbContext : IdentityDbContext<ApplicationUser>
     public DbSet<PortfolioImage> PortfolioImages => Set<PortfolioImage>();
     public DbSet<ArchiveIndex> ArchiveIndices => Set<ArchiveIndex>();
     public DbSet<CustomerDropbox> CustomerDropboxes => Set<CustomerDropbox>();
+    public DbSet<StudioAnalyticsAction> StudioAnalyticsActions => Set<StudioAnalyticsAction>();
 
     protected override void OnModelCreating(ModelBuilder builder)
     {
@@ -277,6 +278,25 @@ public class ApplicationDbContext : IdentityDbContext<ApplicationUser>
             e.Property(d => d.UploadedByEmployeeId).HasColumnName("UploadedByEmployeeID").HasMaxLength(30);
             e.Property(d => d.EventCompletedAt).HasDefaultValueSql("SYSUTCDATETIME()");
             e.Property(d => d.CreatedAt).HasDefaultValueSql("SYSUTCDATETIME()");
+        });
+
+        // ── StudioAnalyticsActions ───────────────────────────────────────────
+        builder.Entity<StudioAnalyticsAction>(e =>
+        {
+            e.ToTable("StudioAnalyticsActions", "dbo");
+            e.HasKey(a => a.Id);
+            e.Property(a => a.ActionKey).HasMaxLength(120).IsRequired();
+            e.Property(a => a.Title).HasMaxLength(255).IsRequired();
+            e.Property(a => a.Category).HasMaxLength(80).IsRequired();
+            e.Property(a => a.EffortTag).HasMaxLength(50).IsRequired();
+            e.Property(a => a.EstimatedImpact).HasMaxLength(255).IsRequired();
+            e.Property(a => a.TriggerSignal).HasMaxLength(500);
+            e.Property(a => a.RelatedReferences).HasMaxLength(1000);
+            e.Property(a => a.Notes).HasMaxLength(1000);
+            e.Property(a => a.AppliedByUserId).HasMaxLength(100).IsRequired();
+            e.Property(a => a.AppliedByName).HasMaxLength(200).IsRequired();
+            e.Property(a => a.AppliedAtUtc).HasDefaultValueSql("SYSUTCDATETIME()");
+            e.Property(a => a.Status).HasMaxLength(40).IsRequired().HasDefaultValue("Applied");
         });
     }
 }

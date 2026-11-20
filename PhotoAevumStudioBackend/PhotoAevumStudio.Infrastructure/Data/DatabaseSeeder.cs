@@ -729,6 +729,26 @@ public static class DatabaseSeeder
                         ALTER TABLE dbo.HistoryLog DROP CONSTRAINT FK_HistoryLog_ChangedByAdmin;
                     END;
                 END;
+
+                IF OBJECT_ID(N'dbo.StudioAnalyticsActions', N'U') IS NULL
+                BEGIN
+                    CREATE TABLE dbo.StudioAnalyticsActions (
+                        Id int IDENTITY(1,1) NOT NULL CONSTRAINT PK_StudioAnalyticsActions PRIMARY KEY,
+                        ActionKey nvarchar(120) NOT NULL,
+                        Title nvarchar(255) NOT NULL,
+                        Category nvarchar(80) NOT NULL,
+                        EffortTag nvarchar(50) NOT NULL,
+                        EstimatedImpact nvarchar(255) NOT NULL,
+                        TriggerSignal nvarchar(500) NULL,
+                        RelatedReferences nvarchar(1000) NULL,
+                        Notes nvarchar(1000) NULL,
+                        AppliedByUserId nvarchar(100) NOT NULL,
+                        AppliedByName nvarchar(200) NOT NULL,
+                        AppliedAtUtc datetime2 NOT NULL CONSTRAINT DF_StudioAnalyticsActions_AppliedAtUtc DEFAULT SYSUTCDATETIME(),
+                        Status nvarchar(40) NOT NULL CONSTRAINT DF_StudioAnalyticsActions_Status DEFAULT 'Applied'
+                    );
+                    CREATE INDEX IX_StudioAnalyticsActions_Key_Date ON dbo.StudioAnalyticsActions (ActionKey, AppliedAtUtc DESC);
+                END;
             ";
             await xenditSchemaCmd.ExecuteNonQueryAsync();
 

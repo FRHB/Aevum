@@ -245,6 +245,11 @@
             _openAccordions.Add("sales-report");
         }
 
+        if (path.StartsWith("analytics") || path.StartsWith("admin/analytics"))
+        {
+            _openAccordions.Add("analytics");
+        }
+
         if (path.StartsWith("admin/portfolio") || path.StartsWith("portfolio") || path.StartsWith("admin/highlights"))
         {
             _openAccordions.Add("portfolio");

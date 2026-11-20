@@ -370,6 +370,7 @@ builder.Services.AddScoped<PhotoAevumStudio.Application.Interfaces.ISqlAuthServi
 builder.Services.AddScoped<PhotoAevumStudio.Application.Interfaces.IR2StorageService, PhotoAevumStudio.Infrastructure.Services.R2StorageService>();
 builder.Services.AddScoped<PhotoAevumStudio.Application.Interfaces.IDataArchiveService, PhotoAevumStudio.Infrastructure.Services.DataArchiveService>();
 builder.Services.AddScoped<PhotoAevumStudio.Application.Interfaces.ICustomerDropboxService, PhotoAevumStudio.Infrastructure.Services.CustomerDropboxService>();
+builder.Services.AddScoped<PhotoAevumStudio.Application.Interfaces.IStudioAnalyticsService, PhotoAevumStudio.Infrastructure.Services.StudioAnalyticsService>();
 builder.Services.AddHostedService<PhotoAevumStudio.Api.BackgroundServices.CustomerDropboxExpiryService>();
 
 // ── Analytics: Hangfire (ETL), ML.NET (predictive), RulesEngine (prescriptive) ──
@@ -578,6 +579,8 @@ await using (var scope = app.Services.CreateAsyncScope())
 
             var dropboxService = scope.ServiceProvider.GetRequiredService<ICustomerDropboxService>();
             await dropboxService.EnsureSchemaAsync();
+            var analyticsService = scope.ServiceProvider.GetRequiredService<IStudioAnalyticsService>();
+            await analyticsService.EnsureSchemaAsync();
             RecurringJob.AddOrUpdate<ICustomerDropboxService>(
                 "customer-dropbox-expiry",
                 s => s.PurgeExpiredDropboxesAsync(CancellationToken.None),
