@@ -3,28 +3,33 @@
 @layout AdminLayout
 @rendermode InteractiveServer
 @attribute [Authorize(Roles = "Admin,SystemAdmin,System Admin,Super Admin,Office Clerk")]
+@using System.Globalization
 @using Microsoft.AspNetCore.Components.Authorization
 @using PhotoAevumStudio.Web.Services
 @inject ISalesReportsClient Client
+@inject NavigationManager Nav
 @inject IJSRuntime JS
 
-<PageTitle>Sales &amp; Transactions | Photo Aevum Studio</PageTitle>
+<PageTitle>Sales &amp; Financials | Photo Aevum Studio</PageTitle>
 
 <div class="space-y-6">
-    <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 pb-2 border-b border-slate-200">
+    @* ── Header: Breadcrumb, Title, Period Selector, Actions ────────────────── *@
+    <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 pb-4 border-b border-slate-200">
         <div>
             <div class="flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-slate-500 mb-1">
-                <span>General</span>
+                <span>Sales &amp; Report</span>
                 <span>/</span>
-                <span class="text-slate-900 font-bold">Sales</span>
+                <span class="text-teal-700 font-bold">Sales</span>
             </div>
-            <h1 class="text-2xl sm:text-3xl font-extrabold text-slate-900 tracking-tight">Sales &amp; Transactions</h1>
+            <h1 class="text-2xl sm:text-3xl font-extrabold text-[var(--text)] tracking-tight">Unified Financial Ledger</h1>
             <p class="text-xs sm:text-sm text-slate-500 mt-1">Manage studio revenue, booking payments, invoice remittances, and package sales.</p>
         </div>
-        <div class="flex items-center gap-2">
-            <input type="date" value="@_start.ToString("yyyy-MM-dd")" @onchange="e => OnDateChanged(e, true)" class="text-xs px-3 py-2 border border-slate-300 rounded-lg bg-white focus:outline-none focus:ring-1 focus:ring-teal-500" aria-label="Start date" />
-            <input type="date" value="@_end.ToString("yyyy-MM-dd")" @onchange="e => OnDateChanged(e, false)" class="text-xs px-3 py-2 border border-slate-300 rounded-lg bg-white focus:outline-none focus:ring-1 focus:ring-teal-500" aria-label="End date" />
-            <button type="button" @onclick="ExportSales" disabled="@_busy" class="inline-flex items-center gap-1.5 px-3.5 py-2 bg-white border border-slate-300 hover:bg-slate-50 text-slate-700 text-xs font-semibold rounded-lg shadow-2xs transition-colors">
+
+        <div class="flex flex-wrap items-center gap-2">
+            <input type="date" value="@_start.ToString("yyyy-MM-dd")" @onchange="e => OnDateChanged(e, true)" class="text-xs px-3 py-2 border border-slate-300 rounded-lg bg-white text-slate-700 focus:outline-none focus:ring-2 focus:ring-teal-500 shadow-2xs" aria-label="Start date" />
+            <input type="date" value="@_end.ToString("yyyy-MM-dd")" @onchange="e => OnDateChanged(e, false)" class="text-xs px-3 py-2 border border-slate-300 rounded-lg bg-white text-slate-700 focus:outline-none focus:ring-2 focus:ring-teal-500 shadow-2xs" aria-label="End date" />
+            
+            <button type="button" @onclick="ExportSales" disabled="@_busy" class="inline-flex items-center gap-1.5 px-3.5 py-2 bg-white border border-slate-300 hover:bg-slate-50 text-slate-700 text-xs font-semibold rounded-lg shadow-2xs transition-colors focus:ring-2 focus:ring-teal-500 disabled:opacity-50">
                 <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                     <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
                     <polyline points="7 10 12 15 17 10"></polyline>
@@ -32,85 +37,75 @@
                 </svg>
                 <span>Export CSV</span>
             </button>
-            <button type="button" @onclick="OpenNewSaleModal" class="inline-flex items-center gap-1.5 px-3.5 py-2 bg-teal-700 hover:bg-teal-800 text-white text-xs font-bold rounded-lg shadow-2xs transition-colors">
+
+            <button type="button" @onclick="OpenNewSaleModal" class="inline-flex items-center gap-1.5 px-3.5 py-2 bg-teal-700 hover:bg-teal-800 text-white text-xs font-bold rounded-lg shadow-2xs transition-colors focus:ring-2 focus:ring-teal-500">
                 <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                     <line x1="12" y1="5" x2="12" y2="19"></line>
                     <line x1="5" y1="12" x2="19" y2="12"></line>
                 </svg>
-                <span>Record New Sale</span>
+                <span>Record Sale</span>
+            </button>
+
+            <button type="button" @onclick='() => Nav.NavigateTo("/admin/reports")' class="inline-flex items-center gap-1.5 px-3.5 py-2 bg-white border border-slate-300 hover:bg-slate-50 text-slate-700 text-xs font-semibold rounded-lg shadow-2xs transition-colors focus:ring-2 focus:ring-teal-500">
+                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
+                    <polyline points="14 2 14 8 20 8"></polyline>
+                    <line x1="16" y1="13" x2="8" y2="13"></line>
+                    <line x1="16" y1="17" x2="8" y2="17"></line>
+                    <polyline points="10 9 9 9 8 9"></polyline>
+                </svg>
+                <span>Generate Report</span>
             </button>
         </div>
     </div>
 
     @if (!string.IsNullOrEmpty(_banner))
     {
-        <div class="px-4 py-3 rounded-lg text-xs font-semibold border @(_bannerError ? "bg-rose-50 border-rose-200 text-rose-700" : "bg-emerald-50 border-emerald-200 text-emerald-700")" role="status">@_banner</div>
+        <div class="px-4 py-3 rounded-lg text-xs font-semibold border @(_bannerError ? "bg-rose-50 border-rose-200 text-rose-700" : "bg-emerald-50 border-emerald-200 text-emerald-700")" role="status">
+            @_banner
+        </div>
     }
 
     @if (_loading)
     {
-        <div class="bg-white rounded-xl border border-slate-200 p-12 text-center text-xs text-slate-500">Loading sales from the database…</div>
+        <div class="bg-white rounded-xl border border-slate-200 p-12 text-center text-xs text-slate-500 shadow-2xs">
+            <div class="inline-block w-8 h-8 border-2 border-teal-600 border-t-transparent rounded-full animate-spin mb-2"></div>
+            <p>Loading financial ledger from live database records…</p>
+        </div>
     }
     else if (_data is null)
     {
-        <div class="bg-white rounded-xl border border-rose-200 p-8 text-center text-xs text-rose-700">
-            @(_error ?? "Unable to load sales.")
+        <div class="bg-white rounded-xl border border-rose-200 p-8 text-center text-xs text-rose-700 shadow-2xs">
+            @(_error ?? "Unable to load sales ledger.")
             <button type="button" @onclick="LoadAsync" class="ml-2 underline font-semibold">Retry</button>
         </div>
     }
     else
     {
         var s = _data.Summary;
+        @* ── KPI Row: 4 Cards from Real SalesSummaryDto ─────────────────────── *@
         <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
             <div class="bg-white p-5 rounded-xl border border-slate-200 shadow-2xs flex items-center gap-4">
-                <div class="w-12 h-12 rounded-xl bg-emerald-50 text-emerald-600 flex items-center justify-center font-bold text-xl shrink-0">₱</div>
+                <div class="w-12 h-12 rounded-xl bg-emerald-50 text-emerald-700 flex items-center justify-center font-bold text-xl shrink-0">₱</div>
                 <div>
-                    <p class="text-xs font-medium text-slate-500 uppercase tracking-wider">Total Revenue</p>
-                    <h3 class="text-xl font-extrabold text-slate-900 mt-0.5">₱@s.TotalRevenue.ToString("N2")</h3>
+                    <p class="text-xs font-medium text-slate-500 uppercase tracking-wider">Total Revenue (Gross)</p>
+                    <h3 class="text-xl sm:text-2xl font-extrabold text-[var(--text)] mt-0.5">₱@s.TotalRevenue.ToString("N2")</h3>
                     @if (s.RevenueDeltaPercent is double d)
                     {
-                        <p class="text-[11px] @(d >= 0 ? "text-emerald-600" : "text-rose-600") font-semibold mt-0.5 flex items-center gap-1">
+                        <p class="text-xs @(d >= 0 ? "text-emerald-600" : "text-rose-600") font-semibold mt-0.5 flex items-center gap-1">
                             <span>@(d >= 0 ? "↑" : "↓") @Math.Abs(d).ToString("0.0")%</span>
                             <span class="text-slate-400 font-normal">vs prior period</span>
                         </p>
                     }
                     else
                     {
-                        <p class="text-[11px] text-slate-400 mt-0.5">No prior-period revenue to compare</p>
+                        <p class="text-xs text-slate-400 mt-0.5">No prior-period revenue</p>
                     }
                 </div>
             </div>
 
             <div class="bg-white p-5 rounded-xl border border-slate-200 shadow-2xs flex items-center gap-4">
-                <div class="w-12 h-12 rounded-xl bg-blue-50 text-blue-600 flex items-center justify-center shrink-0">
-                    <svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                        <rect x="2" y="5" width="20" height="14" rx="2"></rect>
-                        <line x1="2" y1="10" x2="22" y2="10"></line>
-                    </svg>
-                </div>
-                <div>
-                    <p class="text-xs font-medium text-slate-500 uppercase tracking-wider">Completed Transactions</p>
-                    <h3 class="text-xl font-extrabold text-slate-900 mt-0.5">@s.CompletedCount</h3>
-                    <p class="text-[11px] text-slate-400 font-normal mt-0.5">@s.TotalCount total sales records</p>
-                </div>
-            </div>
-
-            <div class="bg-white p-5 rounded-xl border border-slate-200 shadow-2xs flex items-center gap-4">
-                <div class="w-12 h-12 rounded-xl bg-amber-50 text-amber-600 flex items-center justify-center shrink-0">
-                    <svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                        <circle cx="12" cy="12" r="10"></circle>
-                        <polyline points="12 6 12 12 16 14"></polyline>
-                    </svg>
-                </div>
-                <div>
-                    <p class="text-xs font-medium text-slate-500 uppercase tracking-wider">Pending Remittances</p>
-                    <h3 class="text-xl font-extrabold text-amber-600 mt-0.5">₱@s.PendingAmount.ToString("N2")</h3>
-                    <p class="text-[11px] text-slate-400 font-normal mt-0.5">@s.PendingCount awaiting clearance</p>
-                </div>
-            </div>
-
-            <div class="bg-white p-5 rounded-xl border border-slate-200 shadow-2xs flex items-center gap-4">
-                <div class="w-12 h-12 rounded-xl bg-purple-50 text-purple-600 flex items-center justify-center shrink-0">
+                <div class="w-12 h-12 rounded-xl bg-purple-50 text-purple-700 flex items-center justify-center shrink-0">
                     <svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                         <line x1="18" y1="20" x2="18" y2="10"></line>
                         <line x1="12" y1="20" x2="12" y2="4"></line>
@@ -119,49 +114,109 @@
                 </div>
                 <div>
                     <p class="text-xs font-medium text-slate-500 uppercase tracking-wider">Average Sale Value</p>
-                    <h3 class="text-xl font-extrabold text-slate-900 mt-0.5">₱@s.AverageSaleValue.ToString("N2")</h3>
-                    <p class="text-[11px] text-slate-400 font-normal mt-0.5">Per completed transaction</p>
+                    <h3 class="text-xl sm:text-2xl font-extrabold text-[var(--text)] mt-0.5">₱@s.AverageSaleValue.ToString("N2")</h3>
+                    <p class="text-xs text-slate-400 font-normal mt-0.5">Per completed transaction</p>
+                </div>
+            </div>
+
+            <div class="bg-white p-5 rounded-xl border border-slate-200 shadow-2xs flex items-center gap-4">
+                <div class="w-12 h-12 rounded-xl bg-amber-50 text-amber-700 flex items-center justify-center shrink-0">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <circle cx="12" cy="12" r="10"></circle>
+                        <polyline points="12 6 12 12 16 14"></polyline>
+                    </svg>
+                </div>
+                <div>
+                    <p class="text-xs font-medium text-slate-500 uppercase tracking-wider">Outstanding Invoices</p>
+                    <h3 class="text-xl sm:text-2xl font-extrabold text-amber-700 mt-0.5">₱@s.PendingAmount.ToString("N2")</h3>
+                    <p class="text-xs text-slate-400 font-normal mt-0.5">@s.PendingCount awaiting clearance</p>
+                </div>
+            </div>
+
+            <div class="bg-white p-5 rounded-xl border border-slate-200 shadow-2xs flex items-center gap-4">
+                <div class="w-12 h-12 rounded-xl bg-sky-50 text-sky-700 flex items-center justify-center shrink-0">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <rect x="2" y="5" width="20" height="14" rx="2"></rect>
+                        <line x1="2" y1="10" x2="22" y2="10"></line>
+                    </svg>
+                </div>
+                <div>
+                    <p class="text-xs font-medium text-slate-500 uppercase tracking-wider">Completed Transactions</p>
+                    <h3 class="text-xl sm:text-2xl font-extrabold text-[var(--text)] mt-0.5">@s.CompletedCount</h3>
+                    <p class="text-xs text-slate-400 font-normal mt-0.5">@s.TotalCount total recorded</p>
                 </div>
             </div>
         </div>
 
+        @* ── Ledger Table & Toolbar ─────────────────────────────────────────── *@
         <div class="bg-white rounded-xl shadow-2xs border border-slate-200 overflow-hidden">
-            <div class="p-4 border-b border-slate-200 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
-                <div class="flex items-center gap-2">
-                    <input type="text" value="@SearchQuery" @oninput="OnSearchInput"
-                           placeholder="Search invoice #, client, package, or transaction ID..."
-                           class="text-xs px-3 py-2 border border-slate-300 rounded-lg w-72 focus:outline-none focus:ring-1 focus:ring-teal-500" />
-                    <select value="@StatusFilter" @onchange="OnStatusFilterChanged" class="text-xs px-3 py-2 border border-slate-300 rounded-lg bg-white focus:outline-none focus:ring-1 focus:ring-teal-500">
-                        <option value="All">All Statuses</option>
-                        <option value="Completed">Completed</option>
-                        <option value="Pending">Pending</option>
-                        <option value="Failed">Failed</option>
-                        <option value="Expired">Expired</option>
-                    </select>
+            @* Toolbar: Filter-by status, Sort, Sort-by, Search *@
+            <div class="p-4 border-b border-slate-200 flex flex-col md:flex-row md:items-center md:justify-between gap-3">
+                <div class="flex flex-wrap items-center gap-2">
+                    <div class="relative">
+                        <input type="text" value="@SearchQuery" @oninput="OnSearchInput"
+                               placeholder="Search invoice #, client, service..."
+                               class="text-xs px-3 py-2 border border-slate-300 rounded-lg w-56 sm:w-64 bg-white text-slate-700 focus:outline-none focus:ring-2 focus:ring-teal-500" />
+                    </div>
+
+                    <div class="flex items-center gap-1">
+                        <label class="text-xs text-slate-500 font-medium">Filter:</label>
+                        <select value="@StatusFilter" @onchange="OnStatusFilterChanged" class="text-xs px-2.5 py-2 border border-slate-300 rounded-lg bg-white text-slate-700 focus:outline-none focus:ring-2 focus:ring-teal-500">
+                            <option value="All">All Statuses</option>
+                            <option value="Completed">Completed</option>
+                            <option value="Pending">Pending</option>
+                            <option value="Failed">Failed</option>
+                            <option value="Expired">Expired</option>
+                        </select>
+                    </div>
+
+                    <div class="flex items-center gap-1">
+                        <label class="text-xs text-slate-500 font-medium">Sort:</label>
+                        <select value="@SortBy" @onchange="OnSortByChanged" class="text-xs px-2.5 py-2 border border-slate-300 rounded-lg bg-white text-slate-700 focus:outline-none focus:ring-2 focus:ring-teal-500">
+                            <option value="Date">Date</option>
+                            <option value="Amount">Amount</option>
+                            <option value="Client">Client Name</option>
+                            <option value="Invoice">Invoice #</option>
+                        </select>
+                    </div>
+
+                    <div class="flex items-center gap-1">
+                        <label class="text-xs text-slate-500 font-medium">Order:</label>
+                        <select value="@(SortDescending ? "Desc" : "Asc")" @onchange="OnSortOrderChanged" class="text-xs px-2.5 py-2 border border-slate-300 rounded-lg bg-white text-slate-700 focus:outline-none focus:ring-2 focus:ring-teal-500">
+                            <option value="Desc">Descending</option>
+                            <option value="Asc">Ascending</option>
+                        </select>
+                    </div>
                 </div>
-                <div class="text-xs text-slate-500">
-                    Showing <span class="font-semibold text-slate-800">@PagedSales.Count</span> of <span class="font-semibold text-slate-800">@FilteredSales.Count</span> sales records
+
+                <div class="text-xs text-slate-500 shrink-0">
+                    Showing <span class="font-semibold text-slate-700">@PagedSales.Count</span> of <span class="font-semibold text-slate-700">@FilteredSales.Count</span> sales records
                 </div>
             </div>
 
+            @* Table *@
             <div class="overflow-x-auto">
                 <table class="w-full text-left border-collapse text-xs">
                     <thead>
                         <tr class="bg-slate-50 border-b border-slate-200 font-semibold uppercase tracking-wider text-slate-500">
-                            <th class="px-5 py-3.5">Invoice #</th>
-                            <th class="px-5 py-3.5">Date</th>
-                            <th class="px-5 py-3.5">Client</th>
-                            <th class="px-5 py-3.5">Package / Service</th>
-                            <th class="px-5 py-3.5">Payment Method</th>
-                            <th class="px-5 py-3.5 text-right">Amount</th>
-                            <th class="px-5 py-3.5 text-center">Status</th>
+                            <th class="w-8 px-4 py-3.5 text-center">
+                                <input type="checkbox" aria-label="Select all rows" class="rounded border-slate-300 text-teal-700 focus:ring-teal-500" />
+                            </th>
+                            <th class="px-4 py-3.5">Invoice ID</th>
+                            <th class="px-4 py-3.5">Date</th>
+                            <th class="px-4 py-3.5">Client Name</th>
+                            <th class="px-4 py-3.5">Service / Product</th>
+                            <th class="px-4 py-3.5 text-right">Amount</th>
+                            <th class="px-4 py-3.5">Payment Method</th>
+                            <th class="px-4 py-3.5 text-center">Status</th>
+                            <th class="w-10 px-4 py-3.5 text-center">Action</th>
                         </tr>
                     </thead>
                     <tbody class="divide-y divide-slate-100">
                         @if (FilteredSales.Count == 0)
                         {
                             <tr>
-                                <td colspan="7" class="py-12 text-center text-slate-400 italic">No sales records match the selected criteria.</td>
+                                <td colspan="9" class="py-12 text-center text-slate-400 italic">No sales records match the selected criteria.</td>
                             </tr>
                         }
                         else
@@ -169,16 +224,28 @@
                             @foreach (var sale in PagedSales)
                             {
                                 <tr class="hover:bg-slate-50 transition-colors">
-                                    <td class="px-5 py-3.5 font-mono font-medium text-slate-900">@sale.InvoiceNo</td>
-                                    <td class="px-5 py-3.5 text-slate-600">@sale.Date.ToLocalTime().ToString("MMM dd, yyyy")</td>
-                                    <td class="px-5 py-3.5 font-semibold text-slate-900">@sale.ClientName</td>
-                                    <td class="px-5 py-3.5 text-slate-700">@sale.ServiceName</td>
-                                    <td class="px-5 py-3.5 text-slate-600">
+                                    <td class="px-4 py-3.5 text-center">
+                                        <input type="checkbox" aria-label="Select row" class="rounded border-slate-300 text-teal-700 focus:ring-teal-500" />
+                                    </td>
+                                    <td class="px-4 py-3.5 font-mono font-medium text-slate-700">@sale.InvoiceNo</td>
+                                    <td class="px-4 py-3.5 text-slate-600">@sale.Date.ToLocalTime().ToString("MMM dd, yyyy")</td>
+                                    <td class="px-4 py-3.5 font-semibold text-slate-700">@sale.ClientName</td>
+                                    <td class="px-4 py-3.5 text-slate-600">@sale.ServiceName</td>
+                                    <td class="px-4 py-3.5 text-right font-bold text-slate-700">₱@sale.Amount.ToString("N2")</td>
+                                    <td class="px-4 py-3.5 text-slate-600">
                                         <span class="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md bg-slate-100 text-[11px] font-medium text-slate-700">@sale.PaymentMethod</span>
                                     </td>
-                                    <td class="px-5 py-3.5 text-right font-bold text-slate-900">₱@sale.Amount.ToString("N2")</td>
-                                    <td class="px-5 py-3.5 text-center">
+                                    <td class="px-4 py-3.5 text-center">
                                         <span class="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold @BadgeClass(sale.Status)">@sale.Status</span>
+                                    </td>
+                                    <td class="px-4 py-3.5 text-center">
+                                        <button type="button" @onclick="() => CopyInvoice(sale.InvoiceNo)" class="p-1 rounded hover:bg-slate-100 text-slate-400 hover:text-slate-600 transition-colors" title="Copy Invoice #">
+                                            <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                                <circle cx="12" cy="12" r="1"></circle>
+                                                <circle cx="12" cy="5" r="1"></circle>
+                                                <circle cx="12" cy="19" r="1"></circle>
+                                            </svg>
+                                        </button>
                                     </td>
                                 </tr>
                             }
@@ -188,15 +255,172 @@
             </div>
             <TablePagination TotalItems="FilteredSales.Count" PageSize="10" @bind-CurrentPage="currentPage" ItemLabel="sales records" />
         </div>
+
+        @* ── Two Panels Below Table: Category Donut & Revenue Trend Area Chart ─ *@
+        <div class="grid grid-cols-1 lg:grid-cols-12 gap-6">
+            @* Left: Revenue by Category (Donut Chart) *@
+            <div class="lg:col-span-5 bg-white p-5 rounded-xl border border-slate-200 shadow-2xs flex flex-col justify-between">
+                <div>
+                    <h3 class="text-sm font-bold text-[var(--text)] mb-1">Revenue by Category</h3>
+                    <p class="text-xs text-slate-500 mb-4">Total revenue distribution across service categories</p>
+
+                    @{
+                        var catItems = _categoryReport?.RevenueByCategory ?? [];
+                        var totalCatAmount = catItems.Sum(c => c.Amount);
+                    }
+
+                    @if (catItems.Count == 0 || totalCatAmount <= 0)
+                    {
+                        <div class="p-10 text-center text-xs text-slate-400 italic bg-slate-50 rounded-lg">
+                            No categorized revenue recorded in this period.
+                        </div>
+                    }
+                    else
+                    {
+                        var chartColors = new[] { "var(--chart-1)", "var(--chart-2)", "var(--chart-3)", "var(--chart-4)", "var(--chart-5)" };
+                        const double r = 36.0;
+                        const double circumference = 2.0 * Math.PI * r;
+                        double runningOffset = 0.0;
+
+                        <div class="flex flex-col sm:flex-row items-center gap-6">
+                            <div class="relative w-36 h-36 shrink-0">
+                                <svg viewBox="0 0 100 100" class="w-full h-full -rotate-90">
+                                    <circle cx="50" cy="50" r="@r.ToString("0.0", CultureInfo.InvariantCulture)" fill="none" stroke="var(--border)" stroke-width="14" />
+                                    @for (int i = 0; i < catItems.Count; i++)
+                                    {
+                                        var item = catItems[i];
+                                        var fraction = totalCatAmount > 0 ? (double)(item.Amount / totalCatAmount) : 0;
+                                        var strokeDash = fraction * circumference;
+                                        var strokeOffset = -runningOffset;
+                                        runningOffset += strokeDash;
+                                        var colorVar = chartColors[i % chartColors.Length];
+
+                                        <circle cx="50" cy="50" r="@r.ToString("0.0", CultureInfo.InvariantCulture)"
+                                                fill="none"
+                                                stroke="@colorVar"
+                                                stroke-width="14"
+                                                stroke-dasharray="@strokeDash.ToString("0.0", CultureInfo.InvariantCulture) @((circumference - strokeDash).ToString("0.0", CultureInfo.InvariantCulture))"
+                                                stroke-dashoffset="@strokeOffset.ToString("0.0", CultureInfo.InvariantCulture)">
+                                            <title>@item.Label: ₱@item.Amount.ToString("N2") (@fraction.ToString("P0"))</title>
+                                        </circle>
+                                    }
+                                </svg>
+                                <div class="absolute inset-0 flex flex-col items-center justify-center text-center pointer-events-none">
+                                    <span class="text-[10px] text-slate-400 font-semibold uppercase">Total</span>
+                                    <span class="text-xs font-extrabold text-slate-700 aev-tabular">₱@totalCatAmount.ToString("N0")</span>
+                                </div>
+                            </div>
+
+                            <div class="w-full space-y-2 text-xs">
+                                @for (int i = 0; i < catItems.Count; i++)
+                                {
+                                    var item = catItems[i];
+                                    var colorVar = chartColors[i % chartColors.Length];
+                                    var pct = totalCatAmount > 0 ? (double)(item.Amount / totalCatAmount * 100m) : 0;
+                                    <div class="flex items-center justify-between text-slate-600">
+                                        <span class="inline-flex items-center gap-1.5 truncate">
+                                            <span class="w-2.5 h-2.5 rounded-full shrink-0" style="background-color: @colorVar"></span>
+                                            <span class="truncate">@item.Label</span>
+                                        </span>
+                                        <span class="font-semibold text-slate-700 shrink-0 font-mono">
+                                            ₱@item.Amount.ToString("N0") <span class="text-slate-400 font-normal">(@pct.ToString("0.0")%)</span>
+                                        </span>
+                                    </div>
+                                }
+                            </div>
+                        </div>
+                    }
+                </div>
+            </div>
+
+            @* Right: Monthly Revenue Trend (Area/Line Chart) *@
+            <div class="lg:col-span-7 bg-white p-5 rounded-xl border border-slate-200 shadow-2xs flex flex-col justify-between">
+                <div>
+                    <div class="flex items-center justify-between mb-1">
+                        <h3 class="text-sm font-bold text-[var(--text)]">Monthly Revenue Trend</h3>
+                        <span class="text-xs text-slate-500 font-medium">Completed Payments</span>
+                    </div>
+                    <p class="text-xs text-slate-500 mb-4">Historical revenue cadence across selected timeframe</p>
+
+                    @{
+                        var completedSales = _data.Rows.Where(r => r.Status == "Completed").ToList();
+                        var monthlyAgg = completedSales
+                            .GroupBy(r => new DateOnly(r.Date.Year, r.Date.Month, 1))
+                            .Select(g => new { Date = g.Key, Label = g.Key.ToString("MMM yyyy"), Total = g.Sum(x => x.Amount) })
+                            .OrderBy(x => x.Date)
+                            .ToList();
+                    }
+
+                    @if (monthlyAgg.Count == 0)
+                    {
+                        <div class="p-10 text-center text-xs text-slate-400 italic bg-slate-50 rounded-lg">
+                            No completed revenue transactions to chart in this period.
+                        </div>
+                    }
+                    else
+                    {
+                        var maxVal = Math.Max(100m, monthlyAgg.Max(x => x.Total) * 1.15m);
+                        int svgW = 540;
+                        int svgH = 170;
+                        int pL = 44;
+                        int pR = 16;
+                        int pT = 16;
+                        int pB = 28;
+                        double plotW = svgW - pL - pR;
+                        double plotH = svgH - pT - pB;
+                        int n = monthlyAgg.Count;
+                        double stepX = n > 1 ? plotW / (n - 1) : plotW / 2.0;
+
+                        double XPos(int idx) => n > 1 ? pL + idx * stepX : pL + plotW / 2.0;
+                        double YPos(decimal val) => pT + plotH - (double)(val / maxVal) * plotH;
+
+                        var pointsList = monthlyAgg.Select((p, idx) => $"{XPos(idx).ToString("0.0", CultureInfo.InvariantCulture)},{YPos(p.Total).ToString("0.0", CultureInfo.InvariantCulture)}").ToList();
+                        var polylinePoints = string.Join(" ", pointsList);
+
+                        var firstX = XPos(0).ToString("0.0", CultureInfo.InvariantCulture);
+                        var lastX = XPos(n - 1).ToString("0.0", CultureInfo.InvariantCulture);
+                        var bottomY = (pT + plotH).ToString("0.0", CultureInfo.InvariantCulture);
+                        var polygonPoints = $"{firstX},{bottomY} {polylinePoints} {lastX},{bottomY}";
+
+                        <div class="overflow-x-auto">
+                            <svg viewBox="0 0 @svgW @svgH" class="w-full min-w-[420px] h-44 select-none" role="img" aria-label="Monthly revenue trend chart">
+                                @for (int g = 0; g <= 3; g++)
+                                {
+                                    var val = maxVal * (3 - g) / 3.0m;
+                                    var y = pT + plotH * g / 3.0;
+                                    <line x1="@pL" y1="@y.ToString("0.0", CultureInfo.InvariantCulture)" x2="@(svgW - pR)" y2="@y.ToString("0.0", CultureInfo.InvariantCulture)" stroke="var(--chart-grid)" stroke-dasharray="3 3" />
+                                    @:<text x="@(pL - 6)" y="@((y + 3).ToString("0.0", CultureInfo.InvariantCulture))" text-anchor="end" fill="var(--chart-text)" font-size="9" font-family="monospace">₱@val.ToString("N0")</text>
+                                }
+
+                                <polygon points="@polygonPoints" fill="var(--chart-2)" fill-opacity="0.12" />
+                                <polyline points="@polylinePoints" fill="none" stroke="var(--chart-2)" stroke-width="2.5" />
+
+                                @for (int i = 0; i < n; i++)
+                                {
+                                    var pt = monthlyAgg[i];
+                                    var cx = XPos(i);
+                                    var cy = YPos(pt.Total);
+                                    <circle cx="@cx.ToString("0.0", CultureInfo.InvariantCulture)" cy="@cy.ToString("0.0", CultureInfo.InvariantCulture)" r="4" fill="var(--chart-2)" stroke="var(--surface)" stroke-width="1.5">
+                                        <title>@pt.Label: ₱@pt.Total.ToString("N2")</title>
+                                    </circle>
+                                    @:<text x="@cx.ToString("0.0", CultureInfo.InvariantCulture)" y="@(svgH - 8)" text-anchor="middle" fill="var(--chart-text)" font-size="9">@pt.Label</text>
+                                }
+                            </svg>
+                        </div>
+                    }
+                </div>
+            </div>
+        </div>
     }
 </div>
 
+@* ── Record New Sale Modal ────────────────────────────────────────────────── *@
 @if (_showModal)
 {
-    <div class="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 p-4" role="dialog" aria-modal="true" aria-label="Record new sale">
+    <div class="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-xs p-4" role="dialog" aria-modal="true" aria-label="Record new sale">
         <div class="bg-white rounded-xl border border-slate-200 shadow-xl w-full max-w-lg">
             <div class="px-5 py-4 border-b border-slate-200 flex items-center justify-between">
-                <h2 class="text-sm font-bold text-slate-900">Record New Sale</h2>
+                <h2 class="text-sm font-bold text-[var(--text)]">Record New Sale</h2>
                 <button type="button" @onclick="CloseModal" class="text-slate-400 hover:text-slate-700" aria-label="Close">✕</button>
             </div>
             <div class="p-5 space-y-4 text-xs">
@@ -216,7 +440,7 @@
                 {
                     <label class="block">
                         <span class="font-semibold text-slate-600 uppercase tracking-wider">Booking</span>
-                        <select value="@_form.AppointmentId" @onchange="OnBookingSelected" class="mt-1 w-full px-3 py-2 border border-slate-300 rounded-lg bg-white focus:outline-none focus:ring-1 focus:ring-teal-500">
+                        <select value="@_form.AppointmentId" @onchange="OnBookingSelected" class="mt-1 w-full px-3 py-2 border border-slate-300 rounded-lg bg-white text-slate-700 focus:outline-none focus:ring-2 focus:ring-teal-500">
                             <option value="">Select a booking…</option>
                             @foreach (var b in _bookings)
                             {
@@ -227,11 +451,11 @@
                     <div class="grid grid-cols-2 gap-3">
                         <label class="block">
                             <span class="font-semibold text-slate-600 uppercase tracking-wider">Amount (₱)</span>
-                            <input type="number" step="0.01" min="0" @bind="_form.Amount" class="mt-1 w-full px-3 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-1 focus:ring-teal-500" />
+                            <input type="number" step="0.01" min="0" @bind="_form.Amount" class="mt-1 w-full px-3 py-2 border border-slate-300 rounded-lg text-slate-700 focus:outline-none focus:ring-2 focus:ring-teal-500" />
                         </label>
                         <label class="block">
                             <span class="font-semibold text-slate-600 uppercase tracking-wider">Payment Method</span>
-                            <select @bind="_form.PaymentMethod" class="mt-1 w-full px-3 py-2 border border-slate-300 rounded-lg bg-white focus:outline-none focus:ring-1 focus:ring-teal-500">
+                            <select @bind="_form.PaymentMethod" class="mt-1 w-full px-3 py-2 border border-slate-300 rounded-lg bg-white text-slate-700 focus:outline-none focus:ring-2 focus:ring-teal-500">
                                 <option value="Cash">Cash</option>
                                 <option value="GCash">GCash</option>
                                 <option value="Bank Transfer">Bank Transfer</option>
@@ -242,17 +466,17 @@
                     </div>
                     <label class="block">
                         <span class="font-semibold text-slate-600 uppercase tracking-wider">Reference # (optional)</span>
-                        <input type="text" maxlength="100" @bind="_form.Reference" class="mt-1 w-full px-3 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-1 focus:ring-teal-500" />
+                        <input type="text" maxlength="100" @bind="_form.Reference" class="mt-1 w-full px-3 py-2 border border-slate-300 rounded-lg text-slate-700 focus:outline-none focus:ring-2 focus:ring-teal-500" />
                     </label>
                     <label class="block">
                         <span class="font-semibold text-slate-600 uppercase tracking-wider">Notes (optional, saved to audit log)</span>
-                        <textarea rows="2" maxlength="500" @bind="_form.Notes" class="mt-1 w-full px-3 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-1 focus:ring-teal-500"></textarea>
+                        <textarea rows="2" maxlength="500" @bind="_form.Notes" class="mt-1 w-full px-3 py-2 border border-slate-300 rounded-lg text-slate-700 focus:outline-none focus:ring-2 focus:ring-teal-500"></textarea>
                     </label>
                 }
             </div>
             <div class="px-5 py-3 border-t border-slate-200 flex justify-end gap-2">
                 <button type="button" @onclick="CloseModal" class="px-3.5 py-2 bg-white border border-slate-300 hover:bg-slate-50 text-slate-700 text-xs font-semibold rounded-lg">Cancel</button>
-                <button type="button" @onclick="SubmitSaleAsync" disabled="@(_saving || _bookings is null || _bookings.Count == 0)" class="px-3.5 py-2 bg-teal-700 hover:bg-teal-800 disabled:opacity-50 text-white text-xs font-bold rounded-lg">@(_saving ? "Saving…" : "Record Sale")</button>
+                <button type="button" @onclick="SubmitSaleAsync" disabled="@(_saving || _bookings is null || _bookings.Count == 0)" class="px-3.5 py-2 bg-teal-700 hover:bg-teal-800 disabled:opacity-50 text-white text-xs font-bold rounded-lg shadow-2xs">@(_saving ? "Saving…" : "Record Sale")</button>
             </div>
         </div>
     </div>
@@ -261,11 +485,14 @@
 @code {
     private string SearchQuery = "";
     private string StatusFilter = "All";
+    private string SortBy = "Date";
+    private bool SortDescending = true;
     private int currentPage = 1;
 
     private DateOnly _start = DateOnly.FromDateTime(DateTime.Today).AddDays(-29);
     private DateOnly _end = DateOnly.FromDateTime(DateTime.Today);
     private SalesResponseModel? _data;
+    private ReportSummaryModel? _categoryReport;
     private bool _loading = true, _busy, _saving, _showModal, _bannerError;
     private string? _error, _banner, _modalError;
     private List<RecordableBookingModel>? _bookings;
@@ -284,7 +511,26 @@
         .Where(s => StatusFilter == "All" || s.Status.Equals(StatusFilter, StringComparison.OrdinalIgnoreCase))
         .ToList();
 
-    private List<SaleRowModel> PagedSales => TablePagination.Paginate(FilteredSales, currentPage, 10);
+    private List<SaleRowModel> SortedSales
+    {
+        get
+        {
+            var list = FilteredSales;
+            return (SortBy, SortDescending) switch
+            {
+                ("Amount", true) => list.OrderByDescending(s => s.Amount).ToList(),
+                ("Amount", false) => list.OrderBy(s => s.Amount).ToList(),
+                ("Client", true) => list.OrderByDescending(s => s.ClientName).ToList(),
+                ("Client", false) => list.OrderBy(s => s.ClientName).ToList(),
+                ("Invoice", true) => list.OrderByDescending(s => s.InvoiceNo).ToList(),
+                ("Invoice", false) => list.OrderBy(s => s.InvoiceNo).ToList(),
+                (_, true) => list.OrderByDescending(s => s.Date).ToList(),
+                (_, false) => list.OrderBy(s => s.Date).ToList()
+            };
+        }
+    }
+
+    private List<SaleRowModel> PagedSales => TablePagination.Paginate(SortedSales, currentPage, 10);
 
     protected override Task OnInitializedAsync() => LoadAsync();
 
@@ -294,6 +540,10 @@
         var res = await Client.GetSalesAsync(_start, _end, null, null);
         _data = res.IsSuccess ? res.Value : null;
         _error = res.Error?.Message;
+
+        var repRes = await Client.GetReportAsync(_end.Year, _end.Month);
+        _categoryReport = repRes.IsSuccess ? repRes.Value : null;
+
         _loading = false;
         currentPage = 1;
     }
@@ -308,13 +558,21 @@
 
     private void OnSearchInput(ChangeEventArgs e) { SearchQuery = e.Value?.ToString() ?? ""; currentPage = 1; }
     private void OnStatusFilterChanged(ChangeEventArgs e) { StatusFilter = e.Value?.ToString() ?? "All"; currentPage = 1; }
+    private void OnSortByChanged(ChangeEventArgs e) { SortBy = e.Value?.ToString() ?? "Date"; currentPage = 1; }
+    private void OnSortOrderChanged(ChangeEventArgs e) { SortDescending = e.Value?.ToString() == "Desc"; currentPage = 1; }
 
     private static string BadgeClass(string status) => status switch
     {
-        "Completed" => "bg-emerald-100 text-emerald-800",
-        "Pending" => "bg-amber-100 text-amber-800",
-        _ => "bg-rose-100 text-rose-800"
+        "Completed" => "bg-emerald-50 text-emerald-700 border border-emerald-200",
+        "Pending" => "bg-amber-50 text-amber-700 border border-amber-200",
+        _ => "bg-rose-50 text-rose-700 border border-rose-200"
     };
+
+    private async Task CopyInvoice(string invoiceNo)
+    {
+        await JS.InvokeVoidAsync("navigator.clipboard.writeText", invoiceNo);
+        Banner($"Copied invoice {invoiceNo} to clipboard.", false);
+    }
 
     private async Task ExportSales()
     {
