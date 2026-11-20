@@ -32,6 +32,7 @@ public sealed record RecordSaleRequestModel
 public sealed record RecordSaleResultModel(string TransactionId, string InvoiceNo, decimal Amount, string Status);
 
 public sealed record LabeledAmountModel(string Label, decimal Amount, int Count);
+public sealed record HeatmapCellModel(int Weekday, int Slot, int Count);
 public sealed record EquipmentUsageModel(string EquipmentName, string TypeName, int DispatchCount, int DaysUsed, double UtilizationPercent, string Status);
 public sealed record ReportSummaryModel(
     int Year, int Month, string PeriodLabel,
@@ -42,7 +43,8 @@ public sealed record ReportSummaryModel(
     List<LabeledAmountModel> RevenueByCategory, double? DepositCollectionPercent, int ClearedPayments, int UnreconciledPayments,
     List<LabeledAmountModel> BookingsByWeekday, List<LabeledAmountModel> PopularServices,
     double? ConsultationConversionPercent, int ConsultationsTotal, int ConsultationsWon, int CompletedSessions,
-    List<EquipmentUsageModel> EquipmentUsage, int OpenMaintenanceTickets, int EquipmentOnHold, int TotalDispatches);
+    List<EquipmentUsageModel> EquipmentUsage, int OpenMaintenanceTickets, int EquipmentOnHold, int TotalDispatches,
+    List<HeatmapCellModel>? WeekdayTimeSlots = null);
 
 public interface ISalesReportsClient
 {

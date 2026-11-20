@@ -57,6 +57,8 @@ public sealed record RecordSaleResultDto(string TransactionId, string InvoiceNo,
 
 public sealed record LabeledAmountDto(string Label, decimal Amount, int Count);
 
+public sealed record HeatmapCellDto(int Weekday, int Slot, int Count);
+
 public sealed record EquipmentUsageDto(string EquipmentName, string TypeName, int DispatchCount, int DaysUsed, double UtilizationPercent, string Status);
 
 public sealed record ReportSummaryDto(
@@ -97,4 +99,5 @@ public sealed record ReportSummaryDto(
     IReadOnlyList<EquipmentUsageDto> EquipmentUsage,
     int OpenMaintenanceTickets,
     int EquipmentOnHold,
-    int TotalDispatches);
+    int TotalDispatches,
+    IReadOnlyList<HeatmapCellDto>? WeekdayTimeSlots = null);

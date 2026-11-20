@@ -406,6 +406,29 @@ public sealed class SalesReportService : ISalesReportService
             while (await r.ReadAsync(ct)) weekdayCounts[r.GetInt32(0)] = r.GetInt32(1);
         var weekdays = weekdayNames.Select((n, i) => new LabeledAmountDto(n, 0m, weekdayCounts[i])).ToList();
 
+        // Weekday x timeslot heatmap (Slot 0: <12h, Slot 1: 12-16h, Slot 2: >=16h)
+        var heatmapCells = new List<HeatmapCellDto>();
+        await using (var r = await Run(@"
+            SELECT DATEDIFF(day, '19000101', ea.EventDate) % 7,
+                   CASE
+                       WHEN DATEPART(hour, ea.EventTime) < 12 THEN 0
+                       WHEN DATEPART(hour, ea.EventTime) < 16 THEN 1
+                       ELSE 2
+                   END,
+                   COUNT(*)
+            FROM dbo.EventAppointment ea
+            WHERE ea.EventDate >= @s AND ea.EventDate < @e AND " + NotCancelled + @"
+            GROUP BY DATEDIFF(day, '19000101', ea.EventDate) % 7,
+                     CASE
+                         WHEN DATEPART(hour, ea.EventTime) < 12 THEN 0
+                         WHEN DATEPART(hour, ea.EventTime) < 16 THEN 1
+                         ELSE 2
+                     END;", start, end))
+        {
+            while (await r.ReadAsync(ct))
+                heatmapCells.Add(new(r.GetInt32(0), r.GetInt32(1), r.GetInt32(2)));
+        }
+
         // Consultation conversion
         int consults = 0, won = 0;
         await using (var r = await Run("SELECT COUNT(*), ISNULL(SUM(CASE WHEN NegotiationStatus IN (N'Deal_Won', N'Appointment Booked') THEN 1 ELSE 0 END),0) FROM dbo.BookingNegotiation WHERE CreatedAt >= @s AND CreatedAt < @e;", start, end))
@@ -440,6 +463,7 @@ public sealed class SalesReportService : ISalesReportService
             consults > 0 ? Math.Round(won * 100.0 / consults, 1) : null, consults, won, completedSessions,
             equipment.Take(10).ToList(), openTickets,
             equipment.Count(e => e.Status is "Maintenance" or "Needs Replacement"),
-            equipment.Sum(e => e.DispatchCount));
+            equipment.Sum(e => e.DispatchCount),
+            heatmapCells);
     }
 }
