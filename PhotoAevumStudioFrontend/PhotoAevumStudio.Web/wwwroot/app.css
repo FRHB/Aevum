@@ -49,7 +49,7 @@
 .aev-border { border-color: var(--border); }
 .aev-primary-btn {
     background-color: var(--primary);
-    color: #ffffff;
+    color: var(--surface);
 }
 .aev-primary-btn:hover {
     background-color: var(--primary-hover);
@@ -705,7 +705,7 @@ details > summary {
 
 .aev-logout-btn--yes {
     background: #dc2626;
-    color: #ffffff;
+    color: var(--surface);
 }
 
 .aev-logout-btn--yes:hover:not(:disabled) {

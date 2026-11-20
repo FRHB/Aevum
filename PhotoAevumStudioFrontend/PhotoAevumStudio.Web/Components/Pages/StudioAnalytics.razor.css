@@ -1,4 +1,4 @@
-/* Legacy dark slate tokens migrated to shared CSS variables in app.css: #0b1120, #0f172a */
+/* Legacy dark slate tokens migrated to shared CSS variables in app.css */
 
 .aev-analytics-shell {
     background-color: transparent;
@@ -87,7 +87,7 @@
 
 .aev-stage-btn.is-active .aev-stage-num {
     background: var(--primary);
-    color: #ffffff;
+    color: var(--surface);
     border-color: var(--primary);
 }
 
