@@ -9,9 +9,10 @@
 @using System.Security.Claims
 @inject IEquipmentService EquipmentService
 @inject IUserService UserService
+@inject PaymentHubClient PaymentHub
 @inject AuthenticationStateProvider AuthStateProvider
 @inject NavigationManager Nav
-@implements IDisposable
+@implements IAsyncDisposable
 
 <PageTitle>Gear Dispatch &amp; Checkout | Photo Aevum Studio</PageTitle>
 
@@ -53,7 +54,7 @@
             </div>
             <div>
                 <p class="text-xs text-slate-500 font-medium uppercase tracking-wider">Active Dispatches</p>
-                <p class="text-2xl font-extrabold text-blue-700 mt-0.5">@dispatches.Count(d => d.IsActiveCheckout)</p>
+                <p class="text-2xl font-extrabold text-blue-700 mt-0.5">@LatestDispatches.Count(d => d.IsActiveCheckout)</p>
                 <p class="text-[11px] text-slate-400">Currently deployed on-location & shoots</p>
             </div>
         </div>
@@ -65,7 +66,7 @@
             </div>
             <div>
                 <p class="text-xs text-slate-500 font-medium uppercase tracking-wider">Scheduled Checkouts</p>
-                <p class="text-2xl font-extrabold text-amber-700 mt-0.5">@dispatches.Count(d => d.IsScheduled)</p>
+                <p class="text-2xl font-extrabold text-amber-700 mt-0.5">@LatestDispatches.Count(d => d.IsScheduled)</p>
                 <p class="text-[11px] text-slate-400">Allocated to upcoming event appointments</p>
             </div>
         </div>
@@ -78,7 +79,7 @@
             <div>
                 <p class="text-xs text-slate-500 font-medium uppercase tracking-wider">Completed Returns</p>
                 <p class="text-2xl font-extrabold text-emerald-700 mt-0.5">
-                    @dispatches.Count(d => d.IsReturned && d.ReturnedAt.HasValue && d.ReturnedAt.Value.Date == DateTime.UtcNow.Date)
+                    @LatestDispatches.Count(d => d.IsReturned && d.ReturnedAt.HasValue && d.ReturnedAt.Value.Date == DateTime.UtcNow.Date)
                 </p>
                 <p class="text-[11px] text-slate-400">Verified and returned back to rack today</p>
             </div>
@@ -121,7 +122,7 @@
         </div>
 
         <span class="text-xs text-slate-500 self-end md:self-center font-medium">
-            Showing <strong class="text-slate-900">@FilteredDispatches.Count()</strong> of <strong class="text-slate-900">@dispatches.Count</strong> dispatch manifests
+            Showing <strong class="text-slate-900">@FilteredDispatches.Count()</strong> of <strong class="text-slate-900">@LatestDispatches.Count</strong> dispatch manifests
         </span>
     </div>
 
@@ -202,6 +203,12 @@
                                                 <span class="text-slate-400">SN: @item.SerialNo</span>
                                             }
                                         </div>
+                                        @if (item.IsEquipmentMaintenanceOrUnavailable && !item.IsReturned)
+                                        {
+                                            <div class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-amber-100 text-amber-900 border border-amber-300 text-[10px] font-bold">
+                                                🔧 @item.EquipmentStatus — Needs Replacement in Calendar
+                                            </div>
+                                        }
                                         @if (!string.IsNullOrWhiteSpace(item.Notes))
                                         {
                                             <p class="text-[10px] text-slate-400 italic max-w-xs truncate" title="@item.Notes">
@@ -264,11 +271,21 @@
                                             }
                                             else if (item.IsScheduled)
                                             {
-                                                <button type="button" 
-                                                        @onclick="() => QuickDispatchNow(item)"
-                                                        class="px-2.5 py-1.5 text-xs font-bold text-blue-700 bg-blue-50 hover:bg-blue-100 border border-blue-200 rounded-md transition-all shadow-2xs">
-                                                    Dispatch Now
-                                                </button>
+                                                if (item.IsEquipmentMaintenanceOrUnavailable)
+                                                {
+                                                    <a href="/admin/calendar/events?eventId=@item.EventAppointmentID"
+                                                       class="px-2.5 py-1.5 text-xs font-bold text-amber-900 bg-amber-100 hover:bg-amber-200 border border-amber-300 rounded-md transition-all shadow-2xs">
+                                                        🔧 Schedule Replacement
+                                                    </a>
+                                                }
+                                                else
+                                                {
+                                                    <button type="button" 
+                                                            @onclick="() => QuickDispatchNow(item)"
+                                                            class="px-2.5 py-1.5 text-xs font-bold text-blue-700 bg-blue-50 hover:bg-blue-100 border border-blue-200 rounded-md transition-all shadow-2xs">
+                                                        Dispatch Now
+                                                    </button>
+                                                }
                                             }
                                         }
 
@@ -613,8 +630,27 @@
         }
 
         EquipmentService.OnChange += HandleExternalStateChange;
+        PaymentHub.OnEventStatusChanged += HandleHubEventStatusChangedAsync;
         await LoadDataAsync();
     }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender || _isReadOnly) return;
+        try
+        {
+            await PaymentHub.EnsureLiveMonitorStartedAsync();
+        }
+        catch
+        {
+        }
+    }
+
+    private Task HandleHubEventStatusChangedAsync(EventStatusChangedMessage _) => InvokeAsync(async () =>
+    {
+        await LoadDataAsync();
+        StateHasChanged();
+    });
 
     private async Task LoadDataAsync()
     {
@@ -645,11 +681,14 @@
         currentPage = 1;
     }
 
+    private IReadOnlyList<DispatchItemModel> LatestDispatches =>
+        PhotoAevumStudio.Web.Services.EquipmentService.GetLatestDispatchPerEquipment(dispatches);
+
     private IEnumerable<DispatchItemModel> FilteredDispatches
     {
         get
         {
-            var query = dispatches.AsEnumerable();
+            var query = LatestDispatches.AsEnumerable();
 
             if (!string.IsNullOrWhiteSpace(searchQuery))
             {
@@ -768,6 +807,11 @@
 
     private async Task QuickDispatchNow(DispatchItemModel item)
     {
+        if (item.IsEquipmentMaintenanceOrUnavailable)
+        {
+            notificationMessage = null;
+            return;
+        }
         item.DispatchStatus = "Dispatched";
         item.DispatchedAt = DateTime.UtcNow;
         EquipmentService.NotifyStateChanged();
@@ -822,8 +866,10 @@
         return $"{parts[0][0]}{parts[1][0]}".ToUpperInvariant();
     }
 
-    public void Dispose()
+    public ValueTask DisposeAsync()
     {
         EquipmentService.OnChange -= HandleExternalStateChange;
+        PaymentHub.OnEventStatusChanged -= HandleHubEventStatusChangedAsync;
+        return ValueTask.CompletedTask;
     }
 }

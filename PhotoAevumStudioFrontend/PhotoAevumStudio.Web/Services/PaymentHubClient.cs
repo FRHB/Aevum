@@ -21,6 +21,7 @@ public sealed class PaymentHubClient(
     private readonly SemaphoreSlim _gate = new(1, 1);
     private readonly HashSet<string> _joinedBookings = new(StringComparer.OrdinalIgnoreCase);
     private readonly HashSet<string> _joinedCustomers = new(StringComparer.OrdinalIgnoreCase);
+    private readonly HashSet<string> _joinedStaff = new(StringComparer.OrdinalIgnoreCase);
     private bool _joinedLiveMonitor;
     private HubConnection? _connection;
     private string? _cachedToken;
@@ -98,6 +99,26 @@ public sealed class PaymentHubClient(
             if (_joinedCustomers.Add(customerId.Trim()))
             {
                 await conn.InvokeAsync("JoinCustomer", customerId.Trim(), ct);
+            }
+        }
+        finally
+        {
+            _gate.Release();
+        }
+    }
+
+    public async Task EnsureStaffMonitorStartedAsync(string employeeId, CancellationToken ct = default)
+    {
+        if (string.IsNullOrWhiteSpace(employeeId))
+            return;
+
+        await _gate.WaitAsync(ct);
+        try
+        {
+            var conn = await EnsureConnectedCoreAsync(ct);
+            if (_joinedStaff.Add(employeeId.Trim()))
+            {
+                await conn.InvokeAsync("JoinStaff", employeeId.Trim(), ct);
             }
         }
         finally
@@ -203,6 +224,12 @@ public sealed class PaymentHubClient(
                 catch (Exception ex) { logger.LogWarning(ex, "Failed to rejoin customer group {CustomerId}", custId); }
             }
 
+            foreach (var empId in _joinedStaff.ToArray())
+            {
+                try { await connection.InvokeAsync("JoinStaff", empId); }
+                catch (Exception ex) { logger.LogWarning(ex, "Failed to rejoin staff group {EmployeeId}", empId); }
+            }
+
             foreach (var apptId in _joinedBookings.ToArray())
             {
                 try { await connection.InvokeAsync("JoinBooking", apptId); }
@@ -233,6 +260,7 @@ public sealed class PaymentHubClient(
         _joinedLiveMonitor = false;
         _joinedBookings.Clear();
         _joinedCustomers.Clear();
+        _joinedStaff.Clear();
         if (c is null) return;
         try { await c.StopAsync(); } catch { /* best effort */ }
         await c.DisposeAsync();

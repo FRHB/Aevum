@@ -349,6 +349,8 @@ public class TeamLeaderAndPasswordPolicyTests
         Assert.DoesNotContain("SELECT DISTINCT", getSection, StringComparison.OrdinalIgnoreCase);
         Assert.Contains("EXISTS (", getSection);
         Assert.Contains("ORDER BY eeFirst.EmployeeID ASC", getSection);
+        Assert.Contains("IsTeamLeaderForEmp", getSection);
+        Assert.Contains("eeAny.EmployeeID", getSection);
 
         var isTlIdx = source.IndexOf("public async Task<bool> IsTeamLeaderForEventAsync", StringComparison.Ordinal);
         var autoIdx = source.IndexOf("public async Task<int> AutoTriggerPostEventsAsync", isTlIdx, StringComparison.Ordinal);
@@ -356,5 +358,81 @@ public class TeamLeaderAndPasswordPolicyTests
 
         Assert.Contains("FROM dbo.EventAppointment ea", isTlSection);
         Assert.Contains("ORDER BY eeFirst.EmployeeID ASC", isTlSection);
+    }
+
+    [Fact]
+    public void ConsultationNegotiationService_MarkEquipmentTakenAsync_ChecksExistenceOutsideTransactionAndLogsEquipmentStatus()
+    {
+        var dir = new DirectoryInfo(AppContext.BaseDirectory);
+        while (dir is not null && !File.Exists(Path.Combine(dir.FullName, "PhotoAevumStudio.slnx")))
+        {
+            dir = dir.Parent;
+        }
+        var root = dir?.FullName ?? throw new DirectoryNotFoundException("Could not locate repository root.");
+        var servicePath = Path.Combine(root, "PhotoAevumStudioBackend", "PhotoAevumStudio.Infrastructure", "Services", "ConsultationNegotiationService.cs");
+        var source = File.ReadAllText(servicePath);
+
+        var startIdx = source.IndexOf("public async Task<EventAppointmentDto> MarkEquipmentTakenAsync", StringComparison.Ordinal);
+        var endIdx = source.IndexOf("public async Task<EventAppointmentDto> AddAdditionalEquipmentToEventAsync", startIdx, StringComparison.Ordinal);
+        var section = source[startIdx..endIdx];
+
+        var beginTxIdx = section.IndexOf("BeginTransactionAsync", StringComparison.Ordinal);
+        var commitTxIdx = section.IndexOf("CommitAsync", StringComparison.Ordinal);
+        Assert.True(beginTxIdx > 0 && commitTxIdx > beginTxIdx);
+
+        var insideTx = section[beginTxIdx..commitTxIdx];
+        Assert.DoesNotContain("GetAppointmentByIdOnConnectionAsync", insideTx);
+        Assert.Contains("GetAppointmentByIdOnConnectionAsync", section[..beginTxIdx]);
+        Assert.Contains("SET EventStatus = 'Dispatch'", insideTx);
+        Assert.Contains("EntityName, EntityID", insideTx);
+        Assert.Contains("'EventEquipment'", insideTx);
+    }
+
+    [Fact]
+    public void CrewVerification_ReplacementAndSuddenAbsence_ContractsAndTemplates_AreConfigured()
+    {
+        // 1. SchemaBatches includes EventEmployee verification columns & EventCrewReplacementRequest table
+        var batches = typeof(PendingPaymentService)
+            .GetField("SchemaBatches", System.Reflection.BindingFlags.Static | System.Reflection.BindingFlags.NonPublic)
+            ?.GetValue(null) as string[];
+        Assert.NotNull(batches);
+        var allSql = string.Join("\n", batches!);
+        Assert.Contains("EventEmployee", allSql);
+        Assert.Contains("IsVerified", allSql);
+        Assert.Contains("DutyStatus", allSql);
+        Assert.Contains("EventCrewReplacementRequest", allSql);
+
+        // 2. Emergency / Sudden Sick leave type is registered
+        Assert.Contains(PhotoAevumStudio.Application.Entities.LeaveTypes.EmergencySick,
+            PhotoAevumStudio.Application.Entities.LeaveTypes.All);
+        Assert.NotNull(PhotoAevumStudio.Application.Entities.LeaveTypes.Resolve("EMERG"));
+
+        // 3. Interface methods for Crew Duty Verification & Replacement Requests exist
+        var iface = typeof(PhotoAevumStudio.Application.Interfaces.IConsultationNegotiationService);
+        Assert.NotNull(iface.GetMethod(nameof(PhotoAevumStudio.Application.Interfaces.IConsultationNegotiationService.VerifyCrewDutyAsync)));
+        Assert.NotNull(iface.GetMethod(nameof(PhotoAevumStudio.Application.Interfaces.IConsultationNegotiationService.RequestCrewReplacementAsync)));
+        Assert.NotNull(iface.GetMethod(nameof(PhotoAevumStudio.Application.Interfaces.IConsultationNegotiationService.FulfillCrewReplacementAsync)));
+
+        // 4. IPaymentNotifier exposes RosterUpdatedAsync for real-time staff portal updates
+        var notifierMethod = typeof(PhotoAevumStudio.Application.Interfaces.IPaymentNotifier)
+            .GetMethod(nameof(PhotoAevumStudio.Application.Interfaces.IPaymentNotifier.RosterUpdatedAsync));
+        Assert.NotNull(notifierMethod);
+
+        // 5. Email templates render assignment & removal details
+        var assignedHtml = StudioEmailTemplates.StaffEventRosterAssignmentNotification(
+            "Elena Rostova", "EVT-300", "Wedding Shoot", "Maria Santos",
+            new DateOnly(2026, 12, 1), new TimeOnly(10, 0), "Studio A",
+            isTeamLeader: true, isReplacement: true, staffPortalUrl: "https://photoaevum.studio/staff/team-lead-monitor");
+        Assert.Contains("Elena Rostova", assignedHtml);
+        Assert.Contains("Team Leader", assignedHtml);
+        Assert.Contains("EVT-300", assignedHtml);
+        Assert.Contains("https://photoaevum.studio/staff/team-lead-monitor", assignedHtml);
+
+        var removedHtml = StudioEmailTemplates.StaffRemovedFromEventNotification(
+            "Marco Diaz", "EVT-300", "Wedding Shoot", new DateOnly(2026, 12, 1),
+            "Sudden sick absence", "https://photoaevum.studio/staff");
+        Assert.Contains("Marco Diaz", removedHtml);
+        Assert.Contains("Sudden sick absence", removedHtml);
+        Assert.Contains("EVT-300", removedHtml);
     }
 }

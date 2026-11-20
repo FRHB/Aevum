@@ -1,13 +1,22 @@
 @using PhotoAevumStudio.Web.Models
 
 <div @onclick="OnClick"
-     title="@Booking.ClientName (@Booking.ServiceType) with @Booking.AssignedPhotographer — @Booking.DisplayStatus"
-     class="compact-event-chip week-event-chip @(Booking.IsConsultation ? "is-consultation-chip" : "") @(Booking.HasConflict ? "conflict-chip" : "") @GetStatusClass()">
+     title="@ChipTooltip"
+     class="compact-event-chip week-event-chip @(Booking.IsConsultation ? "is-consultation-chip" : "") @(Booking.HasConflict ? "conflict-chip" : "") @(Booking.NeedsEquipmentFix ? "needs-fix-chip" : "") @GetStatusClass()">
     <div class="chip-top-row">
-        <span class="chip-time">@(Booking.IsConsultation ? "💬 " : "")@Booking.StartTime.ToString(@"hh\:mm") - @Booking.EffectiveEndTime.ToString(@"hh\:mm")</span>
+        <span class="chip-time">@(Booking.IsConsultation ? "💬 " : Booking.NeedsEquipmentFix ? "🔧 " : "")@Booking.StartTime.ToString(@"hh\:mm") - @Booking.EffectiveEndTime.ToString(@"hh\:mm")</span>
         <span class="chip-status-dot"></span>
     </div>
     <div class="chip-client">@Booking.ClientName</div>
+    @if (Booking.NeedsEquipmentFix)
+    {
+        <div class="text-[10px] font-bold text-amber-800 truncate">
+            🔧 Needs Fix: @string.Join(", ", Booking.UnavailableAssignedEquipment.Select(e => e.EquipmentName))
+        </div>
+        <div class="text-[9px] font-extrabold text-rose-700 uppercase tracking-wide truncate">
+            Schedule Replacement →
+        </div>
+    }
     @if (Booking.IsCompleted)
     {
         <div class="text-[10px] font-bold text-emerald-700 truncate">✓ Completed</div>
@@ -32,6 +41,12 @@
 @code {
     [Parameter, EditorRequired] public EventBookingModel Booking { get; set; } = default!;
     [Parameter] public EventCallback OnClick { get; set; }
+
+    private string ChipTooltip =>
+        $"{Booking.ClientName} ({Booking.ServiceType}) with {Booking.AssignedPhotographer} — {Booking.DisplayStatus}" +
+        (Booking.NeedsEquipmentFix
+            ? $" | Equipment in Maintenance: {string.Join(", ", Booking.UnavailableAssignedEquipment.Select(e => e.EquipmentName))} (Needs fix & replacement)"
+            : string.Empty);
 
     private string GetStatusClass()
     {

@@ -10,4 +10,5 @@ public interface ITimesheetService
     Task<IReadOnlyList<TodayAttendanceSummaryDto>> GetTodayAttendanceAsync(CancellationToken cancellationToken = default);
     Task<IReadOnlyList<EmployeeTimesheetHistoryDto>> GetTimesheetHistoryAsync(string? employeeId = null, CancellationToken cancellationToken = default);
     Task<bool> AdjustTimesheetPunchAsync(int id, DateTime? clockIn, DateTime? clockOut, string? reason, CancellationToken cancellationToken = default);
+    Task<bool> ApproveTimesheetOvertimeAsync(int id, int? approvedOvertimeMinutes = null, CancellationToken cancellationToken = default) => Task.FromResult(false);
 }

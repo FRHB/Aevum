@@ -76,6 +76,9 @@ public class UpdateAppointmentRosterRequest
     public List<string> EmployeeIds { get; set; } = new();
     public string TeamLeaderEmployeeId { get; set; } = string.Empty;
     public List<string> EquipmentIds { get; set; } = new();
+    public bool MarkRemovedAsSuddenAbsence { get; set; }
+    public List<string>? SuddenAbsenceEmployeeIds { get; set; }
+    public string? SuddenAbsenceReason { get; set; }
     public string? ActorId { get; set; }
     public string? ActorRole { get; set; }
     public string? ActorName { get; set; }
@@ -115,6 +118,7 @@ public class EventAppointmentDto
     public DateTime? FinalPaymentPaidAt { get; set; }
     public List<AssignedEmployeeDto> AssignedEmployees { get; set; } = new();
     public List<AssignedEquipmentDto> AssignedEquipment { get; set; } = new();
+    public List<EventCrewReplacementRequestDto> CrewReplacementRequests { get; set; } = new();
     public List<EventServiceLineDto> SelectedServices { get; set; } = new();
     public List<EventOvertimeDto> OvertimeCharges { get; set; } = new();
     public List<PaymentTransactionDto> Transactions { get; set; } = new();
@@ -128,6 +132,54 @@ public class AssignedEmployeeDto
     public string FullName => EmployeeName;
     public string Specialization { get; set; } = string.Empty;
     public bool IsTeamLeader { get; set; }
+    public bool IsVerified { get; set; }
+    public DateTime? VerifiedAt { get; set; }
+    public string? VerifiedByEmployeeId { get; set; }
+    public string DutyStatus { get; set; } = "Assigned";
+}
+
+public class EventCrewReplacementRequestDto
+{
+    public int RequestId { get; set; }
+    public string EventAppointmentId { get; set; } = string.Empty;
+    public string? AbsentEmployeeId { get; set; }
+    public string? AbsentEmployeeName { get; set; }
+    public string? RequestedByEmployeeId { get; set; }
+    public string? RequestedByName { get; set; }
+    public string? Reason { get; set; }
+    public string Status { get; set; } = "Pending";
+    public string? ReplacementEmployeeId { get; set; }
+    public string? ReplacementEmployeeName { get; set; }
+    public string? FulfilledBy { get; set; }
+    public DateTime? FulfilledAt { get; set; }
+    public DateTime CreatedAt { get; set; }
+}
+
+public class VerifyCrewDutyRequest
+{
+    public List<string>? EmployeeIds { get; set; }
+    public bool IsVerified { get; set; } = true;
+    public string DutyStatus { get; set; } = "On Duty";
+    public string? EmployeeId { get; set; }
+}
+
+public class RequestCrewReplacementRequest
+{
+    public string? AbsentEmployeeId { get; set; }
+    public string? Reason { get; set; }
+    public string? RequestedByEmployeeId { get; set; }
+    public string? RequestedByName { get; set; }
+}
+
+public class FulfillCrewReplacementRequest
+{
+    public string ReplacementEmployeeId { get; set; } = string.Empty;
+    public bool PromoteToTeamLeader { get; set; }
+    public bool MarkAbsentAsSuddenLeave { get; set; } = true;
+    public string? Reason { get; set; }
+    public string? ActorId { get; set; }
+    public string? ActorRole { get; set; }
+    public string? ActorName { get; set; }
 }
 
 public class AssignedEquipmentDto
@@ -136,6 +188,7 @@ public class AssignedEquipmentDto
     public string EquipmentId { get; set; } = string.Empty;
     public string EquipmentName { get; set; } = string.Empty;
     public string EquipmentType { get; set; } = string.Empty;
+    public string EquipmentStatus { get; set; } = "Available";
     public bool IsTaken { get; set; }
     public DateTime? TakenAt { get; set; }
     public string? TakenByEmployeeId { get; set; }

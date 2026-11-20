@@ -15,12 +15,11 @@
 @using System.Security.Claims
 @inject IEquipmentService EquipmentService
 @inject IUserService UserService
+@inject PaymentHubClient PaymentHub
 @inject AuthenticationStateProvider AuthStateProvider
 @inject NavigationManager Nav
 
-@inject NavigationManager Nav
-
-@implements IDisposable
+@implements IAsyncDisposable
 
 
 
@@ -555,8 +554,8 @@
                                                                         <td class="px-4 py-2 font-semibold text-slate-900">@eq.EquipmentName</td>
                                                                         <td class="px-4 py-2 font-mono text-slate-500">@(string.IsNullOrWhiteSpace(eq.SerialNo) ? "N/A" : eq.SerialNo)</td>
                                                                         <td class="px-4 py-2">
-                                                                            <span class="inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-semibold bg-slate-100 text-slate-700 border border-slate-200">
-                                                                                @eq.EquipmentStatus
+                                                                            <span class="inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-semibold border @(eq.IsMaintenance ? "bg-amber-50 text-amber-800 border-amber-200" : eq.IsDispatched ? "bg-blue-50 text-blue-800 border-blue-200" : eq.IsReservedForEvent ? "bg-indigo-50 text-indigo-800 border-indigo-200" : eq.IsAvailable ? "bg-emerald-50 text-emerald-800 border-emerald-200" : "bg-slate-100 text-slate-700 border-slate-200")">
+                                                                                @eq.EffectiveStatusLabel
                                                                             </span>
                                                                         </td>
                                                                     </tr>
@@ -682,10 +681,29 @@
         }
 
         EquipmentService.OnChange += HandleExternalStateChange;
+        PaymentHub.OnEventStatusChanged += HandleHubEventStatusChangedAsync;
 
         await LoadDataAsync();
 
     }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender || _isReadOnly) return;
+        try
+        {
+            await PaymentHub.EnsureLiveMonitorStartedAsync();
+        }
+        catch
+        {
+        }
+    }
+
+    private Task HandleHubEventStatusChangedAsync(EventStatusChangedMessage _) => InvokeAsync(async () =>
+    {
+        await LoadDataAsync();
+        StateHasChanged();
+    });
 
 
 
@@ -848,11 +866,13 @@
 
 
 
-    public void Dispose()
+    public ValueTask DisposeAsync()
 
     {
 
         EquipmentService.OnChange -= HandleExternalStateChange;
+        PaymentHub.OnEventStatusChanged -= HandleHubEventStatusChangedAsync;
+        return ValueTask.CompletedTask;
 
     }
 

@@ -9,6 +9,7 @@
 @using Microsoft.AspNetCore.Components.Authorization
 @using System.Security.Claims
 @inject IScheduleService ScheduleService
+@inject IEquipmentService EquipmentService
 @inject AuthenticationStateProvider AuthStateProvider
 @inject IUserService UserService
 @inject IEmployeeService EmployeeService
@@ -33,6 +34,15 @@
                 <span class="metric-pill highlight">
                     <strong>@_thisWeekBookingsCount</strong> this week (@_thisWeekHoursCount.ToString("0.#")h)
                 </span>
+                @if (_upcomingEquipmentFixAlerts.Count > 0)
+                {
+                    <button type="button"
+                            @onclick="ToggleEquipmentFixFilter"
+                            title="Show only events with equipment in maintenance needing replacement"
+                            class="metric-pill equipment-fix-pill @(_filterOnlyEquipmentFix ? "active" : "")">
+                        🔧 <strong>@_upcomingEquipmentFixAlerts.Count</strong> needs gear fix
+                    </button>
+                }
                 @if (_conflictCount > 0)
                 {
                     <button type="button"
@@ -118,6 +128,51 @@
             </button>
         </div>
     </div>
+
+    @* ── 2B. UPCOMING SCHEDULES WITH EQUIPMENT IN MAINTENANCE ALERT ───── *@
+    @if (_upcomingEquipmentFixAlerts.Count > 0)
+    {
+        <div class="rounded-xl border border-amber-300 bg-amber-50/90 px-4 py-3 shadow-2xs space-y-2" role="region" aria-label="Upcoming schedules needing equipment fix">
+            <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
+                <div class="flex items-center gap-2">
+                    <span class="inline-flex items-center justify-center w-6 h-6 rounded-full bg-amber-200 text-amber-900 text-xs font-bold shrink-0">🔧</span>
+                    <div>
+                        <h2 class="text-xs font-extrabold text-amber-950">
+                            Equipment in Maintenance — Upcoming Schedules Need Fix &amp; Replacement (@_upcomingEquipmentFixAlerts.Count)
+                        </h2>
+                        <p class="text-[11px] text-amber-800">
+                            The following upcoming events have assigned equipment currently in maintenance or unavailable. Schedule available replacement gear before the shoot.
+                        </p>
+                    </div>
+                </div>
+            </div>
+            <div class="space-y-1.5">
+                @foreach (var alertEv in _upcomingEquipmentFixAlerts)
+                {
+                    var brokenList = string.Join(", ", alertEv.UnavailableAssignedEquipment.Select(e => $"{e.EquipmentName} ({e.EquipmentStatus})"));
+                    <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-2 bg-white/90 border border-amber-200 rounded-lg px-3 py-2 text-xs">
+                        <div class="min-w-0">
+                            <div class="flex flex-wrap items-center gap-2">
+                                <span class="font-mono text-[10px] font-bold px-1.5 py-0.5 rounded bg-slate-900 text-white">#@alertEv.Id</span>
+                                <span class="font-bold text-slate-900">@alertEv.Date.ToString("ddd, MMM d, yyyy")</span>
+                                <span class="text-slate-500">@alertEv.FormattedTimeRange</span>
+                                <span class="font-semibold text-slate-800">@alertEv.ClientName</span>
+                                <span class="text-slate-500">(@alertEv.ServiceType)</span>
+                            </div>
+                            <div class="text-[11px] text-amber-900 font-semibold mt-0.5 truncate" title="@brokenList">
+                                Needs Fix: @brokenList
+                            </div>
+                        </div>
+                        <button type="button"
+                                @onclick="() => FixAndScheduleEquipmentAsync(alertEv)"
+                                class="px-3 py-1.5 rounded-lg bg-amber-600 hover:bg-amber-700 text-white text-[11px] font-bold shrink-0 transition-colors">
+                            @(_canManageRoster ? "Fix & Schedule Equipment" : "View Event")
+                        </button>
+                    </div>
+                }
+            </div>
+        </div>
+    }
 
     @* ── 3. MAIN COMPACT SCHEDULE VIEW ────────────────────────────────── *@
     @if (_currentView == ScheduleViewMode.Week)
@@ -248,7 +303,7 @@
                                 <tr id="day-event-row-@b.Id"
                                     data-event-id="@b.Id"
                                     @onclick="() => OpenDetailDrawer(b)"
-                                    class="day-gantt-row @(b.HasConflict ? "conflict-row" : "") @(b.IsConsultation ? "is-consultation-row" : "") @(isHighlighted ? "event-row-highlighted" : "")">
+                                    class="day-gantt-row @(b.HasConflict ? "conflict-row" : "") @(b.NeedsEquipmentFix ? "needs-fix-row" : "") @(b.IsConsultation ? "is-consultation-row" : "") @(isHighlighted ? "event-row-highlighted" : "")">
                                     <td class="gantt-event-meta-cell">
                                         <div class="gantt-meta-top">
                                             <span class="gantt-client-name">
@@ -272,6 +327,10 @@
                                         </div>
                                         <div class="gantt-meta-time">
                                             <span>@b.FormattedTimeRange</span>
+                                            @if (b.NeedsEquipmentFix)
+                                            {
+                                                <span class="text-amber-800 font-bold ml-2">🔧 Needs Fix / Schedule Equipment</span>
+                                            }
                                             @if (b.HasConflict)
                                             {
                                                 <span class="text-rose-700 font-bold ml-2">⚠️ Conflict</span>
@@ -347,12 +406,16 @@
                         <div class="month-events-mini">
                             @foreach (var ev in dayEvents)
                             {
+                                var miniTooltip = $"{ev.FormattedTimeRange}: {ev.ClientName} ({ev.ServiceType}) with {ev.AssignedPhotographer}" +
+                                    (ev.NeedsEquipmentFix
+                                        ? $" | Needs Equipment Fix: {string.Join(", ", ev.UnavailableAssignedEquipment.Select(e => e.EquipmentName))}"
+                                        : string.Empty);
                                 <button type="button"
                                         class="mini-event-pill @GetMiniEventBadgeClass(ev)"
-                                        title="@ev.FormattedTimeRange: @ev.ClientName (@ev.ServiceType) with @ev.AssignedPhotographer"
+                                        title="@miniTooltip"
                                         @onclick="() => OpenDetailDrawer(ev)"
                                         @onclick:stopPropagation="true">
-                                    @(ev.IsConsultation ? "💬 " : "")@DateTime.Today.Add(ev.StartTime).ToString("h:mm tt") @ev.ClientName
+                                    @(ev.IsConsultation ? "💬 " : ev.NeedsEquipmentFix ? "🔧 " : "")@DateTime.Today.Add(ev.StartTime).ToString("h:mm tt") @ev.ClientName@(ev.NeedsEquipmentFix ? " (Needs Fix)" : "")
                                 </button>
                             }
                             @if (totalEvts > 3)
@@ -479,14 +542,18 @@
                                         @foreach (var lv in pagedLeaves)
                                         {
                                             var isOngoing = string.Equals(lv.Status, "Approved", StringComparison.OrdinalIgnoreCase) && lv.StartDate <= today && lv.EndDate >= today;
+                                            var empDaysOff = _staffDirectory.FirstOrDefault(e => e.EmployeeId.Equals(lv.EmployeeStudioId, StringComparison.OrdinalIgnoreCase))?.DaysOff;
+                                            var countableWorkdays = lv.CountableDays ?? LeaveWorkdayHelper.CalculateCountableWorkdays(lv.EmployeeStudioId, lv.StartDate, lv.EndDate, lv.IsHalfDay, empDaysOff).CountableDays;
+                                            bool canReviewLeave = CanReviewLeaveRequest(lv);
                                             <tr class="hover:bg-gray-50/70">
                                                 <td class="py-2.5 px-3">
                                                     <div class="font-bold text-gray-900">@lv.EmployeeName</div>
                                                     <div class="text-[10px] font-mono text-gray-400">@lv.EmployeeStudioId</div>
                                                 </td>
                                                 <td class="py-2.5 px-3 font-semibold text-gray-800">@lv.LeaveType</td>
-                                                <td class="py-2.5 px-3 font-mono text-gray-700 whitespace-nowrap">
-                                                    @lv.StartDate.ToString("MMM d") – @lv.EndDate.ToString("MMM d, yyyy")
+                                                <td class="py-2.5 px-3 text-gray-700 whitespace-nowrap">
+                                                    <div class="font-bold text-gray-900">@($"{countableWorkdays:0.0}") workdays</div>
+                                                    <div class="font-mono text-[11px] text-gray-500">(@lv.StartDate.ToString("MMM d") – @lv.EndDate.ToString("MMM d, yyyy"))</div>
                                                 </td>
                                                 <td class="py-2.5 px-3 text-gray-600 max-w-xs truncate" title="@lv.Reason">
                                                     @(string.IsNullOrWhiteSpace(lv.Reason) ? "—" : lv.Reason)
@@ -512,20 +579,27 @@
                                                 <td class="py-2.5 px-3 text-right whitespace-nowrap">
                                                     @if (string.Equals(lv.Status, "Pending", StringComparison.OrdinalIgnoreCase))
                                                     {
-                                                        <div class="inline-flex items-center gap-1.5">
-                                                            <button type="button"
-                                                                    disabled="@_isProcessingLeaveAction"
-                                                                    @onclick="() => ApproveLeaveRequestAsync(lv)"
-                                                                    class="px-2.5 py-1 rounded bg-emerald-600 hover:bg-emerald-700 text-white text-[11px] font-bold disabled:opacity-50">
-                                                                Approve
-                                                            </button>
-                                                            <button type="button"
-                                                                    disabled="@_isProcessingLeaveAction"
-                                                                    @onclick="() => OpenRejectLeaveModal(lv)"
-                                                                    class="px-2.5 py-1 rounded bg-rose-600 hover:bg-rose-700 text-white text-[11px] font-bold disabled:opacity-50">
-                                                                Reject
-                                                            </button>
-                                                        </div>
+                                                        @if (canReviewLeave)
+                                                        {
+                                                            <div class="inline-flex items-center gap-1.5">
+                                                                <button type="button"
+                                                                        disabled="@_isProcessingLeaveAction"
+                                                                        @onclick="() => ApproveLeaveRequestAsync(lv)"
+                                                                        class="px-2.5 py-1 rounded bg-emerald-600 hover:bg-emerald-700 text-white text-[11px] font-bold disabled:opacity-50">
+                                                                    Approve
+                                                                </button>
+                                                                <button type="button"
+                                                                        disabled="@_isProcessingLeaveAction"
+                                                                        @onclick="() => OpenRejectLeaveModal(lv)"
+                                                                        class="px-2.5 py-1 rounded bg-rose-600 hover:bg-rose-700 text-white text-[11px] font-bold disabled:opacity-50">
+                                                                    Reject
+                                                                </button>
+                                                            </div>
+                                                        }
+                                                        else
+                                                        {
+                                                            <span class="px-2 py-0.5 rounded text-[10px] font-semibold bg-slate-100 text-slate-600">Studio Admin Review Only</span>
+                                                        }
                                                     }
                                                     else
                                                     {
@@ -550,10 +624,11 @@
 
                         <div class="overflow-x-auto border border-gray-200 rounded-lg">
                             <table class="w-full text-left text-xs border-collapse">
-                                <thead>
-                                    <tr class="bg-gray-50 border-b border-gray-200 text-[11px] font-bold uppercase tracking-wider text-gray-500">
+                                <thead class="bg-gray-50 border-b border-gray-200 text-[11px] font-bold uppercase tracking-wider text-gray-500">
+                                    <tr>
                                         <th class="py-2.5 px-3">Staff Member</th>
                                         <th class="py-2.5 px-3">Specializations</th>
+                                        <th class="py-2.5 px-3">Leave / Pay Classification</th>
                                         <th class="py-2.5 px-3">Scheduled Days Off</th>
                                         <th class="py-2.5 px-3 text-right">Action</th>
                                     </tr>
@@ -562,7 +637,7 @@
                                     @if (_staffDirectory.Count == 0)
                                     {
                                         <tr>
-                                            <td colspan="4" class="py-5 text-center text-gray-400 italic">No active staff records found.</td>
+                                            <td colspan="5" class="py-5 text-center text-gray-400 italic">No active staff records found.</td>
                                         </tr>
                                     }
                                     else
@@ -570,6 +645,8 @@
                                         @foreach (var emp in pagedStaffDirectory)
                                         {
                                             var currentDaysOff = string.IsNullOrWhiteSpace(emp.DaysOff) ? "Sunday" : emp.DaysOff;
+                                            bool empIsClerk = emp.IsOfficeClerk || LeaveWorkdayHelper.IsOfficeClerkEmployee(emp.EmployeeId, emp.Specializations, emp.Role);
+                                            var clerkBal = GetStaffLeaveBalance(emp.EmployeeId, empIsClerk, currentDaysOff);
                                             <tr class="hover:bg-gray-50/70">
                                                 <td class="py-2.5 px-3">
                                                     <div class="font-bold text-gray-900">@emp.FullName</div>
@@ -577,6 +654,20 @@
                                                 </td>
                                                 <td class="py-2.5 px-3 text-gray-600">
                                                     @(emp.Specializations != null && emp.Specializations.Count > 0 ? string.Join(", ", emp.Specializations) : "Studio Staff")
+                                                </td>
+                                                <td class="py-2.5 px-3">
+                                                    @if (empIsClerk)
+                                                    {
+                                                        <span class="px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-teal-50 text-teal-900 border border-teal-200">
+                                                            Paid Leave Left: @($"{clerkBal.TotalRemainingPaidDays:0.0}d") (VL @($"{clerkBal.VacationLeaveRemaining:0.0}") / SL @($"{clerkBal.SickLeaveRemaining:0.0}"))
+                                                        </span>
+                                                    }
+                                                    else
+                                                    {
+                                                        <span class="px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-slate-100 text-slate-700 border border-slate-200">
+                                                            Per-Event Crew (Unpaid Time-Off)
+                                                        </span>
+                                                    }
                                                 </td>
                                                 <td class="py-2.5 px-3">
                                                     @if (currentDaysOff.Equals("None", StringComparison.OrdinalIgnoreCase))
@@ -697,6 +788,8 @@
     private string _selectedStatusFilter = string.Empty;
     private string _selectedServiceTypeFilter = string.Empty;
     private bool _filterOnlyConflicts = false;
+    private bool _filterOnlyEquipmentFix = false;
+    private List<EventBookingModel> _upcomingEquipmentFixAlerts = new();
 
     private EventBookingModel? _selectedBooking;
     private bool _isCreateModalOpen;
@@ -781,8 +874,15 @@
         if (firstRender && !_hasLoadedInitialData)
         {
             _hasLoadedInitialData = true;
+            EquipmentService.OnChange += HandleEquipmentServiceChanged;
             PaymentHub.OnEventStatusChanged += HandleHubEventStatusChangedAsync;
-            try { await PaymentHub.EnsureLiveMonitorStartedAsync(); } catch { }
+            try
+            {
+                await PaymentHub.EnsureLiveMonitorStartedAsync();
+                if (!string.IsNullOrWhiteSpace(_currentEmployeeId))
+                    await PaymentHub.EnsureStaffMonitorStartedAsync(_currentEmployeeId);
+            }
+            catch { }
 
             await Task.Run(() =>
             {
@@ -879,10 +979,22 @@
         var queryStart = rangeStart.AddDays(-7);
         var queryEnd = rangeEnd.AddDays(7);
 
-        var (rawBookings, rawEqReservations) = await Task.Run(() =>
-            (ScheduleService.GetEventBookings(queryStart, queryEnd), ScheduleService.GetEquipmentReservations()));
+        var (rawBookings, rawEqReservations, upcomingAll) = await Task.Run(() =>
+            (ScheduleService.GetEventBookings(queryStart, queryEnd),
+             ScheduleService.GetEquipmentReservations(),
+             ScheduleService.GetEventBookings(DateTime.Today, null)));
 
         _equipmentReservations = rawEqReservations;
+
+        IEnumerable<EventBookingModel> upcomingFixQuery = upcomingAll.Where(b => b.NeedsEquipmentFix);
+        if (_isPhotographerOrCreative)
+        {
+            upcomingFixQuery = upcomingFixQuery.Where(b => EmployeeRoleHelper.IsEventAssignedToEmployee(b, _currentEmployeeName, _currentEmployeeId));
+        }
+        _upcomingEquipmentFixAlerts = upcomingFixQuery
+            .OrderBy(b => b.Date.Date)
+            .ThenBy(b => b.StartTime)
+            .ToList();
 
         if (_isPhotographerOrCreative)
         {
@@ -893,6 +1005,13 @@
         else
         {
             _loadedBookings = rawBookings;
+        }
+
+        if (_selectedBooking != null)
+        {
+            _selectedBooking = _loadedBookings.FirstOrDefault(b => string.Equals(b.Id, _selectedBooking.Id, StringComparison.OrdinalIgnoreCase))
+                               ?? _upcomingEquipmentFixAlerts.FirstOrDefault(b => string.Equals(b.Id, _selectedBooking.Id, StringComparison.OrdinalIgnoreCase))
+                               ?? _selectedBooking;
         }
 
         _loadedWindowStart = queryStart;
@@ -930,6 +1049,9 @@
 
         if (_filterOnlyConflicts)
             query = query.Where(b => b.HasConflict);
+
+        if (_filterOnlyEquipmentFix)
+            query = query.Where(b => b.NeedsEquipmentFix);
 
         _filteredBookings = query.ToList();
         _bookingsByDateLookup = _filteredBookings.ToLookup(b => b.Date.Date);
@@ -991,7 +1113,8 @@
         !string.IsNullOrEmpty(_searchQuery) ||
         !string.IsNullOrEmpty(_selectedStatusFilter) ||
         !string.IsNullOrEmpty(_selectedServiceTypeFilter) ||
-        _filterOnlyConflicts;
+        _filterOnlyConflicts ||
+        _filterOnlyEquipmentFix;
 
     private List<DateTime> WeekDays
     {
@@ -1021,6 +1144,7 @@
     private string GetMiniEventBadgeClass(EventBookingModel ev)
     {
         if (ev.HasConflict) return "conflict";
+        if (ev.NeedsEquipmentFix) return "needs-fix";
         if (ev.IsAppointmentBooked) return "appointment-booked";
         if (ev.IsPendingPayment) return "pending";
         if (ev.IsCompleted) return "completed";
@@ -1148,6 +1272,19 @@
                 .Where(e => e.IsActive)
                 .OrderBy(e => e.FullName)
                 .ToList();
+
+            foreach (var clerk in _staffDirectory.Where(e => e.IsOfficeClerk || LeaveWorkdayHelper.IsOfficeClerkEmployee(e.EmployeeId, e.Specializations, e.Role)))
+            {
+                try
+                {
+                    var bal = await EmployeeService.GetLeaveBalancesAsync(clerk.EmployeeId, 2026);
+                    if (bal != null && bal.Balances.Count > 0)
+                    {
+                        _staffLeaveBalances[clerk.EmployeeId] = bal;
+                    }
+                }
+                catch { }
+            }
         }
         catch
         {
@@ -1157,6 +1294,86 @@
         {
             _isLoadingStaffSchedule = false;
         }
+    }
+
+    private readonly Dictionary<string, EmployeeLeaveBalanceSummaryViewModel> _staffLeaveBalances = new(StringComparer.OrdinalIgnoreCase);
+
+    private EmployeeLeaveBalanceSummaryViewModel GetStaffLeaveBalance(string employeeId, bool isClerk, string daysOff)
+    {
+        if (_staffLeaveBalances.TryGetValue(employeeId, out var cached) && cached.Balances.Count > 0)
+        {
+            return cached;
+        }
+
+        if (!isClerk)
+        {
+            return new EmployeeLeaveBalanceSummaryViewModel
+            {
+                EmployeeId = employeeId,
+                IsTitleIExempt = true,
+                PayBasis = "CommissionPerEvent",
+                DaysOff = daysOff
+            };
+        }
+
+        decimal vlUsedOrPending = 0m;
+        decimal slUsedOrPending = 0m;
+        foreach (var lv in _allLeaves.Where(l => l.EmployeeStudioId.Equals(employeeId, StringComparison.OrdinalIgnoreCase)
+                                              && l.StartDate.Year == 2026
+                                              && (l.Status.Equals("Pending", StringComparison.OrdinalIgnoreCase) || l.Status.Equals("Approved", StringComparison.OrdinalIgnoreCase))))
+        {
+            decimal workdays = lv.CountableDays ?? LeaveWorkdayHelper.CalculateCountableWorkdays(employeeId, lv.StartDate, lv.EndDate, lv.IsHalfDay, daysOff).CountableDays;
+            if (lv.LeaveType.Equals("Vacation Leave", StringComparison.OrdinalIgnoreCase) || string.Equals(lv.LeaveTypeCode, "VL", StringComparison.OrdinalIgnoreCase))
+                vlUsedOrPending += workdays;
+            else if (lv.LeaveType.Equals("Sick Leave", StringComparison.OrdinalIgnoreCase) || string.Equals(lv.LeaveTypeCode, "SL", StringComparison.OrdinalIgnoreCase))
+                slUsedOrPending += workdays;
+        }
+
+        decimal vlRem = Math.Max(0m, 5.0m - vlUsedOrPending);
+        decimal slRem = Math.Max(0m, 5.0m - slUsedOrPending);
+
+        return new EmployeeLeaveBalanceSummaryViewModel
+        {
+            EmployeeId = employeeId,
+            IsTitleIExempt = false,
+            PayBasis = "FixedMonthly",
+            DaysOff = daysOff,
+            TotalAllocatedPaidDays = 10.0m,
+            VacationLeaveRemaining = vlRem,
+            SickLeaveRemaining = slRem,
+            TotalRemainingPaidDays = vlRem + slRem
+        };
+    }
+
+    private bool CanReviewLeaveRequest(LeaveItemViewModel lv)
+    {
+        if (EmployeeRoleHelper.IsAdmin(_currentUser))
+            return true;
+
+        // No user can approve/reject their own leave request
+        if (!string.IsNullOrWhiteSpace(_currentEmployeeId)
+            && _currentEmployeeId.Equals(lv.EmployeeStudioId, StringComparison.OrdinalIgnoreCase))
+        {
+            return false;
+        }
+
+        if (_isOfficeClerk)
+        {
+            var applicant = _staffDirectory.FirstOrDefault(e => e.EmployeeId.Equals(lv.EmployeeStudioId, StringComparison.OrdinalIgnoreCase));
+            bool applicantIsClerk = applicant != null
+                ? (applicant.IsOfficeClerk || LeaveWorkdayHelper.IsOfficeClerkEmployee(applicant.EmployeeId, applicant.Specializations, applicant.Role))
+                : LeaveWorkdayHelper.IsOfficeClerkEmployee(lv.EmployeeStudioId);
+
+            if (applicantIsClerk)
+                return false;
+
+            if (lv.LeaveType is "Vacation Leave" or "Sick Leave" or "Leave Without Pay")
+                return false;
+
+            return true;
+        }
+
+        return false;
     }
 
     private async Task ApproveLeaveRequestAsync(LeaveItemViewModel leave)
@@ -1271,13 +1488,27 @@
         ApplyFilters();
     }
 
+    private void ToggleEquipmentFixFilter()
+    {
+        _filterOnlyEquipmentFix = !_filterOnlyEquipmentFix;
+        ApplyFilters();
+    }
+
     private void ClearFilters()
     {
         _searchQuery = string.Empty;
         _selectedStatusFilter = string.Empty;
         _selectedServiceTypeFilter = string.Empty;
         _filterOnlyConflicts = false;
+        _filterOnlyEquipmentFix = false;
         ApplyFilters();
+    }
+
+    private async Task FixAndScheduleEquipmentAsync(EventBookingModel ev)
+    {
+        _selectedDate = ev.Date.Date;
+        await LoadBookingsForCurrentViewAsync(forceReload: true);
+        _selectedBooking = _loadedBookings.FirstOrDefault(b => string.Equals(b.Id, ev.Id, StringComparison.OrdinalIgnoreCase)) ?? ev;
     }
 
     private void OpenDetailDrawer(EventBookingModel booking)
@@ -1410,6 +1641,16 @@
         }
     }
 
+    private void HandleEquipmentServiceChanged()
+    {
+        _ = InvokeAsync(async () =>
+        {
+            ScheduleService.InvalidateCache();
+            await LoadBookingsForCurrentViewAsync(forceReload: true);
+            StateHasChanged();
+        });
+    }
+
     private Task HandleHubEventStatusChangedAsync(EventStatusChangedMessage _) => InvokeAsync(async () =>
     {
         ScheduleService.InvalidateCache();
@@ -1419,6 +1660,7 @@
 
     public void Dispose()
     {
+        EquipmentService.OnChange -= HandleEquipmentServiceChanged;
         PaymentHub.OnEventStatusChanged -= HandleHubEventStatusChangedAsync;
         _debounceTimer?.Dispose();
         _highlightTimer?.Dispose();

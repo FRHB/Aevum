@@ -150,4 +150,41 @@ public class AdminDashboardAndFaqTests
         Assert.Contains("/admin/faqs", content);
         Assert.Contains("/admin/faq", content);
     }
+
+    [Fact]
+    public void AdminDashboard_RefactoredLayoutHierarchy_Contains12ColGrid_RecentActivity_AndRelocatedSections()
+    {
+        var root = GetRepositoryRoot();
+        var path = Path.Combine(root, "PhotoAevumStudioFrontend", "PhotoAevumStudio.Web", "Components", "Pages", "AdminDashboard.razor");
+        Assert.True(File.Exists(path), $"File not found: {path}");
+        var content = File.ReadAllText(path);
+
+        // 1. Personalized greeting header & date pill
+        Assert.Contains("@GetGreeting(), @_adminName", content);
+        Assert.Contains("Here's what's happening with your team today.", content);
+        Assert.Contains("@DateTime.Today.ToString(\"dddd, MMMM d, yyyy\")", content);
+
+        // 2. 12-column responsive 8/4 layout grid
+        Assert.Contains("col-span-12 lg:col-span-8", content);
+        Assert.Contains("col-span-12 lg:col-span-4", content);
+
+        // 3. Left column order: KPI cards -> LiveEventsOverviewPanel -> Current & Upcoming Events
+        var kpiIdx = content.IndexOf("Today's Schedule", StringComparison.Ordinal);
+        var liveIdx = content.IndexOf("<LiveEventsOverviewPanel", StringComparison.Ordinal);
+        var eventsIdx = content.IndexOf("Current &amp; Upcoming Events Overview", StringComparison.Ordinal);
+        Assert.True(kpiIdx > 0 && liveIdx > kpiIdx && eventsIdx > liveIdx);
+
+        // 4. Right sidebar order: Recent Activity -> Recent Bookings -> Quick Actions
+        var activityIdx = content.IndexOf("Recent Activity", StringComparison.Ordinal);
+        var bookingsIdx = content.IndexOf("Recent Bookings", StringComparison.Ordinal);
+        var quickIdx = content.IndexOf("Quick Actions", StringComparison.Ordinal);
+        Assert.True(activityIdx > 0 && bookingsIdx > activityIdx && quickIdx > bookingsIdx);
+        Assert.Contains("/admin/history-log", content);
+        Assert.Contains("GetHistoryLogs", content);
+
+        // 5. Bottom full-width sections order: Staff Timesheet & Attendance -> Staff Leave Requests
+        var attendanceIdx = content.IndexOf("Staff Timesheet &amp; Attendance (Today)", StringComparison.Ordinal);
+        var leavesIdx = content.IndexOf("Staff Leave Requests", StringComparison.Ordinal);
+        Assert.True(attendanceIdx > quickIdx && leavesIdx > attendanceIdx);
+    }
 }

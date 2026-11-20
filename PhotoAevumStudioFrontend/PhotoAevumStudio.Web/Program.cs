@@ -93,6 +93,7 @@ builder.Services.AddScoped<IBookScheduleClient, BookScheduleClient>();
 builder.Services.AddScoped<IConsultationClient, ConsultationClient>();
 builder.Services.AddScoped<ICustomerDropboxClient, CustomerDropboxClient>();
 builder.Services.AddScoped<IAnalyticsClient, AnalyticsClient>();
+builder.Services.AddScoped<ISalesReportsClient, SalesReportsClient>();
 builder.Services.AddScoped<BookingEvents>();
 builder.Services.AddScoped<PaymentHubClient>();
 

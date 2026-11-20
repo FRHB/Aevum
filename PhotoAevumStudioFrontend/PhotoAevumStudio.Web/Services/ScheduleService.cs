@@ -29,7 +29,9 @@ public class ScheduleService : IScheduleService
     private static (DateTime fetchedAt, List<EquipmentReservationModel> reservations)? _sqlCachedEquipmentReservations;
     private static readonly TimeSpan _cacheDuration = TimeSpan.FromSeconds(30);
 
-    public void InvalidateCache()
+    public void InvalidateCache() => InvalidateStaticCache();
+
+    public static void InvalidateStaticCache()
     {
         lock (_sqlCacheLock)
         {
@@ -129,6 +131,8 @@ public class ScheduleService : IScheduleService
         TechnicianInCharge = r.TechnicianInCharge,
         Location = r.Location,
         MaintenanceStatus = r.MaintenanceStatus,
+        MaintenanceSubStatus = r.MaintenanceSubStatus,
+        MaintenanceNotes = r.MaintenanceNotes,
         Notes = r.Notes,
         HasConflict = r.HasConflict,
         ConflictMessage = r.ConflictMessage
@@ -408,6 +412,19 @@ public class ScheduleService : IScheduleService
     {
         if (_useInMemory)
         {
+            var eqStatusLookup = _inMemoryEquipment.ToDictionary(e => e.Id, e => e.Status, StringComparer.OrdinalIgnoreCase);
+            foreach (var b in _inMemoryBookings)
+            {
+                if (b.AssignedEquipment.Count > 0)
+                {
+                    b.AssignedEquipment = b.AssignedEquipment
+                        .Select(ae => eqStatusLookup.TryGetValue(ae.EquipmentId, out var st)
+                            ? ae with { EquipmentStatus = st }
+                            : ae)
+                        .ToList();
+                }
+            }
+
             RecalculateEventConflicts(_inMemoryBookings);
             var inMemQuery = _inMemoryBookings.AsEnumerable();
             if (startDate.HasValue)
@@ -550,7 +567,7 @@ public class ScheduleService : IScheduleService
                 ) eqIds
                 OUTER APPLY (
                     SELECT STUFF((
-                        SELECT ';;' + eeq.EquipmentID + '|' + ISNULL(eq.EquipmentName, eeq.EquipmentID) + '|' + COALESCE(et.EquipmentTypeName, eq.EquipmentTypeID, 'Equipment')
+                        SELECT ';;' + eeq.EquipmentID + '|' + ISNULL(eq.EquipmentName, eeq.EquipmentID) + '|' + COALESCE(et.EquipmentTypeName, eq.EquipmentTypeID, 'Equipment') + '|' + COALESCE(eq.EquipmentStatus, 'Available')
                         FROM dbo.EventEquipment eeq
                         LEFT JOIN dbo.Equipment eq ON eq.EquipmentID = eeq.EquipmentID
                         LEFT JOIN dbo.EquipmentType et ON et.EquipmentTypeID = eq.EquipmentTypeID
@@ -682,7 +699,11 @@ public class ScheduleService : IScheduleService
                     .Split(";;", StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
                     .Select(seg => seg.Split('|'))
                     .Where(parts => parts.Length >= 2 && !string.IsNullOrWhiteSpace(parts[0]))
-                    .Select(parts => new EventEquipmentSummary(parts[0].Trim(), parts[1].Trim(), parts.Length > 2 ? parts[2].Trim() : "Equipment"))
+                    .Select(parts => new EventEquipmentSummary(
+                        parts[0].Trim(),
+                        parts[1].Trim(),
+                        parts.Length > 2 ? parts[2].Trim() : "Equipment",
+                        parts.Length > 3 && !string.IsNullOrWhiteSpace(parts[3]) ? parts[3].Trim() : "Available"))
                     .ToList();
 
                 var parsedCrew = crewDetailsRaw
@@ -1527,12 +1548,43 @@ public class ScheduleService : IScheduleService
             using var conn = CreateConnection();
             conn.Open();
 
-            const string sql = @"
+            bool hasIsTakenCol = false;
+            bool hasFinalPaymentCol = false;
+            try
+            {
+                using var chkCmd = new SqlCommand(@"
+                    SELECT
+                        CASE WHEN COL_LENGTH(N'dbo.EventEquipment', N'IsTaken') IS NOT NULL THEN 1 ELSE 0 END,
+                        CASE WHEN COL_LENGTH(N'dbo.EventAppointment', N'FinalPaymentStatus') IS NOT NULL THEN 1 ELSE 0 END;", conn);
+                using var chkReader = chkCmd.ExecuteReader();
+                if (chkReader.Read())
+                {
+                    hasIsTakenCol = chkReader.GetInt32(0) == 1;
+                    hasFinalPaymentCol = chkReader.GetInt32(1) == 1;
+                }
+            }
+            catch { }
+
+            var isTakenCond = hasIsTakenCol ? "ISNULL(ee.IsTaken, 0) = 1 OR " : string.Empty;
+            var finalPayFilter = hasFinalPaymentCol
+                ? "AND ISNULL(ea.FinalPaymentStatus, '') NOT IN ('Paid', 'Payment Verification (QR:Paid)')"
+                : string.Empty;
+
+            var sql = $@"
                 SELECT eq.EquipmentID,
                        eq.EquipmentName,
                        COALESCE(eq.SerialNo, eq.EquipmentID) AS SerialNumber,
                        COALESCE(et.EquipmentTypeName, eq.EquipmentTypeID, 'Gear') AS Category,
-                       COALESCE(eq.EquipmentStatus, 'Ready') AS Status
+                       COALESCE(eq.EquipmentStatus, 'Available') AS Status,
+                       CASE WHEN EXISTS (
+                           SELECT 1
+                           FROM dbo.EventEquipment ee
+                           INNER JOIN dbo.EventAppointment ea ON ea.EventAppointmentID = ee.EventAppointmentID
+                           WHERE ee.EquipmentID = eq.EquipmentID
+                             AND ISNULL(ea.EventStatus, '') NOT IN ('Cancelled', 'Delivered', 'Completed', 'Complete', 'Expired', 'Deal_Lost', 'Shot')
+                             {finalPayFilter}
+                             AND ({isTakenCond}ea.EventStatus IN ('Dispatch', 'Dispatched', 'Ongoing', 'On Going', 'In Execution', 'Event Done', 'Post Event', 'Pending Verification', 'Paid Cash Pending Verification', 'Payment Verification (Cash)', 'Payment Verification (QR:Pending Payment)'))
+                       ) THEN 1 ELSE 0 END AS IsInUse
                 FROM dbo.Equipment eq
                 LEFT JOIN dbo.EquipmentType et ON et.EquipmentTypeID = eq.EquipmentTypeID
                 ORDER BY eq.EquipmentID;";
@@ -1542,15 +1594,32 @@ public class ScheduleService : IScheduleService
 
             while (reader.Read())
             {
+                var rawStatus = reader.GetString(4);
+                var isInUse = !reader.IsDBNull(5) && reader.GetInt32(5) == 1;
+                var displayStatus = rawStatus.Equals("Maintenance", StringComparison.OrdinalIgnoreCase)
+                    ? "In-Maintenance"
+                    : (isInUse && rawStatus.Equals("Available", StringComparison.OrdinalIgnoreCase))
+                        ? "In-Use"
+                        : (rawStatus.Equals("Available", StringComparison.OrdinalIgnoreCase) ? "Ready" : rawStatus);
+
+                var badgeColor = displayStatus switch
+                {
+                    "In-Maintenance" => "bg-amber-50 text-amber-700 border-amber-200",
+                    "Needs Replacement" => "bg-rose-50 text-rose-700 border-rose-200",
+                    "In-Use" => "bg-blue-50 text-blue-700 border-blue-200",
+                    "Ready" => "bg-emerald-50 text-emerald-700 border-emerald-200",
+                    _ => "bg-slate-100 text-slate-700 border-slate-200"
+                };
+
                 list.Add(new EquipmentItemResource
                 {
                     Id = reader.GetString(0),
                     Name = reader.GetString(1),
                     SerialNumber = reader.GetString(2),
                     Category = reader.GetString(3),
-                    Status = reader.GetString(4),
+                    Status = displayStatus,
                     StorageBay = "Studio Inventory Rack",
-                    BadgeColor = "bg-emerald-50 text-emerald-700 border-emerald-200"
+                    BadgeColor = badgeColor
                 });
             }
 
@@ -1570,6 +1639,14 @@ public class ScheduleService : IScheduleService
     {
         if (_useInMemory)
         {
+            var eqMap = _inMemoryEquipment.ToDictionary(e => e.Id, e => e.Status, StringComparer.OrdinalIgnoreCase);
+            foreach (var r in _inMemoryReservations)
+            {
+                if (eqMap.TryGetValue(r.EquipmentId, out var st))
+                {
+                    r.MaintenanceStatus = st.Equals("Available", StringComparison.OrdinalIgnoreCase) ? "Ready" : st;
+                }
+            }
             RecalculateEquipmentConflicts(_inMemoryReservations);
             return _inMemoryReservations;
         }
@@ -1592,17 +1669,20 @@ public class ScheduleService : IScheduleService
 
             bool hasGranularCols = false;
             bool hasLocationCol = false;
+            bool hasMaintScheduleTable = false;
             try
             {
                 using var chkCmd = new SqlCommand(@"
                     SELECT
                         CASE WHEN COL_LENGTH(N'dbo.EventAppointment', N'EventEndTime') IS NOT NULL AND COL_LENGTH(N'dbo.EventAppointment', N'DurationMinutes') IS NOT NULL THEN 1 ELSE 0 END,
-                        CASE WHEN COL_LENGTH(N'dbo.EventAppointment', N'EventLocation') IS NOT NULL THEN 1 ELSE 0 END;", conn);
+                        CASE WHEN COL_LENGTH(N'dbo.EventAppointment', N'EventLocation') IS NOT NULL THEN 1 ELSE 0 END,
+                        CASE WHEN OBJECT_ID(N'dbo.MaintenanceSchedule', N'U') IS NOT NULL THEN 1 ELSE 0 END;", conn);
                 using var chkReader = chkCmd.ExecuteReader();
                 if (chkReader.Read())
                 {
                     hasGranularCols = chkReader.GetInt32(0) == 1;
                     hasLocationCol = chkReader.GetInt32(1) == 1;
+                    hasMaintScheduleTable = chkReader.GetInt32(2) == 1;
                 }
             }
             catch { }
@@ -1614,6 +1694,20 @@ public class ScheduleService : IScheduleService
             var locationSelect = hasLocationCol
                 ? "COALESCE(NULLIF(ea.EventLocation, ''), N'Studio A (Main Hall)') AS EventLocation,"
                 : "N'Studio A (Main Hall)' AS EventLocation,";
+
+            var maintSelect = hasMaintScheduleTable
+                ? "maint.SubStatus AS MaintSubStatus, maint.IssueDetails AS MaintIssueDetails"
+                : "CAST(NULL AS nvarchar(50)) AS MaintSubStatus, CAST(NULL AS nvarchar(1000)) AS MaintIssueDetails";
+
+            var maintApply = hasMaintScheduleTable
+                ? @"OUTER APPLY (
+                    SELECT TOP 1 ms.SubStatus, ms.IssueDetails
+                    FROM dbo.MaintenanceSchedule ms
+                    WHERE ms.EquipmentID = eq.EquipmentID
+                      AND ms.Status IN ('In Maintenance', 'Needs Replacement')
+                    ORDER BY ms.UpdatedAt DESC, ms.MaintenanceScheduleID DESC
+                ) maint"
+                : string.Empty;
 
             string sql = $@"
                 SELECT eeq.EventAppointmentID,
@@ -1628,7 +1722,8 @@ public class ScheduleService : IScheduleService
                        ISNULL(ea.EventStatus, 'Confirmed') AS EventStatus,
                        {locationSelect}
                        COALESCE(NULLIF(LTRIM(RTRIM(c.CustomerFirstName + ' ' + ISNULL(c.CustomerLastName, ''))), ''), ea.EventName) AS CustomerName,
-                       ISNULL(eq.EquipmentStatus, 'Ready') AS EquipmentStatus
+                       ISNULL(eq.EquipmentStatus, 'Ready') AS EquipmentStatus,
+                       {maintSelect}
                 FROM dbo.EventEquipment eeq
                 INNER JOIN dbo.EventAppointment ea ON ea.EventAppointmentID = eeq.EventAppointmentID
                 INNER JOIN dbo.Equipment eq ON eq.EquipmentID = eeq.EquipmentID
@@ -1641,6 +1736,7 @@ public class ScheduleService : IScheduleService
                     WHERE ee.EventAppointmentID = ea.EventAppointmentID
                     ORDER BY ISNULL(ee.IsTeamLeader, 0) DESC, ee.EmployeeID
                 ) leadEmp
+                {maintApply}
                 WHERE ISNULL(ea.EventStatus, '') NOT IN ('Cancelled', 'Expired')
                   AND (
                       ISNULL(ea.DownpaymentStatus, 'Pending') = 'Paid'
@@ -1673,12 +1769,18 @@ public class ScheduleService : IScheduleService
                 var evtLocation = reader.FieldCount > 11 && !reader.IsDBNull(11) ? reader.GetString(11) : "Studio A (Main Hall)";
                 var custName = reader.FieldCount > 12 && !reader.IsDBNull(12) ? reader.GetString(12) : eventName;
                 var eqStatus = reader.FieldCount > 13 && !reader.IsDBNull(13) ? reader.GetString(13) : "Ready";
+                var maintSubStatus = reader.FieldCount > 14 && !reader.IsDBNull(14) ? reader.GetString(14) : null;
+                var maintNotes = reader.FieldCount > 15 && !reader.IsDBNull(15) ? reader.GetString(15) : null;
 
                 var endTime = dbEndTime.HasValue && dbEndTime.Value > startTime
                     ? dbEndTime.Value
                     : startTime.Add(TimeSpan.FromMinutes(durationMins));
                 if (endTime > new TimeSpan(23, 59, 0))
                     endTime = new TimeSpan(23, 59, 0);
+
+                var normalizedMaintStatus = eqStatus.Equals("Available", StringComparison.OrdinalIgnoreCase)
+                    ? "Ready"
+                    : (eqStatus.Equals("Maintenance", StringComparison.OrdinalIgnoreCase) ? "In-Maintenance" : eqStatus);
 
                 reservations.Add(new EquipmentReservationModel
                 {
@@ -1694,7 +1796,9 @@ public class ScheduleService : IScheduleService
                     ProjectOrClient = string.Equals(custName, eventName, StringComparison.OrdinalIgnoreCase) ? eventName : $"{custName} — {eventName}",
                     TechnicianInCharge = technician,
                     Location = evtLocation,
-                    MaintenanceStatus = eqStatus.Equals("Available", StringComparison.OrdinalIgnoreCase) ? "Ready" : eqStatus,
+                    MaintenanceStatus = normalizedMaintStatus,
+                    MaintenanceSubStatus = maintSubStatus,
+                    MaintenanceNotes = maintNotes,
                     Notes = $"Reserved for shoot: {eventName} (#{apptId})"
                 });
             }
@@ -1723,9 +1827,12 @@ public class ScheduleService : IScheduleService
             if (string.IsNullOrWhiteSpace(reservation.Id))
                 reservation.Id = Guid.NewGuid().ToString("N")[..8];
 
-            var eq = _inMemoryEquipment.FirstOrDefault(e => e.Id == reservation.EquipmentId);
+            var eq = _inMemoryEquipment.FirstOrDefault(e => e.Id.Equals(reservation.EquipmentId, StringComparison.OrdinalIgnoreCase));
             if (eq != null)
             {
+                if (EquipmentItemModel.IsUnavailableStatus(eq.Status))
+                    throw new InvalidOperationException($"Equipment '{eq.Name}' ({eq.Id}) is currently '{eq.Status}' and cannot be reserved.");
+
                 reservation.EquipmentName = eq.Name;
                 reservation.Category = eq.Category;
             }
@@ -1738,6 +1845,21 @@ public class ScheduleService : IScheduleService
         {
             using var conn = CreateConnection();
             conn.Open();
+
+            using (var statusCmd = new SqlCommand("SELECT EquipmentName, ISNULL(EquipmentStatus, 'Available') FROM dbo.Equipment WHERE EquipmentID = @EqId;", conn))
+            {
+                statusCmd.Parameters.AddWithValue("@EqId", reservation.EquipmentId.Trim());
+                using var sr = statusCmd.ExecuteReader();
+                if (sr.Read())
+                {
+                    var eqName = sr.GetString(0);
+                    var eqStatus = sr.GetString(1);
+                    if (EquipmentItemModel.IsUnavailableStatus(eqStatus))
+                    {
+                        throw new InvalidOperationException($"Equipment '{eqName}' ({reservation.EquipmentId}) is currently '{eqStatus}' and cannot be reserved.");
+                    }
+                }
+            }
 
             // Enforce entire calendar-day lock across non-cancelled/non-expired events
             const string sameDayCheckSql = @"
@@ -1909,6 +2031,216 @@ public class ScheduleService : IScheduleService
         }
         catch
         {
+        }
+    }
+
+    public (bool Success, string? Error) ReplaceReservationEquipment(
+        string reservationId,
+        string? eventAppointmentId,
+        string oldEquipmentId,
+        string newEquipmentId,
+        string actorId = "ADM-001")
+    {
+        if (string.IsNullOrWhiteSpace(oldEquipmentId) || string.IsNullOrWhiteSpace(newEquipmentId))
+            return (false, "Both the current and replacement equipment IDs are required.");
+
+        var cleanOldId = oldEquipmentId.Trim();
+        var cleanNewId = newEquipmentId.Trim();
+        if (cleanOldId.Equals(cleanNewId, StringComparison.OrdinalIgnoreCase))
+            return (false, "Replacement equipment must be different from the current equipment.");
+
+        InvalidateCache();
+
+        if (_useInMemory)
+        {
+            var res = _inMemoryReservations.FirstOrDefault(r =>
+                string.Equals(r.Id, reservationId, StringComparison.OrdinalIgnoreCase) ||
+                (!string.IsNullOrWhiteSpace(eventAppointmentId) &&
+                 string.Equals(r.EventAppointmentId, eventAppointmentId, StringComparison.OrdinalIgnoreCase) &&
+                 string.Equals(r.EquipmentId, cleanOldId, StringComparison.OrdinalIgnoreCase)));
+
+            if (res == null)
+                return (false, "Equipment reservation record was not found.");
+
+            var newEq = _inMemoryEquipment.FirstOrDefault(e => e.Id.Equals(cleanNewId, StringComparison.OrdinalIgnoreCase));
+            if (newEq == null)
+                return (false, $"Replacement equipment '{cleanNewId}' was not found.");
+
+            if (EquipmentItemModel.IsUnavailableStatus(newEq.Status))
+                return (false, $"Equipment '{newEq.Name}' ({cleanNewId}) is currently '{newEq.Status}' and cannot be scheduled.");
+
+            var targetDate = res.Date.Date;
+            var conflict = _inMemoryReservations.FirstOrDefault(r =>
+                !string.Equals(r.Id, res.Id, StringComparison.OrdinalIgnoreCase) &&
+                string.Equals(r.EquipmentId, cleanNewId, StringComparison.OrdinalIgnoreCase) &&
+                r.Date.Date == targetDate &&
+                !EquipmentItemModel.IsEventStageCompletedOrInactive(r.EventStatus));
+            if (conflict != null)
+                return (false, $"Equipment '{newEq.Name}' is already booked on {targetDate:yyyy-MM-dd} for '{conflict.ProjectOrClient}'.");
+
+            res.EquipmentId = newEq.Id;
+            res.EquipmentName = newEq.Name;
+            res.Category = newEq.Category;
+            res.MaintenanceStatus = newEq.Status.Equals("Available", StringComparison.OrdinalIgnoreCase) ? "Ready" : newEq.Status;
+            res.MaintenanceSubStatus = null;
+            res.MaintenanceNotes = null;
+            if (!string.IsNullOrWhiteSpace(res.EventAppointmentId))
+                res.Id = $"{res.EventAppointmentId}-{newEq.Id}";
+
+            foreach (var b in _inMemoryBookings.Where(b =>
+                (!string.IsNullOrWhiteSpace(res.EventAppointmentId) && string.Equals(b.Id, res.EventAppointmentId, StringComparison.OrdinalIgnoreCase)) ||
+                (b.Date.Date == targetDate && b.AssignedEquipmentIds.Contains(cleanOldId, StringComparer.OrdinalIgnoreCase))))
+            {
+                b.AssignedEquipmentIds.RemoveAll(id => id.Equals(cleanOldId, StringComparison.OrdinalIgnoreCase));
+                if (!b.AssignedEquipmentIds.Contains(newEq.Id, StringComparer.OrdinalIgnoreCase))
+                    b.AssignedEquipmentIds.Add(newEq.Id);
+                b.AssignedEquipment.RemoveAll(ae => ae.EquipmentId.Equals(cleanOldId, StringComparison.OrdinalIgnoreCase));
+                if (!b.AssignedEquipment.Any(ae => ae.EquipmentId.Equals(newEq.Id, StringComparison.OrdinalIgnoreCase)))
+                    b.AssignedEquipment.Add(new EventEquipmentSummary(newEq.Id, newEq.Name, newEq.Category, newEq.Status));
+                b.AssignedEquipmentNames = b.AssignedEquipment.Select(ae => ae.EquipmentName).ToList();
+            }
+
+            RecalculateEquipmentConflicts(_inMemoryReservations);
+            RecalculateEventConflicts(_inMemoryBookings);
+            return (true, null);
+        }
+
+        try
+        {
+            using var conn = CreateConnection();
+            conn.Open();
+            using var tx = conn.BeginTransaction();
+
+            try
+            {
+                var apptId = eventAppointmentId?.Trim();
+                if (string.IsNullOrWhiteSpace(apptId) && !string.IsNullOrWhiteSpace(reservationId))
+                {
+                    using var lookupCmd = new SqlCommand(
+                        "SELECT TOP 1 EventAppointmentID FROM dbo.EventEquipment WHERE (EventAppointmentID + '-' + EquipmentID) = @CompositeId;",
+                        conn, tx);
+                    lookupCmd.Parameters.AddWithValue("@CompositeId", reservationId.Trim());
+                    apptId = lookupCmd.ExecuteScalar()?.ToString();
+                }
+
+                if (string.IsNullOrWhiteSpace(apptId))
+                    return (false, "Could not resolve the event appointment for this reservation.");
+
+                DateTime evtDate;
+                string evtName;
+                string evtStatus;
+                using (var evtCmd = new SqlCommand(
+                    "SELECT EventDate, ISNULL(EventName, EventAppointmentID), ISNULL(EventStatus, '') FROM dbo.EventAppointment WHERE EventAppointmentID = @ApptId;",
+                    conn, tx))
+                {
+                    evtCmd.Parameters.AddWithValue("@ApptId", apptId);
+                    using var r = evtCmd.ExecuteReader();
+                    if (!r.Read())
+                        return (false, $"Event appointment '{apptId}' not found.");
+                    evtDate = r.GetDateTime(0).Date;
+                    evtName = r.GetString(1);
+                    evtStatus = r.GetString(2);
+                }
+
+                if (EquipmentItemModel.IsEventStageCompletedOrInactive(evtStatus))
+                    return (false, $"Cannot modify equipment for a '{evtStatus}' event.");
+
+                string newEqName;
+                string newEqStatus;
+                using (var eqCmd = new SqlCommand(
+                    "SELECT EquipmentName, ISNULL(EquipmentStatus, 'Available') FROM dbo.Equipment WHERE EquipmentID = @NewEqId;",
+                    conn, tx))
+                {
+                    eqCmd.Parameters.AddWithValue("@NewEqId", cleanNewId);
+                    using var r = eqCmd.ExecuteReader();
+                    if (!r.Read())
+                        return (false, $"Replacement equipment '{cleanNewId}' was not found.");
+                    newEqName = r.GetString(0);
+                    newEqStatus = r.GetString(1);
+                }
+
+                if (EquipmentItemModel.IsUnavailableStatus(newEqStatus))
+                    return (false, $"Equipment '{newEqName}' ({cleanNewId}) is currently '{newEqStatus}' and cannot be scheduled.");
+
+                const string sameDayCheckSql = @"
+                    SELECT TOP 1 ea.EventAppointmentID, COALESCE(NULLIF(ea.EventName, ''), ea.EventAppointmentID) AS EventName
+                    FROM dbo.EventEquipment eeq
+                    INNER JOIN dbo.EventAppointment ea ON ea.EventAppointmentID = eeq.EventAppointmentID
+                    WHERE eeq.EquipmentID = @NewEqId
+                      AND eeq.EventAppointmentID <> @ApptId
+                      AND CAST(ea.EventDate AS date) = @TargetDate
+                      AND ISNULL(ea.EventStatus, '') NOT IN ('Cancelled', 'Expired')
+                      AND NOT EXISTS (
+                          SELECT 1 FROM dbo.BookingNegotiation bn
+                          WHERE bn.EventAppointmentID = ea.EventAppointmentID
+                            AND bn.NegotiationStatus IN ('Deal_Lost', 'Cancelled')
+                      );";
+                using (var lockCmd = new SqlCommand(sameDayCheckSql, conn, tx))
+                {
+                    lockCmd.Parameters.AddWithValue("@NewEqId", cleanNewId);
+                    lockCmd.Parameters.AddWithValue("@ApptId", apptId);
+                    lockCmd.Parameters.AddWithValue("@TargetDate", evtDate);
+                    using var lr = lockCmd.ExecuteReader();
+                    if (lr.Read())
+                        return (false, $"Equipment '{newEqName}' is already booked on {evtDate:yyyy-MM-dd} for '{lr.GetString(1)}' ({lr.GetString(0)}).");
+                }
+
+                string oldEqName = cleanOldId;
+                using (var oldCmd = new SqlCommand("SELECT EquipmentName FROM dbo.Equipment WHERE EquipmentID = @OldEqId;", conn, tx))
+                {
+                    oldCmd.Parameters.AddWithValue("@OldEqId", cleanOldId);
+                    var o = oldCmd.ExecuteScalar()?.ToString();
+                    if (!string.IsNullOrWhiteSpace(o)) oldEqName = o;
+                }
+
+                using (var delCmd = new SqlCommand(
+                    "DELETE FROM dbo.EventEquipment WHERE EventAppointmentID = @ApptId AND EquipmentID = @OldEqId;",
+                    conn, tx))
+                {
+                    delCmd.Parameters.AddWithValue("@ApptId", apptId);
+                    delCmd.Parameters.AddWithValue("@OldEqId", cleanOldId);
+                    delCmd.ExecuteNonQuery();
+                }
+
+                using (var insCmd = new SqlCommand(@"
+                    IF NOT EXISTS (SELECT 1 FROM dbo.EventEquipment WHERE EventAppointmentID = @ApptId AND EquipmentID = @NewEqId)
+                    BEGIN
+                        INSERT INTO dbo.EventEquipment (EventAppointmentID, EquipmentID)
+                        VALUES (@ApptId, @NewEqId);
+                    END;", conn, tx))
+                {
+                    insCmd.Parameters.AddWithValue("@ApptId", apptId);
+                    insCmd.Parameters.AddWithValue("@NewEqId", cleanNewId);
+                    insCmd.ExecuteNonQuery();
+                }
+
+                const string logSql = @"
+                    IF OBJECT_ID(N'dbo.HistoryLog', N'U') IS NOT NULL
+                    BEGIN
+                        INSERT INTO dbo.HistoryLog (ActionType, EntityName, EntityID, EventAppointmentID, ChangedByType, ActionDetails, LoggedAt)
+                        VALUES ('UPDATE', 'EventEquipment', @NewEqId, @ApptId, 'Admin', @Details, SYSUTCDATETIME());
+                    END;";
+                using (var logCmd = new SqlCommand(logSql, conn, tx))
+                {
+                    logCmd.Parameters.AddWithValue("@NewEqId", cleanNewId);
+                    logCmd.Parameters.AddWithValue("@ApptId", apptId);
+                    logCmd.Parameters.AddWithValue("@Details", $"Scheduled replacement equipment '{newEqName}' ({cleanNewId}) in place of '{oldEqName}' ({cleanOldId}) for '{evtName}' (#{apptId}) on {evtDate:yyyy-MM-dd}.");
+                    logCmd.ExecuteNonQuery();
+                }
+
+                tx.Commit();
+                InvalidateCache();
+                return (true, null);
+            }
+            catch (Exception ex)
+            {
+                try { tx.Rollback(); } catch { }
+                return (false, ex.Message);
+            }
+        }
+        catch (Exception ex)
+        {
+            return (false, ex.Message);
         }
     }
 

@@ -84,6 +84,7 @@
                     {
                         @foreach (var sched in maintenanceSchedules)
                         {
+                            var linkedEq = equipmentList.FirstOrDefault(e => e.EquipmentID.Equals(sched.EquipmentID, StringComparison.OrdinalIgnoreCase));
                             <tr class="hover:bg-slate-50/70 transition-colors">
                                 <td class="px-5 py-3">
                                     <p class="font-bold text-slate-900">@sched.EquipmentName</p>
@@ -95,6 +96,13 @@
                                             <span>SN: @sched.SerialNo</span>
                                         }
                                     </div>
+                                    @if ((sched.IsInMaintenance || sched.IsNeedsReplacement) && linkedEq != null && !string.IsNullOrWhiteSpace(linkedEq.CurrentEventId))
+                                    {
+                                        <a href="/admin/calendar/events?eventId=@linkedEq.CurrentEventId"
+                                           class="inline-flex items-center gap-1 mt-1 px-2 py-0.5 rounded-full bg-amber-100 hover:bg-amber-200 text-amber-900 border border-amber-300 text-[10px] font-bold">
+                                            📅 Assigned to @(linkedEq.CurrentEventName ?? linkedEq.CurrentEventId) — Schedule Replacement →
+                                        </a>
+                                    }
                                 </td>
                                 <td class="px-5 py-3 max-w-md">
                                     <p class="font-semibold text-slate-800">@sched.ServiceType</p>
@@ -444,10 +452,10 @@
                         <InputSelect @bind-Value="maintenanceForm.EquipmentID"
                                      class="w-full px-3 py-2 text-xs rounded-lg border border-slate-300 bg-white text-slate-900 focus:outline-none focus:ring-1 focus:ring-slate-900">
                             <option value="">-- Choose Equipment --</option>
-                            @foreach (var eq in equipmentList)
+                            @foreach (var eq in equipmentList.Where(e => !e.IsDispatched))
                             {
                                 <option value="@eq.EquipmentID">
-                                    @eq.EquipmentName — Status: @eq.EquipmentStatus
+                                    @eq.EquipmentName — Status: @eq.EffectiveStatusLabel
                                 </option>
                             }
                         </InputSelect>
@@ -523,6 +531,15 @@
                             </div>
                         </label>
                     </div>
+                    @{
+                        var selectedFormEq = equipmentList.FirstOrDefault(e => e.EquipmentID.Equals(maintenanceForm.EquipmentID, StringComparison.OrdinalIgnoreCase));
+                    }
+                    @if (maintenanceForm.SetUnderMaintenance && selectedFormEq != null && !string.IsNullOrWhiteSpace(selectedFormEq.CurrentEventId))
+                    {
+                        <div class="p-3 rounded-lg bg-amber-50 border border-amber-300 text-amber-950 text-[11px]">
+                            <strong>⚠️ Upcoming Schedule Impact:</strong> This item is scheduled for <strong>@(selectedFormEq.CurrentEventName ?? selectedFormEq.CurrentEventId)</strong> (<code class="font-mono">#@selectedFormEq.CurrentEventId</code>). It will show in the Calendar as needing fix &amp; replacement equipment scheduled.
+                        </div>
+                    }
                 </div>
 
                 <!-- Modal Footer -->
@@ -914,7 +931,7 @@
     {
         maintenanceForm = new NewMaintenanceFormModel
         {
-            EquipmentID = equipmentList.FirstOrDefault(e => e.IsAvailable)?.EquipmentID ?? string.Empty,
+            EquipmentID = equipmentList.FirstOrDefault(e => e.IsAvailable && !e.IsDispatched)?.EquipmentID ?? string.Empty,
             ServiceType = "Repair",
             SubStatus = MaintenanceScheduleStatuses.SubUnderRepair,
             ActorID = GetCurrentActorId(),

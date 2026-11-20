@@ -121,4 +121,20 @@ public class TimesheetService : ITimesheetService
             return false;
         }
     }
+
+    public async Task<bool> ApproveTimesheetOvertimeAsync(int id, int? approvedOvertimeMinutes = null, CancellationToken cancellationToken = default)
+    {
+        if (cancellationToken.IsCancellationRequested) return false;
+
+        try
+        {
+            try { await _tokenStore.GetTokenAsync(cancellationToken); } catch { }
+            var res = await _http.PostAsJsonAsync($"api/timesheet/{id}/approve-ot", new { ApprovedOvertimeMinutes = approvedOvertimeMinutes }, cancellationToken);
+            return res.IsSuccessStatusCode;
+        }
+        catch
+        {
+            return false;
+        }
+    }
 }

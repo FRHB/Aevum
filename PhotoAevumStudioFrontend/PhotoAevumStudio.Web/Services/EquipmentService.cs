@@ -115,6 +115,7 @@ public sealed class EquipmentService : IEquipmentService
 
     public void NotifyStateChanged()
     {
+        ScheduleService.InvalidateStaticCache();
         OnChange?.Invoke();
     }
 
@@ -264,7 +265,9 @@ public sealed class EquipmentService : IEquipmentService
                 await using var conn = new SqlConnection(_connectionString);
                 await conn.OpenAsync(ct);
 
-                const string sql = @"
+                var (isTakenExpr, finalPaymentFilter, negotiationFilter, _) = await GetActiveDispatchSqlPartsAsync(conn, ct);
+
+                var sql = $@"
                     IF OBJECT_ID(N'dbo.Equipment', N'U') IS NOT NULL
                     BEGIN
                         SELECT 
@@ -278,16 +281,29 @@ public sealed class EquipmentService : IEquipmentService
                             e.ImagePath,
                             e.EquipmentImage,
                             activeEvt.EventAppointmentID,
-                            activeEvt.EventName
+                            activeEvt.EventName,
+                            activeEvt.EventStatus,
+                            ISNULL(activeEvt.IsTaken, CAST(0 AS bit)) AS IsTaken
                         FROM dbo.Equipment e
                         LEFT JOIN dbo.EquipmentType et ON et.EquipmentTypeID = e.EquipmentTypeID
                         OUTER APPLY (
-                            SELECT TOP 1 ea.EventAppointmentID, ea.EventName
+                            SELECT TOP 1
+                                ea.EventAppointmentID,
+                                ea.EventName,
+                                ISNULL(ea.EventStatus, 'Confirmed') AS EventStatus,
+                                {isTakenExpr} AS IsTaken
                             FROM dbo.EventEquipment ee
                             INNER JOIN dbo.EventAppointment ea ON ea.EventAppointmentID = ee.EventAppointmentID
                             WHERE ee.EquipmentID = e.EquipmentID
-                              AND ea.EventStatus NOT IN ('Cancelled', 'Delivered', 'Completed')
-                            ORDER BY ea.EventDate ASC, ea.EventTime ASC
+                              AND ISNULL(ea.EventStatus, '') NOT IN ('Cancelled', 'Delivered', 'Completed', 'Complete', 'Expired', 'Deal_Lost', 'Shot')
+                              {finalPaymentFilter}
+                              {negotiationFilter}
+                            ORDER BY
+                                CASE WHEN {isTakenExpr} = 1
+                                       OR ea.EventStatus IN ('Dispatch', 'Dispatched', 'Ongoing', 'On Going', 'In Execution', 'Event Done', 'Post Event', 'Pending Verification', 'Paid Cash Pending Verification', 'Payment Verification (Cash)', 'Payment Verification (QR:Pending Payment)')
+                                     THEN 0 ELSE 1 END,
+                                ea.EventDate ASC,
+                                ea.EventTime ASC
                         ) activeEvt
                         ORDER BY e.EquipmentID ASC;
                     END;";
@@ -311,7 +327,9 @@ public sealed class EquipmentService : IEquipmentService
                         ImagePath = ResolveEquipmentImageUrl(rawImagePath, imageBytes),
                         EquipmentImage = imageBytes,
                         CurrentEventId = reader.IsDBNull(9) ? null : reader.GetString(9),
-                        CurrentEventName = reader.IsDBNull(10) ? null : reader.GetString(10)
+                        CurrentEventName = reader.IsDBNull(10) ? null : reader.GetString(10),
+                        CurrentEventStatus = reader.IsDBNull(11) ? null : reader.GetString(11),
+                        IsCurrentEventTaken = !reader.IsDBNull(12) && reader.GetBoolean(12)
                     });
                 }
 
@@ -992,7 +1010,29 @@ public sealed class EquipmentService : IEquipmentService
                 await using var conn = new SqlConnection(_connectionString);
                 await conn.OpenAsync(ct);
 
-                const string sql = @"
+                bool hasIsTakenCol = false;
+                bool hasTakenAtCol = false;
+                bool hasFinalPaymentCol = false;
+                await using (var colCmd = new SqlCommand(@"
+                    SELECT
+                        CASE WHEN COL_LENGTH(N'dbo.EventEquipment', N'IsTaken') IS NOT NULL THEN 1 ELSE 0 END,
+                        CASE WHEN COL_LENGTH(N'dbo.EventEquipment', N'TakenAt') IS NOT NULL THEN 1 ELSE 0 END,
+                        CASE WHEN COL_LENGTH(N'dbo.EventAppointment', N'FinalPaymentStatus') IS NOT NULL THEN 1 ELSE 0 END;", conn))
+                await using (var colReader = await colCmd.ExecuteReaderAsync(ct))
+                {
+                    if (await colReader.ReadAsync(ct))
+                    {
+                        hasIsTakenCol = colReader.GetInt32(0) == 1;
+                        hasTakenAtCol = colReader.GetInt32(1) == 1;
+                        hasFinalPaymentCol = colReader.GetInt32(2) == 1;
+                    }
+                }
+
+                var isTakenSelect = hasIsTakenCol ? "CAST(ISNULL(ee.IsTaken, 0) AS bit)" : "CAST(0 AS bit)";
+                var takenAtSelect = hasTakenAtCol ? "ee.TakenAt" : "CAST(NULL AS datetime2)";
+                var finalPaymentSelect = hasFinalPaymentCol ? "ISNULL(ea.FinalPaymentStatus, '')" : "CAST('' AS nvarchar(60))";
+
+                var sql = $@"
                     IF OBJECT_ID(N'dbo.EventEquipment', N'U') IS NOT NULL
                     BEGIN
                         SELECT 
@@ -1007,7 +1047,11 @@ public sealed class EquipmentService : IEquipmentService
                             ISNULL(e.EquipmentName, ee.EquipmentID) AS EquipmentName,
                             e.SerialNo,
                             ISNULL(et.EquipmentTypeName, ISNULL(e.EquipmentTypeID, '')) AS EquipmentTypeName,
-                            ISNULL(ea.EventStatus, 'Confirmed') AS EventStatus
+                            ISNULL(ea.EventStatus, 'Confirmed') AS EventStatus,
+                            {isTakenSelect} AS IsTaken,
+                            {takenAtSelect} AS TakenAt,
+                            {finalPaymentSelect} AS FinalPaymentStatus,
+                            ISNULL(e.EquipmentStatus, 'Available') AS EquipmentStatus
                         FROM dbo.EventEquipment ee
                         LEFT JOIN dbo.EventAppointment ea ON ea.EventAppointmentID = ee.EventAppointmentID
                         LEFT JOIN dbo.Customer c ON c.CustomerID = ea.CustomerID
@@ -1022,10 +1066,16 @@ public sealed class EquipmentService : IEquipmentService
                 {
                     var eventDate = reader.GetDateTime(3);
                     var eventStatus = reader.GetString(11);
-                    string dispatchStatus = eventStatus.Equals("Completed", StringComparison.OrdinalIgnoreCase) ||
-                                            eventStatus.Equals("Delivered", StringComparison.OrdinalIgnoreCase)
+                    var isTaken = !reader.IsDBNull(12) && reader.GetBoolean(12);
+                    var takenAt = reader.IsDBNull(13) ? (DateTime?)null : reader.GetDateTime(13);
+                    var finalPaymentStatus = reader.IsDBNull(14) ? null : reader.GetString(14);
+                    var eqStatus = reader.FieldCount > 15 && !reader.IsDBNull(15) ? reader.GetString(15) : "Available";
+
+                    string dispatchStatus = EquipmentItemModel.IsEventStageCompletedOrInactive(eventStatus, finalPaymentStatus)
                         ? "Returned"
-                        : (eventDate.Date <= DateTime.Today ? "Dispatched" : "Scheduled");
+                        : (isTaken || EquipmentItemModel.IsEventStageDispatched(eventStatus)
+                            ? "Dispatched"
+                            : "Scheduled");
 
                     dbDispatches.Add(new DispatchItemModel
                     {
@@ -1040,8 +1090,9 @@ public sealed class EquipmentService : IEquipmentService
                         EquipmentName = reader.GetString(8),
                         SerialNo = reader.IsDBNull(9) ? null : reader.GetString(9),
                         EquipmentTypeName = reader.GetString(10),
+                        EquipmentStatus = eqStatus,
                         DispatchStatus = dispatchStatus,
-                        DispatchedAt = eventDate
+                        DispatchedAt = takenAt ?? eventDate
                     });
                 }
 
@@ -1059,8 +1110,85 @@ public sealed class EquipmentService : IEquipmentService
 
         lock (_lock)
         {
+            var eqMap = _equipments.ToDictionary(e => e.EquipmentID, e => e.EquipmentStatus, StringComparer.OrdinalIgnoreCase);
+            foreach (var d in _dispatches)
+            {
+                if (eqMap.TryGetValue(d.EquipmentID, out var st))
+                    d.EquipmentStatus = st;
+            }
             return _dispatches.OrderByDescending(d => d.DispatchedAt).ToList();
         }
+    }
+
+    /// <summary>
+    /// Collapses dispatch manifests to a single row per equipment showing the latest status
+    /// conforming to <paramref name="currentDate"/> (or <see cref="DateTime.Today"/>).
+    /// </summary>
+    public static List<DispatchItemModel> GetLatestDispatchPerEquipment(
+        IEnumerable<DispatchItemModel>? dispatches,
+        DateTime? currentDate = null)
+    {
+        if (dispatches == null)
+            return new List<DispatchItemModel>();
+
+        var today = (currentDate ?? DateTime.Today).Date;
+
+        static DateTime EventTimestamp(DispatchItemModel d) => d.EventDate.Date.Add(d.EventTime);
+
+        static DispatchItemModel SelectLatest(IEnumerable<DispatchItemModel> items, DateTime todayDate)
+        {
+            var list = items.ToList();
+
+            // 1. Active dispatches (currently out / taken / in execution) — pick the latest one
+            var activeDispatched = list
+                .Where(d => d.IsActiveCheckout)
+                .OrderByDescending(EventTimestamp)
+                .ThenByDescending(d => d.DispatchedAt)
+                .ThenByDescending(d => d.EventEquipmentID)
+                .FirstOrDefault();
+            if (activeDispatched != null)
+                return activeDispatched;
+
+            // 2. Upcoming or today's scheduled assignment (closest to current date)
+            var upcomingScheduled = list
+                .Where(d => !d.IsReturned && d.EventDate.Date >= todayDate)
+                .OrderBy(EventTimestamp)
+                .ThenByDescending(d => d.EventEquipmentID)
+                .FirstOrDefault();
+            if (upcomingScheduled != null)
+                return upcomingScheduled;
+
+            // 3. Past non-returned assignment (most recent)
+            var pastUnreturned = list
+                .Where(d => !d.IsReturned)
+                .OrderByDescending(EventTimestamp)
+                .ThenByDescending(d => d.DispatchedAt)
+                .ThenByDescending(d => d.EventEquipmentID)
+                .FirstOrDefault();
+            if (pastUnreturned != null)
+                return pastUnreturned;
+
+            // 4. Otherwise most recent returned record
+            return list
+                .OrderByDescending(d => d.ReturnedAt ?? EventTimestamp(d))
+                .ThenByDescending(EventTimestamp)
+                .ThenByDescending(d => d.EventEquipmentID)
+                .First();
+        }
+
+        return dispatches
+            .GroupBy(
+                d => string.IsNullOrWhiteSpace(d.EquipmentID)
+                    ? $"__id_{d.EventEquipmentID}"
+                    : d.EquipmentID.Trim(),
+                StringComparer.OrdinalIgnoreCase)
+            .Select(g => SelectLatest(g, today))
+            .OrderBy(d => d.IsActiveCheckout ? 0 : (d.IsScheduled ? 1 : 2))
+            .ThenByDescending(d => d.IsActiveCheckout ? EventTimestamp(d).Ticks : 0)
+            .ThenBy(d => d.IsScheduled ? EventTimestamp(d).Ticks : 0)
+            .ThenByDescending(d => d.ReturnedAt?.Ticks ?? EventTimestamp(d).Ticks)
+            .ThenByDescending(d => d.EventEquipmentID)
+            .ToList();
     }
 
     public async Task<IReadOnlyList<EventAppointmentModel>> GetUpcomingEventsAsync(CancellationToken ct = default)
@@ -1251,6 +1379,7 @@ public sealed class EquipmentService : IEquipmentService
             if (sameDayConflict != null)
                 return (false, $"Cannot dispatch '{eq.EquipmentName}' ({eq.EquipmentID}): It is already booked on {evt.EventDate:yyyy-MM-dd} for '{sameDayConflict.EventName}' ({sameDayConflict.EventAppointmentID}) and is unavailable for the entire day.");
 
+            var isActiveDispatch = evt.EventDate.Date <= DateTime.Today;
             var dispatch = new DispatchItemModel
             {
                 EventEquipmentID = _nextEventEquipmentId++,
@@ -1264,9 +1393,13 @@ public sealed class EquipmentService : IEquipmentService
                 EquipmentName = eq.EquipmentName,
                 SerialNo = eq.SerialNo,
                 EquipmentTypeName = eq.EquipmentTypeName,
-                DispatchStatus = evt.EventDate.Date <= DateTime.Today ? "Dispatched" : "Scheduled",
+                DispatchStatus = isActiveDispatch ? "Dispatched" : "Scheduled",
                 DispatchedAt = DateTime.UtcNow
             };
+            eq.CurrentEventId = evt.EventAppointmentID;
+            eq.CurrentEventName = evt.EventName;
+            eq.CurrentEventStatus = evt.EventStatus;
+            eq.IsCurrentEventTaken = isActiveDispatch;
             _dispatches.Insert(0, dispatch);
             NotifyStateChanged();
             return (true, null);
@@ -1380,6 +1513,8 @@ public sealed class EquipmentService : IEquipmentService
             {
                 eq.CurrentEventId = null;
                 eq.CurrentEventName = null;
+                eq.CurrentEventStatus = null;
+                eq.IsCurrentEventTaken = false;
                 eq.EquipmentStatus = flagMaintenance ? "Maintenance" : "Available";
                 if (flagMaintenance)
                 {
@@ -1666,6 +1801,9 @@ public sealed class EquipmentService : IEquipmentService
                 await using var conn = new SqlConnection(_connectionString);
                 await conn.OpenAsync(ct);
 
+                if (setUnderMaintenance && await IsEquipmentDispatchedInDbAsync(conn, equipmentId.Trim(), ct))
+                    return (false, "Cannot send dispatched equipment to maintenance until it is returned.");
+
                 const string sql = @"
                     IF OBJECT_ID(N'dbo.MaintenanceSchedule', N'U') IS NULL AND OBJECT_ID(N'dbo.Equipment', N'U') IS NOT NULL
                     BEGIN
@@ -1741,11 +1879,12 @@ public sealed class EquipmentService : IEquipmentService
             if (eq == null)
                 return (false, $"Equipment '{equipmentId}' not found.");
 
+            if (setUnderMaintenance && eq.IsDispatched)
+                return (false, $"Cannot send '{eq.EquipmentName}' ({eq.EquipmentID}) to maintenance while it is dispatched. Verify its return first.");
+
             if (setUnderMaintenance)
             {
                 eq.EquipmentStatus = "Maintenance";
-                eq.CurrentEventId = null;
-                eq.CurrentEventName = null;
                 UpsertInMemorySchedule(eq, serviceType, issueDetails, effectiveSubStatus, cleanActorId);
             }
 
@@ -1982,5 +2121,79 @@ public sealed class EquipmentService : IEquipmentService
             resolutionNotes,
             actorId,
             ct);
+    }
+
+    private static async Task<(string IsTakenExpr, string FinalPaymentFilter, string NegotiationFilter, bool HasEventTables)> GetActiveDispatchSqlPartsAsync(
+        SqlConnection conn,
+        CancellationToken ct)
+    {
+        bool hasIsTakenCol = false;
+        bool hasFinalPaymentCol = false;
+        bool hasBookingNegTable = false;
+        bool hasEventTables = false;
+
+        await using (var colCmd = new SqlCommand(@"
+            SELECT
+                CASE WHEN COL_LENGTH(N'dbo.EventEquipment', N'IsTaken') IS NOT NULL THEN 1 ELSE 0 END,
+                CASE WHEN COL_LENGTH(N'dbo.EventAppointment', N'FinalPaymentStatus') IS NOT NULL THEN 1 ELSE 0 END,
+                CASE WHEN OBJECT_ID(N'dbo.BookingNegotiation', N'U') IS NOT NULL THEN 1 ELSE 0 END,
+                CASE WHEN OBJECT_ID(N'dbo.EventEquipment', N'U') IS NOT NULL AND OBJECT_ID(N'dbo.EventAppointment', N'U') IS NOT NULL THEN 1 ELSE 0 END;", conn))
+        await using (var colReader = await colCmd.ExecuteReaderAsync(ct))
+        {
+            if (await colReader.ReadAsync(ct))
+            {
+                hasIsTakenCol = colReader.GetInt32(0) == 1;
+                hasFinalPaymentCol = colReader.GetInt32(1) == 1;
+                hasBookingNegTable = colReader.GetInt32(2) == 1;
+                hasEventTables = colReader.GetInt32(3) == 1;
+            }
+        }
+
+        var isTakenExpr = hasIsTakenCol ? "CAST(ISNULL(ee.IsTaken, 0) AS bit)" : "CAST(0 AS bit)";
+        var finalPaymentFilter = hasFinalPaymentCol
+            ? "AND ISNULL(ea.FinalPaymentStatus, '') NOT IN ('Paid', 'Payment Verification (QR:Paid)')"
+            : string.Empty;
+        var negotiationFilter = hasBookingNegTable
+            ? @"AND NOT EXISTS (
+                    SELECT 1 FROM dbo.BookingNegotiation bn
+                    WHERE bn.EventAppointmentID = ea.EventAppointmentID
+                      AND bn.NegotiationStatus IN ('Deal_Lost', 'Cancelled')
+                )"
+            : string.Empty;
+
+        return (isTakenExpr, finalPaymentFilter, negotiationFilter, hasEventTables);
+    }
+
+    private static async Task<bool> IsEquipmentDispatchedInDbAsync(
+        SqlConnection conn,
+        string equipmentId,
+        CancellationToken ct)
+    {
+        var (isTakenExpr, finalPaymentFilter, negotiationFilter, hasEventTables) = await GetActiveDispatchSqlPartsAsync(conn, ct);
+        if (!hasEventTables)
+            return false;
+
+        var sql = $@"
+            SELECT ISNULL(ea.EventStatus, 'Confirmed') AS EventStatus,
+                   {isTakenExpr} AS IsTaken
+            FROM dbo.EventEquipment ee
+            INNER JOIN dbo.EventAppointment ea ON ea.EventAppointmentID = ee.EventAppointmentID
+            WHERE ee.EquipmentID = @Id
+              AND ISNULL(ea.EventStatus, '') NOT IN ('Cancelled', 'Delivered', 'Completed', 'Complete', 'Expired', 'Deal_Lost', 'Shot')
+              {finalPaymentFilter}
+              {negotiationFilter};";
+
+        await using var cmd = new SqlCommand(sql, conn);
+        cmd.Parameters.AddWithValue("@Id", equipmentId);
+        await using var reader = await cmd.ExecuteReaderAsync(ct);
+        while (await reader.ReadAsync(ct))
+        {
+            var eventStatus = reader.IsDBNull(0) ? null : reader.GetString(0);
+            var isTaken = !reader.IsDBNull(1) && reader.GetBoolean(1);
+            if (isTaken || EquipmentItemModel.IsEventStageDispatched(eventStatus))
+                return true;
+        }
+
+        return false;
     }
 }

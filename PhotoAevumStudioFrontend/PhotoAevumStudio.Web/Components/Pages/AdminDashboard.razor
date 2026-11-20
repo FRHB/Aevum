@@ -11,19 +11,24 @@
 @inject IEmployeeService EmployeeService
 @inject ITimesheetService TimesheetService
 @inject IScheduleService ScheduleService
+@inject IEquipmentService EquipmentService
 @inject IConsultationClient ConsultationApi
 @inject AuthenticationStateProvider AuthStateProvider
 @inject PaymentHubClient PaymentHub
 
 <PageTitle>Admin Dashboard | Photo Aevum Studio</PageTitle>
 
-<header class="aev-page-header">
+<header class="aev-page-header items-center">
     <div>
-        <h1 class="aev-page-header__title">Dashboard Overview</h1>
-        <p class="aev-page-header__subtitle">@DateTime.Today.ToString("dddd, MMMM d, yyyy")</p>
+        <h1 class="aev-page-header__title">@GetGreeting(), @_adminName</h1>
+        <p class="aev-page-header__subtitle">Here's what's happening with your team today.</p>
     </div>
-    @* ── Admin Clock In / Clock Out Widget ─────────────────────────────── *@
-    <div class="flex items-center gap-3 shrink-0">
+    @* ── Date Pill & Admin Clock In / Clock Out Widget ─────────────────── *@
+    <div class="flex flex-wrap items-center gap-2.5 shrink-0">
+        <span class="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-white border border-slate-200 text-xs font-medium text-slate-600 shadow-2xs">
+            <span class="text-slate-400" aria-hidden="true">📅</span>
+            <span>@DateTime.Today.ToString("dddd, MMMM d, yyyy")</span>
+        </span>
         @if (_adminClockStatus.IsClockedIn)
         {
             <div class="hidden sm:flex items-center gap-2 text-xs text-slate-500 font-medium">
@@ -76,418 +81,471 @@
     </div>
 }
 
-@* ── Stacked Concurrent Events & Live Progress (Verify Cash) ───────────────── *@
-<LiveEventsOverviewPanel ManagerId="@_adminId" ManagerName="@_adminName" OnCashVerified="LoadPendingRemittancesAsync" />
+@* ── Top Section: 12-Column Responsive Grid (8 cols Left / 4 cols Right) ── *@
+<div class="grid grid-cols-12 gap-6 items-start mb-6">
+    @* ── Left Main Column (8 cols) ─────────────────────────────────────── *@
+    <div class="col-span-12 lg:col-span-8 space-y-6 min-w-0">
+        @* a) Top KPI Row (3-column equal grid) *@
+        <section class="grid grid-cols-1 sm:grid-cols-3 gap-4" aria-label="Executive KPI statistics">
+            <article class="bg-white rounded-xl border border-slate-200/90 p-5 shadow-2xs flex items-start justify-between gap-3">
+                <div class="min-w-0">
+                    <p class="text-xs font-semibold text-slate-500 tracking-tight">Today's Schedule</p>
+                    <h2 class="text-2xl font-bold text-slate-900 tracking-tight mt-1.5 leading-none">@_appointmentsToday</h2>
+                    <p class="text-[11px] text-slate-400 mt-2">@_bookingsThisWeek this week</p>
+                </div>
+                <div class="w-9 h-9 rounded-lg bg-teal-50 border border-teal-100 text-teal-700 flex items-center justify-center text-base shrink-0" aria-hidden="true">📅</div>
+            </article>
 
-@* ── Relevant Statistics (KPIs) ───────────────────────────────────────────── *@
-<section class="aev-stat-grid" aria-label="Executive KPI statistics">
-    <article class="aev-stat-card">
-        <div class="aev-stat-card__icon aev-stat-card__icon--teal" aria-hidden="true">📅</div>
-        <div>
-            <p class="aev-stat-card__label">Today's Schedule</p>
-            <h2 class="aev-stat-card__value">@_appointmentsToday</h2>
-            <p class="text-[11px] text-slate-400 mt-0.5">@_bookingsThisWeek this week</p>
-        </div>
-    </article>
+            <article class="bg-white rounded-xl border border-slate-200/90 p-5 shadow-2xs flex items-start justify-between gap-3">
+                <div class="min-w-0">
+                    <p class="text-xs font-semibold text-slate-500 tracking-tight">On-Duty Staff</p>
+                    <h2 class="text-2xl font-bold text-slate-900 tracking-tight mt-1.5 leading-none">
+                        @_clockedInStaffCount <span class="text-xs text-slate-400 font-normal">/ @_activeEmployees</span>
+                    </h2>
+                    <p class="text-[11px] text-slate-400 mt-2">@_onLeaveStaffCount on leave / day off</p>
+                </div>
+                <div class="w-9 h-9 rounded-lg bg-sky-50 border border-sky-100 text-sky-700 flex items-center justify-center text-base shrink-0" aria-hidden="true">👥</div>
+            </article>
 
-    <article class="aev-stat-card">
-        <div class="aev-stat-card__icon aev-stat-card__icon--blue" aria-hidden="true">👥</div>
-        <div>
-            <p class="aev-stat-card__label">On-Duty Staff</p>
-            <h2 class="aev-stat-card__value">@_clockedInStaffCount <span class="text-xs text-slate-400 font-normal">/ @_activeEmployees</span></h2>
-            <p class="text-[11px] text-slate-400 mt-0.5">@_onLeaveStaffCount on leave / day off</p>
-        </div>
-    </article>
+            <article class="bg-white rounded-xl border border-slate-200/90 p-5 shadow-2xs flex items-start justify-between gap-3">
+                <div class="min-w-0">
+                    <p class="text-xs font-semibold text-slate-500 tracking-tight">Active Consultations</p>
+                    <h2 class="text-2xl font-bold text-slate-900 tracking-tight mt-1.5 leading-none">@_activeConsultations</h2>
+                    <p class="text-[11px] text-slate-400 mt-2">Inquiries in negotiation</p>
+                </div>
+                <div class="w-9 h-9 rounded-lg bg-violet-50 border border-violet-100 text-violet-700 flex items-center justify-center text-base shrink-0" aria-hidden="true">📹</div>
+            </article>
+        </section>
 
-    <article class="aev-stat-card">
-        <div class="aev-stat-card__icon aev-stat-card__icon--violet" aria-hidden="true">📹</div>
-        <div>
-            <p class="aev-stat-card__label">Active Consultations</p>
-            <h2 class="aev-stat-card__value">@_activeConsultations</h2>
-            <p class="text-[11px] text-slate-400 mt-0.5">Inquiries in negotiation</p>
-        </div>
-    </article>
-</section>
+        @* b) Live Execution Monitor Card *@
+        <LiveEventsOverviewPanel ManagerId="@_adminId" ManagerName="@_adminName" OnCashVerified="LoadPendingRemittancesAsync" />
 
-@* ── Current & Upcoming Events Widget ──────────────────────────────────────── *@
-<section class="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden mb-6" aria-label="Current and upcoming events">
-    <div class="px-6 py-4 border-b border-gray-200 bg-gradient-to-r from-slate-50 to-white flex items-center justify-between">
-        <div>
-            <h2 class="text-base font-bold text-gray-900 flex items-center gap-2">
-                <span>⚡</span> Current &amp; Upcoming Events Overview
-            </h2>
-            <p class="text-xs text-gray-500 mt-0.5">
-                Real-time tracking of active studio sessions, client video consultations, and upcoming schedule slots.
-            </p>
-        </div>
-        <a href="/admin/calendar/events" class="text-xs font-semibold text-teal-700 hover:text-teal-900 hover:underline">
-            Open Calendar of Events &rarr;
-        </a>
-    </div>
+        @* c) Current & Upcoming Events Overview Card *@
+        <section class="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden" aria-label="Current and upcoming events">
+            <div class="px-6 py-4 border-b border-gray-200 bg-gradient-to-r from-slate-50 to-white flex items-center justify-between">
+                <div>
+                    <h2 class="text-base font-bold text-gray-900 flex items-center gap-2">
+                        <span>⚡</span> Current &amp; Upcoming Events Overview
+                    </h2>
+                    <p class="text-xs text-gray-500 mt-0.5">
+                        Real-time tracking of active studio sessions, client video consultations, and upcoming schedule slots.
+                    </p>
+                </div>
+                <a href="/admin/calendar/events" class="text-xs font-semibold text-teal-700 hover:text-teal-900 hover:underline shrink-0">
+                    Open Calendar of Events &rarr;
+                </a>
+            </div>
 
-    <div class="p-6 grid grid-cols-1 lg:grid-cols-12 gap-6">
-        @* Happening Now Panel *@
-        <div class="lg:col-span-5 bg-gradient-to-br from-slate-50 to-slate-100/70 border border-slate-200 rounded-xl p-5 flex flex-col justify-between">
-            <div>
-                <div class="flex items-center justify-between mb-3">
-                    <span class="text-xs font-bold uppercase tracking-wider text-slate-500">Live Status</span>
-                    @if (_liveEvent != null)
-                    {
-                        <span class="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-bold bg-emerald-100 text-emerald-800 border border-emerald-300 animate-pulse">
-                            <span class="w-2 h-2 rounded-full bg-emerald-500"></span> HAPPENING NOW
-                        </span>
-                    }
-                    else
-                    {
-                        <span class="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-medium bg-slate-200 text-slate-600">
-                            ☕ Studio Between Sessions
-                        </span>
-                    }
+            <div class="p-6 grid grid-cols-1 lg:grid-cols-12 gap-6">
+                @* Happening Now Panel *@
+                <div class="lg:col-span-5 bg-gradient-to-br from-slate-50 to-slate-100/70 border border-slate-200 rounded-xl p-5 flex flex-col justify-between">
+                    <div>
+                        <div class="flex items-center justify-between mb-3">
+                            <span class="text-xs font-bold uppercase tracking-wider text-slate-500">Live Status</span>
+                            @if (_liveEvent != null)
+                            {
+                                <span class="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-bold bg-emerald-100 text-emerald-800 border border-emerald-300 animate-pulse">
+                                    <span class="w-2 h-2 rounded-full bg-emerald-500"></span> HAPPENING NOW
+                                </span>
+                            }
+                            else
+                            {
+                                <span class="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-medium bg-slate-200 text-slate-600">
+                                    ☕ Studio Between Sessions
+                                </span>
+                            }
+                        </div>
+
+                        @if (_liveEvents.Any())
+                        {
+                            <div class="space-y-3">
+                                @foreach (var liveEv in _liveEvents)
+                                {
+                                    <div class="space-y-2 p-3 rounded-lg bg-white/80 border border-slate-200/80">
+                                        <div class="flex items-start justify-between">
+                                            <div>
+                                                <h3 class="text-base font-bold text-gray-900 leading-tight">@liveEv.ClientName</h3>
+                                                <p class="text-xs font-semibold text-teal-700 mt-0.5">@liveEv.ServiceType</p>
+                                            </div>
+                                            <span class="px-2 py-0.5 rounded-md text-[11px] font-bold @(liveEv.IsConsultation ? "bg-purple-100 text-purple-800" : "bg-blue-100 text-blue-800")">
+                                                @(liveEv.IsConsultation ? "Video Consultation" : "Studio Shoot")
+                                            </span>
+                                        </div>
+
+                                        <div class="text-xs text-slate-600 space-y-1">
+                                            <div class="flex items-center justify-between">
+                                                <span class="text-slate-400">Scheduled Time:</span>
+                                                <span class="font-bold text-slate-900">@liveEv.FormattedTimeRange</span>
+                                            </div>
+                                            <div class="flex items-center justify-between">
+                                                <span class="text-slate-400">Assigned Staff:</span>
+                                                <span class="font-medium text-slate-800">@liveEv.AssignedPhotographer</span>
+                                            </div>
+                                            @if (!string.IsNullOrWhiteSpace(liveEv.ClientPhone) || !string.IsNullOrWhiteSpace(liveEv.ClientEmail))
+                                            {
+                                                <div class="flex items-center justify-between">
+                                                    <span class="text-slate-400">Contact:</span>
+                                                    <span class="font-mono text-[11px] text-slate-700">@(liveEv.ClientPhone ?? liveEv.ClientEmail)</span>
+                                                </div>
+                                            }
+                                        </div>
+
+                                        @if (liveEv.IsConsultation && !string.IsNullOrWhiteSpace(liveEv.MeetingLink))
+                                        {
+                                            <div class="pt-1">
+                                                <a href="@liveEv.MeetingLink"
+                                                   target="_blank"
+                                                   rel="noopener noreferrer"
+                                                   class="w-full inline-flex items-center justify-center gap-2 px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-bold shadow-xs transition-colors">
+                                                    <span>📹 Launch Google Meet Consultation</span>
+                                                    <span>↗</span>
+                                                </a>
+                                            </div>
+                                        }
+                                    </div>
+                                }
+                            </div>
+                        }
+                        else
+                        {
+                            <div class="py-4 text-center">
+                                <div class="w-12 h-12 rounded-full bg-slate-200/80 flex items-center justify-center mx-auto text-xl mb-2">📸</div>
+                                <h3 class="text-sm font-semibold text-gray-800">No Session Currently in Progress</h3>
+                                <p class="text-xs text-slate-500 mt-1 max-w-xs mx-auto">
+                                    The studio is ready for upcoming bookings. Check the upcoming sessions roster to prepare crew and studio bays.
+                                </p>
+                            </div>
+                        }
+                    </div>
+
+                    <div class="mt-4 pt-3 border-t border-slate-200/80 flex items-center justify-between text-[11px]">
+                        <span class="text-slate-400">Date: @DateTime.Today.ToString("MMM d, yyyy")</span>
+                        <a href="/admin/calendar/events" class="text-teal-700 hover:underline font-semibold">View Live Calendar &rarr;</a>
+                    </div>
                 </div>
 
-                @if (_liveEvents.Any())
-                {
-                    <div class="space-y-3">
-                        @foreach (var liveEv in _liveEvents)
+                @* Upcoming Sessions List *@
+                <div class="lg:col-span-7 flex flex-col justify-between">
+                    <div>
+                        <h3 class="text-xs font-bold uppercase tracking-wider text-slate-500 mb-3 flex items-center justify-between">
+                            <span>Upcoming Scheduled Sessions</span>
+                            <span class="text-[10px] font-normal text-slate-400">
+                                @(_liveEvents.Any()
+                                    ? $"{_liveEvents.Count} active in execution"
+                                    : (_upcomingEvents.Any() ? "Closest upcoming event" : "No upcoming events"))
+                            </span>
+                        </h3>
+
+                        @if (_liveEvents.Any() && !_upcomingEvents.Any())
                         {
-                            <div class="space-y-2 p-3 rounded-lg bg-white/80 border border-slate-200/80">
-                                <div class="flex items-start justify-between">
-                                    <div>
-                                        <h3 class="text-base font-bold text-gray-900 leading-tight">@liveEv.ClientName</h3>
-                                        <p class="text-xs font-semibold text-teal-700 mt-0.5">@liveEv.ServiceType</p>
-                                    </div>
-                                    <span class="px-2 py-0.5 rounded-md text-[11px] font-bold @(liveEv.IsConsultation ? "bg-purple-100 text-purple-800" : "bg-blue-100 text-blue-800")">
-                                        @(liveEv.IsConsultation ? "Video Consultation" : "Studio Shoot")
-                                    </span>
-                                </div>
-
-                                <div class="text-xs text-slate-600 space-y-1">
-                                    <div class="flex items-center justify-between">
-                                        <span class="text-slate-400">Scheduled Time:</span>
-                                        <span class="font-bold text-slate-900">@liveEv.FormattedTimeRange</span>
-                                    </div>
-                                    <div class="flex items-center justify-between">
-                                        <span class="text-slate-400">Assigned Staff:</span>
-                                        <span class="font-medium text-slate-800">@liveEv.AssignedPhotographer</span>
-                                    </div>
-                                    @if (!string.IsNullOrWhiteSpace(liveEv.ClientPhone) || !string.IsNullOrWhiteSpace(liveEv.ClientEmail))
-                                    {
-                                        <div class="flex items-center justify-between">
-                                            <span class="text-slate-400">Contact:</span>
-                                            <span class="font-mono text-[11px] text-slate-700">@(liveEv.ClientPhone ?? liveEv.ClientEmail)</span>
-                                        </div>
-                                    }
-                                </div>
-
-                                @if (liveEv.IsConsultation && !string.IsNullOrWhiteSpace(liveEv.MeetingLink))
+                            <div class="p-8 text-center text-xs text-emerald-700 bg-emerald-50/60 rounded-xl border border-dashed border-emerald-200">
+                                ⚡ @_liveEvents.Count event@(_liveEvents.Count == 1 ? "" : "s") currently in execution in the Live Status panel.
+                            </div>
+                        }
+                        else if (!_upcomingEvents.Any())
+                        {
+                            <div class="p-8 text-center text-xs text-gray-400 bg-slate-50 rounded-xl border border-dashed border-gray-200">
+                                ✨ No upcoming events scheduled for the rest of today or upcoming days.
+                            </div>
+                        }
+                        else
+                        {
+                            <div class="space-y-2.5">
+                                @foreach (var ev in _upcomingEvents)
                                 {
-                                    <div class="pt-1">
-                                        <a href="@liveEv.MeetingLink"
-                                           target="_blank"
-                                           rel="noopener noreferrer"
-                                           class="w-full inline-flex items-center justify-center gap-2 px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-bold shadow-xs transition-colors">
-                                            <span>📹 Launch Google Meet Consultation</span>
-                                            <span>↗</span>
-                                        </a>
+                                    var isToday = ev.Date.Date == DateTime.Today;
+                                    <div class="p-3 rounded-lg border border-gray-200 hover:border-teal-300 hover:bg-teal-50/20 transition-all flex items-center justify-between gap-3 bg-white">
+                                        <div class="flex items-center gap-3">
+                                            <div class="text-center px-2 py-1.5 rounded-md @(isToday ? "bg-amber-100 text-amber-900 border border-amber-200" : "bg-slate-100 text-slate-700")">
+                                                <span class="block text-[10px] font-bold uppercase leading-none">@(isToday ? "Today" : ev.Date.ToString("ddd"))</span>
+                                                <span class="block text-xs font-extrabold leading-none mt-1">@ev.Date.ToString("MMM d")</span>
+                                            </div>
+                                            <div>
+                                                <div class="flex items-center gap-2">
+                                                    <span class="font-bold text-xs text-gray-900">@ev.ClientName</span>
+                                                    <span class="px-1.5 py-0.5 rounded text-[9px] font-semibold @(ev.IsConsultation ? "bg-purple-100 text-purple-700" : "bg-blue-100 text-blue-700")">
+                                                        @(ev.IsConsultation ? "Consultation" : "Shoot")
+                                                    </span>
+                                                </div>
+                                                <p class="text-[11px] text-gray-500 line-clamp-1 mt-0.5">
+                                                    @ev.ServiceType &bull; <span class="font-medium text-gray-700">@ev.FormattedTimeRange</span>
+                                                </p>
+                                            </div>
+                                        </div>
+
+                                        <div class="text-right shrink-0">
+                                            <span class="block text-[10px] text-gray-400">Staff</span>
+                                            <span class="block text-[11px] font-medium text-gray-800">@ev.AssignedPhotographer</span>
+                                        </div>
                                     </div>
                                 }
                             </div>
                         }
                     </div>
-                }
-                else
-                {
-                    <div class="py-4 text-center">
-                        <div class="w-12 h-12 rounded-full bg-slate-200/80 flex items-center justify-center mx-auto text-xl mb-2">📸</div>
-                        <h3 class="text-sm font-semibold text-gray-800">No Session Currently in Progress</h3>
-                        <p class="text-xs text-slate-500 mt-1 max-w-xs mx-auto">
-                            The studio is ready for upcoming bookings. Check the upcoming sessions roster to prepare crew and studio bays.
-                        </p>
+
+                    <div class="mt-4 pt-3 border-t border-gray-100 flex items-center justify-between text-xs">
+                        <span class="text-gray-400">Total active events in pipeline: @_allEvents.Count(e => e.Status != "Cancelled")</span>
+                        <a href="/admin/calendar/events" class="font-semibold text-teal-700 hover:text-teal-900 hover:underline">
+                            View full studio schedule &rarr;
+                        </a>
                     </div>
-                }
+                </div>
             </div>
+        </section>
+    </div>
 
-            <div class="mt-4 pt-3 border-t border-slate-200/80 flex items-center justify-between text-[11px]">
-                <span class="text-slate-400">Date: @DateTime.Today.ToString("MMM d, yyyy")</span>
-                <a href="/admin/calendar/events" class="text-teal-700 hover:underline font-semibold">View Live Calendar &rarr;</a>
-            </div>
-        </div>
+    @* ── Right Sidebar Column (4 cols) ─────────────────────────────────── *@
+    <aside class="col-span-12 lg:col-span-4 space-y-6 min-w-0" aria-label="Activity, bookings, and quick actions">
+        @* a) Recent Activity Card *@
+        <section class="bg-white rounded-xl border border-slate-200/90 shadow-2xs overflow-hidden" aria-label="Recent activity">
+            <header class="px-5 py-3.5 border-b border-slate-100 flex items-center justify-between">
+                <h2 class="text-sm font-bold text-slate-900">Recent Activity</h2>
+                <a href="/admin/history-log" class="text-xs font-semibold text-teal-700 hover:text-teal-900 hover:underline">View all</a>
+            </header>
+            @if (_recentActivity.Count == 0)
+            {
+                <div class="px-5 py-8 text-center text-xs text-slate-400">
+                    No recent activity logs recorded yet.
+                </div>
+            }
+            else
+            {
+                <div class="divide-y divide-slate-100">
+                    @foreach (var log in _recentActivity)
+                    {
+                        var actor = string.IsNullOrWhiteSpace(log.UserId) ? "System" : log.UserId;
+                        var entityRef = string.IsNullOrWhiteSpace(log.EntityId) ? log.EntityType : $"{log.EntityType} #{log.EntityId}";
+                        <div class="px-5 py-3 flex items-start gap-3 hover:bg-slate-50/70 transition-colors">
+                            <div class="w-8 h-8 rounded-lg flex items-center justify-center text-xs font-bold shrink-0 border @GetActivityIconClass(log.Action)" aria-hidden="true">
+                                @GetActivityIcon(log.Action, log.EntityType)
+                            </div>
+                            <div class="min-w-0 flex-1">
+                                <p class="text-xs font-semibold text-slate-800 line-clamp-1" title="@GetActivityTitle(log)">
+                                    @GetActivityTitle(log)
+                                </p>
+                                <p class="text-[11px] text-slate-500 truncate mt-0.5">
+                                    @entityRef &bull; <span class="font-mono text-slate-600">@actor</span>
+                                </p>
+                            </div>
+                            <span class="text-[11px] font-medium text-slate-400 whitespace-nowrap shrink-0 pt-0.5">
+                                @FormatRelativeTime(log.Timestamp)
+                            </span>
+                        </div>
+                    }
+                </div>
+            }
+        </section>
 
-        @* Upcoming Sessions List *@
-        <div class="lg:col-span-7 flex flex-col justify-between">
-            <div>
-                <h3 class="text-xs font-bold uppercase tracking-wider text-slate-500 mb-3 flex items-center justify-between">
-                    <span>Upcoming Scheduled Sessions</span>
-                    <span class="text-[10px] font-normal text-slate-400">
-                        @(_liveEvents.Any()
-                            ? $"{_liveEvents.Count} active in execution"
-                            : (_upcomingEvents.Any() ? "Closest upcoming event" : "No upcoming events"))
-                    </span>
-                </h3>
-
-                @if (_liveEvents.Any() && !_upcomingEvents.Any())
-                {
-                    <div class="p-8 text-center text-xs text-emerald-700 bg-emerald-50/60 rounded-xl border border-dashed border-emerald-200">
-                        ⚡ @_liveEvents.Count event@(_liveEvents.Count == 1 ? "" : "s") currently in execution in the Live Status panel.
-                    </div>
-                }
-                else if (!_upcomingEvents.Any())
-                {
-                    <div class="p-8 text-center text-xs text-gray-400 bg-slate-50 rounded-xl border border-dashed border-gray-200">
-                        ✨ No upcoming events scheduled for the rest of today or upcoming days.
-                    </div>
-                }
-                else
-                {
-                    <div class="space-y-2.5">
-                        @foreach (var ev in _upcomingEvents)
-                        {
-                            var isToday = ev.Date.Date == DateTime.Today;
-                            <div class="p-3 rounded-lg border border-gray-200 hover:border-teal-300 hover:bg-teal-50/20 transition-all flex items-center justify-between gap-3 bg-white">
-                                <div class="flex items-center gap-3">
-                                    <div class="text-center px-2 py-1.5 rounded-md @(isToday ? "bg-amber-100 text-amber-900 border border-amber-200" : "bg-slate-100 text-slate-700")">
-                                        <span class="block text-[10px] font-bold uppercase leading-none">@(isToday ? "Today" : ev.Date.ToString("ddd"))</span>
-                                        <span class="block text-xs font-extrabold leading-none mt-1">@ev.Date.ToString("MMM d")</span>
-                                    </div>
-                                    <div>
-                                        <div class="flex items-center gap-2">
-                                            <span class="font-bold text-xs text-gray-900">@ev.ClientName</span>
-                                            <span class="px-1.5 py-0.5 rounded text-[9px] font-semibold @(ev.IsConsultation ? "bg-purple-100 text-purple-700" : "bg-blue-100 text-blue-700")">
-                                                @(ev.IsConsultation ? "Consultation" : "Shoot")
-                                            </span>
-                                        </div>
-                                        <p class="text-[11px] text-gray-500 line-clamp-1 mt-0.5">
-                                            @ev.ServiceType &bull; <span class="font-medium text-gray-700">@ev.FormattedTimeRange</span>
-                                        </p>
-                                    </div>
-                                </div>
-
-                                <div class="text-right shrink-0">
-                                    <span class="block text-[10px] text-gray-400">Staff</span>
-                                    <span class="block text-[11px] font-medium text-gray-800">@ev.AssignedPhotographer</span>
+        @* b) Recent Bookings Card (Relocated & Compacted) *@
+        <section class="bg-white rounded-xl border border-slate-200/90 shadow-2xs overflow-hidden" aria-label="Recent bookings">
+            <header class="px-5 py-3.5 border-b border-slate-100 flex items-center justify-between">
+                <h2 class="text-sm font-bold text-slate-900">Recent Bookings</h2>
+                <a href="/admin/calendar/events" class="text-xs font-semibold text-teal-700 hover:text-teal-900 hover:underline">View all</a>
+            </header>
+            @if (_recentBookings.Count == 0)
+            {
+                <div class="px-5 py-8 text-center text-xs text-slate-400">
+                    No bookings found in the database.
+                </div>
+            }
+            else
+            {
+                <div class="divide-y divide-slate-100">
+                    @foreach (var booking in _recentBookings)
+                    {
+                        var isConfirmed = booking.Status.Equals("Confirmed", StringComparison.OrdinalIgnoreCase)
+                            || booking.Status.Equals("Scheduled", StringComparison.OrdinalIgnoreCase)
+                            || booking.Status.Equals("Completed", StringComparison.OrdinalIgnoreCase);
+                        <div class="px-5 py-3 flex items-start gap-3 hover:bg-slate-50/70 transition-colors">
+                            <div class="w-8 h-8 rounded-lg bg-teal-50 border border-teal-100 text-teal-700 flex items-center justify-center text-[11px] font-bold shrink-0" aria-hidden="true">
+                                @GetInitials(booking.CustomerName)
+                            </div>
+                            <div class="min-w-0 flex-1">
+                                <p class="text-xs font-semibold text-slate-900 truncate">
+                                    @booking.CustomerName <span class="font-normal text-slate-400">&bull;</span> <span class="font-medium text-slate-700">@booking.EventName</span>
+                                </p>
+                                <p class="text-[11px] text-slate-500 truncate mt-0.5">
+                                    @booking.EventDate.ToString("MMM d, yyyy") &bull; @(DateTime.Today.Add(booking.EventTime).ToString("h:mm tt"))
+                                </p>
+                                <div class="flex flex-wrap items-center gap-1.5 mt-1.5">
+                                    <span class="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-semibold bg-teal-50 text-teal-800 border border-teal-200/80">
+                                        ₱@booking.DepositAmount.ToString("N2") deposit
+                                    </span>
+                                    <span class="aev-badge text-[10px] @(isConfirmed ? "aev-badge--green" : "aev-badge--amber")">
+                                        @booking.Status
+                                    </span>
                                 </div>
                             </div>
-                        }
-                    </div>
-                }
-            </div>
+                            <span class="text-[11px] font-medium text-slate-400 whitespace-nowrap shrink-0 pt-0.5">
+                                @FormatRelativeTime(booking.CreatedAt)
+                            </span>
+                        </div>
+                    }
+                </div>
+            }
+        </section>
 
-            <div class="mt-4 pt-3 border-t border-gray-100 flex items-center justify-between text-xs">
-                <span class="text-gray-400">Total active events in pipeline: @_allEvents.Count(e => e.Status != "Cancelled")</span>
-                <a href="/admin/calendar/events" class="font-semibold text-teal-700 hover:text-teal-900 hover:underline">
-                    View full studio schedule &rarr;
+        @* c) Quick Actions Card (Relocated) *@
+        <section class="bg-white rounded-xl border border-slate-200/90 shadow-2xs overflow-hidden" aria-label="Quick actions">
+            <header class="px-5 py-3.5 border-b border-slate-100">
+                <h2 class="text-sm font-bold text-slate-900">Quick Actions</h2>
+            </header>
+            <div class="aev-quick-actions">
+                <a href="/admin/approvals" class="aev-quick-action">
+                    <span class="aev-quick-action__icon" aria-hidden="true">💵</span>
+                    <span>Review Remittances</span>
+                    <span class="aev-quick-action__arrow" aria-hidden="true">›</span>
+                </a>
+                <a href="/admin/services/main" class="aev-quick-action">
+                    <span class="aev-quick-action__icon" aria-hidden="true">🗂</span>
+                    <span>Manage Main Services</span>
+                    <span class="aev-quick-action__arrow" aria-hidden="true">›</span>
+                </a>
+                <a href="/admin/calendar/events" class="aev-quick-action">
+                    <span class="aev-quick-action__icon" aria-hidden="true">📅</span>
+                    <span>Calendar of Events</span>
+                    <span class="aev-quick-action__arrow" aria-hidden="true">›</span>
+                </a>
+                <a href="/admin/employees" class="aev-quick-action">
+                    <span class="aev-quick-action__icon" aria-hidden="true">👤</span>
+                    <span>Manage Staff</span>
+                    <span class="aev-quick-action__arrow" aria-hidden="true">›</span>
+                </a>
+                <a href="/admin/timesheet" class="aev-quick-action">
+                    <span class="aev-quick-action__icon" aria-hidden="true">⏱️</span>
+                    <span>Staff Timesheets</span>
+                    <span class="aev-quick-action__arrow" aria-hidden="true">›</span>
+                </a>
+                <a href="/admin/negotiations" class="aev-quick-action">
+                    <span class="aev-quick-action__icon" aria-hidden="true">💬</span>
+                    <span>Client Inquiries &amp; Calls</span>
+                    <span class="aev-quick-action__arrow" aria-hidden="true">›</span>
+                </a>
+                <a href="/admin/faqs" class="aev-quick-action">
+                    <span class="aev-quick-action__icon" aria-hidden="true">❓</span>
+                    <span>FAQ Management</span>
+                    <span class="aev-quick-action__arrow" aria-hidden="true">›</span>
                 </a>
             </div>
-        </div>
-    </div>
-</section>
+        </section>
+    </aside>
+</div>
 
-@* ── Staff Timesheet & Attendance (Today) ────────────────────────────────── *@
-<section class="aev-card mb-6" aria-label="Staff timesheet and attendance today">
-    <header class="aev-card__header">
-        <div>
-            <h2 class="aev-card__heading">Staff Timesheet &amp; Attendance (Today)</h2>
-            <p class="text-xs text-slate-400 mt-0.5">Live clock-in status and duty hours for active photographers &amp; clerks</p>
-        </div>
-        <a href="/admin/timesheet" class="aev-card__action-link">Open Full Timesheets Portal &rarr;</a>
-    </header>
-    <div class="aev-table-wrap">
-        <table class="aev-table">
-            <thead>
-                <tr>
-                    <th>Staff Member</th>
-                    <th>Role / Department</th>
-                    <th>Attendance Status</th>
-                    <th>Clock In</th>
-                    <th>Hours Logged</th>
-                </tr>
-            </thead>
-            <tbody>
-                @if (_todayAttendance.Count == 0)
-                {
-                    <tr>
-                        <td colspan="5" class="text-center py-5 text-slate-400 text-xs">
-                            No staff attendance records logged for today yet.
-                        </td>
-                    </tr>
-                }
-                else
-                {
-                    @foreach (var att in PagedAttendance)
-                    {
-                        <tr>
-                            <td class="font-semibold text-slate-800">@att.EmployeeName</td>
-                            <td class="text-xs text-slate-500">@att.EmployeeStudioId</td>
-                            <td>
-                                <span class="aev-badge @(att.IsOnLeaveToday ? "aev-badge--amber" : att.IsClockedIn ? "aev-badge--green" : "aev-badge--gray")">
-                                    @(att.IsOnLeaveToday ? "On Leave" : att.IsClockedIn ? "On Duty" : "Off Duty")
-                                </span>
-                            </td>
-                            <td class="font-mono text-xs text-slate-600">@(att.ClockIn?.ToString("hh:mm tt") ?? "—")</td>
-                            <td class="font-mono text-xs font-semibold text-teal-700">@att.TotalHours.ToString("0.0") hrs</td>
-                        </tr>
-                    }
-                }
-            </tbody>
-        </table>
-        <TablePagination TotalItems="_todayAttendance.Count" PageSize="10" @bind-CurrentPage="_attendancePage" ItemLabel="staff" />
-    </div>
-</section>
-
-@* ── Staff Leave Requests (Submitted by Employees) ─────────────────────────── *@
-<section class="aev-card mb-6" aria-label="Pending staff leave requests">
-    <header class="aev-card__header">
-        <div>
-            <h2 class="aev-card__heading">Staff Leave Requests</h2>
-            <p class="text-xs text-slate-400 mt-0.5">Review employee leave requests; approved leaves block booking assignments automatically</p>
-        </div>
-        <a href="/admin/calendar/events" class="aev-card__action-link">Staff Schedule &amp; Days Off &rarr;</a>
-    </header>
-    <div class="aev-table-wrap">
-        <table class="aev-table">
-            <thead>
-                <tr>
-                    <th>Staff Member</th>
-                    <th>Leave Type</th>
-                    <th>Dates</th>
-                    <th>Description</th>
-                    <th class="text-right">Action</th>
-                </tr>
-            </thead>
-            <tbody>
-                @if (_pendingLeaves.Count == 0)
-                {
-                    <tr>
-                        <td colspan="5" class="text-center py-5 text-slate-400 text-xs">
-                            No pending leave requests awaiting approval.
-                        </td>
-                    </tr>
-                }
-                else
-                {
-                    @foreach (var lv in PagedPendingLeaves)
-                    {
-                        <tr>
-                            <td>
-                                <div class="font-semibold text-slate-800">@lv.EmployeeName</div>
-                                <div class="text-[11px] font-mono text-slate-400">@lv.EmployeeStudioId</div>
-                            </td>
-                            <td class="text-xs font-semibold text-slate-700">@lv.LeaveType</td>
-                            <td class="font-mono text-xs text-slate-600">@lv.StartDate.ToString("MMM d") – @lv.EndDate.ToString("MMM d, yyyy")</td>
-                            <td class="text-xs text-slate-500 max-w-xs truncate">@(string.IsNullOrWhiteSpace(lv.Reason) ? "—" : lv.Reason)</td>
-                            <td class="text-right whitespace-nowrap">
-                                <button type="button"
-                                        disabled="@_isProcessingLeave"
-                                        @onclick="() => HandleApproveLeaveAsync(lv)"
-                                        class="px-2.5 py-1 rounded bg-emerald-600 hover:bg-emerald-700 text-white text-[11px] font-bold mr-1 disabled:opacity-50">
-                                    Approve
-                                </button>
-                                <button type="button"
-                                        disabled="@_isProcessingLeave"
-                                        @onclick="() => HandleRejectLeaveAsync(lv)"
-                                        class="px-2.5 py-1 rounded bg-rose-600 hover:bg-rose-700 text-white text-[11px] font-bold disabled:opacity-50">
-                                    Reject
-                                </button>
-                            </td>
-                        </tr>
-                    }
-                }
-            </tbody>
-        </table>
-        <TablePagination TotalItems="_pendingLeaves.Count" PageSize="10" @bind-CurrentPage="_leavesPage" ItemLabel="requests" />
-    </div>
-</section>
-
-@* ── Recent Bookings & Quick Actions ───────────────────────────────────────── *@
-<div class="aev-content-row">
-    <section class="aev-card aev-card--wide" aria-label="Recent bookings">
+@* ── Bottom Full-Width Sections (col-span-12) ──────────────────────────────── *@
+<div class="grid grid-cols-12 gap-6">
+    @* ── Staff Timesheet & Attendance (Today) ──────────────────────────────── *@
+    <section class="col-span-12 aev-card !mb-0" aria-label="Staff timesheet and attendance today">
         <header class="aev-card__header">
-            <h2 class="aev-card__heading">Recent Bookings</h2>
-            <a href="/admin/calendar/events" class="aev-card__action-link">View All</a>
+            <div>
+                <h2 class="aev-card__heading">Staff Timesheet &amp; Attendance (Today)</h2>
+                <p class="text-xs text-slate-400 mt-0.5">Live clock-in status and duty hours for active photographers &amp; clerks</p>
+            </div>
+            <a href="/admin/timesheet" class="aev-card__action-link">Open Full Timesheets Portal &rarr;</a>
         </header>
         <div class="aev-table-wrap">
             <table class="aev-table">
                 <thead>
                     <tr>
-                        <th>Client</th>
-                        <th>Service</th>
-                        <th>Date &amp; Time</th>
-                        <th>Deposit (15%)</th>
-                        <th>Status</th>
+                        <th>Staff Member</th>
+                        <th>Role / Department</th>
+                        <th>Attendance Status</th>
+                        <th>Clock In</th>
+                        <th>Hours Logged</th>
                     </tr>
                 </thead>
                 <tbody>
-                    @if (_recentBookings.Count == 0)
+                    @if (_todayAttendance.Count == 0)
                     {
                         <tr>
-                            <td colspan="5" class="text-center py-6 text-slate-400">
-                                No bookings found in the database.
+                            <td colspan="5" class="text-center py-5 text-slate-400 text-xs">
+                                No staff attendance records logged for today yet.
                             </td>
                         </tr>
                     }
                     else
                     {
-                        @foreach (var booking in PagedRecentBookings)
+                        @foreach (var att in PagedAttendance)
                         {
                             <tr>
-                                <td>@booking.CustomerName</td>
-                                <td>@booking.EventName</td>
-                                <td>@booking.EventDate.ToString("MMM d, yyyy") &bull; @(DateTime.Today.Add(booking.EventTime).ToString("h:mm tt"))</td>
-                                <td class="text-teal-700 font-semibold text-xs">₱@booking.DepositAmount.ToString("N2")</td>
+                                <td class="font-semibold text-slate-800">@att.EmployeeName</td>
+                                <td class="text-xs text-slate-500">@att.EmployeeStudioId</td>
                                 <td>
-                                    <span class="aev-badge @(booking.Status.Equals("Confirmed", StringComparison.OrdinalIgnoreCase) || booking.Status.Equals("Scheduled", StringComparison.OrdinalIgnoreCase) ? "aev-badge--green" : "aev-badge--amber")">
-                                        @booking.Status
+                                    <span class="aev-badge @(att.IsOnLeaveToday ? "aev-badge--amber" : att.IsClockedIn ? "aev-badge--green" : "aev-badge--gray")">
+                                        @(att.IsOnLeaveToday ? "On Leave" : att.IsClockedIn ? "On Duty" : "Off Duty")
                                     </span>
+                                </td>
+                                <td class="font-mono text-xs text-slate-600">@(att.ClockIn?.ToString("hh:mm tt") ?? "—")</td>
+                                <td class="font-mono text-xs font-semibold text-teal-700">@att.TotalHours.ToString("0.0") hrs</td>
+                            </tr>
+                        }
+                    }
+                </tbody>
+            </table>
+            <TablePagination TotalItems="_todayAttendance.Count" PageSize="10" @bind-CurrentPage="_attendancePage" ItemLabel="staff" />
+        </div>
+    </section>
+
+    @* ── Staff Leave Requests (Submitted by Employees) ─────────────────────── *@
+    <section class="col-span-12 aev-card !mb-0" aria-label="Pending staff leave requests">
+        <header class="aev-card__header">
+            <div>
+                <h2 class="aev-card__heading">Staff Leave Requests</h2>
+                <p class="text-xs text-slate-400 mt-0.5">Review employee leave requests; approved leaves block booking assignments automatically</p>
+            </div>
+            <a href="/admin/calendar/events" class="aev-card__action-link">Staff Schedule &amp; Days Off &rarr;</a>
+        </header>
+        <div class="aev-table-wrap">
+            <table class="aev-table">
+                <thead>
+                    <tr>
+                        <th>Staff Member</th>
+                        <th>Leave Type</th>
+                        <th>Dates</th>
+                        <th>Description</th>
+                        <th class="text-right">Action</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @if (_pendingLeaves.Count == 0)
+                    {
+                        <tr>
+                            <td colspan="5" class="text-center py-5 text-slate-400 text-xs">
+                                No pending leave requests awaiting approval.
+                            </td>
+                        </tr>
+                    }
+                    else
+                    {
+                        @foreach (var lv in PagedPendingLeaves)
+                        {
+                            <tr>
+                                <td>
+                                    <div class="font-semibold text-slate-800">@lv.EmployeeName</div>
+                                    <div class="text-[11px] font-mono text-slate-400">@lv.EmployeeStudioId</div>
+                                </td>
+                                <td class="text-xs font-semibold text-slate-700">@lv.LeaveType</td>
+                                <td class="font-mono text-xs text-slate-600">@lv.StartDate.ToString("MMM d") – @lv.EndDate.ToString("MMM d, yyyy")</td>
+                                <td class="text-xs text-slate-500 max-w-xs truncate">@(string.IsNullOrWhiteSpace(lv.Reason) ? "—" : lv.Reason)</td>
+                                <td class="text-right whitespace-nowrap">
+                                    <button type="button"
+                                            disabled="@_isProcessingLeave"
+                                            @onclick="() => HandleApproveLeaveAsync(lv)"
+                                            class="px-2.5 py-1 rounded bg-emerald-600 hover:bg-emerald-700 text-white text-[11px] font-bold mr-1 disabled:opacity-50">
+                                        Approve
+                                    </button>
+                                    <button type="button"
+                                            disabled="@_isProcessingLeave"
+                                            @onclick="() => HandleRejectLeaveAsync(lv)"
+                                            class="px-2.5 py-1 rounded bg-rose-600 hover:bg-rose-700 text-white text-[11px] font-bold disabled:opacity-50">
+                                        Reject
+                                    </button>
                                 </td>
                             </tr>
                         }
                     }
                 </tbody>
             </table>
-            <TablePagination TotalItems="_recentBookings.Count" PageSize="10" @bind-CurrentPage="_bookingsPage" ItemLabel="bookings" />
-        </div>
-    </section>
-
-    <section class="aev-card" aria-label="Quick actions">
-        <header class="aev-card__header">
-            <h2 class="aev-card__heading">Quick Actions</h2>
-        </header>
-        <div class="aev-quick-actions">
-            <a href="/admin/approvals" class="aev-quick-action">
-                <span class="aev-quick-action__icon" aria-hidden="true">💵</span>
-                <span>Review Remittances</span>
-                <span class="aev-quick-action__arrow" aria-hidden="true">›</span>
-            </a>
-            <a href="/admin/services/main" class="aev-quick-action">
-                <span class="aev-quick-action__icon" aria-hidden="true">🗂</span>
-                <span>Manage Main Services</span>
-                <span class="aev-quick-action__arrow" aria-hidden="true">›</span>
-            </a>
-            <a href="/admin/calendar/events" class="aev-quick-action">
-                <span class="aev-quick-action__icon" aria-hidden="true">📅</span>
-                <span>Calendar of Events</span>
-                <span class="aev-quick-action__arrow" aria-hidden="true">›</span>
-            </a>
-            <a href="/admin/employees" class="aev-quick-action">
-                <span class="aev-quick-action__icon" aria-hidden="true">👤</span>
-                <span>Manage Staff</span>
-                <span class="aev-quick-action__arrow" aria-hidden="true">›</span>
-            </a>
-            <a href="/admin/timesheet" class="aev-quick-action">
-                <span class="aev-quick-action__icon" aria-hidden="true">⏱️</span>
-                <span>Staff Timesheets</span>
-                <span class="aev-quick-action__arrow" aria-hidden="true">›</span>
-            </a>
-            <a href="/admin/negotiations" class="aev-quick-action">
-                <span class="aev-quick-action__icon" aria-hidden="true">💬</span>
-                <span>Client Inquiries &amp; Calls</span>
-                <span class="aev-quick-action__arrow" aria-hidden="true">›</span>
-            </a>
-            <a href="/admin/faqs" class="aev-quick-action">
-                <span class="aev-quick-action__icon" aria-hidden="true">❓</span>
-                <span>FAQ Management</span>
-                <span class="aev-quick-action__arrow" aria-hidden="true">›</span>
-            </a>
+            <TablePagination TotalItems="_pendingLeaves.Count" PageSize="10" @bind-CurrentPage="_leavesPage" ItemLabel="requests" />
         </div>
     </section>
 </div>
@@ -511,12 +569,11 @@
     private List<LeaveItemViewModel> _pendingLeaves = new();
     private bool _isProcessingLeave = false;
     private IReadOnlyList<BookingRowDto> _recentBookings = Array.Empty<BookingRowDto>();
+    private List<AuditLogRowDto> _recentActivity = new();
     private int _attendancePage = 1;
     private int _leavesPage = 1;
-    private int _bookingsPage = 1;
     private List<TodayAttendanceSummaryDto> PagedAttendance => TablePagination.Paginate(_todayAttendance, _attendancePage, 10);
     private List<LeaveItemViewModel> PagedPendingLeaves => TablePagination.Paginate(_pendingLeaves, _leavesPage, 10);
-    private List<BookingRowDto> PagedRecentBookings => TablePagination.Paginate(_recentBookings, _bookingsPage, 10);
     private List<PaymentSummaryModel> _pendingRemittances = new();
     private decimal _pendingRemittancesSum => _pendingRemittances.Sum(r => r.Amount);
 
@@ -525,6 +582,7 @@
     private string? _actionSuccessMessage;
     private string _adminId = "Admin";
     private string _adminName = "System Administrator";
+    private bool _isSystemAdmin = false;
 
     // ── Admin Clock In/Out State ─────────────────────────────────────────
     private ClockStatusViewModel _adminClockStatus = new();
@@ -539,8 +597,15 @@
             var user = auth.User;
             if (user?.Identity?.IsAuthenticated == true)
             {
-                _adminId = user.FindFirst(ClaimTypes.NameIdentifier)?.Value ?? user.FindFirst("sub")?.Value ?? "Admin";
-                _adminName = user.FindFirst("full_name")?.Value ?? user.FindFirst(ClaimTypes.Name)?.Value ?? user.Identity.Name ?? "System Administrator";
+                _adminId = user.FindFirst("studio_id")?.Value
+                    ?? user.FindFirst(ClaimTypes.NameIdentifier)?.Value
+                    ?? user.FindFirst("sub")?.Value
+                    ?? "Admin";
+                _adminName = user.FindFirst("full_name")?.Value
+                    ?? user.FindFirst(ClaimTypes.Name)?.Value
+                    ?? user.Identity.Name
+                    ?? "System Administrator";
+                _isSystemAdmin = EmployeeRoleHelper.IsSystemAdmin(user);
             }
         }
         catch { }
@@ -551,7 +616,7 @@
         var remittancesTask = LoadPendingRemittancesAsync();
         var leavesTask = LoadPendingLeavesAsync();
 
-        // 2. Bookings & Revenue
+        // 2. Bookings, Revenue & Recent Activity
         try
         {
             var allBookings = UserService.GetBookings();
@@ -566,6 +631,8 @@
             _totalActiveBookings = 0;
             _totalBookedDeposits = 0;
         }
+
+        LoadRecentActivity();
 
         // 3. Events & Consultations (ScheduleService)
         try
@@ -635,6 +702,7 @@
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
         if (!firstRender) return;
+        EquipmentService.OnChange += HandleEquipmentStateChanged;
         PaymentHub.OnEventStatusChanged += HandleHubEventStatusChangedAsync;
         try { await PaymentHub.EnsureLiveMonitorStartedAsync(); } catch { }
     }
@@ -643,6 +711,7 @@
     {
         ScheduleService.InvalidateCache();
         RefreshAdminScheduleSnapshot();
+        LoadRecentActivity();
         await LoadPendingRemittancesAsync();
         StateHasChanged();
     });
@@ -702,8 +771,19 @@
         catch { }
     }
 
+    private void HandleEquipmentStateChanged()
+    {
+        _ = InvokeAsync(() =>
+        {
+            ScheduleService.InvalidateCache();
+            RefreshAdminScheduleSnapshot();
+            StateHasChanged();
+        });
+    }
+
     public void Dispose()
     {
+        EquipmentService.OnChange -= HandleEquipmentStateChanged;
         PaymentHub.OnEventStatusChanged -= HandleHubEventStatusChangedAsync;
     }
 
@@ -730,6 +810,7 @@
             {
                 ScheduleService.InvalidateCache();
                 _actionSuccessMessage = $"Approved {lv.LeaveType} for {lv.EmployeeName} ({lv.StartDate:MMM d} – {lv.EndDate:MMM d, yyyy}). Booking assignments during this period are now blocked.";
+                LoadRecentActivity();
                 await Task.WhenAll(LoadPendingLeavesAsync(), SafeGetAttendanceAsync());
             }
         }
@@ -750,6 +831,7 @@
             {
                 ScheduleService.InvalidateCache();
                 _actionSuccessMessage = $"Rejected {lv.LeaveType} request for {lv.EmployeeName}.";
+                LoadRecentActivity();
                 await LoadPendingLeavesAsync();
             }
         }
@@ -908,4 +990,93 @@
             _adminIsPunching = false;
         }
     }
+
+    // ── Recent Activity & Presentation Helpers ───────────────────────────
+    private void LoadRecentActivity()
+    {
+        try
+        {
+            var logs = UserService.GetHistoryLogs(_adminId, 25)?.ToList() ?? new List<AuditLogRowDto>();
+            if (!_isSystemAdmin && !_adminId.StartsWith("SADM-", StringComparison.OrdinalIgnoreCase))
+            {
+                logs = logs.Where(l =>
+                    !(l.UserId?.StartsWith("SADM-", StringComparison.OrdinalIgnoreCase) ?? false) &&
+                    !(l.EntityId?.StartsWith("SADM-", StringComparison.OrdinalIgnoreCase) ?? false) &&
+                    !string.Equals(l.EntityType, "SystemAdmin", StringComparison.OrdinalIgnoreCase) &&
+                    !(string.Equals(l.EntityType, "Session", StringComparison.OrdinalIgnoreCase) && (l.EntityId?.StartsWith("CUST-", StringComparison.OrdinalIgnoreCase) ?? false)) &&
+                    !(string.Equals(l.EntityType, "Session", StringComparison.OrdinalIgnoreCase) && (l.UserId?.StartsWith("CUST-", StringComparison.OrdinalIgnoreCase) ?? false))
+                ).ToList();
+            }
+
+            _recentActivity = logs.Take(5).ToList();
+        }
+        catch
+        {
+            _recentActivity = new();
+        }
+    }
+
+    private static string GetGreeting()
+    {
+        var hour = DateTime.Now.Hour;
+        if (hour < 12) return "Good morning";
+        if (hour < 18) return "Good afternoon";
+        return "Good evening";
+    }
+
+    private static string FormatRelativeTime(DateTime timestamp)
+    {
+        if (timestamp == default) return "—";
+        var utc = timestamp.Kind == DateTimeKind.Local
+            ? timestamp.ToUniversalTime()
+            : DateTime.SpecifyKind(timestamp, DateTimeKind.Utc);
+        var diff = DateTime.UtcNow - utc;
+        if (diff.TotalSeconds < 60) return "Just now";
+        if (diff.TotalMinutes < 60) return $"{(int)diff.TotalMinutes}m ago";
+        if (diff.TotalHours < 24) return $"{(int)diff.TotalHours}h ago";
+        if (diff.TotalDays < 7) return $"{(int)diff.TotalDays}d ago";
+        return utc.ToLocalTime().ToString("MMM d");
+    }
+
+    private static string GetInitials(string? fullName)
+    {
+        if (string.IsNullOrWhiteSpace(fullName)) return "CL";
+        var parts = fullName.Split(' ', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        if (parts.Length == 1) return parts[0][..Math.Min(2, parts[0].Length)].ToUpperInvariant();
+        return $"{char.ToUpperInvariant(parts[0][0])}{char.ToUpperInvariant(parts[^1][0])}";
+    }
+
+    private static string GetActivityTitle(AuditLogRowDto log)
+    {
+        if (!string.IsNullOrWhiteSpace(log.ActionDetails))
+            return log.ActionDetails;
+
+        var action = string.IsNullOrWhiteSpace(log.Action) ? "Activity" : log.Action.Replace('_', ' ');
+        return $"{action} {log.EntityType}".Trim();
+    }
+
+    private static string GetActivityIcon(string? action, string? entityType)
+    {
+        var act = (action ?? string.Empty).ToUpperInvariant();
+        if (act is "CREATE" or "INSERT") return "＋";
+        if (act is "DELETE") return "✕";
+        if (act is "APPROVAL") return "✓";
+        if (act is "MAINTENANCE") return "🔧";
+        if (act is "RESOLUTION") return "✓";
+        if (act is "LOGIN") return "🔑";
+        if (act is "IMAGE_UPLOAD") return "🖼";
+        if (act is "STATUS_CHANGE" or "UPDATE") return "↻";
+        return (entityType ?? string.Empty).Equals("Equipment", StringComparison.OrdinalIgnoreCase) ? "📷" : "•";
+    }
+
+    private static string GetActivityIconClass(string? action) =>
+        (action ?? string.Empty).ToUpperInvariant() switch
+        {
+            "CREATE" or "INSERT" or "APPROVAL" or "RESOLUTION" => "bg-emerald-50 text-emerald-700 border-emerald-200",
+            "UPDATE" or "STATUS_CHANGE" => "bg-teal-50 text-teal-700 border-teal-200",
+            "DELETE" => "bg-rose-50 text-rose-700 border-rose-200",
+            "MAINTENANCE" => "bg-amber-50 text-amber-700 border-amber-200",
+            "LOGIN" => "bg-violet-50 text-violet-700 border-violet-200",
+            _ => "bg-slate-50 text-slate-600 border-slate-200"
+        };
 }

@@ -1596,4 +1596,102 @@ public static class StudioEmailTemplates
         return WrapLayout(preview, badge, AccentGold, title, content);
     }
 
+    /// <summary>
+    /// Notification sent to a staff member when they are assigned to an event, promoted to Team Leader, or added as a replacement.
+    /// </summary>
+    public static string StaffEventRosterAssignmentNotification(
+        string employeeName,
+        string appointmentId,
+        string eventName,
+        string customerName,
+        DateOnly eventDate,
+        TimeOnly eventTime,
+        string venue,
+        bool isTeamLeader,
+        bool isReplacement,
+        string staffPortalUrl)
+    {
+        var roleLabel = isTeamLeader ? "Team Leader" : "Event Crew";
+        var actionPhrase = isReplacement
+            ? $"assigned as a replacement <strong>{roleLabel}</strong>"
+            : isTeamLeader
+                ? "designated as <strong>Team Leader</strong>"
+                : "assigned as <strong>Event Crew</strong>";
+
+        var preview = $"Event Assignment Update: You are {roleLabel} for {eventName} (#{appointmentId}) on {eventDate:MMM d, yyyy}.";
+        var badge = isTeamLeader ? "Team Leader Assignment" : "Crew Assignment";
+        var title = isReplacement ? $"Replacement Assignment: {eventName}" : $"Assigned as {roleLabel}: {eventName}";
+
+        var content = $@"
+<p style=""margin:0 0 16px;color:{TextSecondary};font-size:14px;line-height:1.6;"">
+  Hi <strong>{WebUtility.HtmlEncode(employeeName)}</strong>,
+</p>
+<p style=""margin:0 0 18px;color:{TextSecondary};font-size:14px;line-height:1.6;"">
+  You have been {actionPhrase} for the scheduled studio event below. Your Staff Portal and Team Lead Monitor have been updated automatically.
+</p>
+<table width=""100%"" cellpadding=""0"" cellspacing=""0"" style=""background-color:#f0fdfa;border:1px solid #99f6e4;border-radius:10px;margin:0 0 20px;"">
+  <tr>
+    <td style=""padding:14px 16px;font-size:13px;color:#134e4a;"">
+      <div><strong>Event:</strong> {WebUtility.HtmlEncode(eventName)} (#{WebUtility.HtmlEncode(appointmentId)})</div>
+      <div style=""margin-top:4px;""><strong>Role:</strong> {WebUtility.HtmlEncode(roleLabel)}</div>
+      <div style=""margin-top:4px;""><strong>Client:</strong> {WebUtility.HtmlEncode(customerName)}</div>
+      <div style=""margin-top:4px;""><strong>Schedule:</strong> {eventDate:dddd, MMMM d, yyyy} at {DateTime.Today.Add(eventTime.ToTimeSpan()):h:mm tt}</div>
+      <div style=""margin-top:4px;""><strong>Location:</strong> {(string.IsNullOrWhiteSpace(venue) ? "Studio A (Main Hall)" : WebUtility.HtmlEncode(venue))}</div>
+    </td>
+  </tr>
+</table>
+<div style=""text-align:center;margin:22px 0 12px;"">
+  <a href=""{WebUtility.HtmlEncode(staffPortalUrl)}""
+     style=""display:inline-block;background-color:#0f766e;color:#ffffff;padding:12px 24px;border-radius:10px;text-decoration:none;font-weight:700;font-size:14px;"">
+    Open Staff Portal &rarr;
+  </a>
+</div>";
+
+        return WrapLayout(preview, badge, "#0f766e", title, content);
+    }
+
+    /// <summary>
+    /// Notification sent to a staff member when they are reassigned / removed from an event roster (e.g., sudden absence swap).
+    /// </summary>
+    public static string StaffRemovedFromEventNotification(
+        string employeeName,
+        string appointmentId,
+        string eventName,
+        DateOnly eventDate,
+        string? reason,
+        string staffPortalUrl)
+    {
+        var preview = $"Schedule Update: You have been reassigned off {eventName} (#{appointmentId}).";
+        var badge = "Roster Reassignment";
+        var title = $"Schedule Updated: {eventName}";
+        var reasonHtml = string.IsNullOrWhiteSpace(reason)
+            ? string.Empty
+            : $@"<div style=""margin-top:4px;""><strong>Reason:</strong> {WebUtility.HtmlEncode(reason)}</div>";
+
+        var content = $@"
+<p style=""margin:0 0 16px;color:{TextSecondary};font-size:14px;line-height:1.6;"">
+  Hi <strong>{WebUtility.HtmlEncode(employeeName)}</strong>,
+</p>
+<p style=""margin:0 0 18px;color:{TextSecondary};font-size:14px;line-height:1.6;"">
+  An Office Clerk or Studio Administrator has updated the crew roster for <strong>{WebUtility.HtmlEncode(eventName)}</strong> (#{WebUtility.HtmlEncode(appointmentId)}). You are no longer assigned to this event.
+</p>
+<table width=""100%"" cellpadding=""0"" cellspacing=""0"" style=""background-color:#fffbeb;border:1px solid #fde68a;border-radius:10px;margin:0 0 20px;"">
+  <tr>
+    <td style=""padding:14px 16px;font-size:13px;color:#78350f;"">
+      <div><strong>Event:</strong> {WebUtility.HtmlEncode(eventName)} (#{WebUtility.HtmlEncode(appointmentId)})</div>
+      <div style=""margin-top:4px;""><strong>Date:</strong> {eventDate:dddd, MMMM d, yyyy}</div>
+      {reasonHtml}
+    </td>
+  </tr>
+</table>
+<div style=""text-align:center;margin:22px 0 12px;"">
+  <a href=""{WebUtility.HtmlEncode(staffPortalUrl)}""
+     style=""display:inline-block;background-color:#0f172a;color:#ffffff;padding:12px 24px;border-radius:10px;text-decoration:none;font-weight:700;font-size:14px;"">
+    View Updated Schedule &rarr;
+  </a>
+</div>";
+
+        return WrapLayout(preview, badge, "#d97706", title, content);
+    }
+
 }

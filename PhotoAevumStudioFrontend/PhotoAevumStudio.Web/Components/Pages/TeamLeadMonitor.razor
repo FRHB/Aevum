@@ -4,7 +4,6 @@
 @using PhotoAevumStudio.Web.Models
 @using System.Security.Claims
 @using Microsoft.AspNetCore.Components.Authorization
-@using QRCoder
 @implements IAsyncDisposable
 @inject IUserService UserService
 @inject IEquipmentService EquipmentService
@@ -143,47 +142,39 @@ else
     }
     else
     {
-        <div class="space-y-5">
+        var focusedPillEventId = _selectedActiveEventId
+            ?? _recentlyCompletedEvent?.EventAppointmentId
+            ?? _events.FirstOrDefault()?.EventAppointmentId;
+
+        <div class="space-y-3" aria-label="Scheduled upcoming and ongoing events">
             @foreach (var tlEv in displayed)
             {
                 var isInProcess = TeamLeaderMonitorSelector.IsOngoingOrInProcess(tlEv);
-                var processSteps = TeamLeaderMonitorSelector.GetProcessSteps(tlEv);
                 var tlEndTime = tlEv.EventEndTime.HasValue && tlEv.EventEndTime.Value > tlEv.EventTime
                     ? tlEv.EventEndTime.Value
                     : tlEv.EventTime.AddMinutes(Math.Max(60, tlEv.DurationMinutes));
-                var isPreparing = string.Equals(tlEv.EventStatus, "Preparation", StringComparison.OrdinalIgnoreCase)
-                                  || string.Equals(tlEv.EventStatus, "Preparing", StringComparison.OrdinalIgnoreCase)
-                                  || string.Equals(tlEv.EventStatus, "Dispatch", StringComparison.OrdinalIgnoreCase);
-                var isOngoing = string.Equals(tlEv.EventStatus, "Ongoing", StringComparison.OrdinalIgnoreCase)
-                                || string.Equals(tlEv.EventStatus, "On Going", StringComparison.OrdinalIgnoreCase);
-                var isEventDone = string.Equals(tlEv.EventStatus, "Event Done", StringComparison.OrdinalIgnoreCase)
-                                  || string.Equals(tlEv.EventStatus, "Post Event", StringComparison.OrdinalIgnoreCase);
-                var isCashPendingVerif = string.Equals(tlEv.EventStatus, "Payment Verification (Cash)", StringComparison.OrdinalIgnoreCase)
-                                         || string.Equals(tlEv.EventStatus, "Pending Verification", StringComparison.OrdinalIgnoreCase)
-                                         || string.Equals(tlEv.EventStatus, "Paid Cash Pending Verification", StringComparison.OrdinalIgnoreCase)
-                                         || string.Equals(tlEv.FinalPaymentStatus, "Payment Verification (Cash)", StringComparison.OrdinalIgnoreCase)
-                                         || string.Equals(tlEv.FinalPaymentStatus, "Pending Verification", StringComparison.OrdinalIgnoreCase);
-                var isQrPending = !isCashPendingVerif
-                                  && (string.Equals(tlEv.FinalPaymentStatus, "Payment Verification (QR:Pending Payment)", StringComparison.OrdinalIgnoreCase)
-                                      || (string.Equals(tlEv.FinalPaymentMethod, "Xendit_QR", StringComparison.OrdinalIgnoreCase)
-                                          && !string.IsNullOrWhiteSpace(tlEv.FinalPaymentReferenceId)));
-                var isPrePrep = !isPreparing && !isOngoing && !isEventDone && !isCashPendingVerif && !isQrPending;
-                var isSettlementUnlocked = (isEventDone || string.Equals(tlEv.EventStatus, "Pending Payment", StringComparison.OrdinalIgnoreCase))
-                                           && !isCashPendingVerif && !isQrPending;
-                var canSelectArrival = isPrePrep || isPreparing;
-                var canStartEvent = isPreparing;
-                var canMarkDone = isOngoing;
-                _selectedArrivalByEvent.TryGetValue(tlEv.EventAppointmentId, out var selectedArrival);
-                var finalRefId = string.IsNullOrWhiteSpace(tlEv.FinalPaymentReferenceId) ? $"{tlEv.EventAppointmentId}-FINAL" : tlEv.FinalPaymentReferenceId;
-                var postEventAt = tlEv.PostEventTriggerAt ?? tlEv.EventDate.ToDateTime(tlEv.EventTime).AddHours(1);
+                var isPrePrep = !isInProcess;
+                var isCurrentlyFocused = string.Equals(focusedPillEventId, tlEv.EventAppointmentId, StringComparison.OrdinalIgnoreCase);
 
-                <article class="bg-white rounded-xl border @(isInProcess ? "border-teal-300 ring-1 ring-teal-200" : "border-slate-200") p-6 shadow-xs space-y-4">
-                    <div class="flex flex-col md:flex-row md:items-start md:justify-between gap-3">
+                <article class="bg-white rounded-xl border @(isCurrentlyFocused ? "border-teal-400 ring-1 ring-teal-300" : isInProcess ? "border-teal-200" : "border-slate-200") p-5 shadow-xs">
+                    <div class="flex flex-col md:flex-row md:items-center md:justify-between gap-3">
                         <div class="space-y-1.5">
                             <div class="flex flex-wrap items-center gap-2">
                                 <span class="px-2.5 py-0.5 rounded text-[10px] font-extrabold uppercase @(isInProcess ? "bg-teal-700 text-white" : "bg-sky-100 text-sky-800 border border-sky-200")">
                                     @(isInProcess ? tlEv.EventStatus : "Upcoming")
                                 </span>
+                                @if (tlEv.IsTeamLeader)
+                                {
+                                    <span class="px-2 py-0.5 rounded-full text-[10px] font-bold bg-teal-50 text-teal-800 border border-teal-200">
+                                        ★ Team Leader
+                                    </span>
+                                }
+                                else
+                                {
+                                    <span class="px-2 py-0.5 rounded-full text-[10px] font-bold bg-slate-100 text-slate-700 border border-slate-200">
+                                        Crew (View Only)
+                                    </span>
+                                }
                                 <span class="font-mono text-[11px] font-bold px-2 py-0.5 rounded bg-slate-900 text-white">#@tlEv.EventAppointmentId</span>
                                 <h2 class="text-base font-extrabold text-slate-900">@tlEv.EventName</h2>
                             </div>
@@ -224,7 +215,7 @@ else
                         </div>
 
                         <div class="flex items-center gap-2 shrink-0">
-                            @if (isPrePrep)
+                            @if (tlEv.IsTeamLeader && isPrePrep)
                             {
                                 <button type="button"
                                         disabled="@_isUpdating"
@@ -233,191 +224,22 @@ else
                                     ▶ Start Event
                                 </button>
                             }
+                            @if (isCurrentlyFocused)
+                            {
+                                <span class="px-3.5 py-1.5 rounded-full bg-teal-50 border border-teal-300 text-teal-900 text-xs font-bold">
+                                    Active in Monitor ↑
+                                </span>
+                            }
                             else
                             {
                                 <button type="button"
-                                        @onclick="() => FocusEventInTopPill(tlEv.EventAppointmentId)"
-                                        class="px-3.5 py-1.5 rounded-full border border-teal-300 bg-teal-50 hover:bg-teal-100 text-teal-900 text-xs font-bold transition-all">
-                                    View in Top Pill ↑
+                                        @onclick="() => FocusEventInPill(tlEv.EventAppointmentId)"
+                                        class="px-3.5 py-1.5 rounded-full border border-slate-300 bg-white hover:bg-slate-50 text-slate-800 text-xs font-bold transition-all">
+                                    Switch to Event ↑
                                 </button>
                             }
                         </div>
                     </div>
-
-                    @* ── Event Process Stepper ────────────────────────────────────── *@
-                    <div aria-label="Event process progress">
-                        <div class="text-[10px] font-bold uppercase tracking-wider text-slate-500 mb-1.5">Event Process</div>
-                        <div class="grid grid-cols-2 sm:grid-cols-5 gap-2">
-                            @foreach (var step in processSteps)
-                            {
-                                var boxClass = step.State switch
-                                {
-                                    "done" => "bg-emerald-100 text-emerald-900 border-emerald-300",
-                                    "active-amber" => "bg-amber-200 text-amber-950 border-amber-400 ring-1 ring-amber-400",
-                                    "active" => "bg-teal-700 text-white border-teal-700 shadow-2xs",
-                                    _ => "bg-slate-50 text-slate-400 border-slate-200"
-                                };
-                                <div class="px-2.5 py-2 rounded-lg border text-[11px] font-bold text-center flex items-center justify-center gap-1 @boxClass">
-                                    @if (step.State == "done")
-                                    {
-                                        <span>✓</span>
-                                    }
-                                    <span>@step.Label</span>
-                                </div>
-                            }
-                        </div>
-                    </div>
-
-                    @if (!isCashPendingVerif && !isQrPending)
-                    {
-                        <div>
-                            <div class="flex flex-wrap items-center justify-between gap-2 mb-2">
-                                <span class="text-[11px] font-bold uppercase tracking-wider text-slate-500">Execution Controls</span>
-                                <span class="text-[10px] text-slate-500">
-                                    Early / Late &rarr; Preparing &rarr; Event Started &rarr; Event Done &rarr; Settlement (auto-post @postEventAt.ToString("MMM d, h:mm tt"))
-                                </span>
-                            </div>
-                            <div class="grid grid-cols-2 sm:grid-cols-4 gap-2">
-                                <button type="button"
-                                        disabled="@(_isUpdating || !canSelectArrival)"
-                                        @onclick='() => UpdateStageAsync(tlEv, "Preparing", "Early")'
-                                        class="px-3 py-2 rounded-lg border text-xs font-bold transition-all text-center disabled:opacity-45 disabled:cursor-not-allowed @(isPreparing && selectedArrival != "Late" ? "bg-sky-700 text-white border-sky-700 shadow-xs" : "bg-white text-slate-700 border-slate-200 hover:border-sky-400 hover:bg-sky-50/50")">
-                                    Early (Preparing)
-                                </button>
-                                <button type="button"
-                                        disabled="@(_isUpdating || !canSelectArrival)"
-                                        @onclick='() => UpdateStageAsync(tlEv, "Preparing", "Late")'
-                                        class="px-3 py-2 rounded-lg border text-xs font-bold transition-all text-center disabled:opacity-45 disabled:cursor-not-allowed @(isPreparing && selectedArrival == "Late" ? "bg-amber-600 text-white border-amber-600 shadow-xs" : "bg-white text-slate-700 border-slate-200 hover:border-amber-400 hover:bg-amber-50/50")">
-                                    Late (Preparing)
-                                </button>
-                                <button type="button"
-                                        disabled="@(_isUpdating || !canStartEvent)"
-                                        @onclick='() => UpdateStageAsync(tlEv, "Ongoing")'
-                                        class="px-3 py-2 rounded-lg border text-xs font-bold transition-all text-center disabled:opacity-45 disabled:cursor-not-allowed @(isOngoing ? "bg-teal-700 text-white border-teal-700 shadow-xs" : "bg-white text-slate-700 border-slate-200 hover:border-teal-400 hover:bg-teal-50/50")">
-                                    Event Started
-                                </button>
-                                <button type="button"
-                                        disabled="@(_isUpdating || !canMarkDone)"
-                                        @onclick='() => UpdateStageAsync(tlEv, "Event Done")'
-                                        class="px-3 py-2 rounded-lg border text-xs font-bold transition-all text-center disabled:opacity-45 disabled:cursor-not-allowed @(isEventDone ? "bg-purple-700 text-white border-purple-700 shadow-xs" : "bg-white text-slate-700 border-slate-200 hover:border-purple-400 hover:bg-purple-50/50")">
-                                    Event Done
-                                </button>
-                            </div>
-                        </div>
-                    }
-
-                    @if (isPreparing && !isCashPendingVerif && !isQrPending)
-                    {
-                        <div class="p-4 rounded-xl border border-sky-200 bg-sky-50/30 space-y-3">
-                            <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
-                                <div>
-                                    <h3 class="text-xs font-extrabold text-slate-900 uppercase tracking-wider">📷 Preparation Equipment Checklist</h3>
-                                    <p class="text-[11px] text-slate-500">Check each item as taken to dispatch equipment.</p>
-                                </div>
-                                <button type="button"
-                                        disabled="@_isUpdating"
-                                        @onclick="() => MarkAllEquipmentTakenAsync(tlEv)"
-                                        class="px-3.5 py-2 rounded-lg bg-indigo-700 hover:bg-indigo-800 text-white text-xs font-bold shadow-xs shrink-0">
-                                    ✓ Mark Taken &amp; Dispatch
-                                </button>
-                            </div>
-
-                            @if (!tlEv.AssignedEquipment.Any())
-                            {
-                                <div class="p-3 rounded-lg bg-white border border-dashed border-slate-200 text-xs text-slate-500 text-center">
-                                    No equipment assigned to this event yet.
-                                </div>
-                            }
-                            else
-                            {
-                                <div class="divide-y divide-slate-100 border border-slate-200 rounded-lg bg-white overflow-hidden">
-                                    @foreach (var eq in tlEv.AssignedEquipment)
-                                    {
-                                        <label class="flex items-center justify-between gap-3 px-3.5 py-2 text-xs hover:bg-slate-50 cursor-pointer">
-                                            <div class="flex items-center gap-3">
-                                                <input type="checkbox"
-                                                       checked="@eq.IsTaken"
-                                                       disabled="@_isUpdating"
-                                                       @onchange="(ChangeEventArgs e) => ToggleSingleEquipmentTakenAsync(tlEv, eq, e.Value is bool b && b)"
-                                                       class="h-4 w-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500" />
-                                                <span class="font-bold text-slate-900">@eq.EquipmentName</span>
-                                                <span class="text-[11px] text-slate-400 font-mono">(@eq.EquipmentId)</span>
-                                            </div>
-                                            <span class="px-2 py-0.5 rounded-full text-[10px] font-bold @(eq.IsTaken ? "bg-emerald-100 text-emerald-800" : "bg-slate-100 text-slate-500")">
-                                                @(eq.IsTaken ? "Taken" : "Pending")
-                                            </span>
-                                        </label>
-                                    }
-                                </div>
-                            }
-                        </div>
-                    }
-
-                    @if (isCashPendingVerif)
-                    {
-                        <div class="p-4 rounded-xl border border-amber-300 bg-amber-50 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
-                            <div>
-                                <div class="text-xs font-extrabold text-amber-950">Payment Verification (Cash) — Awaiting Admin / Clerk Verification</div>
-                                <p class="text-[11px] text-amber-900 mt-0.5">
-                                    Cash payment of <strong>₱@tlEv.FinalBalanceAmount.ToString("N2")</strong> logged. Once verified by Admin/Clerk, this event finishes and leaves your active monitor.
-                                </p>
-                            </div>
-                            <span class="px-3 py-1 rounded-full bg-amber-200 text-amber-950 text-xs font-extrabold shrink-0">Payment Verification (Cash)</span>
-                        </div>
-                    }
-                    else if (isQrPending)
-                    {
-                        var confirmUrl = ResolveQrConfirmUrl(finalRefId);
-                        <div class="p-4 rounded-xl border border-teal-200 bg-teal-50/30 grid grid-cols-1 md:grid-cols-[150px_1fr] gap-4 items-center">
-                            <div class="w-36 h-36 mx-auto p-2 bg-white border border-slate-200 rounded-xl shadow-xs">
-                                @((MarkupString)BuildQrSvg(confirmUrl))
-                            </div>
-                            <div class="space-y-2 text-xs">
-                                <span class="inline-flex px-2.5 py-0.5 rounded-full bg-sky-100 text-sky-900 font-bold text-[11px]">
-                                    Payment Verification (QR:Pending Payment)
-                                </span>
-                                <div class="font-bold text-slate-900 text-sm">Awaiting Customer Final Balance Scan (₱@tlEv.FinalBalanceAmount.ToString("N2"))</div>
-                                <p class="text-slate-600">Reference: <span class="font-mono">@finalRefId</span></p>
-                                <div class="flex flex-wrap gap-2">
-                                    <a href="/payments/@finalRefId" target="_blank" class="px-3 py-1.5 rounded-lg border border-slate-300 bg-white hover:bg-slate-50 text-slate-800 font-bold">
-                                        Open Payment Page ↗
-                                    </a>
-                                    @if (Env.IsDevelopment())
-                                    {
-                                        <button type="button"
-                                                disabled="@_isUpdating"
-                                                @onclick="() => SimulateQrPaidAsync(finalRefId)"
-                                                class="px-3 py-1.5 rounded-lg border border-dashed border-teal-600 text-teal-800 hover:bg-teal-50 font-bold">
-                                            Simulate Customer QR Paid (Dev)
-                                        </button>
-                                    }
-                                </div>
-                            </div>
-                        </div>
-                    }
-                    else if (isSettlementUnlocked)
-                    {
-                        <div class="p-4 rounded-xl border border-purple-200 bg-purple-50/30 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-                            <div>
-                                <div class="text-xs font-extrabold text-slate-900">Final Balance Settlement</div>
-                                <p class="text-[11px] text-slate-600">Collect final balance (₱@tlEv.FinalBalanceAmount.ToString("N2")) via Cash or Dynamic Xendit QR.</p>
-                            </div>
-                            <div class="flex flex-wrap items-center gap-2">
-                                <button type="button"
-                                        disabled="@_isUpdating"
-                                        @onclick='() => SettleEventAsync(tlEv, "Cash_OnHand")'
-                                        class="px-3.5 py-2 rounded-lg bg-amber-600 hover:bg-amber-700 text-white text-xs font-bold shadow-xs">
-                                    💵 Cash Received
-                                </button>
-                                <button type="button"
-                                        disabled="@_isUpdating"
-                                        @onclick='() => SettleEventAsync(tlEv, "Xendit_QR")'
-                                        class="px-3.5 py-2 rounded-lg bg-teal-700 hover:bg-teal-800 text-white text-xs font-bold shadow-xs">
-                                    📱 QR Payment
-                                </button>
-                            </div>
-                        </div>
-                    }
                 </article>
             }
         </div>
@@ -440,7 +262,6 @@ else
     private bool _isUpdating = false;
     private string? _actionMessage;
     private string? _errorMessage;
-    private readonly Dictionary<string, string> _selectedArrivalByEvent = new(StringComparer.OrdinalIgnoreCase);
     private readonly HashSet<string> _subscribedHubRefs = new(StringComparer.OrdinalIgnoreCase);
     private System.Threading.Timer? _refreshTimer;
 
@@ -465,6 +286,7 @@ else
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
         if (!firstRender) return;
+        EquipmentService.OnChange += HandleEquipmentStateChanged;
         PaymentHub.OnEventStatusChanged += HandleHubEventStatusChangedAsync;
         await Task.WhenAll(LoadStudioEquipmentsAsync(), RefreshMonitorAsync());
         await SubscribeLiveMonitorAndQrHubsAsync();
@@ -548,7 +370,7 @@ else
                             AssignedEmployees = d.AssignedEmployees,
                             AssignedEquipment = d.AssignedEquipment,
                             SelectedServices = d.SelectedServices,
-                            IsTeamLeader = true
+                            IsTeamLeader = finished.IsTeamLeader
                         };
                         _selectedActiveEventId = d.EventAppointmentId;
                     }
@@ -571,6 +393,7 @@ else
 
     private async Task StartEventPreparationAsync(TeamLeaderEventDto tlEv)
     {
+        if (!tlEv.IsTeamLeader) return;
         _isUpdating = true;
         _actionMessage = null;
         _errorMessage = null;
@@ -603,10 +426,10 @@ else
         }
     }
 
-    private void FocusEventInTopPill(string appointmentId)
+    private void FocusEventInPill(string appointmentId)
     {
         _selectedActiveEventId = appointmentId;
-        _actionMessage = $"Focused Event #{appointmentId} in the top overview panel.";
+        _actionMessage = $"Focused Event #{appointmentId} in the top pill box.";
     }
 
     private async Task HandlePillWorkflowUpdatedAsync()
@@ -639,181 +462,23 @@ else
         {
             _actionMessage = $"Event #{msg.AppointmentId} updated to Success / Completed across all platforms.";
         }
+        else if (string.Equals(msg.EventStatus, "RosterUpdated", StringComparison.OrdinalIgnoreCase) ||
+                 string.Equals(msg.EventStatus, "Updated", StringComparison.OrdinalIgnoreCase))
+        {
+            _actionMessage = $"Event #{msg.AppointmentId} crew / Team Leader roster has been updated.";
+        }
         StateHasChanged();
     });
-
-    private async Task UpdateStageAsync(TeamLeaderEventDto tlEv, string stage, string? arrivalStatus = null)
-    {
-        _isUpdating = true;
-        _actionMessage = null;
-        _errorMessage = null;
-        try
-        {
-            if (!string.IsNullOrWhiteSpace(arrivalStatus))
-                _selectedArrivalByEvent[tlEv.EventAppointmentId] = arrivalStatus;
-
-            var res = await ConsultationApi.UpdateTeamLeaderEventStatusAsync(tlEv.EventAppointmentId, new UpdateTeamLeaderStatusRequest
-            {
-                Status = stage,
-                ArrivalStatus = arrivalStatus,
-                EmployeeId = _employeeId
-            });
-            if (res.IsSuccess && res.Value != null)
-            {
-                ScheduleService.InvalidateCache();
-                await RefreshMonitorAsync();
-                _actionMessage = $"Event #{tlEv.EventAppointmentId} updated to '{res.Value.EventStatus}'.";
-            }
-            else
-            {
-                _errorMessage = res.Error?.Message ?? "Failed to update event stage.";
-            }
-        }
-        catch (Exception ex)
-        {
-            _errorMessage = ex.Message;
-        }
-        finally
-        {
-            _isUpdating = false;
-        }
-    }
-
-    private async Task ToggleSingleEquipmentTakenAsync(TeamLeaderEventDto tlEv, AssignedEquipmentDto eq, bool isTaken)
-    {
-        _isUpdating = true;
-        _actionMessage = null;
-        _errorMessage = null;
-        try
-        {
-            var res = await ConsultationApi.MarkEquipmentTakenAsync(tlEv.EventAppointmentId, new MarkEquipmentTakenRequest
-            {
-                EventEquipmentIds = eq.EventEquipmentId > 0 ? new List<int> { eq.EventEquipmentId } : null,
-                IsTaken = isTaken,
-                TransitionToDispatch = true,
-                EmployeeId = _employeeId
-            });
-            if (res.IsSuccess && res.Value != null)
-            {
-                ScheduleService.InvalidateCache();
-                await RefreshMonitorAsync();
-                _actionMessage = $"Updated '{eq.EquipmentName}' as {(isTaken ? "Taken" : "Pending")}.";
-            }
-            else
-            {
-                _errorMessage = res.Error?.Message ?? "Failed to update equipment checklist.";
-            }
-        }
-        finally
-        {
-            _isUpdating = false;
-        }
-    }
-
-    private async Task MarkAllEquipmentTakenAsync(TeamLeaderEventDto tlEv)
-    {
-        _isUpdating = true;
-        _actionMessage = null;
-        _errorMessage = null;
-        try
-        {
-            var res = await ConsultationApi.MarkEquipmentTakenAsync(tlEv.EventAppointmentId, new MarkEquipmentTakenRequest
-            {
-                EventEquipmentIds = null,
-                IsTaken = true,
-                TransitionToDispatch = true,
-                EmployeeId = _employeeId
-            });
-            if (res.IsSuccess && res.Value != null)
-            {
-                ScheduleService.InvalidateCache();
-                await RefreshMonitorAsync();
-                _actionMessage = $"All equipment marked taken for #{tlEv.EventAppointmentId}. Status updated to 'Dispatch'.";
-            }
-            else
-            {
-                _errorMessage = res.Error?.Message ?? "Could not mark equipment taken.";
-            }
-        }
-        finally
-        {
-            _isUpdating = false;
-        }
-    }
-
-    private async Task SettleEventAsync(TeamLeaderEventDto tlEv, string method)
-    {
-        _isUpdating = true;
-        _actionMessage = null;
-        _errorMessage = null;
-        try
-        {
-            var req = new CompleteEventRequest
-            {
-                EventAppointmentId = tlEv.EventAppointmentId,
-                ExtraHours = 0m,
-                HourlyRate = 1500m,
-                SurchargeAmount = 0m,
-                OvertimeNotes = string.Empty,
-                PaymentMethod = method,
-                TeamLeaderEmployeeId = _employeeId,
-                Notes = $"Settlement initiated from Team Lead Monitor by {_employeeName} ({_employeeId})."
-            };
-            var res = await ConsultationApi.CompleteEventAsync(tlEv.EventAppointmentId, req);
-            if (res.IsSuccess && res.Value != null)
-            {
-                ScheduleService.InvalidateCache();
-                await RefreshMonitorAsync();
-                await SubscribeLiveMonitorAndQrHubsAsync();
-                _actionMessage = method == "Xendit_QR"
-                    ? $"QR payment link generated and emailed to {res.Value.CustomerEmail}."
-                    : $"Cash payment of ₱{res.Value.FinalBalanceAmount:N2} logged. Status: Payment Verification (Cash).";
-            }
-            else
-            {
-                _errorMessage = res.Error?.Message ?? "Failed to submit event settlement.";
-            }
-        }
-        catch (Exception ex)
-        {
-            _errorMessage = ex.Message;
-        }
-        finally
-        {
-            _isUpdating = false;
-        }
-    }
-
-    private async Task SimulateQrPaidAsync(string finalRefId)
-    {
-        _isUpdating = true;
-        _actionMessage = null;
-        _errorMessage = null;
-        try
-        {
-            var res = await ConsultationApi.SimulateQrPaymentAsync(finalRefId);
-            if (res.IsSuccess)
-            {
-                ScheduleService.InvalidateCache();
-                await RefreshMonitorAsync();
-                _actionMessage = $"Payment successful! Reference {finalRefId} marked Completed.";
-            }
-            else
-            {
-                _errorMessage = res.Error?.Message ?? "Could not simulate QR payment.";
-            }
-        }
-        finally
-        {
-            _isUpdating = false;
-        }
-    }
 
     private async Task SubscribeLiveMonitorAndQrHubsAsync()
     {
         try
         {
             await PaymentHub.EnsureLiveMonitorStartedAsync();
+            if (!string.IsNullOrWhiteSpace(_employeeId))
+            {
+                await PaymentHub.EnsureStaffMonitorStartedAsync(_employeeId);
+            }
         }
         catch
         {
@@ -836,28 +501,19 @@ else
         }
     }
 
-    private string ResolveQrConfirmUrl(string referenceId)
+    private void HandleEquipmentStateChanged()
     {
-        var configuredBase = Config["BaseUrl"]?.Trim();
-        var effectiveBase = (!string.IsNullOrWhiteSpace(configuredBase) &&
-                             !configuredBase.Contains("localhost", StringComparison.OrdinalIgnoreCase) &&
-                             !configuredBase.Contains("127.0.0.1", StringComparison.OrdinalIgnoreCase))
-            ? configuredBase
-            : (Nav.BaseUri.Contains("localhost", StringComparison.OrdinalIgnoreCase) || Nav.BaseUri.Contains("127.0.0.1", StringComparison.OrdinalIgnoreCase)
-                ? (string.IsNullOrWhiteSpace(configuredBase) ? Nav.BaseUri : configuredBase)
-                : Nav.BaseUri);
-        return QrPaymentLinks.BuildConfirmUrl(effectiveBase, Nav.BaseUri, referenceId);
-    }
-
-    private static string BuildQrSvg(string payload)
-    {
-        using var generator = new QRCodeGenerator();
-        using var data = generator.CreateQrCode(payload, QRCodeGenerator.ECCLevel.M);
-        return new SvgQRCode(data).GetGraphic(5);
+        _ = InvokeAsync(async () =>
+        {
+            ScheduleService.InvalidateCache();
+            await Task.WhenAll(LoadStudioEquipmentsAsync(), RefreshMonitorAsync());
+            StateHasChanged();
+        });
     }
 
     public ValueTask DisposeAsync()
     {
+        EquipmentService.OnChange -= HandleEquipmentStateChanged;
         PaymentHub.OnEventStatusChanged -= HandleHubEventStatusChangedAsync;
         _refreshTimer?.Dispose();
         return ValueTask.CompletedTask;

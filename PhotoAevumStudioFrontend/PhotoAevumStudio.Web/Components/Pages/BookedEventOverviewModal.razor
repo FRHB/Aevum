@@ -28,6 +28,12 @@
                         {
                             <span class="badge-conflict" title="@Booking.ConflictMessage">⚠️ Conflict</span>
                         }
+                        @if (HasStagedEquipmentFix)
+                        {
+                            <span class="px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-100 text-amber-900 border border-amber-300">
+                                🔧 Needs Gear Fix
+                            </span>
+                        }
                     </div>
                     <h2 id="booked-overview-title" class="text-lg font-extrabold text-slate-900 mt-1.5 truncate">
                         @Booking.ClientName
@@ -222,8 +228,15 @@
                                 {
                                     var isLead = string.Equals(crew.EmployeeId, _stagedTeamLeaderId, StringComparison.OrdinalIgnoreCase);
                                     var isReplacingThisCrew = string.Equals(_replacingCrewId, crew.EmployeeId, StringComparison.OrdinalIgnoreCase);
+                                    var detailCrew = _appointmentDetail?.AssignedEmployees?.FirstOrDefault(e => string.Equals(e.EmployeeId, crew.EmployeeId, StringComparison.OrdinalIgnoreCase));
+                                    var isCrewAbsentOnEvent = detailCrew != null && string.Equals(detailCrew.DutyStatus, "Absent", StringComparison.OrdinalIgnoreCase);
+                                    var isCrewOnLeaveDate = Booking != null && _approvedLeaves.Any(l =>
+                                        string.Equals(l.EmployeeStudioId, crew.EmployeeId, StringComparison.OrdinalIgnoreCase) &&
+                                        string.Equals(l.Status, "Approved", StringComparison.OrdinalIgnoreCase) &&
+                                        DateOnly.FromDateTime(Booking.Date) >= l.StartDate &&
+                                        DateOnly.FromDateTime(Booking.Date) <= l.EndDate);
 
-                                    <div class="roster-item-row @(isLead ? "is-leader" : "")">
+                                    <div class="roster-item-row @(isCrewAbsentOnEvent || isCrewOnLeaveDate ? "border-rose-300 bg-rose-50/70" : isLead ? "is-leader" : "")">
                                         <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
                                             <div class="min-w-0">
                                                 <div class="flex items-center gap-2 flex-wrap">
@@ -233,6 +246,18 @@
                                                     {
                                                         <span class="px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-200 text-amber-950 border border-amber-300">
                                                             Team Leader
+                                                        </span>
+                                                    }
+                                                    @if (isCrewAbsentOnEvent || isCrewOnLeaveDate)
+                                                    {
+                                                        <span class="px-2 py-0.5 rounded-full text-[10px] font-bold bg-rose-100 text-rose-800 border border-rose-300">
+                                                            ⚠ Absent / Leave
+                                                        </span>
+                                                    }
+                                                    else if (detailCrew?.IsVerified == true)
+                                                    {
+                                                        <span class="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-800">
+                                                            ✓ On Duty
                                                         </span>
                                                     }
                                                 </div>
@@ -272,31 +297,44 @@
                                         @if (CanManageRoster && !IsInactiveEvent && isReplacingThisCrew)
                                         {
                                             var swapOptions = GetSelectableCrewOptions(excludeStaged: true);
-                                            <div class="mt-2 pt-2 border-t border-slate-200 flex flex-col sm:flex-row items-stretch sm:items-center gap-2">
-                                                <select @bind="_replaceCrewTargetId"
-                                                        aria-label="Select replacement crew member"
-                                                        class="flex-1 px-2.5 py-1.5 text-xs bg-white border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-slate-900">
-                                                    <option value="">Select available replacement crew...</option>
-                                                    @foreach (var opt in swapOptions)
-                                                    {
-                                                        <option value="@opt.Employee.EmployeeId">
-                                                            @opt.Employee.FullName (@opt.Employee.EmployeeId) — @opt.AvailabilityText
-                                                        </option>
-                                                    }
-                                                </select>
-                                                <div class="flex items-center gap-1.5 shrink-0">
-                                                    <button type="button"
-                                                            disabled="@string.IsNullOrWhiteSpace(_replaceCrewTargetId)"
-                                                            @onclick="() => ConfirmReplaceCrew(crew.EmployeeId)"
-                                                            class="px-3 py-1.5 rounded-lg bg-slate-900 hover:bg-black text-white text-[11px] font-bold disabled:opacity-40">
-                                                        Swap
-                                                    </button>
-                                                    <button type="button"
-                                                            @onclick="CancelReplaceCrew"
-                                                            class="px-2.5 py-1.5 rounded-lg border border-slate-300 bg-white text-slate-600 text-[11px] font-semibold">
-                                                        Cancel
-                                                    </button>
+                                            <div class="mt-2 pt-2 border-t border-slate-200 space-y-2">
+                                                <div class="flex flex-col sm:flex-row items-stretch sm:items-center gap-2">
+                                                    <select @bind="_replaceCrewTargetId"
+                                                            aria-label="Select replacement crew member"
+                                                            class="flex-1 px-2.5 py-1.5 text-xs bg-white border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-slate-900">
+                                                        <option value="">Select available replacement crew...</option>
+                                                        @foreach (var opt in swapOptions)
+                                                        {
+                                                            <option value="@opt.Employee.EmployeeId">
+                                                                @opt.Employee.FullName (@opt.Employee.EmployeeId) — @opt.AvailabilityText
+                                                            </option>
+                                                        }
+                                                    </select>
+                                                    <div class="flex items-center gap-1.5 shrink-0">
+                                                        <button type="button"
+                                                                disabled="@string.IsNullOrWhiteSpace(_replaceCrewTargetId)"
+                                                                @onclick="() => ConfirmReplaceCrew(crew.EmployeeId)"
+                                                                class="px-3 py-1.5 rounded-lg bg-slate-900 hover:bg-black text-white text-[11px] font-bold disabled:opacity-40">
+                                                            Swap
+                                                        </button>
+                                                        <button type="button"
+                                                                @onclick="CancelReplaceCrew"
+                                                                class="px-2.5 py-1.5 rounded-lg border border-slate-300 bg-white text-slate-600 text-[11px] font-semibold">
+                                                            Cancel
+                                                        </button>
+                                                    </div>
                                                 </div>
+                                                <label class="flex items-center gap-2 text-[11px] text-slate-700 cursor-pointer">
+                                                    <input type="checkbox" @bind="_markReplacedCrewAsSuddenAbsence" class="rounded border-slate-300" />
+                                                    <span>Mark <strong>@crew.FullName</strong> as Sudden Absence / Emergency-Sick on @Booking.Date.ToString("MMM d, yyyy") (blocks other bookings today)</span>
+                                                </label>
+                                                @if (_markReplacedCrewAsSuddenAbsence)
+                                                {
+                                                    <input type="text"
+                                                           @bind="_suddenAbsenceReason"
+                                                           placeholder="Sudden absence reason (e.g. sudden sick / family emergency)..."
+                                                           class="w-full px-2.5 py-1.5 text-xs bg-white border border-slate-300 rounded-lg" />
+                                                }
                                             </div>
                                         }
                                     </div>
@@ -343,6 +381,26 @@
                             </div>
                         </div>
 
+                        @if (HasStagedEquipmentFix && !IsInactiveEvent)
+                        {
+                            <div class="p-3 rounded-lg bg-amber-50 border border-amber-300 text-xs text-amber-950 space-y-1">
+                                <div class="font-extrabold flex items-center gap-1.5">
+                                    <span>🔧</span>
+                                    <span>Equipment Maintenance Alert — Needs Fix &amp; Replacement</span>
+                                </div>
+                                <p class="text-[11px] text-amber-900">
+                                    @if (CanManageRoster)
+                                    {
+                                        <span>One or more assigned units were sent to maintenance or marked unavailable. Click <strong>Schedule Replacement</strong> on the flagged item below to assign available gear for this event.</span>
+                                    }
+                                    else
+                                    {
+                                        <span>One or more assigned units are currently in maintenance and awaiting replacement scheduling.</span>
+                                    }
+                                </p>
+                            </div>
+                        }
+
                         @if (_stagedEquipment.Count == 0)
                         {
                             <div class="text-xs text-slate-400 italic">No equipment assigned to this event.</div>
@@ -353,8 +411,10 @@
                                 @foreach (var eq in _stagedEquipment)
                                 {
                                     var isReplacingThisEq = string.Equals(_replacingEquipmentId, eq.EquipmentId, StringComparison.OrdinalIgnoreCase);
+                                    var eqStatus = ResolveEquipmentStatus(eq);
+                                    var isEqUnavailable = EquipmentItemModel.IsUnavailableStatus(eqStatus);
 
-                                    <div class="roster-item-row">
+                                    <div class="roster-item-row @(isEqUnavailable ? "border-amber-300 bg-amber-50/70" : "")">
                                         <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
                                             <div class="min-w-0">
                                                 <div class="flex items-center gap-2 flex-wrap">
@@ -364,6 +424,12 @@
                                                     {
                                                         <span class="px-1.5 py-0.5 rounded bg-slate-100 text-slate-600 text-[10px] font-medium">
                                                             @eq.EquipmentType
+                                                        </span>
+                                                    }
+                                                    @if (isEqUnavailable)
+                                                    {
+                                                        <span class="px-2 py-0.5 rounded-full bg-amber-200 text-amber-950 border border-amber-300 text-[10px] font-bold">
+                                                            🔧 @eqStatus — Needs Replacement
                                                         </span>
                                                     }
                                                     @if (eq.IsTaken)
@@ -380,8 +446,8 @@
                                                 <div class="flex items-center gap-1.5 shrink-0">
                                                     <button type="button"
                                                             @onclick="() => BeginReplaceEquipment(eq.EquipmentId)"
-                                                            class="px-2 py-1 rounded border border-slate-300 bg-white hover:bg-slate-100 text-slate-700 text-[11px] font-semibold">
-                                                        Replace
+                                                            class="px-2 py-1 rounded border text-[11px] font-semibold @(isEqUnavailable ? "border-amber-500 bg-amber-600 hover:bg-amber-700 text-white font-bold" : "border-slate-300 bg-white hover:bg-slate-100 text-slate-700")">
+                                                        @(isEqUnavailable ? "Schedule Replacement" : "Replace")
                                                     </button>
                                                     <button type="button"
                                                             @onclick="() => RemoveEquipment(eq.EquipmentId)"
@@ -524,9 +590,24 @@
     [Parameter] public EventCallback<string> OnOpenLinkedEvent { get; set; }
 
     private sealed record StagedCrewItem(string EmployeeId, string FullName, string Specialization);
-    private sealed record StagedEquipmentItem(string EquipmentId, string EquipmentName, string EquipmentType, bool IsTaken);
+    private sealed record StagedEquipmentItem(string EquipmentId, string EquipmentName, string EquipmentType, bool IsTaken, string EquipmentStatus = "Available");
     private sealed record ServiceBadgeItem(string Name, string? Meta);
     private sealed record EquipmentSelectOption(EquipmentItemModel Item, string Label, bool IsDisabled);
+
+    private string ResolveEquipmentStatus(StagedEquipmentItem item)
+    {
+        var live = _allEquipment.FirstOrDefault(e => string.Equals(e.EquipmentID, item.EquipmentId, StringComparison.OrdinalIgnoreCase));
+        if (live != null && !string.IsNullOrWhiteSpace(live.EquipmentStatus))
+            return live.EquipmentStatus;
+        return string.IsNullOrWhiteSpace(item.EquipmentStatus) ? "Available" : item.EquipmentStatus;
+    }
+
+    private bool HasStagedEquipmentFix =>
+        Booking != null &&
+        !Booking.IsConsultation &&
+        !Booking.IsCompleted &&
+        !IsInactiveEvent &&
+        _stagedEquipment.Any(e => EquipmentItemModel.IsUnavailableStatus(ResolveEquipmentStatus(e)));
 
     private string? _loadedBookingId;
     private EventAppointmentDto? _appointmentDetail;
@@ -541,6 +622,9 @@
     private string _selectedAddCrewId = string.Empty;
     private string? _replacingCrewId;
     private string _replaceCrewTargetId = string.Empty;
+    private bool _markReplacedCrewAsSuddenAbsence;
+    private string _suddenAbsenceReason = string.Empty;
+    private readonly HashSet<string> _stagedSuddenAbsentIds = new(StringComparer.OrdinalIgnoreCase);
 
     private string _selectedAddEquipmentId = string.Empty;
     private string? _replacingEquipmentId;
@@ -633,6 +717,9 @@
         _selectedAddCrewId = string.Empty;
         _replacingCrewId = null;
         _replaceCrewTargetId = string.Empty;
+        _markReplacedCrewAsSuddenAbsence = false;
+        _suddenAbsenceReason = string.Empty;
+        _stagedSuddenAbsentIds.Clear();
         _selectedAddEquipmentId = string.Empty;
         _replacingEquipmentId = null;
         _replaceEquipmentTargetId = string.Empty;
@@ -668,7 +755,7 @@
         if (booking.AssignedEquipment != null && booking.AssignedEquipment.Count > 0)
         {
             _stagedEquipment = booking.AssignedEquipment
-                .Select(e => new StagedEquipmentItem(e.EquipmentId, e.EquipmentName, e.EquipmentType, false))
+                .Select(e => new StagedEquipmentItem(e.EquipmentId, e.EquipmentName, e.EquipmentType, false, e.EquipmentStatus))
                 .ToList();
         }
         else if (booking.AssignedEquipmentIds != null && booking.AssignedEquipmentIds.Count > 0)
@@ -702,7 +789,7 @@
         if (detail.AssignedEquipment != null)
         {
             _stagedEquipment = detail.AssignedEquipment
-                .Select(e => new StagedEquipmentItem(e.EquipmentId, e.EquipmentName, e.EquipmentType, e.IsTaken))
+                .Select(e => new StagedEquipmentItem(e.EquipmentId, e.EquipmentName, e.EquipmentType, e.IsTaken, e.EquipmentStatus))
                 .ToList();
         }
 
@@ -868,12 +955,15 @@
     {
         _replacingCrewId = empId;
         _replaceCrewTargetId = string.Empty;
+        _markReplacedCrewAsSuddenAbsence = false;
+        _suddenAbsenceReason = string.Empty;
     }
 
     private void CancelReplaceCrew()
     {
         _replacingCrewId = null;
         _replaceCrewTargetId = string.Empty;
+        _markReplacedCrewAsSuddenAbsence = false;
     }
 
     private void ConfirmReplaceCrew(string oldEmpId)
@@ -890,6 +980,8 @@
             _stagedCrew[idx] = new StagedCrewItem(emp.EmployeeId, emp.FullName, spec);
             if (string.Equals(_stagedTeamLeaderId, oldEmpId, StringComparison.OrdinalIgnoreCase))
                 _stagedTeamLeaderId = emp.EmployeeId;
+            if (_markReplacedCrewAsSuddenAbsence)
+                _stagedSuddenAbsentIds.Add(oldEmpId);
             _hasUnsavedChanges = true;
             _feedbackMessage = null;
         }
@@ -912,7 +1004,7 @@
 
         if (!_stagedEquipment.Any(e => string.Equals(e.EquipmentId, eq.EquipmentID, StringComparison.OrdinalIgnoreCase)))
         {
-            _stagedEquipment.Add(new StagedEquipmentItem(eq.EquipmentID, eq.EquipmentName, eq.EquipmentTypeName, false));
+            _stagedEquipment.Add(new StagedEquipmentItem(eq.EquipmentID, eq.EquipmentName, eq.EquipmentTypeName, false, eq.EquipmentStatus));
             _hasUnsavedChanges = true;
             _feedbackMessage = null;
         }
@@ -957,7 +1049,7 @@
         var idx = _stagedEquipment.FindIndex(e => string.Equals(e.EquipmentId, oldEqId, StringComparison.OrdinalIgnoreCase));
         if (idx >= 0)
         {
-            _stagedEquipment[idx] = new StagedEquipmentItem(eq.EquipmentID, eq.EquipmentName, eq.EquipmentTypeName, false);
+            _stagedEquipment[idx] = new StagedEquipmentItem(eq.EquipmentID, eq.EquipmentName, eq.EquipmentTypeName, false, eq.EquipmentStatus);
             _hasUnsavedChanges = true;
             _feedbackMessage = null;
         }
@@ -1001,7 +1093,10 @@
             {
                 EmployeeIds = _stagedCrew.Select(c => c.EmployeeId).Distinct(StringComparer.OrdinalIgnoreCase).ToList(),
                 TeamLeaderEmployeeId = effectiveLead,
-                EquipmentIds = _stagedEquipment.Select(e => e.EquipmentId).Distinct(StringComparer.OrdinalIgnoreCase).ToList()
+                EquipmentIds = _stagedEquipment.Select(e => e.EquipmentId).Distinct(StringComparer.OrdinalIgnoreCase).ToList(),
+                MarkRemovedAsSuddenAbsence = _stagedSuddenAbsentIds.Count > 0,
+                SuddenAbsenceEmployeeIds = _stagedSuddenAbsentIds.ToList(),
+                SuddenAbsenceReason = _suddenAbsenceReason
             };
 
             var res = await ConsultationApi.UpdateAppointmentRosterAsync(Booking.Id, req);
@@ -1019,7 +1114,8 @@
                 Booking.AssignedPhotographer = string.Join(", ", _stagedCrew.Select(c => c.FullName));
                 Booking.AssignedEquipmentIds = req.EquipmentIds.ToList();
                 Booking.AssignedEquipmentNames = _stagedEquipment.Select(e => e.EquipmentName).ToList();
-                Booking.AssignedEquipment = _stagedEquipment.Select(e => new EventEquipmentSummary(e.EquipmentId, e.EquipmentName, e.EquipmentType)).ToList();
+                Booking.AssignedEquipment = _stagedEquipment.Select(e => new EventEquipmentSummary(e.EquipmentId, e.EquipmentName, e.EquipmentType, ResolveEquipmentStatus(e))).ToList();
+                EquipmentService.NotifyStateChanged();
 
                 try
                 {

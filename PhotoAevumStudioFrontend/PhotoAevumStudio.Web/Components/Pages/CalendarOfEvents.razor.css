@@ -75,6 +75,20 @@
         color: #065f46;
     }
 
+    .metric-pill.equipment-fix-pill {
+        background: #fffbeb;
+        border-color: #fcd34d;
+        color: #92400e;
+        cursor: pointer;
+        font-weight: 700;
+    }
+
+        .metric-pill.equipment-fix-pill.active {
+            background: #d97706;
+            color: #ffffff;
+            border-color: #d97706;
+        }
+
 .btn-create-event {
     background: #111827;
     color: #ffffff;
@@ -448,6 +462,12 @@
         border-left-color: #ef4444;
         background: #fef2f2;
         border-color: #fca5a5;
+    }
+
+    .compact-event-chip.needs-fix-chip {
+        border-left-color: #d97706;
+        background: #fffbeb;
+        border-color: #fcd34d;
     }
 
     .compact-event-chip.is-consultation-chip {
@@ -849,6 +869,14 @@
         font-weight: 700;
     }
 
+    .mini-event-pill.needs-fix,
+    .mini-event-pill.needs-fix-chip {
+        background: #fffbeb;
+        color: #92400e;
+        border-color: #fcd34d;
+        font-weight: 700;
+    }
+
 .mini-more-pill {
     font-size: 0.65rem;
     color: #6b7280;
@@ -1077,12 +1105,20 @@
     background: #fff5f5;
 }
 
+.day-gantt-row.needs-fix-row {
+    background: #fffbeb;
+}
+
 .day-gantt-row.is-consultation-row .gantt-event-meta-cell {
     border-left: 3px solid #0d9488;
 }
 
 .day-gantt-row.conflict-row .gantt-event-meta-cell {
     border-left: 3px solid #ef4444;
+}
+
+.day-gantt-row.needs-fix-row .gantt-event-meta-cell {
+    border-left: 3px solid #d97706;
 }
 
 .gantt-event-meta-cell {

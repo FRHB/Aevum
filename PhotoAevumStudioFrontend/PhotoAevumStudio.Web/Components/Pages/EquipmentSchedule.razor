@@ -9,7 +9,10 @@
 @using PhotoAevumStudio.Web.Services
 @using Microsoft.AspNetCore.Components.Authorization
 @using System.Security.Claims
+@implements IAsyncDisposable
 @inject IScheduleService ScheduleService
+@inject IEquipmentService EquipmentService
+@inject PaymentHubClient PaymentHub
 @inject AuthenticationStateProvider AuthStateProvider
 @inject IUserService UserService
 
@@ -59,6 +62,12 @@ else
                 <span class="px-2.5 py-1 text-xs font-semibold rounded-full bg-amber-50 text-amber-700 border border-amber-200">
                     🛠 @InMaintenanceCount Bench Tech
                 </span>
+            }
+            @if (NeedsFixReservationsCount > 0)
+            {
+                <button type="button" @onclick="ToggleNeedsFixFilter" class="px-2.5 py-1 text-xs font-bold rounded-full border cursor-pointer @(_filterOnlyNeedsFix ? "bg-amber-600 text-white border-amber-600" : "bg-amber-100 text-amber-900 border-amber-300")">
+                    🔧 @NeedsFixReservationsCount Needs Gear Fix
+                </button>
             }
             @if (ConflictCount > 0)
             {
@@ -111,6 +120,7 @@ else
                 <option value="Ready">Ready</option>
                 <option value="In-Use">In-Use</option>
                 <option value="In-Maintenance">In-Maintenance</option>
+                <option value="Needs Replacement">Needs Replacement</option>
             </select>
 
             <input type="text" @bind="_searchQuery" @bind:event="oninput" class="p-1.5 bg-gray-50 border border-gray-200 rounded text-xs w-36 focus:w-48 transition-all" />
@@ -121,6 +131,57 @@ else
             }
         </div>
     </div>
+
+    @if (!string.IsNullOrWhiteSpace(_bannerMessage))
+    {
+        <SystemMessage Message="@_bannerMessage" Severity="@(_bannerIsError ? "error" : "success")" Mode="banner" OnDismiss="() => _bannerMessage = null" />
+    }
+
+    @if (UpcomingNeedsFixReservations.Count > 0)
+    {
+        <div class="rounded-xl border border-amber-300 bg-amber-50/90 px-4 py-3 shadow-2xs space-y-2" role="region" aria-label="Upcoming equipment schedules needing replacement">
+            <div class="flex items-center gap-2">
+                <span class="inline-flex items-center justify-center w-6 h-6 rounded-full bg-amber-200 text-amber-900 text-xs font-bold shrink-0">🔧</span>
+                <div>
+                    <h2 class="text-xs font-extrabold text-amber-950">
+                        Equipment in Maintenance — Upcoming Schedules Need Replacement (@UpcomingNeedsFixReservations.Count)
+                    </h2>
+                    <p class="text-[11px] text-amber-800">
+                        These scheduled reservations reference equipment currently in maintenance or unavailable. Schedule an available replacement unit for the event.
+                    </p>
+                </div>
+            </div>
+            <div class="space-y-1.5">
+                @foreach (var alertRes in UpcomingNeedsFixReservations)
+                {
+                    <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-2 bg-white/90 border border-amber-200 rounded-lg px-3 py-2 text-xs">
+                        <div class="min-w-0">
+                            <div class="flex flex-wrap items-center gap-2">
+                                <span class="font-bold text-slate-900">@alertRes.EquipmentName</span>
+                                <span class="px-1.5 py-0.5 rounded bg-amber-100 text-amber-900 border border-amber-300 text-[10px] font-bold">
+                                    @alertRes.MaintenanceStatus@(!string.IsNullOrWhiteSpace(alertRes.MaintenanceSubStatus) ? $" ({alertRes.MaintenanceSubStatus})" : "")
+                                </span>
+                                <span class="text-slate-400">&bull;</span>
+                                <span class="font-semibold text-slate-800">@alertRes.Date.ToString("ddd, MMM d, yyyy") (@alertRes.FormattedTimeRange)</span>
+                            </div>
+                            <div class="text-[11px] text-slate-600 mt-0.5 truncate">
+                                Event: <strong>@alertRes.ProjectOrClient</strong>
+                                @if (!string.IsNullOrWhiteSpace(alertRes.MaintenanceNotes))
+                                {
+                                    <span class="text-amber-800 ml-1">— @alertRes.MaintenanceNotes</span>
+                                }
+                            </div>
+                        </div>
+                        <button type="button"
+                                @onclick="() => FocusAndOpenReplacementDrawer(alertRes)"
+                                class="px-3 py-1.5 rounded-lg bg-amber-600 hover:bg-amber-700 text-white text-[11px] font-bold shrink-0 transition-colors">
+                            Schedule Replacement
+                        </button>
+                    </div>
+                }
+            </div>
+        </div>
+    }
 
     @* ── 3. MAIN COMPACT TIMELINE MATRIX ──────────────────────────────── *@
     @if (_currentView == ScheduleViewMode.Week)
@@ -147,7 +208,7 @@ else
                                 <td class="p-2.5 border-r border-gray-200">
                                     <div class="flex items-center justify-between">
                                         <div class="font-bold text-gray-900">@eq.Name</div>
-                                        <span class="text-[9px] px-1.5 py-0.2 rounded font-bold @(eq.Status == "Ready" ? "bg-emerald-100 text-emerald-800" : "bg-amber-100 text-amber-800")">
+                                        <span class="text-[9px] px-1.5 py-0.2 rounded font-bold @(eq.Status == "Ready" ? "bg-emerald-100 text-emerald-800" : eq.Status == "In-Use" ? "bg-blue-100 text-blue-800" : eq.Status == "Needs Replacement" ? "bg-rose-100 text-rose-800" : "bg-amber-100 text-amber-800")">
                                             @(eq.Status == "Ready" ? "✓ Ready" : eq.Status)
                                         </span>
                                     </div>
@@ -171,7 +232,11 @@ else
                                                      class="p-1.5 rounded border text-[11px] cursor-pointer transition-all @GetReservationCardStyle(res)">
                                                     <div class="flex items-center justify-between font-bold gap-1">
                                                         <span>@res.FormattedTimeRange</span>
-                                                        @if (res.HasConflict)
+                                                        @if (res.NeedsEquipmentFix)
+                                                        {
+                                                            <span class="text-amber-800 font-extrabold text-[10px]" title="Equipment in Maintenance — Schedule Replacement">🔧 Needs Fix</span>
+                                                        }
+                                                        else if (res.HasConflict)
                                                         {
                                                             <span class="text-rose-700 font-extrabold text-[10px]" title="Conflict!">⚠️</span>
                                                         }
@@ -181,6 +246,12 @@ else
                                                         }
                                                     </div>
                                                     <div class="text-[10px] truncate">@res.ProjectOrClient &bull; 👤 @res.TechnicianInCharge</div>
+                                                    @if (res.NeedsEquipmentFix)
+                                                    {
+                                                        <div class="text-[9px] font-extrabold text-amber-900 uppercase tracking-wide truncate mt-0.5">
+                                                            Schedule replacement →
+                                                        </div>
+                                                    }
                                                 </div>
                                             }
                                         </div>
@@ -207,15 +278,15 @@ else
                 <div class="space-y-2">
                     @foreach (var res in listReservations)
                     {
-                        <div @onclick="() => OpenDetailDrawer(res)" class="p-2.5 border rounded-lg flex flex-wrap items-center justify-between gap-2 cursor-pointer hover:bg-gray-50 @(res.HasConflict ? "border-rose-300 bg-rose-50/40" : "border-gray-200")">
+                        <div @onclick="() => OpenDetailDrawer(res)" class="p-2.5 border rounded-lg flex flex-wrap items-center justify-between gap-2 cursor-pointer hover:bg-gray-50 @(res.NeedsEquipmentFix ? "border-amber-300 bg-amber-50/50" : res.HasConflict ? "border-rose-300 bg-rose-50/40" : "border-gray-200")">
                             <div class="flex flex-wrap items-center gap-3">
                                 <span class="font-mono text-[11px] px-2 py-0.5 rounded bg-gray-100 text-gray-700 font-semibold">@res.Date.ToString("MMM d")</span>
                                 <span class="font-bold text-xs">@res.FormattedTimeRange</span>
                                 <span class="font-bold text-xs text-slate-900">@res.EquipmentName</span>
                                 <span class="text-xs text-gray-500">@res.ProjectOrClient &bull; 👤 @res.TechnicianInCharge &bull; 📍 @res.Location</span>
                             </div>
-                            <span class="text-xs px-2 py-0.5 rounded @(res.HasConflict ? "bg-rose-100 text-rose-800" : "bg-emerald-50 text-emerald-800") font-semibold">
-                                @(res.HasConflict ? "⚠️ Same-Day Conflict" : "🔒 Booked All Day")
+                            <span class="text-xs px-2 py-0.5 rounded @(res.NeedsEquipmentFix ? "bg-amber-100 text-amber-900 border border-amber-300" : res.HasConflict ? "bg-rose-100 text-rose-800" : "bg-emerald-50 text-emerald-800") font-semibold">
+                                @(res.NeedsEquipmentFix ? $"🔧 {res.MaintenanceStatus} — Needs Fix / Schedule Equipment" : res.HasConflict ? "⚠️ Same-Day Conflict" : "🔒 Booked All Day")
                             </span>
                         </div>
                     }
@@ -247,6 +318,44 @@ else
                         <div><strong class="text-gray-500">Schedule:</strong> @_selectedReservation.Date.ToString("ddd, MMM d, yyyy") (@_selectedReservation.FormattedTimeRange)</div>
                         <div><strong class="text-gray-500">Location:</strong> @_selectedReservation.Location</div>
                         <div><strong class="text-gray-500">Event Status:</strong> @_selectedReservation.EventStatus</div>
+                        @if (_selectedReservation.NeedsEquipmentFix)
+                        {
+                            <div class="p-3 rounded-lg bg-amber-50 border border-amber-300 text-amber-950 space-y-2">
+                                <div class="font-extrabold flex items-center gap-1.5">
+                                    <span>🔧</span>
+                                    <span>Equipment in @_selectedReservation.MaintenanceStatus@(!string.IsNullOrWhiteSpace(_selectedReservation.MaintenanceSubStatus) ? $" ({_selectedReservation.MaintenanceSubStatus})" : "")</span>
+                                </div>
+                                @if (!string.IsNullOrWhiteSpace(_selectedReservation.MaintenanceNotes))
+                                {
+                                    <p class="text-[11px] text-amber-900">@_selectedReservation.MaintenanceNotes</p>
+                                }
+                                <div class="pt-1 border-t border-amber-200 space-y-1.5">
+                                    <label class="block text-[11px] font-bold text-amber-950">Schedule Replacement Equipment</label>
+                                    @if (!string.IsNullOrWhiteSpace(_drawerErrorMessage))
+                                    {
+                                        <div class="p-1.5 rounded bg-rose-50 border border-rose-200 text-rose-700 text-[11px]">@_drawerErrorMessage</div>
+                                    }
+                                    @{
+                                        var replacementOptions = GetReplacementEquipmentOptions(_selectedReservation);
+                                    }
+                                    <select @bind="_replacementEquipmentId" class="w-full p-1.5 bg-white border border-amber-300 rounded text-xs">
+                                        <option value="">Select available replacement gear...</option>
+                                        @foreach (var opt in replacementOptions)
+                                        {
+                                            <option value="@opt.Id" disabled="@opt.IsBooked">
+                                                @opt.Name (@opt.SerialNumber)@(opt.IsBooked ? " — Booked Today" : "")
+                                            </option>
+                                        }
+                                    </select>
+                                    <button type="button"
+                                            disabled="@string.IsNullOrWhiteSpace(_replacementEquipmentId)"
+                                            @onclick="ScheduleReplacementForSelectedAsync"
+                                            class="w-full py-1.5 rounded bg-amber-600 hover:bg-amber-700 disabled:opacity-40 text-white font-bold text-xs transition-colors">
+                                        Schedule Replacement Equipment
+                                    </button>
+                                </div>
+                            </div>
+                        }
                         @if (!string.IsNullOrWhiteSpace(_selectedReservation.Notes))
                         {
                             <div><strong class="text-gray-500">Notes:</strong> <span class="italic text-gray-600">@_selectedReservation.Notes</span></div>
@@ -277,8 +386,10 @@ else
                             @foreach (var eq in EquipmentResources)
                             {
                                 var isBooked = IsEquipmentBookedOnDate(eq.Id, _newReservationDate);
-                                <option value="@eq.Id" disabled="@isBooked">
-                                    @eq.Name (@eq.SerialNumber)@(isBooked ? " — Unavailable (Booked Today)" : "")
+                                var isUnavailable = EquipmentItemModel.IsUnavailableStatus(eq.Status);
+                                var isDisabled = isBooked || isUnavailable;
+                                <option value="@eq.Id" disabled="@isDisabled">
+                                    @eq.Name (@eq.SerialNumber)@(isUnavailable ? $" — Unavailable ({eq.Status})" : isBooked ? " — Unavailable (Booked Today)" : "")
                                 </option>
                             }
                         </select>
@@ -340,6 +451,11 @@ else
         }
 
         _isUnauthorized = EmployeeRoleHelper.IsPhotographerOrCreative(_currentUser, UserService);
+        if (!_isUnauthorized)
+        {
+            EquipmentService.OnChange += HandleEquipmentServiceChange;
+            PaymentHub.OnEventStatusChanged += HandleHubEventStatusChangedAsync;
+        }
     }
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
@@ -347,8 +463,33 @@ else
         if (!firstRender || _hasLoadedInitialData) return;
         _hasLoadedInitialData = true;
         await RefreshEquipmentDataAsync();
+        if (!_isUnauthorized)
+        {
+            try
+            {
+                await PaymentHub.EnsureLiveMonitorStartedAsync();
+            }
+            catch
+            {
+            }
+        }
         await InvokeAsync(StateHasChanged);
     }
+
+    private void HandleEquipmentServiceChange()
+    {
+        _ = InvokeAsync(async () =>
+        {
+            await RefreshEquipmentDataAsync();
+            StateHasChanged();
+        });
+    }
+
+    private Task HandleHubEventStatusChangedAsync(EventStatusChangedMessage _) => InvokeAsync(async () =>
+    {
+        await RefreshEquipmentDataAsync();
+        StateHasChanged();
+    });
 
     private async Task RefreshEquipmentDataAsync()
     {
@@ -364,6 +505,10 @@ else
             (ScheduleService.GetEquipmentResources(), ScheduleService.GetEquipmentReservations()));
         EquipmentResources = equipment;
         AllReservations = reservations;
+        if (_selectedReservation != null)
+        {
+            _selectedReservation = AllReservations.FirstOrDefault(r => string.Equals(r.Id, _selectedReservation.Id, StringComparison.OrdinalIgnoreCase));
+        }
         _isLoadingSchedule = false;
     }
 
@@ -373,8 +518,13 @@ else
     private string _selectedCategoryFilter = string.Empty;
     private string _selectedStatusFilter = string.Empty;
     private bool _filterOnlyConflicts = false;
+    private bool _filterOnlyNeedsFix = false;
 
     private EquipmentReservationModel? _selectedReservation;
+    private string _replacementEquipmentId = string.Empty;
+    private string? _drawerErrorMessage;
+    private string? _bannerMessage;
+    private bool _bannerIsError;
     private bool _isCreateModalOpen;
     private string? _modalErrorMessage;
 
@@ -387,7 +537,14 @@ else
     private List<EquipmentReservationModel> AllReservations = new();
 
     private int ConflictCount => AllReservations.Count(r => r.HasConflict);
-    private int InMaintenanceCount => EquipmentResources.Count(e => e.Status == "In-Maintenance" || e.Status == "Calibration Due");
+    private int NeedsFixReservationsCount => UpcomingNeedsFixReservations.Count;
+    private List<EquipmentReservationModel> UpcomingNeedsFixReservations =>
+        AllReservations
+            .Where(r => r.NeedsEquipmentFix && r.Date.Date >= DateTime.Today)
+            .OrderBy(r => r.Date.Date)
+            .ThenBy(r => r.StartTime)
+            .ToList();
+    private int InMaintenanceCount => EquipmentResources.Count(e => e.Status == "In-Maintenance" || e.Status == "Calibration Due" || e.Status == "Needs Replacement");
     private int ThisWeekReservationsCount => AllReservations.Count(r => WeekDays.Any(w => w.Date == r.Date.Date));
     private double ThisWeekHoursCount => AllReservations.Where(r => WeekDays.Any(w => w.Date == r.Date.Date)).Sum(r => r.DurationHours);
 
@@ -395,7 +552,8 @@ else
         !string.IsNullOrEmpty(_searchQuery) ||
         !string.IsNullOrEmpty(_selectedCategoryFilter) ||
         !string.IsNullOrEmpty(_selectedStatusFilter) ||
-        _filterOnlyConflicts;
+        _filterOnlyConflicts ||
+        _filterOnlyNeedsFix;
 
     private List<DateTime> WeekDays
     {
@@ -440,9 +598,16 @@ else
         {
             var query = AllReservations.AsEnumerable();
             if (!string.IsNullOrEmpty(_selectedStatusFilter))
-                query = query.Where(r => r.MaintenanceStatus.Equals(_selectedStatusFilter, StringComparison.OrdinalIgnoreCase));
+            {
+                query = query.Where(r =>
+                    r.MaintenanceStatus.Equals(_selectedStatusFilter, StringComparison.OrdinalIgnoreCase) ||
+                    (_selectedStatusFilter.Equals("In-Maintenance", StringComparison.OrdinalIgnoreCase) &&
+                     r.MaintenanceStatus.Equals("Maintenance", StringComparison.OrdinalIgnoreCase)));
+            }
             if (_filterOnlyConflicts)
                 query = query.Where(r => r.HasConflict);
+            if (_filterOnlyNeedsFix)
+                query = query.Where(r => r.NeedsEquipmentFix);
             return query;
         }
     }
@@ -474,6 +639,7 @@ else
     private void JumpToToday() => _selectedDate = DateTime.Today;
 
     private void ToggleConflictFilter() => _filterOnlyConflicts = !_filterOnlyConflicts;
+    private void ToggleNeedsFixFilter() => _filterOnlyNeedsFix = !_filterOnlyNeedsFix;
 
     private void ClearFilters()
     {
@@ -481,10 +647,28 @@ else
         _selectedCategoryFilter = string.Empty;
         _selectedStatusFilter = string.Empty;
         _filterOnlyConflicts = false;
+        _filterOnlyNeedsFix = false;
     }
 
-    private void OpenDetailDrawer(EquipmentReservationModel res) => _selectedReservation = res;
-    private void CloseDetailDrawer() => _selectedReservation = null;
+    private void OpenDetailDrawer(EquipmentReservationModel res)
+    {
+        _selectedReservation = res;
+        _replacementEquipmentId = string.Empty;
+        _drawerErrorMessage = null;
+    }
+
+    private void FocusAndOpenReplacementDrawer(EquipmentReservationModel res)
+    {
+        _selectedDate = res.Date.Date;
+        OpenDetailDrawer(res);
+    }
+
+    private void CloseDetailDrawer()
+    {
+        _selectedReservation = null;
+        _replacementEquipmentId = string.Empty;
+        _drawerErrorMessage = null;
+    }
 
     private async Task DeleteSelectedReservation()
     {
@@ -492,8 +676,58 @@ else
         {
             ScheduleService.DeleteEquipmentReservation(_selectedReservation.Id);
             _selectedReservation = null;
+            EquipmentService.NotifyStateChanged();
             await RefreshEquipmentDataAsync();
         }
+    }
+
+    private sealed record ReplacementOption(string Id, string Name, string SerialNumber, bool IsBooked);
+
+    private List<ReplacementOption> GetReplacementEquipmentOptions(EquipmentReservationModel target)
+    {
+        return EquipmentResources
+            .Where(e =>
+                !string.Equals(e.Id, target.EquipmentId, StringComparison.OrdinalIgnoreCase) &&
+                !EquipmentItemModel.IsUnavailableStatus(e.Status))
+            .Select(e => new ReplacementOption(
+                e.Id,
+                e.Name,
+                e.SerialNumber,
+                IsEquipmentBookedOnDate(e.Id, target.Date)))
+            .ToList();
+    }
+
+    private async Task ScheduleReplacementForSelectedAsync()
+    {
+        if (_selectedReservation == null || string.IsNullOrWhiteSpace(_replacementEquipmentId))
+            return;
+
+        _drawerErrorMessage = null;
+        var actorId = _currentUser?.FindFirst("studio_id")?.Value
+            ?? _currentUser?.FindFirst(ClaimTypes.NameIdentifier)?.Value
+            ?? "ADM-001";
+
+        var oldName = _selectedReservation.EquipmentName;
+        var (success, error) = ScheduleService.ReplaceReservationEquipment(
+            _selectedReservation.Id,
+            _selectedReservation.EventAppointmentId,
+            _selectedReservation.EquipmentId,
+            _replacementEquipmentId,
+            actorId);
+
+        if (!success)
+        {
+            _drawerErrorMessage = error ?? "Could not schedule replacement equipment.";
+            return;
+        }
+
+        var replacement = EquipmentResources.FirstOrDefault(e => string.Equals(e.Id, _replacementEquipmentId, StringComparison.OrdinalIgnoreCase));
+        _bannerIsError = false;
+        _bannerMessage = $"Scheduled '{replacement?.Name ?? _replacementEquipmentId}' in place of '{oldName}' for {_selectedReservation.ProjectOrClient}.";
+        _selectedReservation = null;
+        _replacementEquipmentId = string.Empty;
+        EquipmentService.NotifyStateChanged();
+        await RefreshEquipmentDataAsync();
     }
 
     private IEnumerable<EquipmentReservationModel> GetReservationsForActiveView() => _currentView switch
@@ -525,7 +759,9 @@ else
     private void OpenCreateModal()
     {
         _newReservationDate = _selectedDate;
-        var firstAvailable = EquipmentResources.FirstOrDefault(e => !IsEquipmentBookedOnDate(e.Id, _newReservationDate));
+        var firstAvailable = EquipmentResources.FirstOrDefault(e =>
+            !EquipmentItemModel.IsUnavailableStatus(e.Status) &&
+            !IsEquipmentBookedOnDate(e.Id, _newReservationDate));
         _newReservation = new EquipmentReservationModel
         {
             EquipmentId = firstAvailable?.Id ?? string.Empty,
@@ -550,6 +786,13 @@ else
         if (string.IsNullOrWhiteSpace(_newReservation.EquipmentId))
         {
             _modalErrorMessage = "Please select an available equipment unit.";
+            return;
+        }
+
+        var selectedEq = EquipmentResources.FirstOrDefault(e => string.Equals(e.Id, _newReservation.EquipmentId, StringComparison.OrdinalIgnoreCase));
+        if (selectedEq != null && EquipmentItemModel.IsUnavailableStatus(selectedEq.Status))
+        {
+            _modalErrorMessage = $"Equipment '{selectedEq.Name}' is currently '{selectedEq.Status}' and cannot be reserved.";
             return;
         }
 
@@ -581,13 +824,23 @@ else
 
         _isCreateModalOpen = false;
         _modalErrorMessage = null;
+        EquipmentService.NotifyStateChanged();
         await RefreshEquipmentDataAsync();
     }
 
     private string GetReservationCardStyle(EquipmentReservationModel res)
     {
+        if (res.NeedsEquipmentFix)
+            return "bg-amber-50 border-amber-400 text-amber-950 ring-1 ring-amber-300";
         if (res.HasConflict)
             return "bg-rose-50 border-rose-300 text-rose-950";
         return "bg-blue-50/70 border-blue-200 text-blue-950";
+    }
+
+    public ValueTask DisposeAsync()
+    {
+        EquipmentService.OnChange -= HandleEquipmentServiceChange;
+        PaymentHub.OnEventStatusChanged -= HandleHubEventStatusChangedAsync;
+        return ValueTask.CompletedTask;
     }
 }

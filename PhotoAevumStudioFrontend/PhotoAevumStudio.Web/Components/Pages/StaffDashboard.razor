@@ -40,16 +40,22 @@
         </p>
     </div>
     <div class="flex items-center gap-2 shrink-0">
+        @if (IsOfficeClerkLeaveMode)
+        {
+            <span class="px-3 py-1.5 rounded-lg bg-teal-50 border border-teal-200 text-teal-900 text-[11px] font-bold">
+                Remaining Paid Leaves: @($"{leaveBalanceSummary.TotalRemainingPaidDays:0.0}") days (VL: @($"{leaveBalanceSummary.VacationLeaveRemaining:0.0}") left &bull; SL: @($"{leaveBalanceSummary.SickLeaveRemaining:0.0}") left)
+            </span>
+        }
         <button type="button"
-                @onclick="() => isLeaveModalOpen = true"
+                @onclick="OpenLeaveModal"
                 class="px-4 py-2 bg-slate-900 hover:bg-black text-white text-xs font-bold rounded-lg shadow-xs transition-colors">
             Request for Leave
         </button>
     </div>
 </header>
 
-@* ── TEAM LEADER TOP PILL-BOX CONTAINER (ACTIVE / STARTED EVENT) ──── *@
-@if (!isClerk && (teamLeaderEvents.Any(TeamLeaderMonitorSelector.IsOngoingOrInProcess) || _recentlyCompletedTeamLeadEvent != null))
+@* ── TEAM LEADER / CREW TOP PILL-BOX CONTAINER (ACTIVE / LATEST EVENT) ── *@
+@if (!isClerk && (teamLeaderEvents.Any() || _recentlyCompletedTeamLeadEvent != null))
 {
     <TeamLeaderActiveEventPill ActiveEvents="@teamLeaderEvents"
                                RecentlyCompletedEvent="@_recentlyCompletedTeamLeadEvent"
@@ -61,6 +67,14 @@
                                StaffEquipmentReservations="@_staffEquipmentReservations"
                                OnDismissCompleted="HandleDismissCompletedTeamLeadAsync"
                                OnWorkflowUpdated="HandleTeamLeadPillWorkflowUpdatedAsync" />
+}
+
+@if (!string.IsNullOrWhiteSpace(teamLeaderActionMessage))
+{
+    <div class="mb-4 px-3.5 py-2.5 rounded-lg bg-emerald-50 border border-emerald-200 text-emerald-800 text-xs font-semibold flex items-center justify-between gap-2">
+        <span>✓ @teamLeaderActionMessage</span>
+        <button type="button" @onclick="() => teamLeaderActionMessage = null" class="text-emerald-700 font-bold">✕</button>
+    </div>
 }
 
 @* ── OFFICE CLERK: STACKED CONCURRENT EVENTS & VERIFY CASH ────────── *@
@@ -78,471 +92,12 @@
         </button>
     </div>
 }
-
-@* ── TEAM LEADER EVENT MONITOR (UPCOMING & ONGOING ONLY + PROCESS) ─ *@
-@if (teamLeaderEvents.Any())
+else if (!string.IsNullOrWhiteSpace(teamLeaderErrorMessage))
 {
-    var ongoingTlCount = teamLeaderEvents.Count(e => TeamLeaderMonitorSelector.IsOngoingOrInProcess(e));
-    var upcomingTlCount = teamLeaderEvents.Count(e => !TeamLeaderMonitorSelector.IsOngoingOrInProcess(e));
-    var filteredTlEvents = _teamLeaderMonitorFilter switch
-    {
-        "Ongoing" => teamLeaderEvents.Where(e => TeamLeaderMonitorSelector.IsOngoingOrInProcess(e)).ToList(),
-        "Upcoming" => teamLeaderEvents.Where(e => !TeamLeaderMonitorSelector.IsOngoingOrInProcess(e)).ToList(),
-        _ => teamLeaderEvents
-    };
-
-    <section class="bg-white rounded-xl border border-teal-200 shadow-sm p-6 mb-6" aria-label="Team Leader Ongoing Events">
-        <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 pb-3 border-b border-slate-100 mb-4">
-            <div>
-                <div class="flex flex-wrap items-center gap-2 mb-1">
-                    <span class="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider bg-teal-100 text-teal-800">
-                        <span class="w-2 h-2 rounded-full bg-teal-600 animate-pulse"></span>
-                        Team Leader Event Monitor &bull; My Upcoming &amp; Ongoing Schedule
-                    </span>
-                    <span class="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-800">@ongoingTlCount Ongoing</span>
-                    <span class="px-2 py-0.5 rounded-full text-[10px] font-bold bg-sky-100 text-sky-800">@upcomingTlCount Upcoming</span>
-                </div>
-                <h2 class="text-base font-extrabold text-slate-900">Event Execution Workflow &amp; Settlement</h2>
-                <p class="text-xs text-slate-500">Shows only your upcoming and ongoing Team Lead events and live event process: Booked &rarr; Preparing (equipment checklist) &rarr; Ongoing (Event Started) &rarr; Event Done &rarr; Cash / QR Settlement.</p>
-            </div>
-            <div class="flex items-center gap-2 shrink-0">
-                <a href="/staff/team-lead-monitor" class="px-3 py-1.5 rounded-lg bg-teal-700 hover:bg-teal-800 text-white text-xs font-bold shadow-2xs">
-                    Open Full Monitor &rarr;
-                </a>
-                <button type="button" @onclick="RefreshTeamLeaderEventsAsync" class="px-3 py-1.5 rounded-lg border border-slate-200 hover:bg-slate-50 text-xs font-semibold text-slate-700">
-                    Refresh Status
-                </button>
-            </div>
-        </div>
-
-        <div class="flex flex-wrap items-center gap-2 mb-4">
-            <button type="button"
-                    @onclick='() => _teamLeaderMonitorFilter = "All"'
-                    class="px-3 py-1 rounded-full text-[11px] font-bold border transition-all @(_teamLeaderMonitorFilter == "All" ? "bg-slate-900 text-white border-slate-900" : "bg-slate-50 text-slate-600 border-slate-200 hover:bg-slate-100")">
-                All Upcoming &amp; Ongoing (@teamLeaderEvents.Count)
-            </button>
-            <button type="button"
-                    @onclick='() => _teamLeaderMonitorFilter = "Ongoing"'
-                    class="px-3 py-1 rounded-full text-[11px] font-bold border transition-all @(_teamLeaderMonitorFilter == "Ongoing" ? "bg-teal-700 text-white border-teal-700" : "bg-slate-50 text-slate-600 border-slate-200 hover:bg-slate-100")">
-                Ongoing / In Process (@ongoingTlCount)
-            </button>
-            <button type="button"
-                    @onclick='() => _teamLeaderMonitorFilter = "Upcoming"'
-                    class="px-3 py-1 rounded-full text-[11px] font-bold border transition-all @(_teamLeaderMonitorFilter == "Upcoming" ? "bg-sky-700 text-white border-sky-700" : "bg-slate-50 text-slate-600 border-slate-200 hover:bg-slate-100")">
-                Upcoming (@upcomingTlCount)
-            </button>
-        </div>
-
-        @if (!string.IsNullOrWhiteSpace(teamLeaderActionMessage))
-        {
-            <div class="mb-4 px-3.5 py-2.5 rounded-lg bg-emerald-50 border border-emerald-200 text-emerald-800 text-xs font-semibold">
-                @teamLeaderActionMessage
-            </div>
-        }
-        @if (!string.IsNullOrWhiteSpace(teamLeaderErrorMessage))
-        {
-            <div class="mb-4 px-3.5 py-2.5 rounded-lg bg-red-50 border border-red-200 text-red-700 text-xs font-semibold">
-                @teamLeaderErrorMessage
-            </div>
-        }
-
-        @if (!filteredTlEvents.Any())
-        {
-            <div class="py-6 text-center text-xs text-slate-500 bg-slate-50 rounded-xl border border-dashed border-slate-200">
-                No @(_teamLeaderMonitorFilter.ToLowerInvariant()) Team Lead events at the moment.
-            </div>
-        }
-        else
-        {
-        <div class="space-y-4">
-            @foreach (var (tlEv, idx) in filteredTlEvents.Select((e, i) => (e, i)))
-            {
-                var isInProcess = TeamLeaderMonitorSelector.IsOngoingOrInProcess(tlEv);
-                var processSteps = TeamLeaderMonitorSelector.GetProcessSteps(tlEv);
-                var tlEndTime = tlEv.EventEndTime.HasValue && tlEv.EventEndTime.Value > tlEv.EventTime
-                    ? tlEv.EventEndTime.Value
-                    : tlEv.EventTime.AddMinutes(Math.Max(60, tlEv.DurationMinutes));
-                var isPreparing = string.Equals(tlEv.EventStatus, "Preparation", StringComparison.OrdinalIgnoreCase)
-                                  || string.Equals(tlEv.EventStatus, "Preparing", StringComparison.OrdinalIgnoreCase)
-                                  || string.Equals(tlEv.EventStatus, "Dispatch", StringComparison.OrdinalIgnoreCase);
-                var isOngoing = string.Equals(tlEv.EventStatus, "Ongoing", StringComparison.OrdinalIgnoreCase)
-                                || string.Equals(tlEv.EventStatus, "On Going", StringComparison.OrdinalIgnoreCase);
-                var isEventDone = string.Equals(tlEv.EventStatus, "Event Done", StringComparison.OrdinalIgnoreCase)
-                                  || string.Equals(tlEv.EventStatus, "Post Event", StringComparison.OrdinalIgnoreCase);
-                var isCashPendingVerif = string.Equals(tlEv.EventStatus, "Payment Verification (Cash)", StringComparison.OrdinalIgnoreCase)
-                                         || string.Equals(tlEv.EventStatus, "Pending Verification", StringComparison.OrdinalIgnoreCase)
-                                         || string.Equals(tlEv.EventStatus, "Paid Cash Pending Verification", StringComparison.OrdinalIgnoreCase)
-                                         || string.Equals(tlEv.FinalPaymentStatus, "Payment Verification (Cash)", StringComparison.OrdinalIgnoreCase)
-                                         || string.Equals(tlEv.FinalPaymentStatus, "Pending Verification", StringComparison.OrdinalIgnoreCase);
-                var isQrPaid = string.Equals(tlEv.FinalPaymentStatus, "Payment Verification (QR:Paid)", StringComparison.OrdinalIgnoreCase)
-                               || (string.Equals(tlEv.FinalPaymentMethod, "Xendit_QR", StringComparison.OrdinalIgnoreCase)
-                                   && (string.Equals(tlEv.FinalPaymentStatus, "Paid", StringComparison.OrdinalIgnoreCase)
-                                       || string.Equals(tlEv.EventStatus, "Completed", StringComparison.OrdinalIgnoreCase)
-                                       || string.Equals(tlEv.EventStatus, "Complete", StringComparison.OrdinalIgnoreCase)
-                                       || string.Equals(tlEv.EventStatus, "Shot", StringComparison.OrdinalIgnoreCase)));
-                var isFinalPaid = isQrPaid
-                                  || string.Equals(tlEv.FinalPaymentStatus, "Paid", StringComparison.OrdinalIgnoreCase)
-                                  || string.Equals(tlEv.EventStatus, "Completed", StringComparison.OrdinalIgnoreCase)
-                                  || string.Equals(tlEv.EventStatus, "Complete", StringComparison.OrdinalIgnoreCase)
-                                  || string.Equals(tlEv.EventStatus, "Shot", StringComparison.OrdinalIgnoreCase);
-                var isQrPending = !isFinalPaid && !isCashPendingVerif
-                                  && (string.Equals(tlEv.FinalPaymentStatus, "Payment Verification (QR:Pending Payment)", StringComparison.OrdinalIgnoreCase)
-                                      || (string.Equals(tlEv.FinalPaymentMethod, "Xendit_QR", StringComparison.OrdinalIgnoreCase)
-                                          && !string.IsNullOrWhiteSpace(tlEv.FinalPaymentReferenceId)));
-                var isPrePrep = !isPreparing && !isOngoing && !isEventDone && !isCashPendingVerif && !isQrPending && !isFinalPaid;
-                var isSettlementUnlocked = (isEventDone || string.Equals(tlEv.EventStatus, "Pending Payment", StringComparison.OrdinalIgnoreCase))
-                                           && !isCashPendingVerif && !isQrPending && !isFinalPaid;
-                var canSelectArrival = isPrePrep || isPreparing;
-                var canStartEvent = isPreparing;
-                var canMarkDone = isOngoing;
-                _selectedArrivalByEvent.TryGetValue(tlEv.EventAppointmentId, out var selectedArrival);
-                var finalRefId = string.IsNullOrWhiteSpace(tlEv.FinalPaymentReferenceId) ? $"{tlEv.EventAppointmentId}-FINAL" : tlEv.FinalPaymentReferenceId;
-                var postEventAt = tlEv.PostEventTriggerAt ?? tlEv.EventDate.ToDateTime(tlEv.EventTime).AddHours(1);
-
-                <article class="rounded-xl border @(idx == 0 ? "ring-1 ring-teal-300" : "") @(isFinalPaid ? "border-emerald-200 bg-emerald-50/30" : isCashPendingVerif ? "border-amber-200 bg-amber-50/30" : "border-slate-200 bg-slate-50/60") p-5 space-y-4">
-                    <div class="flex flex-col md:flex-row md:items-start md:justify-between gap-3">
-                        <div>
-                            <div class="flex flex-wrap items-center gap-2">
-                                <span class="px-2 py-0.5 rounded text-[10px] font-extrabold uppercase @(isInProcess ? "bg-teal-700 text-white" : "bg-sky-100 text-sky-800 border border-sky-200")">
-                                    @(isInProcess ? "Ongoing / In Process" : "Upcoming")
-                                </span>
-                                <span class="font-mono text-[11px] font-bold px-2 py-0.5 rounded bg-slate-900 text-white">#@tlEv.EventAppointmentId</span>
-                                <h3 class="text-sm font-extrabold text-slate-900">@tlEv.EventName</h3>
-                                <span class="px-2.5 py-0.5 rounded-full text-[11px] font-bold @GetTeamLeaderStatusBadgeClass(tlEv)">
-                                    @GetTeamLeaderDisplayStatus(tlEv, isCashPendingVerif, isFinalPaid, isQrPending, isQrPaid)
-                                </span>
-                                @if (isQrPaid)
-                                {
-                                    <span class="px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-emerald-100 text-emerald-900 border border-emerald-200">
-                                        Payment Verification (QR:Paid)
-                                    </span>
-                                }
-                            </div>
-                            <div class="text-xs text-slate-600 mt-1.5 flex flex-wrap gap-x-4 gap-y-1">
-                                <span>Client: <strong class="text-slate-800">@tlEv.CustomerName</strong> @(!string.IsNullOrWhiteSpace(tlEv.CustomerEmail) ? $"({tlEv.CustomerEmail})" : "")</span>
-                                @if (!string.IsNullOrWhiteSpace(tlEv.CustomerPhone))
-                                {
-                                    <span>Phone: <strong class="font-mono">@tlEv.CustomerPhone</strong></span>
-                                }
-                                <span>Schedule: <strong>@tlEv.EventDate.ToString("MMM dd, yyyy")</strong> &bull; @DateTime.Today.Add(tlEv.EventTime.ToTimeSpan()).ToString("h:mm tt") – @DateTime.Today.Add(tlEndTime.ToTimeSpan()).ToString("h:mm tt")</span>
-                                @if (!string.IsNullOrWhiteSpace(tlEv.EventLocation))
-                                {
-                                    <span>Location: <strong class="text-slate-800">@tlEv.EventLocation</strong></span>
-                                }
-                                <span>Final Balance Due: <strong class="text-slate-900 font-mono">₱@tlEv.FinalBalanceAmount.ToString("N2")</strong></span>
-                            </div>
-                            @if (!string.IsNullOrWhiteSpace(tlEv.EventDescription))
-                            {
-                                <p class="text-[11px] text-slate-500 mt-1">Details / Notes: @tlEv.EventDescription</p>
-                            }
-                            @if (tlEv.SelectedServices.Any())
-                            {
-                                <div class="text-[11px] text-slate-500 mt-1 flex flex-wrap gap-1.5 items-center">
-                                    <span>Services:</span>
-                                    @foreach (var svc in tlEv.SelectedServices)
-                                    {
-                                        <span class="px-2 py-0.5 rounded-full bg-teal-50 border border-teal-200 text-teal-800 font-semibold">
-                                            @svc.ServiceName @(svc.Quantity > 1 ? $"×{svc.Quantity}" : "")
-                                        </span>
-                                    }
-                                </div>
-                            }
-                            @if (tlEv.AssignedEmployees.Any())
-                            {
-                                <div class="text-[11px] text-slate-500 mt-1 flex flex-wrap gap-1.5 items-center">
-                                    <span>Crew:</span>
-                                    @foreach (var crew in tlEv.AssignedEmployees)
-                                    {
-                                        <span class="px-2 py-0.5 rounded bg-white border border-slate-200 text-slate-700 font-medium">
-                                            @crew.EmployeeName @(crew.IsTeamLeader ? "★" : "")
-                                        </span>
-                                    }
-                                </div>
-                            }
-                        </div>
-                        <div class="flex items-center gap-2 shrink-0">
-                            @if (isPrePrep)
-                            {
-                                <button type="button"
-                                        disabled="@isUpdatingTeamLeaderStage"
-                                        @onclick="() => StartTeamLeaderEventIntoTopPillAsync(tlEv)"
-                                        class="px-4 py-2 rounded-full bg-teal-700 hover:bg-teal-800 disabled:opacity-50 text-white text-xs font-extrabold shadow-sm transition-all">
-                                    ▶ Start Event
-                                </button>
-                            }
-                            else if (!isFinalPaid)
-                            {
-                                <button type="button"
-                                        @onclick="() => FocusTeamLeaderTopPill(tlEv.EventAppointmentId)"
-                                        class="px-3.5 py-1.5 rounded-full border border-teal-300 bg-teal-50 hover:bg-teal-100 text-teal-900 text-xs font-bold transition-all">
-                                    View in Top Pill ↑
-                                </button>
-                            }
-                        </div>
-                    </div>
-
-                    @* ── Event Process Monitor Stepper ───────────────────────────── *@
-                    <div aria-label="Event process progress">
-                        <div class="text-[10px] font-bold uppercase tracking-wider text-slate-500 mb-1.5">Event Process</div>
-                        <div class="grid grid-cols-2 sm:grid-cols-5 gap-2">
-                            @foreach (var step in processSteps)
-                            {
-                                var boxClass = step.State switch
-                                {
-                                    "done" => "bg-emerald-100 text-emerald-900 border-emerald-300",
-                                    "active-amber" => "bg-amber-200 text-amber-950 border-amber-400 ring-1 ring-amber-400",
-                                    "active" => "bg-teal-700 text-white border-teal-700 shadow-2xs",
-                                    _ => "bg-white text-slate-400 border-slate-200"
-                                };
-                                <div class="px-2.5 py-2 rounded-lg border text-[11px] font-bold text-center flex items-center justify-center gap-1 @boxClass">
-                                    @if (step.State == "done")
-                                    {
-                                        <span>✓</span>
-                                    }
-                                    <span>@step.Label</span>
-                                </div>
-                            }
-                        </div>
-                    </div>
-
-                    @if (!isCashPendingVerif && !isQrPending && !isFinalPaid)
-                    {
-                        <div>
-                            <div class="flex flex-wrap items-center justify-between gap-2 mb-2">
-                                <span class="text-[11px] font-bold uppercase tracking-wider text-slate-500">Sequential Execution Controls</span>
-                                <span class="text-[10px] text-slate-500">
-                                    Early / Late &rarr; Preparing &rarr; Event Started &rarr; Event Done &rarr; Settlement (auto-post @postEventAt.ToString("MMM d, h:mm tt"))
-                                </span>
-                            </div>
-                            <div class="grid grid-cols-2 sm:grid-cols-4 gap-2">
-                                <button type="button"
-                                        disabled="@(isUpdatingTeamLeaderStage || !canSelectArrival)"
-                                        @onclick='() => HandleTeamLeaderStageClickAsync(tlEv, "Preparing", "Early")'
-                                        class="px-3 py-2 rounded-lg border text-xs font-bold transition-all text-center disabled:opacity-45 disabled:cursor-not-allowed @(isPreparing && selectedArrival != "Late" ? "bg-sky-700 text-white border-sky-700 shadow-xs" : "bg-white text-slate-700 border-slate-200 hover:border-sky-400 hover:bg-sky-50/50")">
-                                    Early (Preparing)
-                                </button>
-                                <button type="button"
-                                        disabled="@(isUpdatingTeamLeaderStage || !canSelectArrival)"
-                                        @onclick='() => HandleTeamLeaderStageClickAsync(tlEv, "Preparing", "Late")'
-                                        class="px-3 py-2 rounded-lg border text-xs font-bold transition-all text-center disabled:opacity-45 disabled:cursor-not-allowed @(isPreparing && selectedArrival == "Late" ? "bg-amber-600 text-white border-amber-600 shadow-xs" : "bg-white text-slate-700 border-slate-200 hover:border-amber-400 hover:bg-amber-50/50")">
-                                    Late (Preparing)
-                                </button>
-                                <button type="button"
-                                        disabled="@(isUpdatingTeamLeaderStage || !canStartEvent)"
-                                        @onclick='() => HandleTeamLeaderStageClickAsync(tlEv, "Ongoing")'
-                                        class="px-3 py-2 rounded-lg border text-xs font-bold transition-all text-center disabled:opacity-45 disabled:cursor-not-allowed @(isOngoing ? "bg-teal-700 text-white border-teal-700 shadow-xs" : "bg-white text-slate-700 border-slate-200 hover:border-teal-400 hover:bg-teal-50/50")">
-                                    Event Started
-                                </button>
-                                <button type="button"
-                                        disabled="@(isUpdatingTeamLeaderStage || !canMarkDone)"
-                                        @onclick='() => HandleTeamLeaderStageClickAsync(tlEv, "Event Done")'
-                                        class="px-3 py-2 rounded-lg border text-xs font-bold transition-all text-center disabled:opacity-45 disabled:cursor-not-allowed @(isEventDone ? "bg-purple-700 text-white border-purple-700 shadow-xs" : "bg-white text-slate-700 border-slate-200 hover:border-purple-400 hover:bg-purple-50/50")">
-                                    Event Done
-                                </button>
-                            </div>
-                            @if (!isSettlementUnlocked)
-                            {
-                                <div class="mt-2 px-3 py-2 rounded-lg border border-dashed border-slate-300 bg-slate-100/70 text-[11px] font-semibold text-slate-600 flex items-center gap-2">
-                                    <span>🔒</span>
-                                    <span>Complete <strong>Event Done</strong> to unlock <strong>Settlement</strong> (Cash or QR Payment).</span>
-                                </div>
-                            }
-                        </div>
-                    }
-
-                    @* ── Preparation Equipment Checklist & Additional Request ── *@
-                    @if (isPreparing && !isCashPendingVerif && !isQrPending && !isFinalPaid)
-                    {
-                        <div class="p-4 rounded-xl border border-sky-200 bg-white space-y-4">
-                            <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 border-b border-slate-100 pb-3">
-                                <div>
-                                    <h4 class="text-xs font-extrabold text-slate-900 uppercase tracking-wider">📷 Preparation Equipment Checklist</h4>
-                                    <p class="text-[11px] text-slate-500">Check each item as taken. Marking all equipment as taken automatically updates event status to <strong>Dispatch</strong>.</p>
-                                </div>
-                                <button type="button"
-                                        disabled="@isUpdatingTeamLeaderStage"
-                                        @onclick="() => MarkAllEquipmentTakenAsync(tlEv)"
-                                        class="px-3.5 py-2 rounded-lg bg-indigo-700 hover:bg-indigo-800 text-white text-xs font-bold shadow-xs shrink-0">
-                                    ✓ Mark Taken &amp; Dispatch
-                                </button>
-                            </div>
-
-                            @if (!tlEv.AssignedEquipment.Any())
-                            {
-                                <div class="p-4 rounded-lg bg-slate-50 border border-dashed border-slate-200 text-xs text-slate-500 text-center">
-                                    No equipment assigned to this event yet. Add/request equipment below or click "Mark Taken &amp; Dispatch".
-                                </div>
-                            }
-                            else
-                            {
-                                <div class="divide-y divide-slate-100 border border-slate-200 rounded-lg overflow-hidden">
-                                    @foreach (var eq in tlEv.AssignedEquipment)
-                                    {
-                                        <label class="flex items-center justify-between gap-3 px-3.5 py-2.5 text-xs hover:bg-slate-50 cursor-pointer">
-                                            <div class="flex items-center gap-3">
-                                                <input type="checkbox"
-                                                       checked="@eq.IsTaken"
-                                                       disabled="@isUpdatingTeamLeaderStage"
-                                                       @onchange="(ChangeEventArgs e) => ToggleSingleEquipmentTakenAsync(tlEv, eq, e.Value is bool b && b)"
-                                                       class="h-4 w-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500" />
-                                                <div>
-                                                    <span class="font-bold text-slate-900">@eq.EquipmentName</span>
-                                                    <span class="text-[11px] text-slate-400 font-mono ml-1.5">(@eq.EquipmentId)</span>
-                                                    <span class="ml-2 px-1.5 py-0.5 rounded bg-slate-100 text-slate-600 text-[10px]">@eq.EquipmentType</span>
-                                                    @if (eq.IsAdditionalRequest)
-                                                    {
-                                                        <span class="ml-1.5 px-1.5 py-0.5 rounded bg-amber-100 text-amber-800 text-[10px] font-bold">Requested Add-on</span>
-                                                    }
-                                                    @if (!string.IsNullOrWhiteSpace(eq.RequestedNotes))
-                                                    {
-                                                        <div class="text-[10px] text-slate-500 italic">Note: @eq.RequestedNotes</div>
-                                                    }
-                                                </div>
-                                            </div>
-                                            <span class="px-2 py-0.5 rounded-full text-[10px] font-bold @(eq.IsTaken ? "bg-emerald-100 text-emerald-800" : "bg-slate-100 text-slate-500")">
-                                                @(eq.IsTaken ? "Taken" : "Pending")
-                                            </span>
-                                        </label>
-                                    }
-                                </div>
-                            }
-
-                            @* Add / Request Additional Equipment *@
-                            <div class="pt-2 border-t border-slate-100">
-                                <div class="text-[11px] font-bold text-slate-700 mb-2">+ Add / Request Additional Equipment</div>
-                                <div class="grid grid-cols-1 sm:grid-cols-12 gap-2">
-                                    <select value="@GetSelectedAddEquipmentId(tlEv.EventAppointmentId)"
-                                            @onchange="(ChangeEventArgs e) => SetSelectedAddEquipmentId(tlEv.EventAppointmentId, e.Value?.ToString())"
-                                            class="sm:col-span-5 px-3 py-2 border border-slate-300 rounded-lg text-xs bg-white">
-                                        <option value="">Select available studio equipment...</option>
-                                        @foreach (var avail in GetAvailableEquipmentOptions(tlEv))
-                                        {
-                                            <option value="@avail.EquipmentID">@avail.EquipmentName (@avail.EquipmentTypeName)</option>
-                                        }
-                                    </select>
-                                    <input type="text"
-                                           value="@GetAddEquipmentNotes(tlEv.EventAppointmentId)"
-                                           @onchange="(ChangeEventArgs e) => SetAddEquipmentNotes(tlEv.EventAppointmentId, e.Value?.ToString())"
-                                           placeholder="Reason / request note (optional)"
-                                           class="sm:col-span-4 px-3 py-2 border border-slate-300 rounded-lg text-xs" />
-                                    <button type="button"
-                                            disabled="@isUpdatingTeamLeaderStage"
-                                            @onclick="() => AddAdditionalEquipmentAsync(tlEv)"
-                                            class="sm:col-span-3 px-3 py-2 bg-slate-900 hover:bg-black text-white rounded-lg text-xs font-bold">
-                                        + Request / Add
-                                    </button>
-                                </div>
-                            </div>
-                        </div>
-                    }
-
-                    @if (isCashPendingVerif)
-                    {
-                        <div class="p-4 rounded-xl border border-amber-300 bg-amber-50 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
-                            <div>
-                                <div class="text-xs font-extrabold text-amber-950">Payment Verification (Cash) — Awaiting Admin / Clerk Verification</div>
-                                <p class="text-[11px] text-amber-900 mt-0.5">
-                                    Cash payment of <strong>₱@tlEv.FinalBalanceAmount.ToString("N2")</strong> was received on-site. Payment verification status is set to <strong>Payment Verification (Cash)</strong>; event marks <strong>Completed</strong> once Admin/Clerk verifies the cash.
-                                </p>
-                            </div>
-                            <span class="px-3 py-1 rounded-full bg-amber-200 text-amber-950 text-xs font-extrabold shrink-0">Payment Verification (Cash)</span>
-                        </div>
-                    }
-                    else if (isQrPending)
-                    {
-                        var confirmUrl = ResolveQrConfirmUrl(finalRefId);
-                        var isMock = string.IsNullOrWhiteSpace(tlEv.FinalQrString)
-                                     || tlEv.FinalQrString.StartsWith("MOCK-QRPH", StringComparison.Ordinal)
-                                     || tlEv.FinalQrString.Contains("/checkout/confirm/", StringComparison.OrdinalIgnoreCase);
-                        <div class="p-4 rounded-xl border border-teal-200 bg-white grid grid-cols-1 md:grid-cols-[160px_1fr] gap-4 items-center">
-                            <div class="w-40 h-40 mx-auto p-2 bg-white border border-slate-200 rounded-xl shadow-xs" aria-label="Team Leader Final Payment QR Code">
-                                @((MarkupString)BuildQrSvg(confirmUrl))
-                            </div>
-                            <div class="space-y-2 text-xs">
-                                <div class="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-sky-100 text-sky-900 font-bold text-[11px]">
-                                    Payment Verification (QR:Pending Payment)
-                                </div>
-                                <div class="font-bold text-slate-900 text-sm">Awaiting Customer Final Balance Scan (₱@tlEv.FinalBalanceAmount.ToString("N2"))</div>
-                                <p class="text-slate-600">
-                                    A final payment request email was sent to <strong>@(string.IsNullOrWhiteSpace(tlEv.CustomerEmail) ? "the customer" : tlEv.CustomerEmail)</strong> (Ref: <span class="font-mono">@finalRefId</span>). Upon QR completion, status becomes <strong>Payment Verification (QR:Paid)</strong>, Event marks <strong>Completed</strong>, and confirmation emails go to both Team Leader and Customer.
-                                </p>
-                                <div class="flex flex-wrap items-center gap-2 pt-1">
-                                    <a href="/payments/@finalRefId" target="_blank" class="px-3 py-1.5 rounded-lg border border-slate-300 hover:bg-slate-50 text-slate-800 font-bold">
-                                        Open Payment Page ↗
-                                    </a>
-                                    @if (Env.IsDevelopment() || isMock)
-                                    {
-                                        <button type="button"
-                                                disabled="@isUpdatingTeamLeaderStage"
-                                                @onclick="() => SimulateTeamLeaderQrPaidAsync(finalRefId)"
-                                                class="px-3 py-1.5 rounded-lg border border-dashed border-teal-600 text-teal-800 hover:bg-teal-50 font-bold">
-                                            Simulate Customer QR Paid (Dev)
-                                        </button>
-                                    }
-                                </div>
-                            </div>
-                        </div>
-                    }
-                    else if (isFinalPaid)
-                    {
-                        <div class="p-4 rounded-xl border border-emerald-300 bg-emerald-50 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
-                            <div>
-                                @if (isQrPaid)
-                                {
-                                    <div class="text-xs font-extrabold text-emerald-950">Payment Successful — Event Completed</div>
-                                    <p class="text-[11px] text-emerald-900 mt-0.5">
-                                        Final QR balance of <strong>₱@tlEv.FinalBalanceAmount.ToString("N2")</strong> is verified. Payment status is <strong>Payment Verification (QR:Paid)</strong>, Event is marked <strong>Completed</strong>, and confirmation emails were sent to both the Team Leader and the Customer.
-                                    </p>
-                                }
-                                else
-                                {
-                                    <div class="text-xs font-extrabold text-emerald-950">Completed — Final Payment Verified</div>
-                                    <p class="text-[11px] text-emerald-900 mt-0.5">
-                                        Final balance of <strong>₱@tlEv.FinalBalanceAmount.ToString("N2")</strong> via Cash is verified and settled.
-                                    </p>
-                                }
-                            </div>
-                            <div class="flex flex-wrap items-center gap-1.5 shrink-0">
-                                @if (isQrPaid)
-                                {
-                                    <span class="px-3 py-1 rounded-full bg-emerald-200 text-emerald-950 text-xs font-extrabold">Payment Verification (QR:Paid)</span>
-                                }
-                                <span class="px-3 py-1 rounded-full bg-emerald-700 text-white text-xs font-extrabold">Completed</span>
-                            </div>
-                        </div>
-                    }
-                    else if (isSettlementUnlocked)
-                    {
-                        <div class="p-4 rounded-xl border border-purple-200 bg-white flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-                            <div>
-                                <div class="text-xs font-extrabold text-slate-900">Event Settlement — Cash vs. QR Payment</div>
-                                <p class="text-[11px] text-slate-500">Event Done unlocked Settlement. Collect final balance (₱@tlEv.FinalBalanceAmount.ToString("N2")) via Cash or QR Payment.</p>
-                            </div>
-                            <div class="flex flex-wrap items-center gap-2">
-                                <button type="button"
-                                        disabled="@isUpdatingTeamLeaderStage"
-                                        @onclick="() => QuickCashReceivedAsync(tlEv)"
-                                        class="px-3.5 py-2 rounded-lg bg-amber-600 hover:bg-amber-700 text-white text-xs font-bold shadow-xs">
-                                    💵 Cash Received
-                                </button>
-                                <button type="button"
-                                        @onclick='() => OpenTeamLeaderSettlementModal(tlEv, "Cash_OnHand")'
-                                        class="px-3 py-2 rounded-lg border border-amber-300 bg-amber-50 hover:bg-amber-100 text-amber-900 text-xs font-bold">
-                                    + Overtime / Cash Details
-                                </button>
-                                <button type="button"
-                                        @onclick='() => OpenTeamLeaderSettlementModal(tlEv, "Xendit_QR")'
-                                        class="px-3.5 py-2 rounded-lg bg-teal-700 hover:bg-teal-800 text-white text-xs font-bold shadow-xs">
-                                    📱 QR Payment
-                                </button>
-                            </div>
-                        </div>
-                    }
-                </article>
-            }
-        </div>
-        }
-    </section>
+    <div class="mb-4 px-3.5 py-2.5 rounded-lg bg-red-50 border border-red-200 text-red-700 text-xs font-semibold flex items-center justify-between gap-2">
+        <span>⚠ @teamLeaderErrorMessage</span>
+        <button type="button" @onclick="() => teamLeaderErrorMessage = null" class="text-red-700 font-bold">✕</button>
+    </div>
 }
 
 @* ── Live Clock In / Clock Out Time Tracker Card ─────────────────── *@
@@ -631,7 +186,7 @@
             <h2 class="aev-stat-card__value">@CompletedThisWeekCount</h2>
         </div>
     </article>
-    @if (!isCreative || teamLeaderEvents.Any())
+    @if (!isCreative || teamLeaderEvents.Any(e => e.IsTeamLeader))
     {
         <article class="aev-stat-card">
             <div class="aev-stat-card__icon aev-stat-card__icon--amber" aria-hidden="true">📷</div>
@@ -722,7 +277,7 @@
                             <td class="py-3 text-right">
                                 @{
                                     var tlMatch = teamLeaderEvents.FirstOrDefault(t => string.Equals(t.EventAppointmentId, ev.Id, StringComparison.OrdinalIgnoreCase));
-                                    var isTlForRow = tlMatch != null || IsTeamLeaderForBooking(ev);
+                                    var isTlForRow = tlMatch != null ? tlMatch.IsTeamLeader : IsTeamLeaderForBooking(ev);
                                 }
                                 <div class="inline-flex flex-wrap items-center justify-end gap-1.5">
                                     @if (isCreative && isTlForRow)
@@ -731,10 +286,16 @@
                                             ★ Team Leader
                                         </span>
                                     }
+                                    else if (isCreative && tlMatch != null)
+                                    {
+                                        <span class="px-2 py-0.5 rounded-full text-[10px] font-bold bg-slate-100 text-slate-700 border border-slate-200">
+                                            Crew (View Only)
+                                        </span>
+                                    }
                                     <span class="px-2.5 py-0.5 rounded-full text-[10px] font-bold @GetEventStatusPillClass(ev.Status)">
                                         @FormatRegularEmployeeEventStatus(ev.Status)
                                     </span>
-                                    @if (isCreative && tlMatch != null)
+                                    @if (isCreative && tlMatch != null && isTlForRow)
                                     {
                                         @if (!TeamLeaderMonitorSelector.IsOngoingOrInProcess(tlMatch))
                                         {
@@ -752,6 +313,14 @@
                                                 Open Monitor &rarr;
                                             </a>
                                         }
+                                    }
+                                    else if (isCreative && tlMatch != null)
+                                    {
+                                        <button type="button"
+                                                @onclick="() => FocusTeamLeaderTopPill(tlMatch.EventAppointmentId)"
+                                                class="px-2.5 py-1 rounded-full bg-slate-100 hover:bg-slate-200 border border-slate-300 text-slate-800 text-[11px] font-bold transition-all">
+                                            Monitor in Pill ↑
+                                        </button>
                                     }
                                     else if (isCreative && isTlForRow)
                                     {
@@ -824,7 +393,7 @@
 </div>
 
 @* ── Cash Collections & Remittance Ledger (Clerk / Team Leader Only) ── *@
-@if (isClerk || teamLeaderEvents.Any())
+@if (isClerk || teamLeaderEvents.Any(e => e.IsTeamLeader))
 {
 <section class="bg-white rounded-xl border border-slate-200 shadow-sm p-6 mt-6">
     <div class="flex items-center justify-between pb-3 border-b border-slate-100 mb-4">
@@ -894,15 +463,45 @@
 
 @* ── Leave Requests Section ───────────────────────────────────────── *@
 <section class="bg-white rounded-xl border border-slate-200 shadow-sm p-6 mt-6">
-    <div class="flex items-center justify-between pb-3 border-b border-slate-100 mb-4">
+    <div class="flex flex-wrap items-center justify-between gap-3 pb-3 border-b border-slate-100 mb-4">
         <div>
             <h2 class="text-base font-bold text-slate-900">Leave Requests &amp; Time Off</h2>
-            <p class="text-xs text-slate-500">File a request for Sick Leave, Vacation Leave, Maternity Leave, or Paternity Leave.</p>
+            @if (IsOfficeClerkLeaveMode)
+            {
+                <p class="text-xs text-slate-500">File a request for Vacation Leave, Sick Leave, Leave Without Pay, or Statutory Leave.</p>
+            }
+            else
+            {
+                <p class="text-xs text-slate-500">File a request for Shoot Unavailability / Time Off or eligible Special Statutory Leave.</p>
+            }
         </div>
-        <button type="button" @onclick="() => isLeaveModalOpen = true" class="px-3 py-1.5 bg-slate-900 hover:bg-black text-white text-xs font-semibold rounded-lg shadow-xs">
+        <button type="button" @onclick="OpenLeaveModal" class="px-3 py-1.5 bg-slate-900 hover:bg-black text-white text-xs font-semibold rounded-lg shadow-xs">
             + File Leave Request
         </button>
     </div>
+
+    @if (IsOfficeClerkLeaveMode)
+    {
+        <div class="mb-4 p-3 rounded-xl bg-teal-50/80 border border-teal-200 flex flex-wrap items-center justify-between gap-2 text-xs">
+            <div class="font-bold text-teal-950">
+                Remaining Paid Leaves: @($"{leaveBalanceSummary.TotalRemainingPaidDays:0.0}") days (VL: @($"{leaveBalanceSummary.VacationLeaveRemaining:0.0}") left &bull; SL: @($"{leaveBalanceSummary.SickLeaveRemaining:0.0}") left)
+            </div>
+            <div class="text-[11px] text-teal-800 font-medium">
+                Fixed Monthly Clerk &bull; Scheduled Days Off: <span class="font-bold">@leaveBalanceSummary.DaysOff</span> &bull; VL carries DOLE Art. 95 year-end cash conversion
+            </div>
+        </div>
+    }
+    else
+    {
+        <div class="mb-4 p-3 rounded-xl bg-slate-50 border border-slate-200 flex flex-wrap items-center justify-between gap-2 text-xs">
+            <div class="font-bold text-slate-800">
+                Per-Event Crew (Unpaid Time-Off) &bull; Shoot Unavailability blocks event dispatch on selected dates
+            </div>
+            <div class="text-[11px] text-slate-500">
+                Scheduled Days Off: <span class="font-semibold text-slate-700">@leaveBalanceSummary.DaysOff</span>
+            </div>
+        </div>
+    }
 
     @if (myLeaves.Count == 0)
     {
@@ -916,6 +515,7 @@
                     <tr class="text-slate-500 border-b border-slate-100">
                         <th class="py-2">Type</th>
                         <th class="py-2">Dates</th>
+                        <th class="py-2">Countable Workdays</th>
                         <th class="py-2">Reason</th>
                         <th class="py-2">Status</th>
                     </tr>
@@ -923,9 +523,11 @@
                 <tbody class="divide-y divide-slate-50">
                     @foreach (var l in PagedLeaves)
                     {
+                        var rowWorkdays = l.CountableDays ?? LeaveWorkdayHelper.CalculateCountableWorkdays(employeeId, l.StartDate, l.EndDate, l.IsHalfDay, leaveBalanceSummary.DaysOff).CountableDays;
                         <tr>
                             <td class="py-2.5 font-bold text-slate-800">@l.LeaveType</td>
                             <td class="py-2.5 font-mono text-slate-600">@l.StartDate.ToString("MMM d") – @l.EndDate.ToString("MMM d, yyyy")</td>
+                            <td class="py-2.5 font-semibold text-slate-700">@($"{rowWorkdays:0.0}") workdays</td>
                             <td class="py-2.5 text-slate-500 italic">@(l.Reason ?? "None provided")</td>
                             <td class="py-2.5">
                                 @if (l.Status == "Approved")
@@ -953,10 +555,21 @@
 <!-- Leave Request Modal -->
 @if (isLeaveModalOpen)
 {
+    var modalWorkdays = CurrentModalWorkdaysPreview;
+    var overlappingAssignedEvents = CurrentModalOverlappingEvents;
+    decimal selectedTypeRemaining = SelectedPaidLeaveRemaining;
+    decimal projectedRemaining = Math.Max(0m, selectedTypeRemaining - modalWorkdays.CountableDays);
+    bool isPaidCreditLeave = newLeaveType is "Vacation Leave" or "Sick Leave";
+    bool requiresMedCert = newLeaveType == "Sick Leave" && modalWorkdays.CountableDays > 2.0m;
+
     <div class="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4" @onclick="() => isLeaveModalOpen = false">
         <div class="bg-white rounded-2xl shadow-xl border border-slate-200 w-full max-w-md p-6" @onclick:stopPropagation="true">
             <h3 class="text-sm font-bold text-slate-900 mb-1">Request Employee Leave</h3>
-            <p class="text-xs text-slate-500 mb-4">Requires approval by an Office Clerk or Studio Admin before taking effect.</p>
+            <p class="text-xs text-slate-500 mb-4">
+                @(IsOfficeClerkLeaveMode
+                    ? "Requires approval by a Studio Admin before taking effect."
+                    : "Requires approval by an Office Clerk or Studio Admin before taking effect.")
+            </p>
 
             @if (!string.IsNullOrWhiteSpace(leaveError))
             {
@@ -967,12 +580,51 @@
                 <div>
                     <label class="block font-semibold mb-1">Leave Type</label>
                     <select @bind="newLeaveType" class="w-full p-2 border rounded-lg">
-                        <option value="Sick Leave">Sick Leave</option>
-                        <option value="Vacation Leave">Vacation Leave</option>
-                        <option value="Maternity Leave">Maternity Leave</option>
-                        <option value="Paternity Leave">Paternity Leave</option>
+                        @if (IsOfficeClerkLeaveMode)
+                        {
+                            <option value="Vacation Leave">Vacation Leave (VL — Paid, Cash Convertible)</option>
+                            <option value="Sick Leave">Sick Leave (SL — Paid)</option>
+                            <option value="Leave Without Pay">Leave Without Pay (LWOP — Unpaid Overflow)</option>
+                            <option value="Maternity Leave">Maternity Leave (Statutory — 105d)</option>
+                            <option value="Paternity Leave">Paternity Leave (Statutory — 7d)</option>
+                            <option value="Solo Parent Leave">Solo Parent Leave (Statutory — 7d)</option>
+                            <option value="VAWC Leave">VAWC Leave (Statutory — 10d)</option>
+                        }
+                        else
+                        {
+                            <option value="Shoot Unavailability / Time Off">Shoot Unavailability / Time Off (Unpaid Schedule Block)</option>
+                            <option value="Maternity Leave">Maternity Leave (Statutory — 105d)</option>
+                            <option value="Paternity Leave">Paternity Leave (Statutory — 7d)</option>
+                            <option value="Solo Parent Leave">Solo Parent Leave (Statutory — 7d)</option>
+                            <option value="VAWC Leave">VAWC Leave (Statutory — 10d)</option>
+                        }
                     </select>
                 </div>
+
+                @if (IsOfficeClerkLeaveMode)
+                {
+                    <div class="p-2.5 rounded-lg bg-teal-50 border border-teal-200 text-teal-900 space-y-1">
+                        <div class="flex items-center justify-between font-bold">
+                            <span>Remaining Paid Leaves: @($"{leaveBalanceSummary.TotalRemainingPaidDays:0.0}") days</span>
+                            <span>VL: @($"{leaveBalanceSummary.VacationLeaveRemaining:0.0}") left &bull; SL: @($"{leaveBalanceSummary.SickLeaveRemaining:0.0}") left</span>
+                        </div>
+                        @if (isPaidCreditLeave)
+                        {
+                            <div class="flex items-center justify-between text-[11px] text-teal-800 pt-1 border-t border-teal-200/70">
+                                <span>Remaining Paid Leave for @(newLeaveType == "Vacation Leave" ? "VL" : "SL"): <strong>@($"{selectedTypeRemaining:0.0}") days</strong></span>
+                                <span>Projected Remaining After Request: <strong>@($"{projectedRemaining:0.0}") days</strong></span>
+                            </div>
+                        }
+                    </div>
+                }
+
+                @if (newLeaveType == "Shoot Unavailability / Time Off")
+                {
+                    <div class="p-2.5 rounded-lg bg-sky-50 border border-sky-200 text-sky-900 font-medium" role="status">
+                        Unpaid schedule block — prevents event dispatch on selected dates.
+                    </div>
+                }
+
                 <div class="grid grid-cols-2 gap-2">
                     <div>
                         <label class="block font-semibold mb-1">Start Date</label>
@@ -983,6 +635,47 @@
                         <input type="date" @bind="newLeaveEnd" class="w-full p-2 border rounded-lg" />
                     </div>
                 </div>
+
+                <div class="flex items-center justify-between bg-slate-50 border border-slate-200 rounded-lg px-3 py-2">
+                    <div>
+                        <span class="font-semibold text-slate-800">Countable Workdays: @($"{modalWorkdays.CountableDays:0.0}") days</span>
+                        <span class="text-[11px] text-slate-500 block">
+                            (@modalWorkdays.CalendarDays calendar days &bull; excludes @leaveBalanceSummary.DaysOff &amp; PH holidays)
+                        </span>
+                    </div>
+                    <label class="inline-flex items-center gap-1.5 text-[11px] font-semibold text-slate-700 cursor-pointer">
+                        <input type="checkbox" @bind="newLeaveIsHalfDay" class="rounded border-slate-300" />
+                        Half-Day (0.5d)
+                    </label>
+                </div>
+
+                @if (requiresMedCert)
+                {
+                    <div class="p-2.5 rounded-lg bg-amber-50 border border-amber-300 space-y-1.5">
+                        <label class="block font-bold text-amber-900">
+                            Medical Certificate Attachment Required (&gt; 2 consecutive countable days) <span class="text-rose-600">*</span>
+                        </label>
+                        <input type="text"
+                               @bind="newLeaveAttachmentName"
+                               placeholder="Enter Medical Certificate filename or reference (e.g., MedCert_SL.pdf)"
+                               class="w-full p-2 bg-white border border-amber-300 rounded-lg text-slate-900" />
+                    </div>
+                }
+
+                @if (overlappingAssignedEvents.Count > 0)
+                {
+                    <div class="p-2.5 rounded-lg bg-amber-50 border border-amber-300 text-amber-900 space-y-1" role="alert">
+                        <div class="font-bold">⚠️ Schedule Conflict Warning (@overlappingAssignedEvents.Count assigned event@(overlappingAssignedEvents.Count == 1 ? "" : "s"))</div>
+                        <p class="text-[11px]">You have active shoot/event assignments overlapping these dates:</p>
+                        <ul class="list-disc list-inside text-[11px] font-medium">
+                            @foreach (var ev in overlappingAssignedEvents.Take(3))
+                            {
+                                <li>@ev.Date.ToString("MMM d, yyyy") — @(string.IsNullOrWhiteSpace(ev.ServiceType) ? ev.ClientName : ev.ServiceType) (@ev.Status)</li>
+                            }
+                        </ul>
+                    </div>
+                }
+
                 <div>
                     <label class="block font-semibold mb-1">Description</label>
                     <textarea @bind="newLeaveReason" rows="3" class="w-full p-2 border rounded-lg" placeholder="Describe the reason for your leave request..."></textarea>
@@ -1153,15 +846,9 @@
     private List<TeamLeaderEventDto> teamLeaderEvents = new();
     private TeamLeaderEventDto? _recentlyCompletedTeamLeadEvent;
     private string? _selectedActiveTeamLeadEventId;
-    private string _teamLeaderMonitorFilter = "All";
     private List<EquipmentItemModel> _studioEquipments = new();
     private List<EventBookingModel> _staffBookings = new();
     private List<EquipmentReservationModel> _staffEquipmentReservations = new();
-    private readonly Dictionary<string, string> _addEquipmentSelections = new(StringComparer.OrdinalIgnoreCase);
-    private readonly Dictionary<string, string> _addEquipmentNotes = new(StringComparer.OrdinalIgnoreCase);
-    private readonly Dictionary<string, string> _selectedArrivalByEvent = new(StringComparer.OrdinalIgnoreCase);
-    // Keep canonical stage constants referenced for sequential Team Leader execution workflow
-    private static readonly string[] TeamLeaderStages = { "Preparing", "Ongoing", "Event Done", "Pending Payment" };
     private string? teamLeaderActionMessage;
     private string? teamLeaderErrorMessage;
     private bool isUpdatingTeamLeaderStage = false;
@@ -1191,33 +878,6 @@
         overtimeNotes = string.Empty;
         baseRemainingBalance = Math.Round(ev.EstimatedPrice * 0.85m, 2);
         selectedPaymentMethod = "Cash_OnHand";
-        finishModalError = null;
-        RecalculateSettlement();
-        isFinishModalOpen = true;
-    }
-
-    private void OpenTeamLeaderSettlementModal(TeamLeaderEventDto tlEv, string defaultMethod = "Cash_OnHand")
-    {
-        selectedFinishEvent = new EventBookingModel
-        {
-            Id = tlEv.EventAppointmentId,
-            ServiceType = tlEv.EventName,
-            ClientName = tlEv.CustomerName,
-            ClientEmail = tlEv.CustomerEmail,
-            Date = tlEv.EventDate.ToDateTime(TimeOnly.MinValue),
-            StartTime = tlEv.EventTime.ToTimeSpan(),
-            EndTime = tlEv.EventEndTime?.ToTimeSpan() ?? tlEv.EventTime.ToTimeSpan().Add(TimeSpan.FromMinutes(Math.Max(60, tlEv.DurationMinutes))),
-            Status = tlEv.EventStatus,
-            EstimatedPrice = tlEv.TotalAmount
-        };
-        extraHours = 0m;
-        hourlyRate = 1500m;
-        extraSurcharges = 0m;
-        overtimeNotes = string.Empty;
-        baseRemainingBalance = tlEv.FinalBalanceAmount > 0
-            ? tlEv.FinalBalanceAmount
-            : Math.Round(tlEv.TotalAmount * 0.85m, 2);
-        selectedPaymentMethod = defaultMethod;
         finishModalError = null;
         RecalculateSettlement();
         isFinishModalOpen = true;
@@ -1294,15 +954,63 @@
 
     private ClockStatusViewModel clockStatus = new();
     private List<LeaveItemViewModel> myLeaves = new();
+    private EmployeeLeaveBalanceSummaryViewModel leaveBalanceSummary = new()
+    {
+        TotalAllocatedPaidDays = 10.0m,
+        TotalRemainingPaidDays = 10.0m,
+        VacationLeaveRemaining = 5.0m,
+        SickLeaveRemaining = 5.0m,
+        DaysOff = "Sunday"
+    };
     private bool isPunching = false;
 
     private bool isLeaveModalOpen = false;
     private bool isSubmittingLeave = false;
     private string? leaveError;
-    private string newLeaveType = "Sick Leave";
+    private string newLeaveType = "Vacation Leave";
     private DateTime newLeaveStart = DateTime.Today;
     private DateTime newLeaveEnd = DateTime.Today;
+    private bool newLeaveIsHalfDay = false;
+    private string newLeaveAttachmentName = string.Empty;
     private string newLeaveReason = string.Empty;
+
+    private bool IsOfficeClerkLeaveMode =>
+        isClerk || LeaveWorkdayHelper.IsOfficeClerkEmployee(employeeId);
+
+    private decimal SelectedPaidLeaveRemaining => newLeaveType switch
+    {
+        "Vacation Leave" => leaveBalanceSummary.VacationLeaveRemaining,
+        "Sick Leave" => leaveBalanceSummary.SickLeaveRemaining,
+        _ => 0m
+    };
+
+    private CountableWorkdaysPreviewViewModel CurrentModalWorkdaysPreview =>
+        LeaveWorkdayHelper.CalculateCountableWorkdays(
+            string.IsNullOrWhiteSpace(employeeId) ? "EMP-003" : employeeId,
+            DateOnly.FromDateTime(newLeaveStart.Date),
+            DateOnly.FromDateTime(newLeaveEnd.Date),
+            newLeaveIsHalfDay,
+            leaveBalanceSummary.DaysOff);
+
+    private List<EventBookingModel> CurrentModalOverlappingEvents =>
+        newLeaveEnd.Date < newLeaveStart.Date
+            ? new List<EventBookingModel>()
+            : displayedEvents
+                .Where(ev => ev.Date.Date >= newLeaveStart.Date
+                          && ev.Date.Date <= newLeaveEnd.Date
+                          && !string.Equals(ev.Status, "Cancelled", StringComparison.OrdinalIgnoreCase)
+                          && (isCreative || EmployeeRoleHelper.IsEventAssignedToEmployee(ev, employeeName, employeeId)))
+                .OrderBy(ev => ev.Date)
+                .ToList();
+
+    private void OpenLeaveModal()
+    {
+        leaveError = null;
+        newLeaveType = IsOfficeClerkLeaveMode ? "Vacation Leave" : "Shoot Unavailability / Time Off";
+        newLeaveIsHalfDay = false;
+        newLeaveAttachmentName = string.Empty;
+        isLeaveModalOpen = true;
+    }
 
     protected override async Task OnInitializedAsync()
     {
@@ -1319,6 +1027,13 @@
 
         // Load all bookings from ScheduleService and UserService
         ScheduleService.InvalidateCache();
+        LoadDisplayedEventsFromSchedule();
+
+        await RefreshStatus();
+    }
+
+    private void LoadDisplayedEventsFromSchedule()
+    {
         var scheduleBookings = ScheduleService.GetEventBookings();
 
         if (isCreative)
@@ -1338,13 +1053,13 @@
 
             UpcomingShootsCount = displayedEvents.Count;
 
-            CompletedThisWeekCount = scheduleBookings.Count(b => 
+            CompletedThisWeekCount = scheduleBookings.Count(b =>
                 EmployeeRoleHelper.IsEventAssignedToEmployee(b, employeeName, employeeId) &&
                 string.Equals(b.Status, "Completed", StringComparison.OrdinalIgnoreCase) &&
                 b.Date >= DateTime.Today.AddDays(-7));
 
             var reservations = ScheduleService.GetEquipmentReservations();
-            GearCheckedOutCount = reservations.Count(r => 
+            GearCheckedOutCount = reservations.Count(r =>
                 !string.IsNullOrWhiteSpace(employeeName) &&
                 r.TechnicianInCharge.Contains(employeeName, StringComparison.OrdinalIgnoreCase));
         }
@@ -1359,19 +1074,18 @@
 
             UpcomingShootsCount = displayedEvents.Count;
 
-            CompletedThisWeekCount = scheduleBookings.Count(b => 
+            CompletedThisWeekCount = scheduleBookings.Count(b =>
                 string.Equals(b.Status, "Completed", StringComparison.OrdinalIgnoreCase) &&
                 b.Date >= DateTime.Today.AddDays(-7));
 
             GearCheckedOutCount = UserService.GetEquipmentRows().Count(e => !string.Equals(e.Status, "Available", StringComparison.OrdinalIgnoreCase));
         }
-
-        await RefreshStatus();
     }
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
         if (!firstRender) return;
+        EquipmentService.OnChange += HandleEquipmentStateChanged;
         PaymentHub.OnEventStatusChanged += HandleHubEventStatusChangedAsync;
         await LoadStudioEquipmentsAsync();
         await RefreshTeamLeaderEventsInternalAsync(surfaceError: true);
@@ -1420,15 +1134,38 @@
 
     private async Task RefreshStatus()
     {
+        var targetEmpId = string.IsNullOrWhiteSpace(employeeId)
+            ? (isClerk ? "EMP-003" : "EMP-002")
+            : employeeId;
+
         var clockTask = Employees.GetClockStatusAsync();
         var leavesTask = Employees.GetMyLeavesAsync();
+        var balanceTask = Employees.GetLeaveBalancesAsync(targetEmpId, 2026);
         var ledgerTask = SafeLoadEmployeeLedgerAsync();
         var tlTask = RefreshTeamLeaderEventsAsync();
 
-        await Task.WhenAll(clockTask, leavesTask, ledgerTask, tlTask);
+        await Task.WhenAll(clockTask, leavesTask, balanceTask, ledgerTask, tlTask);
 
         clockStatus = await clockTask;
         myLeaves = (await leavesTask).ToList();
+        var bal = await balanceTask;
+        if (bal != null)
+        {
+            leaveBalanceSummary = bal;
+            if (IsOfficeClerkLeaveMode && leaveBalanceSummary.Balances.Count == 0)
+            {
+                leaveBalanceSummary.IsTitleIExempt = false;
+                leaveBalanceSummary.PayBasis = "FixedMonthly";
+                leaveBalanceSummary.TotalAllocatedPaidDays = 10.0m;
+                leaveBalanceSummary.VacationLeaveRemaining = 5.0m;
+                leaveBalanceSummary.SickLeaveRemaining = 5.0m;
+                leaveBalanceSummary.TotalRemainingPaidDays = 10.0m;
+            }
+        }
+        if (!IsOfficeClerkLeaveMode && newLeaveType is "Sick Leave" or "Vacation Leave" or "Leave Without Pay")
+        {
+            newLeaveType = "Shoot Unavailability / Time Off";
+        }
     }
 
     private Task RefreshTeamLeaderEventsAsync() => RefreshTeamLeaderEventsInternalAsync(surfaceError: false);
@@ -1479,7 +1216,7 @@
                             AssignedEmployees = d.AssignedEmployees,
                             AssignedEquipment = d.AssignedEquipment,
                             SelectedServices = d.SelectedServices,
-                            IsTeamLeader = true
+                            IsTeamLeader = finished.IsTeamLeader
                         };
                         _selectedActiveTeamLeadEventId = d.EventAppointmentId;
                     }
@@ -1499,6 +1236,7 @@
 
     private async Task StartTeamLeaderEventIntoTopPillAsync(TeamLeaderEventDto tlEv)
     {
+        if (!tlEv.IsTeamLeader) return;
         isUpdatingTeamLeaderStage = true;
         teamLeaderActionMessage = null;
         teamLeaderErrorMessage = null;
@@ -1561,281 +1299,32 @@
     private Task HandleHubEventStatusChangedAsync(EventStatusChangedMessage msg) => InvokeAsync(async () =>
     {
         ScheduleService.InvalidateCache();
-        await Task.WhenAll(LoadStudioEquipmentsAsync(), RefreshTeamLeaderEventsAsync(), SafeLoadEmployeeLedgerAsync());
+        LoadDisplayedEventsFromSchedule();
+        await Task.WhenAll(LoadStudioEquipmentsAsync(), RefreshTeamLeaderEventsAsync(), SafeLoadEmployeeLedgerAsync(), RefreshStatus());
         await SubscribeActiveQrHubAsync();
         if (string.Equals(msg.EventStatus, "Completed", StringComparison.OrdinalIgnoreCase))
         {
             teamLeaderActionMessage = $"Event #{msg.AppointmentId} updated to Success / Completed across all platforms.";
         }
+        else if (string.Equals(msg.EventStatus, "RosterUpdated", StringComparison.OrdinalIgnoreCase) ||
+                 string.Equals(msg.EventStatus, "Updated", StringComparison.OrdinalIgnoreCase))
+        {
+            teamLeaderActionMessage = msg.AppointmentId == "*"
+                ? "Staff attendance / leave status updated."
+                : $"Your crew / Team Leader assignment for #{msg.AppointmentId} has been updated.";
+        }
         StateHasChanged();
     });
-
-    private async Task ToggleSingleEquipmentTakenAsync(TeamLeaderEventDto tlEv, AssignedEquipmentDto eq, bool isTaken)
-    {
-        isUpdatingTeamLeaderStage = true;
-        teamLeaderActionMessage = null;
-        teamLeaderErrorMessage = null;
-        try
-        {
-            var res = await ConsultationApi.MarkEquipmentTakenAsync(tlEv.EventAppointmentId, new MarkEquipmentTakenRequest
-            {
-                EventEquipmentIds = eq.EventEquipmentId > 0 ? new List<int> { eq.EventEquipmentId } : null,
-                IsTaken = isTaken,
-                TransitionToDispatch = true,
-                EmployeeId = employeeId
-            });
-            if (res.IsSuccess && res.Value != null)
-            {
-                ScheduleService.InvalidateCache();
-                await RefreshTeamLeaderEventsAsync();
-                teamLeaderActionMessage = string.Equals(res.Value.EventStatus, "Dispatch", StringComparison.OrdinalIgnoreCase)
-                    ? $"All equipment marked taken for #{tlEv.EventAppointmentId}. Event status updated to 'Dispatch'."
-                    : $"Updated checklist item '{eq.EquipmentName}' as {(isTaken ? "Taken" : "Pending")}.";
-            }
-            else
-            {
-                teamLeaderErrorMessage = res.Error?.Message ?? "Failed to update equipment checklist.";
-            }
-        }
-        catch (Exception ex)
-        {
-            teamLeaderErrorMessage = ex.Message;
-        }
-        finally
-        {
-            isUpdatingTeamLeaderStage = false;
-        }
-    }
-
-    private async Task MarkAllEquipmentTakenAsync(TeamLeaderEventDto tlEv)
-    {
-        isUpdatingTeamLeaderStage = true;
-        teamLeaderActionMessage = null;
-        teamLeaderErrorMessage = null;
-        try
-        {
-            var res = await ConsultationApi.MarkEquipmentTakenAsync(tlEv.EventAppointmentId, new MarkEquipmentTakenRequest
-            {
-                EventEquipmentIds = null,
-                IsTaken = true,
-                TransitionToDispatch = true,
-                EmployeeId = employeeId
-            });
-            if (res.IsSuccess && res.Value != null)
-            {
-                ScheduleService.InvalidateCache();
-                await RefreshTeamLeaderEventsAsync();
-                teamLeaderActionMessage = $"Equipment marked taken for #{tlEv.EventAppointmentId}. Status updated to 'Dispatch'.";
-            }
-            else
-            {
-                teamLeaderErrorMessage = res.Error?.Message ?? "Could not mark equipment taken.";
-            }
-        }
-        catch (Exception ex)
-        {
-            teamLeaderErrorMessage = ex.Message;
-        }
-        finally
-        {
-            isUpdatingTeamLeaderStage = false;
-        }
-    }
-
-    private async Task AddAdditionalEquipmentAsync(TeamLeaderEventDto tlEv)
-    {
-        var eqId = GetSelectedAddEquipmentId(tlEv.EventAppointmentId);
-        if (string.IsNullOrWhiteSpace(eqId))
-        {
-            teamLeaderErrorMessage = "Please select an equipment item to add or request.";
-            return;
-        }
-
-        isUpdatingTeamLeaderStage = true;
-        teamLeaderActionMessage = null;
-        teamLeaderErrorMessage = null;
-        try
-        {
-            var res = await ConsultationApi.AddEventEquipmentAsync(tlEv.EventAppointmentId, new AddEventEquipmentRequest
-            {
-                EquipmentId = eqId,
-                Notes = GetAddEquipmentNotes(tlEv.EventAppointmentId),
-                EmployeeId = employeeId
-            });
-            if (res.IsSuccess && res.Value != null)
-            {
-                _addEquipmentSelections[tlEv.EventAppointmentId] = string.Empty;
-                _addEquipmentNotes[tlEv.EventAppointmentId] = string.Empty;
-                ScheduleService.InvalidateCache();
-                await LoadStudioEquipmentsAsync();
-                await RefreshTeamLeaderEventsAsync();
-                teamLeaderActionMessage = $"Added/requested additional equipment ({eqId}) for #{tlEv.EventAppointmentId}.";
-            }
-            else
-            {
-                teamLeaderErrorMessage = res.Error?.Message ?? "Failed to add/request additional equipment.";
-            }
-        }
-        catch (Exception ex)
-        {
-            teamLeaderErrorMessage = ex.Message;
-        }
-        finally
-        {
-            isUpdatingTeamLeaderStage = false;
-        }
-    }
-
-    private async Task QuickCashReceivedAsync(TeamLeaderEventDto tlEv)
-    {
-        isUpdatingTeamLeaderStage = true;
-        teamLeaderActionMessage = null;
-        teamLeaderErrorMessage = null;
-        try
-        {
-            var req = new CompleteEventRequest
-            {
-                EventAppointmentId = tlEv.EventAppointmentId,
-                ExtraHours = 0m,
-                HourlyRate = 1500m,
-                SurchargeAmount = 0m,
-                OvertimeNotes = string.Empty,
-                PaymentMethod = "Cash_OnHand",
-                TeamLeaderEmployeeId = employeeId,
-                Notes = $"Cash Received logged by Team Leader {employeeName} ({employeeId})."
-            };
-            var res = await ConsultationApi.CompleteEventAsync(tlEv.EventAppointmentId, req);
-            if (res.IsSuccess && res.Value != null)
-            {
-                ScheduleService.InvalidateCache();
-                await RefreshTeamLeaderEventsAsync();
-                await SafeLoadEmployeeLedgerAsync();
-                teamLeaderActionMessage = $"Cash Received (₱{res.Value.FinalBalanceAmount:N2}) logged for #{tlEv.EventAppointmentId}. Status: Payment Verification (Cash).";
-            }
-            else
-            {
-                teamLeaderErrorMessage = res.Error?.Message ?? "Failed to record cash payment.";
-            }
-        }
-        catch (Exception ex)
-        {
-            teamLeaderErrorMessage = ex.Message;
-        }
-        finally
-        {
-            isUpdatingTeamLeaderStage = false;
-        }
-    }
-
-    private string GetSelectedAddEquipmentId(string apptId) =>
-        _addEquipmentSelections.TryGetValue(apptId, out var val) ? val : string.Empty;
-
-    private void SetSelectedAddEquipmentId(string apptId, string? val) =>
-        _addEquipmentSelections[apptId] = val ?? string.Empty;
-
-    private string GetAddEquipmentNotes(string apptId) =>
-        _addEquipmentNotes.TryGetValue(apptId, out var val) ? val : string.Empty;
-
-    private void SetAddEquipmentNotes(string apptId, string? val) =>
-        _addEquipmentNotes[apptId] = val ?? string.Empty;
-
-    private IEnumerable<EquipmentItemModel> GetAvailableEquipmentOptions(TeamLeaderEventDto tlEv)
-    {
-        var assignedIds = tlEv.AssignedEquipment.Select(e => e.EquipmentId).ToHashSet(StringComparer.OrdinalIgnoreCase);
-        var lockedSameDayIds = BookingWizardEngine.GetBookedEquipmentIdsForDate(
-            tlEv.EventDate.ToDateTime(TimeOnly.MinValue),
-            _staffBookings,
-            _staffEquipmentReservations,
-            null,
-            tlEv.EventAppointmentId);
-        return _studioEquipments.Where(e =>
-            !assignedIds.Contains(e.EquipmentID) &&
-            !lockedSameDayIds.Contains(e.EquipmentID));
-    }
-
-    private async Task HandleTeamLeaderStageClickAsync(TeamLeaderEventDto tlEv, string stage, string? arrivalStatus = null)
-    {
-        if (string.Equals(stage, "Pending Payment", StringComparison.OrdinalIgnoreCase))
-        {
-            OpenTeamLeaderSettlementModal(tlEv, "Cash_OnHand");
-            return;
-        }
-
-        isUpdatingTeamLeaderStage = true;
-        teamLeaderActionMessage = null;
-        teamLeaderErrorMessage = null;
-        try
-        {
-            if (!string.IsNullOrWhiteSpace(arrivalStatus))
-            {
-                _selectedArrivalByEvent[tlEv.EventAppointmentId] = arrivalStatus;
-            }
-
-            var res = await ConsultationApi.UpdateTeamLeaderEventStatusAsync(tlEv.EventAppointmentId, new UpdateTeamLeaderStatusRequest
-            {
-                Status = stage,
-                ArrivalStatus = arrivalStatus,
-                EmployeeId = employeeId
-            });
-            if (res.IsSuccess && res.Value != null)
-            {
-                tlEv.EventStatus = res.Value.EventStatus;
-                ScheduleService.InvalidateCache();
-                var arrivalLabel = string.IsNullOrWhiteSpace(arrivalStatus) ? string.Empty : $" ({arrivalStatus})";
-                var unlockNote = string.Equals(res.Value.EventStatus, "Event Done", StringComparison.OrdinalIgnoreCase)
-                    ? " Settlement is now unlocked."
-                    : string.Empty;
-                teamLeaderActionMessage = $"Event #{tlEv.EventAppointmentId} updated to '{res.Value.EventStatus}'{arrivalLabel}.{unlockNote}";
-            }
-            else
-            {
-                teamLeaderErrorMessage = res.Error?.Message ?? "Failed to update event stage.";
-            }
-        }
-        catch (Exception ex)
-        {
-            teamLeaderErrorMessage = ex.Message;
-        }
-        finally
-        {
-            isUpdatingTeamLeaderStage = false;
-        }
-    }
-
-    private async Task SimulateTeamLeaderQrPaidAsync(string finalRefId)
-    {
-        isUpdatingTeamLeaderStage = true;
-        teamLeaderActionMessage = null;
-        teamLeaderErrorMessage = null;
-        try
-        {
-            var res = await ConsultationApi.SimulateQrPaymentAsync(finalRefId);
-            if (res.IsSuccess)
-            {
-                ScheduleService.InvalidateCache();
-                await RefreshTeamLeaderEventsAsync();
-                teamLeaderActionMessage = $"Payment successful! Status updated to Payment Verification (QR:Paid), Event #{finalRefId} marked Completed, and confirmation emails sent to both the Team Leader and the Customer.";
-            }
-            else
-            {
-                teamLeaderErrorMessage = res.Error?.Message ?? "Could not simulate final QR payment.";
-            }
-        }
-        catch (Exception ex)
-        {
-            teamLeaderErrorMessage = ex.Message;
-        }
-        finally
-        {
-            isUpdatingTeamLeaderStage = false;
-        }
-    }
 
     private async Task SubscribeActiveQrHubAsync()
     {
         try
         {
             await PaymentHub.EnsureLiveMonitorStartedAsync();
+            if (!string.IsNullOrWhiteSpace(employeeId))
+            {
+                await PaymentHub.EnsureStaffMonitorStartedAsync(employeeId);
+            }
         }
         catch
         {
@@ -1861,17 +1350,6 @@
         }
     }
 
-    private static string GetTeamLeaderDisplayStatus(TeamLeaderEventDto ev, bool isCashPendingVerif, bool isFinalPaid, bool isQrPending, bool isQrPaid)
-    {
-        if (isFinalPaid) return "Completed";
-        if (isCashPendingVerif) return "Payment Verification (Cash)";
-        if (isQrPending) return "Payment Verification (QR:Pending Payment)";
-        if (string.Equals(ev.EventStatus, "Preparation", StringComparison.OrdinalIgnoreCase) || string.Equals(ev.EventStatus, "Preparing", StringComparison.OrdinalIgnoreCase) || string.Equals(ev.EventStatus, "Dispatch", StringComparison.OrdinalIgnoreCase)) return "Preparing";
-        if (string.Equals(ev.EventStatus, "On Going", StringComparison.OrdinalIgnoreCase) || string.Equals(ev.EventStatus, "Ongoing", StringComparison.OrdinalIgnoreCase)) return "Ongoing";
-        if (string.Equals(ev.EventStatus, "Post Event", StringComparison.OrdinalIgnoreCase) || string.Equals(ev.EventStatus, "Event Done", StringComparison.OrdinalIgnoreCase)) return "Event Done";
-        return ev.EventStatus;
-    }
-
     private static string FormatRegularEmployeeEventStatus(string? status) => (status ?? "Confirmed") switch
     {
         var s when s.Equals("Preparing", StringComparison.OrdinalIgnoreCase) || s.Equals("Preparation", StringComparison.OrdinalIgnoreCase) || s.Equals("Dispatch", StringComparison.OrdinalIgnoreCase) => "Preparing",
@@ -1895,35 +1373,6 @@
         };
     }
 
-    private static string GetTeamLeaderStatusBadgeClass(TeamLeaderEventDto ev)
-    {
-        if (string.Equals(ev.FinalPaymentStatus, "Paid", StringComparison.OrdinalIgnoreCase)
-            || string.Equals(ev.FinalPaymentStatus, "Payment Verification (QR:Paid)", StringComparison.OrdinalIgnoreCase)
-            || string.Equals(ev.EventStatus, "Completed", StringComparison.OrdinalIgnoreCase)
-            || string.Equals(ev.EventStatus, "Complete", StringComparison.OrdinalIgnoreCase)
-            || string.Equals(ev.EventStatus, "Shot", StringComparison.OrdinalIgnoreCase))
-            return "bg-emerald-100 text-emerald-800";
-        if (string.Equals(ev.EventStatus, "Payment Verification (Cash)", StringComparison.OrdinalIgnoreCase)
-            || string.Equals(ev.EventStatus, "Pending Verification", StringComparison.OrdinalIgnoreCase)
-            || string.Equals(ev.EventStatus, "Paid Cash Pending Verification", StringComparison.OrdinalIgnoreCase)
-            || string.Equals(ev.FinalPaymentStatus, "Payment Verification (Cash)", StringComparison.OrdinalIgnoreCase)
-            || string.Equals(ev.FinalPaymentStatus, "Pending Verification", StringComparison.OrdinalIgnoreCase)
-            || string.Equals(ev.FinalPaymentStatus, "Payment Verification (QR:Pending Payment)", StringComparison.OrdinalIgnoreCase)
-            || string.Equals(ev.EventStatus, "Pending Payment", StringComparison.OrdinalIgnoreCase))
-            return "bg-amber-100 text-amber-800";
-        if (string.Equals(ev.EventStatus, "Ongoing", StringComparison.OrdinalIgnoreCase)
-            || string.Equals(ev.EventStatus, "On Going", StringComparison.OrdinalIgnoreCase))
-            return "bg-teal-100 text-teal-800";
-        if (string.Equals(ev.EventStatus, "Event Done", StringComparison.OrdinalIgnoreCase)
-            || string.Equals(ev.EventStatus, "Post Event", StringComparison.OrdinalIgnoreCase))
-            return "bg-purple-100 text-purple-800";
-        if (string.Equals(ev.EventStatus, "Preparation", StringComparison.OrdinalIgnoreCase)
-            || string.Equals(ev.EventStatus, "Preparing", StringComparison.OrdinalIgnoreCase)
-            || string.Equals(ev.EventStatus, "Dispatch", StringComparison.OrdinalIgnoreCase))
-            return "bg-sky-100 text-sky-800";
-        return "bg-slate-100 text-slate-700";
-    }
-
     private string ResolveQrConfirmUrl(string referenceId)
     {
         var configuredBase = Config["BaseUrl"]?.Trim();
@@ -1944,8 +1393,19 @@
         return new SvgQRCode(data).GetGraphic(5);
     }
 
+    private void HandleEquipmentStateChanged()
+    {
+        _ = InvokeAsync(async () =>
+        {
+            ScheduleService.InvalidateCache();
+            await Task.WhenAll(LoadStudioEquipmentsAsync(), RefreshTeamLeaderEventsInternalAsync(surfaceError: false));
+            StateHasChanged();
+        });
+    }
+
     public ValueTask DisposeAsync()
     {
+        EquipmentService.OnChange -= HandleEquipmentStateChanged;
         PaymentHub.OnEventStatusChanged -= HandleHubEventStatusChangedAsync;
         _postEventAutoTimer?.Dispose();
         return ValueTask.CompletedTask;
@@ -2002,6 +1462,29 @@
             return;
         }
 
+        var preview = CurrentModalWorkdaysPreview;
+        if (preview.CountableDays <= 0m)
+        {
+            leaveError = $"Selected dates contain 0 countable workdays (all dates fall on {leaveBalanceSummary.DaysOff} or holidays).";
+            return;
+        }
+
+        if (newLeaveType == "Sick Leave" && preview.CountableDays > 2.0m && string.IsNullOrWhiteSpace(newLeaveAttachmentName))
+        {
+            leaveError = "Medical Certificate attachment reference is required for Sick Leave exceeding 2 consecutive countable workdays.";
+            return;
+        }
+
+        if (IsOfficeClerkLeaveMode && (newLeaveType == "Vacation Leave" || newLeaveType == "Sick Leave"))
+        {
+            decimal avail = SelectedPaidLeaveRemaining;
+            if (preview.CountableDays > avail)
+            {
+                leaveError = $"Insufficient {newLeaveType} credits ({avail:0.0}d left for {preview.CountableDays:0.0}d requested). File overflow days as Leave Without Pay (LWOP).";
+                return;
+            }
+        }
+
         isSubmittingLeave = true;
         leaveError = null;
 
@@ -2012,12 +1495,16 @@
                 DateOnly.FromDateTime(newLeaveStart),
                 DateOnly.FromDateTime(newLeaveEnd),
                 newLeaveReason,
-                string.IsNullOrWhiteSpace(employeeId) ? null : employeeId);
+                string.IsNullOrWhiteSpace(employeeId) ? null : employeeId,
+                newLeaveIsHalfDay,
+                string.IsNullOrWhiteSpace(newLeaveAttachmentName) ? null : newLeaveAttachmentName.Trim());
 
             if (ok)
             {
                 isLeaveModalOpen = false;
                 newLeaveReason = string.Empty;
+                newLeaveAttachmentName = string.Empty;
+                newLeaveIsHalfDay = false;
                 await RefreshStatus();
             }
             else

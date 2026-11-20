@@ -1,4 +1,4 @@
-/* ── Staff ID Card & Account Center (Profile.razor) — light theme ──
+/* ── Staff ID Card & Account Center (shared by Profile.razor & StaffProfile.razor) — light theme ──
    Palette follows the Dashboard Overview: slate neutrals + emerald accent.
    Note: no :root block here — Blazor scoped CSS can't target :root. */
 
@@ -27,6 +27,13 @@
 .loading-card {
     padding: 3rem;
     text-align: center;
+}
+
+.empty-title {
+    font-size: 1.125rem;
+    font-weight: 600;
+    color: #111827;
+    margin: 0 0 0.35rem 0;
 }
 
 .muted-text {

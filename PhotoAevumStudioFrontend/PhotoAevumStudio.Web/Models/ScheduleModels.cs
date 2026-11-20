@@ -28,7 +28,7 @@ public class StudioSpaceResource
 }
 
 public sealed record EventCrewSummary(string EmployeeId, string FullName, string Specialization, bool IsTeamLeader);
-public sealed record EventEquipmentSummary(string EquipmentId, string EquipmentName, string EquipmentType);
+public sealed record EventEquipmentSummary(string EquipmentId, string EquipmentName, string EquipmentType, string EquipmentStatus = "Available");
 
 public class EventBookingModel
 {
@@ -94,6 +94,21 @@ public class EventBookingModel
     public bool IsAppointmentBooked =>
         Status.Equals("Appointment Booked", StringComparison.OrdinalIgnoreCase) ||
         Status.Equals("Deal_Won", StringComparison.OrdinalIgnoreCase);
+
+    public bool IsInactiveOrCompleted =>
+        IsCompleted ||
+        Status.Equals("Cancelled", StringComparison.OrdinalIgnoreCase) ||
+        Status.Equals("Expired", StringComparison.OrdinalIgnoreCase) ||
+        Status.Equals("Deal_Lost", StringComparison.OrdinalIgnoreCase);
+
+    public List<EventEquipmentSummary> UnavailableAssignedEquipment =>
+        IsConsultation || IsInactiveOrCompleted
+            ? new List<EventEquipmentSummary>()
+            : AssignedEquipment
+                .Where(e => EquipmentItemModel.IsUnavailableStatus(e.EquipmentStatus))
+                .ToList();
+
+    public bool NeedsEquipmentFix => UnavailableAssignedEquipment.Count > 0;
 
     public string DisplayStatus
     {
@@ -253,10 +268,16 @@ public class EquipmentReservationModel
     public string ProjectOrClient { get; set; } = string.Empty;
     public string TechnicianInCharge { get; set; } = "Marcus Vance";
     public string Location { get; set; } = "Studio A";
-    public string MaintenanceStatus { get; set; } = "Ready"; // Ready, In-Use, Maintenance Required, Calibration Due
+    public string MaintenanceStatus { get; set; } = "Ready"; // Ready, In-Use, In-Maintenance, Needs Replacement, Retired
+    public string? MaintenanceSubStatus { get; set; }
+    public string? MaintenanceNotes { get; set; }
     public string Notes { get; set; } = string.Empty;
     public bool HasConflict { get; set; }
     public string? ConflictMessage { get; set; }
+
+    public bool NeedsEquipmentFix =>
+        !EquipmentItemModel.IsEventStageCompletedOrInactive(EventStatus) &&
+        EquipmentItemModel.IsUnavailableStatus(MaintenanceStatus);
 
     public double DurationHours => (EndTime - StartTime).TotalHours;
 

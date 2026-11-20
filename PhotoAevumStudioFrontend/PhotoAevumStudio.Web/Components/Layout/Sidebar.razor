@@ -162,6 +162,15 @@
             _paymentHub.OnEventStatusChanged += HandleSidebarEventStatusChangedAsync;
         }
 
+        if (_paymentHub != null && _currentUser?.Identity?.IsAuthenticated == true && !IsAdmin && !IsSystemAdmin && !IsOfficeClerk)
+        {
+            var empId = EmployeeRoleHelper.GetCurrentEmployeeId(_currentUser);
+            if (!string.IsNullOrWhiteSpace(empId))
+            {
+                try { await _paymentHub.EnsureStaffMonitorStartedAsync(empId); } catch { }
+            }
+        }
+
         await RefreshTeamLeadEventCountAsync();
     }
 
@@ -187,7 +196,8 @@
             var res = await consultationClient.GetTeamLeaderEventsAsync(empId);
             if (res.IsSuccess && res.Value != null)
             {
-                var nextCount = TeamLeaderMonitorSelector.SelectUpcomingAndOngoing(res.Value).Count;
+                var nextCount = TeamLeaderMonitorSelector.SelectUpcomingAndOngoing(res.Value)
+                    .Count(e => e.IsTeamLeader);
                 if (nextCount != _teamLeadEventCount)
                 {
                     _teamLeadEventCount = nextCount;

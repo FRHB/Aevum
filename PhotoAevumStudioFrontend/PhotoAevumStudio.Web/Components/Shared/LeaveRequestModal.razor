@@ -1,8 +1,15 @@
+@using PhotoAevumStudio.Web.Models
 @using PhotoAevumStudio.Web.Services
 @inject IEmployeeService Employees
 
 @if (IsOpen)
 {
+    var modalWorkdays = CurrentWorkdaysPreview;
+    decimal selectedTypeRemaining = SelectedPaidLeaveRemaining;
+    decimal projectedRemaining = Math.Max(0m, selectedTypeRemaining - modalWorkdays.CountableDays);
+    bool isPaidCreditLeave = _leaveType is "Vacation Leave" or "Sick Leave";
+    bool requiresMedCert = _leaveType == "Sick Leave" && modalWorkdays.CountableDays > 2.0m;
+
     <div class="fixed inset-0 bg-slate-950/60 backdrop-blur-xs z-50 flex items-center justify-center p-4"
          role="dialog" aria-modal="true" aria-labelledby="leave-modal-title"
          @onclick="CloseAsync">
@@ -10,8 +17,13 @@
              @onclick:stopPropagation="true">
             <div class="px-6 py-4 border-b border-slate-100 flex items-center justify-between bg-slate-50/70">
                 <div>
-                    <h3 id="leave-modal-title" class="text-sm font-extrabold text-slate-900">Request for Leave</h3>
-                    <p class="text-[11px] text-slate-500 mt-0.5">Submits directly to Admin &amp; Office Clerk review queue.</p>
+                    <h3 id="leave-modal-title" class="text-sm font-extrabold text-slate-900">Request Employee Leave</h3>
+                    <span class="sr-only">Request for Leave</span>
+                    <p class="text-[11px] text-slate-500 mt-0.5">
+                        @(_isOfficeClerk
+                            ? "Requires approval by a Studio Admin before taking effect."
+                            : "Requires approval by an Office Clerk or Studio Admin before taking effect.")
+                    </p>
                 </div>
                 <button type="button"
                         @onclick="CloseAsync"
@@ -37,12 +49,50 @@
                     <select id="leave-type-select"
                             @bind="_leaveType"
                             class="w-full px-3 py-2 bg-white border border-slate-300 rounded-lg text-slate-900 focus:outline-none focus:ring-2 focus:ring-teal-500">
-                        <option value="Sick Leave">Sick Leave</option>
-                        <option value="Vacation Leave">Vacation Leave</option>
-                        <option value="Maternity Leave">Maternity Leave</option>
-                        <option value="Paternity Leave">Paternity Leave</option>
+                        @if (_isOfficeClerk)
+                        {
+                            <option value="Vacation Leave">Vacation Leave (VL — Paid, Cash Convertible)</option>
+                            <option value="Sick Leave">Sick Leave (SL — Paid)</option>
+                            <option value="Leave Without Pay">Leave Without Pay (LWOP — Unpaid Overflow)</option>
+                            <option value="Maternity Leave">Maternity Leave (Statutory — 105d)</option>
+                            <option value="Paternity Leave">Paternity Leave (Statutory — 7d)</option>
+                            <option value="Solo Parent Leave">Solo Parent Leave (Statutory — 7d)</option>
+                            <option value="VAWC Leave">VAWC Leave (Statutory — 10d)</option>
+                        }
+                        else
+                        {
+                            <option value="Shoot Unavailability / Time Off">Shoot Unavailability / Time Off (Unpaid Schedule Block)</option>
+                            <option value="Maternity Leave">Maternity Leave (Statutory — 105d)</option>
+                            <option value="Paternity Leave">Paternity Leave (Statutory — 7d)</option>
+                            <option value="Solo Parent Leave">Solo Parent Leave (Statutory — 7d)</option>
+                            <option value="VAWC Leave">VAWC Leave (Statutory — 10d)</option>
+                        }
                     </select>
                 </div>
+
+                @if (_isOfficeClerk)
+                {
+                    <div class="p-2.5 rounded-lg bg-teal-50 border border-teal-200 text-teal-900 space-y-1">
+                        <div class="flex items-center justify-between font-bold">
+                            <span>Remaining Paid Leaves: @($"{_balanceSummary.TotalRemainingPaidDays:0.0}") days</span>
+                            <span>VL: @($"{_balanceSummary.VacationLeaveRemaining:0.0}") left &bull; SL: @($"{_balanceSummary.SickLeaveRemaining:0.0}") left</span>
+                        </div>
+                        @if (isPaidCreditLeave)
+                        {
+                            <div class="flex items-center justify-between text-[11px] text-teal-800 pt-1 border-t border-teal-200/70">
+                                <span>Remaining Paid Leave for @(_leaveType == "Vacation Leave" ? "VL" : "SL"): <strong>@($"{selectedTypeRemaining:0.0}") days</strong></span>
+                                <span>Projected Remaining After Request: <strong>@($"{projectedRemaining:0.0}") days</strong></span>
+                            </div>
+                        }
+                    </div>
+                }
+
+                @if (_leaveType == "Shoot Unavailability / Time Off")
+                {
+                    <div class="p-2.5 rounded-lg bg-sky-50 border border-sky-200 text-sky-900 font-medium" role="status">
+                        Unpaid schedule block — prevents event dispatch on selected dates.
+                    </div>
+                }
 
                 <div class="grid grid-cols-2 gap-3">
                     <div>
@@ -64,6 +114,33 @@
                                class="w-full px-3 py-2 bg-white border border-slate-300 rounded-lg text-slate-900 focus:outline-none focus:ring-2 focus:ring-teal-500" />
                     </div>
                 </div>
+
+                <div class="flex items-center justify-between bg-slate-50 border border-slate-200 rounded-lg px-3 py-2">
+                    <div>
+                        <span class="font-semibold text-slate-800">Countable Workdays: @($"{modalWorkdays.CountableDays:0.0}") days</span>
+                        <span class="text-[11px] text-slate-500 block">
+                            (@modalWorkdays.CalendarDays calendar days &bull; excludes @_balanceSummary.DaysOff &amp; PH holidays)
+                        </span>
+                    </div>
+                    <label class="inline-flex items-center gap-1.5 text-[11px] font-semibold text-slate-700 cursor-pointer">
+                        <input type="checkbox" @bind="_isHalfDay" class="rounded border-slate-300" />
+                        Half-Day (0.5d)
+                    </label>
+                </div>
+
+                @if (requiresMedCert)
+                {
+                    <div class="p-2.5 rounded-lg bg-amber-50 border border-amber-300 space-y-1.5">
+                        <label for="leave-medcert-input" class="block font-bold text-amber-900">
+                            Medical Certificate Attachment Required (&gt; 2 consecutive countable days) <span class="text-rose-600">*</span>
+                        </label>
+                        <input id="leave-medcert-input"
+                               type="text"
+                               @bind="_attachmentName"
+                               placeholder="Enter Medical Certificate filename or reference (e.g., MedCert_SL.pdf)"
+                               class="w-full px-3 py-2 bg-white border border-amber-300 rounded-lg text-slate-900" />
+                    </div>
+                }
 
                 <div>
                     <label for="leave-description" class="block font-semibold text-slate-700 mb-1">
@@ -99,21 +176,68 @@
     [Parameter] public bool IsOpen { get; set; }
     [Parameter] public EventCallback<bool> IsOpenChanged { get; set; }
     [Parameter] public string? EmployeeId { get; set; }
+    [Parameter] public bool? IsOfficeClerk { get; set; }
     [Parameter] public EventCallback OnSubmitted { get; set; }
 
-    private string _leaveType = "Sick Leave";
+    private string _leaveType = "Vacation Leave";
     private DateTime _startDate = DateTime.Today;
     private DateTime _endDate = DateTime.Today;
+    private bool _isHalfDay;
+    private string _attachmentName = string.Empty;
     private string _description = string.Empty;
     private string? _errorMessage;
     private bool _isSubmitting;
+    private bool _isOfficeClerk = true;
+    private EmployeeLeaveBalanceSummaryViewModel _balanceSummary = new()
+    {
+        TotalAllocatedPaidDays = 10.0m,
+        TotalRemainingPaidDays = 10.0m,
+        VacationLeaveRemaining = 5.0m,
+        SickLeaveRemaining = 5.0m,
+        DaysOff = "Sunday"
+    };
 
-    protected override void OnParametersSet()
+    private decimal SelectedPaidLeaveRemaining => _leaveType switch
+    {
+        "Vacation Leave" => _balanceSummary.VacationLeaveRemaining,
+        "Sick Leave" => _balanceSummary.SickLeaveRemaining,
+        _ => 0m
+    };
+
+    private CountableWorkdaysPreviewViewModel CurrentWorkdaysPreview =>
+        LeaveWorkdayHelper.CalculateCountableWorkdays(
+            string.IsNullOrWhiteSpace(EmployeeId) ? "EMP-003" : EmployeeId!,
+            DateOnly.FromDateTime(_startDate.Date),
+            DateOnly.FromDateTime(_endDate.Date),
+            _isHalfDay,
+            _balanceSummary.DaysOff);
+
+    protected override async Task OnParametersSetAsync()
     {
         if (IsOpen && _startDate == default)
         {
             _startDate = DateTime.Today;
             _endDate = DateTime.Today;
+        }
+
+        _isOfficeClerk = IsOfficeClerk ?? (string.IsNullOrWhiteSpace(EmployeeId) || EmployeeId == "EMP-001" || LeaveWorkdayHelper.IsOfficeClerkEmployee(EmployeeId));
+        if (IsOpen)
+        {
+            try
+            {
+                var bal = await Employees.GetLeaveBalancesAsync(EmployeeId ?? (_isOfficeClerk ? "EMP-003" : "EMP-002"), 2026);
+                if (bal != null && bal.Balances.Count > 0)
+                {
+                    _balanceSummary = bal;
+                    _isOfficeClerk = IsOfficeClerk ?? !bal.IsTitleIExempt;
+                }
+            }
+            catch { }
+
+            if (!_isOfficeClerk && (_leaveType is "Vacation Leave" or "Sick Leave" or "Leave Without Pay"))
+            {
+                _leaveType = "Shoot Unavailability / Time Off";
+            }
         }
     }
 
@@ -141,6 +265,19 @@
             return;
         }
 
+        var preview = CurrentWorkdaysPreview;
+        if (preview.CountableDays <= 0m)
+        {
+            _errorMessage = $"Selected dates contain 0 countable workdays (all dates fall on {_balanceSummary.DaysOff} or holidays).";
+            return;
+        }
+
+        if (_leaveType == "Sick Leave" && preview.CountableDays > 2.0m && string.IsNullOrWhiteSpace(_attachmentName))
+        {
+            _errorMessage = "Medical Certificate attachment reference is required for Sick Leave exceeding 2 consecutive countable workdays.";
+            return;
+        }
+
         _isSubmitting = true;
         try
         {
@@ -149,11 +286,15 @@
                 DateOnly.FromDateTime(_startDate),
                 DateOnly.FromDateTime(_endDate),
                 _description.Trim(),
-                string.IsNullOrWhiteSpace(EmployeeId) ? null : EmployeeId);
+                string.IsNullOrWhiteSpace(EmployeeId) ? null : EmployeeId,
+                _isHalfDay,
+                string.IsNullOrWhiteSpace(_attachmentName) ? null : _attachmentName.Trim());
 
             if (ok)
             {
                 _description = string.Empty;
+                _attachmentName = string.Empty;
+                _isHalfDay = false;
                 _startDate = DateTime.Today;
                 _endDate = DateTime.Today;
                 IsOpen = false;

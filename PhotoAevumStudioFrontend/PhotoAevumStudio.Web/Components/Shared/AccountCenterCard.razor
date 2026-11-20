@@ -1,0 +1,307 @@
+@using PhotoAevumStudio.Web.Models
+@using PhotoAevumStudio.Web.Services
+@inject IAuthService AuthService
+
+@if (IsLoading)
+{
+    <div class="profile-page-wrapper">
+        <div class="id-card-container loading-card">
+            <p class="muted-text">Loading profile data...</p>
+        </div>
+    </div>
+}
+else if (RequireAuthenticatedUser && string.IsNullOrWhiteSpace(CurrentUser.Id))
+{
+    <div class="profile-page-wrapper">
+        <div class="id-card-container loading-card">
+            <h2 class="empty-title">@EmptyStateTitle</h2>
+            <p class="muted-text">@EmptyStateMessage</p>
+        </div>
+    </div>
+}
+else
+{
+    <div class="profile-page-wrapper">
+        <!-- Staff ID Card Container -->
+        <div class="id-card-container">
+
+            <!-- Top Identity Banner -->
+            <div class="id-card-header">
+                <div class="profile-summary">
+                    <div class="avatar">@CurrentUser.Initials</div>
+                    <div class="profile-titles">
+                        <h1>@CurrentUser.FullName</h1>
+                        <p>@CurrentUser.JobTitle <span></span> @CurrentUser.Department</p>
+                    </div>
+                </div>
+                <div class="badge-tag">
+                    STAFF ID · @CurrentUser.Id
+                </div>
+            </div>
+
+            <!-- Attributes & Details Body -->
+            <div class="id-card-body">
+                <div class="section-title">Account Attributes & Information</div>
+
+                <!-- Attributes Grid -->
+                <ul class="attributes-list">
+                    <li class="attribute-item">
+                        <div class="attr-content">
+                            <span class="attr-label">Email Address</span>
+                            <span class="attr-value">@CurrentUser.Email</span>
+                        </div>
+                    </li>
+
+                    <li class="attribute-item">
+                        <div class="attr-content">
+                            <span class="attr-label">Role Assignment</span>
+                            <span class="attr-value">@CurrentUser.Role</span>
+                        </div>
+                    </li>
+
+                    <li class="attribute-item">
+                        <div class="attr-content">
+                            <span class="attr-label">@ThirdAttributeLabel</span>
+                            <span class="attr-value">@ThirdAttributeValue</span>
+                        </div>
+                    </li>
+
+                    <li class="attribute-item">
+                        <div class="attr-content">
+                            <span class="attr-label">Account Status</span>
+                            <span class="attr-value status-indicator">
+                                <span class="status-dot"></span> @(string.IsNullOrWhiteSpace(CurrentUser.Status) ? "Active" : CurrentUser.Status)
+                            </span>
+                        </div>
+                    </li>
+                </ul>
+
+                <!-- Interactive Actions Section with Logo Buttons -->
+                <div class="actions-section">
+                    <div>
+                        <div class="section-title section-title--tight">Quick Management Actions</div>
+                        <p class="actions-subtitle">Click an icon below to trigger popup management controls.</p>
+                    </div>
+
+                    <!-- Logo Buttons -->
+                    <div class="actions-grid">
+                        <!-- Permissions Logo Button -->
+                        <button type="button" class="logo-btn" id="openPermissionsBtn" data-tooltip="Manage Permissions" @onclick="OpenPermissionsModal">
+                            <i class="fa-solid fa-user-shield"></i>
+                        </button>
+
+                        <!-- Password Logo Button -->
+                        <button type="button" class="logo-btn" id="openPasswordBtn" data-tooltip="Security & Password" @onclick="OpenPasswordModal">
+                            <i class="fa-solid fa-key"></i>
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Card Footer -->
+            <div class="id-card-footer">
+                <span>PhotoAevum Studio · Account Center</span>
+                <span class="footer-secured"><i class="fa-solid fa-lock"></i> Session secured</span>
+            </div>
+        </div>
+    </div>
+}
+
+<!-- POPUP MODAL 1: Permissions Management -->
+<div class="modal-overlay @(showPermsModal ? "active" : "")" id="permissionsModal" @onclick="ClosePermissionsModal">
+    <div class="modal-card" @onclick:stopPropagation="true">
+        <div class="modal-header">
+            <div class="modal-title">
+                <i class="fa-solid fa-user-shield"></i>
+                <h3>Permissions & Module Access</h3>
+            </div>
+            <button type="button" class="close-btn" id="closePermsModal" @onclick="ClosePermissionsModal">&times;</button>
+        </div>
+
+        <p class="modal-description">
+            @PermissionsDescription
+        </p>
+
+        <div id="permissionsList">
+            @foreach (var perm in UserPermissions)
+            {
+                <div class="permission-item">
+                    <div class="perm-info">
+                        <i class="fa-solid @perm.IconClass"></i>
+                        <span class="perm-name">@perm.Name</span>
+                    </div>
+                </div>
+            }
+        </div>
+    </div>
+</div>
+
+<!-- POPUP MODAL 2: Password Management -->
+<div class="modal-overlay @(showPassModal ? "active" : "")" id="passwordModal" @onclick="ClosePasswordModal">
+    <div class="modal-card" @onclick:stopPropagation="true">
+        <div class="modal-header">
+            <div class="modal-title">
+                <i class="fa-solid fa-key"></i>
+                <h3>Security & Password</h3>
+            </div>
+            <button type="button" class="close-btn" id="closePassModal" @onclick="ClosePasswordModal">&times;</button>
+        </div>
+
+        <p class="modal-description">
+            Enter your current password to set a new one.
+        </p>
+
+        @if (!string.IsNullOrWhiteSpace(passwordErrorMessage))
+        {
+            <div class="form-error">
+                <i class="fa-solid fa-circle-exclamation"></i> @passwordErrorMessage
+            </div>
+        }
+
+        <form id="passwordForm" @onsubmit="HandleUpdatePassword" @onsubmit:preventDefault="true">
+            <div class="form-group">
+                <label>Current Password</label>
+                <div class="input-wrapper">
+                    <i class="fa-solid fa-lock"></i>
+                    <input type="password" class="form-input" placeholder="••••••••••••" @bind="passwordForm.CurrentPassword" required />
+                </div>
+            </div>
+
+            <div class="form-group">
+                <label>New Password</label>
+                <div class="input-wrapper">
+                    <i class="fa-solid fa-shield-halved"></i>
+                    <input type="password" class="form-input" placeholder="8–30 characters" maxlength="30" @bind="passwordForm.NewPassword" @bind:event="oninput" required />
+                </div>
+                @if (PasswordChecklistSlot is not null)
+                {
+                    @PasswordChecklistSlot(passwordForm.NewPassword)
+                }
+            </div>
+
+            <div class="form-group">
+                <label>Confirm New Password</label>
+                <div class="input-wrapper">
+                    <i class="fa-solid fa-check-double"></i>
+                    <input type="password" class="form-input" placeholder="Re-enter new password" maxlength="30" @bind="passwordForm.ConfirmPassword" required />
+                </div>
+            </div>
+
+            <button type="submit" class="modal-action-btn" id="updatePasswordBtn" disabled="@isUpdatingPassword">
+                @(isUpdatingPassword ? "Updating Password..." : "Update Password")
+            </button>
+        </form>
+    </div>
+</div>
+
+<!-- Toast Feedback -->
+<div class="toast @(showToast ? "show" : "")" id="toast">
+    <i class="fa-solid fa-circle-check"></i>
+    <span id="toastMsg">@toastMessage</span>
+</div>
+
+@code {
+    [Parameter] public AppUser CurrentUser { get; set; } = new();
+    [Parameter] public List<Permission> UserPermissions { get; set; } = new();
+    [Parameter] public bool IsLoading { get; set; }
+    [Parameter] public bool RequireAuthenticatedUser { get; set; }
+    [Parameter] public string EmptyStateTitle { get; set; } = "No Active Profile";
+    [Parameter] public string EmptyStateMessage { get; set; } = "Please sign in to view your profile.";
+    [Parameter] public string ThirdAttributeLabel { get; set; } = "Member Since";
+    [Parameter] public string ThirdAttributeValue { get; set; } = "March 2024";
+    [Parameter] public string PermissionsDescription { get; set; } = "Authorize or revoke active studio modules for this administrator account.";
+    [Parameter] public RenderFragment<string>? PasswordChecklistSlot { get; set; }
+
+    private bool showPermsModal = false;
+    private bool showPassModal = false;
+    private bool showToast = false;
+    private string toastMessage = string.Empty;
+    private bool isUpdatingPassword = false;
+    private string passwordErrorMessage = string.Empty;
+    private PasswordFormState passwordForm = new();
+
+    private void OpenPermissionsModal() => showPermsModal = true;
+    private void ClosePermissionsModal() => showPermsModal = false;
+
+    private void OpenPasswordModal()
+    {
+        passwordForm = new();
+        passwordErrorMessage = string.Empty;
+        showPassModal = true;
+    }
+
+    private void ClosePasswordModal() => showPassModal = false;
+
+    private async Task DisplayToast(string message)
+    {
+        toastMessage = message;
+        showToast = true;
+        StateHasChanged();
+        await Task.Delay(3000);
+        showToast = false;
+        StateHasChanged();
+    }
+
+    private async Task HandleUpdatePassword()
+    {
+        isUpdatingPassword = true;
+        passwordErrorMessage = string.Empty;
+        StateHasChanged();
+
+        if (string.IsNullOrWhiteSpace(passwordForm.CurrentPassword) ||
+            string.IsNullOrWhiteSpace(passwordForm.NewPassword) ||
+            string.IsNullOrWhiteSpace(passwordForm.ConfirmPassword))
+        {
+            passwordErrorMessage = "All password fields are required.";
+            isUpdatingPassword = false;
+            return;
+        }
+
+        var policyError = PasswordPolicyHelper.GetValidationError(passwordForm.NewPassword);
+        if (policyError is not null)
+        {
+            passwordErrorMessage = policyError;
+            isUpdatingPassword = false;
+            return;
+        }
+
+        if (passwordForm.NewPassword != passwordForm.ConfirmPassword)
+        {
+            passwordErrorMessage = "New passwords do not match.";
+            isUpdatingPassword = false;
+            return;
+        }
+
+        if (passwordForm.NewPassword == passwordForm.CurrentPassword)
+        {
+            passwordErrorMessage = "New password must be different from current password.";
+            isUpdatingPassword = false;
+            return;
+        }
+
+        var result = await AuthService.ChangeInitialPasswordAsync(
+            CurrentUser.Id,
+            passwordForm.CurrentPassword,
+            passwordForm.NewPassword,
+            passwordForm.ConfirmPassword);
+
+        if (result.Success)
+        {
+            ClosePasswordModal();
+            await DisplayToast("Account password updated successfully!");
+        }
+        else
+        {
+            passwordErrorMessage = result.Error ?? "Failed to update password. Please verify current password.";
+        }
+
+        isUpdatingPassword = false;
+    }
+
+    private sealed class PasswordFormState
+    {
+        public string CurrentPassword { get; set; } = string.Empty;
+        public string NewPassword { get; set; } = string.Empty;
+        public string ConfirmPassword { get; set; } = string.Empty;
+    }
+}

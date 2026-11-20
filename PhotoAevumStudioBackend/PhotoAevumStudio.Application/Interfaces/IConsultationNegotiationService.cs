@@ -24,6 +24,9 @@ public interface IConsultationNegotiationService
     Task<int> AutoTriggerPostEventsAsync(CancellationToken cancellationToken = default);
     Task NotifyTeamLeaderFinalQrPaidAsync(string appointmentId, decimal amountPaid, string? paymentChannel, CancellationToken cancellationToken = default);
     Task<bool> UpdateAppointmentRosterAsync(string appointmentId, UpdateAppointmentRosterRequest request, CancellationToken cancellationToken = default);
+    Task<EventAppointmentDto> VerifyCrewDutyAsync(string appointmentId, VerifyCrewDutyRequest request, CancellationToken cancellationToken = default);
+    Task<EventAppointmentDto> RequestCrewReplacementAsync(string appointmentId, RequestCrewReplacementRequest request, CancellationToken cancellationToken = default);
+    Task<EventAppointmentDto> FulfillCrewReplacementAsync(string appointmentId, int requestId, FulfillCrewReplacementRequest request, CancellationToken cancellationToken = default);
     Task<EventAppointmentDto> UpdateBookingStatusFromPaymentAsync(string appointmentId, UpdatePaymentBookingStatusRequest request, CancellationToken cancellationToken = default);
     Task<CustomerAppointmentActionResultDto> CustomerCancelAppointmentAsync(string appointmentId, string customerId, string? reason = null, bool isPrivileged = false, CancellationToken cancellationToken = default);
     Task<CustomerAppointmentActionResultDto> CustomerRescheduleAppointmentAsync(string appointmentId, CustomerRescheduleAppointmentRequest request, string customerId, bool isPrivileged = false, CancellationToken cancellationToken = default);

@@ -3,6 +3,8 @@
 @implements IDisposable
 @inject IConsultationClient ConsultationApi
 @inject IScheduleService ScheduleService
+@inject IEquipmentService EquipmentService
+@inject IEmployeeService EmployeeService
 @inject PaymentHubClient PaymentHub
 
 <section class="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden mb-6" aria-label="Live Concurrent Events Overview">
@@ -41,6 +43,12 @@
                 {
                     <span class="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-900 border border-emerald-300">
                         ✓ @_paidQrCount Payment Verification (QR:Paid)
+                    </span>
+                }
+                @if (_pendingCrewReplacementsCount > 0)
+                {
+                    <span class="px-2 py-0.5 rounded-full text-[10px] font-bold bg-rose-100 text-rose-900 border border-rose-300 animate-pulse">
+                        🚨 @_pendingCrewReplacementsCount Crew Replacement Request@(_pendingCrewReplacementsCount == 1 ? "" : "s")
                     </span>
                 }
             </div>
@@ -143,6 +151,12 @@
                                         🚚 Dispatched
                                     </span>
                                 }
+                                @if (!isComplete && ev.AssignedEquipment.Any(eq => EquipmentItemModel.IsUnavailableStatus(eq.EquipmentStatus)))
+                                {
+                                    <span class="px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-100 text-amber-900 border border-amber-300">
+                                        🔧 Equipment in Maintenance
+                                    </span>
+                                }
                             </div>
                             <div class="text-xs text-slate-600 flex flex-wrap gap-x-4 gap-y-1">
                                 <span>Client: <strong class="text-slate-900">@ev.CustomerName</strong></span>
@@ -173,9 +187,17 @@
                             }
                         </div>
 
-                        @if (isCashPending)
-                        {
-                            <div class="flex flex-col items-end gap-1 shrink-0">
+                        <div class="flex flex-col items-end gap-1.5 shrink-0">
+                            @if (!isComplete)
+                            {
+                                <button type="button"
+                                        @onclick="() => OpenManageRosterModal(ev)"
+                                        class="px-3.5 py-1.5 rounded-full border border-slate-300 bg-white hover:bg-slate-100 text-slate-800 text-[11px] font-bold shadow-2xs transition-all">
+                                    👥 Manage Crew / Team Lead
+                                </button>
+                            }
+                            @if (isCashPending)
+                            {
                                 <button type="button"
                                         title="Verify Cash — confirm that the cash has been taken back"
                                         disabled="@(_verifyingId == ev.EventAppointmentId)"
@@ -185,9 +207,81 @@
                                     <span>@(_verifyingId == ev.EventAppointmentId ? "Verifying..." : "Confirm Cash Verification")</span>
                                 </button>
                                 <span class="text-[10px] font-semibold text-amber-800">Confirm cash has been taken back</span>
-                            </div>
-                        }
+                            }
+                        </div>
                     </div>
+
+                    @* ── Pending Crew Replacement Requests from Team Leader ────── *@
+                    @{
+                        var pendingCrewReqs = ev.CrewReplacementRequests
+                            .Where(r => string.Equals(r.Status, "Pending", StringComparison.OrdinalIgnoreCase))
+                            .ToList();
+                    }
+                    @if (pendingCrewReqs.Any())
+                    {
+                        <div class="rounded-xl border border-rose-300 bg-rose-50/80 p-3.5 space-y-3" aria-label="Pending Crew Replacement Requests">
+                            <div class="flex items-center justify-between gap-2 flex-wrap">
+                                <span class="text-xs font-extrabold text-rose-900">
+                                    🚨 Team Leader Requested New / Replacement Crew
+                                </span>
+                                <span class="text-[11px] text-rose-700 font-semibold">
+                                    Assign an available employee to update the Team Lead Monitor &amp; Staff Portal
+                                </span>
+                            </div>
+
+                            @foreach (var req in pendingCrewReqs)
+                            {
+                                var availForReq = GetReplacementCrewOptions(ev);
+                                var selectedRepId = _replacementSelections.TryGetValue(req.RequestId, out var selVal) ? selVal : string.Empty;
+                                var markSuddenLeave = !_markSuddenAbsenceOnFulfill.TryGetValue(req.RequestId, out var msVal) || msVal;
+                                var isAbsentLead = ev.AssignedEmployees.Any(a =>
+                                    string.Equals(a.EmployeeId, req.AbsentEmployeeId, StringComparison.OrdinalIgnoreCase) && a.IsTeamLeader);
+
+                                <div class="rounded-lg bg-white border border-rose-200 p-3 space-y-2 text-xs">
+                                    <div class="flex flex-wrap items-center justify-between gap-2">
+                                        <div>
+                                            <span class="font-bold text-slate-900">Not On Duty: @(req.AbsentEmployeeName ?? req.AbsentEmployeeId)</span>
+                                            <span class="font-mono text-[10px] text-slate-500 ml-1">(@req.AbsentEmployeeId)</span>
+                                            @if (isAbsentLead)
+                                            {
+                                                <span class="ml-1 px-2 py-0.5 rounded-full bg-amber-100 text-amber-900 text-[10px] font-bold">Was Team Leader</span>
+                                            }
+                                            <div class="text-[11px] text-slate-600 mt-0.5">
+                                                Requested by <strong>@(req.RequestedByName ?? "Team Leader")</strong>: <em>@req.Reason</em>
+                                            </div>
+                                        </div>
+                                        <span class="px-2 py-0.5 rounded-full bg-amber-100 text-amber-900 text-[10px] font-bold">Pending</span>
+                                    </div>
+
+                                    <div class="grid grid-cols-1 md:grid-cols-12 gap-2 items-center">
+                                        <select value="@selectedRepId"
+                                                @onchange="e => _replacementSelections[req.RequestId] = e.Value?.ToString() ?? string.Empty"
+                                                class="md:col-span-6 px-2.5 py-1.5 border border-slate-300 rounded-lg text-xs bg-white">
+                                            <option value="">Select available replacement employee...</option>
+                                            @foreach (var opt in availForReq)
+                                            {
+                                                <option value="@opt.Employee.EmployeeId">
+                                                    @opt.Employee.FullName (@opt.Employee.EmployeeId) — @opt.AvailabilityText
+                                                </option>
+                                            }
+                                        </select>
+                                        <label class="md:col-span-3 flex items-center gap-1.5 text-[11px] text-slate-700 cursor-pointer">
+                                            <input type="checkbox"
+                                                   checked="@markSuddenLeave"
+                                                   @onchange="e => _markSuddenAbsenceOnFulfill[req.RequestId] = e.Value is bool b && b" />
+                                            <span>Mark absent today</span>
+                                        </label>
+                                        <button type="button"
+                                                disabled="@(_fulfillingRequestId == req.RequestId || string.IsNullOrWhiteSpace(selectedRepId))"
+                                                @onclick="() => FulfillReplacementAsync(ev, req, isAbsentLead)"
+                                                class="md:col-span-3 px-3 py-1.5 rounded-lg bg-slate-900 hover:bg-black disabled:opacity-45 text-white text-xs font-bold">
+                                            @(_fulfillingRequestId == req.RequestId ? "Assigning..." : "Assign Replacement")
+                                        </button>
+                                    </div>
+                                </div>
+                            }
+                        </div>
+                    }
 
                     @* ── 5-Step Live Workflow Stepper ───────────────────────────── *@
                     <div class="grid grid-cols-2 sm:grid-cols-5 gap-2">
@@ -216,6 +310,14 @@
     </div>
 </section>
 
+<BookedEventOverviewModal Booking="_managingRosterBooking"
+                          CanManageRoster="true"
+                          HidePricing="false"
+                          AllBookings="_scheduleBookings"
+                          EquipmentReservations="_equipmentReservations"
+                          OnClose="() => _managingRosterBooking = null"
+                          OnRosterUpdated="HandleLiveRosterUpdatedAsync" />
+
 @code {
     [Parameter] public string ManagerId { get; set; } = string.Empty;
     [Parameter] public string ManagerName { get; set; } = string.Empty;
@@ -234,6 +336,14 @@
     };
 
     private List<LiveEventOverviewDto> _events = new();
+    private List<EmployeeViewModel> _employees = new();
+    private List<LeaveItemViewModel> _approvedLeaves = new();
+    private List<EventBookingModel> _scheduleBookings = new();
+    private List<EquipmentReservationModel> _equipmentReservations = new();
+    private EventBookingModel? _managingRosterBooking;
+    private readonly Dictionary<int, string> _replacementSelections = new();
+    private readonly Dictionary<int, bool> _markSuddenAbsenceOnFulfill = new();
+    private int? _fulfillingRequestId;
     private string _selectedFilter = "All";
     private bool _loading = true;
     private bool _isUpcomingFallback;
@@ -243,6 +353,7 @@
     private System.Threading.Timer? _refreshTimer;
 
     private int _concurrentActiveCount => _events.Count(e => !IsCompletedStage(e.DisplayStage));
+    private int _pendingCrewReplacementsCount => _events.Sum(e => e.CrewReplacementRequests.Count(r => string.Equals(r.Status, "Pending", StringComparison.OrdinalIgnoreCase)));
 
     private int _pendingCashCount => _events.Count(e =>
         !IsCompletedStage(e.DisplayStage) &&
@@ -345,6 +456,7 @@
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
         if (!firstRender) return;
+        EquipmentService.OnChange += HandleEquipmentStateChanged;
         PaymentHub.OnEventStatusChanged += HandleHubEventStatusChangedAsync;
         await RefreshAsync();
         try
@@ -374,6 +486,10 @@
         {
             _actionMessage = $"QR payment succeeded for #{msg.AppointmentId}! Event marked Completed / Success.";
         }
+        else if (string.Equals(msg.EventStatus, "CrewReplacementRequested", StringComparison.OrdinalIgnoreCase))
+        {
+            _actionMessage = $"Team Leader requested a replacement crew member for #{msg.AppointmentId}.";
+        }
         StateHasChanged();
     });
 
@@ -382,12 +498,22 @@
         _loading = true;
         try
         {
-            var res = await ConsultationApi.GetLiveEventsOverviewAsync();
+            var overviewTask = ConsultationApi.GetLiveEventsOverviewAsync();
+            var empTask = EmployeeService.GetEmployeesAsync();
+            var leaveTask = EmployeeService.GetAllLeavesAsync("Approved");
+
+            await Task.WhenAll(overviewTask, empTask, leaveTask);
+
+            var res = await overviewTask;
             if (res.IsSuccess && res.Value != null)
             {
                 _events = SelectOverviewEvents(res.Value).ToList();
                 _isUpcomingFallback = _events.Count == 1 && !IsExecutingEvent(_events[0]);
             }
+            _employees = (await empTask)?.Where(e => e.IsActive).ToList() ?? new();
+            _approvedLeaves = (await leaveTask)?.ToList() ?? new();
+            _scheduleBookings = ScheduleService.GetEventBookings();
+            _equipmentReservations = ScheduleService.GetEquipmentReservations();
         }
         catch
         {
@@ -395,6 +521,123 @@
         finally
         {
             _loading = false;
+        }
+    }
+
+    private List<AvailableCrewOption> GetReplacementCrewOptions(LiveEventOverviewDto ev)
+    {
+        if (_employees.Count == 0) return new List<AvailableCrewOption>();
+        var start = ev.EventTime.ToTimeSpan();
+        var end = ev.EventEndTime.HasValue && ev.EventEndTime.Value > ev.EventTime
+            ? ev.EventEndTime.Value.ToTimeSpan()
+            : start.Add(TimeSpan.FromMinutes(Math.Max(60, ev.DurationMinutes)));
+        var assignedIds = ev.AssignedEmployees.Select(a => a.EmployeeId).ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+        return BookingWizardEngine.GetAvailableCrews(
+                _employees,
+                ev.EventDate.ToDateTime(TimeOnly.MinValue),
+                start,
+                end,
+                _scheduleBookings,
+                null,
+                ev.EventAppointmentId,
+                _approvedLeaves)
+            .Where(opt => !assignedIds.Contains(opt.Employee.EmployeeId))
+            .ToList();
+    }
+
+    private async Task FulfillReplacementAsync(LiveEventOverviewDto ev, EventCrewReplacementRequestDto req, bool promoteToLeader)
+    {
+        if (!_replacementSelections.TryGetValue(req.RequestId, out var repId) || string.IsNullOrWhiteSpace(repId))
+            return;
+
+        _fulfillingRequestId = req.RequestId;
+        _actionMessage = null;
+        _errorMessage = null;
+        try
+        {
+            var markSuddenLeave = !_markSuddenAbsenceOnFulfill.TryGetValue(req.RequestId, out var msVal) || msVal;
+            var res = await ConsultationApi.FulfillCrewReplacementAsync(ev.EventAppointmentId, req.RequestId, new FulfillCrewReplacementRequest
+            {
+                ReplacementEmployeeId = repId,
+                PromoteToTeamLeader = promoteToLeader,
+                MarkAbsentAsSuddenLeave = markSuddenLeave,
+                Reason = req.Reason,
+                ActorId = ManagerId,
+                ActorName = ManagerName
+            });
+            if (res.IsSuccess)
+            {
+                _replacementSelections.Remove(req.RequestId);
+                _markSuddenAbsenceOnFulfill.Remove(req.RequestId);
+                ScheduleService.InvalidateCache();
+                _actionMessage = $"Replacement crew ({repId}) assigned to #{ev.EventAppointmentId}. Staff & Team Lead portals updated.";
+                await RefreshAsync();
+                if (OnCashVerified.HasDelegate)
+                {
+                    await OnCashVerified.InvokeAsync();
+                }
+            }
+            else
+            {
+                _errorMessage = res.Error?.Message ?? "Could not assign replacement crew.";
+            }
+        }
+        catch (Exception ex)
+        {
+            _errorMessage = ex.Message;
+        }
+        finally
+        {
+            _fulfillingRequestId = null;
+        }
+    }
+
+    private void OpenManageRosterModal(LiveEventOverviewDto ev)
+    {
+        var existingBooking = _scheduleBookings.FirstOrDefault(b =>
+            string.Equals(b.Id, ev.EventAppointmentId, StringComparison.OrdinalIgnoreCase));
+        if (existingBooking != null)
+        {
+            _managingRosterBooking = existingBooking;
+            return;
+        }
+
+        var end = ev.EventEndTime.HasValue && ev.EventEndTime.Value > ev.EventTime
+            ? ev.EventEndTime.Value.ToTimeSpan()
+            : ev.EventTime.ToTimeSpan().Add(TimeSpan.FromMinutes(Math.Max(60, ev.DurationMinutes)));
+
+        _managingRosterBooking = new EventBookingModel
+        {
+            Id = ev.EventAppointmentId,
+            ClientName = ev.CustomerName,
+            ClientEmail = ev.CustomerEmail,
+            ClientPhone = ev.CustomerPhone ?? string.Empty,
+            ServiceType = ev.EventName,
+            EventLocation = ev.EventLocation,
+            Date = ev.EventDate.ToDateTime(TimeOnly.MinValue),
+            StartTime = ev.EventTime.ToTimeSpan(),
+            EndTime = end,
+            Status = ev.EventStatus,
+            EstimatedPrice = ev.TotalAmount,
+            Notes = ev.EventDescription,
+            AssignedCrewIds = ev.AssignedEmployees.Select(e => e.EmployeeId).ToList(),
+            AssignedCrew = ev.AssignedEmployees.Select(e => new EventCrewSummary(e.EmployeeId, e.EmployeeName, e.Specialization, e.IsTeamLeader)).ToList(),
+            AssignedPhotographer = string.Join(", ", ev.AssignedEmployees.Select(e => e.EmployeeName)),
+            AssignedEquipmentIds = ev.AssignedEquipment.Select(e => e.EquipmentId).ToList(),
+            AssignedEquipmentNames = ev.AssignedEquipment.Select(e => e.EquipmentName).ToList(),
+            AssignedEquipment = ev.AssignedEquipment.Select(e => new EventEquipmentSummary(e.EquipmentId, e.EquipmentName, e.EquipmentType, e.EquipmentStatus)).ToList()
+        };
+    }
+
+    private async Task HandleLiveRosterUpdatedAsync()
+    {
+        ScheduleService.InvalidateCache();
+        _actionMessage = "Event crew / Team Leader roster updated and affected employee portals notified.";
+        await RefreshAsync();
+        if (OnCashVerified.HasDelegate)
+        {
+            await OnCashVerified.InvokeAsync();
         }
     }
 
@@ -546,8 +789,19 @@
         return "pending";
     }
 
+    private void HandleEquipmentStateChanged()
+    {
+        _ = InvokeAsync(async () =>
+        {
+            ScheduleService.InvalidateCache();
+            await RefreshAsync();
+            StateHasChanged();
+        });
+    }
+
     public void Dispose()
     {
+        EquipmentService.OnChange -= HandleEquipmentStateChanged;
         PaymentHub.OnEventStatusChanged -= HandleHubEventStatusChangedAsync;
         _refreshTimer?.Dispose();
     }

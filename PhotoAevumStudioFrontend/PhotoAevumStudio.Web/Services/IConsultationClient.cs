@@ -21,6 +21,12 @@ public interface IConsultationClient
     Task<ApiResult<EventAppointmentDto>> UpdateTeamLeaderEventStatusAsync(string appointmentId, UpdateTeamLeaderStatusRequest request, CancellationToken ct = default);
     Task<ApiResult<EventAppointmentDto>> MarkEquipmentTakenAsync(string appointmentId, MarkEquipmentTakenRequest request, CancellationToken ct = default);
     Task<ApiResult<EventAppointmentDto>> AddEventEquipmentAsync(string appointmentId, AddEventEquipmentRequest request, CancellationToken ct = default);
+    Task<ApiResult<EventAppointmentDto>> VerifyCrewDutyAsync(string appointmentId, VerifyCrewDutyRequest request, CancellationToken ct = default) =>
+        Task.FromResult(new ApiResult<EventAppointmentDto>(null, new ApiError(default, "Not implemented.")));
+    Task<ApiResult<EventAppointmentDto>> RequestCrewReplacementAsync(string appointmentId, RequestCrewReplacementRequest request, CancellationToken ct = default) =>
+        Task.FromResult(new ApiResult<EventAppointmentDto>(null, new ApiError(default, "Not implemented.")));
+    Task<ApiResult<EventAppointmentDto>> FulfillCrewReplacementAsync(string appointmentId, int requestId, FulfillCrewReplacementRequest request, CancellationToken ct = default) =>
+        Task.FromResult(new ApiResult<EventAppointmentDto>(null, new ApiError(default, "Not implemented.")));
     Task<ApiResult<IReadOnlyList<LiveEventOverviewDto>>> GetLiveEventsOverviewAsync(CancellationToken ct = default);
     Task<ApiResult<EventAppointmentDto>> VerifyCashSettlementAsync(string appointmentId, AdminApproveRemittanceModel? request = null, CancellationToken ct = default);
     Task<ApiResult<PaymentBreakdownModel>> CalculateReservationFeeAsync(decimal total, CancellationToken ct = default);

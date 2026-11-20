@@ -599,6 +599,10 @@ public class PaymentsController : ControllerBase
         {
             return NotFound(new { message = ex.Message });
         }
+        catch (InvalidOperationException ex)
+        {
+            return BadRequest(new { message = ex.Message });
+        }
         catch (ArgumentException ex)
         {
             return BadRequest(new { message = ex.Message });
@@ -648,6 +652,10 @@ public class PaymentsController : ControllerBase
         {
             return NotFound(new { message = ex.Message });
         }
+        catch (InvalidOperationException ex)
+        {
+            return BadRequest(new { message = ex.Message });
+        }
     }
 
     // POST api/payments/team-leader-events/{appointmentId}/equipment
@@ -686,6 +694,121 @@ public class PaymentsController : ControllerBase
             catch (Exception ex)
             {
                 _logger.LogWarning(ex, "SignalR EventStatusChanged broadcast failed after add equipment for {AppointmentId}", appointmentId);
+            }
+            return Ok(updated);
+        }
+        catch (KeyNotFoundException ex)
+        {
+            return NotFound(new { message = ex.Message });
+        }
+        catch (ArgumentException ex)
+        {
+            return BadRequest(new { message = ex.Message });
+        }
+        catch (InvalidOperationException ex)
+        {
+            return BadRequest(new { message = ex.Message });
+        }
+    }
+
+    // POST api/payments/team-leader-events/{appointmentId}/crew/verify
+    [HttpPost("team-leader-events/{appointmentId}/crew/verify")]
+    [Authorize(Roles = $"{AppRoles.Employee},{AppRoles.OfficeClerk},{AppRoles.Admin},{AppRoles.SystemAdmin}")]
+    public async Task<IActionResult> VerifyCrewDuty(
+        string appointmentId,
+        [FromBody] VerifyCrewDutyRequest request,
+        CancellationToken cancellationToken)
+    {
+        var claimEmpId = User.FindFirstValue("studio_id")
+            ?? User.FindFirstValue(ClaimTypes.NameIdentifier)
+            ?? User.FindFirstValue("sub");
+
+        if (string.IsNullOrWhiteSpace(request.EmployeeId))
+            request.EmployeeId = claimEmpId;
+
+        var isManager = User.IsInRole(AppRoles.Admin) || User.IsInRole(AppRoles.SystemAdmin) || User.IsInRole(AppRoles.OfficeClerk);
+        if (!isManager && (string.IsNullOrWhiteSpace(claimEmpId) || !await _consultationService.IsTeamLeaderForEventAsync(appointmentId, claimEmpId, cancellationToken)))
+        {
+            return Forbid();
+        }
+
+        try
+        {
+            var updated = await _consultationService.VerifyCrewDutyAsync(appointmentId, request, cancellationToken);
+            try
+            {
+                await _notifier.EventStatusChangedAsync(
+                    updated.EventAppointmentId,
+                    updated.EventStatus,
+                    updated.FinalPaymentStatus,
+                    updated.CustomerId,
+                    cancellationToken);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "SignalR EventStatusChanged broadcast failed after crew verification for {AppointmentId}", appointmentId);
+            }
+            return Ok(updated);
+        }
+        catch (KeyNotFoundException ex)
+        {
+            return NotFound(new { message = ex.Message });
+        }
+        catch (ArgumentException ex)
+        {
+            return BadRequest(new { message = ex.Message });
+        }
+        catch (InvalidOperationException ex)
+        {
+            return BadRequest(new { message = ex.Message });
+        }
+    }
+
+    // POST api/payments/team-leader-events/{appointmentId}/crew/request-replacement
+    [HttpPost("team-leader-events/{appointmentId}/crew/request-replacement")]
+    [Authorize(Roles = $"{AppRoles.Employee},{AppRoles.OfficeClerk},{AppRoles.Admin},{AppRoles.SystemAdmin}")]
+    public async Task<IActionResult> RequestCrewReplacement(
+        string appointmentId,
+        [FromBody] RequestCrewReplacementRequest request,
+        CancellationToken cancellationToken)
+    {
+        var claimEmpId = User.FindFirstValue("studio_id")
+            ?? User.FindFirstValue(ClaimTypes.NameIdentifier)
+            ?? User.FindFirstValue("sub");
+        var claimName = User.FindFirstValue("full_name")
+            ?? User.FindFirstValue(ClaimTypes.Name);
+
+        if (string.IsNullOrWhiteSpace(request.RequestedByEmployeeId))
+            request.RequestedByEmployeeId = claimEmpId;
+        if (string.IsNullOrWhiteSpace(request.RequestedByName))
+            request.RequestedByName = claimName;
+
+        var isManager = User.IsInRole(AppRoles.Admin) || User.IsInRole(AppRoles.SystemAdmin) || User.IsInRole(AppRoles.OfficeClerk);
+        if (!isManager && (string.IsNullOrWhiteSpace(claimEmpId) || !await _consultationService.IsTeamLeaderForEventAsync(appointmentId, claimEmpId, cancellationToken)))
+        {
+            return Forbid();
+        }
+
+        try
+        {
+            var updated = await _consultationService.RequestCrewReplacementAsync(appointmentId, request, cancellationToken);
+            try
+            {
+                await _notifier.EventStatusChangedAsync(
+                    updated.EventAppointmentId,
+                    "CrewReplacementRequested",
+                    updated.FinalPaymentStatus,
+                    updated.CustomerId,
+                    cancellationToken);
+                await _notifier.RosterUpdatedAsync(
+                    updated.EventAppointmentId,
+                    updated.CustomerId,
+                    updated.AssignedEmployees.Select(e => e.EmployeeId),
+                    cancellationToken);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "SignalR RosterUpdated broadcast failed after crew replacement request for {AppointmentId}", appointmentId);
             }
             return Ok(updated);
         }
@@ -761,6 +884,10 @@ public class PaymentsController : ControllerBase
         catch (KeyNotFoundException ex)
         {
             return NotFound(new { message = ex.Message });
+        }
+        catch (InvalidOperationException ex)
+        {
+            return BadRequest(new { message = ex.Message });
         }
     }
 

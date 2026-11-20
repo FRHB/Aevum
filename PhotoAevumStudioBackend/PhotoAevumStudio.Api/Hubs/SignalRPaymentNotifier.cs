@@ -66,4 +66,43 @@ public class SignalRPaymentNotifier : IPaymentNotifier
         await _hub.Clients.Groups(groups)
             .SendAsync(PaymentHub.EventStatusChangedEvent, payload, ct);
     }
+
+    public async Task RosterUpdatedAsync(
+        string appointmentId,
+        string? customerId = null,
+        IEnumerable<string>? affectedEmployeeIds = null,
+        CancellationToken ct = default)
+    {
+        var payload = new
+        {
+            appointmentId,
+            eventStatus = "RosterUpdated",
+            finalPaymentStatus = (string?)null,
+            customerId
+        };
+
+        var groups = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        if (affectedEmployeeIds != null)
+        {
+            foreach (var empId in affectedEmployeeIds.Where(id => !string.IsNullOrWhiteSpace(id)))
+            {
+                groups.Add(PaymentHub.StaffGroupName(empId.Trim()));
+            }
+        }
+        if (groups.Count == 0)
+        {
+            groups.Add(PaymentHub.LiveMonitorGroup);
+            if (!string.IsNullOrWhiteSpace(appointmentId) && appointmentId != "*")
+            {
+                groups.Add(PaymentHub.GroupName(appointmentId));
+            }
+        }
+
+        _logger.LogInformation(
+            "SignalR Hub broadcasting RosterUpdated for {AppointmentId} to {GroupCount} staff groups.",
+            appointmentId, groups.Count);
+
+        await _hub.Clients.Groups(groups.ToList())
+            .SendAsync(PaymentHub.EventStatusChangedEvent, payload, ct);
+    }
 }

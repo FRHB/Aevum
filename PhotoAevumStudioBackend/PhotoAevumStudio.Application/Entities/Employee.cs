@@ -12,6 +12,8 @@ public class Employee
     
     public string Status { get; set; } = "Active";
     public string DaysOff { get; set; } = "Sunday";
+    public string PayBasis { get; set; } = "CommissionPerEvent";
+    public bool IsTitleIExempt { get; set; } = true;
     
     public string? Address { get; set; }
     public int? BirthYear { get; set; }

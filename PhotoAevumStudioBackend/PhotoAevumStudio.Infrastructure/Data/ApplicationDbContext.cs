@@ -27,6 +27,8 @@ public class ApplicationDbContext : IdentityDbContext<ApplicationUser>
     public DbSet<EmployeeAssignment> EmployeeAssignments => Set<EmployeeAssignment>();
     public DbSet<EquipmentAssignment> EquipmentAssignments => Set<EquipmentAssignment>();
     public DbSet<EmployeeLeave> EmployeeLeaves => Set<EmployeeLeave>();
+    public DbSet<LeaveTypeDefinition> LeaveTypeDefinitions => Set<LeaveTypeDefinition>();
+    public DbSet<LeaveBalance> LeaveBalances => Set<LeaveBalance>();
     public DbSet<EmployeeTimesheet> EmployeeTimesheets => Set<EmployeeTimesheet>();
     public DbSet<Department> Departments => Set<Department>();
     public DbSet<EmployeeSpecialization> EmployeeSpecializations => Set<EmployeeSpecialization>();
@@ -102,6 +104,8 @@ public class ApplicationDbContext : IdentityDbContext<ApplicationUser>
             e.Property(emp => emp.Address).HasMaxLength(500);
             e.Property(emp => emp.BirthYear);
             e.Property(emp => emp.DepartmentID).HasMaxLength(30);
+            e.Property(emp => emp.PayBasis).HasMaxLength(30).HasDefaultValue("CommissionPerEvent");
+            e.Property(emp => emp.IsTitleIExempt).HasDefaultValue(true);
             e.HasOne(emp => emp.DepartmentEntity)
              .WithMany()
              .HasForeignKey(emp => emp.DepartmentID)
@@ -110,6 +114,34 @@ public class ApplicationDbContext : IdentityDbContext<ApplicationUser>
              .WithOne()
              .HasForeignKey<Employee>(emp => emp.IdentityUserId)
              .OnDelete(DeleteBehavior.Cascade);
+        });
+
+        builder.Entity<EmployeeLeave>(e =>
+        {
+            e.ToTable("EmployeeLeaves", "dbo");
+            e.HasKey(l => l.Id);
+            e.Property(l => l.CountableDays).HasColumnType("decimal(5,2)");
+        });
+
+        builder.Entity<LeaveTypeDefinition>(e =>
+        {
+            e.ToTable("LeaveTypes", "dbo");
+            e.HasKey(lt => lt.LeaveTypeID);
+            e.Property(lt => lt.Code).HasMaxLength(20).IsRequired();
+            e.Property(lt => lt.Name).HasMaxLength(50).IsRequired();
+            e.Property(lt => lt.DefaultAnnualCredits).HasColumnType("decimal(5,2)");
+            e.Property(lt => lt.GenderRestriction).HasMaxLength(10);
+        });
+
+        builder.Entity<LeaveBalance>(e =>
+        {
+            e.ToTable("LeaveBalances", "dbo");
+            e.HasKey(lb => lb.LeaveBalanceID);
+            e.Property(lb => lb.EmployeeID).HasMaxLength(30).IsRequired();
+            e.Property(lb => lb.TotalAllocated).HasColumnType("decimal(6,2)");
+            e.Property(lb => lb.PendingCredits).HasColumnType("decimal(6,2)");
+            e.Property(lb => lb.UsedCredits).HasColumnType("decimal(6,2)");
+            e.Ignore(lb => lb.AvailableCredits);
         });
 
         // ── Equipment ────────────────────────────────────────────────────────

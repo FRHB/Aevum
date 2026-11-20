@@ -31,5 +31,6 @@ public interface IScheduleService
     void AddEquipmentReservation(EquipmentReservationModel reservation);
     void UpdateEquipmentReservation(EquipmentReservationModel reservation);
     void DeleteEquipmentReservation(string id);
+    (bool Success, string? Error) ReplaceReservationEquipment(string reservationId, string? eventAppointmentId, string oldEquipmentId, string newEquipmentId, string actorId = "ADM-001");
     int GetEquipmentConflictCount();
 }

@@ -3,9 +3,12 @@ using System.Linq;
 using System.Threading.Tasks;
 using Microsoft.AspNetCore.Components;
 using Microsoft.AspNetCore.Components.Web;
+using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
+using Moq;
 using PhotoAevumStudio.Api.Controllers;
 using PhotoAevumStudio.Application;
 using PhotoAevumStudio.Web.Components.Shared;
@@ -187,23 +190,33 @@ public class SidebarPasswordCalendarAndTeamLeaderTests
         var root = GetRepositoryRoot();
         var webRoot = Path.Combine(root, "PhotoAevumStudioFrontend", "PhotoAevumStudio.Web");
         var staffDashboard = File.ReadAllText(Path.Combine(webRoot, "Components", "Pages", "StaffDashboard.razor"));
+        var monitorPage = File.ReadAllText(Path.Combine(webRoot, "Components", "Pages", "TeamLeadMonitor.razor"));
+        var pillRazor = File.ReadAllText(Path.Combine(webRoot, "Components", "Shared", "TeamLeaderActiveEventPill.razor"));
         var confirmPayment = File.ReadAllText(Path.Combine(webRoot, "Components", "Pages", "ConfirmPayment.razor"));
         var paymentsPage = File.ReadAllText(Path.Combine(webRoot, "Components", "Pages", "Payments.razor"));
 
-        foreach (var stage in new[] { "\"Preparing\"", "\"Ongoing\"", "\"Event Done\"", "\"Pending Payment\"" })
+        // Top Pill Box handles the full Team Leader workflow stages, Cash & QR settlement, and QR SVG rendering
+        foreach (var stage in new[] { "\"Preparation\"", "\"Ongoing\"", "\"Post Event\"" })
         {
-            Assert.Contains(stage, staffDashboard);
+            Assert.Contains(stage, pillRazor);
         }
 
-        Assert.Contains("Early (Preparing)", staffDashboard);
-        Assert.Contains("Late (Preparing)", staffDashboard);
-        Assert.Contains("Event Started", staffDashboard);
-        Assert.Contains("Event Done", staffDashboard);
-        Assert.Contains("Payment Verification (Cash)", staffDashboard);
-        Assert.Contains("Payment Verification (QR:Paid)", staffDashboard);
-        Assert.Contains("Payment Verification (QR:Pending Payment)", staffDashboard);
-        Assert.Contains("SvgQRCode", staffDashboard);
-        Assert.Contains("SimulateTeamLeaderQrPaidAsync", staffDashboard);
+        Assert.Contains("1. Preparation", pillRazor);
+        Assert.Contains("2. Dispatched", pillRazor);
+        Assert.Contains("3. On Going", pillRazor);
+        Assert.Contains("4. Post Event", pillRazor);
+        Assert.Contains("Payment Verification (Cash)", pillRazor);
+        Assert.Contains("Payment Verification (QR:Pending Payment)", pillRazor);
+        Assert.Contains("SvgQRCode", pillRazor);
+        Assert.Contains("SimulateQrPaidAsync", pillRazor);
+
+        // Duplicate legacy container has been removed from StaffDashboard and TeamLeadMonitor
+        Assert.DoesNotContain("View in Top Pill", staffDashboard);
+        Assert.DoesNotContain("View in Top Pill", monitorPage);
+        Assert.DoesNotContain("Sequential Execution Controls", staffDashboard);
+        Assert.DoesNotContain("Preparation Equipment Checklist", staffDashboard);
+        Assert.DoesNotContain("Preparation Equipment Checklist", monitorPage);
+
         Assert.Contains("IsFinalPayment", confirmPayment);
         Assert.Contains("\"Completed\"", confirmPayment);
         Assert.Contains("\"Completed\"", paymentsPage);
@@ -244,6 +257,7 @@ public class SidebarPasswordCalendarAndTeamLeaderTests
         var root = GetRepositoryRoot();
         var webRoot = Path.Combine(root, "PhotoAevumStudioFrontend", "PhotoAevumStudio.Web");
         var staffDashboard = File.ReadAllText(Path.Combine(webRoot, "Components", "Pages", "StaffDashboard.razor"));
+        var pillRazor = File.ReadAllText(Path.Combine(webRoot, "Components", "Shared", "TeamLeaderActiveEventPill.razor"));
         var customerDashboard = File.ReadAllText(Path.Combine(webRoot, "Components", "Pages", "CustomerDashboard.razor"));
         var myBookings = File.ReadAllText(Path.Combine(webRoot, "Components", "Pages", "MyBookings.razor"));
         var adminDashboard = File.ReadAllText(Path.Combine(webRoot, "Components", "Pages", "AdminDashboard.razor"));
@@ -251,19 +265,16 @@ public class SidebarPasswordCalendarAndTeamLeaderTests
         var backendService = File.ReadAllText(Path.Combine(root, "PhotoAevumStudioBackend", "PhotoAevumStudio.Infrastructure", "Services", "ConsultationNegotiationService.cs"));
         var paymentsController = File.ReadAllText(Path.Combine(root, "PhotoAevumStudioBackend", "PhotoAevumStudio.Api", "Controllers", "PaymentsController.cs"));
 
-        // 1. Sequential Team Leader controls, equipment checklist, Event Done settlement gate, Cash & QR settlement
-        Assert.Contains("Early", staffDashboard);
-        Assert.Contains("Late", staffDashboard);
-        Assert.Contains("Preparing", staffDashboard);
-        Assert.Contains("Event Started", staffDashboard);
-        Assert.Contains("Event Done", staffDashboard);
-        Assert.Contains("to unlock <strong>Settlement</strong>", staffDashboard);
-        Assert.Contains("Preparation Equipment Checklist", staffDashboard);
-        Assert.Contains("MarkAllEquipmentTakenAsync", staffDashboard);
-        Assert.Contains("AddAdditionalEquipmentAsync", staffDashboard);
-        Assert.Contains("Cash Received", staffDashboard);
-        Assert.Contains("QuickCashReceivedAsync", staffDashboard);
-        Assert.Contains("QR Payment", staffDashboard);
+        // 1. Single Top Pill Box workflow: Equipment Verification, Add More Equipment, Dispatched, Event Start, Post Event, Cash & QR
+        Assert.Contains("Equipment Dispatch &amp; Verification", pillRazor);
+        Assert.Contains("Verify Equipment", pillRazor);
+        Assert.Contains("Add More Equipment", pillRazor);
+        Assert.Contains("ConfirmDispatchedAsync", pillRazor);
+        Assert.Contains("Event Start", pillRazor);
+        Assert.Contains("Post Event", pillRazor);
+        Assert.Contains("Cash", pillRazor);
+        Assert.Contains("QR Payment", pillRazor);
+        Assert.Contains("Crew Monitor (View Only)", pillRazor);
 
         // 2. Customer Dashboard & MyBookings immediately mark cash pending verification & QR paid as Completed
         Assert.Contains("GetCustomerDisplayStatus", customerDashboard);
@@ -316,7 +327,7 @@ public class SidebarPasswordCalendarAndTeamLeaderTests
         Assert.Contains("/staff/featured-services", sidebar);
         Assert.Contains("My Schedule", sidebar);
         Assert.Contains("/portfolio", sidebar);
-        Assert.Contains("@if (isClerk || teamLeaderEvents.Any())", staffDashboard);
+        Assert.Contains("@if (isClerk || teamLeaderEvents.Any(e => e.IsTeamLeader))", staffDashboard);
         Assert.Contains("My Schedule (Read-Only)", staffDashboard);
         Assert.Contains("string.Equals(h.EmployeeStudioId, employeeId, StringComparison.OrdinalIgnoreCase)", timesheet);
 
@@ -369,15 +380,16 @@ public class SidebarPasswordCalendarAndTeamLeaderTests
 
         Assert.Contains("@page \"/staff/team-lead-monitor\"", monitorPage);
         Assert.Contains("TeamLeaderMonitorSelector.SelectUpcomingAndOngoing", monitorPage);
-        Assert.Contains("TeamLeaderMonitorSelector.GetProcessSteps", monitorPage);
-        Assert.Contains("Event Process", monitorPage);
+        Assert.Contains("TeamLeaderActiveEventPill", monitorPage);
+        Assert.Contains("Switch to Event", monitorPage);
 
         Assert.Contains("TeamLeaderMonitorSelector.SelectUpcomingAndOngoing", staffDashboard);
-        Assert.Contains("TeamLeaderMonitorSelector.GetProcessSteps", staffDashboard);
+        Assert.Contains("TeamLeaderActiveEventPill", staffDashboard);
         Assert.Contains("/staff/team-lead-monitor", staffDashboard);
 
         Assert.Contains("/staff/team-lead-monitor", sidebar);
         Assert.Contains("_teamLeadEventCount > 0", sidebar);
+        Assert.Contains(".Count(e => e.IsTeamLeader)", sidebar);
 
         Assert.Contains("ScheduleService.InvalidateCache()", payments);
         Assert.Contains("ScheduleService.InvalidateCache()", confirmPayment);
@@ -459,5 +471,228 @@ public class SidebarPasswordCalendarAndTeamLeaderTests
 
         var sidebar = File.ReadAllText(Path.Combine(webRoot, "Components", "Layout", "Sidebar.razor"));
         Assert.Contains("HandleSidebarEventStatusChangedAsync", sidebar);
+    }
+
+    private sealed class StubNavManager : NavigationManager
+    {
+        public StubNavManager() => Initialize("https://localhost/", "https://localhost/staff/team-lead-monitor");
+        protected override void NavigateToCore(string uri, bool forceLoad) { }
+    }
+
+    private static async Task<string> RenderTopPillHtmlAsync(IReadOnlyList<PhotoAevumStudio.Web.Models.TeamLeaderEventDto> events)
+    {
+        var services = new ServiceCollection();
+        services.AddSingleton(new Mock<IConsultationClient>().Object);
+        services.AddSingleton(new Mock<IScheduleService>().Object);
+        services.AddSingleton(new Mock<IEquipmentService>().Object);
+        services.AddSingleton<NavigationManager>(new StubNavManager());
+        services.AddSingleton<IConfiguration>(new ConfigurationBuilder().Build());
+        var envMock = new Mock<IWebHostEnvironment>();
+        envMock.SetupGet(e => e.EnvironmentName).Returns("Development");
+        services.AddSingleton(envMock.Object);
+
+        await using var sp = services.BuildServiceProvider();
+        await using var renderer = new HtmlRenderer(sp, NullLoggerFactory.Instance);
+
+        return await renderer.Dispatcher.InvokeAsync(async () =>
+        {
+            var parameters = ParameterView.FromDictionary(new Dictionary<string, object?>
+            {
+                { nameof(TeamLeaderActiveEventPill.ActiveEvents), events },
+                { nameof(TeamLeaderActiveEventPill.EmployeeId), "EMP-010" },
+                { nameof(TeamLeaderActiveEventPill.EmployeeName), "Lexx Martinez" }
+            });
+            var output = await renderer.RenderComponentAsync<TeamLeaderActiveEventPill>(parameters);
+            return output.ToHtmlString();
+        });
+    }
+
+    [Fact]
+    public async Task TeamLeaderActiveEventPill_RendersSingleActiveEvent_AndEnforcesCrewReadOnlyMode()
+    {
+        var today = DateOnly.FromDateTime(DateTime.Today);
+        var events = new List<PhotoAevumStudio.Web.Models.TeamLeaderEventDto>
+        {
+            new()
+            {
+                EventAppointmentId = "EVT-0015",
+                EventName = "Dyan Brad - Photoshoot Event",
+                CustomerName = "Dyan Brad",
+                EventDate = today,
+                EventTime = new TimeOnly(15, 0),
+                EventStatus = "Preparing",
+                DownpaymentStatus = "Paid",
+                FinalBalanceAmount = 8500m,
+                IsTeamLeader = true,
+                AssignedEquipment = new List<PhotoAevumStudio.Web.Models.AssignedEquipmentDto>
+                {
+                    new() { EventEquipmentId = 1, EquipmentId = "EQ-1", EquipmentName = "Sony A7 IV", EquipmentType = "Camera", IsTaken = false }
+                }
+            },
+            new()
+            {
+                EventAppointmentId = "EVT-0016",
+                EventName = "Second Scheduled Event",
+                CustomerName = "Second Client",
+                EventDate = today.AddDays(1),
+                EventTime = new TimeOnly(10, 0),
+                EventStatus = "Confirmed",
+                DownpaymentStatus = "Paid",
+                FinalBalanceAmount = 5000m,
+                IsTeamLeader = true
+            }
+        };
+
+        // 1. Team Leader view: renders only 1 pill body (EVT-0015), provides header switcher for EVT-0016, and shows edit controls
+        var leaderHtml = await RenderTopPillHtmlAsync(events);
+        Assert.Contains("Dyan Brad - Photoshoot Event", leaderHtml);
+        Assert.Contains("Verify Equipment", leaderHtml);
+        Assert.Contains("Verify All", leaderHtml);
+        Assert.Contains("Add More Equipment", leaderHtml);
+        Assert.Contains("Dispatched", leaderHtml);
+        Assert.Contains("EVT-0016", leaderHtml); // Switcher pill in header
+        Assert.DoesNotContain("Second Client", leaderHtml); // Second event details are NOT stacked as a second box
+
+        // 2. Non-Team-Leader crew view: monitor-only pill box without any edit buttons
+        events[0].IsTeamLeader = false;
+        var crewHtml = await RenderTopPillHtmlAsync(events);
+        Assert.Contains("Crew Monitor (View Only)", crewHtml);
+        Assert.Contains("Dyan Brad - Photoshoot Event", crewHtml);
+        Assert.Contains("Sony A7 IV", crewHtml);
+        Assert.DoesNotContain("Verify Equipment", crewHtml);
+        Assert.DoesNotContain("Verify All", crewHtml);
+        Assert.DoesNotContain("Add More Equipment", crewHtml);
+        Assert.DoesNotContain("✓ Dispatched", crewHtml);
+    }
+
+    [Fact]
+    public async Task TeamLeaderActiveEventPill_EnforcesCrewVerification_WhenTwoOrMoreEmployeesAssigned_AndSupportsReplacementRequests()
+    {
+        var today = DateOnly.FromDateTime(DateTime.Today);
+
+        // 1. Solo Team Leader (1 employee): multi-crew verification is NOT required
+        var soloEvent = new List<PhotoAevumStudio.Web.Models.TeamLeaderEventDto>
+        {
+            new()
+            {
+                EventAppointmentId = "EVT-SOLO",
+                EventName = "Solo Portrait Shoot",
+                CustomerName = "Alex Rivera",
+                EventDate = today,
+                EventTime = new TimeOnly(10, 0),
+                EventStatus = "Preparing",
+                DownpaymentStatus = "Paid",
+                IsTeamLeader = true,
+                AssignedEmployees = new List<PhotoAevumStudio.Web.Models.AssignedEmployeeDto>
+                {
+                    new() { EmployeeId = "EMP-010", EmployeeName = "Lexx Martinez", Specialization = "Photographer", IsTeamLeader = true, IsVerified = false }
+                },
+                AssignedEquipment = new List<PhotoAevumStudio.Web.Models.AssignedEquipmentDto>
+                {
+                    new() { EventEquipmentId = 1, EquipmentId = "EQ-1", EquipmentName = "Sony A7 IV", EquipmentType = "Camera", IsTaken = true }
+                }
+            }
+        };
+
+        var soloHtml = await RenderTopPillHtmlAsync(soloEvent);
+        Assert.Contains("Solo Team Lead", soloHtml);
+        Assert.DoesNotContain("Verify All Crew", soloHtml);
+        Assert.DoesNotContain("Verify 1 remaining crew member", soloHtml);
+
+        // 2. Multi-employee event (2+ employees), unverified crew -> renders Crew Verification, Request New Employee, and gates Dispatched
+        var multiUnverified = new List<PhotoAevumStudio.Web.Models.TeamLeaderEventDto>
+        {
+            new()
+            {
+                EventAppointmentId = "EVT-MULTI",
+                EventName = "Grand Wedding",
+                CustomerName = "Dyan Brad",
+                EventDate = today,
+                EventTime = new TimeOnly(14, 0),
+                EventStatus = "Preparing",
+                DownpaymentStatus = "Paid",
+                IsTeamLeader = true,
+                AssignedEmployees = new List<PhotoAevumStudio.Web.Models.AssignedEmployeeDto>
+                {
+                    new() { EmployeeId = "EMP-010", EmployeeName = "Lexx Martinez", Specialization = "Photographer", IsTeamLeader = true, IsVerified = true, DutyStatus = "On Duty" },
+                    new() { EmployeeId = "EMP-020", EmployeeName = "Aria Cruz", Specialization = "Videographer", IsTeamLeader = false, IsVerified = false, DutyStatus = "Assigned" }
+                },
+                AssignedEquipment = new List<PhotoAevumStudio.Web.Models.AssignedEquipmentDto>
+                {
+                    new() { EventEquipmentId = 1, EquipmentId = "EQ-1", EquipmentName = "Sony A7 IV", EquipmentType = "Camera", IsTaken = true }
+                }
+            }
+        };
+
+        var unverifiedHtml = await RenderTopPillHtmlAsync(multiUnverified);
+        Assert.Contains("Crew Verification &amp; Replacement Request", unverifiedHtml);
+        Assert.Contains("1 / 2 Crew On Duty", unverifiedHtml);
+        Assert.Contains("Verify Crew", unverifiedHtml);
+        Assert.Contains("Verify All Crew", unverifiedHtml);
+        Assert.Contains("Request New Employee", unverifiedHtml);
+        Assert.Contains("Verify 1 remaining crew member(s) on duty to enable Dispatched confirmation", unverifiedHtml);
+
+        // 3. Pending crew replacement request -> alerts and keeps Dispatched gated
+        multiUnverified[0].CrewReplacementRequests.Add(new PhotoAevumStudio.Web.Models.EventCrewReplacementRequestDto
+        {
+            RequestId = 7,
+            EventAppointmentId = "EVT-MULTI",
+            AbsentEmployeeId = "EMP-020",
+            AbsentEmployeeName = "Aria Cruz",
+            Reason = "Did not report for duty",
+            Status = "Pending"
+        });
+
+        var pendingReqHtml = await RenderTopPillHtmlAsync(multiUnverified);
+        Assert.Contains("Replacement Requested", pendingReqHtml);
+        Assert.Contains("Awaiting 1 crew replacement assignment(s)", pendingReqHtml);
+
+        // 4. All 2+ crew verified & no pending requests -> Dispatched gate cleared
+        multiUnverified[0].CrewReplacementRequests.Clear();
+        multiUnverified[0].AssignedEmployees[1].IsVerified = true;
+        multiUnverified[0].AssignedEmployees[1].DutyStatus = "On Duty";
+
+        var verifiedHtml = await RenderTopPillHtmlAsync(multiUnverified);
+        Assert.Contains("2 / 2 Crew On Duty", verifiedHtml);
+        Assert.DoesNotContain("remaining crew member", verifiedHtml);
+    }
+
+    [Fact]
+    public void SuddenAbsence_CrewReplacement_And_StaffPortalSync_AreWiredAcrossControllersAndPages()
+    {
+        var root = GetRepositoryRoot();
+        var webRoot = Path.Combine(root, "PhotoAevumStudioFrontend", "PhotoAevumStudio.Web");
+
+        var livePanel = File.ReadAllText(Path.Combine(webRoot, "Components", "Shared", "LiveEventsOverviewPanel.razor"));
+        var overviewModal = File.ReadAllText(Path.Combine(webRoot, "Components", "Pages", "BookedEventOverviewModal.razor"));
+        var timesheet = File.ReadAllText(Path.Combine(webRoot, "Components", "Pages", "Timesheet.razor"));
+        var staffDashboard = File.ReadAllText(Path.Combine(webRoot, "Components", "Pages", "StaffDashboard.razor"));
+        var monitorPage = File.ReadAllText(Path.Combine(webRoot, "Components", "Pages", "TeamLeadMonitor.razor"));
+        var sidebar = File.ReadAllText(Path.Combine(webRoot, "Components", "Layout", "Sidebar.razor"));
+
+        Assert.Contains("Manage Crew / Team Lead", livePanel);
+        Assert.Contains("FulfillReplacementAsync", livePanel);
+        Assert.Contains("Assign Replacement", livePanel);
+
+        Assert.Contains("MarkReplacedCrewAsSuddenAbsence", overviewModal.Replace("_markReplacedCrewAsSuddenAbsence", "MarkReplacedCrewAsSuddenAbsence"));
+        Assert.Contains("Sudden Absence / Emergency-Sick", overviewModal);
+
+        Assert.Contains("Mark Absent", timesheet);
+        Assert.Contains("MarkSuddenAbsenceAsync", timesheet);
+
+        Assert.Contains("EnsureStaffMonitorStartedAsync", staffDashboard);
+        Assert.Contains("LoadDisplayedEventsFromSchedule", staffDashboard);
+        Assert.Contains("EnsureStaffMonitorStartedAsync", monitorPage);
+        Assert.Contains("EnsureStaffMonitorStartedAsync", sidebar);
+
+        var verifyCrewMethod = typeof(PaymentsController).GetMethod(nameof(PaymentsController.VerifyCrewDuty));
+        var reqReplaceMethod = typeof(PaymentsController).GetMethod(nameof(PaymentsController.RequestCrewReplacement));
+        var fulfillMethod = typeof(ConsultationsController).GetMethod(nameof(ConsultationsController.FulfillCrewReplacement));
+        var suddenAbsMethod = typeof(LeavesController).GetMethod(nameof(LeavesController.MarkSuddenAbsence));
+
+        Assert.NotNull(verifyCrewMethod);
+        Assert.NotNull(reqReplaceMethod);
+        Assert.NotNull(fulfillMethod);
+        Assert.NotNull(suddenAbsMethod);
     }
 }

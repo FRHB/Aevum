@@ -14,13 +14,16 @@ public class ConsultationsController : ControllerBase
 {
     private readonly IConsultationNegotiationService _consultationService;
     private readonly ILogger<ConsultationsController> _logger;
+    private readonly IPaymentNotifier? _notifier;
 
     public ConsultationsController(
         IConsultationNegotiationService consultationService,
-        ILogger<ConsultationsController> logger)
+        ILogger<ConsultationsController> logger,
+        IPaymentNotifier? notifier = null)
     {
         _consultationService = consultationService;
         _logger = logger;
+        _notifier = notifier;
     }
 
     // POST api/consultations/schedule
@@ -152,7 +155,32 @@ public class ConsultationsController : ControllerBase
 
         try
         {
+            EventAppointmentDto? beforeUpdate = null;
+            try
+            {
+                beforeUpdate = await _consultationService.GetAppointmentByIdAsync(id, cancellationToken);
+            }
+            catch { }
+
             var success = await _consultationService.UpdateAppointmentRosterAsync(id, request, cancellationToken);
+            if (success && _notifier != null)
+            {
+                try
+                {
+                    var affectedIds = (beforeUpdate?.AssignedEmployees?.Select(e => e.EmployeeId) ?? Enumerable.Empty<string>())
+                        .Concat(request.EmployeeIds ?? Enumerable.Empty<string>())
+                        .Where(empId => !string.IsNullOrWhiteSpace(empId))
+                        .Distinct(StringComparer.OrdinalIgnoreCase)
+                        .ToList();
+
+                    await _notifier.EventStatusChangedAsync(id, "Updated", null, beforeUpdate?.CustomerId, cancellationToken);
+                    await _notifier.RosterUpdatedAsync(id, beforeUpdate?.CustomerId, affectedIds, cancellationToken);
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogWarning(ex, "SignalR RosterUpdated broadcast failed after roster update for {AppointmentId}", id);
+                }
+            }
             return Ok(new { success, appointmentId = id });
         }
         catch (KeyNotFoundException ex)
@@ -162,6 +190,70 @@ public class ConsultationsController : ControllerBase
         catch (InvalidOperationException ex)
         {
             _logger.LogWarning(ex, "Roster update blocked for {AppointmentId}: {Message}", id, ex.Message);
+            return BadRequest(new { message = ex.Message });
+        }
+    }
+
+    // POST api/consultations/appointments/{id}/crew-replacements/{requestId}/fulfill
+    [HttpPost("appointments/{id}/crew-replacements/{requestId:int}/fulfill")]
+    [Authorize(Policy = "ClerkOrAdmin")]
+    public async Task<IActionResult> FulfillCrewReplacement(
+        string id,
+        int requestId,
+        [FromBody] FulfillCrewReplacementRequest request,
+        CancellationToken cancellationToken)
+    {
+        if (User?.Identity?.IsAuthenticated == true)
+        {
+            request.ActorId = User.FindFirstValue("studio_id")
+                              ?? User.FindFirstValue(ClaimTypes.NameIdentifier)
+                              ?? User.FindFirstValue("sub")
+                              ?? request.ActorId;
+            request.ActorName = User.FindFirstValue("full_name")
+                                ?? User.FindFirstValue(ClaimTypes.Name)
+                                ?? request.ActorName;
+            request.ActorRole = User.IsInRole(AppRoles.SystemAdmin) ? "SystemAdmin"
+                : User.IsInRole(AppRoles.Admin) ? "Admin"
+                : User.IsInRole(AppRoles.OfficeClerk) ? "Employee"
+                : (string.IsNullOrWhiteSpace(request.ActorRole) ? "System" : request.ActorRole);
+        }
+
+        try
+        {
+            EventAppointmentDto? before = null;
+            try { before = await _consultationService.GetAppointmentByIdAsync(id, cancellationToken); } catch { }
+
+            var updated = await _consultationService.FulfillCrewReplacementAsync(id, requestId, request, cancellationToken);
+            if (_notifier != null)
+            {
+                try
+                {
+                    var affectedIds = (before?.AssignedEmployees?.Select(e => e.EmployeeId) ?? Enumerable.Empty<string>())
+                        .Concat(updated.AssignedEmployees.Select(e => e.EmployeeId))
+                        .Where(empId => !string.IsNullOrWhiteSpace(empId))
+                        .Distinct(StringComparer.OrdinalIgnoreCase)
+                        .ToList();
+
+                    await _notifier.EventStatusChangedAsync(id, "RosterUpdated", null, updated.CustomerId, cancellationToken);
+                    await _notifier.RosterUpdatedAsync(id, updated.CustomerId, affectedIds, cancellationToken);
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogWarning(ex, "SignalR RosterUpdated broadcast failed after crew replacement for {AppointmentId}", id);
+                }
+            }
+            return Ok(updated);
+        }
+        catch (KeyNotFoundException ex)
+        {
+            return NotFound(new { message = ex.Message });
+        }
+        catch (ArgumentException ex)
+        {
+            return BadRequest(new { message = ex.Message });
+        }
+        catch (InvalidOperationException ex)
+        {
             return BadRequest(new { message = ex.Message });
         }
     }

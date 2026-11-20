@@ -47,6 +47,15 @@ public class EmployeeViewModel
     public string DaysOffString => SelectedDaysOff.Count > 0 ? string.Join(",", SelectedDaysOff) : "Sunday";
     public string Status { get; set; } = "Active";
     public string DaysOff { get; set; } = "Sunday";
+    public string PayBasis { get; set; } = "CommissionPerEvent";
+    public bool IsTitleIExempt { get; set; } = true;
+    public bool IsOfficeClerk => !IsTitleIExempt
+        || PayBasis.Equals("FixedMonthly", StringComparison.OrdinalIgnoreCase)
+        || EmployeeId.Equals("EMP-003", StringComparison.OrdinalIgnoreCase)
+        || EmployeeId.Equals("EMP-004", StringComparison.OrdinalIgnoreCase)
+        || EmployeeId.StartsWith("CLK-", StringComparison.OrdinalIgnoreCase)
+        || Specializations.Any(s => s.Contains("Office Clerk", StringComparison.OrdinalIgnoreCase))
+        || Role.Contains("Clerk", StringComparison.OrdinalIgnoreCase);
     public bool IsClockedIn { get; set; }
     public DateTime? TodayClockIn { get; set; }
     public DateTime? TodayClockOut { get; set; }
@@ -281,14 +290,183 @@ public class LeaveItemViewModel
     public string EmployeeStudioId { get; set; } = string.Empty;
     public string EmployeeName { get; set; } = string.Empty;
     public string LeaveType { get; set; } = "Sick Leave";
+    public string? LeaveTypeCode { get; set; }
     public DateOnly StartDate { get; set; }
     public DateOnly EndDate { get; set; }
+    public decimal? CountableDays { get; set; }
+    public bool IsHalfDay { get; set; }
+    public int? CreditYear { get; set; }
+    public bool CreditsReserved { get; set; }
+    public bool CreditsConsumed { get; set; }
+    public int ConflictCount { get; set; }
+    public string? AttachmentName { get; set; }
     public string? Reason { get; set; }
     public string Status { get; set; } = "Pending";
     public string? ApprovedBy { get; set; }
     public DateTime? ApprovedAt { get; set; }
     public string? RejectionReason { get; set; }
     public DateTime CreatedAt { get; set; }
+}
+
+public class LeaveBalanceItemViewModel
+{
+    public int LeaveTypeId { get; set; }
+    public string LeaveTypeCode { get; set; } = string.Empty;
+    public string LeaveTypeName { get; set; } = string.Empty;
+    public bool IsPaid { get; set; }
+    public bool RequiresCredits { get; set; }
+    public bool IsCashConvertible { get; set; }
+    public decimal TotalAllocated { get; set; }
+    public decimal PendingCredits { get; set; }
+    public decimal UsedCredits { get; set; }
+    public decimal AvailableCredits { get; set; }
+}
+
+public class EmployeeLeaveBalanceSummaryViewModel
+{
+    public string EmployeeId { get; set; } = string.Empty;
+    public string EmployeeName { get; set; } = string.Empty;
+    public int Year { get; set; } = 2026;
+    public string PayBasis { get; set; } = "CommissionPerEvent";
+    public bool IsTitleIExempt { get; set; } = true;
+    public string DaysOff { get; set; } = "Sunday";
+    public decimal TotalAllocatedPaidDays { get; set; }
+    public decimal TotalRemainingPaidDays { get; set; }
+    public decimal VacationLeaveRemaining { get; set; }
+    public decimal SickLeaveRemaining { get; set; }
+    public List<LeaveBalanceItemViewModel> Balances { get; set; } = new();
+}
+
+public class LeaveConflictEventViewModel
+{
+    public string EventAppointmentId { get; set; } = string.Empty;
+    public string EventName { get; set; } = string.Empty;
+    public DateOnly EventDate { get; set; }
+    public string EventStatus { get; set; } = string.Empty;
+}
+
+public class SuddenAbsenceResultViewModel
+{
+    public LeaveItemViewModel? Leave { get; set; }
+    public List<LeaveConflictEventViewModel> AffectedAppointments { get; set; } = new();
+}
+
+public class CountableWorkdaysPreviewViewModel
+{
+    public string EmployeeId { get; set; } = string.Empty;
+    public DateOnly StartDate { get; set; }
+    public DateOnly EndDate { get; set; }
+    public bool IsHalfDay { get; set; }
+    public string DaysOff { get; set; } = "Sunday";
+    public decimal CountableDays { get; set; }
+    public int CalendarDays { get; set; }
+    public int ExcludedDaysOffCount { get; set; }
+    public int ExcludedHolidaysCount { get; set; }
+    public bool HasEventConflict { get; set; }
+    public int ConflictCount { get; set; }
+    public List<LeaveConflictEventViewModel> Conflicts { get; set; } = new();
+}
+
+public static class LeaveWorkdayHelper
+{
+    private static readonly (int Month, int Day)[] FixedPhHolidays =
+    [
+        (1, 1), (2, 25), (4, 9), (5, 1), (6, 12), (8, 21), (8, 31),
+        (11, 1), (11, 2), (11, 30), (12, 8), (12, 24), (12, 25), (12, 30), (12, 31)
+    ];
+
+    private static readonly (int Year, int Month, int Day)[] MovablePhHolidays =
+    [
+        (2026, 2, 17), (2026, 4, 2), (2026, 4, 3), (2026, 4, 4), (2026, 8, 31)
+    ];
+
+    public static bool IsPhHoliday(DateOnly date)
+        => MovablePhHolidays.Any(m => m.Year == date.Year && m.Month == date.Month && m.Day == date.Day)
+        || FixedPhHolidays.Any(f => f.Month == date.Month && f.Day == date.Day);
+
+    public static bool IsOfficeClerkEmployee(string? employeeId, IEnumerable<string>? specializations = null, string? role = null)
+    {
+        if (!string.IsNullOrWhiteSpace(employeeId))
+        {
+            var id = employeeId.Trim();
+            if (id.Equals("EMP-003", StringComparison.OrdinalIgnoreCase)
+                || id.Equals("EMP-004", StringComparison.OrdinalIgnoreCase)
+                || id.StartsWith("CLK-", StringComparison.OrdinalIgnoreCase))
+            {
+                return true;
+            }
+        }
+        if (specializations != null && specializations.Any(s => s.Contains("Clerk", StringComparison.OrdinalIgnoreCase)))
+            return true;
+        if (!string.IsNullOrWhiteSpace(role) && role.Contains("Clerk", StringComparison.OrdinalIgnoreCase))
+            return true;
+        return false;
+    }
+
+    public static CountableWorkdaysPreviewViewModel CalculateCountableWorkdays(
+        string employeeId,
+        DateOnly startDate,
+        DateOnly endDate,
+        bool isHalfDay,
+        string? employeeDaysOff)
+    {
+        var daysOff = string.IsNullOrWhiteSpace(employeeDaysOff)
+            ? (employeeId.Equals("EMP-004", StringComparison.OrdinalIgnoreCase) ? "Sunday,Monday" : "Sunday")
+            : employeeDaysOff;
+
+        if (endDate < startDate)
+        {
+            return new CountableWorkdaysPreviewViewModel
+            {
+                EmployeeId = employeeId,
+                StartDate = startDate,
+                EndDate = endDate,
+                IsHalfDay = isHalfDay,
+                DaysOff = daysOff
+            };
+        }
+
+        int calendarDays = 0;
+        int excludedDaysOff = 0;
+        int excludedHolidays = 0;
+        int workdays = 0;
+
+        for (var d = startDate; d <= endDate; d = d.AddDays(1))
+        {
+            calendarDays++;
+            var dayName = d.DayOfWeek.ToString();
+            if (daysOff.Contains(dayName, StringComparison.OrdinalIgnoreCase))
+            {
+                excludedDaysOff++;
+                continue;
+            }
+            if (IsPhHoliday(d))
+            {
+                excludedHolidays++;
+                continue;
+            }
+            workdays++;
+        }
+
+        decimal countable = workdays;
+        if (isHalfDay && countable > 0m)
+        {
+            countable = startDate == endDate ? 0.5m : Math.Max(0.5m, countable - 0.5m);
+        }
+
+        return new CountableWorkdaysPreviewViewModel
+        {
+            EmployeeId = employeeId,
+            StartDate = startDate,
+            EndDate = endDate,
+            IsHalfDay = isHalfDay,
+            DaysOff = daysOff,
+            CountableDays = countable,
+            CalendarDays = calendarDays,
+            ExcludedDaysOffCount = excludedDaysOff,
+            ExcludedHolidaysCount = excludedHolidays
+        };
+    }
 }
 
 public class ClockStatusViewModel
@@ -308,10 +486,17 @@ public class TodayAttendanceSummaryDto
     public string EmployeeStudioId { get; set; } = string.Empty;
     public string EmployeeName { get; set; } = string.Empty;
     public string DaysOff { get; set; } = "Sunday";
+    public string PayBasis { get; set; } = "CommissionPerEvent";
+    public bool IsTitleIExempt { get; set; } = true;
     public bool IsClockedIn { get; set; }
     public DateTime? ClockIn { get; set; }
     public DateTime? ClockOut { get; set; }
     public double TotalHours { get; set; }
+    public int RegularMinutes { get; set; }
+    public int UndertimeMinutes { get; set; }
+    public int PendingOvertimeMinutes { get; set; }
+    public int ApprovedOvertimeMinutes { get; set; }
+    public bool IsOvertimeApproved { get; set; }
     public bool IsDayOffToday { get; set; }
     public bool IsOnLeaveToday { get; set; }
     public string? ActiveLeaveType { get; set; }
@@ -327,6 +512,15 @@ public class EmployeeTimesheetHistoryDto
     public DateTime ClockIn { get; set; }
     public DateTime? ClockOut { get; set; }
     public double TotalHours { get; set; }
+    public int RegularMinutes { get; set; }
+    public int UndertimeMinutes { get; set; }
+    public int PendingOvertimeMinutes { get; set; }
+    public int ApprovedOvertimeMinutes { get; set; }
+    public bool IsOvertimeApproved { get; set; }
+    public string? OvertimeApprovedBy { get; set; }
+    public DateTime? OvertimeApprovedAt { get; set; }
+    public string EntryType { get; set; } = "Work";
+    public int? LeaveRequestID { get; set; }
     public string Status { get; set; } = "Open";
     public bool IsDayOffWork { get; set; }
     public string? Notes { get; set; }

@@ -308,6 +308,137 @@ public static class DatabaseSeeder
                     );
                 END;
 
+                -- DOLE-Compliant Hybrid Leave Management & Clerk OT Schema Ensure
+                IF OBJECT_ID(N'dbo.Employees', N'U') IS NOT NULL
+                BEGIN
+                    IF COL_LENGTH(N'dbo.Employees', N'PayBasis') IS NULL
+                        ALTER TABLE dbo.Employees ADD PayBasis nvarchar(30) NOT NULL CONSTRAINT DF_Employees_PayBasis DEFAULT 'CommissionPerEvent';
+                    IF COL_LENGTH(N'dbo.Employees', N'IsTitleIExempt') IS NULL
+                        ALTER TABLE dbo.Employees ADD IsTitleIExempt bit NOT NULL CONSTRAINT DF_Employees_IsTitleIExempt DEFAULT 1;
+                    EXEC(N'UPDATE dbo.Employees
+                           SET PayBasis = ''FixedMonthly'', IsTitleIExempt = 0
+                           WHERE (PayBasis <> ''FixedMonthly'' OR IsTitleIExempt <> 0)
+                             AND (EmployeeID IN (N''EMP-003'', N''EMP-004'')
+                                  OR EmployeeID LIKE N''CLK-%''
+                                  OR UPPER(ISNULL(Specializations, N'''')) LIKE N''%OFFICE CLERK%'');');
+                END;
+
+                IF OBJECT_ID(N'dbo.LeaveTypes', N'U') IS NULL
+                BEGIN
+                    CREATE TABLE dbo.LeaveTypes (
+                        LeaveTypeID int IDENTITY(1,1) NOT NULL PRIMARY KEY,
+                        Code nvarchar(20) NOT NULL,
+                        Name nvarchar(50) NOT NULL,
+                        IsPaid bit NOT NULL CONSTRAINT DF_LeaveTypes_IsPaid DEFAULT 1,
+                        RequiresCredits bit NOT NULL CONSTRAINT DF_LeaveTypes_RequiresCredits DEFAULT 1,
+                        DefaultAnnualCredits decimal(5,2) NOT NULL CONSTRAINT DF_LeaveTypes_DefaultAnnualCredits DEFAULT 0,
+                        IsCashConvertible bit NOT NULL CONSTRAINT DF_LeaveTypes_IsCashConvertible DEFAULT 0,
+                        AppliesToFieldExempt bit NOT NULL CONSTRAINT DF_LeaveTypes_AppliesToFieldExempt DEFAULT 0,
+                        RequiresAttachment bit NOT NULL CONSTRAINT DF_LeaveTypes_RequiresAttachment DEFAULT 0,
+                        GenderRestriction nvarchar(10) NULL,
+                        CONSTRAINT UQ_LeaveTypes_Code UNIQUE (Code)
+                    );
+                END;
+
+                IF OBJECT_ID(N'dbo.LeaveTypes', N'U') IS NOT NULL
+                BEGIN
+                    EXEC(N'
+                    MERGE dbo.LeaveTypes AS t
+                    USING (VALUES
+                        (N''VL'',     N''Vacation Leave'',                 1, 1,   5.00, 1, 0, 0, NULL),
+                        (N''SL'',     N''Sick Leave'',                     1, 1,   5.00, 0, 0, 1, NULL),
+                        (N''LWOP'',   N''Leave Without Pay'',              0, 0,   0.00, 0, 0, 0, NULL),
+                        (N''UNAVAIL'',N''Shoot Unavailability / Time Off'',0, 0,   0.00, 0, 1, 0, NULL),
+                        (N''MAT'',    N''Maternity Leave'',                1, 1, 105.00, 0, 1, 0, N''Female''),
+                        (N''PAT'',    N''Paternity Leave'',                1, 1,   7.00, 0, 1, 0, N''Male''),
+                        (N''SPL'',    N''Solo Parent Leave'',              1, 1,   7.00, 0, 1, 0, NULL),
+                        (N''VAWC'',   N''VAWC Leave'',                     1, 1,  10.00, 0, 1, 0, N''Female'')
+                    ) AS s (Code, Name, IsPaid, RequiresCredits, DefaultAnnualCredits, IsCashConvertible, AppliesToFieldExempt, RequiresAttachment, GenderRestriction)
+                    ON t.Code = s.Code
+                    WHEN MATCHED THEN UPDATE SET
+                        Name = s.Name, IsPaid = s.IsPaid, RequiresCredits = s.RequiresCredits,
+                        DefaultAnnualCredits = s.DefaultAnnualCredits, IsCashConvertible = s.IsCashConvertible,
+                        AppliesToFieldExempt = s.AppliesToFieldExempt, RequiresAttachment = s.RequiresAttachment,
+                        GenderRestriction = s.GenderRestriction
+                    WHEN NOT MATCHED BY TARGET THEN INSERT
+                        (Code, Name, IsPaid, RequiresCredits, DefaultAnnualCredits, IsCashConvertible, AppliesToFieldExempt, RequiresAttachment, GenderRestriction)
+                        VALUES (s.Code, s.Name, s.IsPaid, s.RequiresCredits, s.DefaultAnnualCredits, s.IsCashConvertible, s.AppliesToFieldExempt, s.RequiresAttachment, s.GenderRestriction);');
+                END;
+
+                IF OBJECT_ID(N'dbo.LeaveBalances', N'U') IS NULL
+                BEGIN
+                    CREATE TABLE dbo.LeaveBalances (
+                        LeaveBalanceID int IDENTITY(1,1) NOT NULL PRIMARY KEY,
+                        EmployeeID nvarchar(30) NOT NULL,
+                        LeaveTypeID int NOT NULL,
+                        [Year] int NOT NULL,
+                        TotalAllocated decimal(6,2) NOT NULL CONSTRAINT DF_LeaveBalances_TotalAllocated DEFAULT 0,
+                        PendingCredits decimal(6,2) NOT NULL CONSTRAINT DF_LeaveBalances_PendingCredits DEFAULT 0,
+                        UsedCredits decimal(6,2) NOT NULL CONSTRAINT DF_LeaveBalances_UsedCredits DEFAULT 0,
+                        AvailableCredits AS (TotalAllocated - PendingCredits - UsedCredits),
+                        UpdatedAt datetime2 NOT NULL CONSTRAINT DF_LeaveBalances_UpdatedAt DEFAULT SYSUTCDATETIME(),
+                        CONSTRAINT UQ_LeaveBalances_Emp_Type_Year UNIQUE (EmployeeID, LeaveTypeID, [Year])
+                    );
+                END;
+
+                IF OBJECT_ID(N'dbo.EmployeeLeaves', N'U') IS NOT NULL
+                BEGIN
+                    IF COL_LENGTH(N'dbo.EmployeeLeaves', N'LeaveTypeCode') IS NULL ALTER TABLE dbo.EmployeeLeaves ADD LeaveTypeCode nvarchar(20) NULL;
+                    IF COL_LENGTH(N'dbo.EmployeeLeaves', N'CountableDays') IS NULL ALTER TABLE dbo.EmployeeLeaves ADD CountableDays decimal(5,2) NULL;
+                    IF COL_LENGTH(N'dbo.EmployeeLeaves', N'IsHalfDay') IS NULL ALTER TABLE dbo.EmployeeLeaves ADD IsHalfDay bit NOT NULL CONSTRAINT DF_EmployeeLeaves_IsHalfDay DEFAULT 0;
+                    IF COL_LENGTH(N'dbo.EmployeeLeaves', N'CreditYear') IS NULL ALTER TABLE dbo.EmployeeLeaves ADD CreditYear int NULL;
+                    IF COL_LENGTH(N'dbo.EmployeeLeaves', N'CreditsReserved') IS NULL ALTER TABLE dbo.EmployeeLeaves ADD CreditsReserved bit NOT NULL CONSTRAINT DF_EmployeeLeaves_CreditsReserved DEFAULT 0;
+                    IF COL_LENGTH(N'dbo.EmployeeLeaves', N'CreditsConsumed') IS NULL ALTER TABLE dbo.EmployeeLeaves ADD CreditsConsumed bit NOT NULL CONSTRAINT DF_EmployeeLeaves_CreditsConsumed DEFAULT 0;
+                    IF COL_LENGTH(N'dbo.EmployeeLeaves', N'ConflictCount') IS NULL ALTER TABLE dbo.EmployeeLeaves ADD ConflictCount int NOT NULL CONSTRAINT DF_EmployeeLeaves_ConflictCount DEFAULT 0;
+                    IF COL_LENGTH(N'dbo.EmployeeLeaves', N'AttachmentName') IS NULL ALTER TABLE dbo.EmployeeLeaves ADD AttachmentName nvarchar(255) NULL;
+                END;
+
+                IF OBJECT_ID(N'dbo.EmployeeTimesheets', N'U') IS NOT NULL
+                BEGIN
+                    IF COL_LENGTH(N'dbo.EmployeeTimesheets', N'RegularMinutes') IS NULL ALTER TABLE dbo.EmployeeTimesheets ADD RegularMinutes int NOT NULL CONSTRAINT DF_EmployeeTimesheets_RegularMinutes DEFAULT 0;
+                    IF COL_LENGTH(N'dbo.EmployeeTimesheets', N'UndertimeMinutes') IS NULL ALTER TABLE dbo.EmployeeTimesheets ADD UndertimeMinutes int NOT NULL CONSTRAINT DF_EmployeeTimesheets_UndertimeMinutes DEFAULT 0;
+                    IF COL_LENGTH(N'dbo.EmployeeTimesheets', N'PendingOvertimeMinutes') IS NULL ALTER TABLE dbo.EmployeeTimesheets ADD PendingOvertimeMinutes int NOT NULL CONSTRAINT DF_EmployeeTimesheets_PendingOT DEFAULT 0;
+                    IF COL_LENGTH(N'dbo.EmployeeTimesheets', N'ApprovedOvertimeMinutes') IS NULL ALTER TABLE dbo.EmployeeTimesheets ADD ApprovedOvertimeMinutes int NOT NULL CONSTRAINT DF_EmployeeTimesheets_ApprovedOT DEFAULT 0;
+                    IF COL_LENGTH(N'dbo.EmployeeTimesheets', N'IsOvertimeApproved') IS NULL ALTER TABLE dbo.EmployeeTimesheets ADD IsOvertimeApproved bit NOT NULL CONSTRAINT DF_EmployeeTimesheets_IsOTApproved DEFAULT 0;
+                    IF COL_LENGTH(N'dbo.EmployeeTimesheets', N'OvertimeApprovedBy') IS NULL ALTER TABLE dbo.EmployeeTimesheets ADD OvertimeApprovedBy nvarchar(100) NULL;
+                    IF COL_LENGTH(N'dbo.EmployeeTimesheets', N'OvertimeApprovedAt') IS NULL ALTER TABLE dbo.EmployeeTimesheets ADD OvertimeApprovedAt datetime2 NULL;
+                    IF COL_LENGTH(N'dbo.EmployeeTimesheets', N'EntryType') IS NULL ALTER TABLE dbo.EmployeeTimesheets ADD EntryType nvarchar(30) NOT NULL CONSTRAINT DF_EmployeeTimesheets_EntryType DEFAULT 'Work';
+                    IF COL_LENGTH(N'dbo.EmployeeTimesheets', N'LeaveRequestID') IS NULL ALTER TABLE dbo.EmployeeTimesheets ADD LeaveRequestID int NULL;
+                END;
+
+                IF OBJECT_ID(N'dbo.EmployeeLeaves', N'U') IS NOT NULL AND OBJECT_ID(N'dbo.LeaveTypes', N'U') IS NOT NULL AND COL_LENGTH(N'dbo.Employees', N'IsTitleIExempt') IS NOT NULL
+                BEGIN
+                    EXEC(N'UPDATE el
+                           SET el.LeaveType = N''Shoot Unavailability / Time Off'', el.LeaveTypeCode = N''UNAVAIL'', el.CreditsReserved = 0, el.CreditsConsumed = 0
+                           FROM dbo.EmployeeLeaves el
+                           JOIN dbo.Employees e ON e.EmployeeID = el.EmployeeStudioId
+                           WHERE e.IsTitleIExempt = 1
+                             AND el.LeaveType IN (N''Sick Leave'', N''Vacation Leave'', N''Leave Without Pay'')
+                             AND el.Status IN (N''Pending'', N''Approved'');');
+
+                    EXEC(N'UPDATE el SET el.LeaveTypeCode = lt.Code
+                           FROM dbo.EmployeeLeaves el JOIN dbo.LeaveTypes lt ON lt.Name = el.LeaveType
+                           WHERE el.LeaveTypeCode IS NULL;');
+
+                    EXEC(N'UPDATE dbo.EmployeeLeaves
+                           SET CountableDays = CASE WHEN IsHalfDay = 1 THEN 0.5 ELSE CAST(DATEDIFF(DAY, StartDate, EndDate) + 1 AS decimal(5,2)) END,
+                               CreditYear = YEAR(StartDate)
+                           WHERE CountableDays IS NULL;');
+
+                    EXEC(N'DELETE lb
+                           FROM dbo.LeaveBalances lb
+                           JOIN dbo.Employees e ON e.EmployeeID = lb.EmployeeID
+                           JOIN dbo.LeaveTypes lt ON lt.LeaveTypeID = lb.LeaveTypeID
+                           WHERE e.IsTitleIExempt = 1 AND lt.AppliesToFieldExempt = 0 AND lt.RequiresCredits = 1;');
+
+                    EXEC(N'INSERT INTO dbo.LeaveBalances (EmployeeID, LeaveTypeID, [Year], TotalAllocated)
+                           SELECT e.EmployeeID, lt.LeaveTypeID, 2026, lt.DefaultAnnualCredits
+                           FROM dbo.Employees e
+                           CROSS JOIN dbo.LeaveTypes lt
+                           WHERE e.IsTitleIExempt = 0 AND lt.Code IN (N''VL'', N''SL'')
+                             AND NOT EXISTS (SELECT 1 FROM dbo.LeaveBalances lb WHERE lb.EmployeeID = e.EmployeeID AND lb.LeaveTypeID = lt.LeaveTypeID AND lb.[Year] = 2026);');
+                END;
+
                 IF OBJECT_ID(N'dbo.Services', N'U') IS NOT NULL
                 BEGIN
                     IF COL_LENGTH(N'dbo.Services', N'ServiceImage') IS NULL

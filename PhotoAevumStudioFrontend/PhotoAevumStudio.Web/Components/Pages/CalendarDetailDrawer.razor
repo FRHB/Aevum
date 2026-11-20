@@ -6,11 +6,17 @@
         <div class="compact-detail-drawer" @onclick:stopPropagation="true">
             <div class="drawer-header">
                 <div>
-                    <div class="flex items-center gap-2">
+                    <div class="flex items-center gap-2 flex-wrap">
                         <span class="status-pill text-xs @GetDrawerStatusPillClass()">@Booking.DisplayStatus</span>
                         @if (Booking.HasConflict)
                         {
                             <span class="badge-conflict">⚠️ Conflict</span>
+                        }
+                        @if (Booking.NeedsEquipmentFix)
+                        {
+                            <span class="px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-100 text-amber-900 border border-amber-300">
+                                🔧 Needs Gear Fix
+                            </span>
                         }
                     </div>
                     <h3 class="text-lg font-bold text-gray-900 mt-1">@Booking.ClientName</h3>
@@ -87,13 +93,20 @@
                 {
                     <div class="drawer-field">
                         <span class="drawer-field-label">Booked Equipment</span>
+                        @if (Booking.NeedsEquipmentFix)
+                        {
+                            <div class="mt-1 mb-1.5 p-2 rounded-lg bg-amber-50 border border-amber-300 text-[11px] text-amber-900 font-semibold">
+                                🔧 Equipment in maintenance — needs fix &amp; replacement equipment scheduled for this event.
+                            </div>
+                        }
                         @if (Booking.AssignedEquipment.Count > 0)
                         {
                             <div class="flex flex-wrap gap-1 mt-0.5">
                                 @foreach (var eq in Booking.AssignedEquipment)
                                 {
-                                    <span class="px-2 py-0.5 rounded text-xs font-medium bg-slate-100 text-slate-800 border border-slate-200">
-                                        @eq.EquipmentName (@eq.EquipmentId)
+                                    var isEqMaint = EquipmentItemModel.IsUnavailableStatus(eq.EquipmentStatus);
+                                    <span class="px-2 py-0.5 rounded text-xs font-medium border @(isEqMaint ? "bg-amber-100 text-amber-950 border-amber-300 font-bold" : "bg-slate-100 text-slate-800 border-slate-200")">
+                                        @(isEqMaint ? "🔧 " : "")@eq.EquipmentName (@eq.EquipmentId)@(isEqMaint ? $" • {eq.EquipmentStatus}" : "")
                                     </span>
                                 }
                             </div>

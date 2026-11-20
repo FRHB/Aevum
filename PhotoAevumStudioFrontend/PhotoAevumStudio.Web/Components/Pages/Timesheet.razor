@@ -1,5 +1,6 @@
 @page "/staff/timesheet"
 @page "/admin/timesheet"
+@page "/admin/timesheets"
 @page "/timesheet"
 @layout SidebarLayout
 @rendermode InteractiveServer
@@ -161,6 +162,29 @@
                 </button>
             </div>
 
+            @if (!string.IsNullOrWhiteSpace(absenceFeedback))
+            {
+                <div class="mx-6 mt-4 p-3 rounded-xl border border-amber-300 bg-amber-50 text-amber-950 text-xs space-y-1">
+                    <div class="flex items-center justify-between gap-2 font-bold">
+                        <span>✓ @absenceFeedback</span>
+                        <button type="button" @onclick="() => absenceFeedback = null" class="text-amber-800">✕</button>
+                    </div>
+                    @if (absenceAffectedEvents.Count > 0)
+                    {
+                        <div class="text-[11px] text-amber-900">
+                            Assigned today on:
+                            @foreach (var aff in absenceAffectedEvents)
+                            {
+                                <span class="inline-block ml-1 px-2 py-0.5 rounded bg-white border border-amber-300 font-mono font-bold">#@aff.EventAppointmentId (@aff.EventName)</span>
+                            }
+                            <a href="@(isAdmin ? "/admin/calendar/events" : "/staff")" class="ml-2 underline font-bold text-slate-900">
+                                Reassign Crew / Team Leader &rarr;
+                            </a>
+                        </div>
+                    }
+                </div>
+            }
+
             @if (loadingHistory)
             {
                 <div class="py-12 text-center text-xs text-slate-400">Loading punch history…</div>
@@ -177,42 +201,80 @@
                             <tr class="bg-slate-50/80 border-b border-slate-200 text-[11px] font-semibold uppercase tracking-wider text-slate-500">
                                 @if (isClerk || isAdmin)
                                 {
-                                    <th class="py-3 px-6">Employee</th>
+                                    <th class="py-3 px-4">Employee</th>
                                 }
-                                <th class="py-3 px-6">Work Date</th>
-                                <th class="py-3 px-6">Clock In</th>
-                                <th class="py-3 px-6">Clock Out</th>
-                                <th class="py-3 px-6">Duration</th>
-                                <th class="py-3 px-6">Status</th>
-                                <th class="py-3 px-6">Notes</th>
+                                <th class="py-3 px-4">Work Date</th>
+                                <th class="py-3 px-4">Clock In</th>
+                                <th class="py-3 px-4">Clock Out</th>
+                                <th class="py-3 px-4">Regular</th>
+                                <th class="py-3 px-4">Undertime</th>
+                                <th class="py-3 px-4">OT (1.25x)</th>
+                                <th class="py-3 px-4">Status</th>
+                                <th class="py-3 px-4">Notes</th>
+                                @if (isAdmin)
+                                {
+                                    <th class="py-3 px-4 text-right">Actions</th>
+                                }
                             </tr>
                         </thead>
                         <tbody class="divide-y divide-slate-100">
                             @foreach (var h in PagedHistory)
                             {
+                                var regMin = GetDisplayRegularMinutes(h);
+                                bool isClerkShift = LeaveWorkdayHelper.IsOfficeClerkEmployee(h.EmployeeStudioId);
                                 <tr class="hover:bg-slate-50/60 transition-colors">
                                     @if (isClerk || isAdmin)
                                     {
-                                        <td class="py-3 px-6">
+                                        <td class="py-3 px-4">
                                             <div class="font-bold text-slate-900">@h.EmployeeName</div>
                                             <div class="text-[11px] font-mono text-slate-400">@h.EmployeeStudioId</div>
                                         </td>
                                     }
-                                    <td class="py-3 px-6 font-mono font-bold text-slate-800">
+                                    <td class="py-3 px-4 font-mono font-bold text-slate-800">
                                         @h.WorkDate.ToString("ddd, MMM dd, yyyy")
+                                        @if (h.EntryType is "Paid Leave" or "Unpaid Leave")
+                                        {
+                                            <span class="ml-1.5 px-1.5 py-0.5 rounded text-[10px] font-bold bg-teal-50 text-teal-800 border border-teal-200">@h.EntryType</span>
+                                        }
                                     </td>
-                                    <td class="py-3 px-6 font-mono text-slate-700">
+                                    <td class="py-3 px-4 font-mono text-slate-700">
                                         @h.ClockIn.ToString("hh:mm tt")
                                     </td>
-                                    <td class="py-3 px-6 font-mono text-slate-700">
+                                    <td class="py-3 px-4 font-mono text-slate-700">
                                         @(h.ClockOut.HasValue ? h.ClockOut.Value.ToString("hh:mm tt") : "— (Active)")
                                     </td>
-                                    <td class="py-3 px-6">
-                                        <span class="font-bold font-mono text-slate-900">
-                                            @(h.ClockOut.HasValue ? $"{h.TotalHours:0.0#} hrs" : "In Progress")
-                                        </span>
+                                    <td class="py-3 px-4 font-mono font-bold text-slate-900">
+                                        @(h.ClockOut.HasValue ? FormatMinutes(regMin) : "In Progress")
                                     </td>
-                                    <td class="py-3 px-6">
+                                    <td class="py-3 px-4 font-mono">
+                                        @if (h.UndertimeMinutes > 0)
+                                        {
+                                            <span class="px-2 py-0.5 rounded text-[10px] font-bold bg-amber-50 text-amber-800 border border-amber-200">@FormatMinutes(h.UndertimeMinutes)</span>
+                                        }
+                                        else
+                                        {
+                                            <span class="text-slate-400">0m</span>
+                                        }
+                                    </td>
+                                    <td class="py-3 px-4 font-mono">
+                                        @if (h.IsOvertimeApproved && h.ApprovedOvertimeMinutes > 0)
+                                        {
+                                            <span class="px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-100 text-emerald-800 border border-emerald-200">
+                                                @FormatMinutes(h.ApprovedOvertimeMinutes) Approved (1.25x)
+                                            </span>
+                                        }
+                                        else if (h.PendingOvertimeMinutes > 0)
+                                        {
+                                            <span class="px-2 py-0.5 rounded text-[10px] font-bold bg-indigo-50 text-indigo-800 border border-indigo-200">
+                                                @FormatMinutes(h.PendingOvertimeMinutes) Pending
+                                            </span>
+                                        }
+                                        else
+                                        {
+                                            <span class="text-slate-400">0m</span>
+                                        }
+                                    </td>
+                                    <td class="py-3 px-4">
                                         @if (h.ClockOut == null)
                                         {
                                             <span class="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-800">Open</span>
@@ -221,14 +283,40 @@
                                         {
                                             <span class="px-2 py-0.5 rounded-full text-[10px] font-bold bg-purple-100 text-purple-800" title="@h.AdjustmentReason">Adjusted</span>
                                         }
+                                        else if (h.Status == "Approved" || h.IsOvertimeApproved)
+                                        {
+                                            <span class="px-2 py-0.5 rounded-full text-[10px] font-bold bg-teal-100 text-teal-800">Approved</span>
+                                        }
                                         else
                                         {
                                             <span class="px-2 py-0.5 rounded-full text-[10px] font-bold bg-slate-100 text-slate-700">Completed</span>
                                         }
                                     </td>
-                                    <td class="py-3 px-6 text-slate-500 max-w-xs truncate">
+                                    <td class="py-3 px-4 text-slate-500 max-w-xs truncate">
                                         @(string.IsNullOrWhiteSpace(h.Notes) ? "—" : h.Notes)
                                     </td>
+                                    @if (isAdmin)
+                                    {
+                                        <td class="py-3 px-4 text-right whitespace-nowrap">
+                                            @if (isClerkShift && h.PendingOvertimeMinutes > 0 && !h.IsOvertimeApproved)
+                                            {
+                                                <button type="button"
+                                                        disabled="@isApprovingOt"
+                                                        @onclick="() => HandleApproveOvertimeAsync(h)"
+                                                        class="px-2.5 py-1 bg-indigo-600 hover:bg-indigo-700 text-white rounded font-bold text-[11px] shadow-2xs transition-colors disabled:opacity-50">
+                                                    Approve OT
+                                                </button>
+                                            }
+                                            else if (h.IsOvertimeApproved && h.ApprovedOvertimeMinutes > 0)
+                                            {
+                                                <span class="text-[11px] font-semibold text-emerald-700">OT Approved</span>
+                                            }
+                                            else
+                                            {
+                                                <span class="text-[11px] text-slate-400">—</span>
+                                            }
+                                        </td>
+                                    }
                                 </tr>
                             }
                         </tbody>
@@ -251,6 +339,29 @@
                     🔄 Refresh
                 </button>
             </div>
+
+            @if (!string.IsNullOrWhiteSpace(absenceFeedback))
+            {
+                <div class="mx-6 mt-4 p-3 rounded-xl border border-amber-300 bg-amber-50 text-amber-950 text-xs space-y-1">
+                    <div class="flex items-center justify-between gap-2 font-bold">
+                        <span>✓ @absenceFeedback</span>
+                        <button type="button" @onclick="() => absenceFeedback = null" class="text-amber-800">✕</button>
+                    </div>
+                    @if (absenceAffectedEvents.Count > 0)
+                    {
+                        <div class="text-[11px] text-amber-900">
+                            Assigned today on:
+                            @foreach (var aff in absenceAffectedEvents)
+                            {
+                                <span class="inline-block ml-1 px-2 py-0.5 rounded bg-white border border-amber-300 font-mono font-bold">#@aff.EventAppointmentId (@aff.EventName)</span>
+                            }
+                            <a href="@(isAdmin ? "/admin/calendar/events" : "/staff")" class="ml-2 underline font-bold text-slate-900">
+                                Reassign Crew / Team Leader &rarr;
+                            </a>
+                        </div>
+                    }
+                </div>
+            }
 
             @if (loadingHistory)
             {
@@ -318,7 +429,15 @@
                                     <td class="py-3 px-6 font-mono font-bold text-slate-900">
                                         @(row.TotalHours > 0 ? $"{row.TotalHours:0.0#} hrs" : "0.0 hrs")
                                     </td>
-                                    <td class="py-3 px-6 text-right">
+                                    <td class="py-3 px-6 text-right space-x-1.5 whitespace-nowrap">
+                                        @if (!row.IsClockedIn && !row.IsOnLeaveToday && !row.IsDayOffToday)
+                                        {
+                                            <button type="button"
+                                                    @onclick="() => OpenSuddenAbsenceModal(row)"
+                                                    class="px-2.5 py-1 bg-rose-50 hover:bg-rose-100 border border-rose-200 text-rose-700 rounded font-semibold text-[11px] transition-colors">
+                                                Mark Absent
+                                            </button>
+                                        }
                                         <button type="button"
                                                 @onclick="() => OpenAdjustModal(row)"
                                                 class="px-2.5 py-1 bg-slate-100 hover:bg-slate-200 text-slate-800 rounded font-semibold text-[11px] transition-colors">
@@ -335,6 +454,46 @@
         </section>
     }
 </div>
+
+@* ── Sudden Absence Modal (Office Clerk & Admin) ────────────────────── *@
+@if (isSuddenAbsenceModalOpen && suddenAbsenceTarget != null)
+{
+    <div class="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4" @onclick="() => isSuddenAbsenceModalOpen = false">
+        <div class="bg-white rounded-2xl shadow-xl border border-slate-200 w-full max-w-md p-6" @onclick:stopPropagation="true">
+            <h3 class="text-base font-bold text-slate-900 mb-1">Mark Sudden Day-Of Absence</h3>
+            <p class="text-xs text-slate-500 mb-4">
+                Record sudden sick / emergency absence without advance notice for <strong>@suddenAbsenceTarget.EmployeeName</strong> (@suddenAbsenceTarget.EmployeeStudioId). This blocks new assignments today and alerts if they have active shoots.
+            </p>
+
+            @if (!string.IsNullOrWhiteSpace(suddenAbsenceError))
+            {
+                <div class="p-2.5 mb-3 bg-rose-50 border border-rose-200 text-rose-700 text-xs rounded-lg">@suddenAbsenceError</div>
+            }
+
+            <div class="space-y-3 text-xs">
+                <div>
+                    <label class="block font-semibold mb-1 text-slate-700">Absence Classification</label>
+                    <select @bind="suddenAbsenceType" class="w-full p-2 border border-slate-300 rounded-lg bg-white">
+                        <option value="Emergency / Sudden Sick">Emergency / Sudden Sick (No Advance Notice)</option>
+                        <option value="Sick Leave">Sick Leave</option>
+                        <option value="Shoot Unavailability / Time Off">Shoot Unavailability / Time Off</option>
+                    </select>
+                </div>
+                <div>
+                    <label class="block font-semibold mb-1 text-slate-700">Reason / Notes</label>
+                    <textarea @bind="suddenAbsenceReason" rows="3" class="w-full p-2 border border-slate-300 rounded-lg" placeholder="e.g., Sudden high fever or family emergency reported this morning..."></textarea>
+                </div>
+            </div>
+
+            <div class="flex justify-end gap-2 mt-5 pt-3 border-t border-slate-100">
+                <button type="button" @onclick="() => isSuddenAbsenceModalOpen = false" class="px-3.5 py-1.5 border border-slate-300 rounded-lg text-xs font-semibold text-slate-700 hover:bg-slate-50">Cancel</button>
+                <button type="button" @onclick="SubmitSuddenAbsenceAsync" disabled="@isSubmittingSuddenAbsence" class="px-4 py-1.5 bg-rose-600 hover:bg-rose-700 text-white rounded-lg text-xs font-bold disabled:opacity-50">
+                    @(isSubmittingSuddenAbsence ? "Recording…" : "Confirm Absent Today")
+                </button>
+            </div>
+        </div>
+    </div>
+}
 
 @* ── Punch Adjustment Modal (Office Clerk & Admin) ──────────────────── *@
 @if (isAdjustModalOpen)
@@ -400,11 +559,57 @@
     // Adjustment modal state
     private bool isAdjustModalOpen = false;
     private bool isSubmittingAdjust = false;
+    private bool isApprovingOt = false;
     private string? adjustError;
     private TodayAttendanceSummaryDto? adjustTarget;
     private DateTime adjustClockIn = DateTime.Now;
     private DateTime adjustClockOut = DateTime.Now;
     private string adjustReason = string.Empty;
+
+    private static int GetDisplayRegularMinutes(EmployeeTimesheetHistoryDto h)
+    {
+        if (h.RegularMinutes > 0) return h.RegularMinutes;
+        if (!h.ClockOut.HasValue || h.TotalHours <= 0) return 0;
+        int totalMin = (int)Math.Round(h.TotalHours * 60);
+        return LeaveWorkdayHelper.IsOfficeClerkEmployee(h.EmployeeStudioId)
+            ? Math.Min(480, totalMin)
+            : totalMin;
+    }
+
+    private static string FormatMinutes(int minutes)
+    {
+        if (minutes <= 0) return "0m";
+        int hrs = minutes / 60;
+        int rem = minutes % 60;
+        if (hrs > 0 && rem > 0) return $"{hrs}h {rem}m";
+        if (hrs > 0) return $"{hrs}.0h ({minutes}m)";
+        return $"{rem}m";
+    }
+
+    private async Task HandleApproveOvertimeAsync(EmployeeTimesheetHistoryDto h)
+    {
+        if (isApprovingOt || h.PendingOvertimeMinutes <= 0) return;
+        isApprovingOt = true;
+        punchError = null;
+        try
+        {
+            var ok = await Employees.ApproveTimesheetOvertimeAsync(h.Id, h.PendingOvertimeMinutes);
+            if (ok)
+            {
+                h.ApprovedOvertimeMinutes = h.PendingOvertimeMinutes;
+                h.IsOvertimeApproved = true;
+                await RefreshTimesheets();
+            }
+            else
+            {
+                punchError = $"Could not approve overtime for {h.EmployeeName}.";
+            }
+        }
+        finally
+        {
+            isApprovingOt = false;
+        }
+    }
 
     protected override async Task OnInitializedAsync()
     {
@@ -560,6 +765,64 @@
         finally
         {
             isSubmittingAdjust = false;
+        }
+    }
+
+    // Sudden absence modal state
+    private bool isSuddenAbsenceModalOpen = false;
+    private bool isSubmittingSuddenAbsence = false;
+    private string? suddenAbsenceError;
+    private TodayAttendanceSummaryDto? suddenAbsenceTarget;
+    private string suddenAbsenceType = "Emergency / Sudden Sick";
+    private string suddenAbsenceReason = string.Empty;
+    private string? absenceFeedback;
+    private List<LeaveConflictEventViewModel> absenceAffectedEvents = new();
+
+    private void OpenSuddenAbsenceModal(TodayAttendanceSummaryDto row)
+    {
+        suddenAbsenceTarget = row;
+        suddenAbsenceType = "Emergency / Sudden Sick";
+        suddenAbsenceReason = string.Empty;
+        suddenAbsenceError = null;
+        isSuddenAbsenceModalOpen = true;
+    }
+
+    private async Task SubmitSuddenAbsenceAsync()
+    {
+        if (suddenAbsenceTarget == null || isSubmittingSuddenAbsence) return;
+        isSubmittingSuddenAbsence = true;
+        suddenAbsenceError = null;
+
+        try
+        {
+            var res = await Employees.MarkSuddenAbsenceAsync(
+                suddenAbsenceTarget.EmployeeStudioId,
+                suddenAbsenceTarget.EmployeeName,
+                DateOnly.FromDateTime(DateTime.Today),
+                suddenAbsenceType,
+                suddenAbsenceReason);
+
+            if (res?.Leave != null)
+            {
+                isSuddenAbsenceModalOpen = false;
+                absenceAffectedEvents = res.AffectedAppointments ?? new();
+                absenceFeedback = absenceAffectedEvents.Count > 0
+                    ? $"Marked {suddenAbsenceTarget.EmployeeName} as Absent today ({suddenAbsenceType}). {absenceAffectedEvents.Count} assigned shoot(s) need crew/Team Leader reassignment."
+                    : $"Marked {suddenAbsenceTarget.EmployeeName} as Absent today ({suddenAbsenceType}).";
+                await RefreshTimesheets();
+            }
+            else
+            {
+                suddenAbsenceError = "Failed to record sudden absence. Please try again.";
+            }
+        }
+        catch (Exception ex)
+        {
+            suddenAbsenceError = ex.Message;
+        }
+        finally
+        {
+            isSubmittingSuddenAbsence = false;
         }
     }
 }

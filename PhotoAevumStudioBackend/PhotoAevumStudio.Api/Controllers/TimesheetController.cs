@@ -44,7 +44,17 @@ public class TimesheetController : ControllerBase
         }
     }
 
-    private sealed record EmployeeInfo(string Id, string Name, string DaysOff);
+    private static bool IsDefaultClerkId(string? employeeId)
+    {
+        if (string.IsNullOrWhiteSpace(employeeId))
+            return false;
+        var id = employeeId.Trim();
+        return id.Equals("EMP-003", StringComparison.OrdinalIgnoreCase)
+            || id.Equals("EMP-004", StringComparison.OrdinalIgnoreCase)
+            || id.StartsWith("CLK-", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private sealed record EmployeeInfo(string Id, string Name, string DaysOff, string PayBasis, bool IsTitleIExempt);
 
     private async Task<List<EmployeeInfo>> GetEmployeesListAsync(CancellationToken ct)
     {
@@ -60,7 +70,10 @@ public class TimesheetController : ControllerBase
                 SELECT 
                     EmployeeID,
                     LTRIM(RTRIM(CONCAT(ISNULL(EmployeeFirstName, ''), ' ', ISNULL(EmployeeLastName, '')))) AS FullName,
-                    ISNULL(DaysOff, 'Sunday') AS DaysOff
+                    ISNULL(DaysOff, 'Sunday') AS DaysOff,
+                    CASE WHEN COL_LENGTH(N'dbo.Employees', N'PayBasis') IS NOT NULL THEN ISNULL(PayBasis, 'CommissionPerEvent') ELSE 'CommissionPerEvent' END AS PayBasis,
+                    CASE WHEN COL_LENGTH(N'dbo.Employees', N'IsTitleIExempt') IS NOT NULL THEN ISNULL(IsTitleIExempt, 1) ELSE 1 END AS IsTitleIExempt,
+                    ISNULL(Specializations, '') AS Specializations
                 FROM dbo.Employees
                 WHERE EmployeeStatus = 'Active' OR Status = 'Active' OR EmployeeStatus IS NULL
                 ORDER BY EmployeeID ASC;
@@ -71,7 +84,17 @@ public class TimesheetController : ControllerBase
                 var empId = reader.GetString(0);
                 var name = reader.IsDBNull(1) || string.IsNullOrWhiteSpace(reader.GetString(1)) ? empId : reader.GetString(1);
                 var daysOff = reader.IsDBNull(2) ? "Sunday" : reader.GetString(2);
-                list.Add(new EmployeeInfo(empId, name, daysOff));
+                var payBasis = reader.IsDBNull(3) ? "CommissionPerEvent" : reader.GetString(3);
+                var isExempt = reader.IsDBNull(4) ? true : Convert.ToBoolean(reader.GetValue(4));
+                var specs = reader.IsDBNull(5) ? string.Empty : reader.GetString(5);
+
+                if (IsDefaultClerkId(empId) || specs.Contains("Office Clerk", StringComparison.OrdinalIgnoreCase))
+                {
+                    payBasis = "FixedMonthly";
+                    isExempt = false;
+                }
+
+                list.Add(new EmployeeInfo(empId, name, daysOff, payBasis, isExempt));
             }
         }
         catch
@@ -80,7 +103,10 @@ public class TimesheetController : ControllerBase
             foreach (var e in emps)
             {
                 var id = e.IdentityUserId ?? e.Id.ToString();
-                list.Add(new EmployeeInfo(id, id, e.DaysOff ?? "Sunday"));
+                bool isClerk = IsDefaultClerkId(id) || e.Specializations.Any(s => s.Contains("Clerk", StringComparison.OrdinalIgnoreCase));
+                bool isExempt = isClerk ? false : e.IsTitleIExempt;
+                string payBasis = isExempt ? "CommissionPerEvent" : "FixedMonthly";
+                list.Add(new EmployeeInfo(id, id, e.DaysOff ?? "Sunday", payBasis, isExempt));
             }
         }
         return list;
@@ -103,12 +129,10 @@ public class TimesheetController : ControllerBase
             .OrderByDescending(t => t.ClockIn)
             .FirstOrDefaultAsync(ct);
 
-        // Check if on leave today
         var activeLeave = await _db.EmployeeLeaves
             .Where(l => l.EmployeeStudioId == targetId && l.Status == LeaveStatuses.Approved && today >= l.StartDate && today <= l.EndDate)
             .FirstOrDefaultAsync(ct);
 
-        // Check day off
         var employees = await GetEmployeesListAsync(ct);
         var emp = employees.FirstOrDefault(e => e.Id.Equals(targetId, StringComparison.OrdinalIgnoreCase));
 
@@ -146,7 +170,6 @@ public class TimesheetController : ControllerBase
         var phtNow = GetPhtNow();
         var today = DateOnly.FromDateTime(phtNow);
 
-        // 1. Check if already clocked in
         var existingOpen = await _db.EmployeeTimesheets
             .FirstOrDefaultAsync(t => t.EmployeeStudioId == targetId && t.ClockOut == null, ct);
 
@@ -159,7 +182,6 @@ public class TimesheetController : ControllerBase
             });
         }
 
-        // 2. Check if on approved leave today
         var activeLeave = await _db.EmployeeLeaves
             .FirstOrDefaultAsync(l => l.EmployeeStudioId == targetId && l.Status == LeaveStatuses.Approved && today >= l.StartDate && today <= l.EndDate, ct);
 
@@ -172,7 +194,6 @@ public class TimesheetController : ControllerBase
             });
         }
 
-        // 3. Check day off
         var employees = await GetEmployeesListAsync(ct);
         var emp = employees.FirstOrDefault(e => e.Id.Equals(targetId, StringComparison.OrdinalIgnoreCase));
 
@@ -195,6 +216,7 @@ public class TimesheetController : ControllerBase
             WorkDate = today,
             ClockIn = phtNow,
             Status = TimesheetStatuses.Open,
+            EntryType = TimesheetEntryTypes.Work,
             IsDayOffWork = isDayOff,
             Notes = dto.Notes,
             CreatedAt = phtNow
@@ -235,8 +257,12 @@ public class TimesheetController : ControllerBase
             });
         }
 
+        var employees = await GetEmployeesListAsync(ct);
+        var emp = employees.FirstOrDefault(e => e.Id.Equals(targetId, StringComparison.OrdinalIgnoreCase));
+        bool isTitleIExempt = emp?.IsTitleIExempt ?? !IsDefaultClerkId(targetId);
+
         openRecord.ClockOut = phtNow;
-        openRecord.TotalHours = Math.Round((openRecord.ClockOut.Value - openRecord.ClockIn).TotalHours, 2);
+        openRecord.ApplyDoleShiftMinutes(isTitleIExempt);
         openRecord.Status = TimesheetStatuses.Completed;
         if (!string.IsNullOrWhiteSpace(dto.Notes))
         {
@@ -251,7 +277,7 @@ public class TimesheetController : ControllerBase
             "CLOCK_OUT",
             "EmployeeTimesheet",
             openRecord.TimesheetId,
-            $"Employee {targetId} clocked out at {phtNow:yyyy-MM-dd hh:mm:ss tt} PHT (Duration: {openRecord.TotalHours}h)",
+            $"Employee {targetId} clocked out at {phtNow:yyyy-MM-dd hh:mm:ss tt} PHT (Duration: {openRecord.TotalHours}h, Reg: {openRecord.RegularMinutes}m, UT: {openRecord.UndertimeMinutes}m, PendingOT: {openRecord.PendingOvertimeMinutes}m)",
             "Employee",
             targetId,
             ct);
@@ -294,10 +320,17 @@ public class TimesheetController : ControllerBase
                 EmployeeStudioId = emp.Id,
                 EmployeeName = emp.Name,
                 DaysOff = emp.DaysOff ?? "Sunday",
+                PayBasis = emp.PayBasis,
+                IsTitleIExempt = emp.IsTitleIExempt,
                 IsClockedIn = punch != null && punch.ClockOut == null,
                 ClockIn = punch?.ClockIn,
                 ClockOut = punch?.ClockOut,
                 TotalHours = punch != null ? (punch.ClockOut == null ? Math.Round((phtNow - punch.ClockIn).TotalHours, 2) : punch.TotalHours) : 0,
+                RegularMinutes = punch?.RegularMinutes ?? 0,
+                UndertimeMinutes = punch?.UndertimeMinutes ?? 0,
+                PendingOvertimeMinutes = punch?.PendingOvertimeMinutes ?? 0,
+                ApprovedOvertimeMinutes = punch?.ApprovedOvertimeMinutes ?? 0,
+                IsOvertimeApproved = punch?.IsOvertimeApproved ?? false,
                 IsDayOffToday = isDayOff,
                 IsOnLeaveToday = leave != null,
                 ActiveLeaveType = leave?.LeaveType
@@ -348,7 +381,11 @@ public class TimesheetController : ControllerBase
 
         if (record.ClockOut.HasValue)
         {
-            record.TotalHours = Math.Round((record.ClockOut.Value - record.ClockIn).TotalHours, 2);
+            var employees = await GetEmployeesListAsync(ct);
+            var emp = employees.FirstOrDefault(e => e.Id.Equals(record.EmployeeStudioId, StringComparison.OrdinalIgnoreCase));
+            bool isTitleIExempt = emp?.IsTitleIExempt ?? !IsDefaultClerkId(record.EmployeeStudioId);
+
+            record.ApplyDoleShiftMinutes(isTitleIExempt, dto.ExplicitUndertimeMinutes);
             record.Status = TimesheetStatuses.Adjusted;
         }
 
@@ -361,9 +398,68 @@ public class TimesheetController : ControllerBase
             "ADJUST_PUNCH",
             "EmployeeTimesheet",
             record.TimesheetId,
-            $"Timesheet #{id} ({record.EmployeeStudioId}) punch adjusted by {reviewer}: In={record.ClockIn:yyyy-MM-dd HH:mm}, Out={record.ClockOut:yyyy-MM-dd HH:mm}. Reason: {record.AdjustmentReason}",
+            $"Timesheet #{id} ({record.EmployeeStudioId}) punch adjusted by {reviewer}: In={record.ClockIn:yyyy-MM-dd HH:mm}, Out={record.ClockOut:yyyy-MM-dd HH:mm}, Reg={record.RegularMinutes}m, UT={record.UndertimeMinutes}m, PendingOT={record.PendingOvertimeMinutes}m. Reason: {record.AdjustmentReason}",
             "OfficeClerk",
             reviewer,
+            ct);
+
+        return Ok(record);
+    }
+
+    [HttpPost("{id}/approve-ot")]
+    [Authorize(Policy = "AdminOrAbove")]
+    public async Task<IActionResult> ApproveOvertime(int id, [FromBody] ApproveOvertimeDto? dto, CancellationToken ct)
+    {
+        var record = await _db.EmployeeTimesheets.FindAsync([id], ct);
+        if (record == null) return NotFound(new { Message = $"Timesheet #{id} not found." });
+
+        var employees = await GetEmployeesListAsync(ct);
+        var emp = employees.FirstOrDefault(e => e.Id.Equals(record.EmployeeStudioId, StringComparison.OrdinalIgnoreCase));
+        bool isTitleIExempt = emp?.IsTitleIExempt ?? !IsDefaultClerkId(record.EmployeeStudioId);
+
+        if (isTitleIExempt)
+        {
+            return BadRequest(new ProblemDetails
+            {
+                Title = "Title I Exempt Staff",
+                Detail = "Per-event shoot crew are exempt from Labor Code Title I hourly overtime rules."
+            });
+        }
+
+        if (record.PendingOvertimeMinutes <= 0)
+        {
+            return BadRequest(new ProblemDetails
+            {
+                Title = "No Pending Overtime",
+                Detail = $"Timesheet #{id} has 0 pending overtime minutes."
+            });
+        }
+
+        var approver = User.FindFirstValue("studio_id")
+                       ?? User.FindFirstValue(ClaimTypes.Name)
+                       ?? "Admin";
+
+        // DOLE Art. 88: Never subtract UndertimeMinutes from ApprovedOvertimeMinutes.
+        int approvedMinutes = dto?.ApprovedOvertimeMinutes.HasValue == true && dto.ApprovedOvertimeMinutes.Value > 0
+            ? Math.Min(dto.ApprovedOvertimeMinutes.Value, record.PendingOvertimeMinutes)
+            : record.PendingOvertimeMinutes;
+
+        record.ApprovedOvertimeMinutes = approvedMinutes;
+        record.IsOvertimeApproved = true;
+        record.OvertimeApprovedBy = approver;
+        record.OvertimeApprovedAt = GetPhtNow();
+        if (record.Status == TimesheetStatuses.Completed)
+            record.Status = TimesheetStatuses.Approved;
+
+        await _db.SaveChangesAsync(ct);
+
+        await _sqlAuthService.LogActivityAsync(
+            "APPROVE_OVERTIME",
+            "EmployeeTimesheet",
+            record.TimesheetId,
+            $"Timesheet #{id} ({record.EmployeeStudioId}) overtime approved by {approver}: {record.ApprovedOvertimeMinutes} min at 1.25x rate (Undertime preserved at {record.UndertimeMinutes} min per DOLE Art. 88).",
+            "Admin",
+            approver,
             ct);
 
         return Ok(record);
@@ -396,4 +492,9 @@ public record ClockInOutRequestDto(
 public record AdjustPunchDto(
     DateTime? ClockIn,
     DateTime? ClockOut,
-    string? AdjustmentReason);
+    string? AdjustmentReason,
+    int? ExplicitUndertimeMinutes = null);
+
+public record ApproveOvertimeDto(
+    int? ApprovedOvertimeMinutes = null,
+    string? Notes = null);

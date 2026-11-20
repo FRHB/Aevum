@@ -13,10 +13,11 @@
 @using System.Security.Claims
 @inject IEquipmentService EquipmentService
 @inject IUserService UserService
+@inject PaymentHubClient PaymentHub
 @inject AuthenticationStateProvider AuthStateProvider
 @inject NavigationManager Nav
 
-@implements IDisposable
+@implements IAsyncDisposable
 
 
 
@@ -435,9 +436,23 @@
 
                                         <span class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold bg-blue-50 text-blue-800 border border-blue-200">
 
-                                            <span class="w-1.5 h-1.5 rounded-full bg-blue-500"></span>
+                                            <span class="w-1.5 h-1.5 rounded-full bg-blue-500 animate-pulse"></span>
 
-                                            Checked Out / On Shoot
+                                            Dispatched / On Shoot
+
+                                        </span>
+
+                                    }
+
+                                    else if (item.IsReservedForEvent)
+
+                                    {
+
+                                        <span class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold bg-indigo-50 text-indigo-800 border border-indigo-200">
+
+                                            <span class="w-1.5 h-1.5 rounded-full bg-indigo-500"></span>
+
+                                            Reserved / Preparing
 
                                         </span>
 
@@ -507,6 +522,14 @@
 
                                             <p class="text-[11px] text-slate-400 font-mono">Appt: @item.CurrentEventId</p>
 
+                                            @if (item.IsMaintenance || item.IsNeedsReplacement || item.IsRetired)
+                                            {
+                                                <a href="/admin/calendar/events?eventId=@item.CurrentEventId"
+                                                   class="inline-flex items-center gap-1 mt-1 px-2 py-0.5 rounded-full bg-amber-100 hover:bg-amber-200 text-amber-900 border border-amber-300 text-[10px] font-bold">
+                                                    🔧 Needs Replacement in Calendar →
+                                                </a>
+                                            }
+
                                         </div>
 
                                     }
@@ -555,7 +578,7 @@
 
                                         }
 
-                                        else
+                                        else if (!item.IsDispatched)
 
                                         {
 
@@ -669,6 +692,17 @@
                     <p class="text-xs font-mono text-slate-500">ID: @selectedEquipmentForMaintenance.EquipmentID | SN: @(selectedEquipmentForMaintenance.SerialNo ?? "N/A")</p>
 
                 </div>
+
+                @if (!string.IsNullOrWhiteSpace(selectedEquipmentForMaintenance.CurrentEventId))
+                {
+                    <div class="p-3 rounded-lg bg-rose-50 border border-rose-200 text-rose-900 text-[11px] space-y-0.5">
+                        <p class="font-extrabold">⚠️ Upcoming Schedule Assigned</p>
+                        <p>
+                            This equipment is currently scheduled for <strong>@selectedEquipmentForMaintenance.CurrentEventName</strong> (<code class="font-mono">#@selectedEquipmentForMaintenance.CurrentEventId</code>).
+                            Sending it to maintenance will flag that event in the Calendar as needing a fix and replacement equipment scheduled.
+                        </p>
+                    </div>
+                }
 
 
 
@@ -874,9 +908,9 @@
 
                     <span class="text-slate-400 uppercase text-[10px] font-bold">Current Status</span>
 
-                    <p class="font-bold @(detailsModalItem.IsAvailable ? "text-emerald-700" : detailsModalItem.IsMaintenance ? "text-amber-700" : "text-blue-700")">
+                    <p class="font-bold @(detailsModalItem.IsMaintenance ? "text-amber-700" : detailsModalItem.IsDispatched ? "text-blue-700" : detailsModalItem.IsReservedForEvent ? "text-indigo-700" : detailsModalItem.IsAvailable ? "text-emerald-700" : "text-rose-700")">
 
-                        @detailsModalItem.EquipmentStatus
+                        @detailsModalItem.EffectiveStatusLabel
 
                     </p>
 
@@ -1024,10 +1058,29 @@
         }
 
         EquipmentService.OnChange += HandleExternalStateChange;
+        PaymentHub.OnEventStatusChanged += HandleHubEventStatusChangedAsync;
 
         await LoadDataAsync();
 
     }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender || _isReadOnly) return;
+        try
+        {
+            await PaymentHub.EnsureLiveMonitorStartedAsync();
+        }
+        catch
+        {
+        }
+    }
+
+    private Task HandleHubEventStatusChangedAsync(EventStatusChangedMessage _) => InvokeAsync(async () =>
+    {
+        await LoadDataAsync();
+        StateHasChanged();
+    });
 
 
 
@@ -1155,6 +1208,14 @@ private async Task LoadDataAsync()
                 {
 
                     query = query.Where(e => e.IsDispatched);
+
+                }
+
+                else if (selectedStatusFilter == "Available")
+
+                {
+
+                    query = query.Where(e => e.IsAvailable && !e.IsDispatched);
 
                 }
 
@@ -1305,6 +1366,8 @@ private async Task LoadDataAsync()
     private void OpenSendToMaintenanceModal(EquipmentItemModel item)
 
     {
+        if (item.IsDispatched)
+            return;
 
         selectedEquipmentForMaintenance = item;
 
@@ -1332,7 +1395,7 @@ private async Task LoadDataAsync()
 
     {
 
-        if (selectedEquipmentForMaintenance == null || string.IsNullOrWhiteSpace(maintenanceIssueNotes))
+        if (selectedEquipmentForMaintenance == null || selectedEquipmentForMaintenance.IsDispatched || string.IsNullOrWhiteSpace(maintenanceIssueNotes))
 
             return;
 
@@ -1427,11 +1490,13 @@ private async Task LoadDataAsync()
 
 
 
-    public void Dispose()
+    public ValueTask DisposeAsync()
 
     {
 
         EquipmentService.OnChange -= HandleExternalStateChange;
+        PaymentHub.OnEventStatusChanged -= HandleHubEventStatusChangedAsync;
+        return ValueTask.CompletedTask;
 
     }
 

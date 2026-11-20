@@ -1151,8 +1151,9 @@
                                 <div class="flex flex-wrap gap-1">
                                     @foreach (var eq in _selectedNegotiation.Appointment.AssignedEquipment)
                                     {
-                                        <span class="px-2 py-0.5 rounded bg-white border border-indigo-200 text-[10px] font-medium text-slate-700">
-                                            @eq.EquipmentName (@eq.EquipmentId)
+                                        var isEqMaint = EquipmentItemModel.IsUnavailableStatus(eq.EquipmentStatus);
+                                        <span class="px-2 py-0.5 rounded border text-[10px] font-medium @(isEqMaint ? "bg-amber-100 border-amber-300 text-amber-950 font-bold" : "bg-white border-indigo-200 text-slate-700")">
+                                            @(isEqMaint ? "🔧 " : "")@eq.EquipmentName (@eq.EquipmentId)@(isEqMaint ? $" • {eq.EquipmentStatus}" : "")
                                         </span>
                                     }
                                 </div>
@@ -1959,18 +1960,24 @@
                         <div class="grid grid-cols-1 sm:grid-cols-2 gap-2 max-h-72 overflow-y-auto pr-1">
                             @foreach (var eq in _availableEquipment)
                             {
+                                var isUnavailableStatus = EquipmentItemModel.IsUnavailableStatus(eq.EquipmentStatus);
                                 var isConflict = conflictingEqIds.Contains(eq.EquipmentID);
-                                var isChecked = !isConflict && _selectedEquipmentIds.Contains(eq.EquipmentID);
-                                <label class="flex items-center gap-2.5 p-2.5 rounded-lg border transition-all text-xs @(isConflict ? "border-rose-200 bg-rose-50/60 text-rose-400 cursor-not-allowed opacity-75" : (isChecked ? "border-slate-800 bg-slate-50 font-bold cursor-pointer" : "border-slate-200 text-slate-600 hover:border-slate-300 cursor-pointer"))">
+                                var isDisabled = isUnavailableStatus || isConflict;
+                                var isChecked = !isDisabled && _selectedEquipmentIds.Contains(eq.EquipmentID);
+                                <label class="flex items-center gap-2.5 p-2.5 rounded-lg border transition-all text-xs @(isUnavailableStatus ? "border-amber-200 bg-amber-50/70 text-amber-700 cursor-not-allowed opacity-75" : isConflict ? "border-rose-200 bg-rose-50/60 text-rose-400 cursor-not-allowed opacity-75" : (isChecked ? "border-slate-800 bg-slate-50 font-bold cursor-pointer" : "border-slate-200 text-slate-600 hover:border-slate-300 cursor-pointer"))">
                                     <input type="checkbox"
-                                           disabled="@isConflict"
+                                           disabled="@isDisabled"
                                            checked="@isChecked"
                                            @onchange="e => ToggleWizardEquipment(eq.EquipmentID, (bool)(e.Value ?? false))"
                                            class="rounded text-slate-900" />
                                     <div class="truncate flex-1">
                                         <div class="flex items-center justify-between gap-2">
                                             <span class="font-mono text-[10px] text-slate-400">@eq.EquipmentID</span>
-                                            @if (isConflict)
+                                            @if (isUnavailableStatus)
+                                            {
+                                                <span class="text-[9px] font-bold uppercase px-1.5 py-0.5 rounded bg-amber-100 text-amber-800">@eq.EquipmentStatus</span>
+                                            }
+                                            else if (isConflict)
                                             {
                                                 <span class="text-[9px] font-bold uppercase px-1.5 py-0.5 rounded bg-rose-100 text-rose-700">Booked Today</span>
                                             }
@@ -2893,7 +2900,11 @@
             _teamLeaderId = _selectedEmployeeIds.FirstOrDefault() ?? string.Empty;
 
         var conflictEq = GetConflictingWizardEquipmentIds();
-        _selectedEquipmentIds.RemoveWhere(id => conflictEq.Contains(id));
+        var unavailableEq = _availableEquipment
+            .Where(e => EquipmentItemModel.IsUnavailableStatus(e.EquipmentStatus))
+            .Select(e => e.EquipmentID)
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+        _selectedEquipmentIds.RemoveWhere(id => conflictEq.Contains(id) || unavailableEq.Contains(id));
     }
 
     private string _wizardEventLocation = string.Empty;
@@ -2951,6 +2962,10 @@
 
 
     {
+        if (EquipmentService != null)
+        {
+            EquipmentService.OnChange += HandleEquipmentCatalogChanged;
+        }
 
 
 
@@ -3747,7 +3762,7 @@
         }
 
         var conflictEq = GetConflictingWizardEquipmentIds();
-        foreach (var eq in _availableEquipment.Where(e => !conflictEq.Contains(e.EquipmentID)).Take(3))
+        foreach (var eq in _availableEquipment.Where(e => !EquipmentItemModel.IsUnavailableStatus(e.EquipmentStatus) && !conflictEq.Contains(e.EquipmentID)).Take(3))
         {
             _selectedEquipmentIds.Add(eq.EquipmentID);
         }
@@ -4286,14 +4301,30 @@
 
 
 
+    private void HandleEquipmentCatalogChanged()
+    {
+        _ = InvokeAsync(async () =>
+        {
+            try
+            {
+                var eqs = await EquipmentService.GetEquipmentsAsync();
+                _availableEquipment = eqs.ToList();
+                PruneUnavailableCrewAndEquipment();
+                StateHasChanged();
+            }
+            catch { }
+        });
+    }
+
     public void Dispose()
 
 
 
     {
-
-
-
+        if (EquipmentService != null)
+        {
+            EquipmentService.OnChange -= HandleEquipmentCatalogChanged;
+        }
         _countdownTimer?.Dispose();
 
 

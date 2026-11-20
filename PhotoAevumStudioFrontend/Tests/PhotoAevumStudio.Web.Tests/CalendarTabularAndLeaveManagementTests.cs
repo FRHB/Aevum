@@ -227,10 +227,14 @@ public class CalendarTabularAndLeaveManagementTests
 
         // 2. LeavesController endpoints
         Assert.NotNull(typeof(LeavesController).GetMethod(nameof(LeavesController.RequestLeave)));
+        Assert.NotNull(typeof(LeavesController).GetMethod(nameof(LeavesController.GetLeaveBalances)));
+        Assert.NotNull(typeof(LeavesController).GetMethod(nameof(LeavesController.CalculateWorkdays)));
+        Assert.NotNull(typeof(LeavesController).GetMethod(nameof(LeavesController.UpdateLeaveStatus)));
         Assert.NotNull(typeof(LeavesController).GetMethod(nameof(LeavesController.GetPendingLeaves)));
         Assert.NotNull(typeof(LeavesController).GetMethod(nameof(LeavesController.GetAllLeaves)));
         Assert.NotNull(typeof(LeavesController).GetMethod(nameof(LeavesController.ApproveLeave)));
         Assert.NotNull(typeof(LeavesController).GetMethod(nameof(LeavesController.RejectLeave)));
+        Assert.NotNull(typeof(TimesheetController).GetMethod(nameof(TimesheetController.ApproveOvertime)));
 
         // 3. Booking engine leave & day-off enforcement across backend & frontend
         var root = GetRepositoryRoot();

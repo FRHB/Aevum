@@ -2287,9 +2287,24 @@ BEGIN
 
     SET @TotalHours = ROUND(DATEDIFF(SECOND, @ClockIn, @ClockOutTime) / 3600.0, 2);
 
+    DECLARE @WorkedMinutes INT = CASE WHEN DATEDIFF(MINUTE, @ClockIn, @ClockOutTime) > 0 THEN DATEDIFF(MINUTE, @ClockIn, @ClockOutTime) ELSE 0 END;
+    DECLARE @IsTitleIExempt BIT = 1;
+    SELECT TOP 1 @IsTitleIExempt = CASE
+        WHEN e.EmployeeID IN (N'EMP-003', N'EMP-004') OR e.EmployeeID LIKE N'CLK-%' OR UPPER(ISNULL(e.Specializations, N'')) LIKE N'%OFFICE CLERK%' THEN 0
+        WHEN COL_LENGTH(N'dbo.Employees', N'IsTitleIExempt') IS NOT NULL THEN ISNULL(e.IsTitleIExempt, 1)
+        ELSE 1 END
+    FROM dbo.Employees e WHERE e.EmployeeID = @EmployeeStudioId;
+
+    DECLARE @RegularMinutes INT = CASE WHEN @IsTitleIExempt = 1 THEN @WorkedMinutes WHEN @WorkedMinutes > 480 THEN 480 ELSE @WorkedMinutes END;
+    DECLARE @UndertimeMinutes INT = CASE WHEN @IsTitleIExempt = 0 AND @WorkedMinutes < 480 THEN 480 - @WorkedMinutes ELSE 0 END;
+    DECLARE @PendingOTMinutes INT = CASE WHEN @IsTitleIExempt = 0 AND @WorkedMinutes > 480 THEN @WorkedMinutes - 480 ELSE 0 END;
+
     UPDATE dbo.EmployeeTimesheets
     SET ClockOut = @ClockOutTime,
         TotalHours = @TotalHours,
+        RegularMinutes = @RegularMinutes,
+        UndertimeMinutes = @UndertimeMinutes,
+        PendingOvertimeMinutes = @PendingOTMinutes,
         Status = 'Completed',
         Notes = CASE 
             WHEN @Notes IS NOT NULL AND RTRIM(LTRIM(@Notes)) <> '' 

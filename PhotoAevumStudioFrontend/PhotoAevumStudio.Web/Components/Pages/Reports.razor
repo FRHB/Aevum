@@ -4,12 +4,20 @@
 @rendermode InteractiveServer
 @attribute [Authorize(Roles = "Admin,SystemAdmin,System Admin,Super Admin,Office Clerk")]
 @using Microsoft.AspNetCore.Components.Authorization
-@inject NavigationManager Nav
+@using PhotoAevumStudio.Web.Services
+@inject ISalesReportsClient Client
+@inject IJSRuntime JS
 
 <PageTitle>Reports &amp; Analytics | Photo Aevum Studio</PageTitle>
 
+<style>
+    @@media print {
+        aside, nav, header, .aev-no-print { display: none !important; }
+        .aev-print-open { display: block !important; }
+    }
+</style>
+
 <div class="space-y-6">
-    @* ── Page header ─────────────────────────────────────────────────── *@
     <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 pb-2 border-b border-slate-200">
         <div>
             <div class="flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-slate-500 mb-1">
@@ -17,17 +25,12 @@
                 <span>/</span>
                 <span class="text-slate-900 font-bold">Reports</span>
             </div>
-            <h1 class="text-2xl sm:text-3xl font-extrabold text-slate-900 tracking-tight">Reports &amp; Analytics</h1>
-            <p class="text-xs sm:text-sm text-slate-500 mt-1">Review studio operational metrics, revenue breakdowns, attendance logs, and equipment performance.</p>
+            <h1 class="text-2xl sm:text-3xl font-extrabold text-slate-900 tracking-tight">Reports &amp; Analytics Hub</h1>
+            <p class="text-xs sm:text-sm text-slate-500 mt-1">Operational summaries computed from live studio records for @(_report?.PeriodLabel ?? "the selected period").</p>
         </div>
-        <div class="flex items-center gap-2">
-            <select @bind="SelectedDateRange" class="text-xs px-3 py-2 border border-slate-300 rounded-lg bg-white font-medium text-slate-700 focus:outline-none focus:ring-1 focus:ring-teal-500">
-                <option value="month">This Month (November 2026)</option>
-                <option value="quarter">Fourth Quarter (Q4 2026)</option>
-                <option value="year">Year to Date (2026)</option>
-                <option value="all">All-Time Performance</option>
-            </select>
-            <button type="button" @onclick="GenerateSummaryReport" class="inline-flex items-center gap-1.5 px-3.5 py-2 bg-teal-700 hover:bg-teal-800 text-white text-xs font-bold rounded-lg shadow-2xs transition-colors">
+        <div class="flex items-center gap-2 aev-no-print">
+            <input type="month" value="@_period" @onchange="OnPeriodChanged" aria-label="Report period" class="text-xs px-3 py-2 border border-slate-300 rounded-lg bg-white focus:outline-none focus:ring-1 focus:ring-teal-500" />
+            <button type="button" @onclick="GenerateSummaryReport" disabled="@(_report is null)" class="inline-flex items-center gap-1.5 px-3.5 py-2 bg-teal-700 hover:bg-teal-800 disabled:opacity-50 text-white text-xs font-bold rounded-lg shadow-2xs transition-colors">
                 <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                     <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
                     <polyline points="7 10 12 15 17 10"></polyline>
@@ -38,113 +41,184 @@
         </div>
     </div>
 
-    @* ── Analytics Performance Metrics ─────────────────────────────────── *@
-    <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-        <div class="bg-white p-5 rounded-xl border border-slate-200 shadow-2xs">
-            <div class="flex items-center justify-between text-slate-500 mb-2">
-                <span class="text-xs font-medium uppercase tracking-wider">Gross Booking Value</span>
-                <span class="text-emerald-600 text-xs font-bold">↑ 22.4%</span>
-            </div>
-            <h3 class="text-2xl font-extrabold text-slate-900">₱385,400</h3>
-            <p class="text-[11px] text-slate-400 mt-1">Across 48 scheduled photo sessions</p>
+    @if (_loading)
+    {
+        <div class="bg-white rounded-xl border border-slate-200 p-12 text-center text-xs text-slate-500">Loading report from the database…</div>
+    }
+    else if (_report is null)
+    {
+        <div class="bg-white rounded-xl border border-rose-200 p-8 text-center text-xs text-rose-700">
+            @(_error ?? "Unable to load the report.")
+            <button type="button" @onclick="LoadAsync" class="ml-2 underline font-semibold">Retry</button>
         </div>
-
-        <div class="bg-white p-5 rounded-xl border border-slate-200 shadow-2xs">
-            <div class="flex items-center justify-between text-slate-500 mb-2">
-                <span class="text-xs font-medium uppercase tracking-wider">Studio Capacity Utilization</span>
-                <span class="text-blue-600 text-xs font-bold">Optimal</span>
-            </div>
-            <h3 class="text-2xl font-extrabold text-slate-900">86.2%</h3>
-            <p class="text-[11px] text-slate-400 mt-1">Peak bookings between 1:00 PM – 5:00 PM</p>
-        </div>
-
-        <div class="bg-white p-5 rounded-xl border border-slate-200 shadow-2xs">
-            <div class="flex items-center justify-between text-slate-500 mb-2">
-                <span class="text-xs font-medium uppercase tracking-wider">Staff Efficiency &amp; Hours</span>
-                <span class="text-slate-600 text-xs font-semibold">98.1% on-time</span>
-            </div>
-            <h3 class="text-2xl font-extrabold text-slate-900">342.5 hrs</h3>
-            <p class="text-[11px] text-slate-400 mt-1">Logged by active photographers &amp; clerks</p>
-        </div>
-
-        <div class="bg-white p-5 rounded-xl border border-slate-200 shadow-2xs">
-            <div class="flex items-center justify-between text-slate-500 mb-2">
-                <span class="text-xs font-medium uppercase tracking-wider">Client Retention &amp; Referral</span>
-                <span class="text-emerald-600 text-xs font-bold">4.9 / 5.0 ★</span>
-            </div>
-            <h3 class="text-2xl font-extrabold text-slate-900">91.8%</h3>
-            <p class="text-[11px] text-slate-400 mt-1">Repeat clients &amp; positive survey scores</p>
-        </div>
-    </div>
-
-    @* ── Report Categories / Cards ─────────────────────────────────────── *@
-    <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-        <div class="bg-white p-5 rounded-xl border border-slate-200 shadow-2xs flex flex-col justify-between hover:border-slate-300 transition-colors">
-            <div>
-                <div class="w-10 h-10 rounded-lg bg-emerald-50 text-emerald-700 flex items-center justify-center mb-3">
-                    <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                        <line x1="12" y1="1" x2="12" y2="23"></line>
-                        <path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"></path>
-                    </svg>
+    }
+    else
+    {
+        var r = _report;
+        <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+            <div class="bg-white p-5 rounded-xl border border-slate-200 shadow-2xs">
+                <div class="flex items-center justify-between text-slate-500 mb-2">
+                    <span class="text-xs font-medium uppercase tracking-wider">Gross Booking Value</span>
+                    @if (r.GrossDeltaPercent is double g)
+                    {
+                        <span class="@(g >= 0 ? "text-emerald-600" : "text-rose-600") text-xs font-bold">@(g >= 0 ? "↑" : "↓") @Math.Abs(g).ToString("0.0")%</span>
+                    }
+                    else
+                    {
+                        <span class="text-slate-400 text-xs font-semibold">No prior data</span>
+                    }
                 </div>
-                <h4 class="text-sm font-bold text-slate-900">Financial &amp; Revenue Breakdown</h4>
-                <p class="text-xs text-slate-500 mt-1 leading-relaxed">
-                    Detailed revenue per service category, deposit collection rates, and reconciliation logs for bookkeeping.
-                </p>
+                <h3 class="text-2xl font-extrabold text-slate-900">₱@r.GrossBookingValue.ToString("N2")</h3>
+                <p class="text-[11px] text-slate-400 mt-1">Across @r.ScheduledSessions scheduled photo session@(r.ScheduledSessions == 1 ? "" : "s")</p>
             </div>
-            <div class="mt-4 pt-3 border-t border-slate-100 flex items-center justify-between text-xs font-semibold">
-                <span class="text-slate-400">Monthly format</span>
-                <button type="button" class="text-teal-700 hover:text-teal-900">View Breakdown →</button>
+
+            <div class="bg-white p-5 rounded-xl border border-slate-200 shadow-2xs">
+                <div class="flex items-center justify-between text-slate-500 mb-2">
+                    <span class="text-xs font-medium uppercase tracking-wider">Studio Capacity Utilization</span>
+                    <span class="text-blue-600 text-xs font-bold">@r.CapacityBadge</span>
+                </div>
+                <h3 class="text-2xl font-extrabold text-slate-900">@r.CapacityUtilizationPercent.ToString("0.0")%</h3>
+                <p class="text-[11px] text-slate-400 mt-1">@(r.PeakHours is null ? "No booked slots in this period" : $"Peak bookings between {r.PeakHours}")</p>
+            </div>
+
+            <div class="bg-white p-5 rounded-xl border border-slate-200 shadow-2xs">
+                <div class="flex items-center justify-between text-slate-500 mb-2">
+                    <span class="text-xs font-medium uppercase tracking-wider">Staff Efficiency &amp; Hours</span>
+                    <span class="text-slate-600 text-xs font-semibold">@(r.StaffEfficiencyPercent is double e ? $"{e:0.0}% timesheets closed" : "No timesheets")</span>
+                </div>
+                <h3 class="text-2xl font-extrabold text-slate-900">@r.TotalLoggedHours.ToString("0.0") hrs</h3>
+                <p class="text-[11px] text-slate-400 mt-1">Logged by @r.ActiveStaffLogged active crew member@(r.ActiveStaffLogged == 1 ? "" : "s")</p>
+            </div>
+
+            <div class="bg-white p-5 rounded-xl border border-slate-200 shadow-2xs">
+                <div class="flex items-center justify-between text-slate-500 mb-2">
+                    <span class="text-xs font-medium uppercase tracking-wider">Client Retention &amp; Referral</span>
+                    <span class="text-slate-500 text-xs font-semibold">@(r.AverageRating is double a ? $"{a:0.0} / 5.0 ★" : "Rating not tracked")</span>
+                </div>
+                <h3 class="text-2xl font-extrabold text-slate-900">@(r.RetentionPercent is double p ? $"{p:0.0}%" : "—")</h3>
+                <p class="text-[11px] text-slate-400 mt-1">@r.RepeatClients repeat of @r.ClientsInPeriod client@(r.ClientsInPeriod == 1 ? "" : "s") booked this period</p>
             </div>
         </div>
 
-        <div class="bg-white p-5 rounded-xl border border-slate-200 shadow-2xs flex flex-col justify-between hover:border-slate-300 transition-colors">
-            <div>
-                <div class="w-10 h-10 rounded-lg bg-blue-50 text-blue-700 flex items-center justify-center mb-3">
-                    <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                        <rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect>
-                        <line x1="16" y1="2" x2="16" y2="6"></line>
-                        <line x1="8" y1="2" x2="8" y2="6"></line>
-                        <line x1="3" y1="10" x2="21" y2="10"></line>
-                    </svg>
+        <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+            @* Financial *@
+            <div class="bg-white p-5 rounded-xl border border-slate-200 shadow-2xs flex flex-col justify-between hover:border-slate-300 transition-colors">
+                <div>
+                    <div class="w-10 h-10 rounded-lg bg-emerald-50 text-emerald-700 flex items-center justify-center mb-3 font-bold">₱</div>
+                    <h4 class="text-sm font-bold text-slate-900">Financial &amp; Revenue Breakdown</h4>
+                    <p class="text-xs text-slate-500 mt-1 leading-relaxed">Revenue per service category, deposit collection rate, and reconciliation status.</p>
+                    <div class="@(_open == "fin" ? "" : "hidden") aev-print-open mt-3 space-y-1.5 text-xs">
+                        @if (r.RevenueByCategory.Count == 0) { <p class="italic text-slate-400">No category revenue recorded.</p> }
+                        @foreach (var c in r.RevenueByCategory)
+                        {
+                            <div class="flex justify-between"><span class="text-slate-600">@c.Label <span class="text-slate-400">(@c.Count)</span></span><span class="font-semibold text-slate-900">₱@c.Amount.ToString("N2")</span></div>
+                        }
+                        <div class="pt-2 mt-2 border-t border-slate-100 flex justify-between"><span class="text-slate-600">Deposit collection</span><span class="font-semibold">@(r.DepositCollectionPercent is double d ? $"{d:0.0}%" : "—")</span></div>
+                        <div class="flex justify-between"><span class="text-slate-600">Cleared payments</span><span class="font-semibold">@r.ClearedPayments</span></div>
+                        <div class="flex justify-between"><span class="text-slate-600">Awaiting reconciliation</span><span class="font-semibold @(r.UnreconciledPayments > 0 ? "text-amber-600" : "")">@r.UnreconciledPayments</span></div>
+                    </div>
                 </div>
-                <h4 class="text-sm font-bold text-slate-900">Appointments &amp; Booking Trends</h4>
-                <p class="text-xs text-slate-500 mt-1 leading-relaxed">
-                    Peak booking days, popular photo shoot tiers, consultation conversion rates, and studio session completion counts.
-                </p>
+                <div class="mt-4 pt-3 border-t border-slate-100 flex items-center justify-between text-xs font-semibold aev-no-print">
+                    <span class="text-slate-400">@r.PeriodLabel</span>
+                    <button type="button" @onclick='() => Toggle("fin")' class="text-teal-700 hover:text-teal-900">@(_open == "fin" ? "Hide Breakdown" : "View Breakdown →")</button>
+                </div>
             </div>
-            <div class="mt-4 pt-3 border-t border-slate-100 flex items-center justify-between text-xs font-semibold">
-                <span class="text-slate-400">Weekly analytics</span>
-                <button type="button" class="text-teal-700 hover:text-teal-900">View Trends →</button>
-            </div>
-        </div>
 
-        <div class="bg-white p-5 rounded-xl border border-slate-200 shadow-2xs flex flex-col justify-between hover:border-slate-300 transition-colors">
-            <div>
-                <div class="w-10 h-10 rounded-lg bg-purple-50 text-purple-700 flex items-center justify-center mb-3">
-                    <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                        <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"></path>
-                        <circle cx="12" cy="13" r="4"></circle>
-                    </svg>
+            @* Appointments *@
+            <div class="bg-white p-5 rounded-xl border border-slate-200 shadow-2xs flex flex-col justify-between hover:border-slate-300 transition-colors">
+                <div>
+                    <div class="w-10 h-10 rounded-lg bg-blue-50 text-blue-700 flex items-center justify-center mb-3">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect>
+                            <line x1="16" y1="2" x2="16" y2="6"></line>
+                            <line x1="8" y1="2" x2="8" y2="6"></line>
+                            <line x1="3" y1="10" x2="21" y2="10"></line>
+                        </svg>
+                    </div>
+                    <h4 class="text-sm font-bold text-slate-900">Appointments &amp; Booking Trends</h4>
+                    <p class="text-xs text-slate-500 mt-1 leading-relaxed">Peak booking days, popular services, consultation conversion, and completed sessions.</p>
+                    <div class="@(_open == "apt" ? "" : "hidden") aev-print-open mt-3 space-y-1.5 text-xs">
+                        @foreach (var w in r.BookingsByWeekday)
+                        {
+                            <div class="flex justify-between"><span class="text-slate-600">@w.Label</span><span class="font-semibold text-slate-900">@w.Count</span></div>
+                        }
+                        <div class="pt-2 mt-2 border-t border-slate-100 font-semibold text-slate-500 uppercase tracking-wider">Popular services</div>
+                        @if (r.PopularServices.Count == 0) { <p class="italic text-slate-400">No services booked.</p> }
+                        @foreach (var s in r.PopularServices)
+                        {
+                            <div class="flex justify-between"><span class="text-slate-600">@s.Label</span><span class="font-semibold text-slate-900">@s.Count</span></div>
+                        }
+                        <div class="pt-2 mt-2 border-t border-slate-100 flex justify-between"><span class="text-slate-600">Consultation conversion</span><span class="font-semibold">@(r.ConsultationConversionPercent is double cc ? $"{cc:0.0}% ({r.ConsultationsWon}/{r.ConsultationsTotal})" : "No consultations")</span></div>
+                        <div class="flex justify-between"><span class="text-slate-600">Completed sessions</span><span class="font-semibold">@r.CompletedSessions</span></div>
+                    </div>
                 </div>
-                <h4 class="text-sm font-bold text-slate-900">Equipment Usage &amp; Maintenance</h4>
-                <p class="text-xs text-slate-500 mt-1 leading-relaxed">
-                    Utilization rate per camera body, lighting kits, and lens inventory, with dispatch logs and scheduled maintenance alerts.
-                </p>
+                <div class="mt-4 pt-3 border-t border-slate-100 flex items-center justify-between text-xs font-semibold aev-no-print">
+                    <span class="text-slate-400">@r.ScheduledSessions sessions</span>
+                    <button type="button" @onclick='() => Toggle("apt")' class="text-teal-700 hover:text-teal-900">@(_open == "apt" ? "Hide Trends" : "View Trends →")</button>
+                </div>
             </div>
-            <div class="mt-4 pt-3 border-t border-slate-100 flex items-center justify-between text-xs font-semibold">
-                <span class="text-slate-400">Inventory status</span>
-                <button type="button" class="text-teal-700 hover:text-teal-900">View Equipment Report →</button>
+
+            @* Equipment *@
+            <div class="bg-white p-5 rounded-xl border border-slate-200 shadow-2xs flex flex-col justify-between hover:border-slate-300 transition-colors">
+                <div>
+                    <div class="w-10 h-10 rounded-lg bg-amber-50 text-amber-700 flex items-center justify-center mb-3">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"></path>
+                            <circle cx="12" cy="13" r="4"></circle>
+                        </svg>
+                    </div>
+                    <h4 class="text-sm font-bold text-slate-900">Equipment Usage &amp; Maintenance</h4>
+                    <p class="text-xs text-slate-500 mt-1 leading-relaxed">Utilization per asset, dispatch counts, and maintenance / hold alerts.</p>
+                    <div class="@(_open == "eqp" ? "" : "hidden") aev-print-open mt-3 space-y-1.5 text-xs">
+                        @if (r.EquipmentUsage.Count == 0) { <p class="italic text-slate-400">No equipment registered.</p> }
+                        @foreach (var q in r.EquipmentUsage)
+                        {
+                            <div class="flex justify-between gap-2"><span class="text-slate-600 truncate">@q.EquipmentName <span class="text-slate-400">· @q.TypeName</span></span><span class="font-semibold text-slate-900 shrink-0">@q.DispatchCount dispatch · @q.UtilizationPercent.ToString("0.0")%</span></div>
+                        }
+                        <div class="pt-2 mt-2 border-t border-slate-100 flex justify-between"><span class="text-slate-600">Open maintenance tickets</span><span class="font-semibold @(r.OpenMaintenanceTickets > 0 ? "text-amber-600" : "")">@r.OpenMaintenanceTickets</span></div>
+                        <div class="flex justify-between"><span class="text-slate-600">Assets on hold / needing replacement</span><span class="font-semibold @(r.EquipmentOnHold > 0 ? "text-amber-600" : "")">@r.EquipmentOnHold</span></div>
+                    </div>
+                </div>
+                <div class="mt-4 pt-3 border-t border-slate-100 flex items-center justify-between text-xs font-semibold aev-no-print">
+                    <span class="text-slate-400">@r.TotalDispatches dispatches</span>
+                    <button type="button" @onclick='() => Toggle("eqp")' class="text-teal-700 hover:text-teal-900">@(_open == "eqp" ? "Hide Usage" : "View Usage →")</button>
+                </div>
             </div>
         </div>
-    </div>
+    }
 </div>
 
 @code {
-    private string SelectedDateRange = "month";
+    private string _period = DateTime.Today.ToString("yyyy-MM");
+    private ReportSummaryModel? _report;
+    private bool _loading = true;
+    private string? _error, _open;
 
-    private void GenerateSummaryReport()
+    protected override Task OnInitializedAsync() => LoadAsync();
+
+    private async Task LoadAsync()
     {
-        // Placeholder report generation logic
+        _loading = true;
+        var parts = _period.Split('-');
+        var res = await Client.GetReportAsync(int.Parse(parts[0]), int.Parse(parts[1]));
+        _report = res.IsSuccess ? res.Value : null;
+        _error = res.Error?.Message;
+        _loading = false;
+    }
+
+    private async Task OnPeriodChanged(ChangeEventArgs e)
+    {
+        var v = e.Value?.ToString();
+        if (string.IsNullOrWhiteSpace(v) || v.Length != 7) return;
+        _period = v;
+        await LoadAsync();
+    }
+
+    private void Toggle(string key) => _open = _open == key ? null : key;
+
+    private async Task GenerateSummaryReport()
+    {
+        // Expand all modules so the printed/PDF report contains the full figures, then open the browser's Save-as-PDF dialog.
+        await JS.InvokeVoidAsync("print");
     }
 }

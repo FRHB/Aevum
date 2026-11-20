@@ -22,6 +22,7 @@ public class PaymentHub : Hub
 
     public static string GroupName(string appointmentId) => $"booking-{appointmentId}";
     public static string CustomerGroupName(string customerId) => $"customer-{customerId}";
+    public static string StaffGroupName(string employeeId) => $"staff-{employeeId}";
 
     private readonly IPendingPaymentService _payments;
 
@@ -39,6 +40,26 @@ public class PaymentHub : Hub
 
     public Task LeaveLiveMonitor() =>
         Groups.RemoveFromGroupAsync(Context.ConnectionId, LiveMonitorGroup);
+
+    /// <summary>Joins an employee-scoped group to receive real-time roster and Team Leader assignment updates.</summary>
+    public Task JoinStaff(string employeeId)
+    {
+        if (string.IsNullOrWhiteSpace(employeeId))
+            throw new HubException("EmployeeId is required.");
+
+        var user = Context.User;
+        if (user == null || !IsStudioStaff(user))
+            throw new HubException("Not authorized for staff updates.");
+
+        return Groups.AddToGroupAsync(Context.ConnectionId, StaffGroupName(employeeId.Trim()));
+    }
+
+    public Task LeaveStaff(string employeeId)
+    {
+        if (string.IsNullOrWhiteSpace(employeeId))
+            return Task.CompletedTask;
+        return Groups.RemoveFromGroupAsync(Context.ConnectionId, StaffGroupName(employeeId.Trim()));
+    }
 
     /// <summary>Joins a customer-scoped group to receive real-time status updates across all bookings.</summary>
     public Task JoinCustomer(string customerId)

@@ -23,12 +23,80 @@ public class EquipmentItemModel
     public bool IsRetired => EquipmentStatus.Equals("Retired", StringComparison.OrdinalIgnoreCase);
     public bool IsNeedsReplacement => EquipmentStatus.Equals("Needs Replacement", StringComparison.OrdinalIgnoreCase);
 
+    public static bool IsUnavailableStatus(string? status)
+    {
+        if (string.IsNullOrWhiteSpace(status)) return false;
+        var s = status.Trim();
+        return s.Equals("Maintenance", StringComparison.OrdinalIgnoreCase)
+            || s.Equals("In Maintenance", StringComparison.OrdinalIgnoreCase)
+            || s.Equals("In-Maintenance", StringComparison.OrdinalIgnoreCase)
+            || s.Equals("Needs Replacement", StringComparison.OrdinalIgnoreCase)
+            || s.Equals("Retired", StringComparison.OrdinalIgnoreCase);
+    }
+
     /// <summary>
-    /// If currently checked out or dispatched, holds active event appointment information.
+    /// If currently assigned or dispatched, holds active event appointment information.
     /// </summary>
     public string? CurrentEventId { get; set; }
     public string? CurrentEventName { get; set; }
-    public bool IsDispatched => !string.IsNullOrEmpty(CurrentEventId);
+    public string? CurrentEventStatus { get; set; }
+    public bool IsCurrentEventTaken { get; set; }
+
+    public bool IsDispatched =>
+        !string.IsNullOrEmpty(CurrentEventId) &&
+        (IsCurrentEventTaken || IsEventStageDispatched(CurrentEventStatus));
+
+    public bool IsReservedForEvent =>
+        !string.IsNullOrEmpty(CurrentEventId) &&
+        !IsDispatched;
+
+    public string EffectiveStatusLabel =>
+        IsMaintenance ? "In Maintenance"
+        : IsDispatched ? "Dispatched / On Shoot"
+        : IsReservedForEvent ? "Reserved / Preparing"
+        : IsAvailable ? "Available"
+        : IsNeedsReplacement ? "Needs Replacement"
+        : "Retired";
+
+    public static bool IsEventStageDispatched(string? eventStatus)
+    {
+        if (string.IsNullOrWhiteSpace(eventStatus)) return false;
+        var s = eventStatus.Trim();
+        return s.Equals("Dispatch", StringComparison.OrdinalIgnoreCase)
+            || s.Equals("Dispatched", StringComparison.OrdinalIgnoreCase)
+            || s.Equals("Ongoing", StringComparison.OrdinalIgnoreCase)
+            || s.Equals("On Going", StringComparison.OrdinalIgnoreCase)
+            || s.Equals("In Execution", StringComparison.OrdinalIgnoreCase)
+            || s.Equals("Event Done", StringComparison.OrdinalIgnoreCase)
+            || s.Equals("Post Event", StringComparison.OrdinalIgnoreCase)
+            || s.Equals("Pending Verification", StringComparison.OrdinalIgnoreCase)
+            || s.Equals("Paid Cash Pending Verification", StringComparison.OrdinalIgnoreCase)
+            || s.Equals("Payment Verification (Cash)", StringComparison.OrdinalIgnoreCase)
+            || s.Equals("Payment Verification (QR:Pending Payment)", StringComparison.OrdinalIgnoreCase);
+    }
+
+    public static bool IsEventStageCompletedOrInactive(string? eventStatus, string? finalPaymentStatus = null)
+    {
+        if (!string.IsNullOrWhiteSpace(finalPaymentStatus))
+        {
+            var fps = finalPaymentStatus.Trim();
+            if (fps.Equals("Paid", StringComparison.OrdinalIgnoreCase) ||
+                fps.Equals("Payment Verification (QR:Paid)", StringComparison.OrdinalIgnoreCase))
+            {
+                return true;
+            }
+        }
+
+        if (string.IsNullOrWhiteSpace(eventStatus)) return false;
+        var s = eventStatus.Trim();
+        return s.Equals("Complete", StringComparison.OrdinalIgnoreCase)
+            || s.Equals("Completed", StringComparison.OrdinalIgnoreCase)
+            || s.Equals("Delivered", StringComparison.OrdinalIgnoreCase)
+            || s.Equals("Shot", StringComparison.OrdinalIgnoreCase)
+            || s.Equals("Cancelled", StringComparison.OrdinalIgnoreCase)
+            || s.Equals("Expired", StringComparison.OrdinalIgnoreCase)
+            || s.Equals("Deal_Lost", StringComparison.OrdinalIgnoreCase);
+    }
 }
 
 /// <summary>
@@ -79,6 +147,7 @@ public class DispatchItemModel
     public string EquipmentName { get; set; } = string.Empty;
     public string? SerialNo { get; set; }
     public string EquipmentTypeName { get; set; } = string.Empty;
+    public string EquipmentStatus { get; set; } = "Available";
 
     public string DispatchStatus { get; set; } = "Dispatched"; // 'Dispatched', 'Scheduled', 'Returned'
     public DateTime DispatchedAt { get; set; } = DateTime.UtcNow;
@@ -90,6 +159,7 @@ public class DispatchItemModel
     public bool IsActiveCheckout => DispatchStatus.Equals("Dispatched", StringComparison.OrdinalIgnoreCase);
     public bool IsScheduled => DispatchStatus.Equals("Scheduled", StringComparison.OrdinalIgnoreCase);
     public bool IsReturned => DispatchStatus.Equals("Returned", StringComparison.OrdinalIgnoreCase);
+    public bool IsEquipmentMaintenanceOrUnavailable => EquipmentItemModel.IsUnavailableStatus(EquipmentStatus);
 }
 
 /// <summary>

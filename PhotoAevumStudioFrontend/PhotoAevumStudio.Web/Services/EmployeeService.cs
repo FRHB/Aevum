@@ -1563,47 +1563,72 @@ public class EmployeeService : IEmployeeService
 
     }
 
+    public async Task<bool> ApproveTimesheetOvertimeAsync(int id, int? approvedOvertimeMinutes = null, CancellationToken cancellationToken = default)
+    {
+        if (cancellationToken.IsCancellationRequested) return false;
+        try
+        {
+            try { await _tokenStore.GetTokenAsync(cancellationToken); } catch { }
+            var res = await _http.PostAsJsonAsync($"api/timesheet/{id}/approve-ot", new { ApprovedOvertimeMinutes = approvedOvertimeMinutes }, cancellationToken);
+            if (res.IsSuccessStatusCode) return true;
+        }
+        catch { }
+
+        try
+        {
+            await using var conn = SqlResilienceHelper.CreateConnection(_connectionString);
+            await conn.OpenAsync(cancellationToken);
+            const string sql = @"
+                IF COL_LENGTH(N'dbo.EmployeeTimesheets', N'ApprovedOvertimeMinutes') IS NOT NULL
+                BEGIN
+                    UPDATE dbo.EmployeeTimesheets
+                    SET ApprovedOvertimeMinutes = CASE WHEN @Minutes IS NOT NULL AND @Minutes > 0 AND @Minutes < PendingOvertimeMinutes THEN @Minutes ELSE PendingOvertimeMinutes END,
+                        IsOvertimeApproved = 1,
+                        OvertimeApprovedBy = N'Admin',
+                        OvertimeApprovedAt = SYSUTCDATETIME(),
+                        Status = CASE WHEN Status = N'Completed' THEN N'Approved' ELSE Status END
+                    WHERE Id = @Id AND PendingOvertimeMinutes > 0;
+                END";
+            await using var cmd = new SqlCommand(sql, conn);
+            cmd.Parameters.AddWithValue("@Id", id);
+            cmd.Parameters.AddWithValue("@Minutes", (object?)approvedOvertimeMinutes ?? DBNull.Value);
+            return await cmd.ExecuteNonQueryAsync(cancellationToken) > 0;
+        }
+        catch { return false; }
+    }
+
 
 
     // ── Leaves ───────────────────────────────────────────────────────────────
 
 
 
-    public async Task<bool> RequestLeaveAsync(string leaveType, DateOnly startDate, DateOnly endDate, string? reason, string? employeeId = null, CancellationToken cancellationToken = default)
+    public Task<bool> RequestLeaveAsync(string leaveType, DateOnly startDate, DateOnly endDate, string? reason, string? employeeId = null, CancellationToken cancellationToken = default)
+        => RequestLeaveAsync(leaveType, startDate, endDate, reason, employeeId, isHalfDay: false, attachmentName: null, cancellationToken);
 
+    public async Task<bool> RequestLeaveAsync(string leaveType, DateOnly startDate, DateOnly endDate, string? reason, string? employeeId, bool isHalfDay, string? attachmentName = null, CancellationToken cancellationToken = default)
     {
-
         if (cancellationToken.IsCancellationRequested) return false;
-
         try
-
         {
-
             try { await _tokenStore.GetTokenAsync(cancellationToken); } catch { }
-
             var payload = new
-
             {
-
                 LeaveType = leaveType,
-
                 StartDate = startDate,
-
                 EndDate = endDate,
-
                 Reason = reason,
-
-                EmployeeStudioId = employeeId
-
+                EmployeeStudioId = employeeId,
+                IsHalfDay = isHalfDay,
+                AttachmentName = attachmentName
             };
-
             var res = await _http.PostAsJsonAsync("api/leaves/request", payload, cancellationToken);
-
             if (res.IsSuccessStatusCode)
                 return true;
 
+            if (res.StatusCode == System.Net.HttpStatusCode.BadRequest)
+                return false;
         }
-
         catch { }
 
         // Direct SQL fallback if API server is unreachable
@@ -1616,23 +1641,43 @@ public class EmployeeService : IEmployeeService
             await conn.OpenAsync(cancellationToken);
 
             const string empNameSql = @"
-                SELECT TOP 1 LTRIM(RTRIM(CONCAT(ISNULL(EmployeeFirstName, ''), ' ', ISNULL(EmployeeLastName, ''))))
+                SELECT TOP 1
+                    LTRIM(RTRIM(CONCAT(ISNULL(EmployeeFirstName, ''), ' ', ISNULL(EmployeeLastName, '')))),
+                    ISNULL(DaysOff, 'Sunday')
                 FROM dbo.Employees WHERE EmployeeID = @EmpId;";
             string empName = employeeId;
+            string daysOff = employeeId.Equals("EMP-004", StringComparison.OrdinalIgnoreCase) ? "Sunday,Monday" : "Sunday";
             await using (var nameCmd = new SqlCommand(empNameSql, conn))
             {
                 nameCmd.Parameters.AddWithValue("@EmpId", employeeId.Trim());
-                var obj = await nameCmd.ExecuteScalarAsync(cancellationToken);
-                if (obj is string s && !string.IsNullOrWhiteSpace(s))
-                    empName = s;
+                await using var r = await nameCmd.ExecuteReaderAsync(cancellationToken);
+                if (await r.ReadAsync(cancellationToken))
+                {
+                    if (!r.IsDBNull(0) && !string.IsNullOrWhiteSpace(r.GetString(0)))
+                        empName = r.GetString(0);
+                    if (!r.IsDBNull(1) && !string.IsNullOrWhiteSpace(r.GetString(1)))
+                        daysOff = r.GetString(1);
+                }
             }
+
+            var preview = LeaveWorkdayHelper.CalculateCountableWorkdays(employeeId.Trim(), startDate, endDate, isHalfDay, daysOff);
+            if (preview.CountableDays <= 0m)
+                return false;
 
             var leaveId = "LV-" + DateTime.UtcNow.ToString("yyyyMMdd") + "-" + Guid.NewGuid().ToString("N")[..4].ToUpperInvariant();
             const string sql = @"
                 IF OBJECT_ID(N'dbo.EmployeeLeaves', N'U') IS NOT NULL
                 BEGIN
-                    INSERT INTO dbo.EmployeeLeaves (LeaveId, EmployeeStudioId, EmployeeName, LeaveType, StartDate, EndDate, Reason, Status, CreatedAt)
-                    VALUES (@LeaveId, @EmpId, @EmpName, @LeaveType, @StartDate, @EndDate, @Reason, 'Pending', SYSUTCDATETIME());
+                    IF COL_LENGTH(N'dbo.EmployeeLeaves', N'CountableDays') IS NOT NULL
+                    BEGIN
+                        INSERT INTO dbo.EmployeeLeaves (LeaveId, EmployeeStudioId, EmployeeName, LeaveType, StartDate, EndDate, CountableDays, IsHalfDay, CreditYear, AttachmentName, Reason, Status, CreatedAt)
+                        VALUES (@LeaveId, @EmpId, @EmpName, @LeaveType, @StartDate, @EndDate, @CountableDays, @IsHalfDay, @CreditYear, @AttachmentName, @Reason, 'Pending', SYSUTCDATETIME());
+                    END
+                    ELSE
+                    BEGIN
+                        INSERT INTO dbo.EmployeeLeaves (LeaveId, EmployeeStudioId, EmployeeName, LeaveType, StartDate, EndDate, Reason, Status, CreatedAt)
+                        VALUES (@LeaveId, @EmpId, @EmpName, @LeaveType, @StartDate, @EndDate, @Reason, 'Pending', SYSUTCDATETIME());
+                    END
                 END";
             await using var cmd = new SqlCommand(sql, conn);
             cmd.Parameters.AddWithValue("@LeaveId", leaveId);
@@ -1641,11 +1686,190 @@ public class EmployeeService : IEmployeeService
             cmd.Parameters.AddWithValue("@LeaveType", leaveType);
             cmd.Parameters.AddWithValue("@StartDate", startDate.ToDateTime(TimeOnly.MinValue));
             cmd.Parameters.AddWithValue("@EndDate", endDate.ToDateTime(TimeOnly.MinValue));
+            cmd.Parameters.AddWithValue("@CountableDays", preview.CountableDays);
+            cmd.Parameters.AddWithValue("@IsHalfDay", isHalfDay);
+            cmd.Parameters.AddWithValue("@CreditYear", startDate.Year);
+            cmd.Parameters.AddWithValue("@AttachmentName", (object?)attachmentName ?? DBNull.Value);
             cmd.Parameters.AddWithValue("@Reason", (object?)reason ?? DBNull.Value);
             return await cmd.ExecuteNonQueryAsync(cancellationToken) > 0;
         }
         catch { return false; }
+    }
 
+    public async Task<EmployeeLeaveBalanceSummaryViewModel> GetLeaveBalancesAsync(string employeeId, int year = 2026, CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrWhiteSpace(employeeId))
+            employeeId = "EMP-003";
+
+        var trimmedId = employeeId.Trim();
+        if (year <= 0) year = 2026;
+
+        if (!cancellationToken.IsCancellationRequested)
+        {
+            try
+            {
+                try { await _tokenStore.GetTokenAsync(cancellationToken); } catch { }
+                var res = await _http.GetFromJsonAsync<EmployeeLeaveBalanceSummaryViewModel>($"api/leaves/balances/{Uri.EscapeDataString(trimmedId)}?year={year}", cancellationToken);
+                if (res != null) return res;
+            }
+            catch { }
+        }
+
+        // Local fallback calculation using employee roster + filed leaves for the target year
+        bool isClerk = LeaveWorkdayHelper.IsOfficeClerkEmployee(trimmedId);
+        string daysOff = trimmedId.Equals("EMP-004", StringComparison.OrdinalIgnoreCase) ? "Sunday,Monday" : "Sunday";
+        string empName = trimmedId;
+
+        try
+        {
+            var allEmployees = await GetEmployeesAsync(cancellationToken);
+            var emp = allEmployees.FirstOrDefault(e => e.EmployeeId.Equals(trimmedId, StringComparison.OrdinalIgnoreCase));
+            if (emp != null)
+            {
+                empName = string.IsNullOrWhiteSpace(emp.FullName) ? trimmedId : emp.FullName;
+                daysOff = string.IsNullOrWhiteSpace(emp.DaysOff) ? daysOff : emp.DaysOff;
+                isClerk = emp.IsOfficeClerk || isClerk;
+            }
+        }
+        catch { }
+
+        decimal vlPending = 0m, vlUsed = 0m, slPending = 0m, slUsed = 0m;
+        try
+        {
+            var leaves = await GetLeavesFromSqlFallbackAsync(null, trimmedId, cancellationToken);
+            foreach (var lv in leaves.Where(l => l.StartDate.Year == year && (l.Status.Equals("Pending", StringComparison.OrdinalIgnoreCase) || l.Status.Equals("Approved", StringComparison.OrdinalIgnoreCase))))
+            {
+                decimal days = lv.CountableDays ?? LeaveWorkdayHelper.CalculateCountableWorkdays(trimmedId, lv.StartDate, lv.EndDate, lv.IsHalfDay, daysOff).CountableDays;
+                bool isPending = lv.Status.Equals("Pending", StringComparison.OrdinalIgnoreCase);
+                if (lv.LeaveType.Equals("Vacation Leave", StringComparison.OrdinalIgnoreCase) || string.Equals(lv.LeaveTypeCode, "VL", StringComparison.OrdinalIgnoreCase))
+                {
+                    if (isPending) vlPending += days; else vlUsed += days;
+                }
+                else if (lv.LeaveType.Equals("Sick Leave", StringComparison.OrdinalIgnoreCase) || string.Equals(lv.LeaveTypeCode, "SL", StringComparison.OrdinalIgnoreCase))
+                {
+                    if (isPending) slPending += days; else slUsed += days;
+                }
+            }
+        }
+        catch { }
+
+        var balances = new List<LeaveBalanceItemViewModel>();
+        if (isClerk)
+        {
+            decimal vlAvail = Math.Max(0m, 5.0m - vlPending - vlUsed);
+            decimal slAvail = Math.Max(0m, 5.0m - slPending - slUsed);
+            balances.Add(new LeaveBalanceItemViewModel
+            {
+                LeaveTypeId = 1,
+                LeaveTypeCode = "VL",
+                LeaveTypeName = "Vacation Leave",
+                IsPaid = true,
+                RequiresCredits = true,
+                IsCashConvertible = true,
+                TotalAllocated = 5.0m,
+                PendingCredits = vlPending,
+                UsedCredits = vlUsed,
+                AvailableCredits = vlAvail
+            });
+            balances.Add(new LeaveBalanceItemViewModel
+            {
+                LeaveTypeId = 2,
+                LeaveTypeCode = "SL",
+                LeaveTypeName = "Sick Leave",
+                IsPaid = true,
+                RequiresCredits = true,
+                IsCashConvertible = false,
+                TotalAllocated = 5.0m,
+                PendingCredits = slPending,
+                UsedCredits = slUsed,
+                AvailableCredits = slAvail
+            });
+        }
+
+        decimal vlRem = balances.FirstOrDefault(b => b.LeaveTypeCode == "VL")?.AvailableCredits ?? 0m;
+        decimal slRem = balances.FirstOrDefault(b => b.LeaveTypeCode == "SL")?.AvailableCredits ?? 0m;
+
+        return new EmployeeLeaveBalanceSummaryViewModel
+        {
+            EmployeeId = trimmedId,
+            EmployeeName = empName,
+            Year = year,
+            PayBasis = isClerk ? "FixedMonthly" : "CommissionPerEvent",
+            IsTitleIExempt = !isClerk,
+            DaysOff = daysOff,
+            TotalAllocatedPaidDays = isClerk ? 10.0m : 0.0m,
+            TotalRemainingPaidDays = vlRem + slRem,
+            VacationLeaveRemaining = vlRem,
+            SickLeaveRemaining = slRem,
+            Balances = balances
+        };
+    }
+
+    public async Task<CountableWorkdaysPreviewViewModel> PreviewLeaveWorkdaysAsync(
+        string employeeId,
+        DateOnly startDate,
+        DateOnly endDate,
+        bool isHalfDay = false,
+        string? fallbackDaysOff = null,
+        CancellationToken cancellationToken = default)
+    {
+        var trimmedId = string.IsNullOrWhiteSpace(employeeId) ? "EMP-003" : employeeId.Trim();
+
+        if (!cancellationToken.IsCancellationRequested)
+        {
+            try
+            {
+                try { await _tokenStore.GetTokenAsync(cancellationToken); } catch { }
+                var url = $"api/leaves/calculate-workdays?employeeId={Uri.EscapeDataString(trimmedId)}&startDate={startDate:yyyy-MM-dd}&endDate={endDate:yyyy-MM-dd}&isHalfDay={isHalfDay}";
+                var res = await _http.GetFromJsonAsync<CountableWorkdaysPreviewViewModel>(url, cancellationToken);
+                if (res != null) return res;
+            }
+            catch { }
+        }
+
+        var local = LeaveWorkdayHelper.CalculateCountableWorkdays(trimmedId, startDate, endDate, isHalfDay, fallbackDaysOff);
+
+        // Also check SQL directly for overlapping assigned shoots/events if possible
+        try
+        {
+            await using var conn = SqlResilienceHelper.CreateConnection(_connectionString);
+            await conn.OpenAsync(cancellationToken);
+            const string sql = @"
+                IF OBJECT_ID(N'dbo.EventAppointment', N'U') IS NOT NULL
+                BEGIN
+                    SELECT DISTINCT
+                        ea.EventAppointmentID,
+                        ISNULL(ea.EventName, N'Photoshoot Event') AS EventName,
+                        ea.EventDate,
+                        ISNULL(ea.EventStatus, N'Confirmed') AS EventStatus
+                    FROM dbo.EventAppointment ea
+                    LEFT JOIN dbo.EventEmployee ee ON ee.EventAppointmentID = ea.EventAppointmentID
+                    WHERE (ea.EmployeeID = @EmpId OR ee.EmployeeID = @EmpId)
+                      AND ea.EventDate BETWEEN @StartDate AND @EndDate
+                      AND ISNULL(ea.EventStatus, N'Pending') NOT IN (N'Cancelled', N'Rejected', N'Archived')
+                    ORDER BY ea.EventDate ASC;
+                END";
+            await using var cmd = new SqlCommand(sql, conn);
+            cmd.Parameters.AddWithValue("@EmpId", trimmedId);
+            cmd.Parameters.AddWithValue("@StartDate", startDate.ToDateTime(TimeOnly.MinValue));
+            cmd.Parameters.AddWithValue("@EndDate", endDate.ToDateTime(TimeOnly.MinValue));
+            await using var r = await cmd.ExecuteReaderAsync(cancellationToken);
+            while (await r.ReadAsync(cancellationToken))
+            {
+                local.Conflicts.Add(new LeaveConflictEventViewModel
+                {
+                    EventAppointmentId = r.IsDBNull(0) ? string.Empty : r.GetString(0),
+                    EventName = r.IsDBNull(1) ? "Photoshoot Event" : r.GetString(1),
+                    EventDate = r.IsDBNull(2) ? startDate : DateOnly.FromDateTime(r.GetDateTime(2)),
+                    EventStatus = r.IsDBNull(3) ? "Confirmed" : r.GetString(3)
+                });
+            }
+            local.ConflictCount = local.Conflicts.Count;
+            local.HasEventConflict = local.ConflictCount > 0;
+        }
+        catch { }
+
+        return local;
     }
 
 
@@ -1715,7 +1939,10 @@ public class EmployeeService : IEmployeeService
             const string sql = @"
                 IF OBJECT_ID(N'dbo.EmployeeLeaves', N'U') IS NOT NULL
                 BEGIN
-                    SELECT Id, LeaveId, EmployeeStudioId, EmployeeName, LeaveType, StartDate, EndDate, Reason, Status, ApprovedBy, ApprovedAt, RejectionReason, CreatedAt
+                    SELECT Id, LeaveId, EmployeeStudioId, EmployeeName, LeaveType, StartDate, EndDate, Reason, Status, ApprovedBy, ApprovedAt, RejectionReason, CreatedAt,
+                           CASE WHEN COL_LENGTH(N'dbo.EmployeeLeaves', N'CountableDays') IS NOT NULL THEN CountableDays ELSE NULL END AS CountableDays,
+                           CASE WHEN COL_LENGTH(N'dbo.EmployeeLeaves', N'IsHalfDay') IS NOT NULL THEN IsHalfDay ELSE CAST(0 AS bit) END AS IsHalfDay,
+                           CASE WHEN COL_LENGTH(N'dbo.EmployeeLeaves', N'AttachmentName') IS NOT NULL THEN AttachmentName ELSE NULL END AS AttachmentName
                     FROM dbo.EmployeeLeaves
                     WHERE (@Status IS NULL OR Status = @Status)
                       AND (@EmpId IS NULL OR EmployeeStudioId = @EmpId)
@@ -1741,7 +1968,10 @@ public class EmployeeService : IEmployeeService
                     ApprovedBy = reader.IsDBNull(9) ? null : reader.GetString(9),
                     ApprovedAt = reader.IsDBNull(10) ? null : reader.GetDateTime(10),
                     RejectionReason = reader.IsDBNull(11) ? null : reader.GetString(11),
-                    CreatedAt = reader.IsDBNull(12) ? DateTime.UtcNow : reader.GetDateTime(12)
+                    CreatedAt = reader.IsDBNull(12) ? DateTime.UtcNow : reader.GetDateTime(12),
+                    CountableDays = reader.FieldCount > 13 && !reader.IsDBNull(13) ? Convert.ToDecimal(reader.GetValue(13)) : null,
+                    IsHalfDay = reader.FieldCount > 14 && !reader.IsDBNull(14) && Convert.ToBoolean(reader.GetValue(14)),
+                    AttachmentName = reader.FieldCount > 15 && !reader.IsDBNull(15) ? reader.GetString(15) : null
                 });
             }
         }
@@ -1861,6 +2091,42 @@ public class EmployeeService : IEmployeeService
         }
         catch { return false; }
 
+    }
+
+    public async Task<SuddenAbsenceResultViewModel?> MarkSuddenAbsenceAsync(
+        string employeeStudioId,
+        string? employeeName = null,
+        DateOnly? date = null,
+        string? leaveType = null,
+        string? reason = null,
+        CancellationToken cancellationToken = default)
+    {
+        if (cancellationToken.IsCancellationRequested || string.IsNullOrWhiteSpace(employeeStudioId))
+            return null;
+
+        try
+        {
+            try { await _tokenStore.GetTokenAsync(cancellationToken); } catch { }
+
+            var payload = new
+            {
+                EmployeeStudioId = employeeStudioId.Trim(),
+                EmployeeName = employeeName,
+                Date = date,
+                LeaveType = string.IsNullOrWhiteSpace(leaveType) ? "Emergency / Sudden Sick" : leaveType.Trim(),
+                Reason = reason
+            };
+
+            var res = await _http.PostAsJsonAsync("api/leaves/sudden-absence", payload, cancellationToken);
+            if (res.IsSuccessStatusCode)
+            {
+                var dto = await res.Content.ReadFromJsonAsync<SuddenAbsenceResultViewModel>(cancellationToken: cancellationToken);
+                if (dto != null) return dto;
+            }
+        }
+        catch { }
+
+        return null;
     }
 
     public async Task<bool> UpdateEmployeeDaysOffAsync(string employeeId, string daysOff, CancellationToken cancellationToken = default)

@@ -1,4 +1,4 @@
-SET ANSI_NULLS ON;
+﻿SET ANSI_NULLS ON;
 GO
 SET QUOTED_IDENTIFIER ON;
 GO
@@ -335,7 +335,27 @@ CREATE TABLE dbo.EventEmployee (
     EmployeeID nvarchar(30) NULL,
     AssignedEmployeeName nvarchar(100) NULL,
     IsTeamLeader bit NOT NULL CONSTRAINT DF_EventEmployee_IsTeamLeader DEFAULT 0,
+    IsVerified bit NOT NULL CONSTRAINT DF_EventEmployee_IsVerified DEFAULT 0,
+    VerifiedAt datetime2 NULL,
+    VerifiedByEmployeeID nvarchar(30) NULL,
+    DutyStatus nvarchar(30) NOT NULL CONSTRAINT DF_EventEmployee_DutyStatus DEFAULT 'Assigned',
     CONSTRAINT UQ_EventEmployee_Assign UNIQUE (EventAppointmentID, EmployeeID)
+);
+
+CREATE TABLE dbo.EventCrewReplacementRequest (
+    RequestID int IDENTITY(1,1) NOT NULL PRIMARY KEY,
+    EventAppointmentID nvarchar(30) NOT NULL,
+    AbsentEmployeeID nvarchar(30) NULL,
+    AbsentEmployeeName nvarchar(100) NULL,
+    RequestedByEmployeeID nvarchar(30) NULL,
+    RequestedByName nvarchar(100) NULL,
+    Reason nvarchar(500) NULL,
+    Status nvarchar(30) NOT NULL CONSTRAINT DF_CrewRepReq_Status DEFAULT 'Pending',
+    ReplacementEmployeeID nvarchar(30) NULL,
+    ReplacementEmployeeName nvarchar(100) NULL,
+    FulfilledBy nvarchar(100) NULL,
+    FulfilledAt datetime2 NULL,
+    CreatedAt datetime2 NOT NULL CONSTRAINT DF_CrewRepReq_CreatedAt DEFAULT SYSUTCDATETIME()
 );
 
 CREATE TABLE dbo.EventEquipment (
@@ -575,6 +595,10 @@ ALTER TABLE dbo.ComboPackageJoin ADD CONSTRAINT FK_ComboPackageJoin_ComboPackage
 ALTER TABLE dbo.EventLineItem ADD CONSTRAINT FK_EventLineItem_EventAppointment FOREIGN KEY (EventAppointmentID) REFERENCES dbo.EventAppointment(EventAppointmentID) ON DELETE CASCADE;
 ALTER TABLE dbo.EventLineItem ADD CONSTRAINT FK_EventLineItem_ComboPackage FOREIGN KEY (ComboPackageID) REFERENCES dbo.ComboPackage(ComboPackageID);
 ALTER TABLE dbo.EventEmployee ADD CONSTRAINT FK_EventEmployee_EventAppointment FOREIGN KEY (EventAppointmentID) REFERENCES dbo.EventAppointment(EventAppointmentID) ON DELETE CASCADE;
+ALTER TABLE dbo.EventCrewReplacementRequest ADD CONSTRAINT FK_EventCrewReplacementRequest_Appointment FOREIGN KEY (EventAppointmentID) REFERENCES dbo.EventAppointment(EventAppointmentID) ON DELETE CASCADE;
+ALTER TABLE dbo.EventCrewReplacementRequest ADD CONSTRAINT FK_EventCrewReplacementRequest_AbsentEmployee FOREIGN KEY (AbsentEmployeeID) REFERENCES dbo.Employees(EmployeeID) ON DELETE NO ACTION;
+ALTER TABLE dbo.EventCrewReplacementRequest ADD CONSTRAINT FK_EventCrewReplacementRequest_ReplacementEmployee FOREIGN KEY (ReplacementEmployeeID) REFERENCES dbo.Employees(EmployeeID) ON DELETE NO ACTION;
+CREATE INDEX IX_EventCrewReplacementRequest_Appt_Status ON dbo.EventCrewReplacementRequest (EventAppointmentID, Status);
 ALTER TABLE dbo.EventEquipment ADD CONSTRAINT FK_EventEquipment_EventAppointment FOREIGN KEY (EventAppointmentID) REFERENCES dbo.EventAppointment(EventAppointmentID) ON DELETE CASCADE;
 ALTER TABLE dbo.ServiceCategoryJoins ADD CONSTRAINT FK_ServiceCategoryJoins_ServiceCategory FOREIGN KEY (ServiceCategoryID) REFERENCES dbo.ServiceCategory(ServiceCategoryID) ON DELETE CASCADE;
 ALTER TABLE dbo.ServiceCategoryJoins ADD CONSTRAINT FK_ServiceCategoryJoins_Services FOREIGN KEY (ServicesID) REFERENCES dbo.Services(ServicesID) ON DELETE CASCADE;
@@ -643,6 +667,230 @@ CREATE INDEX IX_EventAppointment_Date_Status ON dbo.EventAppointment (EventDate,
 CREATE INDEX IX_PaymentTransactions_Remittance ON dbo.PaymentTransactions (EmployeeRemittanceStatus, PaymentType);
 CREATE INDEX IX_CustomerDropbox_Customer_ExpiresAt ON dbo.CustomerDropbox (CustomerID, ExpiresAt);
 CREATE INDEX IX_CustomerDropbox_ExpiresAt ON dbo.CustomerDropbox (ExpiresAt);
+GO
+
+/* =====================================================================
+   8C. DOLE-COMPLIANT HYBRID LEAVE MANAGEMENT (Office Clerks vs Shoot Crew)
+   Single idempotent block: safe to re-run on any database state.
+   - Office Clerks  : PayBasis = FixedMonthly,        IsTitleIExempt = 0 (VL/SL credits, LWOP, 125% approved OT)
+   - Shoot Crew     : PayBasis = CommissionPerEvent,  IsTitleIExempt = 1 (UNAVAIL + special statutory leaves only)
+   ===================================================================== */
+
+-- 8C.1 Employees: PayBasis + IsTitleIExempt (+ backfill of Office Clerks)
+IF OBJECT_ID(N'dbo.Employees', N'U') IS NOT NULL
+BEGIN
+    IF COL_LENGTH(N'dbo.Employees', N'PayBasis') IS NULL
+        ALTER TABLE dbo.Employees ADD PayBasis nvarchar(30) NOT NULL CONSTRAINT DF_Employees_PayBasis DEFAULT 'CommissionPerEvent';
+    IF COL_LENGTH(N'dbo.Employees', N'IsTitleIExempt') IS NULL
+        ALTER TABLE dbo.Employees ADD IsTitleIExempt bit NOT NULL CONSTRAINT DF_Employees_IsTitleIExempt DEFAULT 1;
+
+    -- Office Clerks (EMP-003, EMP-004, CLK-% ids, or Office Clerk specialization) => fixed monthly, Title I covered.
+    EXEC(N'UPDATE dbo.Employees
+           SET PayBasis = ''FixedMonthly'', IsTitleIExempt = 0
+           WHERE (PayBasis <> ''FixedMonthly'' OR IsTitleIExempt <> 0)
+             AND (EmployeeID IN (N''EMP-003'', N''EMP-004'')
+                  OR EmployeeID LIKE N''CLK-%''
+                  OR UPPER(ISNULL(Specializations, N'''')) LIKE N''%OFFICE CLERK%'');');
+END
+GO
+
+-- 8C.2 LeaveTypes catalogue (columns added defensively, then upserted)
+IF OBJECT_ID(N'dbo.LeaveTypes', N'U') IS NULL
+BEGIN
+    CREATE TABLE dbo.LeaveTypes (
+        LeaveTypeID int IDENTITY(1,1) NOT NULL PRIMARY KEY,
+        Code nvarchar(20) NOT NULL,
+        Name nvarchar(50) NOT NULL,
+        IsPaid bit NOT NULL CONSTRAINT DF_LeaveTypes_IsPaid DEFAULT 1,
+        RequiresCredits bit NOT NULL CONSTRAINT DF_LeaveTypes_RequiresCredits DEFAULT 1,
+        DefaultAnnualCredits decimal(5,2) NOT NULL CONSTRAINT DF_LeaveTypes_DefaultAnnualCredits DEFAULT 0,
+        IsCashConvertible bit NOT NULL CONSTRAINT DF_LeaveTypes_IsCashConvertible DEFAULT 0,
+        AppliesToFieldExempt bit NOT NULL CONSTRAINT DF_LeaveTypes_AppliesToFieldExempt DEFAULT 0,
+        RequiresAttachment bit NOT NULL CONSTRAINT DF_LeaveTypes_RequiresAttachment DEFAULT 0,
+        GenderRestriction nvarchar(10) NULL,
+        CONSTRAINT UQ_LeaveTypes_Code UNIQUE (Code)
+    );
+END
+GO
+
+IF OBJECT_ID(N'dbo.LeaveTypes', N'U') IS NOT NULL
+BEGIN
+    IF COL_LENGTH(N'dbo.LeaveTypes', N'Code') IS NULL ALTER TABLE dbo.LeaveTypes ADD Code nvarchar(20) NULL;
+    IF COL_LENGTH(N'dbo.LeaveTypes', N'IsPaid') IS NULL ALTER TABLE dbo.LeaveTypes ADD IsPaid bit NOT NULL CONSTRAINT DF_LeaveTypes_IsPaid DEFAULT 1;
+    IF COL_LENGTH(N'dbo.LeaveTypes', N'RequiresCredits') IS NULL ALTER TABLE dbo.LeaveTypes ADD RequiresCredits bit NOT NULL CONSTRAINT DF_LeaveTypes_RequiresCredits DEFAULT 1;
+    IF COL_LENGTH(N'dbo.LeaveTypes', N'DefaultAnnualCredits') IS NULL ALTER TABLE dbo.LeaveTypes ADD DefaultAnnualCredits decimal(5,2) NOT NULL CONSTRAINT DF_LeaveTypes_DefaultAnnualCredits DEFAULT 0;
+    IF COL_LENGTH(N'dbo.LeaveTypes', N'IsCashConvertible') IS NULL ALTER TABLE dbo.LeaveTypes ADD IsCashConvertible bit NOT NULL CONSTRAINT DF_LeaveTypes_IsCashConvertible DEFAULT 0;
+    IF COL_LENGTH(N'dbo.LeaveTypes', N'AppliesToFieldExempt') IS NULL ALTER TABLE dbo.LeaveTypes ADD AppliesToFieldExempt bit NOT NULL CONSTRAINT DF_LeaveTypes_AppliesToFieldExempt DEFAULT 0;
+    IF COL_LENGTH(N'dbo.LeaveTypes', N'RequiresAttachment') IS NULL ALTER TABLE dbo.LeaveTypes ADD RequiresAttachment bit NOT NULL CONSTRAINT DF_LeaveTypes_RequiresAttachment DEFAULT 0;
+    IF COL_LENGTH(N'dbo.LeaveTypes', N'GenderRestriction') IS NULL ALTER TABLE dbo.LeaveTypes ADD GenderRestriction nvarchar(10) NULL;
+
+    EXEC(N'
+    MERGE dbo.LeaveTypes AS t
+    USING (VALUES
+        (N''VL'',     N''Vacation Leave'',                 1, 1,   5.00, 1, 0, 0, NULL),
+        (N''SL'',     N''Sick Leave'',                     1, 1,   5.00, 0, 0, 1, NULL),
+        (N''LWOP'',   N''Leave Without Pay'',              0, 0,   0.00, 0, 0, 0, NULL),
+        (N''UNAVAIL'',N''Shoot Unavailability / Time Off'',0, 0,   0.00, 0, 1, 0, NULL),
+        (N''MAT'',    N''Maternity Leave'',                1, 1, 105.00, 0, 1, 0, N''Female''),
+        (N''PAT'',    N''Paternity Leave'',                1, 1,   7.00, 0, 1, 0, N''Male''),
+        (N''SPL'',    N''Solo Parent Leave'',              1, 1,   7.00, 0, 1, 0, NULL),
+        (N''VAWC'',   N''VAWC Leave'',                     1, 1,  10.00, 0, 1, 0, N''Female''),
+        (N''EMERG'',  N''Emergency / Sudden Sick'',        0, 0,   0.00, 0, 1, 0, NULL)
+    ) AS s (Code, Name, IsPaid, RequiresCredits, DefaultAnnualCredits, IsCashConvertible, AppliesToFieldExempt, RequiresAttachment, GenderRestriction)
+    ON t.Code = s.Code
+    WHEN MATCHED THEN UPDATE SET
+        Name = s.Name, IsPaid = s.IsPaid, RequiresCredits = s.RequiresCredits,
+        DefaultAnnualCredits = s.DefaultAnnualCredits, IsCashConvertible = s.IsCashConvertible,
+        AppliesToFieldExempt = s.AppliesToFieldExempt, RequiresAttachment = s.RequiresAttachment,
+        GenderRestriction = s.GenderRestriction
+    WHEN NOT MATCHED BY TARGET THEN INSERT
+        (Code, Name, IsPaid, RequiresCredits, DefaultAnnualCredits, IsCashConvertible, AppliesToFieldExempt, RequiresAttachment, GenderRestriction)
+        VALUES (s.Code, s.Name, s.IsPaid, s.RequiresCredits, s.DefaultAnnualCredits, s.IsCashConvertible, s.AppliesToFieldExempt, s.RequiresAttachment, s.GenderRestriction);');
+END
+GO
+
+-- 8C.3 LeaveBalances (AvailableCredits is computed: TotalAllocated - PendingCredits - UsedCredits)
+IF OBJECT_ID(N'dbo.LeaveBalances', N'U') IS NULL
+BEGIN
+    CREATE TABLE dbo.LeaveBalances (
+        LeaveBalanceID int IDENTITY(1,1) NOT NULL PRIMARY KEY,
+        EmployeeID nvarchar(30) NOT NULL,
+        LeaveTypeID int NOT NULL,
+        [Year] int NOT NULL,
+        TotalAllocated decimal(6,2) NOT NULL CONSTRAINT DF_LeaveBalances_TotalAllocated DEFAULT 0,
+        PendingCredits decimal(6,2) NOT NULL CONSTRAINT DF_LeaveBalances_PendingCredits DEFAULT 0,
+        UsedCredits decimal(6,2) NOT NULL CONSTRAINT DF_LeaveBalances_UsedCredits DEFAULT 0,
+        AvailableCredits AS (TotalAllocated - PendingCredits - UsedCredits),
+        UpdatedAt datetime2 NOT NULL CONSTRAINT DF_LeaveBalances_UpdatedAt DEFAULT SYSUTCDATETIME(),
+        CONSTRAINT UQ_LeaveBalances_Emp_Type_Year UNIQUE (EmployeeID, LeaveTypeID, [Year]),
+        CONSTRAINT CK_LeaveBalances_NonNegative CHECK (TotalAllocated >= 0 AND PendingCredits >= 0 AND UsedCredits >= 0)
+    );
+END
+GO
+
+IF OBJECT_ID(N'dbo.LeaveBalances', N'U') IS NOT NULL AND OBJECT_ID(N'dbo.Employees', N'U') IS NOT NULL AND OBJECT_ID(N'dbo.LeaveTypes', N'U') IS NOT NULL
+BEGIN
+    IF OBJECT_ID(N'dbo.FK_LeaveBalances_Employees', N'F') IS NOT NULL
+        ALTER TABLE dbo.LeaveBalances DROP CONSTRAINT FK_LeaveBalances_Employees;
+    ALTER TABLE dbo.LeaveBalances ADD CONSTRAINT FK_LeaveBalances_Employees FOREIGN KEY (EmployeeID) REFERENCES dbo.Employees(EmployeeID) ON DELETE CASCADE;
+
+    IF OBJECT_ID(N'dbo.FK_LeaveBalances_LeaveTypes', N'F') IS NOT NULL
+        ALTER TABLE dbo.LeaveBalances DROP CONSTRAINT FK_LeaveBalances_LeaveTypes;
+    ALTER TABLE dbo.LeaveBalances ADD CONSTRAINT FK_LeaveBalances_LeaveTypes FOREIGN KEY (LeaveTypeID) REFERENCES dbo.LeaveTypes(LeaveTypeID) ON DELETE NO ACTION;
+END
+GO
+
+-- 8C.4 EmployeeLeaves (leave requests): create if absent, then add DOLE columns
+IF OBJECT_ID(N'dbo.EmployeeLeaves', N'U') IS NULL
+BEGIN
+    CREATE TABLE dbo.EmployeeLeaves (
+        Id int IDENTITY(1,1) NOT NULL PRIMARY KEY,
+        LeaveId nvarchar(50) NOT NULL,
+        EmployeeStudioId nvarchar(50) NOT NULL,
+        EmployeeName nvarchar(255) NOT NULL,
+        LeaveType nvarchar(50) NOT NULL,
+        StartDate date NOT NULL,
+        EndDate date NOT NULL,
+        Reason nvarchar(500) NULL,
+        Status nvarchar(20) NOT NULL CONSTRAINT DF_Leave_Status DEFAULT 'Pending',
+        ApprovedBy nvarchar(255) NULL,
+        ApprovedAt datetime2 NULL,
+        RejectionReason nvarchar(500) NULL,
+        CreatedAt datetime2 NOT NULL CONSTRAINT DF_Leave_CreatedAt DEFAULT SYSUTCDATETIME()
+    );
+END
+GO
+
+IF OBJECT_ID(N'dbo.EmployeeLeaves', N'U') IS NOT NULL
+BEGIN
+    IF COL_LENGTH(N'dbo.EmployeeLeaves', N'LeaveTypeCode') IS NULL ALTER TABLE dbo.EmployeeLeaves ADD LeaveTypeCode nvarchar(20) NULL;
+    IF COL_LENGTH(N'dbo.EmployeeLeaves', N'CountableDays') IS NULL ALTER TABLE dbo.EmployeeLeaves ADD CountableDays decimal(5,2) NULL;
+    IF COL_LENGTH(N'dbo.EmployeeLeaves', N'IsHalfDay') IS NULL ALTER TABLE dbo.EmployeeLeaves ADD IsHalfDay bit NOT NULL CONSTRAINT DF_EmployeeLeaves_IsHalfDay DEFAULT 0;
+    IF COL_LENGTH(N'dbo.EmployeeLeaves', N'CreditYear') IS NULL ALTER TABLE dbo.EmployeeLeaves ADD CreditYear int NULL;
+    IF COL_LENGTH(N'dbo.EmployeeLeaves', N'CreditsReserved') IS NULL ALTER TABLE dbo.EmployeeLeaves ADD CreditsReserved bit NOT NULL CONSTRAINT DF_EmployeeLeaves_CreditsReserved DEFAULT 0;
+    IF COL_LENGTH(N'dbo.EmployeeLeaves', N'CreditsConsumed') IS NULL ALTER TABLE dbo.EmployeeLeaves ADD CreditsConsumed bit NOT NULL CONSTRAINT DF_EmployeeLeaves_CreditsConsumed DEFAULT 0;
+    IF COL_LENGTH(N'dbo.EmployeeLeaves', N'ConflictCount') IS NULL ALTER TABLE dbo.EmployeeLeaves ADD ConflictCount int NOT NULL CONSTRAINT DF_EmployeeLeaves_ConflictCount DEFAULT 0;
+    IF COL_LENGTH(N'dbo.EmployeeLeaves', N'AttachmentName') IS NULL ALTER TABLE dbo.EmployeeLeaves ADD AttachmentName nvarchar(255) NULL;
+
+    IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = N'IX_EmployeeLeaves_Emp_Status_Dates' AND object_id = OBJECT_ID(N'dbo.EmployeeLeaves'))
+        CREATE INDEX IX_EmployeeLeaves_Emp_Status_Dates ON dbo.EmployeeLeaves (EmployeeStudioId, Status, StartDate, EndDate);
+END
+GO
+
+-- 8C.5 EmployeeTimesheets (time entries): regular / undertime / OT split, leave-sync link
+IF OBJECT_ID(N'dbo.EmployeeTimesheets', N'U') IS NOT NULL
+BEGIN
+    IF COL_LENGTH(N'dbo.EmployeeTimesheets', N'RegularMinutes') IS NULL ALTER TABLE dbo.EmployeeTimesheets ADD RegularMinutes int NOT NULL CONSTRAINT DF_EmployeeTimesheets_RegularMinutes DEFAULT 0;
+    IF COL_LENGTH(N'dbo.EmployeeTimesheets', N'UndertimeMinutes') IS NULL ALTER TABLE dbo.EmployeeTimesheets ADD UndertimeMinutes int NOT NULL CONSTRAINT DF_EmployeeTimesheets_UndertimeMinutes DEFAULT 0;
+    IF COL_LENGTH(N'dbo.EmployeeTimesheets', N'PendingOvertimeMinutes') IS NULL ALTER TABLE dbo.EmployeeTimesheets ADD PendingOvertimeMinutes int NOT NULL CONSTRAINT DF_EmployeeTimesheets_PendingOT DEFAULT 0;
+    IF COL_LENGTH(N'dbo.EmployeeTimesheets', N'ApprovedOvertimeMinutes') IS NULL ALTER TABLE dbo.EmployeeTimesheets ADD ApprovedOvertimeMinutes int NOT NULL CONSTRAINT DF_EmployeeTimesheets_ApprovedOT DEFAULT 0;
+    IF COL_LENGTH(N'dbo.EmployeeTimesheets', N'IsOvertimeApproved') IS NULL ALTER TABLE dbo.EmployeeTimesheets ADD IsOvertimeApproved bit NOT NULL CONSTRAINT DF_EmployeeTimesheets_IsOTApproved DEFAULT 0;
+    IF COL_LENGTH(N'dbo.EmployeeTimesheets', N'OvertimeApprovedBy') IS NULL ALTER TABLE dbo.EmployeeTimesheets ADD OvertimeApprovedBy nvarchar(100) NULL;
+    IF COL_LENGTH(N'dbo.EmployeeTimesheets', N'OvertimeApprovedAt') IS NULL ALTER TABLE dbo.EmployeeTimesheets ADD OvertimeApprovedAt datetime2 NULL;
+    IF COL_LENGTH(N'dbo.EmployeeTimesheets', N'EntryType') IS NULL ALTER TABLE dbo.EmployeeTimesheets ADD EntryType nvarchar(30) NOT NULL CONSTRAINT DF_EmployeeTimesheets_EntryType DEFAULT 'Work';
+    IF COL_LENGTH(N'dbo.EmployeeTimesheets', N'LeaveRequestID') IS NULL ALTER TABLE dbo.EmployeeTimesheets ADD LeaveRequestID int NULL;
+END
+GO
+
+IF OBJECT_ID(N'dbo.EmployeeTimesheets', N'U') IS NOT NULL AND OBJECT_ID(N'dbo.EmployeeLeaves', N'U') IS NOT NULL
+BEGIN
+    IF OBJECT_ID(N'dbo.FK_EmployeeTimesheets_LeaveRequest', N'F') IS NOT NULL
+        ALTER TABLE dbo.EmployeeTimesheets DROP CONSTRAINT FK_EmployeeTimesheets_LeaveRequest;
+    ALTER TABLE dbo.EmployeeTimesheets ADD CONSTRAINT FK_EmployeeTimesheets_LeaveRequest FOREIGN KEY (LeaveRequestID) REFERENCES dbo.EmployeeLeaves(Id) ON DELETE SET NULL;
+
+    -- One synced leave entry per (leave request, day)
+    IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = N'UX_EmployeeTimesheets_Leave_Day' AND object_id = OBJECT_ID(N'dbo.EmployeeTimesheets'))
+        EXEC(N'CREATE UNIQUE INDEX UX_EmployeeTimesheets_Leave_Day ON dbo.EmployeeTimesheets (LeaveRequestID, WorkDate) WHERE LeaveRequestID IS NOT NULL;');
+END
+GO
+
+-- 8C.6 Data hygiene + seeds (dynamic SQL because the columns above were created in earlier batches of the same script run)
+IF OBJECT_ID(N'dbo.EmployeeLeaves', N'U') IS NOT NULL AND OBJECT_ID(N'dbo.LeaveTypes', N'U') IS NOT NULL AND COL_LENGTH(N'dbo.Employees', N'IsTitleIExempt') IS NOT NULL
+BEGIN
+    -- Crew (Title I exempt) cannot hold VL/SL/LWOP: convert active ones to Shoot Unavailability so the schedule block survives.
+    EXEC(N'UPDATE el
+           SET el.LeaveType = N''Shoot Unavailability / Time Off'', el.LeaveTypeCode = N''UNAVAIL'', el.CreditsReserved = 0, el.CreditsConsumed = 0
+           FROM dbo.EmployeeLeaves el
+           JOIN dbo.Employees e ON e.EmployeeID = el.EmployeeStudioId
+           WHERE e.IsTitleIExempt = 1
+             AND el.LeaveType IN (N''Sick Leave'', N''Vacation Leave'', N''Leave Without Pay'')
+             AND el.Status IN (N''Pending'', N''Approved'');');
+
+    EXEC(N'UPDATE el SET el.LeaveTypeCode = lt.Code
+           FROM dbo.EmployeeLeaves el JOIN dbo.LeaveTypes lt ON lt.Name = el.LeaveType
+           WHERE el.LeaveTypeCode IS NULL;');
+
+    EXEC(N'UPDATE dbo.EmployeeLeaves
+           SET CountableDays = CASE WHEN IsHalfDay = 1 THEN 0.5 ELSE CAST(DATEDIFF(DAY, StartDate, EndDate) + 1 AS decimal(5,2)) END,
+               CreditYear = YEAR(StartDate)
+           WHERE CountableDays IS NULL;');
+
+    -- Remove VL/SL/credit balances that belong to Title I exempt crew
+    EXEC(N'DELETE lb
+           FROM dbo.LeaveBalances lb
+           JOIN dbo.Employees e ON e.EmployeeID = lb.EmployeeID
+           JOIN dbo.LeaveTypes lt ON lt.LeaveTypeID = lb.LeaveTypeID
+           WHERE e.IsTitleIExempt = 1 AND lt.AppliesToFieldExempt = 0 AND lt.RequiresCredits = 1;');
+
+    -- 2026 VL + SL credits for every Title I covered employee (Office Clerks)
+    EXEC(N'INSERT INTO dbo.LeaveBalances (EmployeeID, LeaveTypeID, [Year], TotalAllocated)
+           SELECT e.EmployeeID, lt.LeaveTypeID, 2026, lt.DefaultAnnualCredits
+           FROM dbo.Employees e
+           CROSS JOIN dbo.LeaveTypes lt
+           WHERE e.IsTitleIExempt = 0 AND lt.Code IN (N''VL'', N''SL'')
+             AND NOT EXISTS (SELECT 1 FROM dbo.LeaveBalances lb WHERE lb.EmployeeID = e.EmployeeID AND lb.LeaveTypeID = lt.LeaveTypeID AND lb.[Year] = 2026);');
+END
+GO
+
+IF OBJECT_ID(N'dbo.EmployeeTimesheets', N'U') IS NOT NULL AND COL_LENGTH(N'dbo.EmployeeTimesheets', N'RegularMinutes') IS NOT NULL AND COL_LENGTH(N'dbo.Employees', N'IsTitleIExempt') IS NOT NULL
+BEGIN
+    -- Historical completed clerk shifts: cap regular minutes at 480 (no retroactive OT/undertime is manufactured)
+    EXEC(N'UPDATE ts
+           SET ts.RegularMinutes = CASE WHEN ts.TotalHours * 60 > 480 THEN 480 ELSE CAST(ROUND(ts.TotalHours * 60, 0) AS int) END
+           FROM dbo.EmployeeTimesheets ts
+           JOIN dbo.Employees e ON e.EmployeeID = ts.EmployeeStudioId
+           WHERE e.IsTitleIExempt = 0 AND ts.ClockOut IS NOT NULL AND ts.EntryType = N''Work'' AND ts.RegularMinutes = 0 AND ts.TotalHours > 0;');
+END
 GO
 
 /* =====================================================================
@@ -1033,12 +1281,16 @@ BEGIN
     );
     CREATE INDEX IX_StudioAnalyticsActions_Key_Date ON dbo.StudioAnalyticsActions (ActionKey, AppliedAtUtc DESC);
 END;
-GO
-/* =====================================================================
-   HANGFIRE BACKGROUND JOB STORAGE SCHEMA (Version 9)
-   ===================================================================== */
+GO
 
--- This file is part of Hangfire. Copyright © 2013-2014 Hangfire OÜ.
+/* =====================================================================
+
+   HANGFIRE BACKGROUND JOB STORAGE SCHEMA (Version 9)
+
+   ===================================================================== */
+
+
+-- This file is part of Hangfire. Copyright Â© 2013-2014 Hangfire OÃœ.
 -- 
 -- Hangfire is free software: you can redistribute it and/or modify
 -- it under the terms of the GNU Lesser General Public License as 
@@ -1464,7 +1716,7 @@ BEGIN
 	PRINT 'Dropped unnecessary index [IX_HangFire_Hash_Key]';
 
 	-- Next, all the indexes that cover expiration will be filtered, to include only non-null values. This
-	-- will prevent unnecessary index modifications – we are seeking these indexes only for non-null
+	-- will prevent unnecessary index modifications â€“ we are seeking these indexes only for non-null
 	-- expiration time. Also, they include the Id column by a mistake. So we'll re-create them later in the
 	-- migration.
 
@@ -1826,5 +2078,7 @@ PRINT 'Hangfire database schema installed';
 COMMIT TRANSACTION;
 PRINT 'Hangfire SQL objects installed';
 
-
-GO
+
+
+GO
+

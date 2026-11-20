@@ -26,13 +26,22 @@ public interface IEmployeeService
     Task<bool> ClockOutAsync(string? employeeId = null, string? notes = null, string? employeeName = null, CancellationToken cancellationToken = default);
     Task<IReadOnlyList<EmployeeTimesheetHistoryDto>> GetTimesheetHistoryAsync(string? employeeId = null, CancellationToken cancellationToken = default);
     Task<bool> AdjustTimesheetPunchAsync(int id, DateTime? clockIn, DateTime? clockOut, string? reason, CancellationToken cancellationToken = default);
+    Task<bool> ApproveTimesheetOvertimeAsync(int id, int? approvedOvertimeMinutes = null, CancellationToken cancellationToken = default) => Task.FromResult(false);
 
     // ── Leaves & Days Off ────────────────────────────────────────────────────
     Task<bool> RequestLeaveAsync(string leaveType, DateOnly startDate, DateOnly endDate, string? reason, string? employeeId = null, CancellationToken cancellationToken = default);
+    Task<bool> RequestLeaveAsync(string leaveType, DateOnly startDate, DateOnly endDate, string? reason, string? employeeId, bool isHalfDay, string? attachmentName = null, CancellationToken cancellationToken = default)
+        => RequestLeaveAsync(leaveType, startDate, endDate, reason, employeeId, cancellationToken);
+    Task<EmployeeLeaveBalanceSummaryViewModel> GetLeaveBalancesAsync(string employeeId, int year = 2026, CancellationToken cancellationToken = default)
+        => Task.FromResult(new EmployeeLeaveBalanceSummaryViewModel { EmployeeId = employeeId, Year = year });
+    Task<CountableWorkdaysPreviewViewModel> PreviewLeaveWorkdaysAsync(string employeeId, DateOnly startDate, DateOnly endDate, bool isHalfDay = false, string? fallbackDaysOff = null, CancellationToken cancellationToken = default)
+        => Task.FromResult(LeaveWorkdayHelper.CalculateCountableWorkdays(employeeId, startDate, endDate, isHalfDay, fallbackDaysOff));
     Task<IReadOnlyList<LeaveItemViewModel>> GetPendingLeavesAsync(CancellationToken cancellationToken = default);
     Task<IReadOnlyList<LeaveItemViewModel>> GetAllLeavesAsync(string? status = null, string? employeeId = null, CancellationToken cancellationToken = default);
     Task<IReadOnlyList<LeaveItemViewModel>> GetMyLeavesAsync(string? employeeId = null, CancellationToken cancellationToken = default);
     Task<bool> ApproveLeaveAsync(int leaveId, CancellationToken cancellationToken = default);
     Task<bool> RejectLeaveAsync(int leaveId, string? reason = null, CancellationToken cancellationToken = default);
+    Task<SuddenAbsenceResultViewModel?> MarkSuddenAbsenceAsync(string employeeStudioId, string? employeeName = null, DateOnly? date = null, string? leaveType = null, string? reason = null, CancellationToken cancellationToken = default)
+        => Task.FromResult<SuddenAbsenceResultViewModel?>(null);
     Task<bool> UpdateEmployeeDaysOffAsync(string employeeId, string daysOff, CancellationToken cancellationToken = default);
 }

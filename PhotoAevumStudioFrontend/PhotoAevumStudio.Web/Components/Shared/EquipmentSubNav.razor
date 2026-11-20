@@ -85,7 +85,7 @@
 
         totalEquipment = eqs.Count;
         maintenanceCount = eqs.Count(e => e.IsMaintenance);
-        activeDispatches = dispatches.Count(d => d.IsActiveCheckout);
+        activeDispatches = PhotoAevumStudio.Web.Services.EquipmentService.GetLatestDispatchPerEquipment(dispatches).Count(d => d.IsActiveCheckout);
         typesCount = types.Count;
     }
 

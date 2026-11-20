@@ -56,6 +56,40 @@ public class PendingPaymentService : IPendingPaymentService
                   ALTER TABLE dbo.EventEquipment ADD IsAdditionalRequest bit NOT NULL CONSTRAINT DF_EventEquipment_IsAdditionalRequest DEFAULT 0;
               IF COL_LENGTH(N'dbo.EventEquipment', N'RequestedNotes') IS NULL
                   ALTER TABLE dbo.EventEquipment ADD RequestedNotes nvarchar(500) NULL;
+          END;
+          IF OBJECT_ID(N'dbo.EventEmployee', N'U') IS NOT NULL
+          BEGIN
+              IF COL_LENGTH(N'dbo.EventEmployee', N'IsVerified') IS NULL
+                  ALTER TABLE dbo.EventEmployee ADD IsVerified bit NOT NULL CONSTRAINT DF_EventEmployee_IsVerified DEFAULT 0;
+              IF COL_LENGTH(N'dbo.EventEmployee', N'VerifiedAt') IS NULL
+                  ALTER TABLE dbo.EventEmployee ADD VerifiedAt datetime2 NULL;
+              IF COL_LENGTH(N'dbo.EventEmployee', N'VerifiedByEmployeeID') IS NULL
+                  ALTER TABLE dbo.EventEmployee ADD VerifiedByEmployeeID nvarchar(30) NULL;
+              IF COL_LENGTH(N'dbo.EventEmployee', N'DutyStatus') IS NULL
+                  ALTER TABLE dbo.EventEmployee ADD DutyStatus nvarchar(30) NOT NULL CONSTRAINT DF_EventEmployee_DutyStatus DEFAULT 'Assigned';
+          END;
+          IF OBJECT_ID(N'dbo.EventCrewReplacementRequest', N'U') IS NULL
+          BEGIN
+              CREATE TABLE dbo.EventCrewReplacementRequest (
+                  RequestID int IDENTITY(1,1) NOT NULL PRIMARY KEY,
+                  EventAppointmentID nvarchar(30) NOT NULL,
+                  AbsentEmployeeID nvarchar(30) NULL,
+                  AbsentEmployeeName nvarchar(100) NULL,
+                  RequestedByEmployeeID nvarchar(30) NULL,
+                  RequestedByName nvarchar(100) NULL,
+                  Reason nvarchar(500) NULL,
+                  Status nvarchar(30) NOT NULL CONSTRAINT DF_CrewRepReq_Status DEFAULT 'Pending',
+                  ReplacementEmployeeID nvarchar(30) NULL,
+                  ReplacementEmployeeName nvarchar(100) NULL,
+                  FulfilledBy nvarchar(100) NULL,
+                  FulfilledAt datetime2 NULL,
+                  CreatedAt datetime2 NOT NULL CONSTRAINT DF_CrewRepReq_CreatedAt DEFAULT SYSUTCDATETIME()
+              );
+          END;
+          IF OBJECT_ID(N'dbo.EventCrewReplacementRequest', N'U') IS NOT NULL
+             AND NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = N'IX_EventCrewReplacementRequest_Appt_Status' AND object_id = OBJECT_ID(N'dbo.EventCrewReplacementRequest'))
+          BEGIN
+              CREATE INDEX IX_EventCrewReplacementRequest_Appt_Status ON dbo.EventCrewReplacementRequest (EventAppointmentID, Status);
           END;",
 
         @"IF NOT EXISTS (SELECT 1 FROM sys.check_constraints

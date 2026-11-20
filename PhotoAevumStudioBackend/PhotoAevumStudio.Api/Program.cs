@@ -371,6 +371,7 @@ builder.Services.AddScoped<PhotoAevumStudio.Application.Interfaces.IR2StorageSer
 builder.Services.AddScoped<PhotoAevumStudio.Application.Interfaces.IDataArchiveService, PhotoAevumStudio.Infrastructure.Services.DataArchiveService>();
 builder.Services.AddScoped<PhotoAevumStudio.Application.Interfaces.ICustomerDropboxService, PhotoAevumStudio.Infrastructure.Services.CustomerDropboxService>();
 builder.Services.AddScoped<PhotoAevumStudio.Application.Interfaces.IStudioAnalyticsService, PhotoAevumStudio.Infrastructure.Services.StudioAnalyticsService>();
+builder.Services.AddScoped<PhotoAevumStudio.Application.Interfaces.ISalesReportService, PhotoAevumStudio.Infrastructure.Services.SalesReportService>();
 builder.Services.AddHostedService<PhotoAevumStudio.Api.BackgroundServices.CustomerDropboxExpiryService>();
 
 // ── Analytics: Hangfire (ETL), ML.NET (predictive), RulesEngine (prescriptive) ──
