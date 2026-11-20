@@ -13,37 +13,37 @@
 @inject NavigationManager Nav
 @inject IJSRuntime JS
 
-<PageTitle>Studio Analytics | Photo Aevum Studio</PageTitle>
+<PageTitle>Business Intelligence Dashboard | Photo Aevum Studio</PageTitle>
 
 <div class="aev-analytics-shell space-y-6">
     @* ── Top Header & Shared Controls ──────────────────────────────────────── *@
-    <div class="flex flex-col xl:flex-row xl:items-center xl:justify-between gap-4 pb-5 border-b border-slate-800">
+    <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 pb-4 border-b border-slate-200">
         <div>
-            <div class="flex items-center gap-2 text-[11px] font-semibold uppercase tracking-wider text-slate-400 mb-1">
+            <div class="flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-slate-500 mb-1">
                 <span>Sales &amp; Report</span>
-                <span class="text-slate-600">/</span>
+                <span>/</span>
                 <span>Studio Analytics</span>
-                <span class="text-slate-600">/</span>
-                <span class="text-teal-400">@GetStageDisplayName(_activeStage)</span>
+                <span>/</span>
+                <span class="text-teal-700 font-bold">@GetStageDisplayName(_activeStage)</span>
             </div>
             <div class="flex flex-wrap items-center gap-3">
-                <h1 class="text-2xl sm:text-3xl font-extrabold text-slate-50 tracking-tight">Studio Analytics</h1>
-                <span class="px-2.5 py-0.5 rounded-full text-[11px] font-bold uppercase tracking-wider bg-teal-500/15 text-teal-300 border border-teal-500/30">
+                <h1 class="text-2xl sm:text-3xl font-extrabold text-[var(--text)] tracking-tight">Business Intelligence Dashboard</h1>
+                <span class="px-2.5 py-0.5 rounded-full text-xs font-bold uppercase tracking-wider bg-teal-50 text-teal-700 border border-teal-200">
                     @GetStageQuestion(_activeStage)
                 </span>
             </div>
-            <p class="text-xs sm:text-sm text-slate-400 mt-1">
+            <p class="text-xs sm:text-sm text-slate-500 mt-1">
                 Operational intelligence across bookings, crew timesheets, leaves, consultations, and camera/lighting inventory.
             </p>
         </div>
 
         <div class="flex flex-wrap items-center gap-2">
             <button type="button" @onclick="LoadAnalyticsAsync" disabled="@_isLoading"
-                    class="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg bg-slate-800 hover:bg-slate-700 border border-slate-700 text-xs font-semibold text-slate-200 disabled:opacity-50 transition-colors">
+                    class="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg bg-white hover:bg-slate-50 border border-slate-300 text-xs font-semibold text-slate-700 shadow-2xs disabled:opacity-50 transition-colors focus:ring-2 focus:ring-teal-500">
                 <span>@(_isLoading ? "Refreshing…" : "Refresh")</span>
             </button>
             <button type="button" @onclick="ExportCsvAsync" disabled="@(_isExporting || _overview is null)"
-                    class="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-lg bg-teal-600 hover:bg-teal-500 disabled:opacity-50 text-xs font-bold text-slate-950 shadow-sm transition-colors">
+                    class="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-lg bg-teal-700 hover:bg-teal-800 disabled:opacity-50 text-xs font-bold text-white shadow-2xs transition-colors focus:ring-2 focus:ring-teal-500">
                 <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
                     <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
                     <polyline points="7 10 12 15 17 10"></polyline>
@@ -54,12 +54,54 @@
         </div>
     </div>
 
+    @* ── Horizontal Analytics Stages Tabs ──────────────────────────────────── *@
+    <nav aria-label="Analytics Stages" class="flex items-center gap-2 border-b border-slate-200 overflow-x-auto pb-px">
+        <button type="button" @onclick='() => SelectStage("descriptive")'
+                class="aev-tab-btn @(_activeStage == "descriptive" ? "is-active text-teal-700 border-b-2 border-teal-700" : "text-slate-500 hover:text-slate-700 border-b-2 border-transparent")">
+            <span class="font-mono text-xs font-bold px-1.5 py-0.5 rounded @(_activeStage == "descriptive" ? "bg-teal-50 text-teal-700" : "bg-slate-100 text-slate-500")">01</span>
+            <span class="text-sm font-bold">Descriptive</span>
+            <span class="text-xs text-slate-400 font-normal hidden sm:inline">(What happened)</span>
+        </button>
+
+        <button type="button" @onclick='() => SelectStage("diagnostic")'
+                class="aev-tab-btn @(_activeStage == "diagnostic" ? "is-active text-teal-700 border-b-2 border-teal-700" : "text-slate-500 hover:text-slate-700 border-b-2 border-transparent")">
+            <span class="font-mono text-xs font-bold px-1.5 py-0.5 rounded @(_activeStage == "diagnostic" ? "bg-teal-50 text-teal-700" : "bg-slate-100 text-slate-500")">02</span>
+            <span class="text-sm font-bold">Diagnostic</span>
+            @if (_overview?.Diagnostic.Drivers.Count > 0)
+            {
+                <span class="text-xs font-mono px-1.5 py-0.5 rounded-full bg-sky-100 text-sky-700 font-semibold">@_overview.Diagnostic.Drivers.Count</span>
+            }
+            <span class="text-xs text-slate-400 font-normal hidden sm:inline">(Why it happened)</span>
+        </button>
+
+        <button type="button" @onclick='() => SelectStage("predictive")'
+                class="aev-tab-btn @(_activeStage == "predictive" ? "is-active text-teal-700 border-b-2 border-teal-700" : "text-slate-500 hover:text-slate-700 border-b-2 border-transparent")">
+            <span class="font-mono text-xs font-bold px-1.5 py-0.5 rounded @(_activeStage == "predictive" ? "bg-teal-50 text-teal-700" : "bg-slate-100 text-slate-500")">03</span>
+            <span class="text-sm font-bold">Predictive</span>
+            <span class="text-xs text-slate-400 font-normal hidden sm:inline">(What will happen)</span>
+        </button>
+
+        <button type="button" @onclick='() => SelectStage("prescriptive")'
+                class="aev-tab-btn @(_activeStage == "prescriptive" ? "is-active text-teal-700 border-b-2 border-teal-700" : "text-slate-500 hover:text-slate-700 border-b-2 border-transparent")">
+            <span class="font-mono text-xs font-bold px-1.5 py-0.5 rounded @(_activeStage == "prescriptive" ? "bg-teal-50 text-teal-700" : "bg-slate-100 text-slate-500")">04</span>
+            <span class="text-sm font-bold">Prescriptive</span>
+            @if (_overview is not null)
+            {
+                var triggered = _overview.Prescriptive.Recommendations.Count(r => r.IsSignalTriggered && !r.IsAlreadyApplied);
+                <span class="text-xs font-mono px-1.5 py-0.5 rounded-full @(triggered > 0 ? "bg-amber-100 text-amber-800 font-semibold" : "bg-slate-100 text-slate-500")">
+                    @triggered
+                </span>
+            }
+            <span class="text-xs text-slate-400 font-normal hidden sm:inline">(What should we do)</span>
+        </button>
+    </nav>
+
     @* ── Shared Filter Bar ─────────────────────────────────────────────────── *@
-    <div class="aev-analytics-card p-4">
+    <div class="bg-white rounded-xl border border-slate-200 p-4 shadow-2xs">
         <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-6 gap-3 items-end">
             <div>
-                <label class="block text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-1">Preset Window</label>
-                <select value="@_selectedPreset" @onchange="OnPresetChangedAsync" class="aev-filter-input w-full">
+                <label class="block text-xs font-bold uppercase tracking-wider text-slate-500 mb-1">Preset Window</label>
+                <select value="@_selectedPreset" @onchange="OnPresetChangedAsync" class="w-full text-xs px-3 py-2 border border-slate-300 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-teal-500 text-slate-700">
                     <option value="30d">Last 30 Days</option>
                     <option value="90d">Last 90 Days</option>
                     <option value="ytd">Year to Date</option>
@@ -69,18 +111,18 @@
             </div>
 
             <div>
-                <label class="block text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-1">Start Date</label>
-                <input type="date" value="@_startDate.ToString("yyyy-MM-dd")" @onchange="OnStartDateChangedAsync" class="aev-filter-input w-full" />
+                <label class="block text-xs font-bold uppercase tracking-wider text-slate-500 mb-1">Start Date</label>
+                <input type="date" value="@_startDate.ToString("yyyy-MM-dd")" @onchange="OnStartDateChangedAsync" class="w-full text-xs px-3 py-2 border border-slate-300 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-teal-500 text-slate-700" />
             </div>
 
             <div>
-                <label class="block text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-1">End Date</label>
-                <input type="date" value="@_endDate.ToString("yyyy-MM-dd")" @onchange="OnEndDateChangedAsync" class="aev-filter-input w-full" />
+                <label class="block text-xs font-bold uppercase tracking-wider text-slate-500 mb-1">End Date</label>
+                <input type="date" value="@_endDate.ToString("yyyy-MM-dd")" @onchange="OnEndDateChangedAsync" class="w-full text-xs px-3 py-2 border border-slate-300 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-teal-500 text-slate-700" />
             </div>
 
             <div>
-                <label class="block text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-1">Booking Status</label>
-                <select value="@_statusFilter" @onchange="OnStatusFilterChangedAsync" class="aev-filter-input w-full">
+                <label class="block text-xs font-bold uppercase tracking-wider text-slate-500 mb-1">Booking Status</label>
+                <select value="@_statusFilter" @onchange="OnStatusFilterChangedAsync" class="w-full text-xs px-3 py-2 border border-slate-300 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-teal-500 text-slate-700">
                     <option value="All">All Statuses</option>
                     <option value="Completed">Completed / Delivered</option>
                     <option value="Confirmed">Confirmed / Active</option>
@@ -91,8 +133,8 @@
             </div>
 
             <div>
-                <label class="block text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-1">Service Category</label>
-                <select value="@_categoryFilter" @onchange="OnCategoryFilterChangedAsync" class="aev-filter-input w-full">
+                <label class="block text-xs font-bold uppercase tracking-wider text-slate-500 mb-1">Service Category</label>
+                <select value="@_categoryFilter" @onchange="OnCategoryFilterChangedAsync" class="w-full text-xs px-3 py-2 border border-slate-300 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-teal-500 text-slate-700">
                     <option value="All">All Categories</option>
                     @if (_overview?.AvailableServiceCategories is not null)
                     {
@@ -105,421 +147,455 @@
             </div>
 
             <div>
-                <label class="block text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-1">Time Bucket</label>
-                <div class="grid grid-cols-2 gap-1 bg-slate-950 p-1 rounded-lg border border-slate-800">
+                <label class="block text-xs font-bold uppercase tracking-wider text-slate-500 mb-1">Time Bucket</label>
+                <div class="grid grid-cols-2 gap-1 bg-slate-100 p-1 rounded-lg border border-slate-200">
                     <button type="button" @onclick='() => SetGranularityAsync("month")'
-                            class="py-1.5 text-xs font-semibold rounded-md transition-colors @(_granularity == "month" ? "bg-teal-600 text-slate-950 font-bold" : "text-slate-400 hover:text-slate-200")">
+                            class="py-1.5 text-xs font-semibold rounded-md transition-colors @(_granularity == "month" ? "bg-white text-teal-700 font-bold shadow-2xs" : "text-slate-600 hover:text-[var(--text)]")">
                         Monthly
                     </button>
                     <button type="button" @onclick='() => SetGranularityAsync("week")'
-                            class="py-1.5 text-xs font-semibold rounded-md transition-colors @(_granularity == "week" ? "bg-teal-600 text-slate-950 font-bold" : "text-slate-400 hover:text-slate-200")">
+                            class="py-1.5 text-xs font-semibold rounded-md transition-colors @(_granularity == "week" ? "bg-white text-teal-700 font-bold shadow-2xs" : "text-slate-600 hover:text-[var(--text)]")">
                         Weekly
                     </button>
                 </div>
             </div>
         </div>
+
+        @if (_overview is not null)
+        {
+            <div class="mt-3 pt-3 border-t border-slate-100 flex flex-wrap items-center justify-between text-xs text-slate-500 gap-2">
+                <div class="flex items-center gap-3">
+                    <span>Active window: <strong class="text-slate-700 font-medium">@_overview.StartDate.ToString("MMM d") – @_overview.EndDate.ToString("MMM d, yyyy")</strong></span>
+                    <span>·</span>
+                    <span>Prior compare: <strong class="text-slate-700 font-medium">@_overview.PriorStartDate.ToString("MMM d") – @_overview.PriorEndDate.ToString("MMM d, yyyy")</strong></span>
+                </div>
+                <div class="flex items-center gap-2">
+                    <span class="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[11px] font-semibold @(_overview.HasAnyData ? (_overview.IsLowData ? "bg-amber-50 text-amber-700 border border-amber-200" : "bg-emerald-50 text-emerald-700 border border-emerald-200") : "bg-slate-100 text-slate-500")">
+                        <span class="w-1.5 h-1.5 rounded-full @(_overview.HasAnyData ? (_overview.IsLowData ? "bg-amber-500" : "bg-emerald-500") : "bg-slate-400")"></span>
+                        @(!_overview.HasAnyData ? "Empty Window" : (_overview.IsLowData ? "Low Data Sample" : "Healthy Sample"))
+                    </span>
+                    <span class="text-slate-400 text-[11px]">Synced @_overview.GeneratedAtUtc.ToLocalTime().ToString("MMM d, HH:mm")</span>
+                </div>
+            </div>
+        }
     </div>
 
     @if (!string.IsNullOrWhiteSpace(_bannerMessage))
     {
-        <div class="px-4 py-3 rounded-xl border text-xs font-semibold flex items-center justify-between @(_bannerIsError ? "bg-rose-950/60 border-rose-500/40 text-rose-200" : "bg-emerald-950/60 border-emerald-500/40 text-emerald-200")">
+        <div class="px-4 py-3 rounded-xl border text-xs font-semibold flex items-center justify-between @(_bannerIsError ? "bg-rose-50 border-rose-200 text-rose-700" : "bg-emerald-50 border-emerald-200 text-emerald-700")">
             <span>@_bannerMessage</span>
-            <button type="button" @onclick="() => _bannerMessage = null" class="text-slate-300 hover:text-white font-bold ml-4">✕</button>
+            <button type="button" @onclick="() => _bannerMessage = null" class="text-slate-400 hover:text-slate-700 font-bold ml-4">✕</button>
         </div>
     }
 
-    @* ── Main Two-Column Workspace: Left-Rail Navigation + Stage Panel ─────── *@
-    <div class="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
-        @* Left Rail *@
-        <aside class="lg:col-span-3 space-y-4 lg:sticky lg:top-4">
-            <div class="aev-analytics-card p-3 space-y-1.5">
-                <div class="px-2 py-1 text-[10px] font-bold uppercase tracking-wider text-slate-400">
-                    Analytics Stages
-                </div>
-
-                <button type="button" @onclick='() => SelectStage("descriptive")'
-                        class="aev-stage-btn @(_activeStage == "descriptive" ? "is-active" : "")">
-                    <span class="aev-stage-num">01</span>
-                    <div class="min-w-0 flex-1">
-                        <div class="text-xs font-bold">Descriptive</div>
-                        <div class="text-[11px] text-slate-400">What happened</div>
-                    </div>
-                </button>
-
-                <button type="button" @onclick='() => SelectStage("diagnostic")'
-                        class="aev-stage-btn @(_activeStage == "diagnostic" ? "is-active" : "")">
-                    <span class="aev-stage-num">02</span>
-                    <div class="min-w-0 flex-1">
-                        <div class="flex items-center justify-between gap-2">
-                            <span class="text-xs font-bold">Diagnostic</span>
-                            @if (_overview?.Diagnostic.Drivers.Count > 0)
-                            {
-                                <span class="text-[10px] font-mono px-1.5 py-0.5 rounded bg-slate-800 text-sky-300">@_overview.Diagnostic.Drivers.Count</span>
-                            }
-                        </div>
-                        <div class="text-[11px] text-slate-400">Why it happened</div>
-                    </div>
-                </button>
-
-                <button type="button" @onclick='() => SelectStage("predictive")'
-                        class="aev-stage-btn @(_activeStage == "predictive" ? "is-active" : "")">
-                    <span class="aev-stage-num">03</span>
-                    <div class="min-w-0 flex-1">
-                        <div class="text-xs font-bold">Predictive</div>
-                        <div class="text-[11px] text-slate-400">What will happen</div>
-                    </div>
-                </button>
-
-                <button type="button" @onclick='() => SelectStage("prescriptive")'
-                        class="aev-stage-btn @(_activeStage == "prescriptive" ? "is-active" : "")">
-                    <span class="aev-stage-num">04</span>
-                    <div class="min-w-0 flex-1">
-                        <div class="flex items-center justify-between gap-2">
-                            <span class="text-xs font-bold">Prescriptive</span>
-                            @if (_overview is not null)
-                            {
-                                var triggered = _overview.Prescriptive.Recommendations.Count(r => r.IsSignalTriggered && !r.IsAlreadyApplied);
-                                <span class="text-[10px] font-mono px-1.5 py-0.5 rounded @(triggered > 0 ? "bg-amber-500/20 text-amber-300" : "bg-slate-800 text-slate-400")">
-                                    @triggered
-                                </span>
-                            }
-                        </div>
-                        <div class="text-[11px] text-slate-400">What should we do</div>
-                    </div>
+    @* ── Main Stage Content ────────────────────────────────────────────────── *@
+    <div>
+        @if (_isLoading && _overview is null)
+        {
+            <div class="bg-white rounded-xl border border-slate-200 p-12 text-center space-y-3 shadow-2xs">
+                <div class="inline-block w-8 h-8 border-2 border-teal-600 border-t-transparent rounded-full animate-spin"></div>
+                <p class="text-sm font-semibold text-slate-600">Aggregating studio bookings, crew timesheets, leaves, and gear records…</p>
+            </div>
+        }
+        else if (!string.IsNullOrWhiteSpace(_loadError))
+        {
+            <div class="bg-white rounded-xl border border-rose-200 p-8 text-center space-y-3 shadow-2xs">
+                <div class="text-rose-700 font-bold text-sm">Unable to Load Studio Analytics</div>
+                <p class="text-xs text-slate-500 max-w-md mx-auto">@_loadError</p>
+                <button type="button" @onclick="LoadAnalyticsAsync"
+                        class="px-4 py-2 rounded-lg bg-teal-700 hover:bg-teal-800 text-white text-xs font-bold shadow-2xs">
+                    Retry Query
                 </button>
             </div>
+        }
+        else if (_overview is not null)
+        {
+            @* ════════════════════════════════════════════════════════════════
+               STAGE 1: DESCRIPTIVE ("What happened")
+               ════════════════════════════════════════════════════════════════ *@
+            @if (_activeStage == "descriptive")
+            {
+                var d = _overview.Descriptive;
 
-            @if (_overview is not null)
-            {
-                <div class="aev-analytics-card p-4 space-y-2.5 text-xs">
-                    <div class="text-[10px] font-bold uppercase tracking-wider text-slate-400">Active Window Snapshot</div>
-                    <div class="flex justify-between text-slate-300">
-                        <span class="text-slate-400">Current</span>
-                        <span class="font-mono text-[11px]">@_overview.StartDate.ToString("MMM d") – @_overview.EndDate.ToString("MMM d, yyyy")</span>
-                    </div>
-                    <div class="flex justify-between text-slate-300">
-                        <span class="text-slate-400">Prior Compare</span>
-                        <span class="font-mono text-[11px]">@_overview.PriorStartDate.ToString("MMM d") – @_overview.PriorEndDate.ToString("MMM d, yyyy")</span>
-                    </div>
-                    <div class="flex justify-between text-slate-300">
-                        <span class="text-slate-400">Sample Density</span>
-                        <span class="font-semibold @(_overview.HasAnyData ? (_overview.IsLowData ? "text-amber-300" : "text-emerald-300") : "text-slate-400")">
-                            @(!_overview.HasAnyData ? "Empty" : (_overview.IsLowData ? "Low Data" : "Healthy"))
-                        </span>
-                    </div>
-                    <div class="pt-2 border-t border-slate-800 text-[10px] text-slate-500 font-mono">
-                        Synced @_overview.GeneratedAtUtc.ToLocalTime().ToString("MMM d, HH:mm:ss")
-                    </div>
-                </div>
-            }
-        </aside>
-
-        @* Right Main Content *@
-        <section class="lg:col-span-9 space-y-6">
-            @if (_isLoading && _overview is null)
-            {
-                <div class="aev-analytics-card p-12 text-center space-y-3">
-                    <div class="inline-block w-8 h-8 border-2 border-teal-400 border-t-transparent rounded-full animate-spin"></div>
-                    <p class="text-sm font-semibold text-slate-300">Aggregating studio bookings, crew timesheets, leaves, and gear records…</p>
-                </div>
-            }
-            else if (!string.IsNullOrWhiteSpace(_loadError))
-            {
-                <div class="aev-analytics-card p-8 text-center space-y-3 border-rose-500/40">
-                    <div class="text-rose-400 font-bold text-sm">Unable to Load Studio Analytics</div>
-                    <p class="text-xs text-slate-400 max-w-md mx-auto">@_loadError</p>
-                    <button type="button" @onclick="LoadAnalyticsAsync"
-                            class="px-4 py-2 rounded-lg bg-teal-600 hover:bg-teal-500 text-slate-950 text-xs font-bold">
-                        Retry Query
-                    </button>
-                </div>
-            }
-            else if (_overview is not null)
-            {
-                @* ════════════════════════════════════════════════════════════════
-                   STAGE 1: DESCRIPTIVE ("What happened")
-                   ════════════════════════════════════════════════════════════════ *@
-                @if (_activeStage == "descriptive")
-                {
-                    var d = _overview.Descriptive;
-
-                    @* KPI Grid *@
-                    <div class="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
-                        <article class="aev-analytics-card p-4 border-t-2 border-t-teal-500">
-                            <div class="flex items-center justify-between text-[11px] font-semibold uppercase tracking-wider text-slate-400">
-                                <span>Total Bookings</span>
-                                @if (d.BookingsDeltaPct.HasValue)
-                                {
-                                    <span class="font-mono font-bold @(d.BookingsDeltaPct >= 0 ? "text-emerald-400" : "text-rose-400")">
-                                        @(d.BookingsDeltaPct >= 0 ? "↑" : "↓") @Math.Abs(d.BookingsDeltaPct.Value).ToString("0.0")%
-                                    </span>
-                                }
-                                else
-                                {
-                                    <span class="text-slate-500 font-mono">No prior</span>
-                                }
+                <div class="space-y-6">
+                    @* KPI Row (4 cards) *@
+                    <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+                        <article class="bg-white p-5 rounded-xl border border-slate-200 shadow-2xs flex flex-col justify-between">
+                            <div>
+                                <div class="flex items-center justify-between text-xs font-medium uppercase tracking-wider text-slate-500">
+                                    <span>Total Bookings</span>
+                                    @if (d.BookingsDeltaPct.HasValue)
+                                    {
+                                        <span class="font-bold @(d.BookingsDeltaPct >= 0 ? "text-emerald-600" : "text-rose-600")">
+                                            @(d.BookingsDeltaPct >= 0 ? "↑" : "↓") @Math.Abs(d.BookingsDeltaPct.Value).ToString("0.0")%
+                                        </span>
+                                    }
+                                    else
+                                    {
+                                        <span class="text-slate-400">Baseline</span>
+                                    }
+                                </div>
+                                <div class="text-2xl sm:text-3xl font-extrabold text-[var(--text)] mt-1.5 aev-tabular">@d.TotalBookings</div>
                             </div>
-                            <div class="text-3xl font-extrabold text-slate-50 mt-2 aev-tabular">@d.TotalBookings</div>
-                            <p class="text-[11px] text-slate-400 mt-1.5">
+                            <p class="text-xs text-slate-500 mt-2">
                                 @d.EventAppointmentsCount event shoots · @d.ConsultationBookingsCount consultations
                             </p>
                         </article>
 
-                        <article class="aev-analytics-card p-4 border-t-2 border-t-emerald-500">
-                            <div class="flex items-center justify-between text-[11px] font-semibold uppercase tracking-wider text-slate-400">
-                                <span>Completion Rate</span>
-                                @if (d.CompletionRateDeltaPts.HasValue)
-                                {
-                                    <span class="font-mono font-bold @(d.CompletionRateDeltaPts >= 0 ? "text-emerald-400" : "text-rose-400")">
-                                        @(d.CompletionRateDeltaPts >= 0 ? "+" : "")@d.CompletionRateDeltaPts.Value.ToString("0.0") pts
-                                    </span>
-                                }
-                                else
-                                {
-                                    <span class="text-slate-500 font-mono">Fulfillment</span>
-                                }
+                        <article class="bg-white p-5 rounded-xl border border-slate-200 shadow-2xs flex flex-col justify-between">
+                            <div>
+                                <div class="flex items-center justify-between text-xs font-medium uppercase tracking-wider text-slate-500">
+                                    <span id="SessionCompletionRate">Completion Rate</span>
+                                    @if (d.CompletionRateDeltaPts.HasValue)
+                                    {
+                                        <span class="font-bold @(d.CompletionRateDeltaPts >= 0 ? "text-emerald-600" : "text-rose-600")">
+                                            @(d.CompletionRateDeltaPts >= 0 ? "+" : "")@d.CompletionRateDeltaPts.Value.ToString("0.0") pts
+                                        </span>
+                                    }
+                                    else
+                                    {
+                                        <span class="text-slate-400">Fulfillment</span>
+                                    }
+                                </div>
+                                <div class="text-2xl sm:text-3xl font-extrabold text-[var(--text)] mt-1.5 aev-tabular">@d.SessionCompletionRate.ToString("0.0")%</div>
                             </div>
-                            <div class="text-3xl font-extrabold text-slate-50 mt-2 aev-tabular">@d.SessionCompletionRate.ToString("0.0")%</div>
-                            <p class="text-[11px] text-slate-400 mt-1.5">
-                                @d.CompletedDeliveredCount done · @d.ConfirmedActiveCount active · @d.PendingHoldCount pending · @d.CancelledExpiredCount lost
+                            <p class="text-xs text-slate-500 mt-2">
+                                @d.CompletedDeliveredCount completed · @d.ConfirmedActiveCount active · @d.PendingHoldCount hold
                             </p>
                         </article>
 
-                        <article class="aev-analytics-card p-4 border-t-2 border-t-sky-500">
-                            <div class="flex items-center justify-between text-[11px] font-semibold uppercase tracking-wider text-slate-400">
-                                <span>Logged Crew Hours</span>
-                                @if (d.CrewHoursDeltaPct.HasValue)
-                                {
-                                    <span class="font-mono font-bold @(d.CrewHoursDeltaPct >= 0 ? "text-sky-400" : "text-amber-400")">
-                                        @(d.CrewHoursDeltaPct >= 0 ? "↑" : "↓") @Math.Abs(d.CrewHoursDeltaPct.Value).ToString("0.0")%
-                                    </span>
-                                }
-                                else
-                                {
-                                    <span class="text-slate-500 font-mono">Timesheets</span>
-                                }
+                        <article class="bg-white p-5 rounded-xl border border-slate-200 shadow-2xs flex flex-col justify-between">
+                            <div>
+                                <div class="flex items-center justify-between text-xs font-medium uppercase tracking-wider text-slate-500">
+                                    <span id="LoggedCrewHours">Logged Crew Hours</span>
+                                    @if (d.CrewHoursDeltaPct.HasValue)
+                                    {
+                                        <span class="font-bold @(d.CrewHoursDeltaPct >= 0 ? "text-sky-600" : "text-amber-600")">
+                                            @(d.CrewHoursDeltaPct >= 0 ? "↑" : "↓") @Math.Abs(d.CrewHoursDeltaPct.Value).ToString("0.0")%
+                                        </span>
+                                    }
+                                    else
+                                    {
+                                        <span class="text-slate-400">Timesheets</span>
+                                    }
+                                </div>
+                                <div class="text-2xl sm:text-3xl font-extrabold text-[var(--text)] mt-1.5 aev-tabular">
+                                    @d.LoggedCrewHours.ToString("0.0") <span class="text-sm font-semibold text-slate-500">hrs</span>
+                                </div>
                             </div>
-                            <div class="text-3xl font-extrabold text-slate-50 mt-2 aev-tabular">@d.LoggedCrewHours.ToString("0.0") <span class="text-base font-semibold text-slate-400">hrs</span></div>
-                            <p class="text-[11px] text-slate-400 mt-1.5">
-                                @d.TimesheetEntriesCount shifts · @d.ActiveCrewLoggedCount crew · @d.DayOffShiftsCount day-off shifts
+                            <p class="text-xs text-slate-500 mt-2">
+                                @d.TimesheetEntriesCount shifts · @d.ActiveCrewLoggedCount crew · @d.DayOffShiftsCount leaves
                             </p>
                         </article>
 
-                        <article class="aev-analytics-card p-4 border-t-2 border-t-amber-500">
-                            <div class="flex items-center justify-between text-[11px] font-semibold uppercase tracking-wider text-slate-400">
-                                <span>Equipment Holds</span>
-                                <span class="font-mono font-bold @(d.EquipmentMaintenanceHolds > 0 ? "text-amber-400" : "text-emerald-400")">
-                                    @(d.EquipmentMaintenanceHolds > 0 ? "Attention" : "Ready")
-                                </span>
+                        <article class="bg-white p-5 rounded-xl border border-slate-200 shadow-2xs flex flex-col justify-between">
+                            <div>
+                                <div class="flex items-center justify-between text-xs font-medium uppercase tracking-wider text-slate-500">
+                                    <span id="EquipmentMaintenanceHolds">Equipment Holds</span>
+                                    <span class="font-semibold text-xs @(d.EquipmentMaintenanceHolds > 0 ? "text-amber-600" : "text-emerald-600")">
+                                        @(d.EquipmentMaintenanceHolds > 0 ? "Attention" : "All Ready")
+                                    </span>
+                                </div>
+                                <div class="text-2xl sm:text-3xl font-extrabold text-[var(--text)] mt-1.5 aev-tabular">
+                                    @d.EquipmentMaintenanceHolds <span class="text-sm font-semibold text-slate-500">/ @d.TotalEquipmentCount</span>
+                                </div>
                             </div>
-                            <div class="text-3xl font-extrabold text-slate-50 mt-2 aev-tabular">@d.EquipmentMaintenanceHolds <span class="text-base font-semibold text-slate-400">/ @d.TotalEquipmentCount</span></div>
-                            <p class="text-[11px] text-slate-400 mt-1.5">
-                                @d.EquipmentInMaintenanceCount maint · @d.EquipmentNeedsReplacementCount replace · @d.EquipmentAssignmentsInPeriod gear dispatches
+                            <p class="text-xs text-slate-500 mt-2">
+                                @d.EquipmentInMaintenanceCount in maint · @d.EquipmentAssignmentsInPeriod assignments
                             </p>
                         </article>
                     </div>
 
                     @if (!_overview.HasAnyData || _overview.IsLowData)
                     {
-                        <div class="aev-analytics-card p-4 border-amber-500/40 bg-amber-950/20 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+                        <div class="p-4 rounded-xl border border-amber-200 bg-amber-50 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 text-xs">
                             <div>
-                                <div class="text-xs font-bold text-amber-300">
-                                    @(!_overview.HasAnyData ? "No Bookings Found in Selected Range" : "Low-Data Window Detected")
-                                </div>
-                                <p class="text-xs text-slate-300 mt-0.5">
+                                <span class="font-bold text-amber-800">
+                                    @(!_overview.HasAnyData ? "No Bookings Found in Selected Range" : "Low Data Sample Detected")
+                                </span>
+                                <p class="text-amber-700 mt-0.5">
                                     @(!_overview.HasAnyData
                                         ? "Zero EventAppointment, Consultation, or Timesheet records matched your current filters."
-                                        : $"Only {d.TotalBookings} booking(s) matched this window — percentages and trends may shift sharply with small counts.")
+                                        : $"Only {d.TotalBookings} booking(s) matched this window. Broaden the filter preset to view richer trends.")
                                 </p>
                             </div>
                             <div class="flex items-center gap-2 shrink-0">
                                 <button type="button" @onclick="ExpandToAllHistoryAsync"
-                                        class="px-3 py-1.5 rounded-lg bg-amber-500/20 hover:bg-amber-500/30 border border-amber-500/40 text-amber-200 text-xs font-semibold">
+                                        class="px-3 py-1.5 rounded-lg bg-amber-600 hover:bg-amber-700 text-white font-semibold transition-colors">
                                     Expand to All History
                                 </button>
                                 <button type="button" @onclick="ResetFiltersAsync"
-                                        class="px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-200 text-xs font-semibold">
+                                        class="px-3 py-1.5 rounded-lg bg-white border border-amber-300 hover:bg-amber-100 text-amber-800 font-semibold transition-colors">
                                     Reset Filters
                                 </button>
                             </div>
                         </div>
                     }
 
-                    @* Chart + Ranked Top Services *@
-                    <div class="grid grid-cols-1 xl:grid-cols-12 gap-6">
-                        <div class="xl:col-span-7 aev-analytics-card p-5 space-y-4">
-                            <div class="flex flex-wrap items-center justify-between gap-2">
-                                <div>
-                                    <h2 class="text-sm font-bold text-slate-100">Booking Volume Over Time</h2>
-                                    <p class="text-xs text-slate-400">
-                                        Grouped by @(_granularity == "week" ? "ISO Week" : "Calendar Month") across EventAppointments &amp; Consultations
-                                    </p>
+                    @* 3 Cards Row: Monthly Volume | Top Services | Category Breakdown *@
+                    <div class="grid grid-cols-1 lg:grid-cols-12 gap-6">
+                        @* Card 1: Monthly Booking Volume (Stacked Bar) *@
+                        <div class="lg:col-span-5 bg-white p-5 rounded-xl border border-slate-200 shadow-2xs flex flex-col justify-between">
+                            <div>
+                                <div class="flex flex-wrap items-center justify-between gap-2 mb-3">
+                                    <div>
+                                        <h2 class="text-sm font-bold text-[var(--text)]">Monthly Booking Volume</h2>
+                                        <p class="text-xs text-slate-500">Grouped by @(_granularity == "week" ? "ISO Week" : "Calendar Month") by booking status</p>
+                                    </div>
+                                    <div class="flex flex-wrap items-center gap-2 text-[10px] font-semibold text-slate-600">
+                                        <span class="inline-flex items-center gap-1"><span class="w-2 h-2 rounded-xs" style="background-color: var(--chart-1)"></span>Done</span>
+                                        <span class="inline-flex items-center gap-1"><span class="w-2 h-2 rounded-xs" style="background-color: var(--chart-2)"></span>Active</span>
+                                        <span class="inline-flex items-center gap-1"><span class="w-2 h-2 rounded-xs" style="background-color: var(--chart-3)"></span>Hold</span>
+                                        <span class="inline-flex items-center gap-1"><span class="w-2 h-2 rounded-xs" style="background-color: var(--chart-4)"></span>Lost</span>
+                                    </div>
                                 </div>
-                                <div class="flex flex-wrap items-center gap-3 text-[10px] font-semibold text-slate-300">
-                                    <span class="inline-flex items-center gap-1.5"><span class="w-2.5 h-2.5 rounded-xs bg-teal-400"></span>Completed</span>
-                                    <span class="inline-flex items-center gap-1.5"><span class="w-2.5 h-2.5 rounded-xs bg-sky-400"></span>Confirmed</span>
-                                    <span class="inline-flex items-center gap-1.5"><span class="w-2.5 h-2.5 rounded-xs bg-amber-400"></span>Pending</span>
-                                    <span class="inline-flex items-center gap-1.5"><span class="w-2.5 h-2.5 rounded-xs bg-rose-500"></span>Cancelled/Exp</span>
-                                </div>
+
+                                @if (d.VolumeSeries.Count == 0 || d.VolumeSeries.All(p => p.TotalBookings == 0))
+                                {
+                                    <div class="p-8 text-center text-xs text-slate-400 italic bg-slate-50 rounded-lg">
+                                        No booking activity recorded for this period.
+                                    </div>
+                                }
+                                else if (d.VolumeSeries.Count <= 1 || d.VolumeSeries.Count(p => p.TotalBookings > 0) <= 1)
+                                {
+                                    <div class="p-8 text-center space-y-2 bg-slate-50 rounded-lg border border-slate-200">
+                                        <div class="text-xs font-semibold text-slate-700">Not enough history</div>
+                                        <p class="text-[11px] text-slate-500 max-w-xs mx-auto">
+                                            Showing only 1 period of booking activity. Expand the preset window (e.g. 90 Days or All History) to visualize historical monthly volume.
+                                        </p>
+                                        <button type="button" @onclick="ExpandToAllHistoryAsync" class="mt-2 text-xs font-bold text-teal-700 hover:underline">Expand to All History →</button>
+                                    </div>
+                                }
+                                else
+                                {
+                                    var maxTotal = Math.Max(1, d.VolumeSeries.Max(p => p.TotalBookings));
+                                    var chartHeight = 170;
+                                    var barSlotWidth = Math.Max(32, Math.Min(60, 420 / Math.Max(1, d.VolumeSeries.Count)));
+                                    var svgWidth = Math.Max(360, d.VolumeSeries.Count * barSlotWidth + 40);
+
+                                    <div class="overflow-x-auto pb-2">
+                                        <svg viewBox="0 0 @svgWidth @(chartHeight + 32)" class="w-full min-w-[340px] h-48 select-none" role="img" aria-label="Booking volume bar chart">
+                                            @for (int g = 0; g <= 4; g++)
+                                            {
+                                                var gy = 16 + (chartHeight - 16) * g / 4.0;
+                                                var tickVal = Math.Round(maxTotal * (4 - g) / 4.0, 0);
+                                                <line x1="28" y1="@gy.ToString("0.0", CultureInfo.InvariantCulture)" x2="@(svgWidth - 6)" y2="@gy.ToString("0.0", CultureInfo.InvariantCulture)" stroke="var(--chart-grid)" stroke-dasharray="3 3" />
+                                                @:<text x="24" y="@((gy + 3).ToString("0.0", CultureInfo.InvariantCulture))" text-anchor="end" fill="var(--chart-text)" font-size="9" font-family="monospace">@tickVal</text>
+                                            }
+
+                                            @for (int i = 0; i < d.VolumeSeries.Count; i++)
+                                            {
+                                                var pt = d.VolumeSeries[i];
+                                                var cx = 32 + i * barSlotWidth + barSlotWidth * 0.5;
+                                                var bw = Math.Max(12, Math.Min(26, barSlotWidth * 0.6));
+                                                var bx = cx - bw / 2.0;
+                                                var usableH = chartHeight - 16.0;
+
+                                                double hComp = (double)pt.CompletedCount / maxTotal * usableH;
+                                                double hConf = (double)pt.ConfirmedCount / maxTotal * usableH;
+                                                double hPend = (double)pt.PendingCount / maxTotal * usableH;
+                                                double hCanc = (double)pt.CancelledOrExpiredCount / maxTotal * usableH;
+
+                                                double yCursor = chartHeight;
+
+                                                if (hComp > 0)
+                                                {
+                                                    yCursor -= hComp;
+                                                    <rect x="@bx.ToString("0.0", CultureInfo.InvariantCulture)" y="@yCursor.ToString("0.0", CultureInfo.InvariantCulture)" width="@bw.ToString("0.0", CultureInfo.InvariantCulture)" height="@hComp.ToString("0.0", CultureInfo.InvariantCulture)" fill="var(--chart-1)" rx="2">
+                                                        <title>@pt.Label: @pt.CompletedCount Completed</title>
+                                                    </rect>
+                                                }
+                                                if (hConf > 0)
+                                                {
+                                                    yCursor -= hConf;
+                                                    <rect x="@bx.ToString("0.0", CultureInfo.InvariantCulture)" y="@yCursor.ToString("0.0", CultureInfo.InvariantCulture)" width="@bw.ToString("0.0", CultureInfo.InvariantCulture)" height="@hConf.ToString("0.0", CultureInfo.InvariantCulture)" fill="var(--chart-2)" rx="2">
+                                                        <title>@pt.Label: @pt.ConfirmedCount Confirmed</title>
+                                                    </rect>
+                                                }
+                                                if (hPend > 0)
+                                                {
+                                                    yCursor -= hPend;
+                                                    <rect x="@bx.ToString("0.0", CultureInfo.InvariantCulture)" y="@yCursor.ToString("0.0", CultureInfo.InvariantCulture)" width="@bw.ToString("0.0", CultureInfo.InvariantCulture)" height="@hPend.ToString("0.0", CultureInfo.InvariantCulture)" fill="var(--chart-3)" rx="2">
+                                                        <title>@pt.Label: @pt.PendingCount Pending</title>
+                                                    </rect>
+                                                }
+                                                if (hCanc > 0)
+                                                {
+                                                    yCursor -= hCanc;
+                                                    <rect x="@bx.ToString("0.0", CultureInfo.InvariantCulture)" y="@yCursor.ToString("0.0", CultureInfo.InvariantCulture)" width="@bw.ToString("0.0", CultureInfo.InvariantCulture)" height="@hCanc.ToString("0.0", CultureInfo.InvariantCulture)" fill="var(--chart-4)" rx="2">
+                                                        <title>@pt.Label: @pt.CancelledOrExpiredCount Cancelled</title>
+                                                    </rect>
+                                                }
+
+                                                if (pt.TotalBookings > 0)
+                                                {
+                                                    @:<text x="@cx.ToString("0.0", CultureInfo.InvariantCulture)" y="@((yCursor - 3).ToString("0.0", CultureInfo.InvariantCulture))" text-anchor="middle" fill="var(--chart-text)" font-size="9" font-weight="700" font-family="monospace">@pt.TotalBookings</text>
+                                                }
+
+                                                var showLabel = d.VolumeSeries.Count <= 8 || i % 2 == 0 || i == d.VolumeSeries.Count - 1;
+                                                if (showLabel)
+                                                {
+                                                    @:<text x="@cx.ToString("0.0", CultureInfo.InvariantCulture)" y="@(chartHeight + 16)" text-anchor="middle" fill="var(--chart-text)" font-size="9">@pt.Label</text>
+                                                }
+                                            }
+                                        </svg>
+                                    </div>
+                                }
                             </div>
-
-                            @if (d.VolumeSeries.Count == 0 || d.VolumeSeries.All(p => p.TotalBookings == 0))
-                            {
-                                <div class="aev-analytics-subcard p-10 text-center text-xs text-slate-400">
-                                    No booking activity recorded for the selected date range and filter combination.
-                                </div>
-                            }
-                            else
-                            {
-                                var maxTotal = Math.Max(1, d.VolumeSeries.Max(p => p.TotalBookings));
-                                var chartHeight = 190;
-                                var barSlotWidth = Math.Max(28, Math.Min(64, 540 / Math.Max(1, d.VolumeSeries.Count)));
-                                var svgWidth = Math.Max(420, d.VolumeSeries.Count * barSlotWidth + 48);
-
-                                <div class="overflow-x-auto pb-2">
-                                    <svg viewBox="0 0 @svgWidth @(chartHeight + 38)" class="w-full min-w-[420px] h-56 select-none" role="img" aria-label="Booking volume bar chart">
-                                        @for (int g = 0; g <= 4; g++)
-                                        {
-                                            var gy = 16 + (chartHeight - 16) * g / 4.0;
-                                            var tickVal = Math.Round(maxTotal * (4 - g) / 4.0, 0);
-                                            <line x1="32" y1="@gy.ToString("0.0", CultureInfo.InvariantCulture)" x2="@(svgWidth - 8)" y2="@gy.ToString("0.0", CultureInfo.InvariantCulture)" stroke="#1e293b" stroke-dasharray="3 3" />
-                                            @:<text x="26" y="@((gy + 3).ToString("0.0", CultureInfo.InvariantCulture))" text-anchor="end" fill="#64748b" font-size="9" font-family="monospace">@tickVal</text>
-                                        }
-
-                                        @for (int i = 0; i < d.VolumeSeries.Count; i++)
-                                        {
-                                            var pt = d.VolumeSeries[i];
-                                            var cx = 36 + i * barSlotWidth + barSlotWidth * 0.5;
-                                            var bw = Math.Max(10, Math.Min(30, barSlotWidth * 0.58));
-                                            var bx = cx - bw / 2.0;
-                                            var usableH = chartHeight - 16.0;
-
-                                            double hComp = (double)pt.CompletedCount / maxTotal * usableH;
-                                            double hConf = (double)pt.ConfirmedCount / maxTotal * usableH;
-                                            double hPend = (double)pt.PendingCount / maxTotal * usableH;
-                                            double hCanc = (double)pt.CancelledOrExpiredCount / maxTotal * usableH;
-
-                                            double yCursor = chartHeight;
-
-                                            if (hComp > 0)
-                                            {
-                                                yCursor -= hComp;
-                                                <rect x="@bx.ToString("0.0", CultureInfo.InvariantCulture)" y="@yCursor.ToString("0.0", CultureInfo.InvariantCulture)" width="@bw.ToString("0.0", CultureInfo.InvariantCulture)" height="@hComp.ToString("0.0", CultureInfo.InvariantCulture)" fill="#2dd4bf" rx="2">
-                                                    <title>@pt.Label: @pt.CompletedCount Completed</title>
-                                                </rect>
-                                            }
-                                            if (hConf > 0)
-                                            {
-                                                yCursor -= hConf;
-                                                <rect x="@bx.ToString("0.0", CultureInfo.InvariantCulture)" y="@yCursor.ToString("0.0", CultureInfo.InvariantCulture)" width="@bw.ToString("0.0", CultureInfo.InvariantCulture)" height="@hConf.ToString("0.0", CultureInfo.InvariantCulture)" fill="#38bdf8" rx="2">
-                                                    <title>@pt.Label: @pt.ConfirmedCount Confirmed/Active</title>
-                                                </rect>
-                                            }
-                                            if (hPend > 0)
-                                            {
-                                                yCursor -= hPend;
-                                                <rect x="@bx.ToString("0.0", CultureInfo.InvariantCulture)" y="@yCursor.ToString("0.0", CultureInfo.InvariantCulture)" width="@bw.ToString("0.0", CultureInfo.InvariantCulture)" height="@hPend.ToString("0.0", CultureInfo.InvariantCulture)" fill="#fbbf24" rx="2">
-                                                    <title>@pt.Label: @pt.PendingCount Pending</title>
-                                                </rect>
-                                            }
-                                            if (hCanc > 0)
-                                            {
-                                                yCursor -= hCanc;
-                                                <rect x="@bx.ToString("0.0", CultureInfo.InvariantCulture)" y="@yCursor.ToString("0.0", CultureInfo.InvariantCulture)" width="@bw.ToString("0.0", CultureInfo.InvariantCulture)" height="@hCanc.ToString("0.0", CultureInfo.InvariantCulture)" fill="#f43f5e" rx="2">
-                                                    <title>@pt.Label: @pt.CancelledOrExpiredCount Cancelled/Expired</title>
-                                                </rect>
-                                            }
-
-                                            if (pt.TotalBookings > 0)
-                                            {
-                                                @:<text x="@cx.ToString("0.0", CultureInfo.InvariantCulture)" y="@((yCursor - 4).ToString("0.0", CultureInfo.InvariantCulture))" text-anchor="middle" fill="#cbd5e1" font-size="9" font-weight="700" font-family="monospace">@pt.TotalBookings</text>
-                                            }
-
-                                            var showLabel = d.VolumeSeries.Count <= 12 || i % 2 == 0 || i == d.VolumeSeries.Count - 1;
-                                            if (showLabel)
-                                            {
-                                                @:<text x="@cx.ToString("0.0", CultureInfo.InvariantCulture)" y="@(chartHeight + 16)" text-anchor="middle" fill="#94a3b8" font-size="9">@pt.Label</text>
-                                            }
-                                        }
-                                    </svg>
-                                </div>
-                            }
                         </div>
 
-                        <div class="xl:col-span-5 aev-analytics-card p-5 space-y-4">
+                        @* Card 2: Ranked Top Services & Packages (Horizontal Bars) *@
+                        <div class="lg:col-span-4 bg-white p-5 rounded-xl border border-slate-200 shadow-2xs flex flex-col justify-between">
                             <div>
-                                <h2 class="text-sm font-bold text-slate-100">Ranked Top Services &amp; Packages</h2>
-                                <p class="text-xs text-slate-400">Most booked services, combo packages, and add-ons in window</p>
-                            </div>
+                                <h2 class="text-sm font-bold text-[var(--text)] mb-1">Ranked Top Services &amp; Packages</h2>
+                                <p class="text-xs text-slate-500 mb-3">Highest demand packages and services in this window</p>
 
-                            @if (d.TopServices.Count == 0)
-                            {
-                                <div class="aev-analytics-subcard p-8 text-center text-xs text-slate-400">
-                                    No service line items recorded in this filter window.
-                                </div>
-                            }
-                            else
-                            {
-                                <div class="space-y-3">
-                                    @for (int idx = 0; idx < d.TopServices.Count; idx++)
-                                    {
-                                        var svc = d.TopServices[idx];
-                                        <div class="aev-analytics-subcard p-3 space-y-1.5">
-                                            <div class="flex items-center justify-between gap-2 text-xs">
-                                                <div class="flex items-center gap-2 min-w-0">
-                                                    <span class="font-mono text-[10px] font-bold px-1.5 py-0.5 rounded bg-slate-800 text-teal-300">#@(idx + 1)</span>
-                                                    <span class="font-semibold text-slate-100 truncate" title="@svc.Name">@svc.Name</span>
+                                @if (d.TopServices.Count == 0)
+                                {
+                                    <div class="p-8 text-center text-xs text-slate-400 italic bg-slate-50 rounded-lg">
+                                        No service items recorded in this window.
+                                    </div>
+                                }
+                                else
+                                {
+                                    <div class="space-y-3">
+                                        @for (int idx = 0; idx < Math.Min(5, d.TopServices.Count); idx++)
+                                        {
+                                            var svc = d.TopServices[idx];
+                                            <div class="p-2.5 rounded-lg bg-slate-50 border border-slate-100 space-y-1.5">
+                                                <div class="flex items-center justify-between gap-2 text-xs">
+                                                    <div class="flex items-center gap-1.5 min-w-0">
+                                                        <span class="font-mono text-[10px] font-bold px-1.5 py-0.2 rounded bg-teal-100 text-teal-800">#@(idx + 1)</span>
+                                                        <span class="font-semibold text-slate-700 truncate" title="@svc.Name">@svc.Name</span>
+                                                    </div>
+                                                    <span class="font-mono text-xs font-bold text-slate-700 shrink-0 aev-tabular">
+                                                        @svc.BookingCount <span class="text-slate-400 font-normal">(@svc.SharePct.ToString("0.0")%)</span>
+                                                    </span>
                                                 </div>
-                                                <span class="font-mono text-xs font-bold text-slate-200 shrink-0 aev-tabular">
-                                                    @svc.BookingCount (@svc.SharePct.ToString("0.0")%)
-                                                </span>
+                                                <div class="flex items-center justify-between text-[11px] text-slate-400">
+                                                    <span>@svc.Kind · @svc.CategoryName</span>
+                                                    <span>Qty: @svc.TotalQuantity</span>
+                                                </div>
+                                                <div class="w-full h-1.5 bg-slate-200 rounded-full overflow-hidden">
+                                                    <div class="h-full rounded-full" style="background-color: var(--chart-1); width: @Math.Max(5, svc.SharePct).ToString("0.#", CultureInfo.InvariantCulture)%"></div>
+                                                </div>
                                             </div>
-                                            <div class="flex items-center justify-between text-[10px] text-slate-400">
-                                                <span>@svc.Kind · @svc.CategoryName</span>
-                                                <span>Qty: @svc.TotalQuantity</span>
-                                            </div>
-                                            <div class="w-full h-1.5 bg-slate-900 rounded-full overflow-hidden">
-                                                <div class="h-full bg-gradient-to-r from-teal-500 to-sky-400 rounded-full"
-                                                     style="width: @Math.Max(4, svc.SharePct).ToString("0.#", CultureInfo.InvariantCulture)%"></div>
+                                        }
+                                    </div>
+                                }
+                            </div>
+                        </div>
+
+                        @* Card 3: Bookings by Service Category (Donut Chart) *@
+                        @{
+                            var categoryBreakdown = d.TopServices
+                                .GroupBy(s => string.IsNullOrWhiteSpace(s.CategoryName) ? "General" : s.CategoryName)
+                                .Select(g => new { Category = g.Key, Count = g.Sum(x => x.BookingCount), Share = g.Sum(x => x.SharePct) })
+                                .OrderByDescending(x => x.Count)
+                                .ToList();
+                            var totalCatCount = categoryBreakdown.Sum(x => x.Count);
+                        }
+                        <div class="lg:col-span-3 bg-white p-5 rounded-xl border border-slate-200 shadow-2xs flex flex-col justify-between">
+                            <div>
+                                <h2 class="text-sm font-bold text-[var(--text)] mb-1">Bookings by Category</h2>
+                                <p class="text-xs text-slate-500 mb-3">Service category share across portfolio</p>
+
+                                @if (categoryBreakdown.Count == 0 || totalCatCount == 0)
+                                {
+                                    <div class="p-8 text-center text-xs text-slate-400 italic bg-slate-50 rounded-lg">
+                                        No categorized services found.
+                                    </div>
+                                }
+                                else
+                                {
+                                    var chartColors = new[] { "var(--chart-1)", "var(--chart-2)", "var(--chart-3)", "var(--chart-4)", "var(--chart-5)" };
+                                    const double r = 36.0;
+                                    const double circumference = 2.0 * Math.PI * r;
+                                    double runningOffset = 0.0;
+
+                                    <div class="flex flex-col items-center">
+                                        <div class="relative w-36 h-36">
+                                            <svg viewBox="0 0 100 100" class="w-full h-full -rotate-90">
+                                                <circle cx="50" cy="50" r="@r.ToString("0.0", CultureInfo.InvariantCulture)" fill="none" stroke="var(--border)" stroke-width="14" />
+                                                @for (int cIdx = 0; cIdx < categoryBreakdown.Count; cIdx++)
+                                                {
+                                                    var item = categoryBreakdown[cIdx];
+                                                    var fraction = (double)item.Count / totalCatCount;
+                                                    var strokeDash = fraction * circumference;
+                                                    var strokeOffset = -runningOffset;
+                                                    runningOffset += strokeDash;
+                                                    var colorVar = chartColors[cIdx % chartColors.Length];
+
+                                                    <circle cx="50" cy="50" r="@r.ToString("0.0", CultureInfo.InvariantCulture)"
+                                                            fill="none"
+                                                            stroke="@colorVar"
+                                                            stroke-width="14"
+                                                            stroke-dasharray="@strokeDash.ToString("0.0", CultureInfo.InvariantCulture) @((circumference - strokeDash).ToString("0.0", CultureInfo.InvariantCulture))"
+                                                            stroke-dashoffset="@strokeOffset.ToString("0.0", CultureInfo.InvariantCulture)">
+                                                        <title>@item.Category: @item.Count (@fraction.ToString("P0"))</title>
+                                                    </circle>
+                                                }
+                                            </svg>
+                                            <div class="absolute inset-0 flex flex-col items-center justify-center text-center pointer-events-none">
+                                                <span class="text-xs text-slate-400 font-medium uppercase">Total</span>
+                                                <span class="text-base font-extrabold text-slate-700 aev-tabular">@totalCatCount</span>
                                             </div>
                                         </div>
-                                    }
-                                </div>
-                            }
+
+                                        <div class="w-full mt-4 space-y-1.5 text-xs">
+                                            @for (int cIdx = 0; cIdx < Math.Min(4, categoryBreakdown.Count); cIdx++)
+                                            {
+                                                var item = categoryBreakdown[cIdx];
+                                                var colorVar = chartColors[cIdx % chartColors.Length];
+                                                var pct = totalCatCount > 0 ? (double)item.Count / totalCatCount * 100.0 : 0.0;
+                                                <div class="flex items-center justify-between text-slate-600">
+                                                    <span class="inline-flex items-center gap-1.5 truncate">
+                                                        <span class="w-2 h-2 rounded-full shrink-0" style="background-color: @colorVar"></span>
+                                                        <span class="truncate">@item.Category</span>
+                                                    </span>
+                                                    <span class="font-semibold text-slate-700 shrink-0 font-mono">@pct.ToString("0.0")%</span>
+                                                </div>
+                                            }
+                                        </div>
+                                    </div>
+                                }
+                            </div>
                         </div>
                     </div>
-                }
+                </div>
+            }
 
-                @* ════════════════════════════════════════════════════════════════
-                   STAGE 2: DIAGNOSTIC ("Why it happened")
-                   ════════════════════════════════════════════════════════════════ *@
-                @if (_activeStage == "diagnostic")
-                {
-                    var diag = _overview.Diagnostic;
-                    var selectedDriver = diag.Drivers.FirstOrDefault(x => x.DriverId == _selectedDriverId)
-                                         ?? diag.Drivers.FirstOrDefault();
+            @* ════════════════════════════════════════════════════════════════
+               STAGE 2: DIAGNOSTIC ("Why it happened")
+               ════════════════════════════════════════════════════════════════ *@
+            @if (_activeStage == "diagnostic")
+            {
+                var diag = _overview.Diagnostic;
+                var selectedDriver = diag.Drivers.FirstOrDefault(x => x.DriverId == _selectedDriverId)
+                                     ?? diag.Drivers.FirstOrDefault();
 
-                    @* Period-over-period banner *@
-                    <div class="aev-analytics-card p-5 flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+                <div class="space-y-6">
+                    @* Period-Over-Period Comparison Banner *@
+                    <div class="bg-white p-5 rounded-xl border border-slate-200 shadow-2xs flex flex-col md:flex-row md:items-center md:justify-between gap-4">
                         <div>
-                            <div class="text-[10px] font-bold uppercase tracking-wider text-sky-400">Period-Over-Period Operational Comparison</div>
-                            <h2 class="text-base font-bold text-slate-100 mt-0.5">
-                                @diag.CurrentPeriodLabel <span class="text-slate-500 font-normal">vs</span> @diag.PriorPeriodLabel
+                            <div class="text-xs font-bold uppercase tracking-wider text-teal-700">Period-Over-Period Operational Comparison</div>
+                            <h2 class="text-lg font-bold text-[var(--text)] mt-0.5">
+                                @diag.CurrentPeriodLabel <span class="text-slate-400 font-normal">vs</span> @diag.PriorPeriodLabel
                             </h2>
                         </div>
                         <div class="flex flex-wrap items-center gap-4">
                             <div class="text-right">
-                                <div class="text-[10px] uppercase text-slate-400">Current</div>
-                                <div class="text-xl font-extrabold text-slate-50 aev-tabular">@diag.CurrentTotalBookings</div>
+                                <div class="text-[11px] uppercase text-slate-400 font-semibold">Current</div>
+                                <div class="text-2xl font-extrabold text-slate-700 aev-tabular">@diag.CurrentTotalBookings</div>
                             </div>
-                            <div class="text-slate-600 text-lg">/</div>
+                            <div class="text-slate-300 text-xl font-light">/</div>
                             <div class="text-right">
-                                <div class="text-[10px] uppercase text-slate-400">Prior</div>
-                                <div class="text-xl font-extrabold text-slate-300 aev-tabular">@diag.PriorTotalBookings</div>
+                                <div class="text-[11px] uppercase text-slate-400 font-semibold">Prior</div>
+                                <div class="text-2xl font-extrabold text-slate-500 aev-tabular">@diag.PriorTotalBookings</div>
                             </div>
                             @if (diag.BookingsChangePct.HasValue)
                             {
-                                <span class="px-3 py-1 rounded-full text-xs font-mono font-bold @(diag.BookingsChangePct >= 0 ? "bg-emerald-500/15 text-emerald-300 border border-emerald-500/30" : "bg-rose-500/15 text-rose-300 border border-rose-500/30")">
+                                <span class="px-3 py-1 rounded-full text-xs font-mono font-bold @(diag.BookingsChangePct >= 0 ? "bg-emerald-50 text-emerald-700 border border-emerald-200" : "bg-rose-50 text-rose-700 border border-rose-200")">
                                     @(diag.BookingsChangePct >= 0 ? "+" : "")@diag.BookingsChangePct.Value.ToString("0.0")%
                                 </span>
                             }
@@ -530,15 +606,15 @@
                     <div class="grid grid-cols-2 sm:grid-cols-5 gap-3">
                         @foreach (var s in diag.StatusShifts)
                         {
-                            <div class="aev-analytics-card p-3.5">
-                                <div class="text-[11px] font-bold uppercase tracking-wider text-slate-400">@s.StatusGroup</div>
+                            <div class="bg-white p-4 rounded-xl border border-slate-200 shadow-2xs">
+                                <div class="text-xs font-bold uppercase tracking-wider text-slate-500">@s.StatusGroup</div>
                                 <div class="flex items-baseline justify-between mt-1.5">
-                                    <span class="text-2xl font-extrabold text-slate-50 aev-tabular">@s.CurrentCount</span>
-                                    <span class="text-[11px] font-mono font-bold @(s.Delta == 0 ? "text-slate-400" : s.Delta > 0 ? "text-sky-300" : "text-amber-300")">
+                                    <span class="text-xl font-extrabold text-[var(--text)] aev-tabular">@s.CurrentCount</span>
+                                    <span class="text-xs font-mono font-bold @(s.Delta == 0 ? "text-slate-400" : s.Delta > 0 ? "text-sky-600" : "text-amber-600")">
                                         @(s.Delta > 0 ? $"+{s.Delta}" : s.Delta.ToString())
                                     </span>
                                 </div>
-                                <div class="text-[10px] text-slate-400 mt-1">Prior: @s.PriorCount · @s.ShareOfCurrentPct.ToString("0.0")%</div>
+                                <div class="text-[11px] text-slate-400 mt-1">Prior: @s.PriorCount · @s.ShareOfCurrentPct.ToString("0.0")%</div>
                             </div>
                         }
                     </div>
@@ -546,8 +622,8 @@
                     @* Interactive Drivers + Finding Detail Panel *@
                     <div class="grid grid-cols-1 xl:grid-cols-12 gap-6">
                         <div class="xl:col-span-5 space-y-3">
-                            <div class="text-xs font-bold uppercase tracking-wider text-slate-400 px-1">
-                                Select an Operational Driver
+                            <div class="text-xs font-bold uppercase tracking-wider text-slate-500 px-1">
+                                Operational Drivers
                             </div>
                             @foreach (var driver in diag.Drivers)
                             {
@@ -555,80 +631,80 @@
                                 <button type="button" @onclick="() => _selectedDriverId = driver.DriverId"
                                         class="aev-driver-btn @(isSelected ? "is-selected" : "")">
                                     <div class="flex items-center justify-between gap-2 mb-1.5">
-                                        <span class="text-[10px] font-bold uppercase tracking-wider text-slate-400">@driver.Category</span>
+                                        <span class="text-[11px] font-bold uppercase tracking-wider text-slate-400">@driver.Category</span>
                                         <span class="px-2 py-0.5 rounded-full text-[10px] font-bold uppercase @GetSeverityBadgeClass(driver.Severity)">
                                             @driver.Severity
                                         </span>
                                     </div>
-                                    <div class="text-sm font-bold text-slate-100">@driver.Title</div>
-                                    <div class="text-xs font-mono text-sky-300 mt-1">@driver.HeadlineMetric</div>
-                                    <div class="flex items-center justify-between gap-2 mt-2 text-[11px] text-slate-400">
+                                    <div class="text-sm font-bold text-slate-700">@driver.Title</div>
+                                    <div class="text-xs font-mono text-sky-700 font-semibold mt-1">@driver.HeadlineMetric</div>
+                                    <div class="flex items-center justify-between gap-2 mt-2 text-xs text-slate-500">
                                         <span>@driver.DeltaLabel</span>
-                                        <span class="text-sky-400 font-semibold">@(isSelected ? "Inspecting →" : "Inspect")</span>
+                                        <span class="text-teal-700 font-semibold">@(isSelected ? "Inspecting →" : "Inspect")</span>
                                     </div>
                                 </button>
                             }
                         </div>
 
-                        <div class="xl:col-span-7 aev-analytics-card p-5 space-y-4">
+                        <div class="xl:col-span-7 bg-white p-5 rounded-xl border border-slate-200 shadow-2xs space-y-4">
                             @if (selectedDriver is not null)
                             {
-                                <div class="flex flex-wrap items-start justify-between gap-3 pb-3 border-b border-slate-800">
+                                <div class="flex flex-wrap items-start justify-between gap-3 pb-3 border-b border-slate-200">
                                     <div>
                                         <div class="flex items-center gap-2">
-                                            <span class="text-[10px] font-bold uppercase tracking-wider text-sky-400">@selectedDriver.Category</span>
+                                            <span class="text-xs font-bold uppercase tracking-wider text-teal-700">@selectedDriver.Category</span>
                                             <span class="px-2 py-0.5 rounded-full text-[10px] font-bold uppercase @GetSeverityBadgeClass(selectedDriver.Severity)">
                                                 @selectedDriver.Severity
                                             </span>
                                         </div>
-                                        <h3 class="text-lg font-extrabold text-slate-50 mt-1">@selectedDriver.Title</h3>
+                                        <h3 class="text-lg font-extrabold text-[var(--text)] mt-1">@selectedDriver.Title</h3>
                                     </div>
-                                    <span class="px-2.5 py-1 rounded-lg bg-slate-800 text-slate-200 font-mono text-xs font-semibold">
+                                    <span class="px-2.5 py-1 rounded-lg bg-slate-100 text-slate-700 font-mono text-xs font-semibold">
                                         @selectedDriver.DeltaLabel
                                     </span>
                                 </div>
 
-                                <div class="aev-analytics-subcard p-4 space-y-2">
-                                    <div class="text-[11px] font-bold uppercase tracking-wider text-slate-400">Diagnostic Finding</div>
-                                    <p class="text-xs sm:text-sm text-slate-200 leading-relaxed">@selectedDriver.DetailedFinding</p>
+                                <div class="p-4 rounded-xl bg-slate-50 border border-slate-200 space-y-1.5">
+                                    <div class="text-xs font-bold uppercase tracking-wider text-slate-500">Diagnostic Finding</div>
+                                    <p class="text-xs sm:text-sm text-slate-700 leading-relaxed">@selectedDriver.DetailedFinding</p>
                                 </div>
 
                                 <div>
                                     <div class="flex items-center justify-between mb-2">
-                                        <span class="text-xs font-bold text-slate-200">Affected Studio Records &amp; Dates</span>
-                                        <span class="text-[11px] font-mono text-slate-400">@selectedDriver.AffectedItems.Count item(s)</span>
+                                        <span class="text-xs font-bold text-slate-700">Affected Studio Records &amp; Dates</span>
+                                        <span class="text-xs font-mono text-slate-400">@selectedDriver.AffectedItems.Count item(s)</span>
                                     </div>
 
                                     @if (selectedDriver.AffectedItems.Count == 0)
                                     {
-                                        <div class="aev-analytics-subcard p-6 text-center text-xs text-slate-400">
+                                        <div class="p-6 text-center text-xs text-slate-400 italic bg-slate-50 rounded-xl">
                                             No affected records surfaced for this driver in the active period.
                                         </div>
                                     }
                                     else
                                     {
-                                        <div class="overflow-x-auto border border-slate-800 rounded-xl">
+                                        <div class="overflow-x-auto border border-slate-200 rounded-xl">
                                             <table class="w-full text-left border-collapse text-xs">
                                                 <thead>
-                                                    <tr class="bg-slate-950/70 text-[10px] uppercase tracking-wider text-slate-400 border-b border-slate-800">
+                                                    <tr class="bg-slate-50 text-[11px] uppercase tracking-wider text-slate-500 border-b border-slate-200">
                                                         <th class="py-2.5 px-3">Ref</th>
                                                         <th class="py-2.5 px-3">Record</th>
                                                         <th class="py-2.5 px-3">Date</th>
                                                         <th class="py-2.5 px-3">Status</th>
                                                     </tr>
                                                 </thead>
-                                                <tbody class="divide-y divide-slate-800/80">
+                                                <tbody class="divide-y divide-slate-100">
                                                     @foreach (var item in selectedDriver.AffectedItems)
                                                     {
-                                                        <tr class="hover:bg-slate-800/40">
-                                                            <td class="py-2.5 px-3 font-mono text-[11px] text-teal-300 whitespace-nowrap">@item.ReferenceId</td>
+                                                        <tr class="hover:bg-slate-50">
+                                                            <td class="py-2.5 px-3 font-mono text-xs text-teal-700 whitespace-nowrap font-medium">@item.ReferenceId</td>
                                                             <td class="py-2.5 px-3">
-                                                                <div class="font-semibold text-slate-100">@item.Title</div>
+                                                                <div class="font-semibold text-slate-700">@item.Title</div>
                                                                 <div class="text-[11px] text-slate-400">@item.ContextDetail</div>
                                                             </td>
-                                                            <td class="py-2.5 px-3 text-slate-300 whitespace-nowrap">@item.DateLabel</td>
+                                                            <td class="py-2.5 px-3 text-slate-600 whitespace-nowrap">@item.DateLabel</td>
                                                             <td class="py-2.5 px-3 whitespace-nowrap">
-                                                                <span class="px-2 py-0.5 rounded-full text-[10px] font-semibold bg-slate-800 text-slate-200 border border-slate-700">
+                                                                <span class="px-2 py-0.5 rounded-full text-[10px] font-semibold bg-slate-100 text-slate-700 border border-slate-200">
                                                                     @item.Status
                                                                 </span>
                                                             </td>
@@ -642,32 +718,34 @@
                             }
                         </div>
                     </div>
-                }
+                </div>
+            }
 
-                @* ════════════════════════════════════════════════════════════════
-                   STAGE 3: PREDICTIVE ("What will happen")
-                   ════════════════════════════════════════════════════════════════ *@
-                @if (_activeStage == "predictive")
-                {
-                    var pred = _overview.Predictive;
-                    var scenarioModel = pred.Scenarios.FirstOrDefault(s => s.Key == _activeScenario)
-                                        ?? pred.Scenarios.FirstOrDefault();
+            @* ════════════════════════════════════════════════════════════════
+               STAGE 3: PREDICTIVE ("What will happen")
+               ════════════════════════════════════════════════════════════════ *@
+            @if (_activeStage == "predictive")
+            {
+                var pred = _overview.Predictive;
+                var scenarioModel = pred.Scenarios.FirstOrDefault(s => s.Key == _activeScenario)
+                                    ?? pred.Scenarios.FirstOrDefault();
 
-                    <div class="aev-analytics-card p-5 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+                <div class="space-y-6">
+                    <div class="bg-white p-5 rounded-xl border border-slate-200 shadow-2xs flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
                         <div>
-                            <div class="text-[10px] font-bold uppercase tracking-wider text-violet-400">Forward Capacity &amp; Demand Horizon</div>
-                            <h2 class="text-base font-bold text-slate-100 mt-0.5">Next @pred.HorizonMonths Months Booking Projection</h2>
-                            <p class="text-xs text-slate-400 mt-0.5">
-                                Toggle demand scenarios to compare expected crew workload and uncertainty bands.
+                            <div class="text-xs font-bold uppercase tracking-wider text-teal-700">Forward Capacity &amp; Demand Horizon</div>
+                            <h2 class="text-lg font-bold text-[var(--text)] mt-0.5">Next @pred.HorizonMonths Months Booking Projection</h2>
+                            <p class="text-xs text-slate-500 mt-0.5">
+                                Toggle demand scenarios to compare expected workload and uncertainty bands.
                             </p>
                         </div>
 
-                        <div class="inline-flex p-1 rounded-xl bg-slate-950 border border-slate-800 gap-1">
+                        <div class="inline-flex p-1 rounded-xl bg-slate-100 border border-slate-200 gap-1">
                             @foreach (var sc in pred.Scenarios)
                             {
                                 var active = sc.Key == _activeScenario;
                                 <button type="button" @onclick="() => _activeScenario = sc.Key"
-                                        class="px-3.5 py-1.5 rounded-lg text-xs font-bold transition-colors @(active ? "bg-violet-500 text-slate-950" : "text-slate-300 hover:text-white hover:bg-slate-800")">
+                                        class="px-3.5 py-1.5 rounded-lg text-xs font-bold transition-colors @(active ? "bg-teal-700 text-white shadow-2xs" : "text-slate-600 hover:text-[var(--text)]")">
                                     @sc.Label
                                 </button>
                             }
@@ -677,49 +755,49 @@
                     @if (scenarioModel is not null)
                     {
                         <div class="grid grid-cols-1 sm:grid-cols-3 gap-4">
-                            <article class="aev-analytics-card p-4 border-t-2 border-t-violet-500">
-                                <div class="text-[11px] font-semibold uppercase tracking-wider text-slate-400">Projected Bookings (@scenarioModel.Label)</div>
-                                <div class="text-3xl font-extrabold text-slate-50 mt-2 aev-tabular">@scenarioModel.ProjectedBookingsTotal</div>
-                                <p class="text-[11px] text-slate-400 mt-1.5">
+                            <article class="bg-white p-5 rounded-xl border border-slate-200 shadow-2xs">
+                                <div class="text-xs font-medium uppercase tracking-wider text-slate-500">Projected Bookings (@scenarioModel.Label)</div>
+                                <div class="text-2xl sm:text-3xl font-extrabold text-[var(--text)] mt-1.5 aev-tabular">@scenarioModel.ProjectedBookingsTotal</div>
+                                <p class="text-xs text-slate-500 mt-2">
                                     Est. @scenarioModel.EstimatedCrewHoursTotal.ToString("0.0") crew hours needed · @scenarioModel.Multiplier.ToString("0.00")× factor
                                 </p>
                             </article>
 
-                            <article class="aev-analytics-card p-4 border-t-2 border-t-sky-500">
-                                <div class="text-[11px] font-semibold uppercase tracking-wider text-slate-400">Peak Projected Period</div>
-                                <div class="text-2xl font-extrabold text-slate-50 mt-2">@scenarioModel.PeakPeriodLabel</div>
-                                <p class="text-[11px] text-slate-400 mt-1.5">
+                            <article class="bg-white p-5 rounded-xl border border-slate-200 shadow-2xs">
+                                <div class="text-xs font-medium uppercase tracking-wider text-slate-500">Peak Projected Period</div>
+                                <div class="text-2xl sm:text-3xl font-extrabold text-[var(--text)] mt-1.5">@scenarioModel.PeakPeriodLabel</div>
+                                <p class="text-xs text-slate-500 mt-2">
                                     ~@scenarioModel.PeakPeriodProjectedBookings projected sessions in peak month
                                 </p>
                             </article>
 
-                            <article class="aev-analytics-card p-4 border-t-2 border-t-amber-500">
-                                <div class="flex items-center justify-between text-[11px] font-semibold uppercase tracking-wider text-slate-400">
+                            <article class="bg-white p-5 rounded-xl border border-slate-200 shadow-2xs">
+                                <div class="flex items-center justify-between text-xs font-medium uppercase tracking-wider text-slate-500">
                                     <span>Model Error &amp; Confidence</span>
-                                    <span class="px-2 py-0.5 rounded-full text-[10px] font-bold @(pred.ConfidenceLevel == "Good" ? "bg-emerald-500/20 text-emerald-300" : pred.ConfidenceLevel == "Moderate" ? "bg-sky-500/20 text-sky-300" : "bg-amber-500/20 text-amber-300")">
+                                    <span class="px-2 py-0.5 rounded-full text-[10px] font-bold @(pred.ConfidenceLevel == "Good" ? "bg-emerald-50 text-emerald-700" : pred.ConfidenceLevel == "Moderate" ? "bg-sky-50 text-sky-700" : "bg-amber-50 text-amber-700")">
                                         @pred.ConfidenceLevel
                                     </span>
                                 </div>
-                                <div class="text-2xl font-extrabold text-slate-50 mt-2 aev-tabular">
+                                <div class="text-2xl sm:text-3xl font-extrabold text-[var(--text)] mt-1.5 aev-tabular">
                                     @(pred.ModelErrorMae.HasValue ? $"±{pred.ModelErrorMae.Value:0.00} MAE" : $"{pred.HistoricalMonthsCount} mo sample")
                                 </div>
-                                <p class="text-[11px] text-slate-400 mt-1.5">
-                                    Based on @pred.HistoricalBookingsCount non-cancelled bookings across @pred.HistoricalMonthsCount active month(s)
+                                <p class="text-xs text-slate-500 mt-2">
+                                    Based on @pred.HistoricalBookingsCount bookings across @pred.HistoricalMonthsCount active month(s)
                                 </p>
                             </article>
                         </div>
 
                         @* Forecast Range Chart *@
-                        <div class="aev-analytics-card p-5 space-y-4">
+                        <div class="bg-white p-5 rounded-xl border border-slate-200 shadow-2xs space-y-4">
                             <div class="flex flex-wrap items-center justify-between gap-2">
                                 <div>
-                                    <h3 class="text-sm font-bold text-slate-100">Historical Trend &amp; Forecast Uncertainty Band</h3>
-                                    <p class="text-xs text-slate-400">Solid bars = historical monthly demand · Shaded violet band = lower/upper forecast range</p>
+                                    <h3 class="text-sm font-bold text-[var(--text)]">Historical Trend &amp; Forecast Uncertainty Band</h3>
+                                    <p class="text-xs text-slate-500">Solid bars = historical monthly demand · Shaded band = lower/upper forecast range</p>
                                 </div>
-                                <div class="flex items-center gap-4 text-[10px] font-semibold text-slate-300">
-                                    <span class="inline-flex items-center gap-1.5"><span class="w-2.5 h-2.5 rounded-xs bg-slate-500"></span>Historical</span>
-                                    <span class="inline-flex items-center gap-1.5"><span class="w-2.5 h-2.5 rounded-xs bg-violet-400"></span>Projected (@scenarioModel.Label)</span>
-                                    <span class="inline-flex items-center gap-1.5"><span class="w-2.5 h-2.5 rounded-xs bg-teal-400"></span>Already Booked</span>
+                                <div class="flex items-center gap-4 text-xs font-semibold text-slate-600">
+                                    <span class="inline-flex items-center gap-1.5"><span class="w-2.5 h-2.5 rounded-xs" style="background-color: var(--chart-2)"></span>Historical</span>
+                                    <span class="inline-flex items-center gap-1.5"><span class="w-2.5 h-2.5 rounded-xs" style="background-color: var(--chart-5)"></span>Projected (@scenarioModel.Label)</span>
+                                    <span class="inline-flex items-center gap-1.5"><span class="w-2.5 h-2.5 rounded-xs" style="background-color: var(--chart-1)"></span>Already Booked</span>
                                 </div>
                             </div>
 
@@ -728,11 +806,11 @@
                                 var maxY = Math.Max(4.0, series.Max(p => Math.Max(p.UpperBound, p.HistoricalBookings ?? 0)) * 1.15);
                                 int count = series.Count;
                                 int w = 640;
-                                int h = 210;
+                                int h = 200;
                                 int padL = 36;
                                 int padR = 16;
                                 int padT = 18;
-                                int padB = 34;
+                                int padB = 32;
                                 double plotW = w - padL - padR;
                                 double plotH = h - padT - padB;
                                 double stepX = count > 1 ? plotW / (count - 1) : plotW;
@@ -748,18 +826,18 @@
                             }
 
                             <div class="overflow-x-auto">
-                                <svg viewBox="0 0 @w @h" class="w-full min-w-[460px] h-56 select-none" role="img" aria-label="Predictive bookings forecast chart">
+                                <svg viewBox="0 0 @w @h" class="w-full min-w-[460px] h-52 select-none" role="img" aria-label="Predictive bookings forecast chart">
                                     @for (int g = 0; g <= 4; g++)
                                     {
                                         var val = maxY * (4 - g) / 4.0;
                                         var y = padT + plotH * g / 4.0;
-                                        <line x1="@padL" y1="@y.ToString("0.0", CultureInfo.InvariantCulture)" x2="@(w - padR)" y2="@y.ToString("0.0", CultureInfo.InvariantCulture)" stroke="#1e293b" stroke-dasharray="3 3" />
-                                        @:<text x="@(padL - 6)" y="@((y + 3).ToString("0.0", CultureInfo.InvariantCulture))" text-anchor="end" fill="#64748b" font-size="9" font-family="monospace">@val.ToString("0")</text>
+                                        <line x1="@padL" y1="@y.ToString("0.0", CultureInfo.InvariantCulture)" x2="@(w - padR)" y2="@y.ToString("0.0", CultureInfo.InvariantCulture)" stroke="var(--chart-grid)" stroke-dasharray="3 3" />
+                                        @:<text x="@(padL - 6)" y="@((y + 3).ToString("0.0", CultureInfo.InvariantCulture))" text-anchor="end" fill="var(--chart-text)" font-size="9" font-family="monospace">@val.ToString("0")</text>
                                     }
 
                                     @if (!string.IsNullOrWhiteSpace(bandPoints))
                                     {
-                                        <polygon points="@bandPoints" fill="rgba(167, 139, 250, 0.22)" />
+                                        <polygon points="@bandPoints" fill="var(--chart-5)" fill-opacity="0.12" />
                                     }
 
                                     @for (int i = 0; i < count; i++)
@@ -770,7 +848,7 @@
                                         {
                                             var barY = YFor(pt.HistoricalBookings ?? 0);
                                             var barH = Math.Max(2, padT + plotH - barY);
-                                            <rect x="@((cx - 10).ToString("0.0", CultureInfo.InvariantCulture))" y="@barY.ToString("0.0", CultureInfo.InvariantCulture)" width="20" height="@barH.ToString("0.0", CultureInfo.InvariantCulture)" fill="#475569" rx="3">
+                                            <rect x="@((cx - 10).ToString("0.0", CultureInfo.InvariantCulture))" y="@barY.ToString("0.0", CultureInfo.InvariantCulture)" width="20" height="@barH.ToString("0.0", CultureInfo.InvariantCulture)" fill="var(--chart-2)" rx="3">
                                                 <title>@pt.Label: @pt.HistoricalBookings historical booking(s)</title>
                                             </rect>
                                         }
@@ -778,26 +856,26 @@
                                         {
                                             var confY = YFor(pt.ConfirmedOnBooksCount!.Value);
                                             var confH = Math.Max(2, padT + plotH - confY);
-                                            <rect x="@((cx - 8).ToString("0.0", CultureInfo.InvariantCulture))" y="@confY.ToString("0.0", CultureInfo.InvariantCulture)" width="16" height="@confH.ToString("0.0", CultureInfo.InvariantCulture)" fill="rgba(45, 212, 191, 0.55)" rx="3">
+                                            <rect x="@((cx - 8).ToString("0.0", CultureInfo.InvariantCulture))" y="@confY.ToString("0.0", CultureInfo.InvariantCulture)" width="16" height="@confH.ToString("0.0", CultureInfo.InvariantCulture)" fill="var(--chart-1)" rx="3">
                                                 <title>@pt.Label: @pt.ConfirmedOnBooksCount confirmed on books</title>
                                             </rect>
                                         }
-                                        @:<text x="@cx.ToString("0.0", CultureInfo.InvariantCulture)" y="@(h - 10)" text-anchor="middle" fill="#94a3b8" font-size="9">@pt.Label</text>
+                                        @:<text x="@cx.ToString("0.0", CultureInfo.InvariantCulture)" y="@(h - 10)" text-anchor="middle" fill="var(--chart-text)" font-size="9">@pt.Label</text>
                                     }
 
                                     @if (!string.IsNullOrWhiteSpace(linePoints))
                                     {
-                                        <polyline points="@linePoints" fill="none" stroke="#a78bfa" stroke-width="2.5" stroke-dasharray="5 3" />
+                                        <polyline points="@linePoints" fill="none" stroke="var(--chart-5)" stroke-width="2.5" stroke-dasharray="5 3" />
                                     }
 
                                     @foreach (var x in forecastIndices.Where(x => !x.p.IsHistorical))
                                     {
                                         var cx = XFor(x.idx);
                                         var cy = YFor(x.p.ProjectedBookings);
-                                        <circle cx="@cx.ToString("0.0", CultureInfo.InvariantCulture)" cy="@cy.ToString("0.0", CultureInfo.InvariantCulture)" r="4.5" fill="#c4b5fd" stroke="#0f172a" stroke-width="1.5">
+                                        <circle cx="@cx.ToString("0.0", CultureInfo.InvariantCulture)" cy="@cy.ToString("0.0", CultureInfo.InvariantCulture)" r="4.5" fill="var(--chart-5)" stroke="var(--surface)" stroke-width="1.5">
                                             <title>@x.p.Label: @x.p.ProjectedBookings.ToString("0.0") projected (range @x.p.LowerBound.ToString("0.0")–@x.p.UpperBound.ToString("0.0"))</title>
                                         </circle>
-                                        @:<text x="@cx.ToString("0.0", CultureInfo.InvariantCulture)" y="@((cy - 9).ToString("0.0", CultureInfo.InvariantCulture))" text-anchor="middle" fill="#e9d5ff" font-size="9.5" font-weight="700" font-family="monospace">@x.p.ProjectedBookings.ToString("0.0")</text>
+                                        @:<text x="@cx.ToString("0.0", CultureInfo.InvariantCulture)" y="@((cy - 9).ToString("0.0", CultureInfo.InvariantCulture))" text-anchor="middle" fill="var(--chart-5)" font-size="9.5" font-weight="700" font-family="monospace">@x.p.ProjectedBookings.ToString("0.0")</text>
                                     }
                                 </svg>
                             </div>
@@ -806,53 +884,55 @@
                             <div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
                                 @foreach (var fp in scenarioModel.Series.Where(s => !s.IsHistorical))
                                 {
-                                    <div class="aev-analytics-subcard p-3.5 space-y-1">
-                                        <div class="flex items-center justify-between text-xs font-bold text-slate-100">
+                                    <div class="p-3.5 rounded-xl bg-slate-50 border border-slate-200 space-y-1">
+                                        <div class="flex items-center justify-between text-xs font-bold text-slate-700">
                                             <span>@fp.Label</span>
-                                            <span class="font-mono text-violet-300">@fp.ProjectedBookings.ToString("0.0") bookings</span>
+                                            <span class="font-mono text-purple-700">@fp.ProjectedBookings.ToString("0.0") bookings</span>
                                         </div>
-                                        <div class="text-[11px] text-slate-400">
-                                            Range: <span class="font-mono text-slate-200">@fp.LowerBound.ToString("0.0") – @fp.UpperBound.ToString("0.0")</span>
+                                        <div class="text-[11px] text-slate-500">
+                                            Range: <span class="font-mono font-medium text-slate-700">@fp.LowerBound.ToString("0.0") – @fp.UpperBound.ToString("0.0")</span>
                                         </div>
-                                        <div class="flex items-center justify-between text-[11px] text-slate-400">
-                                            <span>On books: <strong class="text-teal-300">@(fp.ConfirmedOnBooksCount ?? 0)</strong></span>
-                                            <span>Est. load: <strong class="text-slate-200">@fp.EstimatedCapacityPct.ToString("0")%</strong></span>
+                                        <div class="flex items-center justify-between text-[11px] text-slate-500">
+                                            <span>On books: <strong class="text-teal-700">@(fp.ConfirmedOnBooksCount ?? 0)</strong></span>
+                                            <span>Est. load: <strong class="text-slate-700">@fp.EstimatedCapacityPct.ToString("0")%</strong></span>
                                         </div>
                                     </div>
                                 }
                             </div>
                         </div>
 
-                        <div class="aev-analytics-card p-4 space-y-2 border-slate-800 text-xs">
-                            <div class="font-bold text-slate-200">Confidence &amp; Transparency Note</div>
-                            <p class="text-amber-200/90">@pred.ConfidenceNote</p>
-                            <p class="text-slate-400">@pred.MethodologyNote</p>
+                        <div class="p-4 rounded-xl border border-amber-200 bg-amber-50 text-xs space-y-1.5">
+                            <div class="font-bold text-amber-800">Confidence &amp; Transparency Note</div>
+                            <p class="text-amber-700">@pred.ConfidenceNote</p>
+                            <p class="text-slate-500">@pred.MethodologyNote</p>
                         </div>
                     }
-                }
+                </div>
+            }
 
-                @* ════════════════════════════════════════════════════════════════
-                   STAGE 4: PRESCRIPTIVE ("What should we do")
-                   ════════════════════════════════════════════════════════════════ *@
-                @if (_activeStage == "prescriptive")
-                {
-                    var presc = _overview.Prescriptive;
+            @* ════════════════════════════════════════════════════════════════
+               STAGE 4: PRESCRIPTIVE ("What should we do")
+               ════════════════════════════════════════════════════════════════ *@
+            @if (_activeStage == "prescriptive")
+            {
+                var presc = _overview.Prescriptive;
 
-                    <div class="aev-analytics-card p-5 space-y-4">
+                <div class="space-y-6">
+                    <div class="bg-white p-5 rounded-xl border border-slate-200 shadow-2xs space-y-4">
                         <div class="flex flex-col md:flex-row md:items-center md:justify-between gap-3">
                             <div>
-                                <div class="text-[10px] font-bold uppercase tracking-wider text-amber-400">Actionable Studio Playbook</div>
-                                <h2 class="text-base font-bold text-slate-100 mt-0.5">Recommended Operational Actions</h2>
-                                <p class="text-xs text-slate-400">
+                                <div class="text-xs font-bold uppercase tracking-wider text-teal-700">Actionable Studio Playbook</div>
+                                <h2 class="text-lg font-bold text-[var(--text)] mt-0.5">Recommended Operational Actions</h2>
+                                <p class="text-xs text-slate-500">
                                     Generated from active holds, staff leaves, maintenance tickets, and slot distribution. Applying actions persists them to <code>dbo.StudioAnalyticsActions</code> and <code>dbo.AuditLogs</code>.
                                 </p>
                             </div>
                             <div class="flex items-center gap-2 shrink-0">
-                                <span class="text-xs font-mono text-slate-300">@_selectedActionKeys.Count selected</span>
+                                <span class="text-xs font-mono text-slate-500">@_selectedActionKeys.Count selected</span>
                                 <button type="button"
                                         @onclick="ApplySelectedActionsAsync"
                                         disabled="@(_isApplying || _selectedActionKeys.Count == 0)"
-                                        class="px-4 py-2 rounded-lg bg-amber-500 hover:bg-amber-400 disabled:opacity-40 text-slate-950 text-xs font-extrabold transition-colors">
+                                        class="px-4 py-2 rounded-lg bg-teal-700 hover:bg-teal-800 disabled:opacity-40 text-white text-xs font-bold shadow-2xs transition-colors">
                                     @(_isApplying ? "Persisting…" : "Apply Selected Actions")
                                 </button>
                             </div>
@@ -862,7 +942,7 @@
                             <div class="md:col-span-12">
                                 <input type="text" @bind="_actionOperatorNotes" maxlength="300"
                                        placeholder="Optional execution note for audit log (e.g., Assigned backup crew for Nov 28 wedding)…"
-                                       class="aev-filter-input w-full" />
+                                       class="w-full text-xs px-3 py-2 border border-slate-300 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-teal-500 text-slate-700" />
                             </div>
                         </div>
 
@@ -870,34 +950,40 @@
                             @foreach (var rec in presc.Recommendations)
                             {
                                 var isChecked = _selectedActionKeys.Contains(rec.ActionKey);
-                                <label class="block aev-analytics-subcard p-4 cursor-pointer hover:border-slate-500 transition-colors @(isChecked ? "border-amber-400/70 bg-amber-950/20" : "")">
+                                var prioBadge = rec.Priority >= 3 ? "bg-rose-50 text-rose-700 border border-rose-200" :
+                                                rec.Priority == 2 ? "bg-amber-50 text-amber-700 border border-amber-200" :
+                                                "bg-slate-100 text-slate-700 border border-slate-200";
+                                var prioLabel = rec.Priority >= 3 ? "High" : rec.Priority == 2 ? "Medium" : "Low";
+
+                                <label class="block p-4 rounded-xl border cursor-pointer transition-colors @(isChecked ? "border-teal-500 bg-teal-50/40" : "border-slate-200 bg-white hover:border-slate-300")">
                                     <div class="flex items-start gap-3.5">
                                         <input type="checkbox"
                                                checked="@isChecked"
                                                @onchange="(e) => ToggleActionSelection(rec.ActionKey, (bool?)e.Value == true)"
-                                               class="mt-1 h-4 w-4 rounded border-slate-600 bg-slate-900 text-amber-500 focus:ring-amber-500" />
+                                               class="mt-1 h-4 w-4 rounded border-slate-300 text-teal-700 focus:ring-teal-500" />
 
                                         <div class="min-w-0 flex-1 space-y-2">
                                             <div class="flex flex-wrap items-center justify-between gap-2">
                                                 <div class="flex flex-wrap items-center gap-2">
-                                                    <span class="text-sm font-bold text-slate-100">@rec.Title</span>
-                                                    <span class="px-2 py-0.5 rounded-full text-[10px] font-bold @(rec.IsSignalTriggered ? "bg-amber-500/20 text-amber-300 border border-amber-500/30" : "bg-slate-800 text-slate-400 border border-slate-700")">
+                                                    <span class="text-sm font-bold text-slate-700">@rec.Title</span>
+                                                    <span class="px-2 py-0.5 rounded-full text-[10px] font-bold @(rec.IsSignalTriggered ? "bg-amber-100 text-amber-800 border border-amber-200" : "bg-slate-100 text-slate-500 border border-slate-200")">
                                                         @rec.TriggerSignal
                                                     </span>
                                                 </div>
                                                 <div class="flex items-center gap-1.5">
-                                                    <span class="px-2 py-0.5 rounded text-[10px] font-semibold bg-slate-800 text-slate-300 border border-slate-700">@rec.Category</span>
+                                                    <span class="px-2 py-0.5 rounded text-[10px] font-semibold bg-slate-100 text-slate-600 border border-slate-200">@rec.Category</span>
                                                     <span class="px-2 py-0.5 rounded text-[10px] font-bold @GetEffortBadgeClass(rec.EffortTag)">@rec.EffortTag</span>
+                                                    <span class="px-2 py-0.5 rounded-full text-[10px] font-bold @prioBadge">@prioLabel</span>
                                                 </div>
                                             </div>
 
-                                            <p class="text-xs text-slate-300 leading-relaxed">@rec.Description</p>
+                                            <p class="text-xs text-slate-600 leading-relaxed">@rec.Description</p>
 
-                                            <div class="flex flex-wrap items-center justify-between gap-2 pt-1 text-[11px]">
-                                                <span class="text-teal-300 font-semibold">Impact: @rec.EstimatedImpact</span>
+                                            <div class="flex flex-wrap items-center justify-between gap-2 pt-1 text-xs">
+                                                <span class="text-teal-700 font-semibold">Impact: @rec.EstimatedImpact</span>
                                                 @if (rec.IsAlreadyApplied && rec.LastAppliedAtUtc.HasValue)
                                                 {
-                                                    <span class="text-emerald-300 font-mono text-[10px]">
+                                                    <span class="text-emerald-700 font-mono text-[11px] font-medium">
                                                         ✓ Applied @rec.LastAppliedAtUtc.Value.ToLocalTime().ToString("MMM d, HH:mm") by @rec.LastAppliedBy
                                                     </span>
                                                 }
@@ -908,7 +994,7 @@
                                                 <div class="flex flex-wrap items-center gap-1.5 pt-1">
                                                     @foreach (var refId in rec.RelatedReferences)
                                                     {
-                                                        <span class="px-2 py-0.5 rounded bg-slate-950 border border-slate-800 font-mono text-[10px] text-slate-300">@refId</span>
+                                                        <span class="px-2 py-0.5 rounded bg-slate-100 border border-slate-200 font-mono text-[10px] text-slate-600">@refId</span>
                                                     }
                                                 </div>
                                             }
@@ -919,43 +1005,43 @@
                         </div>
                     </div>
 
-                    @* Persisted Action Log *@
-                    <div class="aev-analytics-card p-5 space-y-3">
+                    @* Persisted Studio Action Log *@
+                    <div class="bg-white p-5 rounded-xl border border-slate-200 shadow-2xs space-y-3">
                         <div class="flex items-center justify-between">
                             <div>
-                                <h3 class="text-sm font-bold text-slate-100">Persisted Studio Action Log</h3>
-                                <p class="text-xs text-slate-400">Recorded in <code>dbo.StudioAnalyticsActions</code> &amp; mirrored to <code>dbo.AuditLogs</code></p>
+                                <h3 class="text-sm font-bold text-[var(--text)]">Persisted Studio Action Log</h3>
+                                <p class="text-xs text-slate-500">Recorded in <code>dbo.StudioAnalyticsActions</code> &amp; mirrored to <code>dbo.AuditLogs</code></p>
                             </div>
                             <span class="text-xs font-mono text-slate-400">@presc.AppliedHistory.Count logged</span>
                         </div>
 
                         @if (presc.AppliedHistory.Count == 0)
                         {
-                            <div class="aev-analytics-subcard p-6 text-center text-xs text-slate-400">
+                            <div class="p-6 text-center text-xs text-slate-400 italic bg-slate-50 rounded-xl">
                                 No prescriptive recommendations have been applied yet. Select one or more actions above and click <strong>Apply Selected Actions</strong>.
                             </div>
                         }
                         else
                         {
-                            <div class="overflow-x-auto border border-slate-800 rounded-xl">
+                            <div class="overflow-x-auto border border-slate-200 rounded-xl">
                                 <table class="w-full text-left border-collapse text-xs">
                                     <thead>
-                                        <tr class="bg-slate-950/70 text-[10px] uppercase tracking-wider text-slate-400 border-b border-slate-800">
+                                        <tr class="bg-slate-50 text-[11px] uppercase tracking-wider text-slate-500 border-b border-slate-200">
                                             <th class="py-2.5 px-3">Applied At</th>
                                             <th class="py-2.5 px-3">Action</th>
                                             <th class="py-2.5 px-3">Effort / Impact</th>
                                             <th class="py-2.5 px-3">Operator</th>
                                         </tr>
                                     </thead>
-                                    <tbody class="divide-y divide-slate-800/80">
+                                    <tbody class="divide-y divide-slate-100">
                                         @foreach (var entry in presc.AppliedHistory)
                                         {
-                                            <tr class="hover:bg-slate-800/40">
-                                                <td class="py-2.5 px-3 font-mono text-[11px] text-slate-400 whitespace-nowrap">
+                                            <tr class="hover:bg-slate-50">
+                                                <td class="py-2.5 px-3 font-mono text-[11px] text-slate-500 whitespace-nowrap">
                                                     @entry.AppliedAtUtc.ToLocalTime().ToString("MMM d, yyyy HH:mm")
                                                 </td>
                                                 <td class="py-2.5 px-3">
-                                                    <div class="font-semibold text-slate-100">@entry.Title</div>
+                                                    <div class="font-semibold text-slate-700">@entry.Title</div>
                                                     @if (!string.IsNullOrWhiteSpace(entry.Notes))
                                                     {
                                                         <div class="text-[11px] text-slate-400 mt-0.5">Note: @entry.Notes</div>
@@ -963,9 +1049,9 @@
                                                 </td>
                                                 <td class="py-2.5 px-3">
                                                     <span class="px-2 py-0.5 rounded text-[10px] font-bold @GetEffortBadgeClass(entry.EffortTag)">@entry.EffortTag</span>
-                                                    <div class="text-[11px] text-teal-300 mt-1">@entry.EstimatedImpact</div>
+                                                    <div class="text-[11px] text-teal-700 font-semibold mt-1">@entry.EstimatedImpact</div>
                                                 </td>
-                                                <td class="py-2.5 px-3 text-slate-300 whitespace-nowrap">@entry.AppliedByName</td>
+                                                <td class="py-2.5 px-3 text-slate-600 whitespace-nowrap">@entry.AppliedByName</td>
                                             </tr>
                                         }
                                     </tbody>
@@ -973,9 +1059,9 @@
                             </div>
                         }
                     </div>
-                }
+                </div>
             }
-        </section>
+        }
     </div>
 </div>
 
@@ -1246,16 +1332,16 @@
 
     private static string GetSeverityBadgeClass(string severity) => severity.ToLowerInvariant() switch
     {
-        "high" => "bg-rose-500/20 text-rose-300 border border-rose-500/40",
-        "medium" => "bg-amber-500/20 text-amber-300 border border-amber-500/40",
-        "positive" => "bg-emerald-500/20 text-emerald-300 border border-emerald-500/40",
-        _ => "bg-slate-800 text-slate-300 border border-slate-700"
+        "high" => "bg-rose-50 text-rose-700 border border-rose-200",
+        "medium" => "bg-amber-50 text-amber-700 border border-amber-200",
+        "positive" => "bg-emerald-50 text-emerald-700 border border-emerald-200",
+        _ => "bg-slate-100 text-slate-700 border border-slate-200"
     };
 
     private static string GetEffortBadgeClass(string effort) => effort.ToLowerInvariant() switch
     {
-        var e when e.Contains("low") => "bg-emerald-500/15 text-emerald-300 border border-emerald-500/30",
-        var e when e.Contains("high") => "bg-rose-500/15 text-rose-300 border border-rose-500/30",
-        _ => "bg-amber-500/15 text-amber-300 border border-amber-500/30"
+        var e when e.Contains("low") => "bg-emerald-50 text-emerald-700 border border-emerald-200",
+        var e when e.Contains("high") => "bg-rose-50 text-rose-700 border border-rose-200",
+        _ => "bg-amber-50 text-amber-700 border border-amber-200"
     };
 }
