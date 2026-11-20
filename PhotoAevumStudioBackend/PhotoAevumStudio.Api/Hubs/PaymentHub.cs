@@ -17,12 +17,48 @@ public class PaymentHub : Hub
     public const string Route = "/hubs/payments";
     public const string PaymentCompletedEvent = "PaymentCompleted";
     public const string BookingExpiredEvent = "BookingExpired";
+    public const string EventStatusChangedEvent = "EventStatusChanged";
+    public const string LiveMonitorGroup = "live-monitor";
 
     public static string GroupName(string appointmentId) => $"booking-{appointmentId}";
+    public static string CustomerGroupName(string customerId) => $"customer-{customerId}";
 
     private readonly IPendingPaymentService _payments;
 
     public PaymentHub(IPendingPaymentService payments) => _payments = payments;
+
+    /// <summary>Joins the studio-wide live execution monitor group (staff, clerks, and admins only).</summary>
+    public Task JoinLiveMonitor()
+    {
+        var user = Context.User;
+        if (user == null || !IsStudioStaff(user))
+            throw new HubException("Not authorized for live monitor updates.");
+
+        return Groups.AddToGroupAsync(Context.ConnectionId, LiveMonitorGroup);
+    }
+
+    public Task LeaveLiveMonitor() =>
+        Groups.RemoveFromGroupAsync(Context.ConnectionId, LiveMonitorGroup);
+
+    /// <summary>Joins a customer-scoped group to receive real-time status updates across all bookings.</summary>
+    public Task JoinCustomer(string customerId)
+    {
+        if (string.IsNullOrWhiteSpace(customerId))
+            throw new HubException("CustomerId is required.");
+
+        var user = Context.User!;
+        if (!IsStudioStaff(user) && !MatchesUserIdentifier(user, customerId))
+            throw new HubException("Not authorized for this customer channel.");
+
+        return Groups.AddToGroupAsync(Context.ConnectionId, CustomerGroupName(customerId.Trim()));
+    }
+
+    public Task LeaveCustomer(string customerId)
+    {
+        if (string.IsNullOrWhiteSpace(customerId))
+            return Task.CompletedTask;
+        return Groups.RemoveFromGroupAsync(Context.ConnectionId, CustomerGroupName(customerId.Trim()));
+    }
 
     /// <summary>Joins the group for one booking. Only the owning customer (or staff) may subscribe.</summary>
     public async Task JoinBooking(string appointmentId)
@@ -32,15 +68,7 @@ public class PaymentHub : Hub
             throw new HubException("Booking not found.");
 
         var user = Context.User!;
-        var isStaff = user.IsInRole(AppRoles.Admin) || user.IsInRole(AppRoles.SystemAdmin) ||
-                      user.IsInRole(AppRoles.OfficeClerk) || user.IsInRole(AppRoles.Employee);
-        var ids = new[]
-        {
-            user.FindFirstValue(ClaimTypes.NameIdentifier),
-            user.FindFirstValue("studio_id"),
-            user.FindFirstValue("sub")
-        };
-        if (!isStaff && !ids.Any(i => string.Equals(i, info.CustomerId, StringComparison.OrdinalIgnoreCase)))
+        if (!IsStudioStaff(user) && !MatchesUserIdentifier(user, info.CustomerId))
             throw new HubException("Not authorized for this booking.");
 
         await Groups.AddToGroupAsync(Context.ConnectionId, GroupName(appointmentId));
@@ -48,4 +76,19 @@ public class PaymentHub : Hub
 
     public Task LeaveBooking(string appointmentId) =>
         Groups.RemoveFromGroupAsync(Context.ConnectionId, GroupName(appointmentId));
+
+    private static bool IsStudioStaff(ClaimsPrincipal user) =>
+        user.IsInRole(AppRoles.Admin) || user.IsInRole(AppRoles.SystemAdmin) ||
+        user.IsInRole(AppRoles.OfficeClerk) || user.IsInRole(AppRoles.Employee);
+
+    private static bool MatchesUserIdentifier(ClaimsPrincipal user, string targetId)
+    {
+        var ids = new[]
+        {
+            user.FindFirstValue(ClaimTypes.NameIdentifier),
+            user.FindFirstValue("studio_id"),
+            user.FindFirstValue("sub")
+        };
+        return ids.Any(i => string.Equals(i, targetId, StringComparison.OrdinalIgnoreCase));
+    }
 }

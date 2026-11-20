@@ -100,6 +100,12 @@ public class EventBookingModel
         get
         {
             if (IsCompleted) return "Completed";
+            if (Status.Equals("Payment Verification (QR:Pending Payment)", StringComparison.OrdinalIgnoreCase)) return "Payment Verification (QR:Pending Payment)";
+            if (Status.Equals("Payment Verification (Cash)", StringComparison.OrdinalIgnoreCase)) return "Payment Verification (Cash)";
+            if (Status.Equals("Dispatch", StringComparison.OrdinalIgnoreCase)) return "Dispatched";
+            if (Status.Equals("Preparation", StringComparison.OrdinalIgnoreCase) || Status.Equals("Preparing", StringComparison.OrdinalIgnoreCase)) return "Preparation";
+            if (Status.Equals("On Going", StringComparison.OrdinalIgnoreCase) || Status.Equals("Ongoing", StringComparison.OrdinalIgnoreCase)) return "Ongoing";
+            if (Status.Equals("Post Event", StringComparison.OrdinalIgnoreCase) || Status.Equals("Event Done", StringComparison.OrdinalIgnoreCase)) return "Post Event";
             if (IsPendingPayment) return IsConsultation ? "Pending Payment" : "Awaiting Reserve Fee Payment";
             if (IsAppointmentBooked) return "Appointment Booked";
             if (Status.Equals("Pending_Call", StringComparison.OrdinalIgnoreCase)) return "Pending Call";

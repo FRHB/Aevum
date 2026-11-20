@@ -508,6 +508,19 @@ public class PaymentsController : ControllerBase
         try
         {
             var result = await _consultationService.CompleteEventSettlementAsync(request, cancellationToken);
+            try
+            {
+                await _notifier.EventStatusChangedAsync(
+                    result.EventAppointmentId,
+                    result.EventStatus,
+                    result.FinalPaymentStatus,
+                    result.CustomerId,
+                    cancellationToken);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "SignalR EventStatusChanged broadcast failed after CompleteEvent for {AppointmentId}", appointmentId);
+            }
 
             return Ok(result);
         }
@@ -567,6 +580,19 @@ public class PaymentsController : ControllerBase
         try
         {
             var updated = await _consultationService.UpdateTeamLeaderEventStatusAsync(appointmentId, request, cancellationToken);
+            try
+            {
+                await _notifier.EventStatusChangedAsync(
+                    updated.EventAppointmentId,
+                    updated.EventStatus,
+                    updated.FinalPaymentStatus,
+                    updated.CustomerId,
+                    cancellationToken);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "SignalR EventStatusChanged broadcast failed after status update for {AppointmentId}", appointmentId);
+            }
             return Ok(updated);
         }
         catch (KeyNotFoundException ex)
@@ -603,6 +629,19 @@ public class PaymentsController : ControllerBase
         try
         {
             var updated = await _consultationService.MarkEquipmentTakenAsync(appointmentId, request, cancellationToken);
+            try
+            {
+                await _notifier.EventStatusChangedAsync(
+                    updated.EventAppointmentId,
+                    updated.EventStatus,
+                    updated.FinalPaymentStatus,
+                    updated.CustomerId,
+                    cancellationToken);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "SignalR EventStatusChanged broadcast failed after equipment update for {AppointmentId}", appointmentId);
+            }
             return Ok(updated);
         }
         catch (KeyNotFoundException ex)
@@ -635,6 +674,19 @@ public class PaymentsController : ControllerBase
         try
         {
             var updated = await _consultationService.AddAdditionalEquipmentToEventAsync(appointmentId, request, cancellationToken);
+            try
+            {
+                await _notifier.EventStatusChangedAsync(
+                    updated.EventAppointmentId,
+                    updated.EventStatus,
+                    updated.FinalPaymentStatus,
+                    updated.CustomerId,
+                    cancellationToken);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "SignalR EventStatusChanged broadcast failed after add equipment for {AppointmentId}", appointmentId);
+            }
             return Ok(updated);
         }
         catch (KeyNotFoundException ex)
@@ -690,6 +742,19 @@ public class PaymentsController : ControllerBase
             catch (Exception ex)
             {
                 _logger.LogWarning(ex, "Customer Dropbox folder auto-generation failed after cash verification for {AppointmentId}", appointmentId);
+            }
+            try
+            {
+                await _notifier.EventStatusChangedAsync(
+                    updated.EventAppointmentId,
+                    updated.EventStatus,
+                    updated.FinalPaymentStatus,
+                    updated.CustomerId,
+                    cancellationToken);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "SignalR EventStatusChanged broadcast failed after cash verification for {AppointmentId}", appointmentId);
             }
             return Ok(updated);
         }
@@ -1120,7 +1185,13 @@ public class PaymentsController : ControllerBase
             {
                 await _notifier.PaymentCompletedAsync(referenceId, cancellationToken);
             }
-            _logger.LogInformation("SignalR hub successfully broadcasted status change event (PaymentCompleted) for appointment {AppointmentId}.", confirmation.AppointmentId);
+            await _notifier.EventStatusChangedAsync(
+                confirmation.AppointmentId,
+                confirmation.IsFinalPayment ? "Completed" : "Confirmed",
+                confirmation.IsFinalPayment ? "Payment Verification (QR:Paid)" : null,
+                confirmation.CustomerId,
+                cancellationToken);
+            _logger.LogInformation("SignalR hub successfully broadcasted status change event (PaymentCompleted & EventStatusChanged) for appointment {AppointmentId}.", confirmation.AppointmentId);
         }
         catch (Exception ex)
         {

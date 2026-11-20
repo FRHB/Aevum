@@ -6,12 +6,14 @@
 @using PhotoAevumStudio.Web.Services
 @using System.Security.Claims
 @using Microsoft.AspNetCore.Components.Authorization
+@implements IDisposable
 @inject IUserService UserService
 @inject IEmployeeService EmployeeService
 @inject ITimesheetService TimesheetService
 @inject IScheduleService ScheduleService
 @inject IConsultationClient ConsultationApi
 @inject AuthenticationStateProvider AuthStateProvider
+@inject PaymentHubClient PaymentHub
 
 <PageTitle>Admin Dashboard | Photo Aevum Studio</PageTitle>
 
@@ -628,6 +630,81 @@
         // 4. Await parallel async tasks
         var adminClockTask = SafeGetAdminClockStatusAsync();
         await Task.WhenAll(statsTask, attendanceTask, remittancesTask, leavesTask, adminClockTask);
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender) return;
+        PaymentHub.OnEventStatusChanged += HandleHubEventStatusChangedAsync;
+        try { await PaymentHub.EnsureLiveMonitorStartedAsync(); } catch { }
+    }
+
+    private Task HandleHubEventStatusChangedAsync(EventStatusChangedMessage msg) => InvokeAsync(async () =>
+    {
+        ScheduleService.InvalidateCache();
+        RefreshAdminScheduleSnapshot();
+        await LoadPendingRemittancesAsync();
+        StateHasChanged();
+    });
+
+    private void RefreshAdminScheduleSnapshot()
+    {
+        try
+        {
+            _allEvents = ScheduleService.GetEventBookings();
+            _activeConsultations = _allEvents.Count(e =>
+                e.IsConsultation &&
+                !e.IsAppointmentBooked &&
+                !e.IsCompleted &&
+                !string.Equals(e.Status, "Cancelled", StringComparison.OrdinalIgnoreCase) &&
+                !string.Equals(e.Status, "Deal_Lost", StringComparison.OrdinalIgnoreCase));
+
+            var today = DateTime.Today;
+            var nowTime = DateTime.Now.TimeOfDay;
+
+            static bool IsExecutingStatus(EventBookingModel e) =>
+                e.Status.Equals("Ongoing", StringComparison.OrdinalIgnoreCase) ||
+                e.Status.Equals("On Going", StringComparison.OrdinalIgnoreCase) ||
+                e.Status.Equals("In Execution", StringComparison.OrdinalIgnoreCase) ||
+                e.Status.Equals("Ready", StringComparison.OrdinalIgnoreCase) ||
+                e.Status.Equals("Preparation", StringComparison.OrdinalIgnoreCase) ||
+                e.Status.Equals("Preparing", StringComparison.OrdinalIgnoreCase) ||
+                e.Status.Equals("Dispatch", StringComparison.OrdinalIgnoreCase) ||
+                e.Status.Equals("Post Event", StringComparison.OrdinalIgnoreCase) ||
+                e.Status.Equals("Event Done", StringComparison.OrdinalIgnoreCase) ||
+                e.Status.Equals("Payment Verification (Cash)", StringComparison.OrdinalIgnoreCase) ||
+                e.Status.Equals("Paid Cash Pending Verification", StringComparison.OrdinalIgnoreCase) ||
+                e.Status.Equals("Pending Verification", StringComparison.OrdinalIgnoreCase);
+
+            static bool IsInactiveOrFinished(EventBookingModel e) =>
+                e.IsCompleted ||
+                string.Equals(e.Status, "Cancelled", StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(e.Status, "Expired", StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(e.Status, "Deal_Lost", StringComparison.OrdinalIgnoreCase);
+
+            _liveEvents = _allEvents
+                .Where(e => !IsInactiveOrFinished(e))
+                .Where(e => IsExecutingStatus(e) || (e.Date.Date == today && nowTime >= e.StartTime && nowTime < e.EffectiveEndTime))
+                .OrderBy(e => e.Date.Date)
+                .ThenBy(e => e.StartTime)
+                .ToList();
+
+            _upcomingEvents = _liveEvents.Any()
+                ? new List<EventBookingModel>()
+                : _allEvents
+                    .Where(e => !IsInactiveOrFinished(e))
+                    .Where(e => (e.Date.Date == today && e.StartTime > nowTime) || (e.Date.Date > today))
+                    .OrderBy(e => e.Date.Date)
+                    .ThenBy(e => e.StartTime)
+                    .Take(1)
+                    .ToList();
+        }
+        catch { }
+    }
+
+    public void Dispose()
+    {
+        PaymentHub.OnEventStatusChanged -= HandleHubEventStatusChangedAsync;
     }
 
     private async Task LoadPendingLeavesAsync()

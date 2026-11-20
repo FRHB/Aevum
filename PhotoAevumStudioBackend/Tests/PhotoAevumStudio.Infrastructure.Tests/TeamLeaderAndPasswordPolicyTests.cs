@@ -314,4 +314,47 @@ public class TeamLeaderAndPasswordPolicyTests
         Assert.Equal("active-amber", cashPendingSteps[4].State);
         Assert.Equal("Payment Verification (Cash)", cashPendingSteps[4].Label);
     }
+
+    [Fact]
+    public void PaymentNotifierInterface_ExposesEventStatusChangedAsync_ForCrossPlatformBroadcast()
+    {
+        var method = typeof(PhotoAevumStudio.Application.Interfaces.IPaymentNotifier)
+            .GetMethod(nameof(PhotoAevumStudio.Application.Interfaces.IPaymentNotifier.EventStatusChangedAsync));
+
+        Assert.NotNull(method);
+        var parameters = method!.GetParameters();
+        Assert.Equal(5, parameters.Length);
+        Assert.Equal("appointmentId", parameters[0].Name);
+        Assert.Equal("eventStatus", parameters[1].Name);
+        Assert.Equal("finalPaymentStatus", parameters[2].Name);
+        Assert.Equal("customerId", parameters[3].Name);
+    }
+
+    [Fact]
+    public void ConsultationNegotiationService_TeamLeaderQueries_AvoidDistinctOrderByErrorAndShareFallback()
+    {
+        var dir = new DirectoryInfo(AppContext.BaseDirectory);
+        while (dir is not null && !File.Exists(Path.Combine(dir.FullName, "PhotoAevumStudio.slnx")))
+        {
+            dir = dir.Parent;
+        }
+        var root = dir?.FullName ?? throw new DirectoryNotFoundException("Could not locate repository root.");
+        var servicePath = Path.Combine(root, "PhotoAevumStudioBackend", "PhotoAevumStudio.Infrastructure", "Services", "ConsultationNegotiationService.cs");
+        var source = File.ReadAllText(servicePath);
+
+        var getIdx = source.IndexOf("public async Task<IReadOnlyList<TeamLeaderEventDto>> GetTeamLeaderEventsAsync", StringComparison.Ordinal);
+        var nextIdx = source.IndexOf("public async Task<EventAppointmentDto> UpdateTeamLeaderEventStatusAsync", getIdx, StringComparison.Ordinal);
+        var getSection = source[getIdx..nextIdx];
+
+        Assert.DoesNotContain("SELECT DISTINCT", getSection, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("EXISTS (", getSection);
+        Assert.Contains("ORDER BY eeFirst.EmployeeID ASC", getSection);
+
+        var isTlIdx = source.IndexOf("public async Task<bool> IsTeamLeaderForEventAsync", StringComparison.Ordinal);
+        var autoIdx = source.IndexOf("public async Task<int> AutoTriggerPostEventsAsync", isTlIdx, StringComparison.Ordinal);
+        var isTlSection = source[isTlIdx..autoIdx];
+
+        Assert.Contains("FROM dbo.EventAppointment ea", isTlSection);
+        Assert.Contains("ORDER BY eeFirst.EmployeeID ASC", isTlSection);
+    }
 }

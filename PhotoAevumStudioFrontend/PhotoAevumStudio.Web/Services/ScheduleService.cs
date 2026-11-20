@@ -449,17 +449,20 @@ public class ScheduleService : IScheduleService
 
             bool hasGranularCols = false;
             bool hasLocationCol = false;
+            bool hasFinalPayCols = false;
             try
             {
                 using var chkCmd = new SqlCommand(@"
                     SELECT
                         CASE WHEN COL_LENGTH(N'dbo.EventAppointment', N'EventEndTime') IS NOT NULL AND COL_LENGTH(N'dbo.EventAppointment', N'DurationMinutes') IS NOT NULL THEN 1 ELSE 0 END,
-                        CASE WHEN COL_LENGTH(N'dbo.EventAppointment', N'EventLocation') IS NOT NULL THEN 1 ELSE 0 END;", conn);
+                        CASE WHEN COL_LENGTH(N'dbo.EventAppointment', N'EventLocation') IS NOT NULL THEN 1 ELSE 0 END,
+                        CASE WHEN COL_LENGTH(N'dbo.EventAppointment', N'FinalPaymentStatus') IS NOT NULL AND COL_LENGTH(N'dbo.EventAppointment', N'FinalPaymentReferenceId') IS NOT NULL THEN 1 ELSE 0 END;", conn);
                 using var chkReader = chkCmd.ExecuteReader();
                 if (chkReader.Read())
                 {
                     hasGranularCols = chkReader.GetInt32(0) == 1;
                     hasLocationCol = chkReader.GetInt32(1) == 1;
+                    hasFinalPayCols = chkReader.GetInt32(2) == 1;
                 }
             }
             catch { }
@@ -472,6 +475,14 @@ public class ScheduleService : IScheduleService
                 ? "ea.EventLocation,"
                 : "CAST(NULL AS nvarchar(255)) AS EventLocation,";
 
+            var statusSelect = hasFinalPayCols
+                ? @"CASE
+                        WHEN ea.EventStatus = 'Pending Payment' AND NULLIF(ea.FinalPaymentReferenceId, '') IS NOT NULL
+                            THEN COALESCE(NULLIF(ea.FinalPaymentStatus, ''), 'Payment Verification (QR:Pending Payment)')
+                        ELSE ea.EventStatus
+                    END AS EventStatus,"
+                : "ea.EventStatus,";
+
             string sql = $@"
                 SELECT ea.EventAppointmentID,
                        ea.EventName,
@@ -482,7 +493,7 @@ public class ScheduleService : IScheduleService
                        c.CustomerPhoneNumber,
                        CAST(ea.EventDate AS datetime2) AS EventDate,
                        ea.EventTime,
-                       ea.EventStatus,
+                       {statusSelect}
                        leadEmp.EmployeeID,
                        COALESCE(leadEmp.EmployeeName, 'Unassigned') AS EmployeeName,
                        CAST(0 AS bit) AS IsConsultation,
@@ -864,9 +875,16 @@ public class ScheduleService : IScheduleService
 
                         IF NOT EXISTS (SELECT 1 FROM dbo.EventEmployee WHERE EventAppointmentID = @ApptId AND EmployeeID = @EmpId)
                         BEGIN
-                            INSERT INTO dbo.EventEmployee (EventAppointmentID, EmployeeID)
-                            VALUES (@ApptId, @EmpId);
+                            IF COL_LENGTH(N'dbo.EventEmployee', N'IsTeamLeader') IS NOT NULL
+                                INSERT INTO dbo.EventEmployee (EventAppointmentID, EmployeeID, IsTeamLeader)
+                                VALUES (@ApptId, @EmpId, 1);
+                            ELSE
+                                INSERT INTO dbo.EventEmployee (EventAppointmentID, EmployeeID)
+                                VALUES (@ApptId, @EmpId);
                         END
+                        UPDATE dbo.EventAppointment
+                        SET EmployeeID = COALESCE(NULLIF(LTRIM(RTRIM(EmployeeID)), ''), @EmpId)
+                        WHERE EventAppointmentID = @ApptId;
                     END";
 
                 using var assignCmd = new SqlCommand(assignSql, conn);
@@ -1022,8 +1040,15 @@ public class ScheduleService : IScheduleService
                         END;
 
                         DELETE FROM dbo.EventEmployee WHERE EventAppointmentID = @ApptId;
-                        INSERT INTO dbo.EventEmployee (EventAppointmentID, EmployeeID)
-                        VALUES (@ApptId, @EmpId);
+                        IF COL_LENGTH(N'dbo.EventEmployee', N'IsTeamLeader') IS NOT NULL
+                            INSERT INTO dbo.EventEmployee (EventAppointmentID, EmployeeID, IsTeamLeader)
+                            VALUES (@ApptId, @EmpId, 1);
+                        ELSE
+                            INSERT INTO dbo.EventEmployee (EventAppointmentID, EmployeeID)
+                            VALUES (@ApptId, @EmpId);
+                        UPDATE dbo.EventAppointment
+                        SET EmployeeID = @EmpId
+                        WHERE EventAppointmentID = @ApptId;
                     END";
 
                 using var reassignCmd = new SqlCommand(reassignSql, conn);

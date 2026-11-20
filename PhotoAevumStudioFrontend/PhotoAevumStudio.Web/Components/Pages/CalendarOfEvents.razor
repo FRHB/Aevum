@@ -13,6 +13,7 @@
 @inject IUserService UserService
 @inject IEmployeeService EmployeeService
 @inject IJSRuntime JS
+@inject PaymentHubClient PaymentHub
 
 <PageTitle>Calendar of Events | Aevum Studio</PageTitle>
 
@@ -780,6 +781,8 @@
         if (firstRender && !_hasLoadedInitialData)
         {
             _hasLoadedInitialData = true;
+            PaymentHub.OnEventStatusChanged += HandleHubEventStatusChangedAsync;
+            try { await PaymentHub.EnsureLiveMonitorStartedAsync(); } catch { }
 
             await Task.Run(() =>
             {
@@ -1407,8 +1410,16 @@
         }
     }
 
+    private Task HandleHubEventStatusChangedAsync(EventStatusChangedMessage _) => InvokeAsync(async () =>
+    {
+        ScheduleService.InvalidateCache();
+        await LoadBookingsForCurrentViewAsync(forceReload: true);
+        StateHasChanged();
+    });
+
     public void Dispose()
     {
+        PaymentHub.OnEventStatusChanged -= HandleHubEventStatusChangedAsync;
         _debounceTimer?.Dispose();
         _highlightTimer?.Dispose();
     }

@@ -70,6 +70,8 @@ public class PendingPaymentExpiryService : BackgroundService
             if (autoTriggered > 0)
             {
                 _logger.LogInformation("Auto-triggered Post Event for {Count} ongoing event(s) 1 hour after scheduled start.", autoTriggered);
+                try { await notifier.EventStatusChangedAsync("*", "Post Event", null, null, ct); }
+                catch (Exception ex) { _logger.LogWarning(ex, "SignalR broadcast failed after auto-triggering Post Event."); }
             }
         }
         catch (Exception ex)

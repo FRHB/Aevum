@@ -92,6 +92,7 @@
     private bool? _cachedIsPhotographerOrCreative;
     private int _teamLeadEventCount;
     private bool _checkedTeamLeadEvents;
+    private PaymentHubClient? _paymentHub;
 
     public bool IsSystemAdmin => EmployeeRoleHelper.IsSystemAdmin(_currentUser) ||
         (_currentUser == null && ((UserRole ?? "").Trim().Equals("systemadmin", StringComparison.OrdinalIgnoreCase) ||
@@ -153,8 +154,19 @@
     {
         if (!firstRender || _checkedTeamLeadEvents) return;
         _checkedTeamLeadEvents = true;
+
+        var hub = ServiceProvider?.GetService<PaymentHubClient>();
+        if (hub != null && _paymentHub == null)
+        {
+            _paymentHub = hub;
+            _paymentHub.OnEventStatusChanged += HandleSidebarEventStatusChangedAsync;
+        }
+
         await RefreshTeamLeadEventCountAsync();
     }
+
+    private Task HandleSidebarEventStatusChangedAsync(EventStatusChangedMessage _) =>
+        InvokeAsync(RefreshTeamLeadEventCountAsync);
 
     private async Task RefreshTeamLeadEventCountAsync()
     {
@@ -193,9 +205,13 @@
     {
         _isMobileOpen = false;
         AutoExpandActiveAccordion();
-        _ = InvokeAsync(() =>
+        _ = InvokeAsync(async () =>
         {
-            try { StateHasChanged(); }
+            try
+            {
+                await RefreshTeamLeadEventCountAsync();
+                StateHasChanged();
+            }
             catch { /* Component or circuit may be disposed during rapid navigation */ }
         });
     }
@@ -203,6 +219,10 @@
     public void Dispose()
     {
         Nav.LocationChanged -= OnLocationChanged;
+        if (_paymentHub != null)
+        {
+            _paymentHub.OnEventStatusChanged -= HandleSidebarEventStatusChangedAsync;
+        }
     }
 
     private void ToggleMobile()

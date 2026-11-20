@@ -2221,10 +2221,10 @@ public class ConsultationNegotiationService : IConsultationNegotiationService
                 EventDate = DateOnly.FromDateTime(reader.GetDateTime(7)),
                 EventTime = TimeOnly.FromTimeSpan(reader.GetFieldValue<TimeSpan>(8)),
                 EventStatus = reader.GetString(9),
-                TotalAmount = reader.GetDecimal(10),
-                DownpaymentAmount = reader.GetDecimal(11),
-                FinalBalanceAmount = reader.GetDecimal(12),
-                DownpaymentStatus = reader.GetString(13),
+                TotalAmount = reader.IsDBNull(10) ? 0m : reader.GetDecimal(10),
+                DownpaymentAmount = reader.IsDBNull(11) ? 0m : reader.GetDecimal(11),
+                FinalBalanceAmount = reader.IsDBNull(12) ? 0m : reader.GetDecimal(12),
+                DownpaymentStatus = reader.IsDBNull(13) ? "Pending" : reader.GetString(13),
                 HoldExpiresAt = reader.IsDBNull(14) ? null : reader.GetDateTime(14),
                 XenditInvoiceId = invoiceId,
                 XenditExternalId = externalId,
@@ -2297,7 +2297,7 @@ public class ConsultationNegotiationService : IConsultationNegotiationService
                     HourlyRate = reader.GetDecimal(3),
                     SurchargeAmount = reader.GetDecimal(4),
                     Notes = reader.IsDBNull(5) ? null : reader.GetString(5),
-                    LoggedByEmployeeId = reader.GetString(6),
+                    LoggedByEmployeeId = reader.IsDBNull(6) ? string.Empty : reader.GetString(6),
                     CreatedAt = reader.GetDateTime(7)
                 });
             }
@@ -4984,23 +4984,47 @@ var invId = invoiceId ?? appt.XenditInvoiceId ?? $"inv_mock_{appointmentId}";
         await AutoTriggerPostEventsOnConnectionAsync(conn, cancellationToken);
 
         const string sql = @"
-            SELECT DISTINCT
+            SELECT
                 ea.EventAppointmentID,
                 ea.EventDate,
                 ea.EventTime,
                 ISNULL(c.CustomerPhoneNumber, '') AS CustomerPhone
             FROM dbo.EventAppointment ea
-            LEFT JOIN dbo.EventEmployee ee ON ee.EventAppointmentID = ea.EventAppointmentID
             LEFT JOIN dbo.Customer c ON c.CustomerID = ea.CustomerID
             WHERE (
-                    (ISNULL(ee.IsTeamLeader, 0) = 1
-                     AND (@EmpId IS NULL OR LTRIM(RTRIM(@EmpId)) = '' OR LTRIM(RTRIM(ee.EmployeeID)) = LTRIM(RTRIM(@EmpId))))
-                    OR (NOT EXISTS (
-                            SELECT 1 FROM dbo.EventEmployee eeTl
+                    EXISTS (
+                        SELECT 1
+                        FROM dbo.EventEmployee ee
+                        WHERE ee.EventAppointmentID = ea.EventAppointmentID
+                          AND ISNULL(ee.IsTeamLeader, 0) = 1
+                          AND (@EmpId IS NULL OR LTRIM(RTRIM(@EmpId)) = '' OR LTRIM(RTRIM(ee.EmployeeID)) = LTRIM(RTRIM(@EmpId)))
+                    )
+                    OR (
+                        NOT EXISTS (
+                            SELECT 1
+                            FROM dbo.EventEmployee eeTl
                             WHERE eeTl.EventAppointmentID = ea.EventAppointmentID
                               AND ISNULL(eeTl.IsTeamLeader, 0) = 1
                         )
-                        AND (@EmpId IS NULL OR LTRIM(RTRIM(@EmpId)) = '' OR LTRIM(RTRIM(ea.EmployeeID)) = LTRIM(RTRIM(@EmpId))))
+                        AND (
+                            (@EmpId IS NULL OR LTRIM(RTRIM(@EmpId)) = '')
+                            OR LTRIM(RTRIM(ISNULL(ea.EmployeeID, ''))) = LTRIM(RTRIM(@EmpId))
+                            OR (
+                                NOT EXISTS (
+                                    SELECT 1
+                                    FROM dbo.EventEmployee eeMatch
+                                    WHERE eeMatch.EventAppointmentID = ea.EventAppointmentID
+                                      AND LTRIM(RTRIM(eeMatch.EmployeeID)) = LTRIM(RTRIM(ISNULL(ea.EmployeeID, '')))
+                                )
+                                AND (
+                                    SELECT TOP 1 LTRIM(RTRIM(eeFirst.EmployeeID))
+                                    FROM dbo.EventEmployee eeFirst
+                                    WHERE eeFirst.EventAppointmentID = ea.EventAppointmentID
+                                    ORDER BY eeFirst.EmployeeID ASC
+                                ) = LTRIM(RTRIM(@EmpId))
+                            )
+                        )
+                    )
                   )
               AND ISNULL(ea.EventStatus, '') NOT IN ('Cancelled', 'Expired', 'Delivered', 'Complete', 'Completed', 'Shot')
               AND ISNULL(ea.FinalPaymentStatus, '') NOT IN ('Paid', 'Payment Verification (QR:Paid)')
@@ -5105,17 +5129,17 @@ var invId = invoiceId ?? appt.XenditInvoiceId ?? $"inv_mock_{appointmentId}";
             var s when s.Equals("Early", StringComparison.OrdinalIgnoreCase) => "Preparing",
             var s when s.Equals("Late", StringComparison.OrdinalIgnoreCase) => "Preparing",
             var s when s.Equals("Confirmed", StringComparison.OrdinalIgnoreCase) => "Confirmed",
-            var s when s.Equals("Preparation", StringComparison.OrdinalIgnoreCase) => "Preparation",
+            var s when s.Equals("Preparation", StringComparison.OrdinalIgnoreCase) || s.Equals("Start Event", StringComparison.OrdinalIgnoreCase) => "Preparation",
             var s when s.Equals("Preparing", StringComparison.OrdinalIgnoreCase) => "Preparing",
-            var s when s.Equals("Dispatch", StringComparison.OrdinalIgnoreCase) => "Dispatch",
-            var s when s.Equals("Ongoing", StringComparison.OrdinalIgnoreCase) || s.Equals("Event Started", StringComparison.OrdinalIgnoreCase) => "Ongoing",
+            var s when s.Equals("Dispatch", StringComparison.OrdinalIgnoreCase) || s.Equals("Dispatched", StringComparison.OrdinalIgnoreCase) => "Dispatch",
+            var s when s.Equals("Ongoing", StringComparison.OrdinalIgnoreCase) || s.Equals("Event Started", StringComparison.OrdinalIgnoreCase) || s.Equals("Event Start", StringComparison.OrdinalIgnoreCase) || s.Equals("EventStart", StringComparison.OrdinalIgnoreCase) => "Ongoing",
             var s when s.Equals("On Going", StringComparison.OrdinalIgnoreCase) => "On Going",
             var s when s.Equals("Event Done", StringComparison.OrdinalIgnoreCase) || s.Equals("EventDone", StringComparison.OrdinalIgnoreCase) => "Event Done",
             var s when s.Equals("Post Event", StringComparison.OrdinalIgnoreCase) || s.Equals("PostEvent", StringComparison.OrdinalIgnoreCase) => "Post Event",
             var s when s.Equals("Pending Payment", StringComparison.OrdinalIgnoreCase) || s.Equals("PendingPayment", StringComparison.OrdinalIgnoreCase) => "Pending Payment",
             var s when s.Equals("Complete", StringComparison.OrdinalIgnoreCase) => "Complete",
-            var s when s.Equals("Completed", StringComparison.OrdinalIgnoreCase) => "Completed",
-            _ => throw new ArgumentException($"Unsupported Team Leader event stage: '{request.Status}'. Allowed stages: Early, Late, Preparing, Ongoing, Event Done, Pending Payment.")
+            var s when s.Equals("Completed", StringComparison.OrdinalIgnoreCase) || s.Equals("Success", StringComparison.OrdinalIgnoreCase) => "Completed",
+            _ => throw new ArgumentException($"Unsupported Team Leader event stage: '{request.Status}'. Allowed stages: Early, Late, Preparation, Preparing, Dispatched, Ongoing, Event Done, Post Event, Pending Payment.")
         };
 
         var effectiveArrival = !string.IsNullOrWhiteSpace(request.ArrivalStatus)
@@ -5481,10 +5505,42 @@ var invId = invoiceId ?? appt.XenditInvoiceId ?? $"inv_mock_{appointmentId}";
         await using var conn = await OpenConnectionAsync(cancellationToken);
         const string sql = @"
             SELECT COUNT(1)
-            FROM dbo.EventEmployee
-            WHERE EventAppointmentID = @EvtId
-              AND EmployeeID = @EmpId
-              AND ISNULL(IsTeamLeader, 0) = 1;";
+            FROM dbo.EventAppointment ea
+            WHERE ea.EventAppointmentID = @EvtId
+              AND (
+                    EXISTS (
+                        SELECT 1
+                        FROM dbo.EventEmployee ee
+                        WHERE ee.EventAppointmentID = ea.EventAppointmentID
+                          AND LTRIM(RTRIM(ee.EmployeeID)) = LTRIM(RTRIM(@EmpId))
+                          AND ISNULL(ee.IsTeamLeader, 0) = 1
+                    )
+                    OR (
+                        NOT EXISTS (
+                            SELECT 1
+                            FROM dbo.EventEmployee eeTl
+                            WHERE eeTl.EventAppointmentID = ea.EventAppointmentID
+                              AND ISNULL(eeTl.IsTeamLeader, 0) = 1
+                        )
+                        AND (
+                            LTRIM(RTRIM(ISNULL(ea.EmployeeID, ''))) = LTRIM(RTRIM(@EmpId))
+                            OR (
+                                NOT EXISTS (
+                                    SELECT 1
+                                    FROM dbo.EventEmployee eeMatch
+                                    WHERE eeMatch.EventAppointmentID = ea.EventAppointmentID
+                                      AND LTRIM(RTRIM(eeMatch.EmployeeID)) = LTRIM(RTRIM(ISNULL(ea.EmployeeID, '')))
+                                )
+                                AND (
+                                    SELECT TOP 1 LTRIM(RTRIM(eeFirst.EmployeeID))
+                                    FROM dbo.EventEmployee eeFirst
+                                    WHERE eeFirst.EventAppointmentID = ea.EventAppointmentID
+                                    ORDER BY eeFirst.EmployeeID ASC
+                                ) = LTRIM(RTRIM(@EmpId))
+                            )
+                        )
+                    )
+                  );";
         await using var cmd = new SqlCommand(sql, conn);
         cmd.Parameters.AddWithValue("@EvtId", appointmentId);
         cmd.Parameters.AddWithValue("@EmpId", employeeId);

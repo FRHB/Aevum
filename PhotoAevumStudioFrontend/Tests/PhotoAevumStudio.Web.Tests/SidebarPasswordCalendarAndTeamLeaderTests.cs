@@ -401,4 +401,63 @@ public class SidebarPasswordCalendarAndTeamLeaderTests
         Assert.Equal("EVT-3", filtered[1].EventAppointmentId);
         Assert.Equal(5, PhotoAevumStudio.Web.Models.TeamLeaderMonitorSelector.GetProcessSteps(filtered[0]).Count);
     }
+
+    [Fact]
+    public void TeamLeaderTopPillContainer_And_CrossPlatformLiveSync_AreWiredCorrectly()
+    {
+        var root = GetRepositoryRoot();
+        var webRoot = Path.Combine(root, "PhotoAevumStudioFrontend", "PhotoAevumStudio.Web");
+        var sharedDir = Path.Combine(webRoot, "Components", "Shared");
+        var pagesDir = Path.Combine(webRoot, "Components", "Pages");
+
+        var pillRazor = File.ReadAllText(Path.Combine(sharedDir, "TeamLeaderActiveEventPill.razor"));
+        var monitorPage = File.ReadAllText(Path.Combine(pagesDir, "TeamLeadMonitor.razor"));
+        var staffDashboard = File.ReadAllText(Path.Combine(pagesDir, "StaffDashboard.razor"));
+        var livePanel = File.ReadAllText(Path.Combine(sharedDir, "LiveEventsOverviewPanel.razor"));
+        var adminDashboard = File.ReadAllText(Path.Combine(pagesDir, "AdminDashboard.razor"));
+        var customerDashboard = File.ReadAllText(Path.Combine(pagesDir, "CustomerDashboard.razor"));
+        var myBookings = File.ReadAllText(Path.Combine(pagesDir, "MyBookings.razor"));
+        var calendar = File.ReadAllText(Path.Combine(pagesDir, "CalendarOfEvents.razor"));
+        var hubClient = File.ReadAllText(Path.Combine(webRoot, "Services", "PaymentHubClient.cs"));
+
+        // Top pill box container renders Customer, Event, Location, Services, Time, Equipment Verification, Add More Equipment, bottom-right Dispatched, Event Start, Post Event, Cash & QR
+        Assert.Contains("Customer", pillRazor);
+        Assert.Contains("Location", pillRazor);
+        Assert.Contains("Services", pillRazor);
+        Assert.Contains("Equipment Dispatch", pillRazor);
+        Assert.Contains("Verify Equipment", pillRazor);
+        Assert.Contains("Add More Equipment", pillRazor);
+        Assert.Contains("Dispatched", pillRazor);
+        Assert.Contains("Event Start", pillRazor);
+        Assert.Contains("Post Event", pillRazor);
+        Assert.Contains("Cash", pillRazor);
+        Assert.Contains("QR Payment", pillRazor);
+
+        // Team Leader monitor & StaffDashboard render the top pill container and Start Event button
+        Assert.Contains("TeamLeaderActiveEventPill", monitorPage);
+        Assert.Contains("Start Event", monitorPage);
+        Assert.Contains("TeamLeaderActiveEventPill", staffDashboard);
+        Assert.Contains("Start Event", staffDashboard);
+
+        // Admin & Clerk Live Monitor has Confirm Cash Verification and SignalR live sync
+        Assert.Contains("Confirm Cash Verification", livePanel);
+        Assert.Contains("EnsureLiveMonitorStartedAsync", livePanel);
+        Assert.Contains("OnEventStatusChanged", livePanel);
+
+        // Real-time SignalR sync across Admin, Calendar, and Customer portals
+        Assert.Contains("EnsureLiveMonitorStartedAsync", hubClient);
+        Assert.Contains("EnsureCustomerMonitorStartedAsync", hubClient);
+        Assert.Contains("OnEventStatusChanged", adminDashboard);
+        Assert.Contains("OnEventStatusChanged", calendar);
+        Assert.Contains("EnsureCustomerMonitorStartedAsync", customerDashboard);
+        Assert.Contains("EnsureCustomerMonitorStartedAsync", myBookings);
+
+        // StaffDashboard Upcoming Events row exposes Team Leader Start / Monitor controls and surfaces API errors
+        Assert.Contains("IsTeamLeaderForBooking", staffDashboard);
+        Assert.Contains("★ Team Leader", staffDashboard);
+        Assert.Contains("RefreshTeamLeaderEventsInternalAsync(surfaceError: true)", staffDashboard);
+
+        var sidebar = File.ReadAllText(Path.Combine(webRoot, "Components", "Layout", "Sidebar.razor"));
+        Assert.Contains("HandleSidebarEventStatusChangedAsync", sidebar);
+    }
 }

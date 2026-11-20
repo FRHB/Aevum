@@ -9,6 +9,8 @@
 @inject IConsultationClient ConsultationApi
 @inject IScheduleService ScheduleService
 @inject BookingEvents Events
+@inject AuthenticationStateProvider AuthStateProvider
+@inject PaymentHubClient PaymentHub
 @rendermode InteractiveServer
 @attribute [Authorize(Roles = "Customer")]
 
@@ -264,9 +266,44 @@
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
         if (!firstRender) return;
+        PaymentHub.OnEventStatusChanged += HandleHubEventStatusChangedAsync;
         await LoadBookingsAsync();
+        await SubscribeCustomerHubAsync();
         StateHasChanged();
     }
+
+    private async Task SubscribeCustomerHubAsync()
+    {
+        try
+        {
+            var auth = await AuthStateProvider.GetAuthenticationStateAsync();
+            var u = auth.User;
+            var custId = u.FindFirst("studio_id")?.Value
+                ?? u.FindFirst(ClaimTypes.NameIdentifier)?.Value
+                ?? u.FindFirst("sub")?.Value;
+            if (string.IsNullOrWhiteSpace(custId))
+                custId = _customerEvents.FirstOrDefault()?.CustomerId;
+
+            if (!string.IsNullOrWhiteSpace(custId))
+                await PaymentHub.EnsureCustomerMonitorStartedAsync(custId);
+
+            foreach (var ev in _customerEvents)
+            {
+                if (!string.IsNullOrWhiteSpace(ev.FinalPaymentReferenceId))
+                    await PaymentHub.JoinBookingGroupAsync(ev.FinalPaymentReferenceId);
+            }
+        }
+        catch
+        {
+        }
+    }
+
+    private Task HandleHubEventStatusChangedAsync(EventStatusChangedMessage _) => InvokeAsync(async () =>
+    {
+        ScheduleService.InvalidateCache();
+        await LoadBookingsAsync();
+        StateHasChanged();
+    });
 
     private async Task LoadBookingsAsync()
     {
@@ -364,14 +401,14 @@
             return "Completed";
         }
         if (string.Equals(appt.EventStatus, "Preparing", StringComparison.OrdinalIgnoreCase) ||
-            string.Equals(appt.EventStatus, "Preparation", StringComparison.OrdinalIgnoreCase) ||
-            string.Equals(appt.EventStatus, "Dispatch", StringComparison.OrdinalIgnoreCase)) return "Preparing";
+            string.Equals(appt.EventStatus, "Preparation", StringComparison.OrdinalIgnoreCase)) return "Preparation";
+        if (string.Equals(appt.EventStatus, "Dispatch", StringComparison.OrdinalIgnoreCase)) return "Dispatched";
         if (string.Equals(appt.EventStatus, "Ready", StringComparison.OrdinalIgnoreCase)) return "Ready";
         if (string.Equals(appt.EventStatus, "On Going", StringComparison.OrdinalIgnoreCase) ||
             string.Equals(appt.EventStatus, "Ongoing", StringComparison.OrdinalIgnoreCase) ||
             string.Equals(appt.EventStatus, "In Execution", StringComparison.OrdinalIgnoreCase)) return "Ongoing";
-        if (string.Equals(appt.EventStatus, "Post Event", StringComparison.OrdinalIgnoreCase) ||
-            string.Equals(appt.EventStatus, "Event Done", StringComparison.OrdinalIgnoreCase)) return "Event Done";
+        if (string.Equals(appt.EventStatus, "Post Event", StringComparison.OrdinalIgnoreCase)) return "Post Event";
+        if (string.Equals(appt.EventStatus, "Event Done", StringComparison.OrdinalIgnoreCase)) return "Event Done";
         return appt.EventStatus;
     }
 
@@ -381,6 +418,7 @@
         if (string.Equals(display, "Completed", StringComparison.OrdinalIgnoreCase) ||
             string.Equals(display, "Complete", StringComparison.OrdinalIgnoreCase) ||
             string.Equals(display, "Ongoing", StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(display, "Post Event", StringComparison.OrdinalIgnoreCase) ||
             string.Equals(display, "Event Done", StringComparison.OrdinalIgnoreCase))
             return false;
 
@@ -512,6 +550,7 @@
 
     public void Dispose()
     {
+        PaymentHub.OnEventStatusChanged -= HandleHubEventStatusChangedAsync;
         Events.Changed -= OnBookingsChanged;
         _countdownTimer?.Dispose();
     }

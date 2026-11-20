@@ -1,0 +1,839 @@
+@using PhotoAevumStudio.Web.Models
+@using PhotoAevumStudio.Web.Services
+@using QRCoder
+@inject IConsultationClient ConsultationApi
+@inject IScheduleService ScheduleService
+@inject NavigationManager Nav
+@inject IConfiguration Config
+@inject IWebHostEnvironment Env
+
+@if (DisplayEvents.Any())
+{
+    var ev = SelectedEvent ?? DisplayEvents[0];
+    var isCompletedSuccess = TeamLeaderMonitorSelector.IsCompletedOrInactive(ev);
+    var isCashPendingVerif = !isCompletedSuccess &&
+                             (string.Equals(ev.EventStatus, "Payment Verification (Cash)", StringComparison.OrdinalIgnoreCase)
+                              || string.Equals(ev.EventStatus, "Pending Verification", StringComparison.OrdinalIgnoreCase)
+                              || string.Equals(ev.EventStatus, "Paid Cash Pending Verification", StringComparison.OrdinalIgnoreCase)
+                              || string.Equals(ev.FinalPaymentStatus, "Payment Verification (Cash)", StringComparison.OrdinalIgnoreCase)
+                              || string.Equals(ev.FinalPaymentStatus, "Pending Verification", StringComparison.OrdinalIgnoreCase));
+    var isQrPaid = string.Equals(ev.FinalPaymentStatus, "Payment Verification (QR:Paid)", StringComparison.OrdinalIgnoreCase)
+                   || (string.Equals(ev.FinalPaymentMethod, "Xendit_QR", StringComparison.OrdinalIgnoreCase)
+                       && (string.Equals(ev.FinalPaymentStatus, "Paid", StringComparison.OrdinalIgnoreCase)
+                           || isCompletedSuccess));
+    var isQrPending = !isCompletedSuccess && !isCashPendingVerif
+                      && (string.Equals(ev.FinalPaymentStatus, "Payment Verification (QR:Pending Payment)", StringComparison.OrdinalIgnoreCase)
+                          || (string.Equals(ev.FinalPaymentMethod, "Xendit_QR", StringComparison.OrdinalIgnoreCase)
+                              && !string.IsNullOrWhiteSpace(ev.FinalPaymentReferenceId)));
+    var isPreparing = !isCompletedSuccess && !isCashPendingVerif && !isQrPending
+                      && (string.Equals(ev.EventStatus, "Preparation", StringComparison.OrdinalIgnoreCase)
+                          || string.Equals(ev.EventStatus, "Preparing", StringComparison.OrdinalIgnoreCase)
+                          || string.Equals(ev.EventStatus, "Ready", StringComparison.OrdinalIgnoreCase));
+    var isDispatched = !isCompletedSuccess && !isCashPendingVerif && !isQrPending
+                       && string.Equals(ev.EventStatus, "Dispatch", StringComparison.OrdinalIgnoreCase);
+    var isOngoing = !isCompletedSuccess && !isCashPendingVerif && !isQrPending
+                    && (string.Equals(ev.EventStatus, "Ongoing", StringComparison.OrdinalIgnoreCase)
+                        || string.Equals(ev.EventStatus, "On Going", StringComparison.OrdinalIgnoreCase)
+                        || string.Equals(ev.EventStatus, "In Execution", StringComparison.OrdinalIgnoreCase));
+    var isPostEvent = !isCompletedSuccess && !isCashPendingVerif && !isQrPending
+                      && (string.Equals(ev.EventStatus, "Post Event", StringComparison.OrdinalIgnoreCase)
+                          || string.Equals(ev.EventStatus, "Event Done", StringComparison.OrdinalIgnoreCase)
+                          || string.Equals(ev.EventStatus, "Pending Payment", StringComparison.OrdinalIgnoreCase));
+
+    var endTime = ev.EventEndTime.HasValue && ev.EventEndTime.Value > ev.EventTime
+        ? ev.EventEndTime.Value
+        : ev.EventTime.AddMinutes(Math.Max(60, ev.DurationMinutes));
+    var startTimeText = DateTime.Today.Add(ev.EventTime.ToTimeSpan()).ToString("h:mm tt");
+    var endTimeText = DateTime.Today.Add(endTime.ToTimeSpan()).ToString("h:mm tt");
+    var finalRefId = string.IsNullOrWhiteSpace(ev.FinalPaymentReferenceId) ? $"{ev.EventAppointmentId}-FINAL" : ev.FinalPaymentReferenceId;
+    var untakenCount = ev.AssignedEquipment.Count(x => !x.IsTaken);
+    var availableEquip = GetAvailableEquipmentOptions(ev).ToList();
+
+    var stageIndex = isCompletedSuccess ? 5
+        : (isCashPendingVerif || isQrPending || isPostEvent) ? 4
+        : isOngoing ? 3
+        : isDispatched ? 2
+        : 1;
+
+    <section class="mb-6 rounded-[2rem] border-2 @(isCompletedSuccess ? "border-emerald-300 bg-gradient-to-br from-emerald-50/70 via-white to-teal-50/40" : isCashPendingVerif ? "border-amber-300 bg-gradient-to-br from-amber-50/60 via-white to-orange-50/30" : "border-teal-300 bg-gradient-to-br from-teal-50/50 via-white to-sky-50/40") shadow-md overflow-hidden"
+             aria-label="Active Team Leader Event Execution Pill Box">
+        @* ── Top Pill Header Bar ────────────────────────────────────────── *@
+        <div class="px-6 py-4 border-b border-slate-200/80 bg-white/85 backdrop-blur-xs flex flex-col lg:flex-row lg:items-center lg:justify-between gap-3">
+            <div class="flex flex-wrap items-center gap-2.5">
+                <span class="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-[11px] font-extrabold uppercase tracking-wider @(isCompletedSuccess ? "bg-emerald-600 text-white" : isCashPendingVerif ? "bg-amber-600 text-white" : isOngoing ? "bg-teal-700 text-white" : isDispatched ? "bg-indigo-700 text-white" : isPostEvent ? "bg-purple-700 text-white" : "bg-sky-700 text-white")">
+                    <span class="w-2 h-2 rounded-full bg-white @(isCompletedSuccess ? "" : "animate-pulse")"></span>
+                    @GetStageDisplayLabel(ev, isCompletedSuccess, isCashPendingVerif, isQrPending, isQrPaid, isDispatched, isOngoing, isPostEvent)
+                </span>
+                <span class="font-mono text-xs font-extrabold px-2.5 py-1 rounded-full bg-slate-900 text-white">#@ev.EventAppointmentId</span>
+                <h2 class="text-base sm:text-lg font-extrabold text-slate-900 tracking-tight">@ev.EventName</h2>
+            </div>
+
+            <div class="flex flex-wrap items-center gap-2">
+                @if (DisplayEvents.Count > 1)
+                {
+                    @foreach (var item in DisplayEvents)
+                    {
+                        var isCurrent = string.Equals(item.EventAppointmentId, ev.EventAppointmentId, StringComparison.OrdinalIgnoreCase);
+                        <button type="button"
+                                @onclick="() => SelectEvent(item.EventAppointmentId)"
+                                class="px-3 py-1 rounded-full text-[11px] font-bold border transition-all @(isCurrent ? "bg-slate-900 text-white border-slate-900 shadow-2xs" : "bg-white text-slate-600 border-slate-200 hover:bg-slate-50")">
+                            #@item.EventAppointmentId &bull; @item.EventName
+                        </button>
+                    }
+                }
+                @if (isCompletedSuccess)
+                {
+                    <button type="button"
+                            @onclick="() => DismissCompletedAsync(ev.EventAppointmentId)"
+                            class="px-3 py-1 rounded-full border border-emerald-300 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 text-xs font-bold">
+                        Dismiss ✓
+                    </button>
+                }
+            </div>
+        </div>
+
+        <div class="p-6 space-y-5">
+            @* ── 5-Step Pill Progress Bar ───────────────────────────────── *@
+            <div class="grid grid-cols-2 sm:grid-cols-5 gap-2">
+                @{
+                    var pillSteps = new[]
+                    {
+                        (Rank: 1, Label: "1. Preparation"),
+                        (Rank: 2, Label: "2. Dispatched"),
+                        (Rank: 3, Label: "3. On Going"),
+                        (Rank: 4, Label: "4. Post Event"),
+                        (Rank: 5, Label: isCashPendingVerif ? "5. Cash Verification" : isQrPending ? "5. QR Waiting" : "5. Success")
+                    };
+                }
+                @foreach (var st in pillSteps)
+                {
+                    var done = isCompletedSuccess || st.Rank < stageIndex;
+                    var current = !isCompletedSuccess && st.Rank == stageIndex;
+                    var pillCss = done
+                        ? "bg-emerald-100 text-emerald-900 border-emerald-300"
+                        : current
+                            ? (st.Rank == 4 && (isCashPendingVerif || isQrPending)
+                                ? "bg-amber-200 text-amber-950 border-amber-400 ring-1 ring-amber-400"
+                                : "bg-teal-700 text-white border-teal-700 shadow-xs")
+                            : "bg-white/80 text-slate-400 border-slate-200";
+                    <div class="px-3 py-2 rounded-full border text-[11px] font-extrabold text-center flex items-center justify-center gap-1 @pillCss">
+                        @if (done)
+                        {
+                            <span>✓</span>
+                        }
+                        <span>@st.Label</span>
+                    </div>
+                }
+            </div>
+
+            @if (!string.IsNullOrWhiteSpace(_localSuccess))
+            {
+                <div class="px-4 py-2.5 rounded-2xl bg-emerald-50 border border-emerald-200 text-emerald-900 text-xs font-semibold flex items-center justify-between gap-2">
+                    <span>✓ @_localSuccess</span>
+                    <button type="button" @onclick="() => _localSuccess = null" class="font-bold text-emerald-700">✕</button>
+                </div>
+            }
+            @if (!string.IsNullOrWhiteSpace(_localError))
+            {
+                <div class="px-4 py-2.5 rounded-2xl bg-rose-50 border border-rose-200 text-rose-800 text-xs font-semibold flex items-center justify-between gap-2">
+                    <span>⚠ @_localError</span>
+                    <button type="button" @onclick="() => _localError = null" class="font-bold text-rose-700">✕</button>
+                </div>
+            }
+
+            @* ── Event Details Pill Grid (Customer, Event, Location, Services, Time) ── *@
+            <div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-5 gap-3">
+                <div class="rounded-2xl bg-white border border-slate-200/90 p-3.5 shadow-2xs">
+                    <div class="text-[10px] font-extrabold uppercase tracking-wider text-slate-400">Customer</div>
+                    <div class="text-sm font-extrabold text-slate-900 mt-1">@ev.CustomerName</div>
+                    @if (!string.IsNullOrWhiteSpace(ev.CustomerEmail))
+                    {
+                        <div class="text-[11px] text-slate-500 truncate mt-0.5">@ev.CustomerEmail</div>
+                    }
+                    @if (!string.IsNullOrWhiteSpace(ev.CustomerPhone))
+                    {
+                        <div class="text-[11px] font-mono text-slate-600 mt-0.5">@ev.CustomerPhone</div>
+                    }
+                </div>
+
+                <div class="rounded-2xl bg-white border border-slate-200/90 p-3.5 shadow-2xs">
+                    <div class="text-[10px] font-extrabold uppercase tracking-wider text-slate-400">Event</div>
+                    <div class="text-sm font-extrabold text-slate-900 mt-1">@ev.EventName</div>
+                    <div class="text-[11px] font-mono text-slate-500 mt-0.5">#@ev.EventAppointmentId</div>
+                    <div class="text-[11px] font-bold text-teal-800 mt-0.5">Balance: ₱@ev.FinalBalanceAmount.ToString("N2")</div>
+                </div>
+
+                <div class="rounded-2xl bg-white border border-slate-200/90 p-3.5 shadow-2xs">
+                    <div class="text-[10px] font-extrabold uppercase tracking-wider text-slate-400">Location</div>
+                    <div class="text-sm font-extrabold text-slate-900 mt-1">
+                        @(!string.IsNullOrWhiteSpace(ev.EventLocation) ? ev.EventLocation : "Studio A (Main Hall)")
+                    </div>
+                    @if (!string.IsNullOrWhiteSpace(ev.EventDescription))
+                    {
+                        <div class="text-[11px] text-slate-500 line-clamp-2 mt-0.5">@ev.EventDescription</div>
+                    }
+                </div>
+
+                <div class="rounded-2xl bg-white border border-slate-200/90 p-3.5 shadow-2xs">
+                    <div class="text-[10px] font-extrabold uppercase tracking-wider text-slate-400">Services</div>
+                    @if (ev.SelectedServices.Any())
+                    {
+                        <div class="mt-1 flex flex-wrap gap-1">
+                            @foreach (var svc in ev.SelectedServices)
+                            {
+                                <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-teal-50 border border-teal-200 text-teal-900 text-[11px] font-bold">
+                                    @svc.ServiceName
+                                    @if (svc.Quantity > 1)
+                                    {
+                                        <span class="text-teal-700">&times;@svc.Quantity</span>
+                                    }
+                                </span>
+                            }
+                        </div>
+                    }
+                    else
+                    {
+                        <div class="text-xs font-semibold text-slate-700 mt-1">Studio Event Package</div>
+                    }
+                </div>
+
+                <div class="rounded-2xl bg-white border border-slate-200/90 p-3.5 shadow-2xs">
+                    <div class="text-[10px] font-extrabold uppercase tracking-wider text-slate-400">Time</div>
+                    <div class="text-sm font-extrabold text-slate-900 mt-1">@ev.EventDate.ToString("MMM dd, yyyy")</div>
+                    <div class="text-xs font-bold text-slate-700 mt-0.5">@startTimeText – @endTimeText</div>
+                    @if (ev.AssignedEmployees.Any())
+                    {
+                        <div class="text-[10px] text-slate-500 mt-1 truncate">
+                            Crew: @string.Join(", ", ev.AssignedEmployees.Select(c => c.EmployeeName))
+                        </div>
+                    }
+                </div>
+            </div>
+
+            @* ── STAGE 1: PREPARATION -> EQUIPMENT DISPATCH & VERIFICATION ── *@
+            @if (isPreparing)
+            {
+                <div class="rounded-3xl border border-sky-200 bg-white p-5 space-y-4 shadow-2xs">
+                    <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 border-b border-slate-100 pb-3">
+                        <div>
+                            <h3 class="text-sm font-extrabold text-slate-900 flex items-center gap-2">
+                                <span>📦</span>
+                                <span>Equipment Dispatch &amp; Verification</span>
+                            </h3>
+                            <p class="text-xs text-slate-500 mt-0.5">
+                                Verify each equipment item when picked up, add more available equipment if needed, then confirm <strong>Dispatched</strong> at the bottom right.
+                            </p>
+                        </div>
+                        <div class="flex items-center gap-2 shrink-0">
+                            <span class="px-3 py-1 rounded-full text-[11px] font-bold @(untakenCount == 0 ? "bg-emerald-100 text-emerald-800" : "bg-amber-100 text-amber-900")">
+                                @(ev.AssignedEquipment.Count - untakenCount) / @ev.AssignedEquipment.Count Verified
+                            </span>
+                            @if (untakenCount > 0)
+                            {
+                                <button type="button"
+                                        disabled="@_isBusy"
+                                        @onclick="() => VerifyAllEquipmentOnlyAsync(ev)"
+                                        class="px-3 py-1.5 rounded-full border border-indigo-200 bg-indigo-50 hover:bg-indigo-100 text-indigo-800 text-[11px] font-bold disabled:opacity-50">
+                                    Verify All
+                                </button>
+                            }
+                        </div>
+                    </div>
+
+                    @if (!ev.AssignedEquipment.Any())
+                    {
+                        <div class="p-4 rounded-2xl bg-slate-50 border border-dashed border-slate-200 text-xs text-slate-500 text-center">
+                            No equipment assigned yet. Add available equipment below or confirm Dispatched if no gear is required.
+                        </div>
+                    }
+                    else
+                    {
+                        <div class="divide-y divide-slate-100 border border-slate-200 rounded-2xl overflow-hidden">
+                            @foreach (var eq in ev.AssignedEquipment)
+                            {
+                                <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3 px-4 py-3 text-xs @(eq.IsTaken ? "bg-emerald-50/40" : "bg-white hover:bg-slate-50")">
+                                    <div class="flex items-center gap-3">
+                                        <span class="w-2.5 h-2.5 rounded-full shrink-0 @(eq.IsTaken ? "bg-emerald-500" : "bg-amber-400")"></span>
+                                        <div>
+                                            <div class="flex flex-wrap items-center gap-2">
+                                                <span class="font-extrabold text-slate-900">@eq.EquipmentName</span>
+                                                <span class="text-[11px] font-mono text-slate-400">(@eq.EquipmentId)</span>
+                                                <span class="px-2 py-0.5 rounded-full bg-slate-100 text-slate-600 text-[10px] font-semibold">@eq.EquipmentType</span>
+                                                @if (eq.IsAdditionalRequest)
+                                                {
+                                                    <span class="px-2 py-0.5 rounded-full bg-amber-100 text-amber-800 text-[10px] font-bold">Added Equipment</span>
+                                                }
+                                            </div>
+                                            @if (!string.IsNullOrWhiteSpace(eq.RequestedNotes))
+                                            {
+                                                <div class="text-[11px] text-slate-500 italic mt-0.5">Note: @eq.RequestedNotes</div>
+                                            }
+                                        </div>
+                                    </div>
+
+                                    <button type="button"
+                                            disabled="@_isBusy"
+                                            @onclick="() => ToggleEquipmentVerifiedAsync(ev, eq, !eq.IsTaken)"
+                                            class="px-4 py-1.5 rounded-full text-xs font-bold transition-all shrink-0 disabled:opacity-50 @(eq.IsTaken ? "bg-emerald-600 hover:bg-emerald-700 text-white shadow-2xs" : "bg-white border border-slate-300 hover:border-indigo-500 hover:bg-indigo-50 text-slate-800")">
+                                        @(eq.IsTaken ? "✓ Verified (Got Equipment)" : "Verify Equipment")
+                                    </button>
+                                </div>
+                            }
+                        </div>
+                    }
+
+                    @* ── Add More Equipment (Available for that date & time) ── *@
+                    <div class="pt-3 border-t border-slate-100">
+                        <div class="flex flex-wrap items-center justify-between gap-2 mb-2">
+                            <span class="text-xs font-extrabold text-slate-800">+ Add More Equipment</span>
+                            <span class="text-[11px] text-slate-500">
+                                Showing <strong>@availableEquip.Count</strong> available unit@(availableEquip.Count == 1 ? "" : "s") for @ev.EventDate.ToString("MMM dd, yyyy") (@startTimeText – @endTimeText)
+                            </span>
+                        </div>
+                        <div class="grid grid-cols-1 sm:grid-cols-12 gap-2">
+                            <select @bind="_selectedAddEquipmentId"
+                                    class="sm:col-span-5 px-3.5 py-2 border border-slate-300 rounded-full text-xs bg-white font-medium text-slate-800">
+                                <option value="">Select available equipment for this schedule...</option>
+                                @foreach (var avail in availableEquip)
+                                {
+                                    <option value="@avail.EquipmentID">@avail.EquipmentName (@avail.EquipmentTypeName) — Available</option>
+                                }
+                            </select>
+                            <input type="text"
+                                   @bind="_addEquipmentNotes"
+                                   placeholder="Reason / note (optional)"
+                                   class="sm:col-span-4 px-3.5 py-2 border border-slate-300 rounded-full text-xs" />
+                            <button type="button"
+                                    disabled="@(_isBusy || string.IsNullOrWhiteSpace(_selectedAddEquipmentId))"
+                                    @onclick="() => AddMoreEquipmentAsync(ev)"
+                                    class="sm:col-span-3 px-4 py-2 rounded-full bg-slate-900 hover:bg-black disabled:opacity-45 text-white text-xs font-bold shadow-2xs">
+                                + Add Equipment
+                            </button>
+                        </div>
+                    </div>
+
+                    @* ── Bottom Right Dispatched Confirmation Button ── *@
+                    <div class="pt-4 border-t border-slate-200 flex flex-col sm:flex-row sm:items-center justify-end gap-3">
+                        @if (untakenCount > 0)
+                        {
+                            <span class="text-[11px] font-semibold text-amber-800">
+                                Verify @untakenCount remaining equipment item@(untakenCount == 1 ? "" : "s") to enable Dispatched confirmation.
+                            </span>
+                        }
+                        <button type="button"
+                                disabled="@(_isBusy || untakenCount > 0)"
+                                @onclick="() => ConfirmDispatchedAsync(ev)"
+                                class="px-6 py-2.5 rounded-full bg-indigo-700 hover:bg-indigo-800 disabled:opacity-45 disabled:cursor-not-allowed text-white text-xs font-extrabold shadow-sm transition-all">
+                            ✓ Dispatched
+                        </button>
+                    </div>
+                </div>
+            }
+
+            @* ── STAGE 2: DISPATCHED -> EVENT START BUTTON ───────────────── *@
+            else if (isDispatched)
+            {
+                <div class="rounded-3xl border border-indigo-200 bg-white p-5 flex flex-col sm:flex-row sm:items-center justify-between gap-4 shadow-2xs">
+                    <div class="space-y-1">
+                        <div class="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-indigo-100 text-indigo-800 text-[11px] font-extrabold">
+                            ✓ Equipment Dispatched (@ev.AssignedEquipment.Count item@(ev.AssignedEquipment.Count == 1 ? "" : "s") verified)
+                        </div>
+                        <h3 class="text-sm font-extrabold text-slate-900">Ready for Event Start</h3>
+                        <p class="text-xs text-slate-600">
+                            Scheduled Event Start Time: <strong>@startTimeText</strong> on @ev.EventDate.ToString("MMM dd, yyyy"). Click <strong>Event Start</strong> when the shoot begins to mark the event <strong>On Going</strong> across all platforms.
+                        </p>
+                    </div>
+                    <button type="button"
+                            disabled="@_isBusy"
+                            @onclick='() => TransitionStageAsync(ev, "Ongoing")'
+                            class="px-6 py-3 rounded-full bg-teal-700 hover:bg-teal-800 disabled:opacity-50 text-white text-xs font-extrabold shadow-sm shrink-0 transition-all">
+                        ▶ Event Start (@startTimeText)
+                    </button>
+                </div>
+            }
+
+            @* ── STAGE 3: ON GOING -> POST EVENT BUTTON ─────────────────── *@
+            else if (isOngoing)
+            {
+                <div class="rounded-3xl border border-teal-200 bg-white p-5 flex flex-col sm:flex-row sm:items-center justify-between gap-4 shadow-2xs">
+                    <div class="space-y-1">
+                        <div class="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-teal-100 text-teal-800 text-[11px] font-extrabold">
+                            <span class="w-2 h-2 rounded-full bg-teal-600 animate-pulse"></span>
+                            Event On Going
+                        </div>
+                        <h3 class="text-sm font-extrabold text-slate-900">Session Currently In Progress</h3>
+                        <p class="text-xs text-slate-600">
+                            Scheduled Window: <strong>@startTimeText – @endTimeText</strong>. Once the shoot wraps up, click <strong>Post Event</strong> to move to final payment settlement (QR or Cash).
+                        </p>
+                    </div>
+                    <button type="button"
+                            disabled="@_isBusy"
+                            @onclick='() => TransitionStageAsync(ev, "Post Event")'
+                            class="px-6 py-3 rounded-full bg-purple-700 hover:bg-purple-800 disabled:opacity-50 text-white text-xs font-extrabold shadow-sm shrink-0 transition-all">
+                        ✓ Post Event
+                    </button>
+                </div>
+            }
+
+            @* ── STAGE 4: POST EVENT -> PAYMENT METHOD (QR OR CASH) ─────── *@
+            else if (isPostEvent)
+            {
+                <div class="rounded-3xl border border-purple-200 bg-white p-5 flex flex-col md:flex-row md:items-center justify-between gap-4 shadow-2xs">
+                    <div class="space-y-1">
+                        <div class="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-purple-100 text-purple-800 text-[11px] font-extrabold">
+                            Post Event &bull; Payment Selection
+                        </div>
+                        <h3 class="text-sm font-extrabold text-slate-900">Select Final Payment Method</h3>
+                        <p class="text-xs text-slate-600">
+                            Final Balance Due: <strong class="font-mono text-slate-900">₱@ev.FinalBalanceAmount.ToString("N2")</strong>. Choose <strong>QR Payment</strong> to email the payment QR to the customer, or <strong>Cash</strong> to collect cash on-site for Admin / Office Clerk verification.
+                        </p>
+                    </div>
+                    <div class="flex flex-wrap items-center gap-2.5 shrink-0">
+                        <button type="button"
+                                disabled="@_isBusy"
+                                @onclick='() => SettleAsync(ev, "Cash_OnHand")'
+                                class="px-5 py-2.5 rounded-full bg-amber-600 hover:bg-amber-700 disabled:opacity-50 text-white text-xs font-extrabold shadow-sm transition-all">
+                            💵 Cash
+                        </button>
+                        <button type="button"
+                                disabled="@_isBusy"
+                                @onclick='() => SettleAsync(ev, "Xendit_QR")'
+                                class="px-5 py-2.5 rounded-full bg-teal-700 hover:bg-teal-800 disabled:opacity-50 text-white text-xs font-extrabold shadow-sm transition-all">
+                            📱 QR Payment
+                        </button>
+                    </div>
+                </div>
+            }
+
+            @* ── STAGE 5A: CASH COLLECTED -> AWAITING ADMIN/CLERK VERIFICATION ── *@
+            else if (isCashPendingVerif)
+            {
+                <div class="rounded-3xl border border-amber-300 bg-amber-50/80 p-5 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                    <div class="space-y-1">
+                        <div class="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-amber-200 text-amber-950 text-[11px] font-extrabold">
+                            💵 Cash Collected &bull; Awaiting Admin / Office Clerk Verification
+                        </div>
+                        <h3 class="text-sm font-extrabold text-amber-950">Payment Verification (Cash)</h3>
+                        <p class="text-xs text-amber-900">
+                            Cash payment of <strong class="font-mono">₱@ev.FinalBalanceAmount.ToString("N2")</strong> has been collected on-site. Waiting for Admin or Office Clerk to click <strong>Confirm Cash Verification</strong> in their Live Monitor once cash is returned.
+                        </p>
+                    </div>
+                    <span class="px-4 py-1.5 rounded-full bg-amber-200 text-amber-950 text-xs font-extrabold shrink-0">
+                        Awaiting Cash Verification
+                    </span>
+                </div>
+            }
+
+            @* ── STAGE 5B: QR SENT TO CUSTOMER -> WAITING FOR PAYMENT ──── *@
+            else if (isQrPending)
+            {
+                var confirmUrl = ResolveQrConfirmUrl(finalRefId);
+                <div class="rounded-3xl border border-teal-200 bg-white p-5 grid grid-cols-1 md:grid-cols-[150px_1fr] gap-5 items-center shadow-2xs">
+                    <div class="w-36 h-36 mx-auto p-2 bg-white border border-slate-200 rounded-2xl shadow-xs">
+                        @((MarkupString)BuildQrSvg(confirmUrl))
+                    </div>
+                    <div class="space-y-2 text-xs">
+                        <span class="inline-flex items-center gap-1.5 px-3 py-0.5 rounded-full bg-sky-100 text-sky-900 font-extrabold text-[11px]">
+                            <span class="w-2 h-2 rounded-full bg-sky-600 animate-pulse"></span>
+                            Waiting for Customer QR Payment
+                        </span>
+                        <div class="font-extrabold text-slate-900 text-sm">
+                            QR Payment Sent to @(!string.IsNullOrWhiteSpace(ev.CustomerEmail) ? ev.CustomerEmail : ev.CustomerName) (₱@ev.FinalBalanceAmount.ToString("N2"))
+                        </div>
+                        <p class="text-slate-600">
+                            Reference: <span class="font-mono font-bold">@finalRefId</span>. Once paid, this event automatically updates to <strong>Success / Completed</strong> across all platforms.
+                        </p>
+                        <div class="flex flex-wrap gap-2 pt-1">
+                            <a href="/payments/@finalRefId" target="_blank" class="px-4 py-1.5 rounded-full border border-slate-300 bg-white hover:bg-slate-50 text-slate-800 font-bold">
+                                Open Payment Page ↗
+                            </a>
+                            @if (Env.IsDevelopment())
+                            {
+                                <button type="button"
+                                        disabled="@_isBusy"
+                                        @onclick="() => SimulateQrPaidAsync(finalRefId)"
+                                        class="px-4 py-1.5 rounded-full border border-dashed border-teal-600 text-teal-800 hover:bg-teal-50 font-bold">
+                                    Simulate Customer QR Paid (Dev)
+                                </button>
+                            }
+                        </div>
+                    </div>
+                </div>
+            }
+
+            @* ── STAGE 5C: SUCCESS / COMPLETED ──────────────────────────── *@
+            else if (isCompletedSuccess)
+            {
+                <div class="rounded-3xl border border-emerald-300 bg-emerald-50 p-5 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                    <div class="space-y-1">
+                        <div class="inline-flex items-center gap-1.5 px-3 py-0.5 rounded-full bg-emerald-200 text-emerald-950 text-[11px] font-extrabold">
+                            ✓ @(isQrPaid ? "QR Payment Success" : "Cash Verified") &bull; Event Success
+                        </div>
+                        <h3 class="text-sm font-extrabold text-emerald-950">Event Completed Successfully</h3>
+                        <p class="text-xs text-emerald-900">
+                            Final balance of <strong class="font-mono">₱@ev.FinalBalanceAmount.ToString("N2")</strong> is confirmed. All platforms have been updated automatically to <strong>Completed</strong>.
+                        </p>
+                    </div>
+                    <button type="button"
+                            @onclick="() => DismissCompletedAsync(ev.EventAppointmentId)"
+                            class="px-5 py-2 rounded-full bg-emerald-700 hover:bg-emerald-800 text-white text-xs font-bold shrink-0">
+                        Done
+                    </button>
+                </div>
+            }
+        </div>
+    </section>
+}
+
+@code {
+    [Parameter] public IReadOnlyList<TeamLeaderEventDto> ActiveEvents { get; set; } = Array.Empty<TeamLeaderEventDto>();
+    [Parameter] public TeamLeaderEventDto? RecentlyCompletedEvent { get; set; }
+    [Parameter] public string EmployeeId { get; set; } = string.Empty;
+    [Parameter] public string EmployeeName { get; set; } = string.Empty;
+    [Parameter] public string? SelectedEventId { get; set; }
+    [Parameter] public IReadOnlyList<EquipmentItemModel> StudioEquipments { get; set; } = Array.Empty<EquipmentItemModel>();
+    [Parameter] public IReadOnlyList<EventBookingModel> StaffBookings { get; set; } = Array.Empty<EventBookingModel>();
+    [Parameter] public IReadOnlyList<EquipmentReservationModel> StaffEquipmentReservations { get; set; } = Array.Empty<EquipmentReservationModel>();
+    [Parameter] public EventCallback<string?> SelectedEventIdChanged { get; set; }
+    [Parameter] public EventCallback<string> OnDismissCompleted { get; set; }
+    [Parameter] public EventCallback OnWorkflowUpdated { get; set; }
+
+    private bool _isBusy;
+    private string? _localSuccess;
+    private string? _localError;
+    private string _selectedAddEquipmentId = string.Empty;
+    private string _addEquipmentNotes = string.Empty;
+
+    private List<TeamLeaderEventDto> DisplayEvents
+    {
+        get
+        {
+            var list = ActiveEvents.Where(TeamLeaderMonitorSelector.IsOngoingOrInProcess).ToList();
+            if (RecentlyCompletedEvent != null &&
+                !list.Any(e => string.Equals(e.EventAppointmentId, RecentlyCompletedEvent.EventAppointmentId, StringComparison.OrdinalIgnoreCase)))
+            {
+                list.Insert(0, RecentlyCompletedEvent);
+            }
+            return list;
+        }
+    }
+
+    private TeamLeaderEventDto? SelectedEvent =>
+        DisplayEvents.FirstOrDefault(e => string.Equals(e.EventAppointmentId, SelectedEventId, StringComparison.OrdinalIgnoreCase))
+        ?? DisplayEvents.FirstOrDefault();
+
+    private void SelectEvent(string id)
+    {
+        _selectedAddEquipmentId = string.Empty;
+        _addEquipmentNotes = string.Empty;
+        _ = SelectedEventIdChanged.InvokeAsync(id);
+    }
+
+    private Task DismissCompletedAsync(string id) => OnDismissCompleted.InvokeAsync(id);
+
+    private IEnumerable<EquipmentItemModel> GetAvailableEquipmentOptions(TeamLeaderEventDto ev)
+    {
+        var assignedIds = ev.AssignedEquipment.Select(e => e.EquipmentId).ToHashSet(StringComparer.OrdinalIgnoreCase);
+        var lockedIds = BookingWizardEngine.GetBookedEquipmentIdsForDate(
+            ev.EventDate.ToDateTime(TimeOnly.MinValue),
+            StaffBookings,
+            StaffEquipmentReservations,
+            null,
+            ev.EventAppointmentId);
+
+        return StudioEquipments.Where(e =>
+            !assignedIds.Contains(e.EquipmentID) &&
+            !lockedIds.Contains(e.EquipmentID));
+    }
+
+    private async Task ToggleEquipmentVerifiedAsync(TeamLeaderEventDto ev, AssignedEquipmentDto eq, bool isTaken)
+    {
+        _isBusy = true;
+        _localSuccess = null;
+        _localError = null;
+        try
+        {
+            var res = await ConsultationApi.MarkEquipmentTakenAsync(ev.EventAppointmentId, new MarkEquipmentTakenRequest
+            {
+                EventEquipmentIds = eq.EventEquipmentId > 0 ? new List<int> { eq.EventEquipmentId } : null,
+                IsTaken = isTaken,
+                TransitionToDispatch = false,
+                EmployeeId = EmployeeId
+            });
+            if (res.IsSuccess && res.Value != null)
+            {
+                ScheduleService.InvalidateCache();
+                _localSuccess = $"Equipment '{eq.EquipmentName}' marked {(isTaken ? "Verified" : "Pending")}.";
+                await OnWorkflowUpdated.InvokeAsync();
+            }
+            else
+            {
+                _localError = res.Error?.Message ?? "Failed to update equipment verification.";
+            }
+        }
+        catch (Exception ex)
+        {
+            _localError = ex.Message;
+        }
+        finally
+        {
+            _isBusy = false;
+        }
+    }
+
+    private async Task VerifyAllEquipmentOnlyAsync(TeamLeaderEventDto ev)
+    {
+        _isBusy = true;
+        _localSuccess = null;
+        _localError = null;
+        try
+        {
+            var res = await ConsultationApi.MarkEquipmentTakenAsync(ev.EventAppointmentId, new MarkEquipmentTakenRequest
+            {
+                EventEquipmentIds = null,
+                IsTaken = true,
+                TransitionToDispatch = false,
+                EmployeeId = EmployeeId
+            });
+            if (res.IsSuccess)
+            {
+                ScheduleService.InvalidateCache();
+                _localSuccess = $"All equipment verified for #{ev.EventAppointmentId}. Click 'Dispatched' at the bottom right to confirm.";
+                await OnWorkflowUpdated.InvokeAsync();
+            }
+            else
+            {
+                _localError = res.Error?.Message ?? "Could not verify all equipment.";
+            }
+        }
+        catch (Exception ex)
+        {
+            _localError = ex.Message;
+        }
+        finally
+        {
+            _isBusy = false;
+        }
+    }
+
+    private async Task ConfirmDispatchedAsync(TeamLeaderEventDto ev)
+    {
+        _isBusy = true;
+        _localSuccess = null;
+        _localError = null;
+        try
+        {
+            var res = await ConsultationApi.MarkEquipmentTakenAsync(ev.EventAppointmentId, new MarkEquipmentTakenRequest
+            {
+                EventEquipmentIds = null,
+                IsTaken = true,
+                TransitionToDispatch = true,
+                EmployeeId = EmployeeId
+            });
+            if (res.IsSuccess && res.Value != null)
+            {
+                ScheduleService.InvalidateCache();
+                _localSuccess = $"Equipment Dispatched confirmed for #{ev.EventAppointmentId}. Status updated across the system.";
+                await OnWorkflowUpdated.InvokeAsync();
+            }
+            else
+            {
+                _localError = res.Error?.Message ?? "Failed to confirm dispatch.";
+            }
+        }
+        catch (Exception ex)
+        {
+            _localError = ex.Message;
+        }
+        finally
+        {
+            _isBusy = false;
+        }
+    }
+
+    private async Task AddMoreEquipmentAsync(TeamLeaderEventDto ev)
+    {
+        if (string.IsNullOrWhiteSpace(_selectedAddEquipmentId))
+        {
+            _localError = "Please select an available equipment item to add.";
+            return;
+        }
+
+        _isBusy = true;
+        _localSuccess = null;
+        _localError = null;
+        try
+        {
+            var addedId = _selectedAddEquipmentId;
+            var res = await ConsultationApi.AddEventEquipmentAsync(ev.EventAppointmentId, new AddEventEquipmentRequest
+            {
+                EquipmentId = addedId,
+                Notes = _addEquipmentNotes,
+                EmployeeId = EmployeeId
+            });
+            if (res.IsSuccess)
+            {
+                _selectedAddEquipmentId = string.Empty;
+                _addEquipmentNotes = string.Empty;
+                ScheduleService.InvalidateCache();
+                _localSuccess = $"Added equipment ({addedId}) to #{ev.EventAppointmentId}.";
+                await OnWorkflowUpdated.InvokeAsync();
+            }
+            else
+            {
+                _localError = res.Error?.Message ?? "Failed to add equipment.";
+            }
+        }
+        catch (Exception ex)
+        {
+            _localError = ex.Message;
+        }
+        finally
+        {
+            _isBusy = false;
+        }
+    }
+
+    private async Task TransitionStageAsync(TeamLeaderEventDto ev, string targetStage)
+    {
+        _isBusy = true;
+        _localSuccess = null;
+        _localError = null;
+        try
+        {
+            var res = await ConsultationApi.UpdateTeamLeaderEventStatusAsync(ev.EventAppointmentId, new UpdateTeamLeaderStatusRequest
+            {
+                Status = targetStage,
+                EmployeeId = EmployeeId
+            });
+            if (res.IsSuccess && res.Value != null)
+            {
+                ScheduleService.InvalidateCache();
+                _localSuccess = $"Event #{ev.EventAppointmentId} updated to '{res.Value.EventStatus}' across the platform.";
+                await OnWorkflowUpdated.InvokeAsync();
+            }
+            else
+            {
+                _localError = res.Error?.Message ?? $"Failed to update status to {targetStage}.";
+            }
+        }
+        catch (Exception ex)
+        {
+            _localError = ex.Message;
+        }
+        finally
+        {
+            _isBusy = false;
+        }
+    }
+
+    private async Task SettleAsync(TeamLeaderEventDto ev, string method)
+    {
+        _isBusy = true;
+        _localSuccess = null;
+        _localError = null;
+        try
+        {
+            var req = new CompleteEventRequest
+            {
+                EventAppointmentId = ev.EventAppointmentId,
+                ExtraHours = 0m,
+                HourlyRate = 1500m,
+                SurchargeAmount = 0m,
+                OvertimeNotes = string.Empty,
+                PaymentMethod = method,
+                TeamLeaderEmployeeId = EmployeeId,
+                Notes = $"Settlement initiated from Team Leader Overview by {EmployeeName} ({EmployeeId})."
+            };
+            var res = await ConsultationApi.CompleteEventAsync(ev.EventAppointmentId, req);
+            if (res.IsSuccess && res.Value != null)
+            {
+                ScheduleService.InvalidateCache();
+                _localSuccess = method == "Xendit_QR"
+                    ? $"QR payment email sent to {res.Value.CustomerEmail}. Waiting for customer payment."
+                    : $"Cash collected (₱{res.Value.FinalBalanceAmount:N2}). Awaiting Admin / Office Clerk Cash Verification.";
+                await OnWorkflowUpdated.InvokeAsync();
+            }
+            else
+            {
+                _localError = res.Error?.Message ?? "Failed to initiate payment settlement.";
+            }
+        }
+        catch (Exception ex)
+        {
+            _localError = ex.Message;
+        }
+        finally
+        {
+            _isBusy = false;
+        }
+    }
+
+    private async Task SimulateQrPaidAsync(string finalRefId)
+    {
+        _isBusy = true;
+        _localSuccess = null;
+        _localError = null;
+        try
+        {
+            var res = await ConsultationApi.SimulateQrPaymentAsync(finalRefId);
+            if (res.IsSuccess)
+            {
+                ScheduleService.InvalidateCache();
+                _localSuccess = "QR Payment successful! Event updated to Success / Completed across all platforms.";
+                await OnWorkflowUpdated.InvokeAsync();
+            }
+            else
+            {
+                _localError = res.Error?.Message ?? "Could not simulate QR payment.";
+            }
+        }
+        catch (Exception ex)
+        {
+            _localError = ex.Message;
+        }
+        finally
+        {
+            _isBusy = false;
+        }
+    }
+
+    private string ResolveQrConfirmUrl(string referenceId)
+    {
+        var configuredBase = Config["BaseUrl"]?.Trim();
+        var effectiveBase = (!string.IsNullOrWhiteSpace(configuredBase) &&
+                             !configuredBase.Contains("localhost", StringComparison.OrdinalIgnoreCase) &&
+                             !configuredBase.Contains("127.0.0.1", StringComparison.OrdinalIgnoreCase))
+            ? configuredBase
+            : (Nav.BaseUri.Contains("localhost", StringComparison.OrdinalIgnoreCase) || Nav.BaseUri.Contains("127.0.0.1", StringComparison.OrdinalIgnoreCase)
+                ? (string.IsNullOrWhiteSpace(configuredBase) ? Nav.BaseUri : configuredBase)
+                : Nav.BaseUri);
+        return QrPaymentLinks.BuildConfirmUrl(effectiveBase, Nav.BaseUri, referenceId);
+    }
+
+    private static string BuildQrSvg(string payload)
+    {
+        using var generator = new QRCodeGenerator();
+        using var data = generator.CreateQrCode(payload, QRCodeGenerator.ECCLevel.M);
+        return new SvgQRCode(data).GetGraphic(5);
+    }
+
+    private static string GetStageDisplayLabel(
+        TeamLeaderEventDto ev,
+        bool isCompletedSuccess,
+        bool isCashPendingVerif,
+        bool isQrPending,
+        bool isQrPaid,
+        bool isDispatched,
+        bool isOngoing,
+        bool isPostEvent)
+    {
+        if (isCompletedSuccess) return isQrPaid ? "Success • QR Paid" : "Success • Completed";
+        if (isCashPendingVerif) return "Payment Verification (Cash)";
+        if (isQrPending) return "Payment Verification (QR:Pending Payment)";
+        if (isPostEvent) return "Post Event";
+        if (isOngoing) return "On Going";
+        if (isDispatched) return "Dispatched";
+        return "Preparation";
+    }
+}

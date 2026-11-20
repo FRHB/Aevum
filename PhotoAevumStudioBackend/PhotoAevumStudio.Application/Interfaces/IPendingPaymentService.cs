@@ -51,4 +51,5 @@ public interface IPaymentNotifier
 {
     Task PaymentCompletedAsync(string appointmentId, CancellationToken ct = default);
     Task BookingExpiredAsync(string appointmentId, CancellationToken ct = default);
+    Task EventStatusChangedAsync(string appointmentId, string eventStatus, string? finalPaymentStatus = null, string? customerId = null, CancellationToken ct = default);
 }

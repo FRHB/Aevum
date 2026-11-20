@@ -48,10 +48,35 @@
     </div>
 </header>
 
+@* ── TEAM LEADER TOP PILL-BOX CONTAINER (ACTIVE / STARTED EVENT) ──── *@
+@if (!isClerk && (teamLeaderEvents.Any(TeamLeaderMonitorSelector.IsOngoingOrInProcess) || _recentlyCompletedTeamLeadEvent != null))
+{
+    <TeamLeaderActiveEventPill ActiveEvents="@teamLeaderEvents"
+                               RecentlyCompletedEvent="@_recentlyCompletedTeamLeadEvent"
+                               EmployeeId="@employeeId"
+                               EmployeeName="@employeeName"
+                               @bind-SelectedEventId="_selectedActiveTeamLeadEventId"
+                               StudioEquipments="@_studioEquipments"
+                               StaffBookings="@_staffBookings"
+                               StaffEquipmentReservations="@_staffEquipmentReservations"
+                               OnDismissCompleted="HandleDismissCompletedTeamLeadAsync"
+                               OnWorkflowUpdated="HandleTeamLeadPillWorkflowUpdatedAsync" />
+}
+
 @* ── OFFICE CLERK: STACKED CONCURRENT EVENTS & VERIFY CASH ────────── *@
 @if (isClerk)
 {
     <LiveEventsOverviewPanel ManagerId="@employeeId" ManagerName="@employeeName" OnCashVerified="RefreshStatus" />
+}
+
+@if (!teamLeaderEvents.Any() && !string.IsNullOrWhiteSpace(teamLeaderErrorMessage))
+{
+    <div class="mb-4 px-3.5 py-2.5 rounded-lg bg-red-50 border border-red-200 text-red-700 text-xs font-semibold flex items-center justify-between gap-2">
+        <span>⚠ @teamLeaderErrorMessage</span>
+        <button type="button" @onclick="() => RefreshTeamLeaderEventsInternalAsync(surfaceError: true)" class="px-2.5 py-1 rounded border border-red-300 bg-white hover:bg-red-50 text-red-800 text-[11px] font-bold">
+            Retry
+        </button>
+    </div>
 }
 
 @* ── TEAM LEADER EVENT MONITOR (UPCOMING & ONGOING ONLY + PROCESS) ─ *@
@@ -210,6 +235,18 @@
                             {
                                 <p class="text-[11px] text-slate-500 mt-1">Details / Notes: @tlEv.EventDescription</p>
                             }
+                            @if (tlEv.SelectedServices.Any())
+                            {
+                                <div class="text-[11px] text-slate-500 mt-1 flex flex-wrap gap-1.5 items-center">
+                                    <span>Services:</span>
+                                    @foreach (var svc in tlEv.SelectedServices)
+                                    {
+                                        <span class="px-2 py-0.5 rounded-full bg-teal-50 border border-teal-200 text-teal-800 font-semibold">
+                                            @svc.ServiceName @(svc.Quantity > 1 ? $"×{svc.Quantity}" : "")
+                                        </span>
+                                    }
+                                </div>
+                            }
                             @if (tlEv.AssignedEmployees.Any())
                             {
                                 <div class="text-[11px] text-slate-500 mt-1 flex flex-wrap gap-1.5 items-center">
@@ -221,6 +258,25 @@
                                         </span>
                                     }
                                 </div>
+                            }
+                        </div>
+                        <div class="flex items-center gap-2 shrink-0">
+                            @if (isPrePrep)
+                            {
+                                <button type="button"
+                                        disabled="@isUpdatingTeamLeaderStage"
+                                        @onclick="() => StartTeamLeaderEventIntoTopPillAsync(tlEv)"
+                                        class="px-4 py-2 rounded-full bg-teal-700 hover:bg-teal-800 disabled:opacity-50 text-white text-xs font-extrabold shadow-sm transition-all">
+                                    ▶ Start Event
+                                </button>
+                            }
+                            else if (!isFinalPaid)
+                            {
+                                <button type="button"
+                                        @onclick="() => FocusTeamLeaderTopPill(tlEv.EventAppointmentId)"
+                                        class="px-3.5 py-1.5 rounded-full border border-teal-300 bg-teal-50 hover:bg-teal-100 text-teal-900 text-xs font-bold transition-all">
+                                    View in Top Pill ↑
+                                </button>
                             }
                         </div>
                     </div>
@@ -664,17 +720,55 @@
                                 </td>
                             }
                             <td class="py-3 text-right">
-                                <span class="px-2.5 py-0.5 rounded-full text-[10px] font-bold @GetEventStatusPillClass(ev.Status)">
-                                    @FormatRegularEmployeeEventStatus(ev.Status)
-                                </span>
-                                @if (!isCreative && ev.Status != "Completed" && ev.Status != "Complete")
-                                {
-                                    <button type="button"
-                                            @onclick="() => OpenEventFinishModal(ev)"
-                                            class="ml-2 px-2.5 py-1 bg-slate-900 hover:bg-black text-white text-[11px] font-bold rounded-md shadow-xs transition-all">
-                                        Event Finish &rarr;
-                                    </button>
+                                @{
+                                    var tlMatch = teamLeaderEvents.FirstOrDefault(t => string.Equals(t.EventAppointmentId, ev.Id, StringComparison.OrdinalIgnoreCase));
+                                    var isTlForRow = tlMatch != null || IsTeamLeaderForBooking(ev);
                                 }
+                                <div class="inline-flex flex-wrap items-center justify-end gap-1.5">
+                                    @if (isCreative && isTlForRow)
+                                    {
+                                        <span class="px-2 py-0.5 rounded-full text-[10px] font-bold bg-teal-50 text-teal-800 border border-teal-200">
+                                            ★ Team Leader
+                                        </span>
+                                    }
+                                    <span class="px-2.5 py-0.5 rounded-full text-[10px] font-bold @GetEventStatusPillClass(ev.Status)">
+                                        @FormatRegularEmployeeEventStatus(ev.Status)
+                                    </span>
+                                    @if (isCreative && tlMatch != null)
+                                    {
+                                        @if (!TeamLeaderMonitorSelector.IsOngoingOrInProcess(tlMatch))
+                                        {
+                                            <button type="button"
+                                                    disabled="@isUpdatingTeamLeaderStage"
+                                                    @onclick="() => StartTeamLeaderEventIntoTopPillAsync(tlMatch)"
+                                                    class="px-2.5 py-1 rounded-full bg-teal-700 hover:bg-teal-800 disabled:opacity-50 text-white text-[11px] font-bold shadow-xs transition-all">
+                                                ▶ Start Event
+                                            </button>
+                                        }
+                                        else
+                                        {
+                                            <a href="/staff/team-lead-monitor"
+                                               class="px-2.5 py-1 rounded-full bg-teal-50 hover:bg-teal-100 border border-teal-300 text-teal-900 text-[11px] font-bold transition-all">
+                                                Open Monitor &rarr;
+                                            </a>
+                                        }
+                                    }
+                                    else if (isCreative && isTlForRow)
+                                    {
+                                        <a href="/staff/team-lead-monitor"
+                                           class="px-2.5 py-1 rounded-full bg-teal-700 hover:bg-teal-800 text-white text-[11px] font-bold shadow-xs transition-all">
+                                            Open Monitor &rarr;
+                                        </a>
+                                    }
+                                    @if (!isCreative && ev.Status != "Completed" && ev.Status != "Complete")
+                                    {
+                                        <button type="button"
+                                                @onclick="() => OpenEventFinishModal(ev)"
+                                                class="px-2.5 py-1 bg-slate-900 hover:bg-black text-white text-[11px] font-bold rounded-md shadow-xs transition-all">
+                                            Event Finish &rarr;
+                                        </button>
+                                    }
+                                </div>
                             </td>
                         </tr>
                     }
@@ -1057,6 +1151,8 @@
     private List<PaymentSummaryModel> PagedCashRemittances => TablePagination.Paginate(myCashRemittances, remittancesPage, 10);
     private List<LeaveItemViewModel> PagedLeaves => TablePagination.Paginate(myLeaves, leavesPage, 10);
     private List<TeamLeaderEventDto> teamLeaderEvents = new();
+    private TeamLeaderEventDto? _recentlyCompletedTeamLeadEvent;
+    private string? _selectedActiveTeamLeadEventId;
     private string _teamLeaderMonitorFilter = "All";
     private List<EquipmentItemModel> _studioEquipments = new();
     private List<EventBookingModel> _staffBookings = new();
@@ -1276,18 +1372,30 @@
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
         if (!firstRender) return;
+        PaymentHub.OnEventStatusChanged += HandleHubEventStatusChangedAsync;
         await LoadStudioEquipmentsAsync();
-        await RefreshTeamLeaderEventsAsync();
+        await RefreshTeamLeaderEventsInternalAsync(surfaceError: true);
         await SubscribeActiveQrHubAsync();
         _postEventAutoTimer = new System.Threading.Timer(_ =>
         {
             _ = InvokeAsync(async () =>
             {
-                await RefreshTeamLeaderEventsAsync();
+                await RefreshTeamLeaderEventsInternalAsync(surfaceError: false);
                 StateHasChanged();
             });
         }, null, TimeSpan.FromSeconds(30), TimeSpan.FromSeconds(30));
         StateHasChanged();
+    }
+
+    private bool IsTeamLeaderForBooking(EventBookingModel ev)
+    {
+        if (ev == null || string.IsNullOrWhiteSpace(employeeId)) return false;
+        if (ev.AssignedCrew != null && ev.AssignedCrew.Count > 0)
+        {
+            var leader = ev.AssignedCrew.FirstOrDefault(c => c.IsTeamLeader) ?? ev.AssignedCrew.FirstOrDefault();
+            return leader != null && string.Equals(leader.EmployeeId?.Trim(), employeeId.Trim(), StringComparison.OrdinalIgnoreCase);
+        }
+        return false;
     }
 
     private async Task LoadStudioEquipmentsAsync()
@@ -1323,20 +1431,144 @@
         myLeaves = (await leavesTask).ToList();
     }
 
-    private async Task RefreshTeamLeaderEventsAsync()
+    private Task RefreshTeamLeaderEventsAsync() => RefreshTeamLeaderEventsInternalAsync(surfaceError: false);
+
+    private async Task RefreshTeamLeaderEventsInternalAsync(bool surfaceError)
     {
         try
         {
+            var previousEvents = teamLeaderEvents.ToList();
             var tlRes = await ConsultationApi.GetTeamLeaderEventsAsync(employeeId);
             if (tlRes.IsSuccess && tlRes.Value != null)
             {
+                if (surfaceError) teamLeaderErrorMessage = null;
                 teamLeaderEvents = TeamLeaderMonitorSelector.SelectUpcomingAndOngoing(tlRes.Value).ToList();
+
+                var finished = previousEvents.FirstOrDefault(prev =>
+                    TeamLeaderMonitorSelector.IsOngoingOrInProcess(prev) &&
+                    !teamLeaderEvents.Any(cur => string.Equals(cur.EventAppointmentId, prev.EventAppointmentId, StringComparison.OrdinalIgnoreCase)));
+                if (finished != null)
+                {
+                    var latestRes = await ConsultationApi.GetAppointmentByIdAsync(finished.EventAppointmentId);
+                    if (latestRes.IsSuccess && latestRes.Value != null && TeamLeaderMonitorSelector.IsCompletedOrInactive(latestRes.Value))
+                    {
+                        var d = latestRes.Value;
+                        _recentlyCompletedTeamLeadEvent = new TeamLeaderEventDto
+                        {
+                            EventAppointmentId = d.EventAppointmentId,
+                            CustomerId = d.CustomerId,
+                            CustomerName = d.CustomerName,
+                            CustomerEmail = d.CustomerEmail,
+                            CustomerPhone = finished.CustomerPhone,
+                            EventName = d.EventName,
+                            EventDescription = d.EventDescription,
+                            EventDate = d.EventDate,
+                            EventTime = d.EventTime,
+                            EventEndTime = d.EventEndTime,
+                            DurationMinutes = d.DurationMinutes,
+                            EventLocation = d.EventLocation,
+                            EventStatus = d.EventStatus,
+                            TotalAmount = d.TotalAmount,
+                            DownpaymentAmount = d.DownpaymentAmount,
+                            FinalBalanceAmount = d.FinalBalanceAmount,
+                            DownpaymentStatus = d.DownpaymentStatus,
+                            FinalPaymentMethod = d.FinalPaymentMethod,
+                            FinalPaymentStatus = d.FinalPaymentStatus,
+                            FinalPaymentReferenceId = d.FinalPaymentReferenceId,
+                            FinalPaymentPaidAt = d.FinalPaymentPaidAt,
+                            AssignedEmployees = d.AssignedEmployees,
+                            AssignedEquipment = d.AssignedEquipment,
+                            SelectedServices = d.SelectedServices,
+                            IsTeamLeader = true
+                        };
+                        _selectedActiveTeamLeadEventId = d.EventAppointmentId;
+                    }
+                }
+            }
+            else if (surfaceError && !tlRes.IsSuccess)
+            {
+                teamLeaderErrorMessage = tlRes.Error?.Message ?? "Unable to load Team Leader monitor events.";
             }
         }
-        catch
+        catch (Exception ex)
         {
+            if (surfaceError)
+                teamLeaderErrorMessage = ex.Message;
         }
     }
+
+    private async Task StartTeamLeaderEventIntoTopPillAsync(TeamLeaderEventDto tlEv)
+    {
+        isUpdatingTeamLeaderStage = true;
+        teamLeaderActionMessage = null;
+        teamLeaderErrorMessage = null;
+        try
+        {
+            var res = await ConsultationApi.UpdateTeamLeaderEventStatusAsync(tlEv.EventAppointmentId, new UpdateTeamLeaderStatusRequest
+            {
+                Status = "Preparation",
+                EmployeeId = employeeId
+            });
+            if (res.IsSuccess && res.Value != null)
+            {
+                _selectedActiveTeamLeadEventId = tlEv.EventAppointmentId;
+                ScheduleService.InvalidateCache();
+                await Task.WhenAll(LoadStudioEquipmentsAsync(), RefreshTeamLeaderEventsAsync());
+                teamLeaderActionMessage = $"Event #{tlEv.EventAppointmentId} started! Preparation & Equipment Dispatch opened at top of your overview.";
+            }
+            else
+            {
+                teamLeaderErrorMessage = res.Error?.Message ?? "Failed to start event preparation.";
+            }
+        }
+        catch (Exception ex)
+        {
+            teamLeaderErrorMessage = ex.Message;
+        }
+        finally
+        {
+            isUpdatingTeamLeaderStage = false;
+        }
+    }
+
+    private void FocusTeamLeaderTopPill(string appointmentId)
+    {
+        _selectedActiveTeamLeadEventId = appointmentId;
+        teamLeaderActionMessage = $"Focused Event #{appointmentId} in the top overview pill box.";
+    }
+
+    private async Task HandleTeamLeadPillWorkflowUpdatedAsync()
+    {
+        await Task.WhenAll(LoadStudioEquipmentsAsync(), RefreshTeamLeaderEventsAsync(), SafeLoadEmployeeLedgerAsync());
+        await SubscribeActiveQrHubAsync();
+    }
+
+    private Task HandleDismissCompletedTeamLeadAsync(string id)
+    {
+        if (_recentlyCompletedTeamLeadEvent != null &&
+            string.Equals(_recentlyCompletedTeamLeadEvent.EventAppointmentId, id, StringComparison.OrdinalIgnoreCase))
+        {
+            _recentlyCompletedTeamLeadEvent = null;
+        }
+        if (string.Equals(_selectedActiveTeamLeadEventId, id, StringComparison.OrdinalIgnoreCase))
+        {
+            _selectedActiveTeamLeadEventId = null;
+        }
+        StateHasChanged();
+        return Task.CompletedTask;
+    }
+
+    private Task HandleHubEventStatusChangedAsync(EventStatusChangedMessage msg) => InvokeAsync(async () =>
+    {
+        ScheduleService.InvalidateCache();
+        await Task.WhenAll(LoadStudioEquipmentsAsync(), RefreshTeamLeaderEventsAsync(), SafeLoadEmployeeLedgerAsync());
+        await SubscribeActiveQrHubAsync();
+        if (string.Equals(msg.EventStatus, "Completed", StringComparison.OrdinalIgnoreCase))
+        {
+            teamLeaderActionMessage = $"Event #{msg.AppointmentId} updated to Success / Completed across all platforms.";
+        }
+        StateHasChanged();
+    });
 
     private async Task ToggleSingleEquipmentTakenAsync(TeamLeaderEventDto tlEv, AssignedEquipmentDto eq, bool isTaken)
     {
@@ -1601,6 +1833,14 @@
 
     private async Task SubscribeActiveQrHubAsync()
     {
+        try
+        {
+            await PaymentHub.EnsureLiveMonitorStartedAsync();
+        }
+        catch
+        {
+        }
+
         foreach (var ev in teamLeaderEvents)
         {
             var refId = ev.FinalPaymentReferenceId;
@@ -1613,17 +1853,7 @@
             _subscribedHubRefs.Add(refId);
             try
             {
-                await PaymentHub.StartAsync(
-                    refId,
-                    onPaymentCompleted: () => InvokeAsync(async () =>
-                    {
-                        ScheduleService.InvalidateCache();
-                        await RefreshTeamLeaderEventsAsync();
-                        teamLeaderActionMessage = $"Payment successful! Status updated to Payment Verification (QR:Paid), Event #{ev.EventAppointmentId} marked Completed, and confirmation emails sent to both the Team Leader and the Customer.";
-                        StateHasChanged();
-                    }),
-                    onBookingExpired: () => Task.CompletedTask);
-                break;
+                await PaymentHub.JoinBookingGroupAsync(refId);
             }
             catch
             {
@@ -1714,10 +1944,11 @@
         return new SvgQRCode(data).GetGraphic(5);
     }
 
-    public async ValueTask DisposeAsync()
+    public ValueTask DisposeAsync()
     {
+        PaymentHub.OnEventStatusChanged -= HandleHubEventStatusChangedAsync;
         _postEventAutoTimer?.Dispose();
-        try { await PaymentHub.DisposeAsync(); } catch { }
+        return ValueTask.CompletedTask;
     }
 
     private async Task SafeLoadEmployeeLedgerAsync()

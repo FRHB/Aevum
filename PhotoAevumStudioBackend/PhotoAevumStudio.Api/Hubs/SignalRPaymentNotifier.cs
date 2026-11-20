@@ -29,5 +29,41 @@ public class SignalRPaymentNotifier : IPaymentNotifier
             PaymentHub.BookingExpiredEvent, PaymentHub.GroupName(appointmentId), appointmentId);
         await _hub.Clients.Group(PaymentHub.GroupName(appointmentId))
             .SendAsync(PaymentHub.BookingExpiredEvent, new { appointmentId, status = "Cancelled" }, ct);
+        await _hub.Clients.Group(PaymentHub.LiveMonitorGroup)
+            .SendAsync(PaymentHub.EventStatusChangedEvent, new { appointmentId, eventStatus = "Cancelled", finalPaymentStatus = (string?)null, customerId = (string?)null }, ct);
+    }
+
+    public async Task EventStatusChangedAsync(
+        string appointmentId,
+        string eventStatus,
+        string? finalPaymentStatus = null,
+        string? customerId = null,
+        CancellationToken ct = default)
+    {
+        var payload = new
+        {
+            appointmentId,
+            eventStatus,
+            finalPaymentStatus,
+            customerId
+        };
+
+        var groups = new List<string> { PaymentHub.LiveMonitorGroup };
+        if (!string.IsNullOrWhiteSpace(appointmentId) && appointmentId != "*")
+        {
+            groups.Add(PaymentHub.GroupName(appointmentId));
+            groups.Add(PaymentHub.GroupName($"{appointmentId}-FINAL"));
+        }
+        if (!string.IsNullOrWhiteSpace(customerId))
+        {
+            groups.Add(PaymentHub.CustomerGroupName(customerId));
+        }
+
+        _logger.LogInformation(
+            "SignalR Hub broadcasting {Event} ({Status}) for {AppointmentId} to {GroupCount} groups.",
+            PaymentHub.EventStatusChangedEvent, eventStatus, appointmentId, groups.Count);
+
+        await _hub.Clients.Groups(groups)
+            .SendAsync(PaymentHub.EventStatusChangedEvent, payload, ct);
     }
 }
