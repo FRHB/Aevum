@@ -1,39 +1,60 @@
+/* Legacy dark slate tokens migrated to shared CSS variables in app.css: #0b1120, #0f172a */
+
 .aev-analytics-shell {
-    background: radial-gradient(circle at top right, rgba(20, 184, 166, 0.08), transparent 36%),
-                radial-gradient(circle at bottom left, rgba(56, 189, 248, 0.06), transparent 40%),
-                #0b1120;
-    border: 1px solid #1e293b;
-    border-radius: 1rem;
-    color: #e2e8f0;
-    padding: 1.5rem;
-    box-shadow: 0 20px 45px -20px rgba(2, 6, 23, 0.85);
+    background-color: transparent;
+    color: var(--text);
 }
 
 .aev-analytics-card {
-    background: #0f172a;
-    border: 1px solid #1e293b;
-    border-radius: 0.875rem;
-    transition: border-color 0.15s ease, transform 0.15s ease;
+    background-color: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 0.75rem;
+    box-shadow: 0 1px 2px 0 rgba(0, 0, 0, 0.04);
+    transition: border-color 0.15s ease, box-shadow 0.15s ease;
 }
 
 .aev-analytics-card:hover {
-    border-color: #334155;
+    border-color: var(--border-subtle);
 }
 
 .aev-analytics-subcard {
-    background: rgba(30, 41, 59, 0.55);
-    border: 1px solid rgba(51, 65, 85, 0.7);
-    border-radius: 0.75rem;
+    background-color: var(--surface-subtle);
+    border: 1px solid var(--border);
+    border-radius: 0.5rem;
+}
+
+.aev-tab-btn {
+    padding: 0.65rem 1rem;
+    font-size: 0.8125rem;
+    font-weight: 600;
+    color: var(--text-muted);
+    border-bottom: 2px solid transparent;
+    transition: all 0.15s ease;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+    background: transparent;
+    cursor: pointer;
+    white-space: nowrap;
+}
+
+.aev-tab-btn:hover {
+    color: var(--text);
+}
+
+.aev-tab-btn.is-active {
+    color: var(--primary);
+    border-bottom-color: var(--primary);
 }
 
 .aev-stage-btn {
     width: 100%;
     text-align: left;
-    padding: 0.85rem 0.95rem;
-    border-radius: 0.75rem;
+    padding: 0.75rem 0.875rem;
+    border-radius: 0.5rem;
     border: 1px solid transparent;
     background: transparent;
-    color: #94a3b8;
+    color: var(--text-muted);
     display: flex;
     align-items: flex-start;
     gap: 0.75rem;
@@ -42,41 +63,39 @@
 }
 
 .aev-stage-btn:hover {
-    background: rgba(30, 41, 59, 0.75);
-    color: #f1f5f9;
-    border-color: #334155;
+    background: var(--surface-muted);
+    color: var(--text);
 }
 
 .aev-stage-btn.is-active {
-    background: linear-gradient(135deg, rgba(20, 184, 166, 0.16), rgba(15, 23, 42, 0.95));
-    border-color: rgba(45, 212, 191, 0.45);
-    color: #f8fafc;
-    box-shadow: inset 3px 0 0 #14b8a6;
+    background: var(--primary-light);
+    border-color: var(--primary-border);
+    color: var(--primary);
 }
 
 .aev-stage-num {
     font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
     font-size: 0.7rem;
     font-weight: 700;
-    padding: 0.2rem 0.45rem;
-    border-radius: 0.4rem;
-    background: #1e293b;
-    color: #94a3b8;
-    border: 1px solid #334155;
+    padding: 0.15rem 0.4rem;
+    border-radius: 0.35rem;
+    background: var(--surface-muted);
+    color: var(--text-muted);
+    border: 1px solid var(--border);
     flex-shrink: 0;
 }
 
 .aev-stage-btn.is-active .aev-stage-num {
-    background: rgba(20, 184, 166, 0.2);
-    color: #5eead4;
-    border-color: rgba(45, 212, 191, 0.5);
+    background: var(--primary);
+    color: #ffffff;
+    border-color: var(--primary);
 }
 
 .aev-filter-input {
-    background: #0f172a;
-    border: 1px solid #334155;
-    color: #f1f5f9;
-    border-radius: 0.55rem;
+    background-color: var(--surface);
+    border: 1px solid var(--border);
+    color: var(--text);
+    border-radius: 0.5rem;
     padding: 0.45rem 0.65rem;
     font-size: 0.75rem;
     line-height: 1.25;
@@ -84,30 +103,30 @@
 
 .aev-filter-input:focus {
     outline: none;
-    border-color: #14b8a6;
-    box-shadow: 0 0 0 2px rgba(20, 184, 166, 0.2);
+    border-color: var(--primary);
+    box-shadow: 0 0 0 2px rgba(15, 118, 110, 0.15);
 }
 
 .aev-driver-btn {
     width: 100%;
     text-align: left;
-    padding: 0.9rem 1rem;
+    padding: 0.875rem 1rem;
     border-radius: 0.75rem;
-    border: 1px solid #1e293b;
-    background: #0f172a;
+    border: 1px solid var(--border);
+    background-color: var(--surface);
     transition: all 0.15s ease;
     cursor: pointer;
 }
 
 .aev-driver-btn:hover {
-    border-color: #475569;
-    background: #162033;
+    border-color: var(--border-subtle);
+    background-color: var(--surface-subtle);
 }
 
 .aev-driver-btn.is-selected {
-    border-color: #38bdf8;
-    background: rgba(14, 165, 233, 0.1);
-    box-shadow: inset 3px 0 0 #38bdf8;
+    border-color: var(--primary);
+    background-color: var(--primary-light);
+    box-shadow: inset 3px 0 0 var(--primary);
 }
 
 .aev-tabular {
