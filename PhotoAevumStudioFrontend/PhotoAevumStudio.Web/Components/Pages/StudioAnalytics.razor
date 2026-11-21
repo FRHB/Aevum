@@ -27,12 +27,7 @@
                 <span>/</span>
                 <span class="text-teal-700 font-bold">@GetStageDisplayName(_activeStage)</span>
             </div>
-            <div class="flex flex-wrap items-center gap-3">
-                <h1 class="text-2xl sm:text-3xl font-extrabold text-[var(--text)] tracking-tight">Business Intelligence Dashboard</h1>
-                <span class="px-2.5 py-0.5 rounded-full text-xs font-bold uppercase tracking-wider bg-teal-50 text-teal-700 border border-teal-200">
-                    @GetStageQuestion(_activeStage)
-                </span>
-            </div>
+            <h1 class="text-2xl sm:text-3xl font-extrabold text-[var(--text)] tracking-tight">Business Intelligence Dashboard</h1>
             <p class="text-xs sm:text-sm text-slate-500 mt-1">
                 Operational intelligence across bookings, crew timesheets, leaves, consultations, and camera/lighting inventory.
             </p>
@@ -1323,14 +1318,6 @@
         "predictive" => "Stage 3 · Predictive",
         "prescriptive" => "Stage 4 · Prescriptive",
         _ => "Stage 1 · Descriptive"
-    };
-
-    private static string GetStageQuestion(string stage) => stage switch
-    {
-        "diagnostic" => "Why did it happen?",
-        "predictive" => "What will happen?",
-        "prescriptive" => "What should we do?",
-        _ => "What happened?"
     };
 
     private static string GetSeverityBadgeClass(string severity) => severity.ToLowerInvariant() switch

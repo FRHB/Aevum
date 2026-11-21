@@ -87,14 +87,14 @@
                                     <label for="emp-first" class="block text-xs font-semibold uppercase tracking-wider text-slate-700 mb-1.5">
                                         First Name <span class="text-rose-500">*</span>
                                     </label>
-                                    <InputText id="emp-first" @bind-Value="model.FirstName" class="@InputClass" placeholder="e.g. John" autocomplete="off" />
+                                    <InputText id="emp-first" @bind-Value="model.FirstName" class="@InputClass" placeholder="Enter first name" autocomplete="off" />
                                     <ValidationMessage For="() => model.FirstName" class="text-xs text-rose-600 mt-1" />
                                 </div>
                                 <div>
                                     <label for="emp-last" class="block text-xs font-semibold uppercase tracking-wider text-slate-700 mb-1.5">
                                         Last Name <span class="text-rose-500">*</span>
                                     </label>
-                                    <InputText id="emp-last" @bind-Value="model.LastName" class="@InputClass" placeholder="e.g. Doe" autocomplete="off" />
+                                    <InputText id="emp-last" @bind-Value="model.LastName" class="@InputClass" placeholder="Enter last name" autocomplete="off" />
                                     <ValidationMessage For="() => model.LastName" class="text-xs text-rose-600 mt-1" />
                                 </div>
                             </div>
@@ -103,7 +103,7 @@
                                 <label for="emp-middle" class="block text-xs font-semibold uppercase tracking-wider text-slate-700 mb-1.5">
                                     Middle Name <span class="text-slate-400 font-normal lowercase">(optional)</span>
                                 </label>
-                                <InputText id="emp-middle" @bind-Value="model.MiddleName" class="@InputClass" placeholder="e.g. Alexander" autocomplete="off" />
+                                <InputText id="emp-middle" @bind-Value="model.MiddleName" class="@InputClass" placeholder="Enter middle name" autocomplete="off" />
                                 <ValidationMessage For="() => model.MiddleName" class="text-xs text-rose-600 mt-1" />
                             </div>
 
@@ -111,7 +111,7 @@
                                 <label for="emp-email" class="block text-xs font-semibold uppercase tracking-wider text-slate-700 mb-1.5">
                                     Employee Email <span class="text-rose-500">*</span>
                                 </label>
-                                <InputText id="emp-email" type="email" @bind-Value="model.Email" class="@InputClass" placeholder="j.doe@photoaevum.com" autocomplete="off" />
+                                <InputText id="emp-email" type="email" @bind-Value="model.Email" class="@InputClass" placeholder="name@photoaevum.com" autocomplete="off" />
                                 <ValidationMessage For="() => model.Email" class="text-xs text-rose-600 mt-1" />
                             </div>
 
@@ -127,7 +127,7 @@
                                     <label for="emp-address" class="block text-xs font-semibold uppercase tracking-wider text-slate-700 mb-1.5">
                                         Home Address <span class="text-rose-500">*</span>
                                     </label>
-                                    <InputText id="emp-address" @bind-Value="model.Address" class="@InputClass" placeholder="e.g. 123 Studio Way, Quezon City" autocomplete="off" />
+                                    <InputText id="emp-address" @bind-Value="model.Address" class="@InputClass" placeholder="Street, barangay/district, city" autocomplete="off" />
                                     <ValidationMessage For="() => model.Address" class="text-xs text-rose-600 mt-1" />
                                 </div>
                             </div>

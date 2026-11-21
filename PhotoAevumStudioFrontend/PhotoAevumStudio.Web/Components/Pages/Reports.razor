@@ -343,37 +343,128 @@
                         <div class="text-xs font-semibold text-slate-600">Day-of-Week Trend Line</div>
 
                         @{
-                            var maxWk = Math.Max(1, r.BookingsByWeekday.Max(w => w.Count));
-                            int twW = 280;
-                            int twH = 120;
-                            int twPadL = 24;
-                            int twPadR = 16;
-                            int twPadT = 16;
-                            int twPadB = 24;
+                            // ── Layout constants ──────────────────────────────────────
+                            // Extra top padding so the peak value label never gets clipped.
+                            // Extra bottom padding accommodates X-axis labels + Y baseline.
+                            // Left padding gives room for the Y-axis tick numbers.
+                            int twW    = 300;
+                            int twH    = 170;
+                            int twPadL = 32;   // room for Y-axis labels
+                            int twPadR = 12;
+                            int twPadT = 24;   // room for value labels above peak node
+                            int twPadB = 32;   // room for X-axis day labels
                             double twPlotW = twW - twPadL - twPadR;
                             double twPlotH = twH - twPadT - twPadB;
-                            double twStep = twPlotW / 6.0;
+                            double twStep  = twPlotW / 6.0;   // 7 days → 6 intervals
 
-                            var trendPoints = string.Join(" ", r.BookingsByWeekday.Select((w, idx) =>
+                            // ── Data ─────────────────────────────────────────────────
+                            // Sum each weekday across all three time-slots (matches heatmap totals).
+                            var wdTotals = new int[7];
+                            if (r.WeekdayTimeSlots is { Count: > 0 })
                             {
-                                var x = twPadL + idx * twStep;
-                                var y = twPadT + twPlotH - ((double)w.Count / maxWk) * twPlotH;
-                                return $"{x.ToString("0.0", CultureInfo.InvariantCulture)},{y.ToString("0.0", CultureInfo.InvariantCulture)}";
-                            }));
+                                foreach (var cell in r.WeekdayTimeSlots)
+                                    if (cell.Weekday >= 0 && cell.Weekday < 7)
+                                        wdTotals[cell.Weekday] += cell.Count;
+                            }
+                            else
+                            {
+                                for (int di = 0; di < 7 && di < r.BookingsByWeekday.Count; di++)
+                                    wdTotals[di] = r.BookingsByWeekday[di].Count;
+                            }
+
+                            int rawMax = wdTotals.Length > 0 ? wdTotals.Max() : 0;
+                            int twMax  = Math.Max(1, rawMax);   // avoid divide-by-zero
+
+                            // ── Y-axis ticks (whole integers only) ───────────────────
+                            // Choose a step that gives 3–5 clean ticks.
+                            int yTickStep = twMax <= 4 ? 1 : twMax <= 10 ? 2 : twMax <= 20 ? 5 : 10;
+                            int yTickCount = twMax / yTickStep;
+                            var yTicks = Enumerable.Range(0, yTickCount + 1)
+                                                   .Select(t => t * yTickStep)
+                                                   .ToList();
+
+                            // Helper: map a booking count value → SVG Y coordinate
+                            double YCoord(int count) =>
+                                twPadT + twPlotH - (rawMax == 0 ? 0 : (double)count / twMax * twPlotH);
+
+                            // ── Polyline + area fill polygon points ──────────────────
+                            var nodeCoords = Enumerable.Range(0, 7).Select(i =>
+                            {
+                                double nx = twPadL + i * twStep;
+                                double ny = YCoord(wdTotals[i]);
+                                return (X: nx, Y: ny);
+                            }).ToList();
+
+                            var polylinePoints = string.Join(" ", nodeCoords.Select(p =>
+                                $"{p.X.ToString("0.00", CultureInfo.InvariantCulture)},{p.Y.ToString("0.00", CultureInfo.InvariantCulture)}"));
+
+                            // Area polygon: line nodes + bottom-right corner + bottom-left corner
+                            double baselineY = twPadT + twPlotH;
+                            var areaPoints = polylinePoints
+                                + $" {nodeCoords[6].X.ToString("0.00", CultureInfo.InvariantCulture)},{baselineY.ToString("0.00", CultureInfo.InvariantCulture)}"
+                                + $" {nodeCoords[0].X.ToString("0.00", CultureInfo.InvariantCulture)},{baselineY.ToString("0.00", CultureInfo.InvariantCulture)}";
+
+                            var shortDays = new[] { "MON", "TUE", "WED", "THU", "FRI", "SAT", "SUN" };
+                            var fullDays  = new[] { "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday" };
                         }
 
                         <div class="overflow-x-auto">
-                            <svg viewBox="0 0 @twW @twH" class="w-full h-28 select-none" role="img" aria-label="Weekday booking volume trend">
-                                <polyline points="@trendPoints" fill="none" stroke="var(--chart-2)" stroke-width="2.5" />
-                                @for (int i = 0; i < r.BookingsByWeekday.Count && i < 7; i++)
+                            <svg viewBox="0 0 @twW @twH" class="w-full select-none" style="height:@(twH)px; display:block;" role="img" aria-label="Day-of-week booking volume trend">
+                                <defs>
+                                    <linearGradient id="twAreaGrad" x1="0" y1="0" x2="0" y2="1">
+                                        <stop offset="0%"   stop-color="var(--chart-2)" stop-opacity="0.18" />
+                                        <stop offset="100%" stop-color="var(--chart-2)" stop-opacity="0.02" />
+                                    </linearGradient>
+                                </defs>
+
+                                @* ── Horizontal gridlines + Y-axis labels ── *@
+                                @foreach (var tick in yTicks)
                                 {
-                                    var w = r.BookingsByWeekday[i];
-                                    var x = twPadL + i * twStep;
-                                    var y = twPadT + twPlotH - ((double)w.Count / maxWk) * twPlotH;
-                                    <circle cx="@x.ToString("0.0", CultureInfo.InvariantCulture)" cy="@y.ToString("0.0", CultureInfo.InvariantCulture)" r="3.5" fill="var(--chart-2)" stroke="var(--surface)" stroke-width="1.5">
-                                        <title>@w.Label: @w.Count booking(s)</title>
+                                    var gy = YCoord(tick);
+                                    var gxLabel = (twPadL - 4).ToString(CultureInfo.InvariantCulture);
+                                    var gyStr   = gy.ToString("0.00", CultureInfo.InvariantCulture);
+                                    var gyLbl   = (gy + 3.5).ToString("0.00", CultureInfo.InvariantCulture);
+                                    var gxRight = (twW - twPadR).ToString(CultureInfo.InvariantCulture);
+                                    var gxLeft  = twPadL.ToString(CultureInfo.InvariantCulture);
+                                    <line x1="@gxLeft" y1="@gyStr" x2="@gxRight" y2="@gyStr"
+                                          stroke="#E2E8F0" stroke-width="1" stroke-dasharray="3 3" />
+                                    @:    <text x="@gxLabel" y="@gyLbl" text-anchor="end" fill="#94A3B8" font-size="8" font-family="ui-monospace,monospace">@tick</text>
+                                }
+
+                                @* ── Baseline (X-axis) ── *@
+                                <line x1="@twPadL.ToString(CultureInfo.InvariantCulture)"
+                                      y1="@baselineY.ToString("0.00", CultureInfo.InvariantCulture)"
+                                      x2="@((twW - twPadR).ToString(CultureInfo.InvariantCulture))"
+                                      y2="@baselineY.ToString("0.00", CultureInfo.InvariantCulture)"
+                                      stroke="#CBD5E1" stroke-width="1" />
+
+                                @* ── Gradient area fill ── *@
+                                <polygon points="@areaPoints" fill="url(#twAreaGrad)" />
+
+                                @* ── Trend polyline ── *@
+                                <polyline points="@polylinePoints"
+                                          fill="none"
+                                          stroke="var(--chart-2)"
+                                          stroke-width="2.5"
+                                          stroke-linejoin="round"
+                                          stroke-linecap="round" />
+
+                                @* ── Nodes, value labels, X-axis day labels ── *@
+                                @for (int i = 0; i < 7; i++)
+                                {
+                                    var nx    = nodeCoords[i].X;
+                                    var ny    = nodeCoords[i].Y;
+                                    var cnt   = wdTotals[i];
+                                    var nxStr = nx.ToString("0.00", CultureInfo.InvariantCulture);
+                                    var nyStr = ny.ToString("0.00", CultureInfo.InvariantCulture);
+                                    var nyLbl = (ny - 7).ToString("0.00", CultureInfo.InvariantCulture);
+                                    var nyDay = (twH - 6).ToString(CultureInfo.InvariantCulture);
+                                    <circle cx="@nxStr" cy="@nyStr" r="3.5"
+                                            fill="var(--chart-2)" stroke="white" stroke-width="1.5">
+                                        <title>@fullDays[i]: @cnt booking(s)</title>
                                     </circle>
-                                    @:<text x="@x.ToString("0.0", CultureInfo.InvariantCulture)" y="@(twH - 6)" text-anchor="middle" fill="var(--chart-text)" font-size="9">@dayNames[i]</text>
+                                    @:    <text x="@nxStr" y="@nyLbl" text-anchor="middle" fill="#475569" font-size="8" font-weight="600" font-family="ui-monospace,monospace">@cnt</text>
+                                    @:    <text x="@nxStr" y="@nyDay" text-anchor="middle" fill="#94A3B8" font-size="8" font-weight="600" letter-spacing="0.3" font-family="ui-sans-serif,system-ui,sans-serif">@shortDays[i]</text>
                                 }
                             </svg>
                         </div>

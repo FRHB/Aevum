@@ -263,6 +263,14 @@ public class StudioAnalyticsWebTests
         Assert.Contains("Forecast Uncertainty Band", markup);
         Assert.Contains("Apply Selected Actions", markup);
         Assert.Contains("Persisted Studio Action Log", markup);
+
+        // Header stands cleanly without stage question pill badge
+        Assert.Contains("Business Intelligence Dashboard", markup);
+        Assert.DoesNotContain("GetStageQuestion", markup);
+        Assert.DoesNotContain("WHAT HAPPENED?", markup, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("WHY DID IT HAPPEN?", markup, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("WHAT WILL HAPPEN?", markup, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("WHAT SHOULD WE DO?", markup, StringComparison.OrdinalIgnoreCase);
     }
 
     private sealed class StubHandler(Func<HttpRequestMessage, Task<HttpResponseMessage>> handler) : HttpMessageHandler

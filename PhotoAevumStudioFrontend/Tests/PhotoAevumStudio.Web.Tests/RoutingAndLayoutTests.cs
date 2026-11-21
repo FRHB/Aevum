@@ -385,6 +385,15 @@ public class RoutingAndLayoutTests
         Assert.True(faqsIdx      >= 0);
         Assert.True(resourcesIdx >  faqsIdx);
 
+        // Sales & Report parent toggle button contains a left-side icon before the label
+        var toggleIdx = content.IndexOf("aria-controls=\"acc-sales-report\"", StringComparison.Ordinal);
+        Assert.True(toggleIdx >= 0);
+        var labelIdx = content.IndexOf("Sales &amp; Report", toggleIdx, StringComparison.Ordinal);
+        Assert.True(labelIdx > toggleIdx);
+        var buttonHeaderSlice = content.Substring(toggleIdx, labelIdx - toggleIdx);
+        Assert.Contains("class=\"aev-sidebar__icon\"", buttonHeaderSlice);
+        Assert.Contains("<svg", buttonHeaderSlice);
+
         // Analytics is NOT its own top-level accordion — it lives only as a sub-link inside Sales & Report
         Assert.DoesNotContain("acc-analytics",         content);
         Assert.DoesNotContain("IsOpen(\"analytics\")", content);
