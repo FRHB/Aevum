@@ -69,7 +69,8 @@ public class RoutingAndLayoutTests
             typeof(HistoryLog),
             typeof(FaqManagement),
             typeof(Sales),
-            typeof(Reports)
+            typeof(Reports),
+            typeof(StudioAnalytics)
         };
 
         foreach (var page in adminPages)
@@ -350,9 +351,43 @@ public class RoutingAndLayoutTests
         Assert.True(sidebarPath != null && File.Exists(sidebarPath), $"Sidebar.razor was not found starting from {AppContext.BaseDirectory}");
         var content = File.ReadAllText(sidebarPath!);
 
-        Assert.Contains("href=\"/admin/sales\"", content);
-        Assert.Contains("href=\"/admin/reports\"", content);
-        Assert.Contains("Sales", content);
-        Assert.Contains("Reports", content);
+        // 1. Sales & Report collapsible submenu contains exactly 3 nested items in order:
+        //    Sales → Reports → Analytics  (consolidated from the former 6-item list)
+        var salesReportSubIndex = content.IndexOf("id=\"acc-sales-report\"", StringComparison.Ordinal);
+        Assert.True(salesReportSubIndex >= 0);
+
+        var salesIdx     = content.IndexOf("href=\"/admin/sales\"",      salesReportSubIndex, StringComparison.Ordinal);
+        var reportsIdx   = content.IndexOf("href=\"/admin/reports\"",    salesReportSubIndex, StringComparison.Ordinal);
+        var analyticsIdx = content.IndexOf("href=\"/admin/analytics\"",  salesReportSubIndex, StringComparison.Ordinal);
+
+        Assert.True(salesIdx     > salesReportSubIndex, "Sales link must appear inside acc-sales-report");
+        Assert.True(reportsIdx   > salesIdx,            "Reports link must appear after Sales");
+        Assert.True(analyticsIdx > reportsIdx,          "Analytics link must appear after Reports");
+
+        // The four former individual stage links must be gone from the sidebar
+        Assert.DoesNotContain("href=\"/analytics/descriptive\"",  content);
+        Assert.DoesNotContain("href=\"/analytics/diagnostic\"",   content);
+        Assert.DoesNotContain("href=\"/analytics/predictive\"",   content);
+        Assert.DoesNotContain("href=\"/analytics/prescriptive\"", content);
+
+        // Analytics link uses prefix matching so it stays active on any sub-stage route
+        Assert.Contains("Match=\"NavLinkMatch.Prefix\"", content);
+
+        // 2. Duplicate SALES & REPORT section header is removed
+        Assert.DoesNotContain("<p class=\"aev-sidebar__section-label\">Sales &amp; Report</p>", content);
+        Assert.DoesNotContain("href=\"/sales\"",   content);
+        Assert.DoesNotContain("href=\"/reports\"", content);
+
+        // 3. FAQ Management is still the final item in GENERAL; Resources & Logistics follows it
+        var faqsIdx      = content.IndexOf("href=\"/admin/faqs\"",         StringComparison.Ordinal);
+        var resourcesIdx = content.IndexOf("Resources &amp; Logistics",    StringComparison.Ordinal);
+
+        Assert.True(faqsIdx      >= 0);
+        Assert.True(resourcesIdx >  faqsIdx);
+
+        // Analytics is NOT its own top-level accordion — it lives only as a sub-link inside Sales & Report
+        Assert.DoesNotContain("acc-analytics",         content);
+        Assert.DoesNotContain("IsOpen(\"analytics\")", content);
+        Assert.DoesNotContain("Toggle(\"analytics\")", content);
     }
 }
