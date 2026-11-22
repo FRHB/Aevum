@@ -731,12 +731,14 @@
                 _rescheduleDate = _appointment.EventDate.AddDays(7);
 
                 var configuredBase = Config["BaseUrl"]?.Trim();
-                var effectiveBase = (!string.IsNullOrWhiteSpace(configuredBase) &&
-                                     !configuredBase.Contains("localhost", StringComparison.OrdinalIgnoreCase) &&
-                                     !configuredBase.Contains("127.0.0.1", StringComparison.OrdinalIgnoreCase))
-                    ? configuredBase
-                    : (Nav.BaseUri.Contains("localhost", StringComparison.OrdinalIgnoreCase) || Nav.BaseUri.Contains("127.0.0.1", StringComparison.OrdinalIgnoreCase)
-                        ? (string.IsNullOrWhiteSpace(configuredBase) ? Nav.BaseUri : configuredBase)
+                var isCurrentLocal = Nav.BaseUri.Contains("localhost", StringComparison.OrdinalIgnoreCase) ||
+                                     Nav.BaseUri.Contains("127.0.0.1", StringComparison.OrdinalIgnoreCase);
+                var effectiveBase = !isCurrentLocal
+                    ? Nav.BaseUri
+                    : (!string.IsNullOrWhiteSpace(configuredBase) &&
+                       !configuredBase.Contains("localhost", StringComparison.OrdinalIgnoreCase) &&
+                       !configuredBase.Contains("127.0.0.1", StringComparison.OrdinalIgnoreCase)
+                        ? configuredBase
                         : Nav.BaseUri);
 
                 var confirmUrl = QrPaymentLinks.BuildConfirmUrl(effectiveBase, Nav.BaseUri, AppointmentId);
@@ -762,6 +764,12 @@
             }
             else
             {
+                if (res.Error?.Kind == ApiErrorKind.Unauthorized)
+                {
+                    var returnPath = $"/checkout/{Uri.EscapeDataString(AppointmentId)}";
+                    Nav.NavigateTo($"/login?returnUrl={Uri.EscapeDataString(returnPath)}");
+                    return;
+                }
                 _errorMessage = res.Error?.Message ?? $"Event appointment #{AppointmentId} could not be located.";
             }
         }
@@ -808,7 +816,6 @@
 
         try
         {
-            // Trigger dev-only simulated webhook payment confirmation
             var res = await ConsultationApi.SimulateWebhookPaymentAsync(_appointment.EventAppointmentId, _selectedChannelName);
             if (res.IsSuccess && res.Value != null)
             {
@@ -817,10 +824,21 @@
                 _bookingState = "Deal_Won";
                 _showMobileAuthModal = false;
                 _timer?.Dispose();
+                return;
+            }
+
+            var qrRes = await ConsultationApi.SimulateQrPaymentAsync(_appointment.EventAppointmentId);
+            if (qrRes.IsSuccess)
+            {
+                ScheduleService.InvalidateCache();
+                await LoadAppointmentAsync();
+                _bookingState = "Deal_Won";
+                _showMobileAuthModal = false;
+                _timer?.Dispose();
             }
             else
             {
-                _modalError = res.Error?.Message ?? "Payment verification simulation failed.";
+                _modalError = qrRes.Error?.Message ?? res.Error?.Message ?? "Payment verification simulation failed.";
             }
         }
         catch (Exception ex)

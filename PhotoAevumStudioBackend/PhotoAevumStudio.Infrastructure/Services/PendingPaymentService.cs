@@ -339,7 +339,7 @@ public class PendingPaymentService : IPendingPaymentService
                 return new PaymentConfirmation(finalApptId, finalCustId!, effectivePaid, IsFinalPayment: true);
             }
 
-            // Downpayment QR confirmation: only a booking still 'Pending Payment' / 'Awaiting_Downpayment' with unpaid downpayment can confirm
+            // Downpayment QR confirmation: only a booking still 'Pending Payment' / 'Pending' / 'Awaiting_Downpayment' / 'Rescheduled' with unpaid downpayment can confirm
             const string confirmSql = @"
                 UPDATE dbo.EventAppointment
                 SET EventStatus = 'Confirmed',
@@ -349,7 +349,7 @@ public class PendingPaymentService : IPendingPaymentService
                     HoldExpiresAt = NULL
                 OUTPUT inserted.EventAppointmentID, inserted.CustomerID, inserted.DownpaymentAmount
                 WHERE EventAppointmentID = @Ref
-                  AND EventStatus IN ('Pending Payment', 'Awaiting_Downpayment')
+                  AND EventStatus IN ('Pending Payment', 'Pending', 'Awaiting_Downpayment', 'Rescheduled')
                   AND ISNULL(DownpaymentStatus, 'Pending') <> 'Paid';";
 
             string? apptId = null, custId = null;

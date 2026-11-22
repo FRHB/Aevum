@@ -88,9 +88,20 @@ public class SessionInactivityMiddleware
 
             if (!_cache.TryGetValue(cacheKey, out DateTime lastActivityUtc))
             {
-                _logger.LogWarning("Rejected authenticated request for user {UserId} with missing/expired session state.", userId);
-                await WriteSessionRejectedAsync(context, "SESSION_TIMEOUT", "Session Expired", "Your session has expired or is no longer active. Please log in again.");
-                return;
+                // If the API worker restarted (cold start / IIS recycle) shortly after login,
+                // preserve the active session when the token was issued within the inactivity window.
+                var issuedAtUtc = GetTokenIssuedAtUtc(context.User);
+                if (issuedAtUtc.HasValue && (DateTime.UtcNow - issuedAtUtc.Value) <= _timeoutDuration)
+                {
+                    lastActivityUtc = issuedAtUtc.Value;
+                    _cache.Set(cacheKey, DateTime.UtcNow, TimeSpan.FromHours(4));
+                }
+                else
+                {
+                    _logger.LogWarning("Rejected authenticated request for user {UserId} with missing/expired session state.", userId);
+                    await WriteSessionRejectedAsync(context, "SESSION_TIMEOUT", "Session Expired", "Your session has expired or is no longer active. Please log in again.");
+                    return;
+                }
             }
 
             var idleTime = DateTime.UtcNow - lastActivityUtc;
@@ -111,13 +122,34 @@ public class SessionInactivityMiddleware
         await _next(context);
     }
 
+    private static DateTime? GetTokenIssuedAtUtc(ClaimsPrincipal user)
+    {
+        var iatMsClaim = user.FindFirstValue("iat_ms");
+        if (long.TryParse(iatMsClaim, out var parsedMs))
+            return DateTimeOffset.FromUnixTimeMilliseconds(parsedMs).UtcDateTime;
+
+        var iatClaim = user.FindFirstValue("iat");
+        if (long.TryParse(iatClaim, out var parsedSec))
+            return DateTimeOffset.FromUnixTimeSeconds(parsedSec).UtcDateTime;
+
+        return null;
+    }
+
     private bool IsTokenRevoked(ClaimsPrincipal user, string userId)
     {
+        long? issuedAtMs = null;
+        var iatMsClaim = user.FindFirstValue("iat_ms");
+        if (long.TryParse(iatMsClaim, out var parsedMs))
+        {
+            issuedAtMs = parsedMs;
+        }
+
         long? issuedAtEpoch = null;
         var iatClaim = user.FindFirstValue("iat");
         if (long.TryParse(iatClaim, out var parsedIat))
         {
             issuedAtEpoch = parsedIat;
+            issuedAtMs ??= parsedIat * 1000L;
         }
 
         var candidateKeys = new[]
@@ -132,7 +164,14 @@ public class SessionInactivityMiddleware
 
         foreach (var candidate in candidateKeys)
         {
-            if (_cache.TryGetValue($"SessionRevokedBefore_{candidate}", out long revokedBeforeEpoch))
+            if (_cache.TryGetValue($"SessionRevokedBeforeMs_{candidate}", out long revokedBeforeMs))
+            {
+                if (!issuedAtMs.HasValue || issuedAtMs.Value <= revokedBeforeMs)
+                {
+                    return true;
+                }
+            }
+            else if (_cache.TryGetValue($"SessionRevokedBefore_{candidate}", out long revokedBeforeEpoch))
             {
                 if (!issuedAtEpoch.HasValue || issuedAtEpoch.Value <= revokedBeforeEpoch)
                 {

@@ -358,7 +358,8 @@
 
                 _awaitingAppointments = _customerEvents
                     .Where(a => (string.Equals(a.EventStatus, "Pending Payment", StringComparison.OrdinalIgnoreCase) ||
-                                 string.Equals(a.EventStatus, "Awaiting_Downpayment", StringComparison.OrdinalIgnoreCase)) &&
+                                 string.Equals(a.EventStatus, "Awaiting_Downpayment", StringComparison.OrdinalIgnoreCase) ||
+                                 string.Equals(a.EventStatus, "Rescheduled", StringComparison.OrdinalIgnoreCase)) &&
                                 !string.Equals(a.DownpaymentStatus, "Paid", StringComparison.OrdinalIgnoreCase))
                     .ToList();
 
@@ -540,7 +541,21 @@
             if (res.IsSuccess)
             {
                 ScheduleService.InvalidateCache();
+                _customerActionFeedback = "Reservation payment confirmed!";
                 await LoadBookingsAsync();
+                return;
+            }
+
+            var qrRes = await ConsultationApi.SimulateQrPaymentAsync(appointmentId);
+            if (qrRes.IsSuccess)
+            {
+                ScheduleService.InvalidateCache();
+                _customerActionFeedback = "Reservation payment confirmed!";
+                await LoadBookingsAsync();
+            }
+            else
+            {
+                _customerActionFeedback = qrRes.Error?.Message ?? res.Error?.Message ?? "Payment simulation could not be completed.";
             }
         }
         finally

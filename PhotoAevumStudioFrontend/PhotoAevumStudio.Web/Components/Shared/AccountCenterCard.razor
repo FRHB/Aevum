@@ -287,8 +287,12 @@ else
 
         if (result.Success)
         {
+            var newPwd = passwordForm.NewPassword;
             ClosePasswordModal();
-            await DisplayToast("Account password updated successfully!");
+            var refreshOk = await AuthService.LoginAsync(CurrentUser.Id, newPwd);
+            await DisplayToast(refreshOk
+                ? "Account password updated successfully!"
+                : "Account password updated! Please sign in again if prompted.");
         }
         else
         {

@@ -1,3 +1,4 @@
+using System.IdentityModel.Tokens.Jwt;
 using System.Security.Cryptography;
 using Microsoft.AspNetCore.Components.Server.ProtectedBrowserStorage;
 using Microsoft.JSInterop;
@@ -7,6 +8,7 @@ namespace PhotoAevumStudio.Web.Services;
 public sealed class ProtectedSessionTokenStore : ITokenStore
 {
     private readonly ProtectedSessionStorage _sessionStorage;
+    private readonly ProtectedLocalStorage? _localStorage;
     private readonly SemaphoreSlim _readLock = new(1, 1);
     private const string TokenKey = "jwt_token";
 
@@ -17,9 +19,10 @@ public sealed class ProtectedSessionTokenStore : ITokenStore
     private static readonly AsyncLocal<ITokenStore?> AmbientStore = new();
     private static readonly AsyncLocal<string?> AmbientToken = new();
 
-    public ProtectedSessionTokenStore(ProtectedSessionStorage sessionStorage)
+    public ProtectedSessionTokenStore(ProtectedSessionStorage sessionStorage, ProtectedLocalStorage? localStorage = null)
     {
         _sessionStorage = sessionStorage;
+        _localStorage = localStorage;
     }
 
     internal static IDisposable BeginCircuitScope(ITokenStore store)
@@ -76,6 +79,37 @@ public sealed class ProtectedSessionTokenStore : ITokenStore
                 _circuitToken = result.Value;
                 AmbientToken.Value = result.Value;
                 return result.Value;
+            }
+
+            // Cross-tab fallback: allow links opened in a new tab (e.g. payment checkout / email links)
+            // within the same browser to inherit the active signed-in session.
+            if (_localStorage is not null)
+            {
+                try
+                {
+                    var localResult = await _localStorage.GetAsync<string>(TokenKey);
+                    if (localResult.Success && !string.IsNullOrWhiteSpace(localResult.Value))
+                    {
+                        if (IsTokenExpired(localResult.Value))
+                        {
+                            try { await _localStorage.DeleteAsync(TokenKey); } catch { }
+                            return null;
+                        }
+
+                        _circuitToken = localResult.Value;
+                        AmbientToken.Value = localResult.Value;
+                        try { await _sessionStorage.SetAsync(TokenKey, localResult.Value); } catch { }
+                        return localResult.Value;
+                    }
+                }
+                catch (CryptographicException)
+                {
+                    try { await _localStorage.DeleteAsync(TokenKey); } catch { }
+                }
+                catch
+                {
+                    // Fall through cleanly if localStorage is unavailable during prerender/disconnect.
+                }
             }
 
             return null;
@@ -143,6 +177,18 @@ public sealed class ProtectedSessionTokenStore : ITokenStore
         catch (Exception)
         {
         }
+
+        if (_localStorage is not null)
+        {
+            try
+            {
+                await _localStorage.SetAsync(TokenKey, token);
+            }
+            catch
+            {
+                // Best effort cross-tab persistence
+            }
+        }
     }
 
     public async Task ClearAsync(CancellationToken cancellationToken = default)
@@ -168,6 +214,34 @@ public sealed class ProtectedSessionTokenStore : ITokenStore
         }
         catch (Exception)
         {
+        }
+
+        if (_localStorage is not null)
+        {
+            try
+            {
+                await _localStorage.DeleteAsync(TokenKey);
+            }
+            catch
+            {
+                // Best effort cleanup
+            }
+        }
+    }
+
+    private static bool IsTokenExpired(string token)
+    {
+        try
+        {
+            var handler = new JwtSecurityTokenHandler();
+            if (!handler.CanReadToken(token))
+                return false;
+            var jwt = handler.ReadJwtToken(token);
+            return jwt.ValidTo < DateTime.UtcNow;
+        }
+        catch
+        {
+            return false;
         }
     }
 

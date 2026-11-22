@@ -141,18 +141,27 @@
 
     private async Task HandleLogin()
     {
-        isSubmitting = true;
         errorMessage = "";
         successMessage = "";
+
+        var identifier = loginModel.UserId?.Trim() ?? string.Empty;
+        if (string.IsNullOrWhiteSpace(identifier) || string.IsNullOrWhiteSpace(loginModel.Password))
+        {
+            errorMessage = "Please enter both your Account ID or Email and password.";
+            return;
+        }
+
+        loginModel.UserId = identifier;
+        isSubmitting = true;
         StateHasChanged();
 
         try
         {
-            var result = await AuthService.LoginAsync(loginModel.UserId, loginModel.Password, CancellationToken.None);
+            var result = await AuthService.LoginAsync(identifier, loginModel.Password, CancellationToken.None);
 
             if (result.RequiresPasswordChange)
             {
-                NavManager.NavigateTo($"/change-password?userId={Uri.EscapeDataString(result.UserId ?? loginModel.UserId)}");
+                NavManager.NavigateTo($"/change-password?userId={Uri.EscapeDataString(result.UserId ?? identifier)}");
                 return;
             }
 
@@ -163,20 +172,22 @@
 
                 bool isSuper = user.IsInRole("Super Admin") ||
                     (!string.IsNullOrEmpty(result.Role) && result.Role.Contains("Super", StringComparison.OrdinalIgnoreCase)) ||
-                    (!string.IsNullOrEmpty(loginModel.UserId) && loginModel.UserId.StartsWith("SADM-", StringComparison.OrdinalIgnoreCase));
+                    identifier.StartsWith("SADM-", StringComparison.OrdinalIgnoreCase);
 
                 bool isAdmin = isSuper || user.IsInRole("Admin") ||
                     (!string.IsNullOrEmpty(result.Role) && result.Role.Contains("Admin", StringComparison.OrdinalIgnoreCase)) ||
-                    (!string.IsNullOrEmpty(loginModel.UserId) && loginModel.UserId.StartsWith("ADM-", StringComparison.OrdinalIgnoreCase));
+                    identifier.StartsWith("ADM-", StringComparison.OrdinalIgnoreCase);
 
                 bool isEmployee = user.IsInRole("Employee") ||
                     user.IsInRole("Office Clerk") ||
                     (!string.IsNullOrEmpty(result.Role) && (result.Role.Contains("Employee", StringComparison.OrdinalIgnoreCase) || result.Role.Contains("Staff", StringComparison.OrdinalIgnoreCase) || result.Role.Contains("Clerk", StringComparison.OrdinalIgnoreCase))) ||
-                    (!string.IsNullOrEmpty(loginModel.UserId) && (loginModel.UserId.StartsWith("EMP-", StringComparison.OrdinalIgnoreCase) || loginModel.UserId.StartsWith("CLK-", StringComparison.OrdinalIgnoreCase)));
+                    identifier.StartsWith("EMP-", StringComparison.OrdinalIgnoreCase) ||
+                    identifier.StartsWith("CLK-", StringComparison.OrdinalIgnoreCase);
 
-                if (IsSafeLocalReturnUrl(returnUrl))
+                if (TryNormalizeSafeLocalReturnUrl(returnUrl, out var safeReturnUrl) &&
+                    !safeReturnUrl.StartsWith("/login", StringComparison.OrdinalIgnoreCase))
                 {
-                    NavManager.NavigateTo(returnUrl!);
+                    NavManager.NavigateTo(safeReturnUrl);
                     return;
                 }
 
@@ -220,13 +231,14 @@
             || trimmed.EndsWith("@photoaevum.studio", StringComparison.OrdinalIgnoreCase);
     }
 
-    private static bool IsSafeLocalReturnUrl(string? url)
+    private static bool TryNormalizeSafeLocalReturnUrl(string? url, out string normalized)
     {
+        normalized = string.Empty;
         if (string.IsNullOrWhiteSpace(url))
             return false;
 
         var trimmed = url.Trim();
-        if (!trimmed.StartsWith("/", StringComparison.Ordinal) ||
+        if (trimmed.Contains("://", StringComparison.Ordinal) ||
             trimmed.StartsWith("//", StringComparison.Ordinal) ||
             trimmed.StartsWith("/\\", StringComparison.Ordinal) ||
             trimmed.Contains('\\'))
@@ -234,8 +246,25 @@
             return false;
         }
 
-        return Uri.TryCreate(trimmed, UriKind.Relative, out _);
+        if (!trimmed.StartsWith("/", StringComparison.Ordinal))
+        {
+            var firstSlash = trimmed.IndexOf('/');
+            var prefix = firstSlash >= 0 ? trimmed[..firstSlash] : trimmed;
+            if (prefix.Contains(':'))
+                return false;
+
+            trimmed = "/" + trimmed;
+        }
+
+        if (!Uri.TryCreate(trimmed, UriKind.Relative, out _))
+            return false;
+
+        normalized = trimmed;
+        return true;
     }
+
+    private static bool IsSafeLocalReturnUrl(string? url) =>
+        TryNormalizeSafeLocalReturnUrl(url, out _);
 
     public class LoginCredentials
     {

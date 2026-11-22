@@ -1,352 +1,381 @@
-using System.Net.Http.Json;
-using PhotoAevumStudio.Web.Models;
-
-namespace PhotoAevumStudio.Web.Services;
-
-public sealed class AuthService : IAuthService
-{
-    private readonly HttpClient _http;
-    private readonly AevumAuthenticationStateProvider _authStateProvider;
-
-    public AuthService(IHttpClientFactory httpClientFactory,
-                       AevumAuthenticationStateProvider authStateProvider)
-    {
-        _http = httpClientFactory.CreateClient("AevumApi.Anonymous");
-        _authStateProvider = authStateProvider;
-    }
-
-    public async Task<AuthResult> LoginAsync(
-        string userId, string password,
-        CancellationToken cancellationToken = default)
-    {
-        try
-        {
-            var response = await _http.PostAsJsonAsync(
-                "api/auth/login",
-                new LoginRequest(userId, password),
-                cancellationToken);
-
-            if (!response.IsSuccessStatusCode)
-            {
-                var error = await ReadProblemMessageAsync(response, "Invalid credentials.", cancellationToken);
-                return new AuthResult(false, Error: error);
-            }
-
-            var loginResponse = await response.Content
-                .ReadFromJsonAsync<LoginResponse>(cancellationToken: cancellationToken);
-
-            if (loginResponse is null)
-                return new AuthResult(false, Error: "Unexpected server response.");
-
-            // First-time login: JWT is not issued; redirect to password change screen
-            if (loginResponse.RequiresPasswordChange || loginResponse.IsFirstLogin)
-            {
-                return new AuthResult(
-                    true,
-                    RequiresPasswordChange: true,
-                    UserId: loginResponse.UserId ?? userId,
-                    Role: loginResponse.Role,
-                    IsFirstLogin: true);
-            }
-
-            if (string.IsNullOrWhiteSpace(loginResponse.Token))
-                return new AuthResult(false, Error: "Token missing from server response.");
-
-            await _authStateProvider.NotifyUserLoginAsync(loginResponse.Token);
-            return new AuthResult(true, Token: loginResponse.Token, UserId: loginResponse.UserId, Role: loginResponse.Role);
-        }
-        catch (HttpRequestException ex)
-        {
-            return new AuthResult(false, Error: $"Cannot reach the API server: {ex.Message}");
-        }
-        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
-        {
-            return new AuthResult(false, Error: "Login request was canceled.");
-        }
-        catch (Exception)
-        {
-            return new AuthResult(false, Error: "Authentication service returned an unexpected response. Please try again shortly.");
-        }
-    }
-
-    public async Task<bool> LoginAsync(string username, string password)
-    {
-        var result = await LoginAsync(username, password, CancellationToken.None);
-        return result.Success && !result.RequiresPasswordChange;
-    }
-
-    public async Task<AuthResult> ChangeInitialPasswordAsync(
-        string userId, string currentPassword, string newPassword, string confirmPassword,
-        CancellationToken cancellationToken = default)
-    {
-        try
-        {
-            var response = await _http.PostAsJsonAsync(
-                "api/auth/initial-password-change",
-                new InitialPasswordChangeRequest(userId, currentPassword, newPassword, confirmPassword),
-                cancellationToken);
-
-            if (!response.IsSuccessStatusCode)
-            {
-                var error = await ReadProblemMessageAsync(response, "Password change failed.", cancellationToken);
-                return new AuthResult(false, Error: error);
-            }
-
-            return new AuthResult(true);
-        }
-        catch (HttpRequestException ex)
-        {
-            return new AuthResult(false, Error: $"Cannot reach the API server: {ex.Message}");
-        }
-        catch (Exception)
-        {
-            return new AuthResult(false, Error: "Password change service returned an unexpected response. Please try again.");
-        }
-    }
-
-    public async Task LogoutAsync(CancellationToken cancellationToken = default)
-    {
-        try
-        {
-            await _http.PostAsync("api/auth/logout", null, cancellationToken);
-        }
-        catch
-        {
-            // Ignore API connectivity issues so the local user session is always guaranteed to be cleared
-        }
-        await _authStateProvider.NotifyUserLogoutAsync();
-    }
-
-    public async Task<bool> IsUserLoggedInAsync(CancellationToken cancellationToken = default)
-    {
-        var state = await _authStateProvider.GetAuthenticationStateAsync();
-        return state.User.Identity?.IsAuthenticated ?? false;
-    }
-
-    public async Task<bool> RegisterCustomerAsync(object request, CancellationToken cancellationToken = default)
-    {
-        var result = await RegisterCustomerWithResultAsync(request, cancellationToken);
-        return result.Success;
-    }
-
-    public async Task<AuthResult> RegisterCustomerWithResultAsync(object request, CancellationToken cancellationToken = default)
-    {
-        try
-        {
-            var response = await _http.PostAsJsonAsync("api/auth/register-customer", request, cancellationToken);
-            if (response.IsSuccessStatusCode)
-            {
-                return new AuthResult(true);
-            }
-
-            var error = await ReadProblemMessageAsync(response, "Registration failed.", cancellationToken);
-            return new AuthResult(false, Error: error);
-        }
-        catch (HttpRequestException ex)
-        {
-            return new AuthResult(false, Error: $"Cannot reach the API server: {ex.Message}");
-        }
-        catch
-        {
-            return new AuthResult(false, Error: "A server error occurred during registration. Please try again.");
-        }
-    }
-
-    public async Task<(bool Success, string? Error)> RequestVerificationCodeAsync(string email, CancellationToken cancellationToken = default)
-    {
-        try
-        {
-            var response = await _http.PostAsJsonAsync("api/auth/send-verification", new { Email = email }, cancellationToken);
-            if (response.IsSuccessStatusCode)
-            {
-                return (true, null);
-            }
-
-            var error = await ReadProblemMessageAsync(
-                response,
-                "Could not send verification email. Please check your address.",
-                cancellationToken);
-            return (false, error);
-        }
-        catch (HttpRequestException ex)
-        {
-            return (false, $"Cannot reach the API server: {ex.Message}");
-        }
-        catch
-        {
-            return (false, "Could not send verification email. Please try again.");
-        }
-    }
-
-    public async Task<bool> SendVerificationCodeAsync(string email, CancellationToken cancellationToken = default)
-    {
-        var (success, _) = await RequestVerificationCodeAsync(email, cancellationToken);
-        return success;
-    }
-
-    public async Task<bool> IsEmailInUseAsync(string email, string? excludeId = null, CancellationToken cancellationToken = default)
-    {
-        try
-        {
-            var url = $"api/auth/check-email?email={Uri.EscapeDataString(email)}";
-            if (!string.IsNullOrWhiteSpace(excludeId))
-            {
-                url += $"&excludeId={Uri.EscapeDataString(excludeId)}";
-            }
-            var response = await _http.GetAsync(url, cancellationToken);
-            if (response.IsSuccessStatusCode)
-            {
-                var data = await response.Content.ReadFromJsonAsync<CheckEmailResult>(cancellationToken: cancellationToken);
-                return data != null && !data.IsUnique;
-            }
-            return false;
-        }
-        catch
-        {
-            return false;
-        }
-    }
-
-    private sealed record CheckEmailResult(bool IsUnique, string? Message);
-
-    public async Task<bool> VerifyCodeAsync(string email, string code, CancellationToken cancellationToken = default)
-    {
-        try
-        {
-            var response = await _http.PostAsJsonAsync("api/auth/verify-code", new { Email = email, VerificationCode = code }, cancellationToken);
-            return response.IsSuccessStatusCode;
-        }
-        catch
-        {
-            return false;
-        }
-    }
-
-    public async Task<bool> ForgotPasswordAsync(string email, CancellationToken cancellationToken = default)
-    {
-        var (success, _) = await RequestPasswordResetCodeAsync(email, cancellationToken);
-        return success;
-    }
-
-    public Task<(bool Success, string? Error)> RequestPasswordResetCodeAsync(string email, CancellationToken cancellationToken = default)
-        => PostWithProblemAsync(
-            "api/auth/forgot-password",
-            new { Email = email },
-            "Could not send password reset verification code. Please check your email address.",
-            cancellationToken);
-
-    public Task<(bool Success, string? Error)> VerifyPasswordResetCodeAsync(string email, string code, CancellationToken cancellationToken = default)
-        => PostWithProblemAsync(
-            "api/auth/verify-reset-code",
-            new { Email = email, VerificationCode = code },
-            "Invalid or expired verification code. Please check and try again.",
-            cancellationToken);
-
-    public Task<(bool Success, string? Error)> ResetCustomerPasswordAsync(string email, string code, string newPassword, CancellationToken cancellationToken = default)
-        => PostWithProblemAsync(
-            "api/auth/reset-password",
-            new { Email = email, VerificationCode = code, NewPassword = newPassword },
-            "Password reset failed. Please verify your code and password requirements.",
-            cancellationToken);
-
-    public async Task<bool> ResetPasswordAsync(string email, string verificationCode, string newPassword, CancellationToken cancellationToken = default)
-    {
-        var (success, _) = await ResetCustomerPasswordAsync(email, verificationCode, newPassword, cancellationToken);
-        return success;
-    }
-
-    private async Task<(bool Success, string? Error)> PostWithProblemAsync(
-        string url,
-        object payload,
-        string fallbackError,
-        CancellationToken cancellationToken)
-    {
-        try
-        {
-            var response = await _http.PostAsJsonAsync(url, payload, cancellationToken);
-            if (response.IsSuccessStatusCode)
-            {
-                return (true, null);
-            }
-
-            var error = await ReadProblemMessageAsync(response, fallbackError, cancellationToken);
-            return (false, error);
-        }
-        catch (HttpRequestException ex)
-        {
-            return (false, $"Cannot reach the API server: {ex.Message}");
-        }
-        catch
-        {
-            return (false, fallbackError);
-        }
-    }
-
-    private static async Task<string> ReadProblemMessageAsync(
-        HttpResponseMessage response,
-        string fallback,
-        CancellationToken cancellationToken)
-    {
-        try
-        {
-            var mediaType = response.Content.Headers.ContentType?.MediaType;
-            if (string.IsNullOrWhiteSpace(mediaType) ||
-                mediaType.Contains("json", StringComparison.OrdinalIgnoreCase))
-            {
-                var problem = await response.Content.ReadFromJsonAsync<ProblemDetails>(cancellationToken: cancellationToken);
-                if (problem is not null)
-                    return problem.GetErrorMessage(fallback);
-            }
-        }
-        catch
-        {
-            // Non-JSON responses (such as IIS 500.30/502 HTML error pages) fall through to status handling.
-        }
-
-        return (int)response.StatusCode >= 500
-            ? $"The API server returned an error (HTTP {(int)response.StatusCode}). Please ensure the backend service is running and configured."
-            : fallback;
-    }
-
-    public async Task<bool> RegisterAsync(
-        RegistrationRequest request,
-        CancellationToken cancellationToken = default)
-    {
-        try
-        {
-            var response = await _http.PostAsJsonAsync(
-                "api/auth/register",
-                request,
-                cancellationToken);
-            return response.IsSuccessStatusCode;
-        }
-        catch
-        {
-            return false;
-        }
-    }
-
-    private sealed record ProblemDetails(
-        string? Title = null,
-        string? Detail = null,
-        Dictionary<string, string[]>? Errors = null)
-    {
-        public string GetErrorMessage(string fallback)
-        {
-            if (Errors is { Count: > 0 })
-            {
-                var firstError = Errors.Values.SelectMany(v => v).FirstOrDefault(e => !string.IsNullOrWhiteSpace(e));
-                if (!string.IsNullOrWhiteSpace(firstError))
-                    return firstError;
-            }
-
-            if (!string.IsNullOrWhiteSpace(Detail))
-                return Detail;
-
-            if (!string.IsNullOrWhiteSpace(Title) && Title != "One or more validation errors occurred.")
-                return Title;
-
-            return fallback;
-        }
-    }
-}
+using System.Net;
+using System.Net.Http.Json;
+using System.Text.Json;
+using PhotoAevumStudio.Web.Models;
+
+namespace PhotoAevumStudio.Web.Services;
+
+public sealed class AuthService : IAuthService
+{
+    private readonly HttpClient _http;
+    private readonly AevumAuthenticationStateProvider _authStateProvider;
+
+    public AuthService(IHttpClientFactory httpClientFactory,
+                       AevumAuthenticationStateProvider authStateProvider)
+    {
+        _http = httpClientFactory.CreateClient("AevumApi.Anonymous");
+        _authStateProvider = authStateProvider;
+    }
+
+    public async Task<AuthResult> LoginAsync(
+        string userId, string password,
+        CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrWhiteSpace(userId) || string.IsNullOrWhiteSpace(password))
+            return new AuthResult(false, Error: "Account ID or Email and password are required.");
+
+        try
+        {
+            var response = await _http.PostAsJsonAsync(
+                "api/auth/login",
+                new LoginRequest(userId.Trim(), password),
+                cancellationToken);
+
+            if (!response.IsSuccessStatusCode)
+            {
+                var error = await ReadProblemMessageAsync(response, "Invalid credentials.", cancellationToken);
+                return new AuthResult(false, Error: error);
+            }
+
+            var loginResponse = await response.Content
+                .ReadFromJsonAsync<LoginResponse>(cancellationToken: cancellationToken);
+
+            if (loginResponse is null)
+                return new AuthResult(false, Error: "Unexpected server response.");
+
+            // First-time login: JWT is not issued; redirect to password change screen
+            if (loginResponse.RequiresPasswordChange || loginResponse.IsFirstLogin)
+            {
+                return new AuthResult(
+                    true,
+                    RequiresPasswordChange: true,
+                    UserId: loginResponse.UserId ?? userId.Trim(),
+                    Role: loginResponse.Role,
+                    IsFirstLogin: true);
+            }
+
+            if (string.IsNullOrWhiteSpace(loginResponse.Token))
+                return new AuthResult(false, Error: "Token missing from server response.");
+
+            await _authStateProvider.NotifyUserLoginAsync(loginResponse.Token);
+            return new AuthResult(true, Token: loginResponse.Token, UserId: loginResponse.UserId, Role: loginResponse.Role);
+        }
+        catch (HttpRequestException ex)
+        {
+            return new AuthResult(false, Error: $"Cannot reach the API server: {ex.Message}");
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            return new AuthResult(false, Error: "Login request was canceled.");
+        }
+        catch (Exception)
+        {
+            return new AuthResult(false, Error: "Authentication service returned an unexpected response. Please try again shortly.");
+        }
+    }
+
+    public async Task<bool> LoginAsync(string username, string password)
+    {
+        var result = await LoginAsync(username, password, CancellationToken.None);
+        return result.Success && !result.RequiresPasswordChange;
+    }
+
+    public async Task<AuthResult> ChangeInitialPasswordAsync(
+        string userId, string currentPassword, string newPassword, string confirmPassword,
+        CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            var response = await _http.PostAsJsonAsync(
+                "api/auth/initial-password-change",
+                new InitialPasswordChangeRequest(userId, currentPassword, newPassword, confirmPassword),
+                cancellationToken);
+
+            if (!response.IsSuccessStatusCode)
+            {
+                var error = await ReadProblemMessageAsync(response, "Password change failed.", cancellationToken);
+                return new AuthResult(false, Error: error);
+            }
+
+            return new AuthResult(true);
+        }
+        catch (HttpRequestException ex)
+        {
+            return new AuthResult(false, Error: $"Cannot reach the API server: {ex.Message}");
+        }
+        catch (Exception)
+        {
+            return new AuthResult(false, Error: "Password change service returned an unexpected response. Please try again.");
+        }
+    }
+
+    public async Task LogoutAsync(CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            await _http.PostAsync("api/auth/logout", null, cancellationToken);
+        }
+        catch
+        {
+            // Ignore API connectivity issues so the local user session is always guaranteed to be cleared
+        }
+        await _authStateProvider.NotifyUserLogoutAsync();
+    }
+
+    public async Task<bool> IsUserLoggedInAsync(CancellationToken cancellationToken = default)
+    {
+        var state = await _authStateProvider.GetAuthenticationStateAsync();
+        return state.User.Identity?.IsAuthenticated ?? false;
+    }
+
+    public async Task<bool> RegisterCustomerAsync(object request, CancellationToken cancellationToken = default)
+    {
+        var result = await RegisterCustomerWithResultAsync(request, cancellationToken);
+        return result.Success;
+    }
+
+    public async Task<AuthResult> RegisterCustomerWithResultAsync(object request, CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            var response = await _http.PostAsJsonAsync("api/auth/register-customer", request, cancellationToken);
+            if (response.IsSuccessStatusCode)
+            {
+                return new AuthResult(true);
+            }
+
+            var error = await ReadProblemMessageAsync(response, "Registration failed.", cancellationToken);
+            return new AuthResult(false, Error: error);
+        }
+        catch (HttpRequestException ex)
+        {
+            return new AuthResult(false, Error: $"Cannot reach the API server: {ex.Message}");
+        }
+        catch
+        {
+            return new AuthResult(false, Error: "A server error occurred during registration. Please try again.");
+        }
+    }
+
+    public async Task<(bool Success, string? Error)> RequestVerificationCodeAsync(string email, CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            var response = await _http.PostAsJsonAsync("api/auth/send-verification", new { Email = email }, cancellationToken);
+            if (response.IsSuccessStatusCode)
+            {
+                return (true, null);
+            }
+
+            var error = await ReadProblemMessageAsync(
+                response,
+                "Could not send verification email. Please check your address.",
+                cancellationToken);
+            return (false, error);
+        }
+        catch (HttpRequestException ex)
+        {
+            return (false, $"Cannot reach the API server: {ex.Message}");
+        }
+        catch
+        {
+            return (false, "Could not send verification email. Please try again.");
+        }
+    }
+
+    public async Task<bool> SendVerificationCodeAsync(string email, CancellationToken cancellationToken = default)
+    {
+        var (success, _) = await RequestVerificationCodeAsync(email, cancellationToken);
+        return success;
+    }
+
+    public async Task<bool> IsEmailInUseAsync(string email, string? excludeId = null, CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            var url = $"api/auth/check-email?email={Uri.EscapeDataString(email)}";
+            if (!string.IsNullOrWhiteSpace(excludeId))
+            {
+                url += $"&excludeId={Uri.EscapeDataString(excludeId)}";
+            }
+            var response = await _http.GetAsync(url, cancellationToken);
+            if (response.IsSuccessStatusCode)
+            {
+                var data = await response.Content.ReadFromJsonAsync<CheckEmailResult>(cancellationToken: cancellationToken);
+                return data != null && !data.IsUnique;
+            }
+            return false;
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
+    private sealed record CheckEmailResult(bool IsUnique, string? Message);
+
+    public async Task<bool> VerifyCodeAsync(string email, string code, CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            var response = await _http.PostAsJsonAsync("api/auth/verify-code", new { Email = email, VerificationCode = code }, cancellationToken);
+            return response.IsSuccessStatusCode;
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
+    public async Task<bool> ForgotPasswordAsync(string email, CancellationToken cancellationToken = default)
+    {
+        var (success, _) = await RequestPasswordResetCodeAsync(email, cancellationToken);
+        return success;
+    }
+
+    public Task<(bool Success, string? Error)> RequestPasswordResetCodeAsync(string email, CancellationToken cancellationToken = default)
+        => PostWithProblemAsync(
+            "api/auth/forgot-password",
+            new { Email = email },
+            "Could not send password reset verification code. Please check your email address.",
+            cancellationToken);
+
+    public Task<(bool Success, string? Error)> VerifyPasswordResetCodeAsync(string email, string code, CancellationToken cancellationToken = default)
+        => PostWithProblemAsync(
+            "api/auth/verify-reset-code",
+            new { Email = email, VerificationCode = code },
+            "Invalid or expired verification code. Please check and try again.",
+            cancellationToken);
+
+    public Task<(bool Success, string? Error)> ResetCustomerPasswordAsync(string email, string code, string newPassword, CancellationToken cancellationToken = default)
+        => PostWithProblemAsync(
+            "api/auth/reset-password",
+            new { Email = email, VerificationCode = code, NewPassword = newPassword },
+            "Password reset failed. Please verify your code and password requirements.",
+            cancellationToken);
+
+    public async Task<bool> ResetPasswordAsync(string email, string verificationCode, string newPassword, CancellationToken cancellationToken = default)
+    {
+        var (success, _) = await ResetCustomerPasswordAsync(email, verificationCode, newPassword, cancellationToken);
+        return success;
+    }
+
+    private async Task<(bool Success, string? Error)> PostWithProblemAsync(
+        string url,
+        object payload,
+        string fallbackError,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            var response = await _http.PostAsJsonAsync(url, payload, cancellationToken);
+            if (response.IsSuccessStatusCode)
+            {
+                return (true, null);
+            }
+
+            var error = await ReadProblemMessageAsync(response, fallbackError, cancellationToken);
+            return (false, error);
+        }
+        catch (HttpRequestException ex)
+        {
+            return (false, $"Cannot reach the API server: {ex.Message}");
+        }
+        catch
+        {
+            return (false, fallbackError);
+        }
+    }
+
+    private static async Task<string> ReadProblemMessageAsync(
+        HttpResponseMessage response,
+        string fallback,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            var mediaType = response.Content.Headers.ContentType?.MediaType;
+            if (string.IsNullOrWhiteSpace(mediaType) ||
+                mediaType.Contains("json", StringComparison.OrdinalIgnoreCase))
+            {
+                var raw = await response.Content.ReadAsStringAsync(cancellationToken);
+                if (!string.IsNullOrWhiteSpace(raw))
+                {
+                    var problem = JsonSerializer.Deserialize<ProblemDetails>(
+                        raw,
+                        new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
+                    if (problem is not null)
+                    {
+                        var extracted = problem.GetErrorMessage(string.Empty);
+                        if (!string.IsNullOrWhiteSpace(extracted))
+                            return extracted;
+                    }
+                }
+            }
+        }
+        catch
+        {
+            // Non-JSON responses (such as IIS 500.30/502 HTML error pages) fall through to status handling.
+        }
+
+        if (response.StatusCode == HttpStatusCode.TooManyRequests)
+        {
+            return "Too many attempts right now. Please wait a moment and try again.";
+        }
+
+        if (response.StatusCode == HttpStatusCode.ServiceUnavailable)
+        {
+            return "The service is temporarily unavailable. Please try again shortly.";
+        }
+
+        return (int)response.StatusCode >= 500
+            ? $"The API server returned an error (HTTP {(int)response.StatusCode}). Please ensure the backend service is running and configured."
+            : fallback;
+    }
+
+    public async Task<bool> RegisterAsync(
+        RegistrationRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            var response = await _http.PostAsJsonAsync(
+                "api/auth/register",
+                request,
+                cancellationToken);
+            return response.IsSuccessStatusCode;
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
+    private sealed record ProblemDetails(
+        string? Title = null,
+        string? Detail = null,
+        string? Message = null,
+        Dictionary<string, string[]>? Errors = null)
+    {
+        public string GetErrorMessage(string fallback)
+        {
+            if (Errors is { Count: > 0 })
+            {
+                var firstError = Errors.Values.SelectMany(v => v).FirstOrDefault(e => !string.IsNullOrWhiteSpace(e));
+                if (!string.IsNullOrWhiteSpace(firstError))
+                    return firstError;
+            }
+
+            if (!string.IsNullOrWhiteSpace(Detail))
+                return Detail;
+
+            if (!string.IsNullOrWhiteSpace(Message))
+                return Message;
+
+            if (!string.IsNullOrWhiteSpace(Title) && Title != "One or more validation errors occurred.")
+                return Title;
+
+            return fallback;
+        }
+    }
+}

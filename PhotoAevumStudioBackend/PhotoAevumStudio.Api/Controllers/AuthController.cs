@@ -44,8 +44,16 @@ public class AuthController : ControllerBase
     [EnableRateLimiting("LoginPolicy")]
     public async Task<IActionResult> SendVerificationCode([FromBody] SendVerificationRequest request)
     {
-        var normalizedEmail = request.Email?.Trim().ToLowerInvariant() ?? string.Empty;
-        if (string.IsNullOrWhiteSpace(normalizedEmail)) return BadRequest("Email is required.");
+        var normalizedEmail = request?.Email?.Trim().ToLowerInvariant() ?? string.Empty;
+        if (string.IsNullOrWhiteSpace(normalizedEmail) || !System.Net.Mail.MailAddress.TryCreate(normalizedEmail, out _))
+        {
+            return BadRequest(new ProblemDetails
+            {
+                Title = "Invalid email address",
+                Detail = "Please enter a valid email address.",
+                Status = StatusCodes.Status400BadRequest
+            });
+        }
 
         if (await _sqlAuthService.IsEmailInUseAcrossRolesAsync(normalizedEmail))
         {
@@ -289,7 +297,18 @@ public class AuthController : ControllerBase
     [EnableRateLimiting("LoginPolicy")]
     public async Task<IActionResult> Login([FromBody] LoginRequest request)
     {
-        var lockoutKey = BuildAuthLockoutKey(request.UserId);
+        if (request == null || string.IsNullOrWhiteSpace(request.UserId) || string.IsNullOrWhiteSpace(request.Password))
+        {
+            return BadRequest(new ProblemDetails
+            {
+                Title = "Validation error",
+                Detail = "Account ID or Email and password are required.",
+                Status = StatusCodes.Status400BadRequest
+            });
+        }
+
+        var trimmedUserId = request.UserId.Trim();
+        var lockoutKey = BuildAuthLockoutKey(trimmedUserId);
         if (IsAuthLockedOut(lockoutKey))
         {
             return StatusCode(StatusCodes.Status429TooManyRequests, new ProblemDetails
@@ -300,12 +319,22 @@ public class AuthController : ControllerBase
             });
         }
 
-        var authResult = await _sqlAuthService.AuthenticateAsync(request.UserId, request.Password);
+        var authResult = await _sqlAuthService.AuthenticateAsync(trimmedUserId, request.Password);
 
         if (!authResult.Success)
         {
             RecordAuthFailure(lockoutKey);
-            _logger.LogWarning("Failed login attempt for {UserId}: {Error}", request.UserId, authResult.ErrorMessage);
+            _logger.LogWarning("Failed login attempt for {UserId}: {Error}", trimmedUserId, authResult.ErrorMessage);
+            if (!string.IsNullOrWhiteSpace(authResult.ErrorMessage) &&
+                authResult.ErrorMessage.Contains("inactive", StringComparison.OrdinalIgnoreCase))
+            {
+                return Unauthorized(new ProblemDetails
+                {
+                    Title = "Account inactive",
+                    Detail = authResult.ErrorMessage,
+                    Status = StatusCodes.Status401Unauthorized
+                });
+            }
             return InvalidCredentials();
         }
 
@@ -600,12 +629,14 @@ public class AuthController : ControllerBase
         var audience = _configuration["Jwt:Audience"] ?? throw new InvalidOperationException("Jwt:Audience is not configured.");
         var minutes = _configuration.GetValue<int?>("Jwt:ExpiryMinutes") ?? 60;
 
+        var nowOffset = DateTimeOffset.UtcNow;
         var claims = new List<Claim>
         {
             new(JwtRegisteredClaimNames.Sub,   userId),
             new(JwtRegisteredClaimNames.Email, email),
             new(JwtRegisteredClaimNames.Jti,   Guid.NewGuid().ToString()),
-            new(JwtRegisteredClaimNames.Iat,   DateTimeOffset.UtcNow.ToUnixTimeSeconds().ToString(), ClaimValueTypes.Integer64),
+            new(JwtRegisteredClaimNames.Iat,   nowOffset.ToUnixTimeSeconds().ToString(), ClaimValueTypes.Integer64),
+            new("iat_ms",                      nowOffset.ToUnixTimeMilliseconds().ToString()),
             new(ClaimTypes.NameIdentifier,     userId),
             new(ClaimTypes.Name,               email),
             new("full_name",                   fullName),
@@ -708,8 +739,10 @@ public class AuthController : ControllerBase
             return;
 
         var normalized = identifier.Trim().ToUpperInvariant();
+        var now = DateTimeOffset.UtcNow;
         _cache.Remove($"SessionActivity_{normalized}");
-        _cache.Set($"SessionRevokedBefore_{normalized}", DateTimeOffset.UtcNow.ToUnixTimeSeconds(), TimeSpan.FromHours(4));
+        _cache.Set($"SessionRevokedBefore_{normalized}", now.ToUnixTimeSeconds(), TimeSpan.FromHours(4));
+        _cache.Set($"SessionRevokedBeforeMs_{normalized}", now.ToUnixTimeMilliseconds(), TimeSpan.FromHours(4));
     }
 }
 

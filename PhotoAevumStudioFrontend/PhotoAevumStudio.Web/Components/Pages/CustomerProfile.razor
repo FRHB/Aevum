@@ -350,8 +350,13 @@ else
 
         if (result.Success)
         {
-            passwordSuccessMessage = "Password successfully updated!";
+            var newPwd = passwordForm.NewPassword;
             passwordForm = new();
+            // Refresh the active JWT since password change revokes prior tokens on the server.
+            var refreshOk = await AuthService.LoginAsync(profile.Id, newPwd);
+            passwordSuccessMessage = refreshOk
+                ? "Password successfully updated!"
+                : "Password successfully updated! Please sign in again with your new password.";
         }
         else
         {

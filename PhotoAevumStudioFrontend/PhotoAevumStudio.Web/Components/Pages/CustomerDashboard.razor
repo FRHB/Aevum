@@ -269,25 +269,14 @@
 
 
                 @if (!isExpired)
-
-
-
                 {
-
-
-
-                    <a href="@(GetCheckoutUrl(_awaitingDepositAppointment))" target="_blank" rel="noopener noreferrer"
-
-
-
+                    var checkoutUrl = GetCheckoutUrl(_awaitingDepositAppointment);
+                    var isExternalCheckout = checkoutUrl.StartsWith("http", StringComparison.OrdinalIgnoreCase);
+                    <a href="@checkoutUrl"
+                       target="@(isExternalCheckout ? "_blank" : null)"
+                       rel="@(isExternalCheckout ? "noopener noreferrer" : null)"
                        class="px-4 py-2.5 bg-emerald-700 hover:bg-emerald-800 text-white rounded-lg text-xs font-bold shadow-sm transition-all text-center">
-
-
-
                         Pay Deposit (Xendit) &rarr;
-
-
-
                     </a>
 
 
@@ -1970,7 +1959,8 @@
 
                 _awaitingDepositAppointment = _customerEventAppointments.FirstOrDefault(a =>
                     (string.Equals(a.EventStatus, "Pending Payment", StringComparison.OrdinalIgnoreCase) ||
-                     string.Equals(a.EventStatus, "Awaiting_Downpayment", StringComparison.OrdinalIgnoreCase)) &&
+                     string.Equals(a.EventStatus, "Awaiting_Downpayment", StringComparison.OrdinalIgnoreCase) ||
+                     string.Equals(a.EventStatus, "Rescheduled", StringComparison.OrdinalIgnoreCase)) &&
                     !string.Equals(a.DownpaymentStatus, "Paid", StringComparison.OrdinalIgnoreCase));
 
                 if (_awaitingDepositAppointment != null)
@@ -2265,12 +2255,16 @@
         StateHasChanged();
     }
 
-        private string GetCheckoutUrl(EventAppointmentDto? appt)
+    private string GetCheckoutUrl(EventAppointmentDto? appt)
     {
-        if (appt == null || string.IsNullOrWhiteSpace(appt.XenditInvoiceUrl))
-            return appt != null ? $"/payments/{appt.EventAppointmentId}" : "#";
-        if (appt.XenditInvoiceUrl.Contains("mock", StringComparison.OrdinalIgnoreCase) ||
-            appt.XenditInvoiceUrl.Contains("inv_mock_", StringComparison.OrdinalIgnoreCase))
+        if (appt == null)
+            return "#";
+        if (string.IsNullOrWhiteSpace(appt.XenditInvoiceUrl) ||
+            appt.XenditInvoiceUrl.Contains("/qr_", StringComparison.OrdinalIgnoreCase) ||
+            appt.XenditInvoiceUrl.Contains("qr_", StringComparison.OrdinalIgnoreCase) ||
+            appt.XenditInvoiceUrl.Contains("mock", StringComparison.OrdinalIgnoreCase) ||
+            appt.XenditInvoiceUrl.Contains("inv_mock_", StringComparison.OrdinalIgnoreCase) ||
+            !string.IsNullOrWhiteSpace(appt.QrString))
         {
             return $"/payments/{appt.EventAppointmentId}";
         }
@@ -2278,35 +2272,34 @@
     }
 
     private async Task SimulatePaymentSuccessAsync(string appointmentId)
-
     {
-
         try
-
         {
-
             var res = await ConsultationApi.SimulateWebhookPaymentAsync(appointmentId);
-
-            if (res.IsSuccess && res.Value?.DownpaymentStatus == "Paid")
-
+            if (!res.IsSuccess)
             {
-
-                ScheduleService.InvalidateCache();
-
-                _countdownTimer?.Dispose();
-
-                _awaitingDepositAppointment = null;
-
-                await LoadAsync();
-
-                StateHasChanged();
-
+                var qrRes = await ConsultationApi.SimulateQrPaymentAsync(appointmentId);
+                if (qrRes.IsSuccess)
+                {
+                    ScheduleService.InvalidateCache();
+                    _countdownTimer?.Dispose();
+                    _awaitingDepositAppointment = null;
+                    await LoadAsync();
+                    StateHasChanged();
+                }
+                return;
             }
 
+            if (res.Value?.DownpaymentStatus == "Paid")
+            {
+                ScheduleService.InvalidateCache();
+                _countdownTimer?.Dispose();
+                _awaitingDepositAppointment = null;
+                await LoadAsync();
+                StateHasChanged();
+            }
         }
-
         catch { }
-
     }
 
 

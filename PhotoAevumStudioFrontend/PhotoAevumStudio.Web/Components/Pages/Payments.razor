@@ -24,13 +24,23 @@
     {
         <p class="mt-8 text-sm text-slate-500">Loading payment details&hellip;</p>
     }
+    else if (!string.IsNullOrWhiteSpace(_loadError))
+    {
+        <div class="mt-8 rounded-2xl border border-red-200 bg-red-50 p-6 text-sm text-red-800 space-y-3" role="alert">
+            <p>@_loadError</p>
+            <button type="button" @onclick="RetryLoadAsync"
+                    class="px-4 py-2 rounded-lg bg-slate-900 hover:bg-black text-white text-xs font-bold">
+                Try Again
+            </button>
+        </div>
+    }
     else if (_info is null)
     {
         <div class="mt-8 rounded-2xl border border-red-200 bg-red-50 p-6 text-sm text-red-800">
             We couldn't find that booking.
         </div>
     }
-    else if (_info.EventStatus == "Confirmed" || _info.EventStatus == "Shot" || _info.EventStatus == "Complete" || _info.EventStatus == "Completed" || _paid)
+    else if (IsAlreadyPaid(_info) || _paid)
     {
         <div class="mt-8 rounded-2xl border border-emerald-200 bg-emerald-50 p-8 text-center shadow-sm" role="status">
             <div class="text-5xl mb-3">&#10003;</div>
@@ -56,14 +66,25 @@
             <a href="/my/bookings" class="inline-block mt-6 px-5 py-2.5 rounded-xl bg-emerald-700 text-white text-sm font-bold">View My Bookings</a>
         </div>
     }
-    else if (_info.EventStatus == "Cancelled" || _info.EventStatus == "Expired" || _expired)
+    else if (_info.EventStatus == "Cancelled" || _info.EventStatus == "Expired" || _info.EventStatus == "Deal_Lost" || _expired)
     {
         <div class="mt-8 rounded-2xl border border-red-200 bg-red-50 p-8 text-center shadow-sm" role="alert">
             <h1 class="text-2xl font-black text-red-900">Reservation Expired</h1>
             <p class="mt-2 text-sm text-red-800">
                 The reservation fee for <strong>@_info.EventName</strong> (#@_info.AppointmentId) was not received in time,
-                so the booking was cancelled and the time slot released. Please contact the studio to book again.
+                so the booking hold elapsed.
             </p>
+            @if (!string.IsNullOrWhiteSpace(_paymentError))
+            {
+                <p class="mt-3 text-xs rounded-lg px-3 py-2 bg-white/80 text-red-800 border border-red-200">@_paymentError</p>
+            }
+            @if (!_info.IsFinalPayment && _info.EventStatus is not ("Cancelled" or "Expired" or "Deal_Lost"))
+            {
+                <button type="button" @onclick="RequestExtensionAsync" disabled="@_busy"
+                        class="mt-5 px-5 py-2.5 rounded-xl bg-amber-600 hover:bg-amber-700 disabled:opacity-50 text-white text-xs font-bold">
+                    @(_busy ? "Extending Hold…" : "Request 30-Min Hold Extension")
+                </button>
+            }
         </div>
     }
     else if (!_info.IsFinalPayment && !_info.ContractAccepted)
@@ -79,7 +100,15 @@
 
             @if (!string.IsNullOrWhiteSpace(_docError))
             {
-                <div class="p-3 rounded-xl bg-rose-50 border border-rose-200 text-rose-800 text-xs font-semibold">@_docError</div>
+                <div class="p-3 rounded-xl bg-rose-50 border border-rose-200 text-rose-800 text-xs font-semibold flex items-center justify-between gap-2">
+                    <span>@_docError</span>
+                    @if (_docsBundle is null)
+                    {
+                        <button type="button" @onclick="RetryLoadAsync" class="px-2.5 py-1 rounded bg-rose-700 text-white text-[11px] font-bold shrink-0">
+                            Reload
+                        </button>
+                    }
+                </div>
             }
 
             <div class="flex gap-2 border-b border-slate-200">
@@ -96,11 +125,11 @@
             <div class="max-h-96 overflow-y-auto border border-slate-200 rounded-xl p-4 bg-slate-50/40">
                 @if (_docTab == "agreement")
                 {
-                    @((MarkupString)(_docsBundle?.Contract?.RenderedContractHtml ?? "<p class='text-xs text-slate-500'>Loading agreement...</p>"))
+                    @((MarkupString)(_docsBundle?.Contract?.RenderedContractHtml ?? "<p class='text-xs text-slate-500'>Agreement preview unavailable. Click Reload above or proceed below.</p>"))
                 }
                 else
                 {
-                    @((MarkupString)(_docsBundle?.TermsVersion?.TermsBodyHtml ?? "<p class='text-xs text-slate-500'>Loading terms...</p>"))
+                    @((MarkupString)(_docsBundle?.TermsVersion?.TermsBodyHtml ?? "<p class='text-xs text-slate-500'>Standard Terms unavailable.</p>"))
                 }
             </div>
 
@@ -146,7 +175,7 @@
             }
 
             <p class="mt-4 text-xs text-slate-600">
-                Open GCash, Maya or any QR&nbsp;Ph-enabled e-wallet and scan this code. This page updates automatically once the payment is received.
+                Scan this QR code with another device (or click <strong>Confirm Payment</strong> below) to settle your @(_info.IsFinalPayment ? "final balance" : "reservation fee"). This page updates automatically once received.
             </p>
 
             @if (!_info.IsFinalPayment && _info.LockExpiresAt != null)
@@ -157,14 +186,30 @@
                 </div>
             }
 
-            @if (!_hubConnected)
+            @if (!string.IsNullOrWhiteSpace(_paymentError))
             {
-                <p class="mt-3 text-[11px] text-slate-400">Live updates are reconnecting&hellip; you can also refresh this page after paying.</p>
+                <p class="mt-4 text-xs rounded-lg px-3 py-2 bg-red-50 text-red-700 border border-red-200" role="alert">@_paymentError</p>
             }
 
-            @if (_isMockQr)
+            <div class="mt-6 flex flex-col gap-2.5">
+                <button type="button" @onclick="ConfirmPaymentAsync" disabled="@_busy"
+                        class="w-full py-3.5 rounded-xl bg-emerald-700 hover:bg-emerald-800 disabled:opacity-50 text-white text-sm font-black shadow-sm transition-colors">
+                    @(_busy ? "Processing & Confirming Payment…" : "Confirm Payment")
+                </button>
+                <button type="button" @onclick="RefreshStatusAsync" disabled="@_busy"
+                        class="w-full py-2.5 rounded-xl border border-slate-300 bg-white hover:bg-slate-50 disabled:opacity-50 text-slate-700 text-xs font-bold transition-colors">
+                    Refresh Payment Status
+                </button>
+            </div>
+
+            @if (!_hubConnected)
             {
-                <div class="mt-5">
+                <p class="mt-3 text-[11px] text-slate-400">Live updates are reconnecting&hellip; you can also click Refresh Payment Status after paying on another device.</p>
+            }
+
+            @if (_isMockQr && Env.IsDevelopment())
+            {
+                <div class="mt-4">
                     <button class="px-4 py-2 rounded-lg border border-dashed border-slate-400 text-xs font-semibold text-slate-600"
                             @onclick="SimulatePaymentAsync" disabled="@_busy">
                         Simulate payment (development only)
@@ -203,7 +248,8 @@
                         </p>
                     }
                 </div>
-            }        </div>
+            }
+        </div>
     }
 </div>
 
@@ -226,6 +272,8 @@
     private bool _agreeTerms;
     private string _docTab = "agreement";
     private string? _docError;
+    private string? _loadError;
+    private string? _paymentError;
     private bool _hubConnected;
     private bool _isMockQr;
     private string _countdown = "--:--";
@@ -240,7 +288,7 @@
         _loading = false;
         StateHasChanged();
 
-        if (_info is { EventStatus: "Pending Payment" })
+        if (IsAwaitingPayment(_info))
         {
             try
             {
@@ -256,14 +304,79 @@
             StateHasChanged();
         }
     }
+
     private string BaseAppointmentId => AppointmentId.EndsWith("-FINAL", StringComparison.OrdinalIgnoreCase)
         ? AppointmentId[..^"-FINAL".Length]
         : AppointmentId;
 
+    private static bool IsAwaitingPayment(QrPaymentInfoDto? info)
+    {
+        if (info is null) return false;
+        return string.Equals(info.EventStatus, "Pending Payment", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(info.EventStatus, "Pending", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(info.EventStatus, "Awaiting_Downpayment", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(info.EventStatus, "Rescheduled", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static bool IsAlreadyPaid(QrPaymentInfoDto? info)
+    {
+        if (info is null) return false;
+        if (info.IsFinalPayment)
+        {
+            return string.Equals(info.EventStatus, "Completed", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(info.EventStatus, "Complete", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(info.EventStatus, "Shot", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(info.EventStatus, "Delivered", StringComparison.OrdinalIgnoreCase);
+        }
+
+        return string.Equals(info.EventStatus, "Confirmed", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(info.EventStatus, "Preparation", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(info.EventStatus, "Preparing", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(info.EventStatus, "Dispatch", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(info.EventStatus, "Ongoing", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(info.EventStatus, "On Going", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(info.EventStatus, "In Execution", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(info.EventStatus, "Ready", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(info.EventStatus, "Event Done", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(info.EventStatus, "Post Event", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(info.EventStatus, "Shot", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(info.EventStatus, "Complete", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(info.EventStatus, "Completed", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(info.EventStatus, "Delivered", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private async Task RetryLoadAsync()
+    {
+        _loading = true;
+        _loadError = null;
+        _docError = null;
+        StateHasChanged();
+        await LoadAsync();
+        _loading = false;
+        StateHasChanged();
+    }
+
     private async Task LoadAsync()
     {
+        _loadError = null;
         var res = await ConsultationApi.GetQrPaymentAsync(AppointmentId);
-        _info = res.IsSuccess ? res.Value : null;
+        if (!res.IsSuccess)
+        {
+            _info = null;
+            if (res.Error?.Kind == ApiErrorKind.Unauthorized)
+            {
+                var returnPath = $"/payments/{Uri.EscapeDataString(AppointmentId)}";
+                Nav.NavigateTo($"/login?returnUrl={Uri.EscapeDataString(returnPath)}");
+                return;
+            }
+            if (res.Error?.Kind is ApiErrorKind.Network or ApiErrorKind.Server)
+            {
+                _loadError = res.Error.Message;
+            }
+            return;
+        }
+
+        _info = res.Value;
         _qrSvg = null;
         _qrConfirmUrl = null;
         _isMockQr = false;
@@ -272,20 +385,26 @@
         {
             var docsRes = await ConsultationApi.GetBookingDocumentsAsync(BaseAppointmentId);
             if (docsRes.IsSuccess && docsRes.Value != null)
+            {
                 _docsBundle = docsRes.Value;
+            }
+            else if (!_info.IsFinalPayment && !_info.ContractAccepted && !docsRes.IsSuccess)
+            {
+                _docError = docsRes.Error?.Message ?? "Unable to load agreement details.";
+            }
         }
 
-        if (_info is { EventStatus: "Pending Payment" } && (_info.IsFinalPayment || _info.ContractAccepted))
+        if (IsAwaitingPayment(_info) && (_info!.IsFinalPayment || _info.ContractAccepted))
         {
             var configuredBase = Config["BaseUrl"]?.Trim();
-            // When the page is currently opened on a non-localhost domain/tunnel (e.g. ngrok or live domain),
-            // prefer the current browser host if BaseUrl is still pointing at localhost.
-            var effectiveBase = (!string.IsNullOrWhiteSpace(configuredBase) &&
-                                 !configuredBase.Contains("localhost", StringComparison.OrdinalIgnoreCase) &&
-                                 !configuredBase.Contains("127.0.0.1", StringComparison.OrdinalIgnoreCase))
-                ? configuredBase
-                : (Nav.BaseUri.Contains("localhost", StringComparison.OrdinalIgnoreCase) || Nav.BaseUri.Contains("127.0.0.1", StringComparison.OrdinalIgnoreCase)
-                    ? (string.IsNullOrWhiteSpace(configuredBase) ? Nav.BaseUri : configuredBase)
+            var isCurrentLocal = Nav.BaseUri.Contains("localhost", StringComparison.OrdinalIgnoreCase) ||
+                                 Nav.BaseUri.Contains("127.0.0.1", StringComparison.OrdinalIgnoreCase);
+            var effectiveBase = !isCurrentLocal
+                ? Nav.BaseUri
+                : (!string.IsNullOrWhiteSpace(configuredBase) &&
+                   !configuredBase.Contains("localhost", StringComparison.OrdinalIgnoreCase) &&
+                   !configuredBase.Contains("127.0.0.1", StringComparison.OrdinalIgnoreCase)
+                    ? configuredBase
                     : Nav.BaseUri);
 
             _qrConfirmUrl = QrPaymentLinks.BuildConfirmUrl(effectiveBase, Nav.BaseUri, AppointmentId);
@@ -300,10 +419,9 @@
         }
         else
         {
-            if (string.Equals(_info?.EventStatus, "Confirmed", StringComparison.OrdinalIgnoreCase) ||
-                string.Equals(_info?.EventStatus, "Completed", StringComparison.OrdinalIgnoreCase) ||
-                string.Equals(_info?.EventStatus, "Complete", StringComparison.OrdinalIgnoreCase))
+            if (IsAlreadyPaid(_info))
             {
+                _paid = true;
                 ScheduleService.InvalidateCache();
             }
             _timer?.Dispose();
@@ -328,22 +446,130 @@
         if (diff <= TimeSpan.Zero)
         {
             _countdown = "00:00";
+            _expired = true;
             _timer?.Dispose();
             return;
         }
+        _expired = false;
         _countdown = $"{(int)diff.TotalMinutes:D2}:{diff.Seconds:D2}";
+    }
+
+    private async Task ConfirmPaymentAsync()
+    {
+        if (_busy || _info is null) return;
+        _busy = true;
+        _paymentError = null;
+        StateHasChanged();
+
+        try
+        {
+            var res = await ConsultationApi.SimulateQrPaymentAsync(AppointmentId);
+            if (!res.IsSuccess)
+            {
+                // If live Xendit mode rejects simulation, check whether payment has already cleared on Xendit.
+                var verify = await ConsultationApi.VerifyDownpaymentAsync(BaseAppointmentId);
+                if (verify.IsSuccess && string.Equals(verify.Value?.DownpaymentStatus, "Paid", StringComparison.OrdinalIgnoreCase))
+                {
+                    ScheduleService.InvalidateCache();
+                    await LoadAsync();
+                    _paid = true;
+                    return;
+                }
+
+                _paymentError = res.Error?.Message ?? "Payment confirmation failed. Please try again.";
+                return;
+            }
+
+            for (var i = 0; i < 6; i++)
+            {
+                await LoadAsync();
+                if (IsAlreadyPaid(_info))
+                {
+                    _paid = true;
+                    ScheduleService.InvalidateCache();
+                    break;
+                }
+                await Task.Delay(500);
+            }
+
+            if (!_paid)
+            {
+                _paymentError = "Payment was submitted and is awaiting confirmation. Click Refresh Payment Status in a moment.";
+            }
+        }
+        catch (Exception ex)
+        {
+            _paymentError = "Payment confirmation failed: " + ex.Message;
+        }
+        finally
+        {
+            _busy = false;
+            StateHasChanged();
+        }
+    }
+
+    private async Task RefreshStatusAsync()
+    {
+        if (_busy) return;
+        _busy = true;
+        _paymentError = null;
+        try
+        {
+            await LoadAsync();
+            if (!IsAlreadyPaid(_info))
+            {
+                await ConsultationApi.VerifyDownpaymentAsync(BaseAppointmentId);
+                await LoadAsync();
+            }
+        }
+        finally
+        {
+            _busy = false;
+            StateHasChanged();
+        }
+    }
+
+    private async Task RequestExtensionAsync()
+    {
+        if (_busy) return;
+        _busy = true;
+        _paymentError = null;
+        try
+        {
+            var res = await ConsultationApi.RequestExtensionAsync(BaseAppointmentId);
+            if (res.IsSuccess && res.Value)
+            {
+                _expired = false;
+                await LoadAsync();
+            }
+            else
+            {
+                _paymentError = res.Error?.Message ?? "Unable to extend the reservation hold.";
+            }
+        }
+        finally
+        {
+            _busy = false;
+            StateHasChanged();
+        }
     }
 
     private async Task SimulatePaymentAsync()
     {
         if (_busy) return;
         _busy = true;
+        _paymentError = null;
         try
         {
-            // Dev-only: the API rejects this once a live Xendit key is configured. Success arrives via SignalR.
-            await ConsultationApi.SimulateWebhookPaymentAsync(AppointmentId, "QR Ph");
+            var res = await ConsultationApi.SimulateWebhookPaymentAsync(AppointmentId, "QR Ph");
+            if (!res.IsSuccess)
+            {
+                var qrRes = await ConsultationApi.SimulateQrPaymentAsync(AppointmentId);
+                if (!qrRes.IsSuccess)
+                    _paymentError = qrRes.Error?.Message ?? res.Error?.Message ?? "Simulation failed.";
+            }
             ScheduleService.InvalidateCache();
-            if (!_hubConnected) { await LoadAsync(); }
+            if (!_hubConnected || !IsAlreadyPaid(_info)) { await LoadAsync(); }
         }
         finally { _busy = false; }
     }
@@ -378,9 +604,13 @@
             var res = await ConsultationApi.SimulateQrPaymentAsync(externalId);
             _scanFailed = !res.IsSuccess;
             _scanMessage = res.IsSuccess
-                ? "QR scanned and payment simulated. Please wait for the ngrok webhook to confirm this reservation."
-                : "Xendit simulation failed. Check the API log for details.";
-            if (res.IsSuccess) _showScanner = false;
+                ? "QR scanned and payment simulated. Updating your booking confirmation..."
+                : (res.Error?.Message ?? "Xendit simulation failed. Check the API log for details.");
+            if (res.IsSuccess)
+            {
+                _showScanner = false;
+                await LoadAsync();
+            }
         }
         catch (Exception ex)
         {
@@ -424,6 +654,7 @@
         }
         return data.StartsWith("000201", StringComparison.Ordinal) ? AppointmentId : data;
     }
+
     public async ValueTask DisposeAsync()
     {
         _timer?.Dispose();

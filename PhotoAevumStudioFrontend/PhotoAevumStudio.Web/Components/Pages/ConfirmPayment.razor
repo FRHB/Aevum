@@ -1,15 +1,18 @@
 @page "/checkout/confirm/{AppointmentId}"
 @layout MainLayout
+@using System.Net
 @using System.Net.Http.Json
+@using Microsoft.AspNetCore.Components.Authorization
 @using PhotoAevumStudio.Web.Models
 @using PhotoAevumStudio.Web.Services
 @inject IHttpClientFactory HttpFactory
 @inject IScheduleService ScheduleService
+@inject AuthenticationStateProvider AuthStateProvider
 @inject NavigationManager Nav
 @rendermode InteractiveServer
 
-@* Mock Xendit payment page. Opened by scanning the reservation QR (phone or laptop webcam), so it is anonymous:
-   the visitor may have no login session. It only uses the anonymous summary + simulate endpoints. *@
+@* Mock/Test-mode Xendit payment page. Opened by scanning the reservation QR (phone, another device, or laptop webcam),
+   so it works anonymously without requiring a login session on the scanning device. *@
 
 <PageTitle>Confirm Payment - Photo Aevum Studio</PageTitle>
 
@@ -27,13 +30,23 @@
         {
             <p class="text-sm text-slate-500" role="status">Loading payment details&hellip;</p>
         }
+        else if (!string.IsNullOrWhiteSpace(_loadError))
+        {
+            <div class="rounded-2xl border border-red-200 bg-red-50 p-6 text-sm text-red-800 space-y-3" role="alert">
+                <p>@_loadError</p>
+                <button type="button" @onclick="RetryLoadAsync"
+                        class="px-4 py-2 rounded-lg bg-slate-900 text-white text-xs font-bold">
+                    Try Again
+                </button>
+            </div>
+        }
         else if (_info is null)
         {
             <div class="rounded-2xl border border-red-200 bg-red-50 p-6 text-sm text-red-800" role="alert">
                 We couldn't find that reservation (#@AppointmentId). Please re-scan the QR code.
             </div>
         }
-        else if (_paid || _info.EventStatus == "Confirmed" || _info.EventStatus == "Shot" || _info.EventStatus == "Complete" || _info.EventStatus == "Completed")
+        else if (_paid || IsAlreadyPaid(_info))
         {
             <div class="rounded-2xl border border-emerald-200 bg-emerald-50 p-8 text-center shadow-sm" role="status">
                 <div class="text-5xl mb-3">&#10003;</div>
@@ -43,10 +56,20 @@
                         ? $"Your final balance payment for {_info.EventName} (#{_info.AppointmentId}) is verified (Payment Verification (QR:Paid)). Event marked Completed, and confirmation emails have been sent to both you and the Team Leader."
                         : $"Your reservation fee for {_info.EventName} (#{_info.AppointmentId}) has been received.")
                 </p>
-                <a href="/my/bookings" class="inline-block mt-6 px-5 py-2.5 rounded-xl bg-emerald-700 text-white text-sm font-bold">View My Bookings</a>
+                <div class="mt-6 flex flex-col sm:flex-row items-center justify-center gap-2.5">
+                    @if (_isAuthenticated)
+                    {
+                        <a href="/my/bookings" class="inline-block px-5 py-2.5 rounded-xl bg-emerald-700 text-white text-sm font-bold">View My Bookings</a>
+                    }
+                    else
+                    {
+                        <a href="/login?returnUrl=%2Fmy%2Fbookings" class="inline-block px-5 py-2.5 rounded-xl bg-emerald-700 text-white text-sm font-bold">Sign In to View Bookings</a>
+                        <a href="/" class="inline-block px-5 py-2.5 rounded-xl bg-white border border-slate-300 text-slate-700 text-sm font-bold">Back to Home</a>
+                    }
+                </div>
             </div>
         }
-        else if (_info.EventStatus is "Cancelled" or "Expired")
+        else if (_info.EventStatus is "Cancelled" or "Expired" or "Deal_Lost" || IsHoldExpired(_info))
         {
             <div class="rounded-2xl border border-red-200 bg-red-50 p-8 text-center shadow-sm" role="alert">
                 <h2 class="text-xl font-black text-red-900">Reservation Expired</h2>
@@ -92,14 +115,35 @@
     private bool _loading = true;
     private bool _busy;
     private bool _paid;
+    private bool _isAuthenticated;
     private string? _error;
+    private string? _loadError;
 
     private HttpClient Api => HttpFactory.CreateClient("AevumApi.Anonymous");
-    private HttpClient AuthorizedApi => HttpFactory.CreateClient("AevumApi.Authorized");
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
         if (!firstRender) return;
+        try
+        {
+            var auth = await AuthStateProvider.GetAuthenticationStateAsync();
+            _isAuthenticated = auth.User.Identity?.IsAuthenticated == true;
+        }
+        catch
+        {
+            _isAuthenticated = false;
+        }
+
+        await LoadAsync();
+        _loading = false;
+        StateHasChanged();
+    }
+
+    private async Task RetryLoadAsync()
+    {
+        _loading = true;
+        _loadError = null;
+        StateHasChanged();
         await LoadAsync();
         _loading = false;
         StateHasChanged();
@@ -107,15 +151,61 @@
 
     private async Task LoadAsync()
     {
+        _loadError = null;
         try
         {
             using var res = await Api.GetAsync($"api/payments/qr/{Uri.EscapeDataString(AppointmentId)}/public");
-            _info = res.IsSuccessStatusCode ? await res.Content.ReadFromJsonAsync<QrPaymentInfoDto>() : null;
+            if (res.IsSuccessStatusCode)
+            {
+                _info = await res.Content.ReadFromJsonAsync<QrPaymentInfoDto>();
+            }
+            else if (res.StatusCode == HttpStatusCode.NotFound)
+            {
+                _info = null;
+            }
+            else
+            {
+                _info = null;
+                _loadError = await ReadMessageAsync(res) ?? "Could not load payment details right now. Please try again.";
+            }
         }
         catch
         {
             _info = null;
+            _loadError = "Unable to reach the payment server. Please check your connection and try again.";
         }
+    }
+
+    private static bool IsHoldExpired(QrPaymentInfoDto info) =>
+        !info.IsFinalPayment &&
+        info.LockExpiresAt.HasValue &&
+        DateTime.SpecifyKind(info.LockExpiresAt.Value, DateTimeKind.Utc) <= DateTime.UtcNow;
+
+    private static bool IsAlreadyPaid(QrPaymentInfoDto? info)
+    {
+        if (info is null) return false;
+        if (info.IsFinalPayment)
+        {
+            return string.Equals(info.EventStatus, "Completed", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(info.EventStatus, "Complete", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(info.EventStatus, "Shot", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(info.EventStatus, "Delivered", StringComparison.OrdinalIgnoreCase);
+        }
+
+        return string.Equals(info.EventStatus, "Confirmed", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(info.EventStatus, "Preparation", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(info.EventStatus, "Preparing", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(info.EventStatus, "Dispatch", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(info.EventStatus, "Ongoing", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(info.EventStatus, "On Going", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(info.EventStatus, "In Execution", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(info.EventStatus, "Ready", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(info.EventStatus, "Event Done", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(info.EventStatus, "Post Event", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(info.EventStatus, "Shot", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(info.EventStatus, "Complete", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(info.EventStatus, "Completed", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(info.EventStatus, "Delivered", StringComparison.OrdinalIgnoreCase);
     }
 
     private async Task ConfirmAsync()
@@ -125,10 +215,15 @@
         _error = null;
         try
         {
-            using var res = await AuthorizedApi.PostAsync($"api/payments/simulate-qr/{Uri.EscapeDataString(AppointmentId)}", null);
+            using var res = await Api.PostAsync($"api/payments/simulate-qr/{Uri.EscapeDataString(AppointmentId)}", null);
             if (!res.IsSuccessStatusCode)
             {
-                _error = await ReadMessageAsync(res) ?? "Payment could not be completed. Please sign in and try again.";
+                var apiMsg = await ReadMessageAsync(res);
+                _error = !string.IsNullOrWhiteSpace(apiMsg)
+                    ? apiMsg
+                    : (res.StatusCode is HttpStatusCode.Unauthorized or HttpStatusCode.Forbidden
+                        ? "Payment authorization failed. Please refresh and try again."
+                        : "Payment could not be completed right now. Please try again.");
                 return;
             }
 
@@ -136,7 +231,7 @@
             for (var i = 0; i < 10 && !_paid; i++)
             {
                 await LoadAsync();
-                _paid = _info?.EventStatus == "Confirmed" || _info?.EventStatus == "Shot" || _info?.EventStatus == "Complete" || _info?.EventStatus == "Completed";
+                _paid = IsAlreadyPaid(_info);
                 if (_paid) break;
                 await Task.Delay(1000);
             }
@@ -145,8 +240,11 @@
             if (_paid)
             {
                 ScheduleService.InvalidateCache();
-                await Task.Delay(2500);
-                Nav.NavigateTo("/my/bookings");
+                if (_isAuthenticated)
+                {
+                    await Task.Delay(2500);
+                    Nav.NavigateTo("/my/bookings");
+                }
             }
             else
             {
@@ -167,8 +265,18 @@
     {
         try
         {
-            using var doc = await System.Text.Json.JsonDocument.ParseAsync(await res.Content.ReadAsStreamAsync());
-            return doc.RootElement.TryGetProperty("message", out var m) ? m.GetString() : null;
+            var raw = await res.Content.ReadAsStringAsync();
+            if (string.IsNullOrWhiteSpace(raw)) return null;
+            using var doc = System.Text.Json.JsonDocument.Parse(raw);
+            foreach (var prop in new[] { "message", "detail", "title" })
+            {
+                if (doc.RootElement.TryGetProperty(prop, out var m) && m.ValueKind == System.Text.Json.JsonValueKind.String)
+                {
+                    var val = m.GetString();
+                    if (!string.IsNullOrWhiteSpace(val)) return val;
+                }
+            }
+            return null;
         }
         catch { return null; }
     }

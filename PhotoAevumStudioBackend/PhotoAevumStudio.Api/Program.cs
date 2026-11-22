@@ -512,7 +512,7 @@ builder.Services.AddRateLimiter(options =>
         return System.Threading.RateLimiting.RateLimitPartition.GetFixedWindowLimiter(ip, _ => new System.Threading.RateLimiting.FixedWindowRateLimiterOptions
         {
             Window = TimeSpan.FromMinutes(1),
-            PermitLimit = 5,
+            PermitLimit = 30,
             QueueLimit = 0
         });
     });

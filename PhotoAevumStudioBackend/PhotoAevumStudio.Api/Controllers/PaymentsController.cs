@@ -1186,18 +1186,16 @@ public class PaymentsController : ControllerBase
 
     // POST api/payments/simulate-qr/{externalId}
     // POST api/payment/simulate-qr/{externalId}
-    // Non-production only: asks Xendit to simulate a QR payment. The secret key stays server-side.
+    // Test/sandbox QR payment confirmation: works both for logged-in web users and unauthenticated QR scans from another device.
     [HttpPost("simulate-qr/{externalId}")]
     [HttpPost("/api/payment/simulate-qr/{externalId}")]
-    [Authorize(Roles = $"{AppRoles.Customer},{AppRoles.Admin},{AppRoles.SystemAdmin},{AppRoles.OfficeClerk},{AppRoles.Employee}")]
+    [AllowAnonymous]
+    [EnableRateLimiting("PaymentPolicy")]
     public async Task<IActionResult> SimulateQrPayment(
         string externalId,
         [FromQuery] decimal? amount,
         CancellationToken cancellationToken)
     {
-        if (_env != null && _env.IsProduction())
-            return NotFound();
-
         if (string.IsNullOrWhiteSpace(externalId))
             return BadRequest(new { message = "externalId is required." });
 
@@ -1224,6 +1222,10 @@ public class PaymentsController : ControllerBase
                 ?? _configuration["XENDIT_SECRET_KEY"]
                 ?? key;
 
+        var isTestKey = !string.IsNullOrWhiteSpace(key) &&
+                        key.StartsWith("xnd_development", StringComparison.Ordinal) &&
+                        !key.Contains("mock", StringComparison.OrdinalIgnoreCase);
+
         if (string.IsNullOrWhiteSpace(key) || key.Contains("mock", StringComparison.OrdinalIgnoreCase))
         {
             var confirmed = await _pendingPayments.ConfirmByReferenceAsync(externalId, null, amount, "QRPH", cancellationToken);
@@ -1236,17 +1238,32 @@ public class PaymentsController : ControllerBase
             var mockAppt = await _consultationService.GetAppointmentByIdAsync(externalId, cancellationToken);
             if (mockAppt != null)
             {
+                if (string.Equals(mockAppt.EventStatus, "Cancelled", StringComparison.OrdinalIgnoreCase) ||
+                    string.Equals(mockAppt.EventStatus, "Expired", StringComparison.OrdinalIgnoreCase))
+                {
+                    return BadRequest(new { message = "This reservation has expired or was cancelled." });
+                }
+
                 var simInvoiceId = mockAppt.XenditInvoiceId ?? $"inv_sim_{externalId}_{Guid.NewGuid():N[..6]}";
                 await _consultationService.VerifyDownpaymentAsync(externalId, simInvoiceId, "QR Ph", cancellationToken);
                 try { await _notifier.PaymentCompletedAsync(externalId, cancellationToken); } catch { }
                 return Ok(new { status = "SIMULATED", externalId, xenditStatus = 200 });
             }
 
-            return Conflict(new { message = "A Xendit test secret key (xnd_development_...) is required to simulate QR payments." });
+            var existingQr = await _pendingPayments.GetQrPaymentAsync(externalId, cancellationToken);
+            if (existingQr != null &&
+                (string.Equals(existingQr.EventStatus, "Confirmed", StringComparison.OrdinalIgnoreCase) ||
+                 string.Equals(existingQr.EventStatus, "Completed", StringComparison.OrdinalIgnoreCase) ||
+                 string.Equals(existingQr.EventStatus, "Complete", StringComparison.OrdinalIgnoreCase)))
+            {
+                return Ok(new { status = "ALREADY_PAID", externalId, xenditStatus = 200 });
+            }
+
+            return Conflict(new { message = "Reservation could not be confirmed or has expired." });
         }
 
         // Simulation is a test-mode feature; refuse to run with a live key.
-        if (!key.StartsWith("xnd_development", StringComparison.Ordinal))
+        if (!isTestKey)
             return StatusCode(StatusCodes.Status403Forbidden, new { message = "QR simulation is only available with a Xendit test key." });
 
         decimal? effectiveAmount = amount;
@@ -1490,7 +1507,8 @@ public class PaymentsController : ControllerBase
             info.EventTime,
             info.EventStatus,
             info.Amount,
-            info.LockExpiresAt
+            info.LockExpiresAt,
+            info.IsFinalPayment
         });
     }
 
