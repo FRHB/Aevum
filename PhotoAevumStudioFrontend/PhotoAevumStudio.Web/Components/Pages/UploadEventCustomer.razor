@@ -22,7 +22,7 @@
     <div>
         <h1 class="aev-page-header__title">Upload Event Customer</h1>
         <p class="aev-page-header__subtitle">
-            Click any completed event pill-box below to upload a ZIP archive directly to that customer&apos;s isolated Cloudflare R2 Dropbox.
+            Click any completed event pill-box below to upload one or multiple ZIP archives (max 500 MB per individual ZIP file) directly to that customer&apos;s isolated Cloudflare R2 Dropbox.
         </p>
     </div>
     <button type="button"
@@ -103,8 +103,10 @@ else
     <div class="space-y-3" role="list" aria-label="Completed event upload containers">
         @foreach (var item in FilteredContainers)
         {
+            var eventJobs = UploadService.GetJobsForEvent(item.EventAppointmentId);
             var activeJob = UploadService.GetActiveJobForEvent(item.EventAppointmentId);
             var isRowUploading = activeJob != null && activeJob.IsActive;
+            var queuedCount = eventJobs.Count(j => j.IsQueued);
             var isExpired = item.IsEffectivelyExpired;
             var pillStateClass = isExpired
                 ? "is-expired"
@@ -146,13 +148,27 @@ else
                         @if (isRowUploading && activeJob != null)
                         {
                             <span class="aev-pill-badge aev-pill-badge--uploading" title="@activeJob.FileName">
-                                @(activeJob.IsFinalizing ? "Finalizing in R2" : "Uploading in Background")
+                                @if (queuedCount > 0)
+                                {
+                                    <span>@(activeJob.IsFinalizing ? "Finalizing in R2" : "Uploading") (+@queuedCount queued)</span>
+                                }
+                                else
+                                {
+                                    <span>@(activeJob.IsFinalizing ? "Finalizing in R2" : "Uploading in Background")</span>
+                                }
                             </span>
                         }
                         else if (item.HasFile)
                         {
-                            <span class="aev-pill-badge aev-pill-badge--uploaded" title="@item.OriginalFileName (@item.FormattedFileSize)">
-                                ✓ ZIP Uploaded (@item.FormattedFileSize)
+                            <span class="aev-pill-badge aev-pill-badge--uploaded" title="@item.OriginalFileName (@item.FormattedTotalFileSize)">
+                                @if (item.FileCount > 1)
+                                {
+                                    <span>✓ @item.FileCount ZIPs Uploaded (@item.FormattedTotalFileSize)</span>
+                                }
+                                else
+                                {
+                                    <span>✓ ZIP Uploaded (@item.FormattedTotalFileSize)</span>
+                                }
                             </span>
                         }
                         else
@@ -185,14 +201,14 @@ else
                                     <span class="aev-circle-progress__sm-text">@rowPct%</span>
                                 </span>
                                 <span class="aev-pill-upload-circle__label">
-                                    @(activeJob.IsFinalizing ? "Finalizing" : "Uploading")
+                                    @(activeJob.IsQueued ? "Queued" : (activeJob.IsFinalizing ? "Finalizing" : "Uploading"))
                                 </span>
                             </span>
                         }
                         else
                         {
                             <span class="aev-pill-action">
-                                @(item.HasFile ? "Replace ZIP" : "Upload ZIP") &rarr;
+                                @(item.HasFile ? "Add / Manage ZIPs" : "Upload ZIPs") &rarr;
                             </span>
                         }
                     }
@@ -204,6 +220,7 @@ else
 
 @if (_selectedContainer != null)
 {
+    var eventJobs = UploadService.GetJobsForEvent(_selectedContainer.EventAppointmentId);
     var activeModalJob = UploadService.GetActiveJobForEvent(_selectedContainer.EventAppointmentId);
     var latestModalJob = UploadService.GetLatestJobForEvent(_selectedContainer.EventAppointmentId);
     var modalUploading = (activeModalJob != null && activeModalJob.IsActive) || _isUploading;
@@ -222,19 +239,19 @@ else
          role="dialog"
          aria-modal="true"
          aria-labelledby="dropboxUploadModalTitle">
-        <div class="bg-white rounded-2xl border border-slate-200 shadow-2xl w-full max-w-lg overflow-hidden"
+        <div class="bg-white rounded-2xl border border-slate-200 shadow-2xl w-full max-w-xl max-h-[90vh] flex flex-col overflow-hidden"
              @onclick:stopPropagation="true">
-            <div class="px-6 py-4 border-b border-slate-100 flex items-center justify-between bg-slate-50">
+            <div class="px-6 py-4 border-b border-slate-100 flex items-center justify-between bg-slate-50 shrink-0">
                 <div>
                     <span class="font-mono text-[11px] font-bold px-2 py-0.5 rounded bg-slate-900 text-white">#@_selectedContainer.EventAppointmentId</span>
                     <h2 id="dropboxUploadModalTitle" class="text-base font-extrabold text-slate-900 mt-1">
-                        Upload Customer ZIP Archive
+                        Upload Customer ZIP Archives
                     </h2>
                 </div>
                 <button type="button" @onclick="CloseUploadModal" class="text-slate-400 hover:text-slate-700 text-lg font-bold" title="Close modal">✕</button>
             </div>
 
-            <div class="p-6 space-y-4">
+            <div class="p-6 space-y-4 overflow-y-auto">
                 <div class="rounded-xl bg-slate-50 border border-slate-200 p-4 text-xs space-y-1.5">
                     <div><span class="text-slate-500">Event:</span> <strong class="text-slate-900">@_selectedContainer.EventName</strong></div>
                     <div>
@@ -246,12 +263,8 @@ else
                     @if (_selectedContainer.HasFile)
                     {
                         <div>
-                            <span class="text-slate-500">30-Day Retention Expiry:</span>
-                            <strong class="text-teal-700">@_selectedContainer.EffectiveCountdownLabel</strong>
-                            @if (_selectedContainer.ExpiresAt.HasValue)
-                            {
-                                <span>(expires @_selectedContainer.ExpiresAt.Value.ToString("MMM dd, yyyy"))</span>
-                            }
+                            <span class="text-slate-500">Retention Policy:</span>
+                            <strong class="text-teal-700">Independent 30-day retention per ZIP file</strong>
                         </div>
                     }
                     else
@@ -262,45 +275,110 @@ else
                         </div>
                         <div>
                             <span class="text-slate-500">Retention Policy:</span>
-                            <strong class="text-slate-700">30-day retention starts after upload</strong>
+                            <strong class="text-slate-700">Independent 30-day retention starts per ZIP upon upload</strong>
                         </div>
                     }
                 </div>
 
-                @if (_selectedContainer.HasFile)
+                @if (_selectedContainer.Files.Count > 0)
+                {
+                    <div class="rounded-xl bg-teal-50/70 border border-teal-200 p-3.5 space-y-2">
+                        <div class="flex items-center justify-between">
+                            <span class="text-xs font-bold text-teal-900">
+                                Uploaded ZIP Files (@_selectedContainer.Files.Count)
+                            </span>
+                            <span class="text-[11px] text-teal-700 font-semibold">
+                                New uploads will be appended
+                            </span>
+                        </div>
+                        <div class="space-y-1.5 max-h-40 overflow-y-auto pr-1">
+                            @foreach (var existingFile in _selectedContainer.Files)
+                            {
+                                var isDeleting = _deletingFileId == existingFile.DropboxFileId;
+                                <div class="aev-existing-zip-row @(existingFile.IsEffectivelyExpired ? "is-expired" : string.Empty)">
+                                    <div class="min-w-0 flex-1">
+                                        <div class="text-xs font-bold text-slate-800 truncate" title="@existingFile.OriginalFileName">@existingFile.OriginalFileName</div>
+                                        <div class="text-[11px] text-slate-500 flex flex-wrap items-center gap-x-2">
+                                            <span>@existingFile.FormattedFileSize</span>
+                                            <span>&bull; Uploaded @existingFile.UploadedAt.ToLocalTime().ToString("MMM dd, yyyy")</span>
+                                            <span class="font-semibold @(existingFile.IsEffectivelyExpired ? "text-slate-500" : "text-teal-700")">
+                                                &bull; @existingFile.EffectiveCountdownLabel
+                                            </span>
+                                        </div>
+                                    </div>
+                                    <button type="button"
+                                            disabled="@(isDeleting || modalUploading)"
+                                            @onclick="() => DeleteExistingFileAsync(existingFile)"
+                                            class="px-2.5 py-1 rounded-md border border-rose-200 bg-white hover:bg-rose-50 text-[11px] font-bold text-rose-700 disabled:opacity-50 shrink-0">
+                                        @(isDeleting ? "Deleting..." : "Delete")
+                                    </button>
+                                </div>
+                            }
+                        </div>
+                    </div>
+                }
+                else if (_selectedContainer.HasFile)
                 {
                     <div class="rounded-xl bg-teal-50 border border-teal-200 px-3.5 py-2.5 text-xs text-teal-900">
-                        Current file: <strong>@_selectedContainer.OriginalFileName</strong> (@_selectedContainer.FormattedFileSize). Uploading a new ZIP will replace it.
+                        Current file: <strong>@_selectedContainer.OriginalFileName</strong> (@_selectedContainer.FormattedFileSize). New ZIP uploads will be appended to this folder.
                     </div>
                 }
 
                 @if (!modalUploading)
                 {
                     <div>
-                        <label class="block text-xs font-bold text-slate-700 mb-2">Select Photo Archive (.zip, max 500 MB)</label>
+                        <label class="block text-xs font-bold text-slate-700 mb-2">
+                            Select Photo Archives (.zip, max 500 MB per individual ZIP file)
+                        </label>
                         <label for="zipUploadInput" class="aev-zip-dropzone">
                             <InputFile id="zipUploadInput"
-                                       OnChange="OnZipSelected"
+                                       OnChange="OnZipsSelected"
+                                       multiple
                                        accept=".zip,application/zip,application/x-zip-compressed"
                                        style="display:none;" />
                             <div class="text-center space-y-1">
                                 <div class="text-sm font-bold text-slate-800">
-                                    @(_selectedFile != null ? _selectedFile.Name : "Click to choose a .zip file")
+                                    @(_stagedFiles.Count > 0
+                                        ? $"{_stagedFiles.Count} ZIP archive{(_stagedFiles.Count == 1 ? "" : "s")} ready ({FormatBytes(_stagedFiles.Sum(f => f.Size))})"
+                                        : "Click to choose one or more .zip files")
                                 </div>
                                 <div class="text-xs text-slate-500">
-                                    @(_selectedFile != null ? FormatBytes(_selectedFile.Size) : "Strictly isolated to this customer's Cloudflare R2 folder")
+                                    Each ZIP file must be 500 MB or smaller &bull; Uploaded sequentially and appended to this customer&apos;s R2 folder
                                 </div>
                             </div>
                         </label>
                     </div>
+
+                    @if (_stagedFiles.Count > 0)
+                    {
+                        <div class="space-y-1.5 max-h-40 overflow-y-auto pr-1">
+                            @foreach (var staged in _stagedFiles)
+                            {
+                                <div class="aev-staged-zip-row">
+                                    <div class="min-w-0 flex-1">
+                                        <div class="text-xs font-bold text-slate-800 truncate" title="@staged.Name">@staged.Name</div>
+                                        <div class="text-[11px] text-slate-500">@FormatBytes(staged.Size)</div>
+                                    </div>
+                                    <button type="button"
+                                            @onclick="() => RemoveStagedFileAsync(staged)"
+                                            class="text-slate-400 hover:text-rose-600 text-xs font-bold px-2 py-1"
+                                            title="Remove from upload list">
+                                        ✕
+                                    </button>
+                                </div>
+                            }
+                        </div>
+                    }
                 }
 
                 @if (modalUploading)
                 {
                     var sentBytes = Interlocked.Read(ref _uploadBytesSent);
                     var finalizingR2 = activeModalJob?.IsFinalizing == true || (_uploadTotalBytes > 0 && sentBytes >= _uploadTotalBytes);
-                    var displayFileName = activeModalJob?.FileName ?? _selectedFile?.Name ?? "archive.zip";
+                    var displayFileName = activeModalJob?.FileName ?? "archive.zip";
                     var dashOffsetLg = CircleCircumferenceLg * (1.0 - Math.Clamp(_uploadPercent, 0, 100) / 100.0);
+                    var completedInQueue = eventJobs.Count(j => j.Status == DropboxUploadJobStatus.Completed);
+                    var totalInQueue = eventJobs.Count;
 
                     <div class="aev-upload-progress-card" aria-live="polite">
                         <div class="aev-upload-progress aev-circle-progress aev-circle-progress--lg"
@@ -325,16 +403,67 @@ else
                         <div class="min-w-0 flex-1 space-y-1">
                             <div class="text-xs font-bold text-slate-800">
                                 @(finalizingR2 ? "Finalizing upload in Cloudflare R2..." : "Uploading ZIP archive...")
+                                @if (totalInQueue > 1)
+                                {
+                                    <span class="text-teal-700"> (@(Math.Min(totalInQueue, completedInQueue + 1)) of @totalInQueue)</span>
+                                }
                             </div>
                             <div class="text-[11px] text-slate-500">
                                 @FormatBytes(sentBytes) of @FormatBytes(_uploadTotalBytes)
                             </div>
                             <div class="text-[11px] text-slate-400 truncate" title="@displayFileName">@displayFileName</div>
                             <div class="text-[11px] text-teal-700 font-semibold pt-0.5">
-                                Upload runs in the background — you can close this window or browse other pages.
+                                Sequential queue runs in the background — you can close this window or browse other pages.
                             </div>
                         </div>
                     </div>
+
+                    @if (eventJobs.Count > 1)
+                    {
+                        <div class="space-y-1.5 max-h-36 overflow-y-auto pr-1">
+                            @foreach (var job in eventJobs)
+                            {
+                                <div class="aev-staged-zip-row">
+                                    <div class="min-w-0 flex-1">
+                                        <div class="text-xs font-bold text-slate-800 truncate" title="@job.FileName">@job.FileName</div>
+                                        <div class="text-[11px] text-slate-500">
+                                            @FormatBytes(job.TotalBytes) &bull;
+                                            @switch (job.Status)
+                                            {
+                                                case DropboxUploadJobStatus.Queued:
+                                                    <span>Queued</span>
+                                                    break;
+                                                case DropboxUploadJobStatus.Uploading:
+                                                    <span class="text-teal-700 font-semibold">Uploading (@job.Percent%)</span>
+                                                    break;
+                                                case DropboxUploadJobStatus.Finalizing:
+                                                    <span class="text-emerald-700 font-semibold">Finalizing in R2...</span>
+                                                    break;
+                                                case DropboxUploadJobStatus.Completed:
+                                                    <span class="text-emerald-700 font-semibold">✓ Completed</span>
+                                                    break;
+                                                case DropboxUploadJobStatus.Failed:
+                                                    <span class="text-rose-700 font-semibold">Failed: @job.ErrorMessage</span>
+                                                    break;
+                                                case DropboxUploadJobStatus.Canceled:
+                                                    <span class="text-slate-400">Canceled</span>
+                                                    break;
+                                            }
+                                        </div>
+                                    </div>
+                                    @if (job.IsActive)
+                                    {
+                                        <button type="button"
+                                                @onclick="() => CancelActiveModalUploadAsync(job.JobId)"
+                                                class="text-rose-600 hover:text-rose-800 text-xs font-bold px-2 py-1"
+                                                title="Cancel this file">
+                                            ✕
+                                        </button>
+                                    }
+                                </div>
+                            }
+                        </div>
+                    }
                 }
 
                 @if (!string.IsNullOrWhiteSpace(modalErrorText))
@@ -345,13 +474,13 @@ else
                 }
             </div>
 
-            <div class="px-6 py-4 border-t border-slate-100 bg-slate-50 flex items-center justify-end gap-3">
+            <div class="px-6 py-4 border-t border-slate-100 bg-slate-50 flex items-center justify-end gap-3 shrink-0">
                 @if (modalUploading && activeModalJob != null)
                 {
                     <button type="button"
                             @onclick="() => CancelActiveModalUploadAsync(activeModalJob.JobId)"
                             class="px-4 py-2 rounded-lg border border-rose-200 bg-white text-xs font-bold text-rose-700 hover:bg-rose-50">
-                        Cancel Upload
+                        Cancel Current
                     </button>
                     <button type="button"
                             @onclick="CloseUploadModal"
@@ -367,10 +496,10 @@ else
                         Cancel
                     </button>
                     <button type="button"
-                            @onclick="UploadSelectedZipAsync"
-                            disabled="@(modalUploading || _selectedFile == null)"
+                            @onclick="UploadSelectedZipsAsync"
+                            disabled="@(modalUploading || _stagedFiles.Count == 0)"
                             class="px-5 py-2 rounded-lg bg-slate-900 hover:bg-teal-700 disabled:opacity-50 text-white text-xs font-bold transition-colors">
-                        Upload ZIP to R2
+                        @(_stagedFiles.Count <= 1 ? "Upload ZIP to R2" : $"Upload {_stagedFiles.Count} ZIPs to R2")
                     </button>
                 }
             </div>
@@ -379,7 +508,7 @@ else
 }
 
 @code {
-    private const long MaxZipSizeBytes = 500L * 1024 * 1024;
+    private const long MaxZipSizeBytes = 500L * 1024 * 1024; // 500 MB per individual ZIP file
     private const double CircleRadiusSm = 15.0;
     private const double CircleRadiusLg = 38.0;
     private static readonly double CircleCircumferenceSm = 2.0 * Math.PI * CircleRadiusSm;
@@ -387,9 +516,18 @@ else
     private static readonly string CircleCircumferenceSmStr = CircleCircumferenceSm.ToString("0.##", CultureInfo.InvariantCulture);
     private static readonly string CircleCircumferenceLgStr = CircleCircumferenceLg.ToString("0.##", CultureInfo.InvariantCulture);
 
+    private sealed record StagedZipSelection(
+        string Id,
+        string Name,
+        long Size,
+        string? ContentType,
+        string? JsFileToken,
+        int InputIndex);
+
     private List<CustomerDropboxFolderItem> _containers = new();
     private CustomerDropboxFolderItem? _selectedContainer;
-    private IBrowserFile? _selectedFile;
+    private readonly List<StagedZipSelection> _stagedFiles = new();
+    private string? _deletingFileId;
     private bool _loading = true;
     private bool _isUploading;
     private bool _disposed;
@@ -485,7 +623,7 @@ else
     {
         if (item.IsEffectivelyExpired) return;
         _selectedContainer = item;
-        _selectedFile = null;
+        _stagedFiles.Clear();
         _modalError = null;
         var activeJob = UploadService.GetActiveJobForEvent(item.EventAppointmentId);
         if (activeJob != null && activeJob.IsActive)
@@ -502,45 +640,105 @@ else
 
     private void CloseUploadModal()
     {
+        foreach (var staged in _stagedFiles)
+        {
+            if (!string.IsNullOrWhiteSpace(staged.JsFileToken))
+            {
+                _ = JS.InvokeVoidAsync("aevumDropboxUpload.releaseStagedFile", staged.JsFileToken);
+            }
+        }
         _selectedContainer = null;
-        _selectedFile = null;
+        _stagedFiles.Clear();
         _modalError = null;
         _isUploading = false;
         ResetUploadProgress();
     }
 
-    private void OnZipSelected(InputFileChangeEventArgs e)
+    private async Task OnZipsSelected(InputFileChangeEventArgs e)
     {
         _modalError = null;
-        var file = e.File;
-        if (file == null) return;
+        var files = e.GetMultipleFiles(Math.Max(10, e.FileCount));
+        if (files == null || files.Count == 0) return;
 
-        if (!Path.GetExtension(file.Name).Equals(".zip", StringComparison.OrdinalIgnoreCase))
+        string[]? jsTokens = null;
+        try
         {
-            _selectedFile = null;
-            _modalError = "Please select a valid .zip archive file.";
-            return;
+            jsTokens = await JS.InvokeAsync<string[]>("aevumDropboxUpload.captureInputFiles", "zipUploadInput");
+        }
+        catch
+        {
         }
 
-        if (file.Size <= 0 || file.Size > MaxZipSizeBytes)
+        var rejectedReasons = new List<string>();
+        var addedCount = 0;
+
+        for (var i = 0; i < files.Count; i++)
         {
-            _selectedFile = null;
-            _modalError = "ZIP file must be between 1 byte and 500 MB.";
-            return;
+            var file = files[i];
+            var token = jsTokens != null && i < jsTokens.Length ? jsTokens[i] : null;
+
+            if (!Path.GetExtension(file.Name).Equals(".zip", StringComparison.OrdinalIgnoreCase))
+            {
+                if (!string.IsNullOrWhiteSpace(token))
+                    _ = JS.InvokeVoidAsync("aevumDropboxUpload.releaseStagedFile", token);
+                rejectedReasons.Add($"'{file.Name}' is not a .zip file");
+                continue;
+            }
+
+            if (file.Size <= 0 || file.Size > MaxZipSizeBytes)
+            {
+                if (!string.IsNullOrWhiteSpace(token))
+                    _ = JS.InvokeVoidAsync("aevumDropboxUpload.releaseStagedFile", token);
+                rejectedReasons.Add($"'{file.Name}' ({FormatBytes(file.Size)}) exceeds the 500 MB per-ZIP limit");
+                continue;
+            }
+
+            _stagedFiles.Add(new StagedZipSelection(
+                Guid.NewGuid().ToString("N"),
+                file.Name,
+                file.Size,
+                file.ContentType,
+                token,
+                i));
+            addedCount++;
         }
 
-        _selectedFile = file;
-        ResetUploadProgress();
+        if (rejectedReasons.Count > 0)
+        {
+            _modalError = $"Skipped {rejectedReasons.Count} invalid file(s): {string.Join("; ", rejectedReasons)}. Each ZIP file must be .zip and 500 MB or smaller.";
+        }
+
+        if (addedCount > 0)
+            ResetUploadProgress();
     }
 
-    private async Task UploadSelectedZipAsync()
+    private async Task RemoveStagedFileAsync(StagedZipSelection staged)
     {
-        if (_selectedContainer == null || _selectedFile == null || _isUploading) return;
+        _stagedFiles.Remove(staged);
+        if (!string.IsNullOrWhiteSpace(staged.JsFileToken))
+        {
+            try
+            {
+                await JS.InvokeVoidAsync("aevumDropboxUpload.releaseStagedFile", staged.JsFileToken);
+            }
+            catch
+            {
+            }
+        }
+    }
+
+    private async Task UploadSelectedZipsAsync()
+    {
+        if (_selectedContainer == null || _stagedFiles.Count == 0 || _isUploading) return;
 
         _isUploading = true;
         _modalError = null;
         _successMessage = null;
-        _uploadTotalBytes = _selectedFile.Size;
+        var batch = _stagedFiles
+            .Select(f => new DropboxQueuedFileRequest(f.Name, f.Size, f.ContentType, f.JsFileToken, f.InputIndex))
+            .ToList();
+
+        _uploadTotalBytes = batch[0].FileSizeBytes;
         Interlocked.Exchange(ref _uploadBytesSent, 0);
         _uploadPercent = 0;
         _lastReportedPercent = 0;
@@ -548,11 +746,9 @@ else
 
         try
         {
-            var (started, error, _) = await UploadService.StartBackgroundUploadAsync(
+            var (started, error, _) = await UploadService.StartBackgroundBatchUploadAsync(
                 _selectedContainer,
-                _selectedFile.Name,
-                _selectedFile.Size,
-                _selectedFile.ContentType,
+                batch,
                 "zipUploadInput",
                 JS);
 
@@ -562,7 +758,7 @@ else
             }
             else
             {
-                _selectedFile = null;
+                _stagedFiles.Clear();
             }
         }
         catch (Exception ex)
@@ -575,11 +771,47 @@ else
         }
     }
 
+    private async Task DeleteExistingFileAsync(CustomerDropboxFileItem file)
+    {
+        if (_selectedContainer == null || _deletingFileId != null) return;
+        _deletingFileId = file.DropboxFileId;
+        _modalError = null;
+        _successMessage = null;
+
+        try
+        {
+            var res = await DropboxClient.DeleteDropboxFileAsync(_selectedContainer.EventAppointmentId, file.DropboxFileId);
+            if (res.IsSuccess && res.Value != null)
+            {
+                var updated = res.Value;
+                var idx = _containers.FindIndex(c => c.EventAppointmentId == updated.EventAppointmentId);
+                if (idx >= 0) _containers[idx] = updated;
+                _selectedContainer = updated;
+                _successMessage = $"Deleted '{file.OriginalFileName}' from #{updated.EventAppointmentId}.";
+            }
+            else
+            {
+                _modalError = res.Error?.Message ?? "Failed to delete ZIP file.";
+            }
+        }
+        catch (Exception ex)
+        {
+            _modalError = ex.Message;
+        }
+        finally
+        {
+            _deletingFileId = null;
+        }
+    }
+
     private async Task CancelActiveModalUploadAsync(string jobId)
     {
         await UploadService.CancelJobAsync(jobId, JS);
-        _isUploading = false;
-        ResetUploadProgress();
+        if (_selectedContainer != null && UploadService.GetActiveJobForEvent(_selectedContainer.EventAppointmentId) == null)
+        {
+            _isUploading = false;
+            ResetUploadProgress();
+        }
     }
 
     private void HandleBackgroundJobsChanged()
@@ -604,11 +836,18 @@ else
                 if (idx >= 0) _containers[idx] = item;
                 else _containers.Insert(0, item);
 
+                if (_selectedContainer != null &&
+                    string.Equals(_selectedContainer.EventAppointmentId, item.EventAppointmentId, StringComparison.OrdinalIgnoreCase))
+                {
+                    _selectedContainer = item;
+                }
+
                 if (_announcedCompletedJobIds.Add(job.JobId))
                 {
-                    _successMessage = $"Uploaded '{item.OriginalFileName}' for #{item.EventAppointmentId} ({item.CustomerName}). Isolated to customer {item.CustomerId}.";
+                    _successMessage = $"Uploaded '{job.FileName}' for #{item.EventAppointmentId} ({item.CustomerName}). Isolated to customer {item.CustomerId}.";
                     if (_selectedContainer != null &&
-                        string.Equals(_selectedContainer.EventAppointmentId, item.EventAppointmentId, StringComparison.OrdinalIgnoreCase))
+                        string.Equals(_selectedContainer.EventAppointmentId, item.EventAppointmentId, StringComparison.OrdinalIgnoreCase) &&
+                        UploadService.GetActiveJobForEvent(item.EventAppointmentId) == null)
                     {
                         CloseUploadModal();
                     }

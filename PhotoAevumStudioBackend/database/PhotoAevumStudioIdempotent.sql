@@ -59,6 +59,8 @@ IF NOT EXISTS (SELECT 1 FROM sys.sequences WHERE name = N'Seq_HomeHighlightID' A
     CREATE SEQUENCE dbo.Seq_HomeHighlightID AS INT START WITH 1 INCREMENT BY 1;
 IF NOT EXISTS (SELECT 1 FROM sys.sequences WHERE name = N'Seq_DropboxID' AND schema_id = SCHEMA_ID(N'dbo'))
     CREATE SEQUENCE dbo.Seq_DropboxID AS INT START WITH 1 INCREMENT BY 1;
+IF NOT EXISTS (SELECT 1 FROM sys.sequences WHERE name = N'Seq_DropboxFileID' AND schema_id = SCHEMA_ID(N'dbo'))
+    CREATE SEQUENCE dbo.Seq_DropboxFileID AS INT START WITH 1 INCREMENT BY 1;
 GO
 
 /* =====================================================================
@@ -906,6 +908,59 @@ BEGIN
       AND UploadedAt IS NOT NULL
       AND (ExpiresAt IS NULL OR ExpiresAt < DATEADD(day, 30, UploadedAt));
 END;
+
+IF OBJECT_ID(N'dbo.CustomerDropboxFiles', N'U') IS NULL
+BEGIN
+    CREATE TABLE dbo.CustomerDropboxFiles (
+        DropboxFileID nvarchar(30) NOT NULL PRIMARY KEY,
+        DropboxID nvarchar(30) NOT NULL,
+        EventAppointmentID nvarchar(30) NOT NULL,
+        CustomerID nvarchar(30) NOT NULL,
+        BucketName nvarchar(100) NOT NULL CONSTRAINT DF_CustomerDropboxFiles_Bucket DEFAULT 'dropbox',
+        R2ObjectKey nvarchar(500) NULL,
+        OriginalFileName nvarchar(255) NOT NULL,
+        FileSizeBytes bigint NOT NULL,
+        ContentType nvarchar(100) NULL,
+        FileStatus nvarchar(30) NOT NULL CONSTRAINT DF_CustomerDropboxFiles_Status DEFAULT 'Active',
+        UploadedAt datetime2 NOT NULL CONSTRAINT DF_CustomerDropboxFiles_UploadedAt DEFAULT SYSUTCDATETIME(),
+        UploadedByEmployeeID nvarchar(30) NULL,
+        ExpiresAt datetime2 NOT NULL,
+        CreatedAt datetime2 NOT NULL CONSTRAINT DF_CustomerDropboxFiles_CreatedAt DEFAULT SYSUTCDATETIME(),
+        CONSTRAINT CK_CustomerDropboxFiles_Status CHECK (FileStatus IN ('Active', 'Expired')),
+        CONSTRAINT CK_CustomerDropboxFiles_Size CHECK (FileSizeBytes > 0 AND FileSizeBytes <= 524288000)
+    );
+END;
+
+IF OBJECT_ID(N'dbo.CustomerDropbox', N'U') IS NOT NULL
+   AND OBJECT_ID(N'dbo.CustomerDropboxFiles', N'U') IS NOT NULL
+BEGIN
+    INSERT INTO dbo.CustomerDropboxFiles (
+        DropboxFileID, DropboxID, EventAppointmentID, CustomerID, BucketName,
+        R2ObjectKey, OriginalFileName, FileSizeBytes, ContentType, FileStatus,
+        UploadedAt, UploadedByEmployeeID, ExpiresAt, CreatedAt
+    )
+    SELECT
+        N'DRPF-' + RIGHT(N'0000' + CAST(NEXT VALUE FOR dbo.Seq_DropboxFileID AS nvarchar(10)), 4),
+        cd.DropboxID,
+        cd.EventAppointmentID,
+        cd.CustomerID,
+        cd.BucketName,
+        cd.R2ObjectKey,
+        COALESCE(cd.OriginalFileName, cd.EventAppointmentID + N'.zip'),
+        CASE WHEN ISNULL(cd.FileSizeBytes, 0) > 0 AND cd.FileSizeBytes <= 524288000 THEN cd.FileSizeBytes ELSE 1 END,
+        cd.ContentType,
+        CASE WHEN cd.DropboxStatus = N'Expired' THEN N'Expired' ELSE N'Active' END,
+        COALESCE(cd.UploadedAt, cd.CreatedAt, SYSUTCDATETIME()),
+        cd.UploadedByEmployeeID,
+        COALESCE(cd.ExpiresAt, DATEADD(day, 30, COALESCE(cd.UploadedAt, cd.CreatedAt, SYSUTCDATETIME()))),
+        COALESCE(cd.CreatedAt, SYSUTCDATETIME())
+    FROM dbo.CustomerDropbox cd
+    WHERE cd.DropboxStatus IN (N'Uploaded', N'Expired')
+      AND (cd.R2ObjectKey IS NOT NULL OR cd.OriginalFileName IS NOT NULL)
+      AND NOT EXISTS (
+          SELECT 1 FROM dbo.CustomerDropboxFiles cdf WHERE cdf.DropboxID = cd.DropboxID
+      );
+END;
 GO
 
 /* =====================================================================
@@ -1138,6 +1193,19 @@ ALTER TABLE dbo.CustomerDropbox ADD CONSTRAINT FK_CustomerDropbox_EventAppointme
 IF OBJECT_ID(N'dbo.FK_CustomerDropbox_Customer', N'F') IS NOT NULL
     ALTER TABLE dbo.CustomerDropbox DROP CONSTRAINT FK_CustomerDropbox_Customer;
 ALTER TABLE dbo.CustomerDropbox ADD CONSTRAINT FK_CustomerDropbox_Customer FOREIGN KEY (CustomerID) REFERENCES dbo.Customer(CustomerID) ON DELETE NO ACTION;
+
+-- 8.10B CustomerDropboxFiles Constraints
+IF OBJECT_ID(N'dbo.FK_CustomerDropboxFiles_CustomerDropbox', N'F') IS NOT NULL
+    ALTER TABLE dbo.CustomerDropboxFiles DROP CONSTRAINT FK_CustomerDropboxFiles_CustomerDropbox;
+ALTER TABLE dbo.CustomerDropboxFiles ADD CONSTRAINT FK_CustomerDropboxFiles_CustomerDropbox FOREIGN KEY (DropboxID) REFERENCES dbo.CustomerDropbox(DropboxID) ON DELETE CASCADE;
+
+IF OBJECT_ID(N'dbo.FK_CustomerDropboxFiles_EventAppointment', N'F') IS NOT NULL
+    ALTER TABLE dbo.CustomerDropboxFiles DROP CONSTRAINT FK_CustomerDropboxFiles_EventAppointment;
+ALTER TABLE dbo.CustomerDropboxFiles ADD CONSTRAINT FK_CustomerDropboxFiles_EventAppointment FOREIGN KEY (EventAppointmentID) REFERENCES dbo.EventAppointment(EventAppointmentID) ON DELETE NO ACTION;
+
+IF OBJECT_ID(N'dbo.FK_CustomerDropboxFiles_Customer', N'F') IS NOT NULL
+    ALTER TABLE dbo.CustomerDropboxFiles DROP CONSTRAINT FK_CustomerDropboxFiles_Customer;
+ALTER TABLE dbo.CustomerDropboxFiles ADD CONSTRAINT FK_CustomerDropboxFiles_Customer FOREIGN KEY (CustomerID) REFERENCES dbo.Customer(CustomerID) ON DELETE NO ACTION;
 
 -- 8.11 MaintenanceSchedule Constraints
 IF OBJECT_ID(N'dbo.FK_MaintenanceSchedule_Equipment', N'F') IS NOT NULL
@@ -1479,6 +1547,12 @@ IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = N'IX_CustomerDropbox_Custo
 
 IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = N'IX_CustomerDropbox_ExpiresAt' AND object_id = OBJECT_ID(N'dbo.CustomerDropbox'))
     CREATE INDEX IX_CustomerDropbox_ExpiresAt ON dbo.CustomerDropbox (ExpiresAt);
+
+IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = N'IX_CustomerDropboxFiles_Dropbox_Status' AND object_id = OBJECT_ID(N'dbo.CustomerDropboxFiles'))
+    CREATE INDEX IX_CustomerDropboxFiles_Dropbox_Status ON dbo.CustomerDropboxFiles (DropboxID, FileStatus, ExpiresAt);
+
+IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = N'IX_CustomerDropboxFiles_ExpiresAt' AND object_id = OBJECT_ID(N'dbo.CustomerDropboxFiles'))
+    CREATE INDEX IX_CustomerDropboxFiles_ExpiresAt ON dbo.CustomerDropboxFiles (ExpiresAt);
 GO
 
 /* =====================================================================
@@ -1698,10 +1772,14 @@ GO
 IF OBJECT_ID(N'dbo.EventAppointment', N'U') IS NOT NULL
    AND NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = N'IX_EventAppointment_Status_LockExpiresAt' AND object_id = OBJECT_ID(N'dbo.EventAppointment'))
     CREATE INDEX IX_EventAppointment_Status_LockExpiresAt ON dbo.EventAppointment (EventStatus, LockExpiresAt);
-GO
-/* =====================================================================
-   HANGFIRE BACKGROUND JOB STORAGE SCHEMA (Version 9)
-   ===================================================================== */
+GO
+
+/* =====================================================================
+
+   HANGFIRE BACKGROUND JOB STORAGE SCHEMA (Version 9)
+
+   ===================================================================== */
+
 
 -- This file is part of Hangfire. Copyright © 2013-2014 Hangfire OÜ.
 -- 
@@ -2491,8 +2569,10 @@ PRINT 'Hangfire database schema installed';
 COMMIT TRANSACTION;
 PRINT 'Hangfire SQL objects installed';
 
-
-GO
+
+
+GO
+
 
 /* =====================================================================
    15. TWO-STAGE CONTRACTS, TERMS VERSIONS, PAYMENT LEDGER & RECEIPTS (IDEMPOTENT)

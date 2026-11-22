@@ -18,7 +18,7 @@ public sealed record DropboxUploadTicket(
 /// </summary>
 public sealed class DropboxUploadTicketStore
 {
-    private static readonly TimeSpan TicketTtl = TimeSpan.FromHours(2);
+    private static readonly TimeSpan TicketTtl = TimeSpan.FromHours(12);
     private readonly ConcurrentDictionary<string, DropboxUploadTicket> _tickets = new(StringComparer.Ordinal);
 
     public DropboxUploadTicket CreateTicket(

@@ -277,3 +277,20 @@
         border-radius: 1.25rem;
     }
 }
+
+.aev-existing-zip-row,
+.aev-staged-zip-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.75rem;
+    padding: 0.55rem 0.75rem;
+    border-radius: 0.65rem;
+    background: #ffffff;
+    border: 1px solid #cbd5e1;
+}
+
+.aev-existing-zip-row.is-expired {
+    background: #f1f5f9;
+    opacity: 0.75;
+}

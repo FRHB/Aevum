@@ -7,8 +7,15 @@ public static class DropboxStatuses
     public const string Expired = "Expired";
 }
 
+public static class DropboxFileStatuses
+{
+    public const string Active = "Active";
+    public const string Expired = "Expired";
+}
+
 public static class DropboxCountdownHelper
 {
+    public const long MaxZipSizeBytes = 524_288_000L; // 500 MB per individual ZIP file
     public const int RetentionDays = 30;
     public const int DefaultDeliveryBusinessDays = 7;
 
@@ -117,12 +124,32 @@ public class CustomerDropboxFolderDto
     public bool IsWaitingForUpload => string.Equals(DropboxStatus, DropboxStatuses.Waiting, StringComparison.OrdinalIgnoreCase) && !IsExpired;
     public bool HasFile => string.Equals(DropboxStatus, DropboxStatuses.Uploaded, StringComparison.OrdinalIgnoreCase)
                            && !IsExpired
-                           && !string.IsNullOrWhiteSpace(OriginalFileName);
+                           && (Files.Any(f => !f.IsExpired) || !string.IsNullOrWhiteSpace(OriginalFileName));
+    public List<CustomerDropboxFileDto> Files { get; set; } = new();
+    public int FileCount => Files.Count > 0 ? Files.Count(f => !f.IsExpired) : (HasFile ? 1 : 0);
+    public long TotalFileSizeBytes => Files.Count > 0
+        ? Files.Where(f => !f.IsExpired).Sum(f => f.FileSizeBytes)
+        : (FileSizeBytes ?? 0L);
+}
+
+public class CustomerDropboxFileDto
+{
+    public string DropboxFileId { get; set; } = string.Empty;
+    public string DropboxId { get; set; } = string.Empty;
+    public string EventAppointmentId { get; set; } = string.Empty;
+    public string OriginalFileName { get; set; } = string.Empty;
+    public long FileSizeBytes { get; set; }
+    public DateTime UploadedAt { get; set; }
+    public DateTime ExpiresAt { get; set; }
+    public int DaysRemaining { get; set; }
+    public string CountdownLabel { get; set; } = string.Empty;
+    public bool IsExpired { get; set; }
 }
 
 public class DropboxDownloadUrlDto
 {
     public string DropboxId { get; set; } = string.Empty;
+    public string? DropboxFileId { get; set; }
     public string EventAppointmentId { get; set; } = string.Empty;
     public string FileName { get; set; } = string.Empty;
     public long FileSizeBytes { get; set; }

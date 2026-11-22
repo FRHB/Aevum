@@ -42,7 +42,9 @@ public class CustomerDropboxService : ICustomerDropboxService
     internal static readonly string[] SchemaBatches =
     {
         @"IF NOT EXISTS (SELECT 1 FROM sys.sequences WHERE name = N'Seq_DropboxID' AND schema_id = SCHEMA_ID(N'dbo'))
-              CREATE SEQUENCE dbo.Seq_DropboxID AS INT START WITH 1 INCREMENT BY 1;",
+              CREATE SEQUENCE dbo.Seq_DropboxID AS INT START WITH 1 INCREMENT BY 1;
+          IF NOT EXISTS (SELECT 1 FROM sys.sequences WHERE name = N'Seq_DropboxFileID' AND schema_id = SCHEMA_ID(N'dbo'))
+              CREATE SEQUENCE dbo.Seq_DropboxFileID AS INT START WITH 1 INCREMENT BY 1;",
 
         @"IF OBJECT_ID(N'dbo.CustomerDropbox', N'U') IS NULL
           BEGIN
@@ -63,6 +65,28 @@ public class CustomerDropboxService : ICustomerDropboxService
                   CreatedAt datetime2 NOT NULL CONSTRAINT DF_CustomerDropbox_CreatedAt DEFAULT SYSUTCDATETIME(),
                   CONSTRAINT UQ_CustomerDropbox_Event UNIQUE (EventAppointmentID),
                   CONSTRAINT CK_CustomerDropbox_Status CHECK (DropboxStatus IN ('Waiting', 'Uploaded', 'Expired'))
+              );
+          END;
+
+          IF OBJECT_ID(N'dbo.CustomerDropboxFiles', N'U') IS NULL
+          BEGIN
+              CREATE TABLE dbo.CustomerDropboxFiles (
+                  DropboxFileID nvarchar(30) NOT NULL PRIMARY KEY,
+                  DropboxID nvarchar(30) NOT NULL,
+                  EventAppointmentID nvarchar(30) NOT NULL,
+                  CustomerID nvarchar(30) NOT NULL,
+                  BucketName nvarchar(100) NOT NULL CONSTRAINT DF_CustomerDropboxFiles_Bucket DEFAULT 'dropbox',
+                  R2ObjectKey nvarchar(500) NULL,
+                  OriginalFileName nvarchar(255) NOT NULL,
+                  FileSizeBytes bigint NOT NULL,
+                  ContentType nvarchar(100) NULL,
+                  FileStatus nvarchar(30) NOT NULL CONSTRAINT DF_CustomerDropboxFiles_Status DEFAULT 'Active',
+                  UploadedAt datetime2 NOT NULL CONSTRAINT DF_CustomerDropboxFiles_UploadedAt DEFAULT SYSUTCDATETIME(),
+                  UploadedByEmployeeID nvarchar(30) NULL,
+                  ExpiresAt datetime2 NOT NULL,
+                  CreatedAt datetime2 NOT NULL CONSTRAINT DF_CustomerDropboxFiles_CreatedAt DEFAULT SYSUTCDATETIME(),
+                  CONSTRAINT CK_CustomerDropboxFiles_Status CHECK (FileStatus IN ('Active', 'Expired')),
+                  CONSTRAINT CK_CustomerDropboxFiles_Size CHECK (FileSizeBytes > 0 AND FileSizeBytes <= 524288000)
               );
           END;",
 
@@ -86,6 +110,37 @@ public class CustomerDropboxService : ICustomerDropboxService
               WHERE DropboxStatus = 'Uploaded'
                 AND UploadedAt IS NOT NULL
                 AND (ExpiresAt IS NULL OR ExpiresAt < DATEADD(day, 30, UploadedAt));
+          END;
+
+          IF OBJECT_ID(N'dbo.CustomerDropbox', N'U') IS NOT NULL
+             AND OBJECT_ID(N'dbo.CustomerDropboxFiles', N'U') IS NOT NULL
+          BEGIN
+              INSERT INTO dbo.CustomerDropboxFiles (
+                  DropboxFileID, DropboxID, EventAppointmentID, CustomerID, BucketName,
+                  R2ObjectKey, OriginalFileName, FileSizeBytes, ContentType, FileStatus,
+                  UploadedAt, UploadedByEmployeeID, ExpiresAt, CreatedAt
+              )
+              SELECT
+                  N'DRPF-' + RIGHT(N'0000' + CAST(NEXT VALUE FOR dbo.Seq_DropboxFileID AS nvarchar(10)), 4),
+                  cd.DropboxID,
+                  cd.EventAppointmentID,
+                  cd.CustomerID,
+                  cd.BucketName,
+                  cd.R2ObjectKey,
+                  COALESCE(cd.OriginalFileName, cd.EventAppointmentID + N'.zip'),
+                  CASE WHEN ISNULL(cd.FileSizeBytes, 0) > 0 AND cd.FileSizeBytes <= 524288000 THEN cd.FileSizeBytes ELSE 1 END,
+                  cd.ContentType,
+                  CASE WHEN cd.DropboxStatus = N'Expired' THEN N'Expired' ELSE N'Active' END,
+                  COALESCE(cd.UploadedAt, cd.CreatedAt, SYSUTCDATETIME()),
+                  cd.UploadedByEmployeeID,
+                  COALESCE(cd.ExpiresAt, DATEADD(day, 30, COALESCE(cd.UploadedAt, cd.CreatedAt, SYSUTCDATETIME()))),
+                  COALESCE(cd.CreatedAt, SYSUTCDATETIME())
+              FROM dbo.CustomerDropbox cd
+              WHERE cd.DropboxStatus IN (N'Uploaded', N'Expired')
+                AND (cd.R2ObjectKey IS NOT NULL OR cd.OriginalFileName IS NOT NULL)
+                AND NOT EXISTS (
+                    SELECT 1 FROM dbo.CustomerDropboxFiles cdf WHERE cdf.DropboxID = cd.DropboxID
+                );
           END;",
 
         @"IF OBJECT_ID(N'dbo.CustomerDropbox', N'U') IS NOT NULL
@@ -100,13 +155,39 @@ public class CustomerDropboxService : ICustomerDropboxService
               ALTER TABLE dbo.CustomerDropbox ADD CONSTRAINT FK_CustomerDropbox_Customer
                   FOREIGN KEY (CustomerID) REFERENCES dbo.Customer(CustomerID) ON DELETE NO ACTION;
 
+          IF OBJECT_ID(N'dbo.CustomerDropboxFiles', N'U') IS NOT NULL
+             AND OBJECT_ID(N'dbo.CustomerDropbox', N'U') IS NOT NULL
+             AND OBJECT_ID(N'dbo.FK_CustomerDropboxFiles_CustomerDropbox', N'F') IS NULL
+              ALTER TABLE dbo.CustomerDropboxFiles ADD CONSTRAINT FK_CustomerDropboxFiles_CustomerDropbox
+                  FOREIGN KEY (DropboxID) REFERENCES dbo.CustomerDropbox(DropboxID) ON DELETE CASCADE;
+
+          IF OBJECT_ID(N'dbo.CustomerDropboxFiles', N'U') IS NOT NULL
+             AND OBJECT_ID(N'dbo.EventAppointment', N'U') IS NOT NULL
+             AND OBJECT_ID(N'dbo.FK_CustomerDropboxFiles_EventAppointment', N'F') IS NULL
+              ALTER TABLE dbo.CustomerDropboxFiles ADD CONSTRAINT FK_CustomerDropboxFiles_EventAppointment
+                  FOREIGN KEY (EventAppointmentID) REFERENCES dbo.EventAppointment(EventAppointmentID) ON DELETE NO ACTION;
+
+          IF OBJECT_ID(N'dbo.CustomerDropboxFiles', N'U') IS NOT NULL
+             AND OBJECT_ID(N'dbo.Customer', N'U') IS NOT NULL
+             AND OBJECT_ID(N'dbo.FK_CustomerDropboxFiles_Customer', N'F') IS NULL
+              ALTER TABLE dbo.CustomerDropboxFiles ADD CONSTRAINT FK_CustomerDropboxFiles_Customer
+                  FOREIGN KEY (CustomerID) REFERENCES dbo.Customer(CustomerID) ON DELETE NO ACTION;
+
           IF OBJECT_ID(N'dbo.CustomerDropbox', N'U') IS NOT NULL
              AND NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = N'IX_CustomerDropbox_Customer_ExpiresAt' AND object_id = OBJECT_ID(N'dbo.CustomerDropbox'))
               CREATE INDEX IX_CustomerDropbox_Customer_ExpiresAt ON dbo.CustomerDropbox (CustomerID, ExpiresAt);
 
           IF OBJECT_ID(N'dbo.CustomerDropbox', N'U') IS NOT NULL
              AND NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = N'IX_CustomerDropbox_ExpiresAt' AND object_id = OBJECT_ID(N'dbo.CustomerDropbox'))
-              CREATE INDEX IX_CustomerDropbox_ExpiresAt ON dbo.CustomerDropbox (ExpiresAt);"
+              CREATE INDEX IX_CustomerDropbox_ExpiresAt ON dbo.CustomerDropbox (ExpiresAt);
+
+          IF OBJECT_ID(N'dbo.CustomerDropboxFiles', N'U') IS NOT NULL
+             AND NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = N'IX_CustomerDropboxFiles_Dropbox_Status' AND object_id = OBJECT_ID(N'dbo.CustomerDropboxFiles'))
+              CREATE INDEX IX_CustomerDropboxFiles_Dropbox_Status ON dbo.CustomerDropboxFiles (DropboxID, FileStatus, ExpiresAt);
+
+          IF OBJECT_ID(N'dbo.CustomerDropboxFiles', N'U') IS NOT NULL
+             AND NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = N'IX_CustomerDropboxFiles_ExpiresAt' AND object_id = OBJECT_ID(N'dbo.CustomerDropboxFiles'))
+              CREATE INDEX IX_CustomerDropboxFiles_ExpiresAt ON dbo.CustomerDropboxFiles (ExpiresAt);"
     };
 
     public async Task EnsureSchemaAsync(CancellationToken ct = default)
@@ -300,6 +381,23 @@ public class CustomerDropboxService : ICustomerDropboxService
         return $"DRP-{Guid.NewGuid():N}"[..12].ToUpperInvariant();
     }
 
+    private static async Task<string> GenerateNextDropboxFileIdAsync(SqlConnection conn, CancellationToken ct)
+    {
+        for (var attempt = 0; attempt < 25; attempt++)
+        {
+            await using var cmd = new SqlCommand("SELECT NEXT VALUE FOR dbo.Seq_DropboxFileID;", conn);
+            var num = Convert.ToInt32(await cmd.ExecuteScalarAsync(ct));
+            var candidate = $"DRPF-{num:D4}";
+
+            await using var chk = new SqlCommand("SELECT COUNT(1) FROM dbo.CustomerDropboxFiles WHERE DropboxFileID = @Id;", conn);
+            chk.Parameters.AddWithValue("@Id", candidate);
+            if (Convert.ToInt32(await chk.ExecuteScalarAsync(ct)) == 0)
+                return candidate;
+        }
+
+        return $"DRPF-{Guid.NewGuid():N}"[..13].ToUpperInvariant();
+    }
+
     public async Task<IReadOnlyList<CustomerDropboxFolderDto>> GetCustomerDropboxesAsync(
         string customerId,
         CancellationToken ct = default)
@@ -366,6 +464,7 @@ public class CustomerDropboxService : ICustomerDropboxService
             }
         }
 
+        await LoadFilesForFoldersAsync(conn, rows, DateTime.UtcNow, ct);
         await ApplyDeliveryWindowsAsync(conn, rows, DateTime.UtcNow, ct);
         return rows;
     }
@@ -414,6 +513,7 @@ public class CustomerDropboxService : ICustomerDropboxService
             }
         }
 
+        await LoadFilesForFoldersAsync(conn, rows, DateTime.UtcNow, ct);
         await ApplyDeliveryWindowsAsync(conn, rows, DateTime.UtcNow, ct);
         return rows;
     }
@@ -469,6 +569,8 @@ public class CustomerDropboxService : ICustomerDropboxService
             throw new ArgumentNullException(nameof(zipStream));
         if (fileSizeBytes <= 0)
             throw new ArgumentException("Uploaded ZIP file cannot be empty.", nameof(fileSizeBytes));
+        if (fileSizeBytes > DropboxCountdownHelper.MaxZipSizeBytes)
+            throw new InvalidOperationException("ZIP file must be between 1 byte and 500 MB.");
 
         var safeName = SanitizeFileName(originalFileName);
         if (!Path.GetExtension(safeName).Equals(".zip", StringComparison.OrdinalIgnoreCase))
@@ -480,6 +582,8 @@ public class CustomerDropboxService : ICustomerDropboxService
         {
             if (zipStream.CanSeek)
             {
+                if (zipStream.Length > DropboxCountdownHelper.MaxZipSizeBytes)
+                    throw new InvalidOperationException("ZIP file must be between 1 byte and 500 MB.");
                 zipStream.Position = 0;
                 await ValidateZipSignatureAsync(zipStream, ct);
                 zipStream.Position = 0;
@@ -489,7 +593,16 @@ public class CustomerDropboxService : ICustomerDropboxService
                 tempFilePath = Path.Combine(Path.GetTempPath(), $"aevum-dropbox-{Guid.NewGuid():N}.zip");
                 await using (var fs = new FileStream(tempFilePath, FileMode.CreateNew, FileAccess.Write, FileShare.None, 81920, useAsync: true))
                 {
-                    await zipStream.CopyToAsync(fs, ct);
+                    var buffer = new byte[81920];
+                    long totalCopied = 0;
+                    int read;
+                    while ((read = await zipStream.ReadAsync(buffer, ct)) > 0)
+                    {
+                        totalCopied += read;
+                        if (totalCopied > DropboxCountdownHelper.MaxZipSizeBytes)
+                            throw new InvalidOperationException("ZIP file must be between 1 byte and 500 MB.");
+                        await fs.WriteAsync(buffer.AsMemory(0, read), ct);
+                    }
                 }
 
                 var readFs = new FileStream(tempFilePath, FileMode.Open, FileAccess.Read, FileShare.Read, 81920, useAsync: true);
@@ -502,13 +615,17 @@ public class CustomerDropboxService : ICustomerDropboxService
             await EnsureFolderForEventOnConnectionAsync(conn, eventAppointmentId.Trim(), ct);
 
             const string fetchSql = @"
-                SELECT TOP 1 cd.DropboxID, cd.CustomerID, cd.BucketName, cd.R2ObjectKey, cd.DropboxStatus, cd.ExpiresAt
+                SELECT TOP 1 cd.DropboxID, cd.CustomerID, cd.BucketName, cd.R2ObjectKey,
+                       cd.OriginalFileName, cd.FileSizeBytes, cd.ContentType,
+                       cd.DropboxStatus, cd.UploadedAt, cd.UploadedByEmployeeID, cd.ExpiresAt
                 FROM dbo.CustomerDropbox cd
                 WHERE cd.EventAppointmentID = @EvtId;";
 
-            string? dropboxId = null, customerId = null, bucketName = null, oldKey = null;
+            string? dropboxId = null, customerId = null, bucketName = null, legacyKey = null;
+            string? legacyFileName = null, legacyContentType = null, legacyUploadedBy = null;
+            long? legacySize = null;
             string currentStatus = DropboxStatuses.Waiting;
-            DateTime? expiresAt = null;
+            DateTime? legacyUploadedAt = null, expiresAt = null;
 
             await using (var cmd = new SqlCommand(fetchSql, conn))
             {
@@ -520,13 +637,38 @@ public class CustomerDropboxService : ICustomerDropboxService
                 dropboxId = r.GetString(0);
                 customerId = r.GetString(1);
                 bucketName = r.IsDBNull(2) ? _r2Storage.DropboxBucket : r.GetString(2);
-                oldKey = r.IsDBNull(3) ? null : r.GetString(3);
-                currentStatus = r.IsDBNull(4) ? DropboxStatuses.Waiting : r.GetString(4);
-                expiresAt = r.IsDBNull(5) ? null : DateTime.SpecifyKind(r.GetDateTime(5), DateTimeKind.Utc);
+                legacyKey = r.IsDBNull(3) ? null : r.GetString(3);
+                legacyFileName = r.IsDBNull(4) ? null : r.GetString(4);
+                legacySize = r.IsDBNull(5) ? null : r.GetInt64(5);
+                legacyContentType = r.IsDBNull(6) ? null : r.GetString(6);
+                currentStatus = r.IsDBNull(7) ? DropboxStatuses.Waiting : r.GetString(7);
+                legacyUploadedAt = r.IsDBNull(8) ? null : DateTime.SpecifyKind(r.GetDateTime(8), DateTimeKind.Utc);
+                legacyUploadedBy = r.IsDBNull(9) ? null : r.GetString(9);
+                expiresAt = r.IsDBNull(10) ? null : DateTime.SpecifyKind(r.GetDateTime(10), DateTimeKind.Utc);
             }
 
             if (IsDropboxExpired(currentStatus, expiresAt, DateTime.UtcNow))
                 throw new InvalidOperationException($"The 30-day Dropbox retention window for event '{eventAppointmentId}' has expired and is no longer available.");
+
+            // Preserve any legacy single-file record in CustomerDropboxFiles before appending the new ZIP
+            if (string.Equals(currentStatus, DropboxStatuses.Uploaded, StringComparison.OrdinalIgnoreCase)
+                && !string.IsNullOrWhiteSpace(legacyKey))
+            {
+                await BackfillLegacyFileIfNeededAsync(
+                    conn,
+                    dropboxId!,
+                    eventAppointmentId.Trim(),
+                    customerId!,
+                    string.IsNullOrWhiteSpace(bucketName) ? _r2Storage.DropboxBucket : bucketName.Trim(),
+                    legacyKey,
+                    legacyFileName ?? $"{eventAppointmentId.Trim()}.zip",
+                    legacySize ?? 1L,
+                    legacyContentType,
+                    legacyUploadedAt ?? DateTime.UtcNow,
+                    legacyUploadedBy,
+                    expiresAt ?? (legacyUploadedAt ?? DateTime.UtcNow).AddDays(DropboxCountdownHelper.RetentionDays),
+                    ct);
+            }
 
             var targetBucket = string.IsNullOrWhiteSpace(bucketName) ? _r2Storage.DropboxBucket : bucketName.Trim();
             await EnsureDropboxBucketAsync();
@@ -545,9 +687,32 @@ public class CustomerDropboxService : ICustomerDropboxService
             if (string.IsNullOrWhiteSpace(uploadedUri))
                 throw new InvalidOperationException("Cloudflare R2 upload did not return a success confirmation.");
 
-            if (!string.IsNullOrWhiteSpace(oldKey) && !string.Equals(oldKey, objectKey, StringComparison.Ordinal))
+            var dropboxFileId = await GenerateNextDropboxFileIdAsync(conn, ct);
+            const string insertFileSql = @"
+                INSERT INTO dbo.CustomerDropboxFiles (
+                    DropboxFileID, DropboxID, EventAppointmentID, CustomerID, BucketName,
+                    R2ObjectKey, OriginalFileName, FileSizeBytes, ContentType, FileStatus,
+                    UploadedAt, UploadedByEmployeeID, ExpiresAt, CreatedAt
+                )
+                VALUES (
+                    @FileId, @DropboxId, @EvtId, @CustId, @Bucket,
+                    @Key, @FileName, @Size, @ContentType, 'Active',
+                    SYSUTCDATETIME(), NULLIF(@UploadedBy, ''), DATEADD(day, 30, SYSUTCDATETIME()), SYSUTCDATETIME()
+                );";
+
+            await using (var insFile = new SqlCommand(insertFileSql, conn))
             {
-                await _r2Storage.DeleteFileAsync(targetBucket, oldKey);
+                insFile.Parameters.AddWithValue("@FileId", dropboxFileId);
+                insFile.Parameters.AddWithValue("@DropboxId", dropboxId!);
+                insFile.Parameters.AddWithValue("@EvtId", eventAppointmentId.Trim());
+                insFile.Parameters.AddWithValue("@CustId", customerId!);
+                insFile.Parameters.AddWithValue("@Bucket", targetBucket);
+                insFile.Parameters.AddWithValue("@Key", objectKey);
+                insFile.Parameters.AddWithValue("@FileName", safeName);
+                insFile.Parameters.AddWithValue("@Size", fileSizeBytes);
+                insFile.Parameters.AddWithValue("@ContentType", resolvedContentType);
+                insFile.Parameters.AddWithValue("@UploadedBy", uploadedByEmployeeId ?? string.Empty);
+                await insFile.ExecuteNonQueryAsync(ct);
             }
 
             const string updateSql = @"
@@ -558,7 +723,7 @@ public class CustomerDropboxService : ICustomerDropboxService
                     FileSizeBytes = @Size,
                     ContentType = @ContentType,
                     DropboxStatus = 'Uploaded',
-                    UploadedAt = SYSUTCDATETIME(),
+                    UploadedAt = COALESCE(UploadedAt, SYSUTCDATETIME()),
                     ExpiresAt = DATEADD(day, 30, SYSUTCDATETIME()),
                     UploadedByEmployeeID = NULLIF(@UploadedBy, '')
                 WHERE DropboxID = @DropboxId;";
@@ -574,6 +739,8 @@ public class CustomerDropboxService : ICustomerDropboxService
                 upd.Parameters.AddWithValue("@DropboxId", dropboxId!);
                 await upd.ExecuteNonQueryAsync(ct);
             }
+
+            await SyncParentDropboxSummaryAsync(conn, dropboxId!, ct);
 
             try
             {
@@ -664,6 +831,7 @@ public class CustomerDropboxService : ICustomerDropboxService
                 dto = MapFolder(reader, DateTime.UtcNow, DropboxCountdownHelper.DefaultDeliveryBusinessDays);
             }
 
+            await LoadFilesForFoldersAsync(conn, [dto], DateTime.UtcNow, ct);
             await ApplyDeliveryWindowsAsync(conn, [dto], DateTime.UtcNow, ct);
             return dto;
         }
@@ -679,29 +847,44 @@ public class CustomerDropboxService : ICustomerDropboxService
         }
     }
 
-    public async Task<(string FileName, string ContentType, Stream FileStream, string PresignedUrl)> GetCustomerDownloadAsync(
+    public Task<(string FileName, string ContentType, Stream FileStream, string PresignedUrl)> GetCustomerDownloadAsync(
         string dropboxId,
         string callerCustomerId,
         CancellationToken ct = default)
+        => GetCustomerDownloadAsync(dropboxId, callerCustomerId, null, ct);
+
+    public async Task<(string FileName, string ContentType, Stream FileStream, string PresignedUrl)> GetCustomerDownloadAsync(
+        string dropboxId,
+        string callerCustomerId,
+        string? dropboxFileId,
+        CancellationToken ct = default)
     {
-        var row = await GetAuthorizedDownloadRecordAsync(dropboxId, callerCustomerId, ct);
+        var row = await GetAuthorizedDownloadRecordAsync(dropboxId, callerCustomerId, dropboxFileId, ct);
         var presigned = _r2Storage.GetPresignedDownloadUrl(row.BucketName, row.R2ObjectKey, row.FileName, TimeSpan.FromMinutes(15));
         var stream = await _r2Storage.DownloadFileAsync(row.BucketName, row.R2ObjectKey);
         return (row.FileName, row.ContentType, stream, presigned);
     }
 
-    public async Task<DropboxDownloadUrlDto> GetCustomerDownloadInfoAsync(
+    public Task<DropboxDownloadUrlDto> GetCustomerDownloadInfoAsync(
         string dropboxId,
         string callerCustomerId,
         string apiBaseUrl,
         CancellationToken ct = default)
+        => GetCustomerDownloadInfoAsync(dropboxId, callerCustomerId, apiBaseUrl, null, ct);
+
+    public async Task<DropboxDownloadUrlDto> GetCustomerDownloadInfoAsync(
+        string dropboxId,
+        string callerCustomerId,
+        string apiBaseUrl,
+        string? dropboxFileId,
+        CancellationToken ct = default)
     {
-        var row = await GetAuthorizedDownloadRecordAsync(dropboxId, callerCustomerId, ct);
+        var row = await GetAuthorizedDownloadRecordAsync(dropboxId, callerCustomerId, dropboxFileId, ct);
         var presigned = _r2Storage.GetPresignedDownloadUrl(row.BucketName, row.R2ObjectKey, row.FileName, TimeSpan.FromMinutes(15));
 
         if (string.IsNullOrWhiteSpace(presigned))
         {
-            var token = CreateSignedDownloadToken(row.DropboxId, row.CustomerId, TimeSpan.FromMinutes(10));
+            var token = CreateSignedDownloadToken(row.DropboxId, row.CustomerId, TimeSpan.FromMinutes(10), row.DropboxFileId);
             var basePrefix = string.IsNullOrWhiteSpace(apiBaseUrl) ? string.Empty : apiBaseUrl.TrimEnd('/');
             presigned = $"{basePrefix}/api/dropbox/download/{Uri.EscapeDataString(token)}";
         }
@@ -709,6 +892,7 @@ public class CustomerDropboxService : ICustomerDropboxService
         return new DropboxDownloadUrlDto
         {
             DropboxId = row.DropboxId,
+            DropboxFileId = row.DropboxFileId,
             EventAppointmentId = row.EventAppointmentId,
             FileName = row.FileName,
             FileSizeBytes = row.FileSizeBytes,
@@ -718,9 +902,14 @@ public class CustomerDropboxService : ICustomerDropboxService
     }
 
     public string CreateSignedDownloadToken(string dropboxId, string customerId, TimeSpan ttl)
+        => CreateSignedDownloadToken(dropboxId, customerId, ttl, null);
+
+    public string CreateSignedDownloadToken(string dropboxId, string customerId, TimeSpan ttl, string? dropboxFileId)
     {
         var exp = DateTimeOffset.UtcNow.Add(ttl).ToUnixTimeSeconds();
-        var payload = $"{dropboxId}|{customerId}|{exp}";
+        var payload = string.IsNullOrWhiteSpace(dropboxFileId)
+            ? $"{dropboxId}|{customerId}|{exp}"
+            : $"{dropboxId}|{customerId}|{exp}|{dropboxFileId.Trim()}";
         var sig = ComputeHmac(payload);
         var raw = $"{payload}|{sig}";
         return Convert.ToBase64String(Encoding.UTF8.GetBytes(raw))
@@ -731,8 +920,14 @@ public class CustomerDropboxService : ICustomerDropboxService
 
     public (bool Valid, string DropboxId, string CustomerId) ValidateSignedDownloadToken(string token)
     {
+        var (valid, dropboxId, customerId, _) = ValidateSignedDownloadTokenWithFile(token);
+        return (valid, dropboxId, customerId);
+    }
+
+    public (bool Valid, string DropboxId, string CustomerId, string? DropboxFileId) ValidateSignedDownloadTokenWithFile(string token)
+    {
         if (string.IsNullOrWhiteSpace(token))
-            return (false, string.Empty, string.Empty);
+            return (false, string.Empty, string.Empty, null);
 
         try
         {
@@ -744,30 +939,33 @@ public class CustomerDropboxService : ICustomerDropboxService
             }
             var decoded = Encoding.UTF8.GetString(Convert.FromBase64String(padded));
             var parts = decoded.Split('|');
-            if (parts.Length != 4) return (false, string.Empty, string.Empty);
+            if (parts.Length is not (4 or 5))
+                return (false, string.Empty, string.Empty, null);
 
             if (!long.TryParse(parts[2], out var expUnix))
-                return (false, string.Empty, string.Empty);
+                return (false, string.Empty, string.Empty, null);
 
             if (DateTimeOffset.FromUnixTimeSeconds(expUnix) <= DateTimeOffset.UtcNow)
-                return (false, string.Empty, string.Empty);
+                return (false, string.Empty, string.Empty, null);
 
-            var payload = $"{parts[0]}|{parts[1]}|{parts[2]}";
+            var payload = parts.Length == 5
+                ? $"{parts[0]}|{parts[1]}|{parts[2]}|{parts[3]}"
+                : $"{parts[0]}|{parts[1]}|{parts[2]}";
             var expectedSig = ComputeHmac(payload);
-            var actualBytes = Encoding.UTF8.GetBytes(parts[3]);
+            var actualBytes = Encoding.UTF8.GetBytes(parts[^1]);
             var expectedBytes = Encoding.UTF8.GetBytes(expectedSig);
 
             if (actualBytes.Length != expectedBytes.Length ||
                 !CryptographicOperations.FixedTimeEquals(actualBytes, expectedBytes))
             {
-                return (false, string.Empty, string.Empty);
+                return (false, string.Empty, string.Empty, null);
             }
 
-            return (true, parts[0], parts[1]);
+            return (true, parts[0], parts[1], parts.Length == 5 ? parts[3] : null);
         }
         catch
         {
-            return (false, string.Empty, string.Empty);
+            return (false, string.Empty, string.Empty, null);
         }
     }
 
@@ -791,9 +989,10 @@ public class CustomerDropboxService : ICustomerDropboxService
         return Convert.ToHexString(hash);
     }
 
-    private async Task<(string DropboxId, string EventAppointmentId, string CustomerId, string BucketName, string R2ObjectKey, string FileName, long FileSizeBytes, string ContentType, DateTime ExpiresAt)> GetAuthorizedDownloadRecordAsync(
+    private async Task<(string DropboxId, string? DropboxFileId, string EventAppointmentId, string CustomerId, string BucketName, string R2ObjectKey, string FileName, long FileSizeBytes, string ContentType, DateTime ExpiresAt)> GetAuthorizedDownloadRecordAsync(
         string dropboxId,
         string callerCustomerId,
+        string? dropboxFileId,
         CancellationToken ct)
     {
         if (string.IsNullOrWhiteSpace(dropboxId))
@@ -818,23 +1017,38 @@ public class CustomerDropboxService : ICustomerDropboxService
             LEFT JOIN dbo.EventAppointment ea ON ea.EventAppointmentID = cd.EventAppointmentID
             WHERE cd.DropboxID = @DropboxId;";
 
-        await using var cmd = new SqlCommand(sql, conn);
-        cmd.Parameters.AddWithValue("@DropboxId", dropboxId.Trim());
-        await using var r = await cmd.ExecuteReaderAsync(ct);
+        string dbDropboxId, evtId, ownerCustomerId, bucket, key, fileName, contentType, status, evtStatus;
+        long fileSize;
+        DateTime? expiresAt;
+        decimal totalAmt, finalBalAmt, remainingBal;
+        string? finalPayStatus;
+        bool unlockedFlag;
 
-        if (!await r.ReadAsync(ct))
-            throw new KeyNotFoundException($"Dropbox folder '{dropboxId}' was not found.");
+        await using (var cmd = new SqlCommand(sql, conn))
+        {
+            cmd.Parameters.AddWithValue("@DropboxId", dropboxId.Trim());
+            await using var r = await cmd.ExecuteReaderAsync(ct);
 
-        var dbDropboxId = r.GetString(0);
-        var evtId = r.GetString(1);
-        var ownerCustomerId = r.GetString(2);
-        var bucket = r.IsDBNull(3) ? _r2Storage.DropboxBucket : r.GetString(3);
-        var key = r.IsDBNull(4) ? string.Empty : r.GetString(4);
-        var fileName = r.IsDBNull(5) ? $"{evtId}.zip" : r.GetString(5);
-        var fileSize = r.IsDBNull(6) ? 0L : r.GetInt64(6);
-        var contentType = r.IsDBNull(7) ? "application/zip" : r.GetString(7);
-        var status = r.IsDBNull(8) ? DropboxStatuses.Waiting : r.GetString(8);
-        DateTime? expiresAt = r.IsDBNull(9) ? null : DateTime.SpecifyKind(r.GetDateTime(9), DateTimeKind.Utc);
+            if (!await r.ReadAsync(ct))
+                throw new KeyNotFoundException($"Dropbox folder '{dropboxId}' was not found.");
+
+            dbDropboxId = r.GetString(0);
+            evtId = r.GetString(1);
+            ownerCustomerId = r.GetString(2);
+            bucket = r.IsDBNull(3) ? _r2Storage.DropboxBucket : r.GetString(3);
+            key = r.IsDBNull(4) ? string.Empty : r.GetString(4);
+            fileName = r.IsDBNull(5) ? $"{evtId}.zip" : r.GetString(5);
+            fileSize = r.IsDBNull(6) ? 0L : r.GetInt64(6);
+            contentType = r.IsDBNull(7) ? "application/zip" : r.GetString(7);
+            status = r.IsDBNull(8) ? DropboxStatuses.Waiting : r.GetString(8);
+            expiresAt = r.IsDBNull(9) ? null : DateTime.SpecifyKind(r.GetDateTime(9), DateTimeKind.Utc);
+            evtStatus = r.FieldCount > 10 && !r.IsDBNull(10) ? r.GetString(10) : string.Empty;
+            totalAmt = r.FieldCount > 11 && !r.IsDBNull(11) ? r.GetDecimal(11) : 0m;
+            finalBalAmt = r.FieldCount > 13 && !r.IsDBNull(13) ? r.GetDecimal(13) : 0m;
+            remainingBal = r.FieldCount > 14 && !r.IsDBNull(14) ? r.GetDecimal(14) : 0m;
+            finalPayStatus = r.FieldCount > 15 && !r.IsDBNull(15) ? r.GetString(15) : null;
+            unlockedFlag = r.FieldCount > 16 && !r.IsDBNull(16) && r.GetBoolean(16);
+        }
 
         // Strict customer isolation enforcement
         if (!string.Equals(ownerCustomerId, callerCustomerId.Trim(), StringComparison.OrdinalIgnoreCase))
@@ -845,20 +1059,7 @@ public class CustomerDropboxService : ICustomerDropboxService
             throw new UnauthorizedAccessException("You are not authorized to access this customer's Dropbox.");
         }
 
-        if (IsDropboxExpired(status, expiresAt, DateTime.UtcNow))
-            throw new InvalidOperationException("This Dropbox gallery has expired after the 30-day retention period and is no longer available.");
-
-        if (!string.Equals(status, DropboxStatuses.Uploaded, StringComparison.OrdinalIgnoreCase) || string.IsNullOrWhiteSpace(key))
-            throw new InvalidOperationException("No ZIP archive has been uploaded to this Dropbox folder yet.");
-
         // Server-side Deliverable Release Gate: remaining balance must be <= 0 and final settlement verified
-        var evtStatus = r.FieldCount > 10 && !r.IsDBNull(10) ? r.GetString(10) : string.Empty;
-        var totalAmt = r.FieldCount > 11 && !r.IsDBNull(11) ? r.GetDecimal(11) : 0m;
-        var finalBalAmt = r.FieldCount > 13 && !r.IsDBNull(13) ? r.GetDecimal(13) : 0m;
-        var remainingBal = r.FieldCount > 14 && !r.IsDBNull(14) ? r.GetDecimal(14) : 0m;
-        var finalPayStatus = r.FieldCount > 15 && !r.IsDBNull(15) ? r.GetString(15) : null;
-        var unlockedFlag = r.FieldCount > 16 && !r.IsDBNull(16) && r.GetBoolean(16);
-
         var finalSettled = string.Equals(finalPayStatus, "Paid", StringComparison.OrdinalIgnoreCase)
                            || string.Equals(finalPayStatus, "Payment Verification (QR:Paid)", StringComparison.OrdinalIgnoreCase);
 
@@ -878,7 +1079,231 @@ public class CustomerDropboxService : ICustomerDropboxService
             throw new InvalidOperationException("Deliverables are locked until final settlement verification is complete.");
         }
 
-        return (dbDropboxId, evtId, ownerCustomerId, bucket, key, fileName, fileSize, contentType, expiresAt ?? DateTime.UtcNow.AddDays(DropboxCountdownHelper.RetentionDays));
+        string? resolvedFileId = null;
+        if (!string.IsNullOrWhiteSpace(dropboxFileId))
+        {
+            const string fileSql = @"
+                SELECT TOP 1 DropboxFileID, BucketName, R2ObjectKey, OriginalFileName, FileSizeBytes, ContentType, FileStatus, ExpiresAt
+                FROM dbo.CustomerDropboxFiles
+                WHERE DropboxFileID = @FileId AND DropboxID = @DropboxId;";
+
+            await using var fileCmd = new SqlCommand(fileSql, conn);
+            fileCmd.Parameters.AddWithValue("@FileId", dropboxFileId.Trim());
+            fileCmd.Parameters.AddWithValue("@DropboxId", dbDropboxId);
+            await using var fr = await fileCmd.ExecuteReaderAsync(ct);
+
+            if (!await fr.ReadAsync(ct))
+                throw new KeyNotFoundException($"Dropbox ZIP file '{dropboxFileId}' was not found in this folder.");
+
+            resolvedFileId = fr.GetString(0);
+            bucket = fr.IsDBNull(1) ? bucket : fr.GetString(1);
+            key = fr.IsDBNull(2) ? string.Empty : fr.GetString(2);
+            fileName = fr.IsDBNull(3) ? fileName : fr.GetString(3);
+            fileSize = fr.IsDBNull(4) ? 0L : fr.GetInt64(4);
+            contentType = fr.IsDBNull(5) ? "application/zip" : fr.GetString(5);
+            var fileStatus = fr.IsDBNull(6) ? DropboxFileStatuses.Active : fr.GetString(6);
+            var fileExpiresAt = DateTime.SpecifyKind(fr.GetDateTime(7), DateTimeKind.Utc);
+            expiresAt = fileExpiresAt;
+
+            if (string.Equals(fileStatus, DropboxFileStatuses.Expired, StringComparison.OrdinalIgnoreCase) || fileExpiresAt <= DateTime.UtcNow)
+                throw new InvalidOperationException("This ZIP archive has expired after its 30-day retention period and is no longer available.");
+
+            if (string.IsNullOrWhiteSpace(key))
+                throw new InvalidOperationException("This ZIP archive is no longer available.");
+
+            return (dbDropboxId, resolvedFileId, evtId, ownerCustomerId, bucket, key, fileName, fileSize, contentType, fileExpiresAt);
+        }
+
+        // No specific fileId requested: prefer newest active file from CustomerDropboxFiles, else legacy CustomerDropbox columns
+        const string latestFileSql = @"
+            SELECT TOP 1 DropboxFileID, BucketName, R2ObjectKey, OriginalFileName, FileSizeBytes, ContentType, FileStatus, ExpiresAt
+            FROM dbo.CustomerDropboxFiles
+            WHERE DropboxID = @DropboxId
+            ORDER BY CASE WHEN FileStatus = 'Active' AND ExpiresAt > SYSUTCDATETIME() THEN 0 ELSE 1 END,
+                     UploadedAt DESC, CreatedAt DESC;";
+
+        await using (var latestCmd = new SqlCommand(latestFileSql, conn))
+        {
+            latestCmd.Parameters.AddWithValue("@DropboxId", dbDropboxId);
+            await using var lr = await latestCmd.ExecuteReaderAsync(ct);
+            if (await lr.ReadAsync(ct))
+            {
+                resolvedFileId = lr.GetString(0);
+                bucket = lr.IsDBNull(1) ? bucket : lr.GetString(1);
+                key = lr.IsDBNull(2) ? string.Empty : lr.GetString(2);
+                fileName = lr.IsDBNull(3) ? fileName : lr.GetString(3);
+                fileSize = lr.IsDBNull(4) ? 0L : lr.GetInt64(4);
+                contentType = lr.IsDBNull(5) ? "application/zip" : lr.GetString(5);
+                var fileStatus = lr.IsDBNull(6) ? DropboxFileStatuses.Active : lr.GetString(6);
+                var fileExpiresAt = DateTime.SpecifyKind(lr.GetDateTime(7), DateTimeKind.Utc);
+                expiresAt = fileExpiresAt;
+
+                if (string.Equals(fileStatus, DropboxFileStatuses.Expired, StringComparison.OrdinalIgnoreCase) || fileExpiresAt <= DateTime.UtcNow)
+                    throw new InvalidOperationException("This Dropbox gallery has expired after the 30-day retention period and is no longer available.");
+
+                if (string.IsNullOrWhiteSpace(key))
+                    throw new InvalidOperationException("No ZIP archive is available in this Dropbox folder.");
+
+                return (dbDropboxId, resolvedFileId, evtId, ownerCustomerId, bucket, key, fileName, fileSize, contentType, fileExpiresAt);
+            }
+        }
+
+        if (IsDropboxExpired(status, expiresAt, DateTime.UtcNow))
+            throw new InvalidOperationException("This Dropbox gallery has expired after the 30-day retention period and is no longer available.");
+
+        if (!string.Equals(status, DropboxStatuses.Uploaded, StringComparison.OrdinalIgnoreCase) || string.IsNullOrWhiteSpace(key))
+            throw new InvalidOperationException("No ZIP archive has been uploaded to this Dropbox folder yet.");
+
+        return (dbDropboxId, null, evtId, ownerCustomerId, bucket, key, fileName, fileSize, contentType, expiresAt ?? DateTime.UtcNow.AddDays(DropboxCountdownHelper.RetentionDays));
+    }
+
+    public async Task<CustomerDropboxFolderDto> DeleteDropboxFileAsync(
+        string eventAppointmentId,
+        string dropboxFileId,
+        string deletedByEmployeeId,
+        CancellationToken ct = default)
+    {
+        if (string.IsNullOrWhiteSpace(eventAppointmentId))
+            throw new ArgumentException("Event appointment ID is required.", nameof(eventAppointmentId));
+        if (string.IsNullOrWhiteSpace(dropboxFileId))
+            throw new ArgumentException("Dropbox file ID is required.", nameof(dropboxFileId));
+
+        await using var conn = await OpenAsync(ct);
+
+        const string lookupSql = @"
+            SELECT TOP 1 cdf.DropboxFileID, cdf.DropboxID, cdf.EventAppointmentID, cdf.CustomerID,
+                   cdf.BucketName, cdf.R2ObjectKey, cdf.OriginalFileName
+            FROM dbo.CustomerDropboxFiles cdf
+            WHERE cdf.DropboxFileID = @FileId AND cdf.EventAppointmentID = @EvtId;";
+
+        string? dropboxId = null, customerId = null, bucket = null, objectKey = null, fileName = null;
+        await using (var cmd = new SqlCommand(lookupSql, conn))
+        {
+            cmd.Parameters.AddWithValue("@FileId", dropboxFileId.Trim());
+            cmd.Parameters.AddWithValue("@EvtId", eventAppointmentId.Trim());
+            await using var r = await cmd.ExecuteReaderAsync(ct);
+            if (!await r.ReadAsync(ct))
+                throw new KeyNotFoundException($"Dropbox ZIP file '{dropboxFileId}' was not found for event '{eventAppointmentId}'.");
+
+            dropboxId = r.GetString(1);
+            customerId = r.GetString(3);
+            bucket = r.IsDBNull(4) ? _r2Storage.DropboxBucket : r.GetString(4);
+            objectKey = r.IsDBNull(5) ? null : r.GetString(5);
+            fileName = r.IsDBNull(6) ? dropboxFileId : r.GetString(6);
+        }
+
+        if (!string.IsNullOrWhiteSpace(objectKey))
+        {
+            var deleted = await _r2Storage.DeleteFileAsync(bucket!, objectKey);
+            if (!deleted && _r2Storage.IsConfigured)
+                throw new InvalidOperationException($"Cloudflare R2 failed to delete '{fileName}'. Please try again.");
+        }
+
+        const string deleteSql = @"
+            DELETE cdf
+            FROM dbo.CustomerDropboxFiles cdf
+            WHERE cdf.DropboxFileID = @FileId;";
+
+        await using (var delCmd = new SqlCommand(deleteSql, conn))
+        {
+            delCmd.Parameters.AddWithValue("@FileId", dropboxFileId.Trim());
+            await delCmd.ExecuteNonQueryAsync(ct);
+        }
+
+        await SyncParentDropboxSummaryAsync(conn, dropboxId!, ct);
+
+        try
+        {
+            const string historySql = @"
+                IF OBJECT_ID(N'dbo.HistoryLog', N'U') IS NOT NULL
+                BEGIN
+                    DECLARE @EmpActor nvarchar(30) = NULL;
+                    DECLARE @AdmActor nvarchar(30) = NULL;
+                    DECLARE @ActorType nvarchar(20) = 'System';
+
+                    IF NULLIF(@DeletedBy, '') IS NOT NULL
+                    BEGIN
+                        IF OBJECT_ID(N'dbo.Employees', N'U') IS NOT NULL
+                           AND EXISTS (SELECT 1 FROM dbo.Employees WHERE EmployeeID = @DeletedBy)
+                        BEGIN
+                            SET @EmpActor = @DeletedBy;
+                            SET @ActorType = 'Employee';
+                        END
+                        ELSE IF OBJECT_ID(N'dbo.Admin', N'U') IS NOT NULL
+                           AND EXISTS (SELECT 1 FROM dbo.Admin WHERE AdminID = @DeletedBy)
+                        BEGIN
+                            SET @AdmActor = @DeletedBy;
+                            SET @ActorType = 'Admin';
+                        END
+                        ELSE IF @DeletedBy LIKE 'SADM-%'
+                            SET @ActorType = 'SystemAdmin';
+                        ELSE IF @DeletedBy LIKE 'ADM-%'
+                            SET @ActorType = 'Admin';
+                        ELSE IF @DeletedBy LIKE 'EMP-%' OR @DeletedBy LIKE 'CLK-%'
+                            SET @ActorType = 'Employee';
+                    END;
+
+                    INSERT INTO dbo.HistoryLog (
+                        ActionType, EntityName, EntityID, ActionDetails,
+                        EventAppointmentID, CustomerID, ChangedByType, ChangedByEmployeeID, ChangedByAdminID, LoggedAt
+                    )
+                    VALUES (
+                        'DELETE', 'CustomerDropbox', @DropboxId,
+                        'Deleted customer gallery ZIP (' + @FileName + ') from Cloudflare R2.',
+                        @EvtId, @CustId, @ActorType, @EmpActor, @AdmActor, SYSUTCDATETIME()
+                    );
+                END;";
+
+            await using var histCmd = new SqlCommand(historySql, conn);
+            histCmd.Parameters.AddWithValue("@DropboxId", dropboxId!);
+            histCmd.Parameters.AddWithValue("@FileName", fileName!);
+            histCmd.Parameters.AddWithValue("@EvtId", eventAppointmentId.Trim());
+            histCmd.Parameters.AddWithValue("@CustId", customerId!);
+            histCmd.Parameters.AddWithValue("@DeletedBy", deletedByEmployeeId ?? string.Empty);
+            await histCmd.ExecuteNonQueryAsync(ct);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Non-fatal HistoryLog write skipped after deleting Dropbox ZIP {FileId}.", dropboxFileId);
+        }
+
+        const string readBackSql = @"
+            SELECT TOP 1
+                   cd.DropboxID,
+                   cd.EventAppointmentID,
+                   cd.CustomerID,
+                   LTRIM(RTRIM(ISNULL(c.CustomerFirstName, '') + ' ' + ISNULL(c.CustomerLastName, ''))) AS CustomerName,
+                   ISNULL(c.CustomerEmail, '') AS CustomerEmail,
+                   ea.EventName,
+                   ISNULL(ea.EventDescription, '') AS EventDescription,
+                   ea.EventDate,
+                   ea.EventTime,
+                   ea.EventStatus,
+                   cd.DropboxStatus,
+                   cd.OriginalFileName,
+                   cd.FileSizeBytes,
+                   cd.EventCompletedAt,
+                   cd.UploadedAt,
+                   cd.ExpiresAt
+            FROM dbo.CustomerDropbox cd
+            INNER JOIN dbo.EventAppointment ea ON ea.EventAppointmentID = cd.EventAppointmentID
+            LEFT JOIN dbo.Customer c ON c.CustomerID = cd.CustomerID
+            WHERE cd.DropboxID = @DropboxId;";
+
+        CustomerDropboxFolderDto dto;
+        await using (var readCmd = new SqlCommand(readBackSql, conn))
+        {
+            readCmd.Parameters.AddWithValue("@DropboxId", dropboxId!);
+            await using var reader = await readCmd.ExecuteReaderAsync(ct);
+            if (!await reader.ReadAsync(ct))
+                throw new InvalidOperationException("Dropbox record could not be reloaded.");
+
+            dto = MapFolder(reader, DateTime.UtcNow, DropboxCountdownHelper.DefaultDeliveryBusinessDays);
+        }
+
+        await LoadFilesForFoldersAsync(conn, [dto], DateTime.UtcNow, ct);
+        await ApplyDeliveryWindowsAsync(conn, [dto], DateTime.UtcNow, ct);
+        return dto;
     }
 
     public async Task<DropboxPurgeResultDto> PurgeExpiredDropboxesAsync(CancellationToken ct = default)
@@ -886,12 +1311,93 @@ public class CustomerDropboxService : ICustomerDropboxService
         var result = new DropboxPurgeResultDto();
         await using var conn = await OpenAsync(ct);
 
-        const string selectExpiredSql = @"
-            SELECT DropboxID, EventAppointmentID, CustomerID, BucketName, R2ObjectKey
-            FROM dbo.CustomerDropbox
-            WHERE DropboxStatus = 'Uploaded'
-              AND ExpiresAt IS NOT NULL
+        // 1. Purge individual expired ZIP files (independent 30-day expiration per ZIP file)
+        const string selectExpiredFilesSql = @"
+            SELECT DropboxFileID, DropboxID, EventAppointmentID, CustomerID, BucketName, R2ObjectKey, OriginalFileName
+            FROM dbo.CustomerDropboxFiles
+            WHERE FileStatus = 'Active'
               AND ExpiresAt <= SYSUTCDATETIME();";
+
+        var expiredFiles = new List<(string FileId, string DropboxId, string EventAppointmentId, string CustomerId, string BucketName, string? R2ObjectKey, string FileName)>();
+        await using (var fCmd = new SqlCommand(selectExpiredFilesSql, conn))
+        await using (var fr = await fCmd.ExecuteReaderAsync(ct))
+        {
+            while (await fr.ReadAsync(ct))
+            {
+                expiredFiles.Add((
+                    fr.GetString(0),
+                    fr.GetString(1),
+                    fr.GetString(2),
+                    fr.GetString(3),
+                    fr.IsDBNull(4) ? _r2Storage.DropboxBucket : fr.GetString(4),
+                    fr.IsDBNull(5) ? null : fr.GetString(5),
+                    fr.IsDBNull(6) ? string.Empty : fr.GetString(6)
+                ));
+            }
+        }
+
+        var affectedDropboxIds = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var file in expiredFiles)
+        {
+            if (!string.IsNullOrWhiteSpace(file.R2ObjectKey))
+            {
+                var deleted = await _r2Storage.DeleteFileAsync(file.BucketName, file.R2ObjectKey);
+                if (!deleted && _r2Storage.IsConfigured)
+                {
+                    _logger.LogWarning(
+                        "Skipping DB expiry transition for expired Dropbox ZIP {FileId} ({DropboxId}) because R2 deletion failed for {Bucket}/{Key}.",
+                        file.FileId, file.DropboxId, file.BucketName, file.R2ObjectKey);
+                    continue;
+                }
+                result.DeletedR2Keys.Add(file.R2ObjectKey);
+            }
+
+            const string expireFileSql = @"
+                UPDATE dbo.CustomerDropboxFiles
+                SET FileStatus = 'Expired',
+                    R2ObjectKey = NULL
+                WHERE DropboxFileID = @FileId;
+
+                IF OBJECT_ID(N'dbo.HistoryLog', N'U') IS NOT NULL
+                BEGIN
+                    INSERT INTO dbo.HistoryLog (
+                        ActionType, EntityName, EntityID, ActionDetails,
+                        EventAppointmentID, CustomerID, ChangedByType, LoggedAt
+                    )
+                    VALUES (
+                        'DELETE', 'CustomerDropbox', @DropboxId,
+                        'Automatically deleted expired customer Dropbox ZIP (' + @FileName + ') from Cloudflare R2 after 30-day retention period.',
+                        @EvtId, @CustId, 'System', SYSUTCDATETIME()
+                    );
+                END;";
+
+            await using var expFileCmd = new SqlCommand(expireFileSql, conn);
+            expFileCmd.Parameters.AddWithValue("@FileId", file.FileId);
+            expFileCmd.Parameters.AddWithValue("@DropboxId", file.DropboxId);
+            expFileCmd.Parameters.AddWithValue("@FileName", file.FileName);
+            expFileCmd.Parameters.AddWithValue("@EvtId", file.EventAppointmentId);
+            expFileCmd.Parameters.AddWithValue("@CustId", file.CustomerId);
+            await expFileCmd.ExecuteNonQueryAsync(ct);
+
+            affectedDropboxIds.Add(file.DropboxId);
+            if (!result.PurgedDropboxIds.Contains(file.DropboxId))
+                result.PurgedDropboxIds.Add(file.DropboxId);
+            result.PurgedCount++;
+        }
+
+        foreach (var affectedId in affectedDropboxIds)
+        {
+            await SyncParentDropboxSummaryAsync(conn, affectedId, ct);
+        }
+
+        // 2. Fallback sweep for any legacy CustomerDropbox rows with no child rows in CustomerDropboxFiles
+        const string selectExpiredSql = @"
+            SELECT cd.DropboxID, cd.EventAppointmentID, cd.CustomerID, cd.BucketName, cd.R2ObjectKey
+            FROM dbo.CustomerDropbox cd
+            WHERE cd.DropboxStatus = 'Uploaded'
+              AND cd.ExpiresAt IS NOT NULL
+              AND cd.ExpiresAt <= SYSUTCDATETIME()
+              AND NOT EXISTS (SELECT 1 FROM dbo.CustomerDropboxFiles cdf WHERE cdf.DropboxID = cd.DropboxID);";
 
         var expired = new List<(string DropboxId, string EventAppointmentId, string CustomerId, string BucketName, string? R2ObjectKey)>();
         await using (var cmd = new SqlCommand(selectExpiredSql, conn))
@@ -949,7 +1455,8 @@ public class CustomerDropboxService : ICustomerDropboxService
             expCmd.Parameters.AddWithValue("@CustId", item.CustomerId);
             await expCmd.ExecuteNonQueryAsync(ct);
 
-            result.PurgedDropboxIds.Add(item.DropboxId);
+            if (!result.PurgedDropboxIds.Contains(item.DropboxId))
+                result.PurgedDropboxIds.Add(item.DropboxId);
             result.PurgedCount++;
         }
 
@@ -959,6 +1466,218 @@ public class CustomerDropboxService : ICustomerDropboxService
         }
 
         return result;
+    }
+
+    private static async Task BackfillLegacyFileIfNeededAsync(
+        SqlConnection conn,
+        string dropboxId,
+        string eventAppointmentId,
+        string customerId,
+        string bucketName,
+        string legacyKey,
+        string legacyFileName,
+        long legacySizeBytes,
+        string? legacyContentType,
+        DateTime legacyUploadedAt,
+        string? legacyUploadedBy,
+        DateTime legacyExpiresAt,
+        CancellationToken ct)
+    {
+        const string countSql = "SELECT COUNT(1) FROM dbo.CustomerDropboxFiles WHERE DropboxID = @DropboxId;";
+        await using (var chk = new SqlCommand(countSql, conn))
+        {
+            chk.Parameters.AddWithValue("@DropboxId", dropboxId);
+            if (Convert.ToInt32(await chk.ExecuteScalarAsync(ct)) > 0)
+                return;
+        }
+
+        var fileId = await GenerateNextDropboxFileIdAsync(conn, ct);
+        var safeSize = legacySizeBytes > 0 && legacySizeBytes <= DropboxCountdownHelper.MaxZipSizeBytes ? legacySizeBytes : 1L;
+        const string insertSql = @"
+            INSERT INTO dbo.CustomerDropboxFiles (
+                DropboxFileID, DropboxID, EventAppointmentID, CustomerID, BucketName,
+                R2ObjectKey, OriginalFileName, FileSizeBytes, ContentType, FileStatus,
+                UploadedAt, UploadedByEmployeeID, ExpiresAt, CreatedAt
+            )
+            VALUES (
+                @FileId, @DropboxId, @EvtId, @CustId, @Bucket,
+                @Key, @FileName, @Size, @ContentType, 'Active',
+                @UploadedAt, NULLIF(@UploadedBy, ''), @ExpiresAt, @UploadedAt
+            );";
+
+        await using var ins = new SqlCommand(insertSql, conn);
+        ins.Parameters.AddWithValue("@FileId", fileId);
+        ins.Parameters.AddWithValue("@DropboxId", dropboxId);
+        ins.Parameters.AddWithValue("@EvtId", eventAppointmentId);
+        ins.Parameters.AddWithValue("@CustId", customerId);
+        ins.Parameters.AddWithValue("@Bucket", bucketName);
+        ins.Parameters.AddWithValue("@Key", legacyKey);
+        ins.Parameters.AddWithValue("@FileName", legacyFileName);
+        ins.Parameters.AddWithValue("@Size", safeSize);
+        ins.Parameters.AddWithValue("@ContentType", (object?)legacyContentType ?? DBNull.Value);
+        ins.Parameters.AddWithValue("@UploadedAt", legacyUploadedAt);
+        ins.Parameters.AddWithValue("@UploadedBy", legacyUploadedBy ?? string.Empty);
+        ins.Parameters.AddWithValue("@ExpiresAt", legacyExpiresAt);
+        await ins.ExecuteNonQueryAsync(ct);
+    }
+
+    private static async Task SyncParentDropboxSummaryAsync(SqlConnection conn, string dropboxId, CancellationToken ct)
+    {
+        const string syncSql = @"
+            DECLARE @ActiveCount int = 0;
+            DECLARE @ExpiredCount int = 0;
+
+            SELECT @ActiveCount = COUNT(1)
+            FROM dbo.CustomerDropboxFiles
+            WHERE DropboxID = @DropboxId
+              AND FileStatus = 'Active'
+              AND ExpiresAt > SYSUTCDATETIME();
+
+            SELECT @ExpiredCount = COUNT(1)
+            FROM dbo.CustomerDropboxFiles
+            WHERE DropboxID = @DropboxId
+              AND (FileStatus = 'Expired' OR ExpiresAt <= SYSUTCDATETIME());
+
+            IF @ActiveCount > 0
+            BEGIN
+                UPDATE cd
+                SET cd.DropboxStatus = 'Uploaded',
+                    cd.R2ObjectKey = topFile.R2ObjectKey,
+                    cd.OriginalFileName = topFile.OriginalFileName,
+                    cd.FileSizeBytes = agg.TotalBytes,
+                    cd.ContentType = topFile.ContentType,
+                    cd.UploadedAt = agg.FirstUploadedAt,
+                    cd.ExpiresAt = agg.MaxExpiresAt
+                FROM dbo.CustomerDropbox cd
+                CROSS APPLY (
+                    SELECT TOP 1 R2ObjectKey, OriginalFileName, ContentType
+                    FROM dbo.CustomerDropboxFiles
+                    WHERE DropboxID = @DropboxId AND FileStatus = 'Active' AND ExpiresAt > SYSUTCDATETIME()
+                    ORDER BY UploadedAt DESC, CreatedAt DESC
+                ) topFile
+                CROSS APPLY (
+                    SELECT SUM(FileSizeBytes) AS TotalBytes,
+                           MIN(UploadedAt) AS FirstUploadedAt,
+                           MAX(ExpiresAt) AS MaxExpiresAt
+                    FROM dbo.CustomerDropboxFiles
+                    WHERE DropboxID = @DropboxId AND FileStatus = 'Active' AND ExpiresAt > SYSUTCDATETIME()
+                ) agg
+                WHERE cd.DropboxID = @DropboxId;
+            END
+            ELSE IF @ExpiredCount > 0
+            BEGIN
+                UPDATE dbo.CustomerDropbox
+                SET DropboxStatus = 'Expired',
+                    R2ObjectKey = NULL
+                WHERE DropboxID = @DropboxId;
+            END
+            ELSE
+            BEGIN
+                UPDATE dbo.CustomerDropbox
+                SET DropboxStatus = 'Waiting',
+                    R2ObjectKey = NULL,
+                    OriginalFileName = NULL,
+                    FileSizeBytes = NULL,
+                    ContentType = NULL,
+                    UploadedAt = NULL,
+                    ExpiresAt = NULL
+                WHERE DropboxID = @DropboxId;
+            END;";
+
+        await using var cmd = new SqlCommand(syncSql, conn);
+        cmd.Parameters.AddWithValue("@DropboxId", dropboxId);
+        await cmd.ExecuteNonQueryAsync(ct);
+    }
+
+    private static async Task LoadFilesForFoldersAsync(
+        SqlConnection conn,
+        List<CustomerDropboxFolderDto> folders,
+        DateTime nowUtc,
+        CancellationToken ct)
+    {
+        if (folders.Count == 0)
+            return;
+
+        var ids = folders
+            .Select(f => f.DropboxId)
+            .Where(id => !string.IsNullOrWhiteSpace(id))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList();
+        if (ids.Count == 0)
+            return;
+
+        var paramNames = ids.Select((_, i) => $"@drp{i}").ToArray();
+        var sql = $@"
+            SELECT DropboxFileID, DropboxID, EventAppointmentID, OriginalFileName, FileSizeBytes,
+                   UploadedAt, ExpiresAt, FileStatus
+            FROM dbo.CustomerDropboxFiles
+            WHERE DropboxID IN ({string.Join(", ", paramNames)})
+            ORDER BY UploadedAt ASC, CreatedAt ASC;";
+
+        var byDropbox = new Dictionary<string, List<CustomerDropboxFileDto>>(StringComparer.OrdinalIgnoreCase);
+        await using (var cmd = new SqlCommand(sql, conn))
+        {
+            for (var i = 0; i < ids.Count; i++)
+                cmd.Parameters.AddWithValue(paramNames[i], ids[i]);
+
+            await using var r = await cmd.ExecuteReaderAsync(ct);
+            while (await r.ReadAsync(ct))
+            {
+                var fileId = r.GetString(0);
+                var dropboxId = r.GetString(1);
+                var evtId = r.GetString(2);
+                var fileName = r.GetString(3);
+                var size = r.GetInt64(4);
+                var uploadedAt = DateTime.SpecifyKind(r.GetDateTime(5), DateTimeKind.Utc);
+                var expiresAt = DateTime.SpecifyKind(r.GetDateTime(6), DateTimeKind.Utc);
+                var status = r.IsDBNull(7) ? DropboxFileStatuses.Active : r.GetString(7);
+                var isExpired = string.Equals(status, DropboxFileStatuses.Expired, StringComparison.OrdinalIgnoreCase) || expiresAt <= nowUtc;
+
+                var fileDto = new CustomerDropboxFileDto
+                {
+                    DropboxFileId = fileId,
+                    DropboxId = dropboxId,
+                    EventAppointmentId = evtId,
+                    OriginalFileName = fileName,
+                    FileSizeBytes = size,
+                    UploadedAt = uploadedAt,
+                    ExpiresAt = expiresAt,
+                    IsExpired = isExpired,
+                    DaysRemaining = isExpired ? 0 : DropboxCountdownHelper.ComputeDaysRemaining(expiresAt, nowUtc),
+                    CountdownLabel = isExpired ? "Unavailable" : DropboxCountdownHelper.FormatCountdownLabel(expiresAt, nowUtc)
+                };
+
+                if (!byDropbox.TryGetValue(dropboxId, out var list))
+                {
+                    list = new List<CustomerDropboxFileDto>();
+                    byDropbox[dropboxId] = list;
+                }
+                list.Add(fileDto);
+            }
+        }
+
+        foreach (var folder in folders)
+        {
+            if (!byDropbox.TryGetValue(folder.DropboxId, out var files) || files.Count == 0)
+                continue;
+
+            folder.Files = files;
+            var activeFiles = files.Where(f => !f.IsExpired).ToList();
+            if (activeFiles.Count > 0)
+            {
+                folder.IsExpired = false;
+                folder.DropboxStatus = DropboxStatuses.Uploaded;
+                folder.OriginalFileName = activeFiles.Last().OriginalFileName;
+                folder.FileSizeBytes = activeFiles.Sum(f => f.FileSizeBytes);
+                folder.UploadedAt = activeFiles.Min(f => f.UploadedAt);
+                folder.ExpiresAt = activeFiles.Max(f => f.ExpiresAt);
+            }
+            else
+            {
+                folder.IsExpired = true;
+                folder.DropboxStatus = DropboxStatuses.Expired;
+            }
+        }
     }
 
     public static bool IsDropboxExpired(string? status, DateTime? expiresAtUtc, DateTime nowUtc)

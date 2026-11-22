@@ -51,6 +51,7 @@
                             <span class="aev-bg-upload-item__pct">
                                 @(job.Status == DropboxUploadJobStatus.Completed ? "✓"
                                     : job.Status == DropboxUploadJobStatus.Failed ? "!"
+                                    : job.Status == DropboxUploadJobStatus.Queued ? "Q"
                                     : $"{job.Percent}%")
                             </span>
                         </div>
@@ -63,6 +64,9 @@
                             <div class="aev-bg-upload-item__status">
                                 @switch (job.Status)
                                 {
+                                    case DropboxUploadJobStatus.Queued:
+                                        <span>@FormatBytes(job.TotalBytes) &bull; Queued</span>
+                                        break;
                                     case DropboxUploadJobStatus.Uploading:
                                         <span>@FormatBytes(job.BytesSent) / @FormatBytes(job.TotalBytes) &bull; Uploading...</span>
                                         break;
@@ -192,6 +196,7 @@
         DropboxUploadJobStatus.Completed => "is-completed",
         DropboxUploadJobStatus.Failed => "is-failed",
         DropboxUploadJobStatus.Canceled => "is-canceled",
+        DropboxUploadJobStatus.Queued => "is-queued",
         _ => "is-active"
     };
 

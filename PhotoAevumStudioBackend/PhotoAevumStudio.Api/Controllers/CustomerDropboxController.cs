@@ -58,7 +58,10 @@ public class CustomerDropboxController : ControllerBase
     // GET api/dropbox/my/{dropboxId}/download-url
     [HttpGet("my/{dropboxId}/download-url")]
     [Authorize(Roles = AppRoles.Customer)]
-    public async Task<IActionResult> GetMyDownloadUrl(string dropboxId, CancellationToken cancellationToken)
+    public async Task<IActionResult> GetMyDownloadUrl(
+        string dropboxId,
+        CancellationToken cancellationToken = default,
+        [FromQuery] string? fileId = null)
     {
         var customerId = ResolveCustomerId();
         if (string.IsNullOrWhiteSpace(customerId))
@@ -67,7 +70,9 @@ public class CustomerDropboxController : ControllerBase
         try
         {
             var apiBase = $"{Request.Scheme}://{Request.Host}";
-            var dto = await _dropboxService.GetCustomerDownloadInfoAsync(dropboxId, customerId, apiBase, cancellationToken);
+            var dto = string.IsNullOrWhiteSpace(fileId)
+                ? await _dropboxService.GetCustomerDownloadInfoAsync(dropboxId, customerId, apiBase, cancellationToken)
+                : await _dropboxService.GetCustomerDownloadInfoAsync(dropboxId, customerId, apiBase, fileId, cancellationToken);
             return Ok(dto);
         }
         catch (UnauthorizedAccessException ex)
@@ -87,7 +92,10 @@ public class CustomerDropboxController : ControllerBase
     // GET api/dropbox/my/{dropboxId}/download
     [HttpGet("my/{dropboxId}/download")]
     [Authorize(Roles = AppRoles.Customer)]
-    public async Task<IActionResult> DownloadMyZip(string dropboxId, CancellationToken cancellationToken)
+    public async Task<IActionResult> DownloadMyZip(
+        string dropboxId,
+        CancellationToken cancellationToken = default,
+        [FromQuery] string? fileId = null)
     {
         var customerId = ResolveCustomerId();
         if (string.IsNullOrWhiteSpace(customerId))
@@ -95,7 +103,9 @@ public class CustomerDropboxController : ControllerBase
 
         try
         {
-            var (fileName, contentType, stream, _) = await _dropboxService.GetCustomerDownloadAsync(dropboxId, customerId, cancellationToken);
+            var (fileName, contentType, stream, _) = string.IsNullOrWhiteSpace(fileId)
+                ? await _dropboxService.GetCustomerDownloadAsync(dropboxId, customerId, cancellationToken)
+                : await _dropboxService.GetCustomerDownloadAsync(dropboxId, customerId, fileId, cancellationToken);
             return File(stream, contentType, fileName);
         }
         catch (UnauthorizedAccessException ex)
@@ -120,13 +130,15 @@ public class CustomerDropboxController : ControllerBase
         if (_dropboxService is not CustomerDropboxService concrete)
             return NotFound();
 
-        var (valid, dropboxId, customerId) = concrete.ValidateSignedDownloadToken(token);
+        var (valid, dropboxId, customerId, dropboxFileId) = concrete.ValidateSignedDownloadTokenWithFile(token);
         if (!valid)
             return Unauthorized(new ProblemDetails { Title = "Invalid or expired download token", Status = 401 });
 
         try
         {
-            var (fileName, contentType, stream, _) = await _dropboxService.GetCustomerDownloadAsync(dropboxId, customerId, cancellationToken);
+            var (fileName, contentType, stream, _) = string.IsNullOrWhiteSpace(dropboxFileId)
+                ? await _dropboxService.GetCustomerDownloadAsync(dropboxId, customerId, cancellationToken)
+                : await _dropboxService.GetCustomerDownloadAsync(dropboxId, customerId, dropboxFileId, cancellationToken);
             return File(stream, contentType, fileName);
         }
         catch (UnauthorizedAccessException ex)
@@ -182,6 +194,16 @@ public class CustomerDropboxController : ControllerBase
             });
         }
 
+        if (file.Length > DropboxCountdownHelper.MaxZipSizeBytes)
+        {
+            return BadRequest(new ProblemDetails
+            {
+                Title = "File too large",
+                Detail = $"ZIP file '{Path.GetFileName(file.FileName)}' exceeds the 500 MB maximum limit per ZIP file.",
+                Status = 400
+            });
+        }
+
         var staffId = ResolveStaffId();
         try
         {
@@ -191,7 +213,7 @@ public class CustomerDropboxController : ControllerBase
                 stream,
                 file.FileName,
                 file.Length,
-                file.ContentType,
+                file.Headers != null ? file.ContentType : "application/zip",
                 staffId,
                 cancellationToken);
 
@@ -386,6 +408,143 @@ public class CustomerDropboxController : ControllerBase
         catch (UnauthorizedAccessException ex)
         {
             return StatusCode(StatusCodes.Status403Forbidden, new ProblemDetails { Title = "Access Denied", Detail = ex.Message, Status = 403 });
+        }
+    }
+
+    // POST api/dropbox/admin/{eventAppointmentId}/upload-multiple
+    [HttpPost("admin/{eventAppointmentId}/upload-multiple")]
+    [Authorize(Policy = "ClerkOrAdmin")]
+    [DisableRequestSizeLimit]
+    [RequestFormLimits(MultipartBodyLengthLimit = long.MaxValue)]
+    public async Task<IActionResult> UploadEventZips(
+        string eventAppointmentId,
+        [FromForm] List<IFormFile>? files,
+        CancellationToken cancellationToken)
+    {
+        if (files == null || files.Count == 0)
+        {
+            return BadRequest(new ProblemDetails
+            {
+                Title = "No ZIP files uploaded",
+                Detail = "Please select one or more .zip archives (max 500 MB per ZIP file).",
+                Status = 400
+            });
+        }
+
+        foreach (var file in files)
+        {
+            if (file == null || file.Length <= 0)
+            {
+                return BadRequest(new ProblemDetails
+                {
+                    Title = "Empty ZIP file",
+                    Detail = "Every selected ZIP file must be non-empty.",
+                    Status = 400
+                });
+            }
+
+            if (!Path.GetExtension(file.FileName).Equals(".zip", StringComparison.OrdinalIgnoreCase))
+            {
+                return BadRequest(new ProblemDetails
+                {
+                    Title = "Invalid file type",
+                    Detail = $"File '{Path.GetFileName(file.FileName)}' is not a .zip file. Only .zip files are allowed.",
+                    Status = 400
+                });
+            }
+
+            if (file.Length > DropboxCountdownHelper.MaxZipSizeBytes)
+            {
+                return BadRequest(new ProblemDetails
+                {
+                    Title = "File too large",
+                    Detail = $"ZIP file '{Path.GetFileName(file.FileName)}' exceeds the 500 MB limit per individual ZIP file.",
+                    Status = 400
+                });
+            }
+        }
+
+        var staffId = ResolveStaffId();
+        CustomerDropboxFolderDto? updated = null;
+        try
+        {
+            foreach (var file in files)
+            {
+                await using var stream = file.OpenReadStream();
+                updated = await _dropboxService.UploadZipAsync(
+                    eventAppointmentId,
+                    stream,
+                    file.FileName,
+                    file.Length,
+                    file.Headers != null ? file.ContentType : "application/zip",
+                    staffId,
+                    cancellationToken);
+
+                _logger.LogInformation(
+                    "Staff {StaffId} uploaded Dropbox ZIP '{FileName}' ({Size} bytes) for event {EventId} (Customer {CustomerId}).",
+                    staffId, file.FileName, file.Length, eventAppointmentId, updated.CustomerId);
+            }
+
+            return Ok(updated);
+        }
+        catch (KeyNotFoundException ex)
+        {
+            return NotFound(new ProblemDetails { Title = "Event container not found", Detail = ex.Message, Status = 404 });
+        }
+        catch (InvalidOperationException ex)
+        {
+            return BadRequest(new ProblemDetails { Title = "Upload rejected", Detail = ex.Message, Status = 400 });
+        }
+        catch (AmazonS3Exception ex)
+        {
+            _logger.LogError(ex, "Cloudflare R2 multi-ZIP upload failed for event {EventId} (Status: {StatusCode}, Code: {ErrorCode}).", eventAppointmentId, ex.StatusCode, ex.ErrorCode);
+            return StatusCode(StatusCodes.Status502BadGateway, new ProblemDetails
+            {
+                Title = "Cloudflare R2 upload failed",
+                Detail = $"R2 storage rejected the upload ({ex.ErrorCode ?? ex.StatusCode.ToString()}): {ex.Message}",
+                Status = 502
+            });
+        }
+        catch (SqlException ex)
+        {
+            _logger.LogError(ex, "Database error saving CustomerDropbox metadata for event {EventId}.", eventAppointmentId);
+            return StatusCode(StatusCodes.Status500InternalServerError, new ProblemDetails
+            {
+                Title = "Database error",
+                Detail = "Failed to save uploaded ZIP archive metadata.",
+                Status = 500
+            });
+        }
+    }
+
+    // DELETE api/dropbox/admin/{eventAppointmentId}/files/{dropboxFileId}
+    [HttpDelete("admin/{eventAppointmentId}/files/{dropboxFileId}")]
+    [Authorize(Policy = "ClerkOrAdmin")]
+    public async Task<IActionResult> DeleteEventZipFile(
+        string eventAppointmentId,
+        string dropboxFileId,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            var staffId = ResolveStaffId();
+            var updated = await _dropboxService.DeleteDropboxFileAsync(eventAppointmentId, dropboxFileId, staffId, cancellationToken);
+            _logger.LogInformation(
+                "Staff {StaffId} deleted Dropbox ZIP {FileId} for event {EventId}.",
+                staffId, dropboxFileId, eventAppointmentId);
+            return Ok(updated);
+        }
+        catch (KeyNotFoundException ex)
+        {
+            return NotFound(new ProblemDetails { Title = "ZIP file not found", Detail = ex.Message, Status = 404 });
+        }
+        catch (InvalidOperationException ex)
+        {
+            return BadRequest(new ProblemDetails { Title = "Delete failed", Detail = ex.Message, Status = 400 });
+        }
+        catch (ArgumentException ex)
+        {
+            return BadRequest(new ProblemDetails { Title = "Invalid request", Detail = ex.Message, Status = 400 });
         }
     }
 

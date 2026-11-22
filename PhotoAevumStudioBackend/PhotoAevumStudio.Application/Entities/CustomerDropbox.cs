@@ -17,3 +17,21 @@ public class CustomerDropbox
     public DateTime? ExpiresAt { get; set; }
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
 }
+
+public class CustomerDropboxFile
+{
+    public string DropboxFileId { get; set; } = string.Empty;
+    public string DropboxId { get; set; } = string.Empty;
+    public string EventAppointmentId { get; set; } = string.Empty;
+    public string CustomerId { get; set; } = string.Empty;
+    public string BucketName { get; set; } = "dropbox";
+    public string? R2ObjectKey { get; set; }
+    public string OriginalFileName { get; set; } = string.Empty;
+    public long FileSizeBytes { get; set; }
+    public string? ContentType { get; set; }
+    public string FileStatus { get; set; } = "Active";
+    public DateTime UploadedAt { get; set; } = DateTime.UtcNow;
+    public string? UploadedByEmployeeId { get; set; }
+    public DateTime ExpiresAt { get; set; }
+    public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
+}

@@ -25,6 +25,7 @@ CREATE SEQUENCE dbo.Seq_PortfolioCategoryID AS INT START WITH 1 INCREMENT BY 1;
 CREATE SEQUENCE dbo.Seq_DepartmentID AS INT START WITH 8 INCREMENT BY 1;
 CREATE SEQUENCE dbo.Seq_HomeHighlightID AS INT START WITH 1 INCREMENT BY 1;
 CREATE SEQUENCE dbo.Seq_DropboxID AS INT START WITH 1 INCREMENT BY 1;
+CREATE SEQUENCE dbo.Seq_DropboxFileID AS INT START WITH 1 INCREMENT BY 1;
 GO
 
 /* =====================================================================
@@ -575,6 +576,25 @@ CREATE TABLE dbo.CustomerDropbox (
     CONSTRAINT UQ_CustomerDropbox_Event UNIQUE (EventAppointmentID),
     CONSTRAINT CK_CustomerDropbox_Status CHECK (DropboxStatus IN ('Waiting', 'Uploaded', 'Expired'))
 );
+
+CREATE TABLE dbo.CustomerDropboxFiles (
+    DropboxFileID nvarchar(30) NOT NULL PRIMARY KEY,
+    DropboxID nvarchar(30) NOT NULL,
+    EventAppointmentID nvarchar(30) NOT NULL,
+    CustomerID nvarchar(30) NOT NULL,
+    BucketName nvarchar(100) NOT NULL CONSTRAINT DF_CustomerDropboxFiles_Bucket DEFAULT 'dropbox',
+    R2ObjectKey nvarchar(500) NULL,
+    OriginalFileName nvarchar(255) NOT NULL,
+    FileSizeBytes bigint NOT NULL,
+    ContentType nvarchar(100) NULL,
+    FileStatus nvarchar(30) NOT NULL CONSTRAINT DF_CustomerDropboxFiles_Status DEFAULT 'Active',
+    UploadedAt datetime2 NOT NULL CONSTRAINT DF_CustomerDropboxFiles_UploadedAt DEFAULT SYSUTCDATETIME(),
+    UploadedByEmployeeID nvarchar(30) NULL,
+    ExpiresAt datetime2 NOT NULL,
+    CreatedAt datetime2 NOT NULL CONSTRAINT DF_CustomerDropboxFiles_CreatedAt DEFAULT SYSUTCDATETIME(),
+    CONSTRAINT CK_CustomerDropboxFiles_Status CHECK (FileStatus IN ('Active', 'Expired')),
+    CONSTRAINT CK_CustomerDropboxFiles_Size CHECK (FileSizeBytes > 0 AND FileSizeBytes <= 524288000)
+);
 GO
 
 /* =====================================================================
@@ -630,6 +650,9 @@ ALTER TABLE dbo.PaymentTransactions ADD CONSTRAINT FK_PaymentTransactions_EventA
 ALTER TABLE dbo.PaymentTransactions ADD CONSTRAINT FK_PaymentTransactions_Employee FOREIGN KEY (ReceivedByEmployeeID) REFERENCES dbo.Employees(EmployeeID) ON DELETE SET NULL;
 ALTER TABLE dbo.CustomerDropbox ADD CONSTRAINT FK_CustomerDropbox_EventAppointment FOREIGN KEY (EventAppointmentID) REFERENCES dbo.EventAppointment(EventAppointmentID) ON DELETE CASCADE;
 ALTER TABLE dbo.CustomerDropbox ADD CONSTRAINT FK_CustomerDropbox_Customer FOREIGN KEY (CustomerID) REFERENCES dbo.Customer(CustomerID) ON DELETE NO ACTION;
+ALTER TABLE dbo.CustomerDropboxFiles ADD CONSTRAINT FK_CustomerDropboxFiles_CustomerDropbox FOREIGN KEY (DropboxID) REFERENCES dbo.CustomerDropbox(DropboxID) ON DELETE CASCADE;
+ALTER TABLE dbo.CustomerDropboxFiles ADD CONSTRAINT FK_CustomerDropboxFiles_EventAppointment FOREIGN KEY (EventAppointmentID) REFERENCES dbo.EventAppointment(EventAppointmentID) ON DELETE NO ACTION;
+ALTER TABLE dbo.CustomerDropboxFiles ADD CONSTRAINT FK_CustomerDropboxFiles_Customer FOREIGN KEY (CustomerID) REFERENCES dbo.Customer(CustomerID) ON DELETE NO ACTION;
 GO
 
 /* =====================================================================
@@ -671,6 +694,8 @@ CREATE INDEX IX_EventAppointment_Date_Status ON dbo.EventAppointment (EventDate,
 CREATE INDEX IX_PaymentTransactions_Remittance ON dbo.PaymentTransactions (EmployeeRemittanceStatus, PaymentType);
 CREATE INDEX IX_CustomerDropbox_Customer_ExpiresAt ON dbo.CustomerDropbox (CustomerID, ExpiresAt);
 CREATE INDEX IX_CustomerDropbox_ExpiresAt ON dbo.CustomerDropbox (ExpiresAt);
+CREATE INDEX IX_CustomerDropboxFiles_Dropbox_Status ON dbo.CustomerDropboxFiles (DropboxID, FileStatus, ExpiresAt);
+CREATE INDEX IX_CustomerDropboxFiles_ExpiresAt ON dbo.CustomerDropboxFiles (ExpiresAt);
 GO
 
 /* =====================================================================

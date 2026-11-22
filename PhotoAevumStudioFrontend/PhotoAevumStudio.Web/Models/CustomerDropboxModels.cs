@@ -37,9 +37,22 @@ public class CustomerDropboxFolderItem
 
     public bool HasFile => string.Equals(DropboxStatus, "Uploaded", StringComparison.OrdinalIgnoreCase)
                            && !IsEffectivelyExpired
-                           && !string.IsNullOrWhiteSpace(OriginalFileName);
+                           && (ActiveFiles.Any() || !string.IsNullOrWhiteSpace(OriginalFileName));
 
     public bool IsWaitingForUpload => !IsEffectivelyExpired && !HasFile;
+
+    public List<CustomerDropboxFileItem> Files { get; set; } = new();
+
+    public IEnumerable<CustomerDropboxFileItem> ActiveFiles =>
+        Files.Where(f => !f.IsEffectivelyExpired);
+
+    public int FileCount => Files.Count > 0 ? ActiveFiles.Count() : (HasFile ? 1 : 0);
+
+    public long TotalFileSizeBytes => Files.Count > 0
+        ? ActiveFiles.Sum(f => f.FileSizeBytes)
+        : (FileSizeBytes ?? 0L);
+
+    public string FormattedTotalFileSize => FormatFileSize(TotalFileSizeBytes);
 
     public string EffectiveCountdownLabel
     {
@@ -73,28 +86,60 @@ public class CustomerDropboxFolderItem
         }
     }
 
-    public string FormattedFileSize
+    public string FormattedFileSize => FormatFileSize(FileSizeBytes ?? 0);
+
+    internal static string FormatFileSize(long bytes)
+    {
+        if (bytes <= 0) return "0 KB";
+        string[] units = ["B", "KB", "MB", "GB"];
+        double size = bytes;
+        int unit = 0;
+        while (size >= 1024 && unit < units.Length - 1)
+        {
+            size /= 1024;
+            unit++;
+        }
+        return $"{size:0.##} {units[unit]}";
+    }
+}
+
+public class CustomerDropboxFileItem
+{
+    public string DropboxFileId { get; set; } = string.Empty;
+    public string DropboxId { get; set; } = string.Empty;
+    public string EventAppointmentId { get; set; } = string.Empty;
+    public string OriginalFileName { get; set; } = string.Empty;
+    public long FileSizeBytes { get; set; }
+    public DateTime UploadedAt { get; set; }
+    public DateTime ExpiresAt { get; set; }
+    public int DaysRemaining { get; set; }
+    public string CountdownLabel { get; set; } = string.Empty;
+    public bool IsExpired { get; set; }
+
+    public bool IsEffectivelyExpired => IsExpired || ExpiresAt <= DateTime.UtcNow;
+
+    public string EffectiveCountdownLabel
     {
         get
         {
-            var bytes = FileSizeBytes ?? 0;
-            if (bytes <= 0) return "0 KB";
-            string[] units = ["B", "KB", "MB", "GB"];
-            double size = bytes;
-            int unit = 0;
-            while (size >= 1024 && unit < units.Length - 1)
-            {
-                size /= 1024;
-                unit++;
-            }
-            return $"{size:0.##} {units[unit]}";
+            if (IsEffectivelyExpired)
+                return "Unavailable";
+            if (!string.IsNullOrWhiteSpace(CountdownLabel))
+                return CountdownLabel;
+            var rem = Math.Clamp(DaysRemaining, 0, 30);
+            return rem == 1 ? "1 Day Left" : $"{rem} Days Left";
         }
     }
+
+    public int CountdownPercent => (int)Math.Round(Math.Clamp(DaysRemaining, 0, 30) / 30.0 * 100.0);
+
+    public string FormattedFileSize => CustomerDropboxFolderItem.FormatFileSize(FileSizeBytes);
 }
 
 public class DropboxDownloadUrlResponse
 {
     public string DropboxId { get; set; } = string.Empty;
+    public string? DropboxFileId { get; set; }
     public string EventAppointmentId { get; set; } = string.Empty;
     public string FileName { get; set; } = string.Empty;
     public long FileSizeBytes { get; set; }

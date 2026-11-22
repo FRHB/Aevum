@@ -602,5 +602,213 @@ public class CustomerDropboxUiTests
 
         Assert.Contains("aev-pill-badge--expired", uploadRazor);
         Assert.Contains(".aev-event-pillbox.is-expired", uploadCss);
+
+        // Multi-ZIP support checks
+        Assert.Contains("multiple", uploadRazor);
+        Assert.Contains("max 500 MB per individual ZIP file", uploadRazor);
+        Assert.Contains("aev-existing-zip-row", uploadRazor);
+        Assert.Contains("DeleteExistingFileAsync", uploadRazor);
+        Assert.Contains("folder.Files", razor);
+    }
+
+    [Fact]
+    public async Task DropboxBackgroundUploadService_QueuesMultipleZipsSequentially_AndRejectsOversizedIndividualZip()
+    {
+        var tokenStore = new Mock<ITokenStore>();
+        tokenStore.Setup(t => t.GetTokenAsync(It.IsAny<CancellationToken>())).ReturnsAsync("jwt-123");
+        var ticketStore = new DropboxUploadTicketStore();
+        var svc = new DropboxBackgroundUploadService(tokenStore.Object, ticketStore);
+
+        var js = new Mock<IJSRuntime>();
+        js.Setup(j => j.InvokeAsync<bool>("aevumDropboxUpload.start", It.IsAny<object?[]>()))
+            .ReturnsAsync(true);
+
+        var container = new CustomerDropboxFolderItem
+        {
+            DropboxId = "DRP-0018",
+            EventAppointmentId = "EVT-0018",
+            CustomerId = "CUST-0004",
+            CustomerName = "Fernest Rumon Baclig",
+            EventName = "Photoshoot Event"
+        };
+
+        // 1. Reject batch if any individual ZIP exceeds 500 MB
+        var (badStarted, badError, _) = await svc.StartBackgroundBatchUploadAsync(
+            container,
+            new[]
+            {
+                new DropboxQueuedFileRequest("part1.zip", 400L * 1024 * 1024, "application/zip"),
+                new DropboxQueuedFileRequest("too-big.zip", 500L * 1024 * 1024 + 1, "application/zip")
+            },
+            "zipUploadInput",
+            js.Object);
+
+        Assert.False(badStarted);
+        Assert.Contains("500 MB", badError);
+        Assert.Empty(svc.Jobs);
+
+        // 2. Accept multiple ZIPs where each individual ZIP <= 500 MB (total > 500 MB) and run sequentially
+        var (started, error, jobs) = await svc.StartBackgroundBatchUploadAsync(
+            container,
+            new[]
+            {
+                new DropboxQueuedFileRequest("part1.zip", 400L * 1024 * 1024, "application/zip", "tok-1", 0),
+                new DropboxQueuedFileRequest("part2.zip", 450L * 1024 * 1024, "application/zip", "tok-2", 1),
+                new DropboxQueuedFileRequest("part3.zip", 500L * 1024 * 1024, "application/zip", "tok-3", 2)
+            },
+            "zipUploadInput",
+            js.Object);
+
+        Assert.True(started);
+        Assert.Null(error);
+        Assert.Equal(3, jobs.Count);
+        Assert.Equal(DropboxUploadJobStatus.Uploading, jobs[0].Status);
+        Assert.Equal(DropboxUploadJobStatus.Queued, jobs[1].Status);
+        Assert.Equal(DropboxUploadJobStatus.Queued, jobs[2].Status);
+
+        // Completing job 0 triggers job 1
+        svc.ReportCompletedFromJson(jobs[0].JobId, "{\"eventAppointmentId\":\"EVT-0018\",\"dropboxStatus\":\"Uploaded\",\"originalFileName\":\"part1.zip\"}");
+        await Task.Delay(50);
+        Assert.Equal(DropboxUploadJobStatus.Completed, jobs[0].Status);
+        Assert.Equal(DropboxUploadJobStatus.Uploading, jobs[1].Status);
+        Assert.Equal(DropboxUploadJobStatus.Queued, jobs[2].Status);
+
+        // Failing job 1 still advances queue to job 2
+        svc.MarkJobFailed(jobs[1].JobId, "Simulated failure");
+        await Task.Delay(50);
+        Assert.Equal(DropboxUploadJobStatus.Failed, jobs[1].Status);
+        Assert.Equal(DropboxUploadJobStatus.Uploading, jobs[2].Status);
+
+        // Completing job 2 finishes queue
+        svc.ReportCompletedFromJson(jobs[2].JobId, "{\"eventAppointmentId\":\"EVT-0018\",\"dropboxStatus\":\"Uploaded\",\"originalFileName\":\"part3.zip\"}");
+        await Task.Delay(50);
+        Assert.Equal(DropboxUploadJobStatus.Completed, jobs[2].Status);
+        Assert.False(svc.HasActiveUploads);
+    }
+
+    [Fact]
+    public async Task CustomerDropboxController_UploadEventZips_Enforces500MbPerFile_AndAppendsEach()
+    {
+        var mockService = new Mock<ICustomerDropboxService>();
+        mockService
+            .Setup(s => s.UploadZipAsync(
+                "EVT-0020",
+                It.IsAny<Stream>(),
+                It.IsAny<string>(),
+                It.IsAny<long>(),
+                It.IsAny<string?>(),
+                "ADM-0001",
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync((string evtId, Stream _, string fileName, long size, string? _, string _, CancellationToken _) =>
+                new CustomerDropboxFolderDto
+                {
+                    DropboxId = "DRP-0020",
+                    EventAppointmentId = evtId,
+                    CustomerId = "CUST-0001",
+                    DropboxStatus = DropboxStatuses.Uploaded,
+                    OriginalFileName = fileName,
+                    FileSizeBytes = size
+                });
+
+        var controller = new CustomerDropboxController(mockService.Object, NullLogger<CustomerDropboxController>.Instance);
+        var admin = new ClaimsPrincipal(new ClaimsIdentity(new[]
+        {
+            new Claim("studio_id", "ADM-0001"),
+            new Claim(ClaimTypes.Role, AppRoles.Admin)
+        }, "TestAuth"));
+        controller.ControllerContext = new ControllerContext
+        {
+            HttpContext = new DefaultHttpContext { User = admin }
+        };
+
+        using var ms1 = new MemoryStream(new byte[] { 0x50, 0x4B, 0x03, 0x04 });
+        using var ms2 = new MemoryStream(new byte[] { 0x50, 0x4B, 0x03, 0x04 });
+        var files = new List<IFormFile>
+        {
+            new FormFile(ms1, 0, 400L * 1024 * 1024, "files", "part1.zip") { Headers = new HeaderDictionary(), ContentType = "application/zip" },
+            new FormFile(ms2, 0, 450L * 1024 * 1024, "files", "part2.zip") { Headers = new HeaderDictionary(), ContentType = "application/zip" }
+        };
+
+        var okResult = await controller.UploadEventZips("EVT-0020", files, CancellationToken.None) as OkObjectResult;
+        Assert.NotNull(okResult);
+        mockService.Verify(s => s.UploadZipAsync(
+            "EVT-0020", It.IsAny<Stream>(), It.IsAny<string>(), It.IsAny<long>(), It.IsAny<string?>(), "ADM-0001", It.IsAny<CancellationToken>()),
+            Times.Exactly(2));
+
+        // Reject if any file exceeds 500 MB
+        var oversized = new List<IFormFile>
+        {
+            new FormFile(ms1, 0, 100L * 1024 * 1024, "files", "ok.zip"),
+            new FormFile(ms2, 0, DropboxCountdownHelper.MaxZipSizeBytes + 1, "files", "oversized.zip")
+        };
+        var badResult = await controller.UploadEventZips("EVT-0020", oversized, CancellationToken.None);
+        Assert.IsType<BadRequestObjectResult>(badResult);
+    }
+
+    [Fact]
+    public async Task CustomerDropboxController_DeleteEventZipFile_CallsService()
+    {
+        var mockService = new Mock<ICustomerDropboxService>();
+        mockService
+            .Setup(s => s.DeleteDropboxFileAsync("EVT-0020", "DRPF-0001", "ADM-0001", It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new CustomerDropboxFolderDto
+            {
+                DropboxId = "DRP-0020",
+                EventAppointmentId = "EVT-0020",
+                DropboxStatus = DropboxStatuses.Waiting
+            });
+
+        var controller = new CustomerDropboxController(mockService.Object, NullLogger<CustomerDropboxController>.Instance);
+        var admin = new ClaimsPrincipal(new ClaimsIdentity(new[]
+        {
+            new Claim("studio_id", "ADM-0001"),
+            new Claim(ClaimTypes.Role, AppRoles.Admin)
+        }, "TestAuth"));
+        controller.ControllerContext = new ControllerContext
+        {
+            HttpContext = new DefaultHttpContext { User = admin }
+        };
+
+        var res = await controller.DeleteEventZipFile("EVT-0020", "DRPF-0001", CancellationToken.None) as OkObjectResult;
+        Assert.NotNull(res);
+        var dto = Assert.IsType<CustomerDropboxFolderDto>(res!.Value);
+        Assert.Equal(DropboxStatuses.Waiting, dto.DropboxStatus);
+    }
+
+    [Fact]
+    public void CustomerDropboxFolderItem_TracksIndependentFileExpirationsAndCounts()
+    {
+        var now = DateTime.UtcNow;
+        var folder = new CustomerDropboxFolderItem
+        {
+            DropboxId = "DRP-0099",
+            DropboxStatus = "Uploaded",
+            OriginalFileName = "part2.zip",
+            ExpiresAt = now.AddDays(25),
+            Files =
+            [
+                new CustomerDropboxFileItem
+                {
+                    DropboxFileId = "DRPF-0001",
+                    OriginalFileName = "part1.zip",
+                    FileSizeBytes = 300L * 1024 * 1024,
+                    ExpiresAt = now.AddMinutes(-10),
+                    IsExpired = true
+                },
+                new CustomerDropboxFileItem
+                {
+                    DropboxFileId = "DRPF-0002",
+                    OriginalFileName = "part2.zip",
+                    FileSizeBytes = 400L * 1024 * 1024,
+                    ExpiresAt = now.AddDays(25),
+                    DaysRemaining = 24,
+                    CountdownLabel = "24 Days Left"
+                }
+            ]
+        };
+
+        Assert.True(folder.HasFile);
+        Assert.Equal(1, folder.FileCount);
+        Assert.Equal(400L * 1024 * 1024, folder.TotalFileSizeBytes);
     }
 }

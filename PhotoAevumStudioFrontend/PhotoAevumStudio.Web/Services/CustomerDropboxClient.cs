@@ -32,11 +32,18 @@ public sealed class CustomerDropboxClient(
         }
     }
 
-    public async Task<ApiResult<DropboxDownloadUrlResponse>> GetDownloadUrlAsync(string dropboxId, CancellationToken ct = default)
+    public Task<ApiResult<DropboxDownloadUrlResponse>> GetDownloadUrlAsync(string dropboxId, CancellationToken ct = default)
+        => GetDownloadUrlAsync(dropboxId, null, ct);
+
+    public async Task<ApiResult<DropboxDownloadUrlResponse>> GetDownloadUrlAsync(string dropboxId, string? dropboxFileId, CancellationToken ct = default)
     {
         try
         {
-            using var resp = await _http.GetAsync($"api/dropbox/my/{Uri.EscapeDataString(dropboxId)}/download-url", ct);
+            var url = $"api/dropbox/my/{Uri.EscapeDataString(dropboxId)}/download-url";
+            if (!string.IsNullOrWhiteSpace(dropboxFileId))
+                url += $"?fileId={Uri.EscapeDataString(dropboxFileId)}";
+
+            using var resp = await _http.GetAsync(url, ct);
             if (!resp.IsSuccessStatusCode)
                 return await ReadErrorAsync<DropboxDownloadUrlResponse>(resp, ct);
 
@@ -106,6 +113,31 @@ public sealed class CustomerDropboxClient(
         catch (Exception ex)
         {
             logger.LogError(ex, "Failed uploading ZIP archive for event {EventId}.", eventAppointmentId);
+            return ApiResult<CustomerDropboxFolderItem>.Fail(ApiErrorKind.Network, ex.Message);
+        }
+    }
+
+    public async Task<ApiResult<CustomerDropboxFolderItem>> DeleteDropboxFileAsync(
+        string eventAppointmentId,
+        string dropboxFileId,
+        CancellationToken ct = default)
+    {
+        try
+        {
+            using var resp = await _http.DeleteAsync(
+                $"api/dropbox/admin/{Uri.EscapeDataString(eventAppointmentId)}/files/{Uri.EscapeDataString(dropboxFileId)}",
+                ct);
+            if (!resp.IsSuccessStatusCode)
+                return await ReadErrorAsync<CustomerDropboxFolderItem>(resp, ct);
+
+            var data = await resp.Content.ReadFromJsonAsync<CustomerDropboxFolderItem>(cancellationToken: ct);
+            return data != null
+                ? ApiResult<CustomerDropboxFolderItem>.Ok(data)
+                : ApiResult<CustomerDropboxFolderItem>.Fail(ApiErrorKind.Server, "Empty delete response.");
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "Failed deleting ZIP file {FileId} for event {EventId}.", dropboxFileId, eventAppointmentId);
             return ApiResult<CustomerDropboxFolderItem>.Fail(ApiErrorKind.Network, ex.Message);
         }
     }

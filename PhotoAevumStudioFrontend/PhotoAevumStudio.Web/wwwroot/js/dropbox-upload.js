@@ -1,5 +1,7 @@
 (function () {
     const activeUploads = new Map();
+    const stagedFiles = new Map();
+    let stagedCounter = 0;
     let hostRef = null;
     let beforeUnloadBound = false;
 
@@ -209,9 +211,37 @@
             hostRef = dotNetRef;
         },
 
-        start: function (jobId, ticketId, inputElementId, totalBytes) {
+        captureInputFiles: function (inputElementId) {
             const input = document.getElementById(inputElementId);
-            const file = input && input.files && input.files[0];
+            if (!input || !input.files || input.files.length === 0) {
+                return [];
+            }
+            const tokens = [];
+            for (let i = 0; i < input.files.length; i++) {
+                const token = `f_${++stagedCounter}_${Date.now().toString(36)}`;
+                stagedFiles.set(token, input.files[i]);
+                tokens.push(token);
+            }
+            return tokens;
+        },
+
+        releaseStagedFile: function (fileToken) {
+            if (fileToken) {
+                stagedFiles.delete(fileToken);
+            }
+        },
+
+        start: function (jobId, ticketId, inputElementId, totalBytes, fileToken, fileIndex) {
+            let file = null;
+            if (fileToken && stagedFiles.has(fileToken)) {
+                file = stagedFiles.get(fileToken);
+                stagedFiles.delete(fileToken);
+            }
+            if (!file) {
+                const input = document.getElementById(inputElementId);
+                const idx = typeof fileIndex === "number" && fileIndex >= 0 ? fileIndex : 0;
+                file = input && input.files && input.files[idx];
+            }
             if (!file) return false;
 
             const state = {

@@ -43,6 +43,7 @@ public class ApplicationDbContext : IdentityDbContext<ApplicationUser>
     public DbSet<PortfolioImage> PortfolioImages => Set<PortfolioImage>();
     public DbSet<ArchiveIndex> ArchiveIndices => Set<ArchiveIndex>();
     public DbSet<CustomerDropbox> CustomerDropboxes => Set<CustomerDropbox>();
+    public DbSet<CustomerDropboxFile> CustomerDropboxFiles => Set<CustomerDropboxFile>();
     public DbSet<StudioAnalyticsAction> StudioAnalyticsActions => Set<StudioAnalyticsAction>();
     public DbSet<TermsVersion> TermsVersions => Set<TermsVersion>();
     public DbSet<BookingContract> BookingContracts => Set<BookingContract>();
@@ -314,6 +315,25 @@ public class ApplicationDbContext : IdentityDbContext<ApplicationUser>
             e.Property(d => d.UploadedByEmployeeId).HasColumnName("UploadedByEmployeeID").HasMaxLength(30);
             e.Property(d => d.EventCompletedAt).HasDefaultValueSql("SYSUTCDATETIME()");
             e.Property(d => d.CreatedAt).HasDefaultValueSql("SYSUTCDATETIME()");
+        });
+
+        // ── CustomerDropboxFiles ─────────────────────────────────────────────
+        builder.Entity<CustomerDropboxFile>(e =>
+        {
+            e.ToTable("CustomerDropboxFiles", "dbo");
+            e.HasKey(f => f.DropboxFileId);
+            e.Property(f => f.DropboxFileId).HasColumnName("DropboxFileID").HasMaxLength(30).IsRequired();
+            e.Property(f => f.DropboxId).HasColumnName("DropboxID").HasMaxLength(30).IsRequired();
+            e.Property(f => f.EventAppointmentId).HasColumnName("EventAppointmentID").HasMaxLength(30).IsRequired();
+            e.Property(f => f.CustomerId).HasColumnName("CustomerID").HasMaxLength(30).IsRequired();
+            e.Property(f => f.BucketName).HasMaxLength(100).IsRequired().HasDefaultValue("dropbox");
+            e.Property(f => f.R2ObjectKey).HasMaxLength(500);
+            e.Property(f => f.OriginalFileName).HasMaxLength(255).IsRequired();
+            e.Property(f => f.ContentType).HasMaxLength(100);
+            e.Property(f => f.FileStatus).HasMaxLength(30).IsRequired().HasDefaultValue("Active");
+            e.Property(f => f.UploadedByEmployeeId).HasColumnName("UploadedByEmployeeID").HasMaxLength(30);
+            e.Property(f => f.UploadedAt).HasDefaultValueSql("SYSUTCDATETIME()");
+            e.Property(f => f.CreatedAt).HasDefaultValueSql("SYSUTCDATETIME()");
         });
 
         // ── StudioAnalyticsActions ───────────────────────────────────────────

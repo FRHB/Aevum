@@ -198,6 +198,33 @@ public class CustomerDropboxTests
         var expiredToken = svc.CreateSignedDownloadToken("DRP-0001", "CUST-0001", TimeSpan.FromSeconds(-5));
         var (expiredValid, _, _) = svc.ValidateSignedDownloadToken(expiredToken);
         Assert.False(expiredValid);
+
+        // File-specific token
+        var fileToken = svc.CreateSignedDownloadToken("DRP-0001", "CUST-0001", TimeSpan.FromMinutes(10), "DRPF-0007");
+        var (fileValid, fDrp, fCust, fId) = svc.ValidateSignedDownloadTokenWithFile(fileToken);
+        Assert.True(fileValid);
+        Assert.Equal("DRP-0001", fDrp);
+        Assert.Equal("CUST-0001", fCust);
+        Assert.Equal("DRPF-0007", fId);
+    }
+
+    [Fact]
+    public async Task UploadZipAsync_RejectsIndividualZipExceeding500Mb()
+    {
+        using var db = CreateDummyDbContext();
+        var r2 = new Mock<IR2StorageService>();
+        r2.SetupGet(x => x.DropboxBucket).Returns("dropbox");
+        var config = new ConfigurationBuilder().Build();
+        var svc = new CustomerDropboxService(db, r2.Object, config, NullLogger<CustomerDropboxService>.Instance);
+
+        using var pkStream = new MemoryStream(new byte[] { 0x50, 0x4B, 0x03, 0x04 });
+        var overLimitBytes = DropboxCountdownHelper.MaxZipSizeBytes + 1;
+
+        var ex = await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            svc.UploadZipAsync("EVT-0001", pkStream, "too-big.zip", overLimitBytes, "application/zip", "ADM-001"));
+
+        Assert.Contains("500 MB", ex.Message);
+        r2.Verify(x => x.UploadFileAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<Stream>(), It.IsAny<string>(), It.IsAny<Action<long>?>(), It.IsAny<CancellationToken>()), Times.Never);
     }
 
     [Fact]
@@ -231,16 +258,23 @@ public class CustomerDropboxTests
         var procsSql = File.ReadAllText(Path.Combine(dbDir, "PhotoAevumStudioStoredProcedures.sql"));
 
         Assert.Contains("CREATE TABLE dbo.CustomerDropbox", masterSql);
+        Assert.Contains("CREATE TABLE dbo.CustomerDropboxFiles", masterSql);
         Assert.Contains("Seq_DropboxID", masterSql);
+        Assert.Contains("Seq_DropboxFileID", masterSql);
         Assert.Contains("FK_CustomerDropbox_EventAppointment", masterSql);
         Assert.Contains("FK_CustomerDropbox_Customer", masterSql);
+        Assert.Contains("FK_CustomerDropboxFiles_CustomerDropbox", masterSql);
 
         Assert.Contains("CREATE TABLE dbo.CustomerDropbox", idempotentSql);
+        Assert.Contains("CREATE TABLE dbo.CustomerDropboxFiles", idempotentSql);
         Assert.Contains("Seq_DropboxID", idempotentSql);
+        Assert.Contains("Seq_DropboxFileID", idempotentSql);
         Assert.Contains("FK_CustomerDropbox_EventAppointment", idempotentSql);
         Assert.Contains("FK_CustomerDropbox_Customer", idempotentSql);
+        Assert.Contains("FK_CustomerDropboxFiles_CustomerDropbox", idempotentSql);
 
         Assert.Contains("dbo.sp_GetNextDropboxID", procsSql);
+        Assert.Contains("dbo.sp_GetNextDropboxFileID", procsSql);
         Assert.Contains("dbo.usp_SyncCustomerDropboxFolders", procsSql);
     }
 

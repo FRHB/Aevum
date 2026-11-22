@@ -2843,6 +2843,21 @@ BEGIN
 END;
 GO
 
+CREATE OR ALTER PROCEDURE dbo.sp_GetNextDropboxFileID
+    @NextID nvarchar(30) OUTPUT
+AS
+BEGIN
+    SET NOCOUNT ON;
+    DECLARE @Num int = NEXT VALUE FOR dbo.Seq_DropboxFileID;
+    SET @NextID = 'DRPF-' + RIGHT('0000' + CAST(@Num AS nvarchar(10)), 4);
+    WHILE EXISTS (SELECT 1 FROM dbo.CustomerDropboxFiles WHERE DropboxFileID = @NextID)
+    BEGIN
+        SET @Num = NEXT VALUE FOR dbo.Seq_DropboxFileID;
+        SET @NextID = 'DRPF-' + RIGHT('0000' + CAST(@Num AS nvarchar(10)), 4);
+    END;
+END;
+GO
+
 CREATE OR ALTER PROCEDURE dbo.usp_SyncCustomerDropboxFolders
     @CustomerID nvarchar(30) = NULL
 AS

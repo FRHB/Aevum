@@ -147,6 +147,80 @@ else
                             </div>
                         </div>
                     }
+                    else if (folder.Files.Count > 0)
+                    {
+                        <div class="space-y-2.5">
+                            @if (!folder.IsDeliverablesUnlocked)
+                            {
+                                <div class="w-full p-2.5 rounded-lg bg-rose-50 border border-rose-200 text-rose-800 text-[11px] font-semibold">
+                                    🔒 @(string.IsNullOrWhiteSpace(folder.LockReason) ? $"Locked until remaining balance of ₱{folder.RemainingBalance:N2} is settled in full." : folder.LockReason)
+                                    <a href="/my/bookings" class="underline font-bold ml-1">Go to My Bookings &rarr;</a>
+                                </div>
+                            }
+
+                            @if (folder.FileCount > 1)
+                            {
+                                <div class="text-[11px] font-bold text-teal-800 px-1">
+                                    @folder.FileCount ZIP Archives (@folder.FormattedTotalFileSize total)
+                                </div>
+                            }
+
+                            @foreach (var file in folder.Files)
+                            {
+                                var fileExpired = file.IsEffectivelyExpired;
+                                var fileUrgent = !fileExpired && file.DaysRemaining <= 5;
+                                var downloadKey = $"{folder.DropboxId}:{file.DropboxFileId}";
+                                var isDownloadingThis = _downloadingKey == downloadKey;
+
+                                <div class="aev-dropbox-file-box @(fileExpired ? "is-file-expired" : string.Empty)" @key="file.DropboxFileId">
+                                    <div class="flex items-center gap-2.5 min-w-0">
+                                        <span class="aev-dropbox-zip-badge @(fileExpired ? "is-expired" : string.Empty)">ZIP</span>
+                                        <div class="min-w-0 flex-1">
+                                            <div class="text-xs font-bold @(fileExpired ? "text-slate-500" : "text-slate-900") truncate" title="@file.OriginalFileName">@file.OriginalFileName</div>
+                                            <div class="text-[11px] text-slate-500">
+                                                @file.FormattedFileSize
+                                                <span> &bull; Uploaded @file.UploadedAt.ToLocalTime().ToString("MMM dd, yyyy")</span>
+                                            </div>
+                                        </div>
+                                        <span class="aev-dropbox-countdown shrink-0 @(fileExpired ? "is-expired" : (fileUrgent ? "is-urgent" : ""))">
+                                            <span class="aev-dropbox-countdown__dot" aria-hidden="true"></span>
+                                            @file.EffectiveCountdownLabel
+                                        </span>
+                                    </div>
+
+                                    @if (fileExpired)
+                                    {
+                                        <button type="button"
+                                                disabled
+                                                class="aev-dropbox-download-btn is-unavailable">
+                                            Unavailable
+                                        </button>
+                                    }
+                                    else if (folder.IsDeliverablesUnlocked)
+                                    {
+                                        <button type="button"
+                                                @onclick="() => DownloadZipAsync(folder, file.DropboxFileId)"
+                                                disabled="@(_downloadingKey != null)"
+                                                class="aev-dropbox-download-btn">
+                                            @if (isDownloadingThis)
+                                            {
+                                                <span>Preparing Download...</span>
+                                            }
+                                            else
+                                            {
+                                                <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                                                    <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                                                    <polyline points="7 10 12 15 17 10"></polyline>
+                                                    <line x1="12" y1="15" x2="12" y2="3"></line>
+                                                </svg>
+                                                <span>Download ZIP</span>
+                                            }
+                                        </button>
+                                    }
+                                </div>
+                            }
+                        </div>
+                    }
                     else
                     {
                         <div class="aev-dropbox-file-box">
@@ -174,10 +248,10 @@ else
                             else
                             {
                                 <button type="button"
-                                        @onclick="() => DownloadZipAsync(folder)"
-                                        disabled="@(_downloadingDropboxId == folder.DropboxId)"
+                                        @onclick="() => DownloadZipAsync(folder, null)"
+                                        disabled="@(_downloadingKey != null)"
                                         class="aev-dropbox-download-btn">
-                                    @if (_downloadingDropboxId == folder.DropboxId)
+                                    @if (_downloadingKey == folder.DropboxId)
                                     {
                                         <span>Preparing Download...</span>
                                     }
@@ -238,7 +312,7 @@ else
 @code {
     private List<CustomerDropboxFolderItem> _folders = new();
     private bool _loading = true;
-    private string? _downloadingDropboxId;
+    private string? _downloadingKey;
     private string? _statusMessage;
     private string? _errorMessage;
 
@@ -273,16 +347,20 @@ else
         }
     }
 
-    private async Task DownloadZipAsync(CustomerDropboxFolderItem folder)
+    private async Task DownloadZipAsync(CustomerDropboxFolderItem folder, string? dropboxFileId)
     {
-        if (folder.IsEffectivelyExpired || _downloadingDropboxId != null) return;
-        _downloadingDropboxId = folder.DropboxId;
+        if (folder.IsEffectivelyExpired || _downloadingKey != null) return;
+        _downloadingKey = string.IsNullOrWhiteSpace(dropboxFileId)
+            ? folder.DropboxId
+            : $"{folder.DropboxId}:{dropboxFileId}";
         _errorMessage = null;
         _statusMessage = null;
 
         try
         {
-            var res = await DropboxClient.GetDownloadUrlAsync(folder.DropboxId);
+            var res = string.IsNullOrWhiteSpace(dropboxFileId)
+                ? await DropboxClient.GetDownloadUrlAsync(folder.DropboxId)
+                : await DropboxClient.GetDownloadUrlAsync(folder.DropboxId, dropboxFileId);
             if (res.IsSuccess && res.Value != null && !string.IsNullOrWhiteSpace(res.Value.DownloadUrl))
             {
                 _statusMessage = $"Starting download for {res.Value.FileName}...";
@@ -299,7 +377,7 @@ else
         }
         finally
         {
-            _downloadingDropboxId = null;
+            _downloadingKey = null;
         }
     }
 }
