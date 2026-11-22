@@ -24,11 +24,37 @@ using Serilog;
 
 var builder = WebApplication.CreateBuilder(args);
 
+static string? FirstNonEmpty(params string?[] candidates)
+{
+    foreach (var candidate in candidates)
+    {
+        if (!string.IsNullOrWhiteSpace(candidate))
+            return candidate.Trim();
+    }
+    return null;
+}
+
 // Fetch Infisical auth keys from appsettings, user secrets, or environment variables
-var infisicalClientId = builder.Configuration["Infisical:ClientId"]?.Trim();
-var infisicalClientSecret = builder.Configuration["Infisical:ClientSecret"]?.Trim();
-var infisicalProjectId = builder.Configuration["Infisical:ProjectId"]?.Trim() ?? string.Empty;
-var infisicalEnvironment = builder.Configuration["Infisical:Environment"]?.Trim() ?? "dev";
+var infisicalClientId = FirstNonEmpty(
+    builder.Configuration["Infisical:ClientId"],
+    builder.Configuration["Infisical__ClientId"],
+    builder.Configuration["INFISICAL_CLIENT_ID"],
+    Environment.GetEnvironmentVariable("INFISICAL_CLIENT_ID"));
+var infisicalClientSecret = FirstNonEmpty(
+    builder.Configuration["Infisical:ClientSecret"],
+    builder.Configuration["Infisical__ClientSecret"],
+    builder.Configuration["INFISICAL_CLIENT_SECRET"],
+    Environment.GetEnvironmentVariable("INFISICAL_CLIENT_SECRET"));
+var infisicalProjectId = FirstNonEmpty(
+    builder.Configuration["Infisical:ProjectId"],
+    builder.Configuration["Infisical__ProjectId"],
+    builder.Configuration["INFISICAL_PROJECT_ID"],
+    Environment.GetEnvironmentVariable("INFISICAL_PROJECT_ID")) ?? string.Empty;
+var infisicalEnvironment = FirstNonEmpty(
+    builder.Configuration["Infisical:Environment"],
+    builder.Configuration["Infisical__Environment"],
+    builder.Configuration["INFISICAL_ENVIRONMENT"],
+    Environment.GetEnvironmentVariable("INFISICAL_ENVIRONMENT")) ?? "dev";
 
 // Only connect to Infisical if the keys are present (prevents crashes in environments without Infisical)
 if (!string.IsNullOrEmpty(infisicalClientId) && !string.IsNullOrEmpty(infisicalClientSecret) && !string.IsNullOrEmpty(infisicalProjectId))
@@ -90,9 +116,15 @@ builder.Services.AddValidatorsFromAssemblyContaining<PhotoAevumStudio.Applicatio
 // ── Database ─────────────────────────────────────────────────────────────────
 
 var connectionString = SqlResilienceHelper.NormalizeConnectionString(
-    builder.Configuration.GetConnectionString("DefaultConnection")
-    ?? builder.Configuration["ConnectionStrings__DefaultConnection"]
-    ?? Environment.GetEnvironmentVariable("AEVUM_DB_CONNECTION"));
+    FirstNonEmpty(
+        builder.Configuration.GetConnectionString("DefaultConnection"),
+        builder.Configuration["ConnectionStrings__DefaultConnection"],
+        builder.Configuration["ConnectionStrings:DefaultConnection"],
+        builder.Configuration["AEVUM_DB_CONNECTION"],
+        builder.Configuration["DB_CONNECTION_STRING"],
+        Environment.GetEnvironmentVariable("AEVUM_DB_CONNECTION"),
+        Environment.GetEnvironmentVariable("DB_CONNECTION_STRING"),
+        Environment.GetEnvironmentVariable("SQLCONNSTR_DefaultConnection")));
 
 if (string.IsNullOrWhiteSpace(connectionString))
 {
@@ -140,7 +172,13 @@ builder.Services.AddIdentity<ApplicationUser, IdentityRole>(options =>
 
 // ── JWT Authentication ────────────────────────────────────────────────────────
 
-var jwtKey = builder.Configuration["Jwt:Key"] ?? builder.Configuration["Jwt__Key"];
+var jwtKey = FirstNonEmpty(
+    builder.Configuration["Jwt:Key"],
+    builder.Configuration["Jwt__Key"],
+    builder.Configuration["JWT_KEY"],
+    builder.Configuration["JWT_SECRET"],
+    Environment.GetEnvironmentVariable("JWT_KEY"),
+    Environment.GetEnvironmentVariable("JWT_SECRET"));
 if (string.IsNullOrWhiteSpace(jwtKey) || jwtKey.Length < 32)
 {
     if (builder.Environment.IsDevelopment() || builder.Environment.IsEnvironment("Testing"))
@@ -155,9 +193,9 @@ if (string.IsNullOrWhiteSpace(jwtKey) || jwtKey.Length < 32)
     }
 }
 
-var jwtIssuer = builder.Configuration["Jwt:Issuer"]
+var jwtIssuer = FirstNonEmpty(builder.Configuration["Jwt:Issuer"], builder.Configuration["Jwt__Issuer"])
     ?? throw new InvalidOperationException("Jwt:Issuer is not configured.");
-var jwtAudience = builder.Configuration["Jwt:Audience"]
+var jwtAudience = FirstNonEmpty(builder.Configuration["Jwt:Audience"], builder.Configuration["Jwt__Audience"])
     ?? throw new InvalidOperationException("Jwt:Audience is not configured.");
 
 builder.Services.AddAuthentication(options =>

@@ -7,11 +7,37 @@ using PhotoAevumStudio.Web.Services;
 
 var builder = WebApplication.CreateBuilder(args);
 
+static string? FirstNonEmpty(params string?[] candidates)
+{
+    foreach (var candidate in candidates)
+    {
+        if (!string.IsNullOrWhiteSpace(candidate))
+            return candidate.Trim();
+    }
+    return null;
+}
+
 // Fetch Infisical auth keys from appsettings, user secrets, or environment variables
-var infisicalClientId = builder.Configuration["Infisical:ClientId"]?.Trim();
-var infisicalClientSecret = builder.Configuration["Infisical:ClientSecret"]?.Trim();
-var infisicalProjectId = builder.Configuration["Infisical:ProjectId"]?.Trim() ?? string.Empty;
-var infisicalEnvironment = builder.Configuration["Infisical:Environment"]?.Trim() ?? "dev";
+var infisicalClientId = FirstNonEmpty(
+    builder.Configuration["Infisical:ClientId"],
+    builder.Configuration["Infisical__ClientId"],
+    builder.Configuration["INFISICAL_CLIENT_ID"],
+    Environment.GetEnvironmentVariable("INFISICAL_CLIENT_ID"));
+var infisicalClientSecret = FirstNonEmpty(
+    builder.Configuration["Infisical:ClientSecret"],
+    builder.Configuration["Infisical__ClientSecret"],
+    builder.Configuration["INFISICAL_CLIENT_SECRET"],
+    Environment.GetEnvironmentVariable("INFISICAL_CLIENT_SECRET"));
+var infisicalProjectId = FirstNonEmpty(
+    builder.Configuration["Infisical:ProjectId"],
+    builder.Configuration["Infisical__ProjectId"],
+    builder.Configuration["INFISICAL_PROJECT_ID"],
+    Environment.GetEnvironmentVariable("INFISICAL_PROJECT_ID")) ?? string.Empty;
+var infisicalEnvironment = FirstNonEmpty(
+    builder.Configuration["Infisical:Environment"],
+    builder.Configuration["Infisical__Environment"],
+    builder.Configuration["INFISICAL_ENVIRONMENT"],
+    Environment.GetEnvironmentVariable("INFISICAL_ENVIRONMENT")) ?? "dev";
 
 // Only connect to Infisical if the keys are present
 if (!string.IsNullOrEmpty(infisicalClientId) && !string.IsNullOrEmpty(infisicalClientSecret) && !string.IsNullOrEmpty(infisicalProjectId))
@@ -46,6 +72,20 @@ if (!string.IsNullOrEmpty(infisicalClientId) && !string.IsNullOrEmpty(infisicalC
         }
         Console.Error.WriteLine($"[Startup Warning] Infisical secret fetch failed in Frontend; falling back to local configuration: {ex.Message}");
     }
+}
+
+var resolvedWebConnectionString = FirstNonEmpty(
+    builder.Configuration.GetConnectionString("DefaultConnection"),
+    builder.Configuration["ConnectionStrings__DefaultConnection"],
+    builder.Configuration["ConnectionStrings:DefaultConnection"],
+    builder.Configuration["AEVUM_DB_CONNECTION"],
+    builder.Configuration["DB_CONNECTION_STRING"],
+    Environment.GetEnvironmentVariable("AEVUM_DB_CONNECTION"),
+    Environment.GetEnvironmentVariable("DB_CONNECTION_STRING"),
+    Environment.GetEnvironmentVariable("SQLCONNSTR_DefaultConnection"));
+if (!string.IsNullOrWhiteSpace(resolvedWebConnectionString))
+{
+    builder.Configuration["ConnectionStrings:DefaultConnection"] = SqlResilienceHelper.NormalizeConnectionString(resolvedWebConnectionString);
 }
 
 var bootInfo = new AppBootInfo();

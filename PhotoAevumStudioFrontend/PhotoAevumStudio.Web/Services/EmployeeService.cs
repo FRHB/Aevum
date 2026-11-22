@@ -42,8 +42,14 @@ public class EmployeeService : IEmployeeService
 
         _userService = userService;
 
-        _connectionString = configuration.GetConnectionString("DefaultConnection")
-
+        _connectionString = new[]
+            {
+                configuration.GetConnectionString("DefaultConnection"),
+                configuration["ConnectionStrings__DefaultConnection"],
+                configuration["AEVUM_DB_CONNECTION"],
+                Environment.GetEnvironmentVariable("AEVUM_DB_CONNECTION"),
+                Environment.GetEnvironmentVariable("DB_CONNECTION_STRING")
+            }.FirstOrDefault(v => !string.IsNullOrWhiteSpace(v))?.Trim()
             ?? throw new InvalidOperationException("Connection string 'DefaultConnection' is missing.");
 
     }

@@ -146,51 +146,60 @@
         successMessage = "";
         StateHasChanged();
 
-        var result = await AuthService.LoginAsync(loginModel.UserId, loginModel.Password, CancellationToken.None);
-
-        if (result.RequiresPasswordChange)
+        try
         {
-            NavManager.NavigateTo($"/change-password?userId={Uri.EscapeDataString(result.UserId ?? loginModel.UserId)}");
-            return;
-        }
+            var result = await AuthService.LoginAsync(loginModel.UserId, loginModel.Password, CancellationToken.None);
 
-        if (result.Success)
-        {
-            var authState = await AuthStateProvider.GetAuthenticationStateAsync();
-            var user = authState.User;
-
-            bool isSuper = user.IsInRole("Super Admin") ||
-                (!string.IsNullOrEmpty(result.Role) && result.Role.Contains("Super", StringComparison.OrdinalIgnoreCase)) ||
-                (!string.IsNullOrEmpty(loginModel.UserId) && loginModel.UserId.StartsWith("SADM-", StringComparison.OrdinalIgnoreCase));
-
-            bool isAdmin = isSuper || user.IsInRole("Admin") ||
-                (!string.IsNullOrEmpty(result.Role) && result.Role.Contains("Admin", StringComparison.OrdinalIgnoreCase)) ||
-                (!string.IsNullOrEmpty(loginModel.UserId) && loginModel.UserId.StartsWith("ADM-", StringComparison.OrdinalIgnoreCase));
-
-            bool isEmployee = user.IsInRole("Employee") ||
-                user.IsInRole("Office Clerk") ||
-                (!string.IsNullOrEmpty(result.Role) && (result.Role.Contains("Employee", StringComparison.OrdinalIgnoreCase) || result.Role.Contains("Staff", StringComparison.OrdinalIgnoreCase) || result.Role.Contains("Clerk", StringComparison.OrdinalIgnoreCase))) ||
-                (!string.IsNullOrEmpty(loginModel.UserId) && (loginModel.UserId.StartsWith("EMP-", StringComparison.OrdinalIgnoreCase) || loginModel.UserId.StartsWith("CLK-", StringComparison.OrdinalIgnoreCase)));
-
-            if (IsSafeLocalReturnUrl(returnUrl))
+            if (result.RequiresPasswordChange)
             {
-                NavManager.NavigateTo(returnUrl!);
+                NavManager.NavigateTo($"/change-password?userId={Uri.EscapeDataString(result.UserId ?? loginModel.UserId)}");
                 return;
             }
 
-            if (isAdmin)
-                NavManager.NavigateTo("/admin");
-            else if (isEmployee)
-                NavManager.NavigateTo("/staff");
-            else
-                NavManager.NavigateTo("/my");
-        }
-        else
-        {
-            errorMessage = result.Error ?? "Invalid Account ID, Email, or password. Please check your credentials.";
-        }
+            if (result.Success)
+            {
+                var authState = await AuthStateProvider.GetAuthenticationStateAsync();
+                var user = authState.User;
 
-        isSubmitting = false;
+                bool isSuper = user.IsInRole("Super Admin") ||
+                    (!string.IsNullOrEmpty(result.Role) && result.Role.Contains("Super", StringComparison.OrdinalIgnoreCase)) ||
+                    (!string.IsNullOrEmpty(loginModel.UserId) && loginModel.UserId.StartsWith("SADM-", StringComparison.OrdinalIgnoreCase));
+
+                bool isAdmin = isSuper || user.IsInRole("Admin") ||
+                    (!string.IsNullOrEmpty(result.Role) && result.Role.Contains("Admin", StringComparison.OrdinalIgnoreCase)) ||
+                    (!string.IsNullOrEmpty(loginModel.UserId) && loginModel.UserId.StartsWith("ADM-", StringComparison.OrdinalIgnoreCase));
+
+                bool isEmployee = user.IsInRole("Employee") ||
+                    user.IsInRole("Office Clerk") ||
+                    (!string.IsNullOrEmpty(result.Role) && (result.Role.Contains("Employee", StringComparison.OrdinalIgnoreCase) || result.Role.Contains("Staff", StringComparison.OrdinalIgnoreCase) || result.Role.Contains("Clerk", StringComparison.OrdinalIgnoreCase))) ||
+                    (!string.IsNullOrEmpty(loginModel.UserId) && (loginModel.UserId.StartsWith("EMP-", StringComparison.OrdinalIgnoreCase) || loginModel.UserId.StartsWith("CLK-", StringComparison.OrdinalIgnoreCase)));
+
+                if (IsSafeLocalReturnUrl(returnUrl))
+                {
+                    NavManager.NavigateTo(returnUrl!);
+                    return;
+                }
+
+                if (isAdmin)
+                    NavManager.NavigateTo("/admin");
+                else if (isEmployee)
+                    NavManager.NavigateTo("/staff");
+                else
+                    NavManager.NavigateTo("/my");
+            }
+            else
+            {
+                errorMessage = result.Error ?? "Invalid Account ID, Email, or password. Please check your credentials.";
+            }
+        }
+        catch (Exception)
+        {
+            errorMessage = "Unable to reach the authentication service right now. Please try again shortly.";
+        }
+        finally
+        {
+            isSubmitting = false;
+        }
     }
 
     private void NavigateToHome()

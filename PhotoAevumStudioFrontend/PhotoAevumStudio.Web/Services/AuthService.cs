@@ -28,9 +28,8 @@ public sealed class AuthService : IAuthService
 
             if (!response.IsSuccessStatusCode)
             {
-                var problem = await response.Content
-                    .ReadFromJsonAsync<ProblemDetails>(cancellationToken: cancellationToken);
-                return new AuthResult(false, Error: problem?.GetErrorMessage("Invalid credentials.") ?? "Invalid credentials.");
+                var error = await ReadProblemMessageAsync(response, "Invalid credentials.", cancellationToken);
+                return new AuthResult(false, Error: error);
             }
 
             var loginResponse = await response.Content
@@ -60,6 +59,14 @@ public sealed class AuthService : IAuthService
         {
             return new AuthResult(false, Error: $"Cannot reach the API server: {ex.Message}");
         }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            return new AuthResult(false, Error: "Login request was canceled.");
+        }
+        catch (Exception)
+        {
+            return new AuthResult(false, Error: "Authentication service returned an unexpected response. Please try again shortly.");
+        }
     }
 
     public async Task<bool> LoginAsync(string username, string password)
@@ -81,9 +88,8 @@ public sealed class AuthService : IAuthService
 
             if (!response.IsSuccessStatusCode)
             {
-                var problem = await response.Content
-                    .ReadFromJsonAsync<ProblemDetails>(cancellationToken: cancellationToken);
-                return new AuthResult(false, Error: problem?.GetErrorMessage("Password change failed.") ?? "Password change failed.");
+                var error = await ReadProblemMessageAsync(response, "Password change failed.", cancellationToken);
+                return new AuthResult(false, Error: error);
             }
 
             return new AuthResult(true);
@@ -91,6 +97,10 @@ public sealed class AuthService : IAuthService
         catch (HttpRequestException ex)
         {
             return new AuthResult(false, Error: $"Cannot reach the API server: {ex.Message}");
+        }
+        catch (Exception)
+        {
+            return new AuthResult(false, Error: "Password change service returned an unexpected response. Please try again.");
         }
     }
 
@@ -129,8 +139,7 @@ public sealed class AuthService : IAuthService
                 return new AuthResult(true);
             }
 
-            var problem = await response.Content.ReadFromJsonAsync<ProblemDetails>(cancellationToken: cancellationToken);
-            var error = problem?.GetErrorMessage("Registration failed.") ?? "Registration failed.";
+            var error = await ReadProblemMessageAsync(response, "Registration failed.", cancellationToken);
             return new AuthResult(false, Error: error);
         }
         catch (HttpRequestException ex)
@@ -153,9 +162,10 @@ public sealed class AuthService : IAuthService
                 return (true, null);
             }
 
-            var problem = await response.Content.ReadFromJsonAsync<ProblemDetails>(cancellationToken: cancellationToken);
-            var error = problem?.GetErrorMessage("Could not send verification email. Please check your address.")
-                        ?? "Could not send verification email. Please check your address.";
+            var error = await ReadProblemMessageAsync(
+                response,
+                "Could not send verification email. Please check your address.",
+                cancellationToken);
             return (false, error);
         }
         catch (HttpRequestException ex)
@@ -259,17 +269,8 @@ public sealed class AuthService : IAuthService
                 return (true, null);
             }
 
-            ProblemDetails? problem = null;
-            try
-            {
-                problem = await response.Content.ReadFromJsonAsync<ProblemDetails>(cancellationToken: cancellationToken);
-            }
-            catch
-            {
-                // Ignore JSON parse errors on non-ProblemDetails responses
-            }
-
-            return (false, problem?.GetErrorMessage(fallbackError) ?? fallbackError);
+            var error = await ReadProblemMessageAsync(response, fallbackError, cancellationToken);
+            return (false, error);
         }
         catch (HttpRequestException ex)
         {
@@ -279,6 +280,32 @@ public sealed class AuthService : IAuthService
         {
             return (false, fallbackError);
         }
+    }
+
+    private static async Task<string> ReadProblemMessageAsync(
+        HttpResponseMessage response,
+        string fallback,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            var mediaType = response.Content.Headers.ContentType?.MediaType;
+            if (string.IsNullOrWhiteSpace(mediaType) ||
+                mediaType.Contains("json", StringComparison.OrdinalIgnoreCase))
+            {
+                var problem = await response.Content.ReadFromJsonAsync<ProblemDetails>(cancellationToken: cancellationToken);
+                if (problem is not null)
+                    return problem.GetErrorMessage(fallback);
+            }
+        }
+        catch
+        {
+            // Non-JSON responses (such as IIS 500.30/502 HTML error pages) fall through to status handling.
+        }
+
+        return (int)response.StatusCode >= 500
+            ? $"The API server returned an error (HTTP {(int)response.StatusCode}). Please ensure the backend service is running and configured."
+            : fallback;
     }
 
     public async Task<bool> RegisterAsync(

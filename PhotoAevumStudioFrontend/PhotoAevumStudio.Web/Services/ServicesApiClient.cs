@@ -46,7 +46,12 @@ public class ServicesApiClient : IServicesApiClient
         _tokenStore = tokenStore;
         _logger = logger;
         _env = env;
-        _connectionString = configuration.GetConnectionString("DefaultConnection")
+        _connectionString = FirstNonEmpty(
+            configuration.GetConnectionString("DefaultConnection"),
+            configuration["ConnectionStrings__DefaultConnection"],
+            configuration["AEVUM_DB_CONNECTION"],
+            Environment.GetEnvironmentVariable("AEVUM_DB_CONNECTION"),
+            Environment.GetEnvironmentVariable("DB_CONNECTION_STRING"))
             ?? throw new InvalidOperationException("Connection string 'DefaultConnection' is missing.");
 
         var accessKey = FirstNonEmpty(

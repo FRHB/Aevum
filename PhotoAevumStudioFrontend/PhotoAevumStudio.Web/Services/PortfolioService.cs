@@ -40,10 +40,12 @@ public class PortfolioService : IPortfolioService
     {
         _env = env;
         _logger = logger;
-        _connectionString = configuration?.GetConnectionString("DefaultConnection")
-            ?? configuration?["ConnectionStrings__DefaultConnection"]
-            ?? Environment.GetEnvironmentVariable("AEVUM_DB_CONNECTION")
-            ?? string.Empty;
+        _connectionString = FirstNonEmpty(
+            configuration?.GetConnectionString("DefaultConnection"),
+            configuration?["ConnectionStrings__DefaultConnection"],
+            configuration?["AEVUM_DB_CONNECTION"],
+            Environment.GetEnvironmentVariable("AEVUM_DB_CONNECTION"),
+            Environment.GetEnvironmentVariable("DB_CONNECTION_STRING")) ?? string.Empty;
 
         var accessKey = FirstNonEmpty(
                             configuration?["CloudflareR2:AccessKey"],

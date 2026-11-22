@@ -176,10 +176,14 @@ public class ScheduleService : IScheduleService
     public ScheduleService(IConfiguration? configuration = null)
     {
         _useInMemory = configuration is null;
-        _connectionString = configuration?.GetConnectionString("DefaultConnection")
-            ?? configuration?["ConnectionStrings__DefaultConnection"]
-            ?? Environment.GetEnvironmentVariable("AEVUM_DB_CONNECTION")
-            ?? string.Empty;
+        _connectionString = new[]
+            {
+                configuration?.GetConnectionString("DefaultConnection"),
+                configuration?["ConnectionStrings__DefaultConnection"],
+                configuration?["AEVUM_DB_CONNECTION"],
+                Environment.GetEnvironmentVariable("AEVUM_DB_CONNECTION"),
+                Environment.GetEnvironmentVariable("DB_CONNECTION_STRING")
+            }.FirstOrDefault(v => !string.IsNullOrWhiteSpace(v))?.Trim() ?? string.Empty;
 
         if (!_useInMemory && string.IsNullOrWhiteSpace(_connectionString))
         {

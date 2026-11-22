@@ -53,7 +53,10 @@ public sealed class EquipmentService : IEquipmentService
         _httpClientFactory = httpClientFactory;
         _connectionString = FirstNonEmpty(
             configuration?.GetConnectionString("DefaultConnection"),
-            configuration?["ConnectionStrings__DefaultConnection"]);
+            configuration?["ConnectionStrings__DefaultConnection"],
+            configuration?["AEVUM_DB_CONNECTION"],
+            Environment.GetEnvironmentVariable("AEVUM_DB_CONNECTION"),
+            Environment.GetEnvironmentVariable("DB_CONNECTION_STRING"));
 
         var accessKey = FirstNonEmpty(
             configuration?["CloudflareR2:AccessKey"],

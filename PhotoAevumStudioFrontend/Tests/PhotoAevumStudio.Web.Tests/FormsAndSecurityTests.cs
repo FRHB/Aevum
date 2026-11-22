@@ -1,5 +1,6 @@
 ﻿using System.Security.Claims;
 using InfisicalConfiguration;
+using Microsoft.Extensions.Configuration;
 using PhotoAevumStudio.Web.Components.Pages;
 using PhotoAevumStudio.Web.Components.Shared;
 using PhotoAevumStudio.Web.Models;
@@ -961,5 +962,53 @@ public class FormsAndSecurityTests
         Assert.Contains("MinLength(8", content);
         Assert.Contains("MaxLength(30", content);
         Assert.Contains("PasswordPolicyHelper.PolicyRegexPattern", content);
+    }
+
+    [Fact]
+    public async Task AuthService_LoginAsync_HandlesHtml500ResponseWithoutThrowing()
+    {
+        var handler = new StubHttpMessageHandler(new HttpResponseMessage(System.Net.HttpStatusCode.InternalServerError)
+        {
+            Content = new StringContent("<!DOCTYPE html><html><body><h1>HTTP Error 500.30</h1></body></html>", System.Text.Encoding.UTF8, "text/html")
+        });
+        var factory = new Moq.Mock<IHttpClientFactory>();
+        factory.Setup(f => f.CreateClient("AevumApi.Anonymous"))
+            .Returns(new HttpClient(handler) { BaseAddress = new Uri("http://api-photoaevum.tryasp.net/") });
+
+        var tokenStore = new Moq.Mock<ITokenStore>();
+        var authStateProvider = new AevumAuthenticationStateProvider(tokenStore.Object);
+        var authService = new AuthService(factory.Object, authStateProvider);
+
+        var result = await authService.LoginAsync("SADM-001", "SomePassword1!", CancellationToken.None);
+
+        Assert.False(result.Success);
+        Assert.NotNull(result.Error);
+        Assert.Contains("500", result.Error);
+    }
+
+    [Fact]
+    public void EmployeeService_ResolvesFallbackConnectionString_WhenDefaultConnectionIsEmpty()
+    {
+        var config = new Microsoft.Extensions.Configuration.ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?>
+            {
+                ["ConnectionStrings:DefaultConnection"] = "",
+                ["AEVUM_DB_CONNECTION"] = "Server=localhost;Database=PhotoAevumTest;Trusted_Connection=True;"
+            })
+            .Build();
+
+        var factory = new Moq.Mock<IHttpClientFactory>();
+        factory.Setup(f => f.CreateClient("AevumApi.Authorized")).Returns(new HttpClient());
+        var tokenStore = new Moq.Mock<ITokenStore>();
+        var userService = new Moq.Mock<IUserService>();
+
+        var service = new EmployeeService(factory.Object, tokenStore.Object, userService.Object, config);
+        Assert.NotNull(service);
+    }
+
+    private sealed class StubHttpMessageHandler(HttpResponseMessage response) : HttpMessageHandler
+    {
+        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+            => Task.FromResult(response);
     }
 }
