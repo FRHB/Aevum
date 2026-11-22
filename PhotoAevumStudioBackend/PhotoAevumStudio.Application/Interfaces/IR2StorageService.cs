@@ -13,6 +13,8 @@ public interface IR2StorageService
 
     Task CreateBucketIfNotExistsAsync(string bucketName);
     Task<string> UploadFileAsync(string bucketName, string objectKey, Stream fileStream, string contentType);
+    Task<string> UploadFileAsync(string bucketName, string objectKey, Stream fileStream, string contentType, Action<long>? onBytesTransferred, CancellationToken cancellationToken = default)
+        => UploadFileAsync(bucketName, objectKey, fileStream, contentType);
     Task<Stream> DownloadFileAsync(string bucketName, string objectKey);
     Task<bool> DeleteFileAsync(string bucketName, string objectKey);
 

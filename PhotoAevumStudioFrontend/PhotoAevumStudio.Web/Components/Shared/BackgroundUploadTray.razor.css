@@ -1,0 +1,209 @@
+.aev-bg-upload-tray {
+    position: fixed;
+    right: 1.25rem;
+    bottom: 1.25rem;
+    z-index: 60;
+    width: min(22rem, calc(100vw - 2rem));
+    background: #ffffff;
+    border: 1px solid #cbd5e1;
+    border-radius: 1rem;
+    box-shadow: 0 20px 40px -15px rgba(15, 23, 42, 0.25);
+    overflow: hidden;
+}
+
+.aev-bg-upload-tray__header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0.65rem 0.9rem;
+    background: #0f172a;
+    color: #ffffff;
+    font-size: 0.75rem;
+    font-weight: 700;
+}
+
+.aev-bg-upload-tray__title {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+}
+
+.aev-bg-upload-tray__dot {
+    width: 0.5rem;
+    height: 0.5rem;
+    border-radius: 9999px;
+    background: #14b8a6;
+    animation: aev-tray-pulse 1.2s ease-in-out infinite;
+}
+
+.aev-bg-upload-tray__toggle {
+    background: transparent;
+    border: none;
+    color: #cbd5e1;
+    font-size: 0.7rem;
+    cursor: pointer;
+    padding: 0.15rem 0.35rem;
+}
+
+.aev-bg-upload-tray__toggle:hover {
+    color: #ffffff;
+}
+
+.aev-bg-upload-tray__list {
+    max-height: 16rem;
+    overflow-y: auto;
+    padding: 0.5rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.45rem;
+}
+
+.aev-bg-upload-item {
+    display: flex;
+    align-items: center;
+    gap: 0.65rem;
+    padding: 0.55rem 0.6rem;
+    border-radius: 0.75rem;
+    background: #f8fafc;
+    border: 1px solid #e2e8f0;
+}
+
+.aev-bg-upload-item.is-completed {
+    background: #f0fdfa;
+    border-color: #99f6e4;
+}
+
+.aev-bg-upload-item.is-failed {
+    background: #fff1f2;
+    border-color: #fecdd3;
+}
+
+.aev-bg-upload-item__circle {
+    position: relative;
+    width: 2.35rem;
+    height: 2.35rem;
+    flex-shrink: 0;
+}
+
+.aev-bg-upload-item__circle svg {
+    width: 100%;
+    height: 100%;
+    transform: rotate(-90deg);
+}
+
+.aev-bg-upload-item__track {
+    fill: none;
+    stroke: #e2e8f0;
+    stroke-width: 3.2;
+}
+
+.aev-bg-upload-item__fill {
+    fill: none;
+    stroke: #0d9488;
+    stroke-width: 3.2;
+    stroke-linecap: round;
+    transition: stroke-dashoffset 0.2s ease;
+}
+
+.aev-bg-upload-item.is-completed .aev-bg-upload-item__fill {
+    stroke: #059669;
+}
+
+.aev-bg-upload-item.is-failed .aev-bg-upload-item__fill {
+    stroke: #e11d48;
+}
+
+.aev-bg-upload-item__fill.is-finalizing {
+    animation: aev-tray-pulse 1.2s ease-in-out infinite;
+}
+
+.aev-bg-upload-item__pct {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 0.58rem;
+    font-weight: 800;
+    color: #0f172a;
+    font-variant-numeric: tabular-nums;
+}
+
+.aev-bg-upload-item__meta {
+    min-width: 0;
+    flex: 1;
+}
+
+.aev-bg-upload-item__top {
+    display: flex;
+    align-items: center;
+    gap: 0.35rem;
+    min-width: 0;
+}
+
+.aev-bg-upload-item__evt {
+    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+    font-size: 0.65rem;
+    font-weight: 700;
+    padding: 0.1rem 0.35rem;
+    border-radius: 0.35rem;
+    background: #0f172a;
+    color: #ffffff;
+    flex-shrink: 0;
+}
+
+.aev-bg-upload-item__file {
+    font-size: 0.72rem;
+    font-weight: 700;
+    color: #0f172a;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.aev-bg-upload-item__status {
+    font-size: 0.66rem;
+    color: #64748b;
+    margin-top: 0.15rem;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.aev-bg-upload-item__actions {
+    display: flex;
+    align-items: center;
+    gap: 0.25rem;
+    flex-shrink: 0;
+}
+
+.aev-bg-upload-item__link {
+    background: transparent;
+    border: none;
+    color: #0f766e;
+    font-size: 0.68rem;
+    font-weight: 700;
+    cursor: pointer;
+    padding: 0.2rem 0.35rem;
+}
+
+.aev-bg-upload-item__btn {
+    background: transparent;
+    border: none;
+    color: #64748b;
+    font-size: 0.75rem;
+    font-weight: 700;
+    cursor: pointer;
+    padding: 0.2rem 0.35rem;
+    border-radius: 0.35rem;
+}
+
+.aev-bg-upload-item__btn:hover {
+    background: #e2e8f0;
+    color: #0f172a;
+}
+
+@keyframes aev-tray-pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.55; }
+}

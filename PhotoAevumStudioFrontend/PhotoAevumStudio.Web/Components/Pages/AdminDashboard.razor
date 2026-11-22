@@ -164,7 +164,13 @@
                                     <div class="space-y-2 p-3 rounded-lg bg-white/80 border border-slate-200/80">
                                         <div class="flex items-start justify-between">
                                             <div>
-                                                <h3 class="text-base font-bold text-gray-900 leading-tight">@liveEv.ClientName</h3>
+                                                <h3 class="text-base font-bold text-gray-900 leading-tight flex items-center gap-2">
+                                                    @if (LiveEventsOverviewPanel.IsOngoingStage(liveEv.Status))
+                                                    {
+                                                        <LiveOngoingDot />
+                                                    }
+                                                    <span>@liveEv.ClientName</span>
+                                                </h3>
                                                 <p class="text-xs font-semibold text-teal-700 mt-0.5">@liveEv.ServiceType</p>
                                             </div>
                                             <span class="px-2 py-0.5 rounded-md text-[11px] font-bold @(liveEv.IsConsultation ? "bg-purple-100 text-purple-800" : "bg-blue-100 text-blue-800")">

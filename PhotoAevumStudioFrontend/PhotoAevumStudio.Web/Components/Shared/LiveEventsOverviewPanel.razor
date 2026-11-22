@@ -27,6 +27,13 @@
                         @_concurrentActiveCount concurrent / active event@(_concurrentActiveCount == 1 ? "" : "s")
                     </span>
                 }
+                @if (_ongoingCount > 0)
+                {
+                    <span class="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-red-50 text-red-700 border border-red-200">
+                        <LiveOngoingDot />
+                        @_ongoingCount Live Ongoing
+                    </span>
+                }
                 @if (_pendingCashCount > 0)
                 {
                     <span class="px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-100 text-amber-900 border border-amber-300">
@@ -87,8 +94,12 @@
             var active = _selectedFilter == tab;
             <button type="button"
                     @onclick="() => _selectedFilter = tab"
-                    class="px-3 py-1.5 rounded-full text-[11px] font-bold transition-all border @(active ? "bg-slate-900 text-white border-slate-900" : "bg-slate-50 text-slate-600 border-slate-200 hover:bg-slate-100")">
-                @tab <span class="opacity-75 ml-0.5">(@count)</span>
+                    class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[11px] font-bold transition-all border @(active ? "bg-slate-900 text-white border-slate-900" : "bg-slate-50 text-slate-600 border-slate-200 hover:bg-slate-100")">
+                @if (tab == "Ongoing" && count > 0)
+                {
+                    <LiveOngoingDot />
+                }
+                <span>@tab <span class="opacity-75 ml-0.5">(@count)</span></span>
             </button>
         }
     </div>
@@ -110,6 +121,7 @@
             @foreach (var ev in FilteredEvents)
             {
                 var stage = NormalizeStage(ev.DisplayStage);
+                var isOngoing = IsOngoingStage(stage);
                 var paymentLabel = ResolvePaymentLabel(ev);
                 var isComplete = IsCompletedStage(stage);
                 var isCashPending = !isComplete && string.Equals(paymentLabel, "Payment Verification (Cash)", StringComparison.OrdinalIgnoreCase);
@@ -136,7 +148,11 @@
                                         Closest Upcoming
                                     </span>
                                 }
-                                <span class="px-2.5 py-0.5 rounded-full text-[11px] font-bold @GetStageBadgeClass(stage)">
+                                <span class="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-bold @GetStageBadgeClass(stage)">
+                                    @if (isOngoing)
+                                    {
+                                        <LiveOngoingDot />
+                                    }
                                     @stage
                                 </span>
                                 @if (!string.IsNullOrWhiteSpace(paymentLabel) && !string.Equals(paymentLabel, stage, StringComparison.OrdinalIgnoreCase))
@@ -295,10 +311,14 @@
                                 "active" => "bg-teal-700 text-white border-teal-700 shadow-2xs",
                                 _ => "bg-white text-slate-400 border-slate-200"
                             };
-                            <div class="px-2.5 py-2 rounded-lg border text-[11px] font-bold text-center flex items-center justify-center gap-1 @boxClass">
+                            <div class="px-2.5 py-2 rounded-lg border text-[11px] font-bold text-center flex items-center justify-center gap-1.5 @boxClass">
                                 @if (state == "done")
                                 {
                                     <span>✓</span>
+                                }
+                                else if (state == "active" && string.Equals(step, "Ongoing", StringComparison.OrdinalIgnoreCase))
+                                {
+                                    <LiveOngoingDot />
                                 }
                                 <span>@step</span>
                             </div>
@@ -353,6 +373,7 @@
     private System.Threading.Timer? _refreshTimer;
 
     private int _concurrentActiveCount => _events.Count(e => !IsCompletedStage(e.DisplayStage));
+    private int _ongoingCount => _events.Count(e => MatchesStageFilter(e, "Ongoing"));
     private int _pendingCrewReplacementsCount => _events.Sum(e => e.CrewReplacementRequests.Count(r => string.Equals(r.Status, "Pending", StringComparison.OrdinalIgnoreCase)));
 
     private int _pendingCashCount => _events.Count(e =>
@@ -680,6 +701,15 @@
         {
             _verifyingId = null;
         }
+    }
+
+    public static bool IsOngoingStage(string? stage)
+    {
+        if (string.IsNullOrWhiteSpace(stage)) return false;
+        var s = stage.Trim();
+        return s.Equals("Ongoing", StringComparison.OrdinalIgnoreCase) ||
+               s.Equals("On Going", StringComparison.OrdinalIgnoreCase) ||
+               s.Equals("In Execution", StringComparison.OrdinalIgnoreCase);
     }
 
     private static bool IsCompletedStage(string? stage) =>

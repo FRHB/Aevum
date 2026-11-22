@@ -17,21 +17,61 @@ public class CustomerDropboxFolderItem
     public long? FileSizeBytes { get; set; }
     public DateTime EventCompletedAt { get; set; }
     public DateTime? UploadedAt { get; set; }
-    public DateTime ExpiresAt { get; set; }
+    public DateTime? ExpiresAt { get; set; }
+    public int DeliveryBusinessDays { get; set; } = 7;
+    public DateTime? DeliveryWindowEndsAt { get; set; }
+    public int DeliveryDaysRemaining { get; set; }
     public int DaysRemaining { get; set; }
     public string CountdownLabel { get; set; } = string.Empty;
+    public bool IsExpired { get; set; }
     public decimal RemainingBalance { get; set; }
     public bool IsDeliverablesUnlocked { get; set; } = true;
     public string? LockReason { get; set; }
 
+    public bool IsEffectivelyExpired =>
+        IsExpired
+        || string.Equals(DropboxStatus, "Expired", StringComparison.OrdinalIgnoreCase)
+        || (string.Equals(DropboxStatus, "Uploaded", StringComparison.OrdinalIgnoreCase)
+            && ExpiresAt.HasValue
+            && ExpiresAt.Value <= DateTime.UtcNow);
+
     public bool HasFile => string.Equals(DropboxStatus, "Uploaded", StringComparison.OrdinalIgnoreCase)
+                           && !IsEffectivelyExpired
                            && !string.IsNullOrWhiteSpace(OriginalFileName);
 
-    public string EffectiveCountdownLabel => !string.IsNullOrWhiteSpace(CountdownLabel)
-        ? CountdownLabel
-        : (DaysRemaining == 1 ? "1 Day Left" : $"{Math.Clamp(DaysRemaining, 0, 30)} Days Left");
+    public bool IsWaitingForUpload => !IsEffectivelyExpired && !HasFile;
+
+    public string EffectiveCountdownLabel
+    {
+        get
+        {
+            if (IsEffectivelyExpired)
+                return "Unavailable";
+
+            if (!string.IsNullOrWhiteSpace(CountdownLabel))
+                return CountdownLabel;
+
+            if (IsWaitingForUpload)
+            {
+                var windowDays = Math.Max(1, DeliveryBusinessDays);
+                var rem = Math.Clamp(DeliveryDaysRemaining, 0, windowDays);
+                return rem == 1 ? "1 Business Day Left" : $"{rem} Business Days Left";
+            }
+
+            return DaysRemaining == 1 ? "1 Day Left" : $"{Math.Clamp(DaysRemaining, 0, 30)} Days Left";
+        }
+    }
 
     public int CountdownPercent => (int)Math.Round(Math.Clamp(DaysRemaining, 0, 30) / 30.0 * 100.0);
+
+    public int DeliveryWindowPercent
+    {
+        get
+        {
+            var total = Math.Max(1, DeliveryBusinessDays);
+            return (int)Math.Round(Math.Clamp(DeliveryDaysRemaining, 0, total) / (double)total * 100.0);
+        }
+    }
 
     public string FormattedFileSize
     {

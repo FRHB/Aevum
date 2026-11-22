@@ -124,7 +124,11 @@
                     <div>
                         <div class="flex items-center gap-2 mb-1">
                             <span class="font-mono text-xs font-bold text-slate-500">#@ev.EventAppointmentId</span>
-                            <span class="px-2.5 py-0.5 rounded-full text-xs font-bold @(displayStatus == "Completed" || displayStatus == "Complete" || displayStatus == "Confirmed" ? "bg-emerald-100 text-emerald-800" : "bg-amber-100 text-amber-800")">
+                            <span class="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-bold @(displayStatus == "Completed" || displayStatus == "Complete" || displayStatus == "Confirmed" ? "bg-emerald-100 text-emerald-800" : "bg-amber-100 text-amber-800")">
+                                @if (LiveEventsOverviewPanel.IsOngoingStage(displayStatus))
+                                {
+                                    <LiveOngoingDot />
+                                }
                                 @displayStatus
                             </span>
                         </div>

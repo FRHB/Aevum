@@ -135,6 +135,8 @@ builder.Services.AddScoped<IServicesApiClient, ServicesApiClient>();
 builder.Services.AddScoped<PhotoAevumStudio.Web.Models.BookScheduleState>();
 builder.Services.AddScoped<IBookScheduleClient, BookScheduleClient>();
 builder.Services.AddScoped<IConsultationClient, ConsultationClient>();
+builder.Services.AddSingleton<DropboxUploadTicketStore>();
+builder.Services.AddScoped<DropboxBackgroundUploadService>();
 builder.Services.AddScoped<ICustomerDropboxClient, CustomerDropboxClient>();
 builder.Services.AddScoped<IAnalyticsClient, AnalyticsClient>();
 builder.Services.AddScoped<ISalesReportsClient, SalesReportsClient>();
@@ -169,6 +171,14 @@ builder.Services.AddHttpClient("AevumApi.Authorized", client =>
     client.BaseAddress = new Uri(apiBaseUrl))
     .AddHttpMessageHandler<AuthHttpHandler>()
     .ConfigurePrimaryHttpMessageHandler(CreateApiHttpHandler);
+
+builder.Services.AddHttpClient("AevumApi.Upload", client =>
+{
+    client.BaseAddress = new Uri(apiBaseUrl);
+    client.Timeout = Timeout.InfiniteTimeSpan;
+})
+.AddHttpMessageHandler<AuthHttpHandler>()
+.ConfigurePrimaryHttpMessageHandler(CreateApiHttpHandler);
 
 builder.Services.AddHttpClient("AevumApi.Anonymous", client =>
     client.BaseAddress = new Uri(apiBaseUrl))
@@ -229,6 +239,8 @@ app.MapGet("/version", (HttpContext context) =>
         timestamp = DateTime.UtcNow
     });
 });
+
+app.MapDropboxUploadBffEndpoints();
 
 app.MapRazorComponents<App>()
     .AddInteractiveServerRenderMode()

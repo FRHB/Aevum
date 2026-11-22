@@ -612,7 +612,11 @@
                                 }
                             </td>
                             <td>
-                                <span class="aev-badge @(custStatus == "Completed" || custStatus == "Complete" || custStatus == "Confirmed" ? "aev-badge--green" : "aev-badge--amber")">
+                                <span class="aev-badge inline-flex items-center gap-1.5 @(custStatus == "Completed" || custStatus == "Complete" || custStatus == "Confirmed" ? "aev-badge--green" : "aev-badge--amber")">
+                                    @if (LiveEventsOverviewPanel.IsOngoingStage(custStatus))
+                                    {
+                                        <LiveOngoingDot />
+                                    }
                                     @custStatus
                                 </span>
                             </td>

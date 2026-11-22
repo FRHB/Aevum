@@ -460,6 +460,7 @@ builder.Services.AddSingleton<PhotoAevumStudio.Application.Interfaces.IDocumentP
 builder.Services.AddScoped<PhotoAevumStudio.Application.Interfaces.IBookingDocumentService, PhotoAevumStudio.Infrastructure.Services.BookingDocumentService>();
 builder.Services.AddScoped<PhotoAevumStudio.Application.Interfaces.IDataArchiveService, PhotoAevumStudio.Infrastructure.Services.DataArchiveService>();
 builder.Services.AddScoped<PhotoAevumStudio.Application.Interfaces.ICustomerDropboxService, PhotoAevumStudio.Infrastructure.Services.CustomerDropboxService>();
+builder.Services.AddSingleton<PhotoAevumStudio.Api.Services.DropboxChunkUploadCoordinator>();
 builder.Services.AddScoped<PhotoAevumStudio.Application.Interfaces.IStudioAnalyticsService, PhotoAevumStudio.Infrastructure.Services.StudioAnalyticsService>();
 builder.Services.AddScoped<PhotoAevumStudio.Application.Interfaces.ISalesReportService, PhotoAevumStudio.Infrastructure.Services.SalesReportService>();
 builder.Services.AddHostedService<PhotoAevumStudio.Api.BackgroundServices.CustomerDropboxExpiryService>();

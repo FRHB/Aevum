@@ -106,7 +106,9 @@ public class R2StorageService : IR2StorageService
                 ForcePathStyle = true,
                 AuthenticationRegion = "auto",
                 RequestChecksumCalculation = RequestChecksumCalculation.WHEN_REQUIRED,
-                ResponseChecksumValidation = ResponseChecksumValidation.WHEN_REQUIRED
+                ResponseChecksumValidation = ResponseChecksumValidation.WHEN_REQUIRED,
+                Timeout = TimeSpan.FromMinutes(30),
+                MaxErrorRetry = 3
             };
             _s3Client = new AmazonS3Client(credentials, s3Config);
         }
@@ -147,7 +149,16 @@ public class R2StorageService : IR2StorageService
         }
     }
 
-    public async Task<string> UploadFileAsync(string bucketName, string objectKey, Stream fileStream, string contentType)
+    public Task<string> UploadFileAsync(string bucketName, string objectKey, Stream fileStream, string contentType)
+        => UploadFileAsync(bucketName, objectKey, fileStream, contentType, null, CancellationToken.None);
+
+    public async Task<string> UploadFileAsync(
+        string bucketName,
+        string objectKey,
+        Stream fileStream,
+        string contentType,
+        Action<long>? onBytesTransferred,
+        CancellationToken cancellationToken = default)
     {
         if (string.IsNullOrWhiteSpace(bucketName))
             throw new ArgumentException("Bucket name cannot be null or empty.", nameof(bucketName));
@@ -177,7 +188,12 @@ public class R2StorageService : IR2StorageService
             DisablePayloadSigning = true
         };
 
-        var response = await _s3Client.PutObjectAsync(putRequest);
+        if (onBytesTransferred != null)
+        {
+            putRequest.StreamTransferProgress += (_, args) => onBytesTransferred(args.TransferredBytes);
+        }
+
+        var response = await _s3Client.PutObjectAsync(putRequest, cancellationToken);
         if (response.HttpStatusCode == HttpStatusCode.OK)
         {
             return $"r2://{targetBucket}/{normalizedKey}";

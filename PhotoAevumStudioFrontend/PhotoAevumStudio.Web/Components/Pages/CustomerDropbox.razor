@@ -13,7 +13,7 @@
     <div>
         <h1 class="aev-page-header__title">Dropbox</h1>
         <p class="aev-page-header__subtitle">
-            Private event photo archives stored in isolated cloud folders for 30 days after event completion.
+            Private event photo archives remain in their image delivery window empty state until uploaded, then stay available for 30 days before becoming unavailable.
         </p>
     </div>
     <button type="button"
@@ -66,12 +66,28 @@ else
     <div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-5">
         @foreach (var folder in _folders)
         {
-            var isUrgent = folder.DaysRemaining <= 5;
-            <article class="aev-dropbox-folder @(folder.HasFile ? "aev-dropbox-folder--ready" : "aev-dropbox-folder--waiting")"
+            var isExpired = folder.IsEffectivelyExpired;
+            var isWaiting = folder.IsWaitingForUpload;
+            var isUrgent = folder.HasFile && folder.DaysRemaining <= 5;
+            var cardClass = isExpired
+                ? "aev-dropbox-folder--expired"
+                : (folder.HasFile ? "aev-dropbox-folder--ready" : "aev-dropbox-folder--waiting");
+            var countdownClass = isExpired
+                ? "is-expired"
+                : (isWaiting ? "is-delivery" : (isUrgent ? "is-urgent" : ""));
+            var countdownTooltip = isExpired
+                ? $"30-day retention window ended{(folder.ExpiresAt.HasValue ? $" on {folder.ExpiresAt.Value:MMM dd, yyyy HH:mm} UTC" : string.Empty)}"
+                : (isWaiting
+                    ? $"Image Delivery Window: {folder.DeliveryBusinessDays} business days after event completion"
+                    : $"Available until {(folder.ExpiresAt.HasValue ? folder.ExpiresAt.Value.ToString("MMM dd, yyyy HH:mm") : string.Empty)} UTC");
+            var iconClass = isExpired ? "is-expired" : (folder.HasFile ? "is-ready" : "is-waiting");
+
+            <article class="aev-dropbox-folder @cardClass"
+                     aria-disabled="@(isExpired ? "true" : null)"
                      @key="folder.DropboxId">
                 <div class="aev-dropbox-folder__tab">
-                    <span class="font-mono text-[11px] font-bold text-slate-700">#@folder.EventAppointmentId</span>
-                    <span class="aev-dropbox-countdown @(isUrgent ? "is-urgent" : "")" title="Auto-deletes on @folder.ExpiresAt.ToString("MMM dd, yyyy HH:mm") UTC">
+                    <span class="font-mono text-[11px] font-bold @(isExpired ? "text-slate-500" : "text-slate-700")">#@folder.EventAppointmentId</span>
+                    <span class="aev-dropbox-countdown @countdownClass" title="@countdownTooltip">
                         <span class="aev-dropbox-countdown__dot" aria-hidden="true"></span>
                         @folder.EffectiveCountdownLabel
                     </span>
@@ -79,27 +95,54 @@ else
 
                 <div class="aev-dropbox-folder__body">
                     <div class="flex items-start gap-3">
-                        <div class="aev-dropbox-folder__icon @(folder.HasFile ? "is-ready" : "is-waiting")" aria-hidden="true">
+                        <div class="aev-dropbox-folder__icon @iconClass" aria-hidden="true">
                             <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round">
                                 <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path>
                             </svg>
                         </div>
                         <div class="min-w-0 flex-1">
-                            <h2 class="text-base font-bold text-slate-900 truncate" title="@folder.EventName">@folder.EventName</h2>
+                            <h2 class="text-base font-bold @(isExpired ? "text-slate-500" : "text-slate-900") truncate" title="@folder.EventName">@folder.EventName</h2>
                             <p class="text-xs text-slate-500 mt-0.5">
-                                Event Date: <strong class="text-slate-700">@folder.EventDate.ToString("MMM dd, yyyy")</strong>
+                                Event Date: <strong class="@(isExpired ? "text-slate-500" : "text-slate-700")">@folder.EventDate.ToString("MMM dd, yyyy")</strong>
                             </p>
                         </div>
                     </div>
 
-                    @if (!folder.HasFile)
+                    @if (isExpired)
+                    {
+                        <div class="aev-dropbox-expired-box">
+                            <div class="flex items-start gap-2.5">
+                                <span class="aev-dropbox-expired-dot" aria-hidden="true"></span>
+                                <div>
+                                    <div class="text-xs font-bold text-slate-700">Dropbox Unavailable</div>
+                                    <div class="text-[11px] text-slate-500 mt-0.5">
+                                        The 30-day retention period has ended@(folder.ExpiresAt.HasValue ? $" ({folder.ExpiresAt.Value.ToLocalTime():MMM dd, yyyy})" : string.Empty). This photo archive is no longer available.
+                                    </div>
+                                </div>
+                            </div>
+                            <button type="button"
+                                    disabled
+                                    class="aev-dropbox-download-btn is-unavailable">
+                                Unavailable
+                            </button>
+                        </div>
+                    }
+                    else if (isWaiting)
                     {
                         <div class="aev-dropbox-waiting-box">
                             <span class="aev-dropbox-waiting-dot" aria-hidden="true"></span>
                             <div>
-                                <div class="text-xs font-bold text-amber-900">Waiting for uploads...</div>
+                                <div class="text-xs font-bold text-amber-900">Empty &mdash; Image Delivery Window (@folder.DeliveryBusinessDays Business Days)</div>
+                                <div class="text-[11px] font-semibold text-amber-800 mt-0.5">Waiting for uploads...</div>
                                 <div class="text-[11px] text-amber-700 mt-0.5">
-                                    Our studio team is preparing your photo archive.
+                                    @if (folder.DeliveryDaysRemaining > 0 && folder.DeliveryWindowEndsAt.HasValue)
+                                    {
+                                        <span>Our studio team is preparing your photo archive (est. by @folder.DeliveryWindowEndsAt.Value.ToLocalTime().ToString("MMM dd, yyyy")). Your 30-day retention period begins once pictures are uploaded.</span>
+                                    }
+                                    else
+                                    {
+                                        <span>Our studio team is finalizing your photo archive. Your 30-day retention period begins once pictures are uploaded.</span>
+                                    }
                                 </div>
                             </div>
                         </div>
@@ -153,14 +196,38 @@ else
                     }
 
                     <div class="pt-2 border-t border-slate-100">
-                        <div class="flex items-center justify-between text-[11px] text-slate-500 mb-1.5">
-                            <span>30-Day Retention Window</span>
-                            <span class="font-semibold @(isUrgent ? "text-rose-700" : "text-slate-700")">@folder.EffectiveCountdownLabel</span>
-                        </div>
-                        <div class="aev-dropbox-progress" role="progressbar" aria-valuenow="@folder.DaysRemaining" aria-valuemin="0" aria-valuemax="30">
-                            <div class="aev-dropbox-progress__fill @(isUrgent ? "is-urgent" : "")"
-                                 style="width: @(folder.CountdownPercent)%;"></div>
-                        </div>
+                        @if (isExpired)
+                        {
+                            <div class="flex items-center justify-between text-[11px] text-slate-400 mb-1.5">
+                                <span>30-Day Retention Window</span>
+                                <span class="font-semibold text-slate-500">Expired</span>
+                            </div>
+                            <div class="aev-dropbox-progress" role="progressbar" aria-valuenow="0" aria-valuemin="0" aria-valuemax="30">
+                                <div class="aev-dropbox-progress__fill is-expired" style="width: 0%;"></div>
+                            </div>
+                        }
+                        else if (isWaiting)
+                        {
+                            <div class="flex items-center justify-between text-[11px] text-slate-500 mb-1.5">
+                                <span>Image Delivery Window (@folder.DeliveryBusinessDays Business Days)</span>
+                                <span class="font-semibold text-amber-700">@folder.EffectiveCountdownLabel</span>
+                            </div>
+                            <div class="aev-dropbox-progress" role="progressbar" aria-valuenow="@folder.DeliveryDaysRemaining" aria-valuemin="0" aria-valuemax="@Math.Max(1, folder.DeliveryBusinessDays)">
+                                <div class="aev-dropbox-progress__fill is-delivery"
+                                     style="width: @(folder.DeliveryWindowPercent)%;"></div>
+                            </div>
+                        }
+                        else
+                        {
+                            <div class="flex items-center justify-between text-[11px] text-slate-500 mb-1.5">
+                                <span>30-Day Retention Window</span>
+                                <span class="font-semibold @(isUrgent ? "text-rose-700" : "text-slate-700")">@folder.EffectiveCountdownLabel</span>
+                            </div>
+                            <div class="aev-dropbox-progress" role="progressbar" aria-valuenow="@folder.DaysRemaining" aria-valuemin="0" aria-valuemax="30">
+                                <div class="aev-dropbox-progress__fill @(isUrgent ? "is-urgent" : "")"
+                                     style="width: @(folder.CountdownPercent)%;"></div>
+                            </div>
+                        }
                     </div>
                 </div>
             </article>
@@ -208,7 +275,7 @@ else
 
     private async Task DownloadZipAsync(CustomerDropboxFolderItem folder)
     {
-        if (_downloadingDropboxId != null) return;
+        if (folder.IsEffectivelyExpired || _downloadingDropboxId != null) return;
         _downloadingDropboxId = folder.DropboxId;
         _errorMessage = null;
         _statusMessage = null;

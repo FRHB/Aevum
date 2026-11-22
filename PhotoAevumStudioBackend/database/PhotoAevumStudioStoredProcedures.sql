@@ -2856,29 +2856,26 @@ BEGIN
     DECLARE @Missing TABLE (
         EventAppointmentID nvarchar(30),
         CustomerID nvarchar(30),
-        CompletedAt datetime2,
-        ExpiresAt datetime2
+        CompletedAt datetime2
     );
 
-    INSERT INTO @Missing (EventAppointmentID, CustomerID, CompletedAt, ExpiresAt)
+    INSERT INTO @Missing (EventAppointmentID, CustomerID, CompletedAt)
     SELECT ea.EventAppointmentID,
            ea.CustomerID,
-           COALESCE(ea.FinalPaymentPaidAt, CAST(ea.EventDate AS datetime2)),
-           DATEADD(day, 30, COALESCE(ea.FinalPaymentPaidAt, CAST(ea.EventDate AS datetime2)))
+           COALESCE(ea.FinalPaymentPaidAt, CAST(ea.EventDate AS datetime2))
     FROM dbo.EventAppointment ea
     WHERE (@CustomerID IS NULL OR LTRIM(RTRIM(@CustomerID)) = '' OR ea.CustomerID = @CustomerID)
       AND ea.EventStatus IN ('Shot', 'Editing', 'Delivered', 'Complete', 'Completed')
-      AND DATEADD(day, 30, COALESCE(ea.FinalPaymentPaidAt, CAST(ea.EventDate AS datetime2))) > SYSUTCDATETIME()
       AND NOT EXISTS (
           SELECT 1 FROM dbo.CustomerDropbox cd WHERE cd.EventAppointmentID = ea.EventAppointmentID
       );
 
-    DECLARE @EvtId nvarchar(30), @CustId nvarchar(30), @CompletedAt datetime2, @ExpiresAt datetime2, @NewId nvarchar(30);
+    DECLARE @EvtId nvarchar(30), @CustId nvarchar(30), @CompletedAt datetime2, @NewId nvarchar(30);
     DECLARE cur CURSOR LOCAL FAST_FORWARD FOR
-        SELECT EventAppointmentID, CustomerID, CompletedAt, ExpiresAt FROM @Missing;
+        SELECT EventAppointmentID, CustomerID, CompletedAt FROM @Missing;
 
     OPEN cur;
-    FETCH NEXT FROM cur INTO @EvtId, @CustId, @CompletedAt, @ExpiresAt;
+    FETCH NEXT FROM cur INTO @EvtId, @CustId, @CompletedAt;
     WHILE @@FETCH_STATUS = 0
     BEGIN
         EXEC dbo.sp_GetNextDropboxID @NextID = @NewId OUTPUT;
@@ -2888,9 +2885,9 @@ BEGIN
         )
         VALUES (
             @NewId, @EvtId, @CustId, 'dropbox', 'Waiting',
-            @CompletedAt, @ExpiresAt, SYSUTCDATETIME()
+            @CompletedAt, NULL, SYSUTCDATETIME()
         );
-        FETCH NEXT FROM cur INTO @EvtId, @CustId, @CompletedAt, @ExpiresAt;
+        FETCH NEXT FROM cur INTO @EvtId, @CustId, @CompletedAt;
     END;
     CLOSE cur;
     DEALLOCATE cur;

@@ -3,6 +3,7 @@ using Amazon.S3;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Data.SqlClient;
+using PhotoAevumStudio.Api.Services;
 using PhotoAevumStudio.Application;
 using PhotoAevumStudio.Application.Auth;
 using PhotoAevumStudio.Application.Interfaces;
@@ -17,13 +18,16 @@ public class CustomerDropboxController : ControllerBase
 {
     private readonly ICustomerDropboxService _dropboxService;
     private readonly ILogger<CustomerDropboxController> _logger;
+    private readonly DropboxChunkUploadCoordinator? _chunkCoordinator;
 
     public CustomerDropboxController(
         ICustomerDropboxService dropboxService,
-        ILogger<CustomerDropboxController> logger)
+        ILogger<CustomerDropboxController> logger,
+        DropboxChunkUploadCoordinator? chunkCoordinator = null)
     {
         _dropboxService = dropboxService;
         _logger = logger;
+        _chunkCoordinator = chunkCoordinator;
     }
 
     private string ResolveCustomerId() =>
@@ -224,6 +228,164 @@ public class CustomerDropboxController : ControllerBase
                 Detail = "Failed to save uploaded ZIP archive metadata.",
                 Status = 500
             });
+        }
+    }
+
+    // POST api/dropbox/admin/{eventAppointmentId}/upload/init
+    [HttpPost("admin/{eventAppointmentId}/upload/init")]
+    [Authorize(Policy = "ClerkOrAdmin")]
+    public async Task<IActionResult> InitChunkedUpload(
+        string eventAppointmentId,
+        [FromBody] DropboxUploadInitRequest request,
+        CancellationToken cancellationToken)
+    {
+        if (_chunkCoordinator == null)
+            return StatusCode(StatusCodes.Status503ServiceUnavailable, new ProblemDetails { Title = "Chunk upload unavailable", Status = 503 });
+
+        try
+        {
+            await _dropboxService.ValidateUploadTargetAsync(eventAppointmentId, cancellationToken);
+            var staffId = ResolveStaffId();
+            var session = _chunkCoordinator.CreateSession(
+                eventAppointmentId,
+                staffId,
+                request.FileName,
+                request.FileSizeBytes,
+                request.ContentType);
+
+            return Ok(session);
+        }
+        catch (KeyNotFoundException ex)
+        {
+            return NotFound(new ProblemDetails { Title = "Event container not found", Detail = ex.Message, Status = 404 });
+        }
+        catch (InvalidOperationException ex)
+        {
+            return BadRequest(new ProblemDetails { Title = "Upload rejected", Detail = ex.Message, Status = 400 });
+        }
+        catch (ArgumentException ex)
+        {
+            return BadRequest(new ProblemDetails { Title = "Invalid request", Detail = ex.Message, Status = 400 });
+        }
+    }
+
+    // POST api/dropbox/admin/{eventAppointmentId}/upload/chunk
+    [HttpPost("admin/{eventAppointmentId}/upload/chunk")]
+    [Authorize(Policy = "ClerkOrAdmin")]
+    [RequestSizeLimit(16_777_216)] // 16 MB per chunk
+    [RequestFormLimits(MultipartBodyLengthLimit = 16_777_216)]
+    public async Task<IActionResult> UploadChunk(
+        string eventAppointmentId,
+        [FromQuery] string sessionId,
+        [FromQuery] int chunkIndex,
+        IFormFile? chunk,
+        CancellationToken cancellationToken)
+    {
+        if (_chunkCoordinator == null)
+            return StatusCode(StatusCodes.Status503ServiceUnavailable, new ProblemDetails { Title = "Chunk upload unavailable", Status = 503 });
+
+        if (chunk == null || chunk.Length <= 0)
+            return BadRequest(new ProblemDetails { Title = "Empty chunk", Detail = "Chunk payload is required.", Status = 400 });
+
+        try
+        {
+            var staffId = ResolveStaffId();
+            await using var stream = chunk.OpenReadStream();
+            var res = await _chunkCoordinator.AppendChunkAsync(
+                sessionId,
+                eventAppointmentId,
+                staffId,
+                chunkIndex,
+                stream,
+                chunk.Length,
+                cancellationToken);
+            return Ok(res);
+        }
+        catch (KeyNotFoundException ex)
+        {
+            return NotFound(new ProblemDetails { Title = "Upload session not found", Detail = ex.Message, Status = 404 });
+        }
+        catch (UnauthorizedAccessException ex)
+        {
+            return StatusCode(StatusCodes.Status403Forbidden, new ProblemDetails { Title = "Access Denied", Detail = ex.Message, Status = 403 });
+        }
+        catch (InvalidOperationException ex)
+        {
+            return BadRequest(new ProblemDetails { Title = "Chunk rejected", Detail = ex.Message, Status = 400 });
+        }
+    }
+
+    // POST api/dropbox/admin/{eventAppointmentId}/upload/complete
+    [HttpPost("admin/{eventAppointmentId}/upload/complete")]
+    [Authorize(Policy = "ClerkOrAdmin")]
+    public IActionResult CompleteChunkedUpload(
+        string eventAppointmentId,
+        [FromQuery] string sessionId)
+    {
+        if (_chunkCoordinator == null)
+            return StatusCode(StatusCodes.Status503ServiceUnavailable, new ProblemDetails { Title = "Chunk upload unavailable", Status = 503 });
+
+        try
+        {
+            var staffId = ResolveStaffId();
+            var status = _chunkCoordinator.StartFinalize(sessionId, eventAppointmentId, staffId);
+            return Accepted(status);
+        }
+        catch (KeyNotFoundException ex)
+        {
+            return NotFound(new ProblemDetails { Title = "Upload session not found", Detail = ex.Message, Status = 404 });
+        }
+        catch (UnauthorizedAccessException ex)
+        {
+            return StatusCode(StatusCodes.Status403Forbidden, new ProblemDetails { Title = "Access Denied", Detail = ex.Message, Status = 403 });
+        }
+        catch (InvalidOperationException ex)
+        {
+            return BadRequest(new ProblemDetails { Title = "Finalize rejected", Detail = ex.Message, Status = 400 });
+        }
+    }
+
+    // GET api/dropbox/admin/upload/status/{sessionId}
+    [HttpGet("admin/upload/status/{sessionId}")]
+    [Authorize(Policy = "ClerkOrAdmin")]
+    public IActionResult GetChunkedUploadStatus(string sessionId)
+    {
+        if (_chunkCoordinator == null)
+            return StatusCode(StatusCodes.Status503ServiceUnavailable, new ProblemDetails { Title = "Chunk upload unavailable", Status = 503 });
+
+        try
+        {
+            var staffId = ResolveStaffId();
+            var status = _chunkCoordinator.GetStatus(sessionId, staffId);
+            return Ok(status);
+        }
+        catch (KeyNotFoundException ex)
+        {
+            return NotFound(new ProblemDetails { Title = "Upload session not found", Detail = ex.Message, Status = 404 });
+        }
+        catch (UnauthorizedAccessException ex)
+        {
+            return StatusCode(StatusCodes.Status403Forbidden, new ProblemDetails { Title = "Access Denied", Detail = ex.Message, Status = 403 });
+        }
+    }
+
+    // DELETE api/dropbox/admin/upload/{sessionId}
+    [HttpDelete("admin/upload/{sessionId}")]
+    [Authorize(Policy = "ClerkOrAdmin")]
+    public IActionResult AbortChunkedUpload(string sessionId)
+    {
+        if (_chunkCoordinator == null)
+            return NoContent();
+
+        try
+        {
+            var staffId = ResolveStaffId();
+            _chunkCoordinator.AbortSession(sessionId, staffId);
+            return NoContent();
+        }
+        catch (UnauthorizedAccessException ex)
+        {
+            return StatusCode(StatusCodes.Status403Forbidden, new ProblemDetails { Title = "Access Denied", Detail = ex.Message, Status = 403 });
         }
     }
 

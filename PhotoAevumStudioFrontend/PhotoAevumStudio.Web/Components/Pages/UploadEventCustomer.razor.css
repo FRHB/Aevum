@@ -29,6 +29,27 @@
     border-color: #99f6e4;
 }
 
+.aev-event-pillbox.is-expired {
+    background: #f1f5f9;
+    border-color: #cbd5e1;
+    filter: grayscale(100%);
+    opacity: 0.75;
+    cursor: not-allowed;
+    box-shadow: none;
+}
+
+.aev-event-pillbox.is-expired:hover {
+    transform: none;
+    border-color: #cbd5e1;
+    background: #f1f5f9;
+    box-shadow: none;
+}
+
+.aev-event-pillbox.is-uploading {
+    border-color: #14b8a6;
+    background: #f0fdfa;
+}
+
 .aev-event-pillbox__left {
     display: flex;
     align-items: center;
@@ -70,6 +91,12 @@
     border: 1px solid #fcd34d;
 }
 
+.aev-pill-badge--uploading {
+    background: #ccfbf1;
+    color: #0f766e;
+    border: 1px solid #5eead4;
+}
+
 .aev-pill-badge--uploaded {
     background: #ccfbf1;
     color: #115e59;
@@ -82,11 +109,34 @@
     border: 1px solid #cbd5e1;
 }
 
+.aev-pill-badge--expired {
+    background: #e2e8f0;
+    color: #475569;
+    border: 1px solid #cbd5e1;
+}
+
 .aev-pill-action {
     font-size: 0.75rem;
     font-weight: 700;
     color: #0f766e;
     padding-left: 0.35rem;
+}
+
+.aev-pill-action.is-unavailable {
+    color: #64748b;
+}
+
+.aev-pill-upload-circle {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.45rem;
+    padding-left: 0.35rem;
+}
+
+.aev-pill-upload-circle__label {
+    font-size: 0.72rem;
+    font-weight: 700;
+    color: #0f766e;
 }
 
 .aev-zip-dropzone {
@@ -104,6 +154,122 @@
 .aev-zip-dropzone:hover {
     border-color: #0f766e;
     background: #f0fdfa;
+}
+
+.aev-zip-dropzone.is-disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+    pointer-events: none;
+}
+
+.aev-upload-progress-card {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+    padding: 0.95rem 1.05rem;
+    border-radius: 0.9rem;
+    background: #f8fafc;
+    border: 1px solid #e2e8f0;
+}
+
+.aev-upload-progress,
+.aev-circle-progress {
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+}
+
+.aev-circle-progress--sm {
+    width: 2.25rem;
+    height: 2.25rem;
+}
+
+.aev-circle-progress--lg {
+    width: 5.25rem;
+    height: 5.25rem;
+}
+
+.aev-circle-progress__svg {
+    width: 100%;
+    height: 100%;
+    transform: rotate(-90deg);
+}
+
+.aev-circle-progress__track {
+    fill: none;
+    stroke: #e2e8f0;
+    stroke-width: 3.4;
+}
+
+.aev-circle-progress--lg .aev-circle-progress__track {
+    stroke-width: 7;
+}
+
+.aev-upload-progress__fill,
+.aev-circle-progress__fill {
+    fill: none;
+    stroke: #0d9488;
+    stroke-width: 3.4;
+    stroke-linecap: round;
+    transition: stroke-dashoffset 0.2s ease;
+}
+
+.aev-circle-progress--lg .aev-circle-progress__fill {
+    stroke-width: 7;
+}
+
+.aev-upload-progress__fill.is-finalizing,
+.aev-circle-progress__fill.is-finalizing {
+    stroke: #10b981;
+    animation: aev-upload-pulse 1.2s ease-in-out infinite;
+}
+
+.aev-circle-progress__center {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    line-height: 1.05;
+}
+
+.aev-circle-progress__percent {
+    font-size: 1rem;
+    font-weight: 800;
+    color: #0f172a;
+    font-variant-numeric: tabular-nums;
+}
+
+.aev-circle-progress__sub {
+    font-size: 0.62rem;
+    font-weight: 700;
+    letter-spacing: 0.04em;
+    color: #0f766e;
+    text-transform: uppercase;
+}
+
+.aev-circle-progress__sm-text {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 0.56rem;
+    font-weight: 800;
+    color: #0f172a;
+    font-variant-numeric: tabular-nums;
+}
+
+@keyframes aev-upload-pulse {
+    0%, 100% {
+        opacity: 1;
+    }
+    50% {
+        opacity: 0.6;
+    }
 }
 
 @media (max-width: 640px) {

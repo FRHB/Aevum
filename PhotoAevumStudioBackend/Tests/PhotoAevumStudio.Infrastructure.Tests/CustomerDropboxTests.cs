@@ -49,6 +49,92 @@ public class CustomerDropboxTests
         var expired = now.AddMinutes(-5);
         Assert.Equal(0, DropboxCountdownHelper.ComputeDaysRemaining(expired, now));
         Assert.Equal("0 Days Left", DropboxCountdownHelper.FormatCountdownLabel(expired, now));
+
+        // Waiting for upload (no ExpiresAt yet)
+        Assert.Equal(0, DropboxCountdownHelper.ComputeDaysRemaining(null, now));
+        Assert.Equal("Awaiting Upload", DropboxCountdownHelper.FormatCountdownLabel(null, now));
+    }
+
+    [Fact]
+    public void CountdownHelper_ComputesImageDeliveryWindowBusinessDays()
+    {
+        // Monday Nov 16, 2026 10:00 UTC + 7 business days -> Wednesday Nov 25, 2026 10:00 UTC (skips Sat/Sun)
+        var start = new DateTime(2026, 11, 16, 10, 0, 0, DateTimeKind.Utc);
+        var expectedEnd = new DateTime(2026, 11, 25, 10, 0, 0, DateTimeKind.Utc);
+
+        Assert.Equal(expectedEnd, DropboxCountdownHelper.AddBusinessDays(start, 7));
+        Assert.Equal(7, DropboxCountdownHelper.ComputeBusinessDaysRemaining(start, 7, start.AddMinutes(5)));
+        Assert.Equal("7 Business Days Left", DropboxCountdownHelper.FormatDeliveryWindowLabel(start, 7, start.AddMinutes(5)));
+
+        // After 1 business day (Tuesday 10:05 UTC) -> 6 business days left
+        Assert.Equal(6, DropboxCountdownHelper.ComputeBusinessDaysRemaining(start, 7, start.AddDays(1).AddMinutes(5)));
+
+        // On final business day (Tuesday Nov 24, 10:05 UTC) -> 1 business day left
+        var finalDay = new DateTime(2026, 11, 24, 10, 5, 0, DateTimeKind.Utc);
+        Assert.Equal(1, DropboxCountdownHelper.ComputeBusinessDaysRemaining(start, 7, finalDay));
+        Assert.Equal("1 Business Day Left", DropboxCountdownHelper.FormatDeliveryWindowLabel(start, 7, finalDay));
+
+        // Past delivery window -> 0 business days left
+        Assert.Equal(0, DropboxCountdownHelper.ComputeBusinessDaysRemaining(start, 7, expectedEnd.AddMinutes(1)));
+        Assert.Equal("0 Business Days Left", DropboxCountdownHelper.FormatDeliveryWindowLabel(start, 7, expectedEnd.AddMinutes(1)));
+    }
+
+    [Fact]
+    public void ApplyDeliveryWindowMetrics_HandlesWaiting_Uploaded_AndExpiredLifecycle()
+    {
+        var completedAt = new DateTime(2026, 11, 2, 12, 0, 0, DateTimeKind.Utc);
+
+        // 1. Waiting (Image Delivery Window empty state, even if >30 calendar days could pass without upload)
+        var waitingDto = new CustomerDropboxFolderDto
+        {
+            DropboxStatus = DropboxStatuses.Waiting,
+            EventCompletedAt = completedAt,
+            ExpiresAt = DateTime.UtcNow.AddDays(5) // legacy value should be cleared
+        };
+        CustomerDropboxService.ApplyDeliveryWindowMetrics(waitingDto, 10, completedAt.AddMinutes(10));
+        Assert.Null(waitingDto.ExpiresAt);
+        Assert.True(waitingDto.IsWaitingForUpload);
+        Assert.False(waitingDto.HasFile);
+        Assert.False(waitingDto.IsExpired);
+        Assert.Equal(10, waitingDto.DeliveryBusinessDays);
+        Assert.Equal(10, waitingDto.DeliveryDaysRemaining);
+        Assert.Equal("10 Business Days Left", waitingDto.CountdownLabel);
+
+        // 2. Uploaded -> 30-day retention window starts from upload
+        var uploadedAt = completedAt.AddDays(4);
+        var uploadedDto = new CustomerDropboxFolderDto
+        {
+            DropboxStatus = DropboxStatuses.Uploaded,
+            OriginalFileName = "photos.zip",
+            EventCompletedAt = completedAt,
+            UploadedAt = uploadedAt,
+            ExpiresAt = uploadedAt.AddDays(30)
+        };
+        CustomerDropboxService.ApplyDeliveryWindowMetrics(uploadedDto, 10, uploadedAt.AddMinutes(5));
+        Assert.False(uploadedDto.IsWaitingForUpload);
+        Assert.True(uploadedDto.HasFile);
+        Assert.False(uploadedDto.IsExpired);
+        Assert.Equal(29, uploadedDto.DaysRemaining);
+        Assert.Equal("29 Days Left", uploadedDto.CountdownLabel);
+
+        // 3. Expired after 30 days from upload -> grey & unavailable
+        var expiredDto = new CustomerDropboxFolderDto
+        {
+            DropboxStatus = DropboxStatuses.Expired,
+            OriginalFileName = "photos.zip",
+            EventCompletedAt = completedAt,
+            UploadedAt = uploadedAt,
+            ExpiresAt = uploadedAt.AddDays(30),
+            IsExpired = true
+        };
+        CustomerDropboxService.ApplyDeliveryWindowMetrics(expiredDto, 10, uploadedAt.AddDays(31));
+        Assert.True(expiredDto.IsExpired);
+        Assert.False(expiredDto.HasFile);
+        Assert.False(expiredDto.IsWaitingForUpload);
+        Assert.Equal(0, expiredDto.DaysRemaining);
+        Assert.Equal("Unavailable", expiredDto.CountdownLabel);
+        Assert.True(CustomerDropboxService.IsDropboxExpired(DropboxStatuses.Uploaded, uploadedAt.AddDays(30), uploadedAt.AddDays(30).AddSeconds(1)));
+        Assert.False(CustomerDropboxService.IsDropboxExpired(DropboxStatuses.Waiting, null, uploadedAt.AddDays(100)));
     }
 
     [Fact]
@@ -172,6 +258,9 @@ public class CustomerDropboxTests
         Assert.Contains("'IMAGE_UPLOAD'", source);
         Assert.Contains("'DELETE'", source);
         Assert.Contains("ChangedByEmployeeID, ChangedByAdminID", source);
+        Assert.Contains("ExpiresAt = DATEADD(day, 30, SYSUTCDATETIME())", source);
+        Assert.Contains("SET DropboxStatus = 'Expired'", source);
+        Assert.DoesNotContain("DELETE FROM dbo.CustomerDropbox", source);
     }
 
     [Fact]

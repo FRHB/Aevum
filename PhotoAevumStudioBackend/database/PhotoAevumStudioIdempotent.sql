@@ -879,11 +879,32 @@ BEGIN
         EventCompletedAt datetime2 NOT NULL CONSTRAINT DF_CustomerDropbox_CompletedAt DEFAULT SYSUTCDATETIME(),
         UploadedAt datetime2 NULL,
         UploadedByEmployeeID nvarchar(30) NULL,
-        ExpiresAt datetime2 NOT NULL,
+        ExpiresAt datetime2 NULL,
         CreatedAt datetime2 NOT NULL CONSTRAINT DF_CustomerDropbox_CreatedAt DEFAULT SYSUTCDATETIME(),
         CONSTRAINT UQ_CustomerDropbox_Event UNIQUE (EventAppointmentID),
         CONSTRAINT CK_CustomerDropbox_Status CHECK (DropboxStatus IN ('Waiting', 'Uploaded', 'Expired'))
     );
+END;
+
+IF OBJECT_ID(N'dbo.CustomerDropbox', N'U') IS NOT NULL
+BEGIN
+    IF COL_LENGTH(N'dbo.CustomerDropbox', N'ExpiresAt') IS NOT NULL
+       AND COLUMNPROPERTY(OBJECT_ID(N'dbo.CustomerDropbox'), N'ExpiresAt', N'AllowsNull') = 0
+    BEGIN
+        ALTER TABLE dbo.CustomerDropbox ALTER COLUMN ExpiresAt datetime2 NULL;
+    END;
+
+    UPDATE dbo.CustomerDropbox
+    SET ExpiresAt = NULL
+    WHERE DropboxStatus = 'Waiting'
+      AND UploadedAt IS NULL
+      AND ExpiresAt IS NOT NULL;
+
+    UPDATE dbo.CustomerDropbox
+    SET ExpiresAt = DATEADD(day, 30, UploadedAt)
+    WHERE DropboxStatus = 'Uploaded'
+      AND UploadedAt IS NOT NULL
+      AND (ExpiresAt IS NULL OR ExpiresAt < DATEADD(day, 30, UploadedAt));
 END;
 GO
 

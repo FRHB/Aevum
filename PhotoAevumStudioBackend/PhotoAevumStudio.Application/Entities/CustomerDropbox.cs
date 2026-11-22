@@ -14,6 +14,6 @@ public class CustomerDropbox
     public DateTime EventCompletedAt { get; set; } = DateTime.UtcNow;
     public DateTime? UploadedAt { get; set; }
     public string? UploadedByEmployeeId { get; set; }
-    public DateTime ExpiresAt { get; set; } = DateTime.UtcNow.AddDays(30);
+    public DateTime? ExpiresAt { get; set; }
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
 }

@@ -10,6 +10,8 @@ public sealed class CustomerDropboxClient(
     ILogger<CustomerDropboxClient> logger) : ICustomerDropboxClient
 {
     private readonly HttpClient _http = httpClientFactory.CreateClient("AevumApi.Authorized");
+    private readonly HttpClient _uploadHttp = httpClientFactory.CreateClient("AevumApi.Upload")
+        ?? httpClientFactory.CreateClient("AevumApi.Authorized");
 
     public async Task<ApiResult<IReadOnlyList<CustomerDropboxFolderItem>>> GetMyDropboxesAsync(CancellationToken ct = default)
     {
@@ -85,10 +87,13 @@ public sealed class CustomerDropboxClient(
                 : new MediaTypeHeaderValue("application/zip");
             form.Add(fileContent, "file", string.IsNullOrWhiteSpace(fileName) ? "event-photos.zip" : fileName);
 
-            using var resp = await _http.PostAsync(
+            using var uploadTimeoutCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+            uploadTimeoutCts.CancelAfter(TimeSpan.FromMinutes(30));
+
+            using var resp = await _uploadHttp.PostAsync(
                 $"api/dropbox/admin/{Uri.EscapeDataString(eventAppointmentId)}/upload",
                 form,
-                ct);
+                uploadTimeoutCts.Token);
 
             if (!resp.IsSuccessStatusCode)
                 return await ReadErrorAsync<CustomerDropboxFolderItem>(resp, ct);

@@ -215,4 +215,46 @@ public class LiveMonitorCalendarAndCustomerActionsTests
         var ctors = typeof(PaymentsController).GetConstructors();
         Assert.Contains(ctors, c => c.GetParameters().Length == 8);
     }
+
+    [Fact]
+    public async Task LiveOngoingDot_RendersRedPulsingIndicator_AndIsWiredForOngoingEvents()
+    {
+        Assert.True(LiveEventsOverviewPanel.IsOngoingStage("Ongoing"));
+        Assert.True(LiveEventsOverviewPanel.IsOngoingStage(" On Going "));
+        Assert.True(LiveEventsOverviewPanel.IsOngoingStage("In Execution"));
+        Assert.False(LiveEventsOverviewPanel.IsOngoingStage("Preparing"));
+        Assert.False(LiveEventsOverviewPanel.IsOngoingStage("Ready"));
+        Assert.False(LiveEventsOverviewPanel.IsOngoingStage("Completed"));
+        Assert.False(LiveEventsOverviewPanel.IsOngoingStage(null));
+
+        var services = new ServiceCollection().BuildServiceProvider();
+        await using var htmlRenderer = new HtmlRenderer(services, NullLoggerFactory.Instance);
+
+        var dotHtml = await htmlRenderer.Dispatcher.InvokeAsync(async () =>
+        {
+            var output = await htmlRenderer.RenderComponentAsync<LiveOngoingDot>();
+            return output.ToHtmlString();
+        });
+
+        Assert.Contains("bg-red-500", dotHtml);
+        Assert.Contains("bg-red-400", dotHtml);
+        Assert.Contains("animate-ping", dotHtml);
+        Assert.Contains("Live: Event is ongoing", dotHtml);
+
+        var root = GetRepositoryRoot();
+        var webRoot = Path.Combine(root, "PhotoAevumStudioFrontend", "PhotoAevumStudio.Web");
+        foreach (var relPath in new[]
+        {
+            Path.Combine("Components", "Shared", "LiveEventsOverviewPanel.razor"),
+            Path.Combine("Components", "Shared", "TeamLeaderActiveEventPill.razor"),
+            Path.Combine("Components", "Pages", "TeamLeadMonitor.razor"),
+            Path.Combine("Components", "Pages", "AdminDashboard.razor"),
+            Path.Combine("Components", "Pages", "CustomerDashboard.razor"),
+            Path.Combine("Components", "Pages", "MyBookings.razor")
+        })
+        {
+            var content = File.ReadAllText(Path.Combine(webRoot, relPath));
+            Assert.Contains("<LiveOngoingDot", content);
+        }
+    }
 }

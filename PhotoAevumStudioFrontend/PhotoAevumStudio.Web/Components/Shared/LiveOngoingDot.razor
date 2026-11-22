@@ -1,0 +1,8 @@
+<span class="relative inline-flex h-2 w-2 shrink-0" title="@Title" aria-hidden="true">
+    <span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75"></span>
+    <span class="relative inline-flex rounded-full h-2 w-2 bg-red-500"></span>
+</span>
+
+@code {
+    [Parameter] public string Title { get; set; } = "Live: Event is ongoing";
+}

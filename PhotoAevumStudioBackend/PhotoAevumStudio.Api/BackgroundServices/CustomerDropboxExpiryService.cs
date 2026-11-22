@@ -3,8 +3,8 @@ using PhotoAevumStudio.Application.Interfaces;
 namespace PhotoAevumStudio.Api.BackgroundServices;
 
 /// <summary>
-/// Periodically sweeps expired Customer Dropbox records (30 days after event completion),
-/// deletes the corresponding ZIP archives from Cloudflare R2, and removes their database rows.
+/// Periodically sweeps expired Customer Dropbox records (30 days after ZIP upload),
+/// deletes the corresponding ZIP archives from Cloudflare R2, and marks their database records Expired/Unavailable.
 /// </summary>
 public class CustomerDropboxExpiryService : BackgroundService
 {

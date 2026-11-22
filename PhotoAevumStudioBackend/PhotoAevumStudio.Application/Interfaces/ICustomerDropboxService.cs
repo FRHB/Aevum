@@ -19,6 +19,20 @@ public interface ICustomerDropboxService
         string uploadedByEmployeeId,
         CancellationToken ct = default);
 
+    Task<CustomerDropboxFolderDto> UploadZipAsync(
+        string eventAppointmentId,
+        Stream zipStream,
+        string originalFileName,
+        long fileSizeBytes,
+        string? contentType,
+        string uploadedByEmployeeId,
+        Action<long>? onR2BytesTransferred,
+        CancellationToken ct = default)
+        => UploadZipAsync(eventAppointmentId, zipStream, originalFileName, fileSizeBytes, contentType, uploadedByEmployeeId, ct);
+
+    Task ValidateUploadTargetAsync(string eventAppointmentId, CancellationToken ct = default)
+        => Task.CompletedTask;
+
     Task<(string FileName, string ContentType, Stream FileStream, string PresignedUrl)> GetCustomerDownloadAsync(
         string dropboxId,
         string callerCustomerId,

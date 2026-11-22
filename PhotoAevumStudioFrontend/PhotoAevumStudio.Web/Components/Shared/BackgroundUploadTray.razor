@@ -1,0 +1,217 @@
+@using System.Globalization
+@using PhotoAevumStudio.Web.Services
+@inject DropboxBackgroundUploadService UploadService
+@inject IJSRuntime JS
+@inject NavigationManager Nav
+@implements IDisposable
+
+@if (UploadService.Jobs.Count > 0)
+{
+    <aside class="aev-bg-upload-tray" aria-label="Background ZIP uploads">
+        <div class="aev-bg-upload-tray__header">
+            <div class="aev-bg-upload-tray__title">
+                @if (UploadService.HasActiveUploads)
+                {
+                    <span class="aev-bg-upload-tray__dot" aria-hidden="true"></span>
+                    <span>Uploading in Background (@UploadService.Jobs.Count(j => j.IsActive))</span>
+                }
+                else
+                {
+                    <span>Background Uploads (@UploadService.Jobs.Count)</span>
+                }
+            </div>
+            <button type="button"
+                    class="aev-bg-upload-tray__toggle"
+                    @onclick="() => _collapsed = !_collapsed"
+                    aria-label="@(_collapsed ? "Expand upload tray" : "Minimize upload tray")">
+                @(_collapsed ? "▲" : "▼")
+            </button>
+        </div>
+
+        @if (!_collapsed)
+        {
+            <div class="aev-bg-upload-tray__list">
+                @foreach (var job in UploadService.Jobs)
+                {
+                    var dashOffset = Circumference * (1.0 - Math.Clamp(job.Percent, 0, 100) / 100.0);
+                    <div class="aev-bg-upload-item @StatusCssClass(job.Status)">
+                        <div class="aev-bg-upload-item__circle"
+                             role="progressbar"
+                             aria-label="Upload progress for #@job.EventAppointmentId"
+                             aria-valuenow="@job.Percent"
+                             aria-valuemin="0"
+                             aria-valuemax="100">
+                            <svg viewBox="0 0 36 36" aria-hidden="true">
+                                <circle class="aev-bg-upload-item__track" cx="18" cy="18" r="15" />
+                                <circle class="aev-bg-upload-item__fill @(job.IsFinalizing ? "is-finalizing" : string.Empty)"
+                                        cx="18" cy="18" r="15"
+                                        stroke-dasharray="@CircumferenceStr"
+                                        stroke-dashoffset="@dashOffset.ToString("0.##", CultureInfo.InvariantCulture)" />
+                            </svg>
+                            <span class="aev-bg-upload-item__pct">
+                                @(job.Status == DropboxUploadJobStatus.Completed ? "✓"
+                                    : job.Status == DropboxUploadJobStatus.Failed ? "!"
+                                    : $"{job.Percent}%")
+                            </span>
+                        </div>
+
+                        <div class="aev-bg-upload-item__meta">
+                            <div class="aev-bg-upload-item__top">
+                                <span class="aev-bg-upload-item__evt">#@job.EventAppointmentId</span>
+                                <span class="aev-bg-upload-item__file" title="@job.FileName">@job.FileName</span>
+                            </div>
+                            <div class="aev-bg-upload-item__status">
+                                @switch (job.Status)
+                                {
+                                    case DropboxUploadJobStatus.Uploading:
+                                        <span>@FormatBytes(job.BytesSent) / @FormatBytes(job.TotalBytes) &bull; Uploading...</span>
+                                        break;
+                                    case DropboxUploadJobStatus.Finalizing:
+                                        <span>Finalizing upload in Cloudflare R2...</span>
+                                        break;
+                                    case DropboxUploadJobStatus.Completed:
+                                        <span class="text-emerald-700 font-semibold">Uploaded to R2</span>
+                                        break;
+                                    case DropboxUploadJobStatus.Failed:
+                                        <span class="text-rose-700 font-semibold" title="@job.ErrorMessage">@job.ErrorMessage</span>
+                                        break;
+                                    case DropboxUploadJobStatus.Canceled:
+                                        <span class="text-slate-500">Canceled</span>
+                                        break;
+                                }
+                            </div>
+                        </div>
+
+                        <div class="aev-bg-upload-item__actions">
+                            @if (job.IsActive)
+                            {
+                                <button type="button"
+                                        class="aev-bg-upload-item__btn"
+                                        title="Cancel upload"
+                                        @onclick="() => CancelAsync(job.JobId)">
+                                    ✕
+                                </button>
+                            }
+                            else
+                            {
+                                @if (!IsOnUploadPage)
+                                {
+                                    <button type="button"
+                                            class="aev-bg-upload-item__link"
+                                            @onclick="GoToUploadPage">
+                                        View
+                                    </button>
+                                }
+                                <button type="button"
+                                        class="aev-bg-upload-item__btn"
+                                        title="Dismiss"
+                                        @onclick="() => UploadService.DismissJob(job.JobId)">
+                                    ✕
+                                </button>
+                            }
+                        </div>
+                    </div>
+                }
+            </div>
+        }
+    </aside>
+}
+
+@code {
+    private const double Radius = 15.0;
+    private static readonly double Circumference = 2.0 * Math.PI * Radius;
+    private static readonly string CircumferenceStr = Circumference.ToString("0.##", CultureInfo.InvariantCulture);
+
+    private DotNetObjectReference<BackgroundUploadTray>? _dotNetRef;
+    private bool _collapsed;
+    private bool _disposed;
+
+    private bool IsOnUploadPage
+    {
+        get
+        {
+            var path = Nav.ToBaseRelativePath(Nav.Uri).ToLowerInvariant();
+            return path.Contains("upload-event-customer", StringComparison.OrdinalIgnoreCase);
+        }
+    }
+
+    protected override void OnInitialized()
+    {
+        UploadService.OnJobsChanged += HandleJobsChanged;
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender) return;
+        _dotNetRef = DotNetObjectReference.Create(this);
+        try
+        {
+            await JS.InvokeVoidAsync("aevumDropboxUpload.registerHost", _dotNetRef);
+        }
+        catch
+        {
+        }
+    }
+
+    [JSInvokable]
+    public void OnUploadProgress(string jobId, long bytesSent, int percent, bool isFinalizing)
+    {
+        if (_disposed) return;
+        UploadService.ReportProgress(jobId, bytesSent, percent, isFinalizing);
+    }
+
+    [JSInvokable]
+    public void OnUploadCompleted(string jobId, string? resultJson)
+    {
+        if (_disposed) return;
+        UploadService.ReportCompletedFromJson(jobId, resultJson);
+    }
+
+    [JSInvokable]
+    public void OnUploadFailed(string jobId, string error)
+    {
+        if (_disposed) return;
+        UploadService.MarkJobFailed(jobId, error);
+    }
+
+    private void HandleJobsChanged()
+    {
+        if (_disposed) return;
+        _ = InvokeAsync(() =>
+        {
+            if (!_disposed) StateHasChanged();
+        });
+    }
+
+    private Task CancelAsync(string jobId) => UploadService.CancelJobAsync(jobId, JS);
+
+    private void GoToUploadPage() => Nav.NavigateTo("/staff/upload-event-customer");
+
+    private static string StatusCssClass(DropboxUploadJobStatus status) => status switch
+    {
+        DropboxUploadJobStatus.Completed => "is-completed",
+        DropboxUploadJobStatus.Failed => "is-failed",
+        DropboxUploadJobStatus.Canceled => "is-canceled",
+        _ => "is-active"
+    };
+
+    private static string FormatBytes(long bytes)
+    {
+        string[] units = ["B", "KB", "MB", "GB"];
+        double size = bytes;
+        int unit = 0;
+        while (size >= 1024 && unit < units.Length - 1)
+        {
+            size /= 1024;
+            unit++;
+        }
+        return $"{size:0.##} {units[unit]}";
+    }
+
+    public void Dispose()
+    {
+        _disposed = true;
+        UploadService.OnJobsChanged -= HandleJobsChanged;
+        _dotNetRef?.Dispose();
+    }
+}

@@ -570,7 +570,7 @@ CREATE TABLE dbo.CustomerDropbox (
     EventCompletedAt datetime2 NOT NULL CONSTRAINT DF_CustomerDropbox_CompletedAt DEFAULT SYSUTCDATETIME(),
     UploadedAt datetime2 NULL,
     UploadedByEmployeeID nvarchar(30) NULL,
-    ExpiresAt datetime2 NOT NULL,
+    ExpiresAt datetime2 NULL,
     CreatedAt datetime2 NOT NULL CONSTRAINT DF_CustomerDropbox_CreatedAt DEFAULT SYSUTCDATETIME(),
     CONSTRAINT UQ_CustomerDropbox_Event UNIQUE (EventAppointmentID),
     CONSTRAINT CK_CustomerDropbox_Status CHECK (DropboxStatus IN ('Waiting', 'Uploaded', 'Expired'))
