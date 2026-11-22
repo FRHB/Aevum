@@ -16,8 +16,8 @@ public class XenditPaymentIntegrationTests
     {
         var settings = new XenditSettings();
 
-        Assert.False(string.IsNullOrWhiteSpace(settings.SecretKey));
-        Assert.False(string.IsNullOrWhiteSpace(settings.WebhookToken));
+        Assert.True(string.IsNullOrEmpty(settings.SecretKey));
+        Assert.True(string.IsNullOrEmpty(settings.WebhookToken));
         Assert.Equal(0.15m, settings.DownpaymentPercentage);
         Assert.Equal(30, settings.HoldDurationMinutes);
         Assert.Contains("xendit.co", settings.InvoiceBaseUrl);
@@ -119,7 +119,7 @@ public class XenditPaymentIntegrationTests
         Assert.Equal(expectedBalance, balance);
     }
     [Fact]
-    public async Task XenditPaymentService_Sandbox_CheckPaymentStatus_ReturnsQRPhChannel()
+    public async Task XenditPaymentService_Sandbox_CheckPaymentStatus_FailsClosed()
     {
         var options = Options.Create(new XenditSettings
         {
@@ -132,9 +132,7 @@ public class XenditPaymentIntegrationTests
 
         var status = await service.CheckPaymentStatusAsync("inv_mock_12345");
         Assert.NotNull(status);
-        Assert.Equal("PAID", status.Status);
-        Assert.Equal("QRPH", status.PaymentMethod);
-        Assert.Equal("QRPH", status.PaymentChannel);
+        Assert.Equal("UNVERIFIED", status.Status);
     }
     [Fact]
     public async Task XenditPaymentService_CreateQrCodeAsync_ReturnsMockQrStringWithEvtReference()

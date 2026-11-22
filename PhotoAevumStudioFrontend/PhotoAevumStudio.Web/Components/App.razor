@@ -339,6 +339,24 @@
                 setTimeout(() => URL.revokeObjectURL(url), 1000);
             } catch (e) { }
         };
+
+        window.aevumDownloadBase64 = function (fileName, base64Data, mimeType) {
+            try {
+                const binary = atob(base64Data);
+                const len = binary.length;
+                const bytes = new Uint8Array(len);
+                for (let i = 0; i < len; i++) bytes[i] = binary.charCodeAt(i);
+                const blob = new Blob([bytes], { type: mimeType || 'application/pdf' });
+                const url = URL.createObjectURL(blob);
+                const anchor = document.createElement('a');
+                anchor.href = url;
+                anchor.download = fileName || 'document.pdf';
+                document.body.appendChild(anchor);
+                anchor.click();
+                document.body.removeChild(anchor);
+                setTimeout(() => URL.revokeObjectURL(url), 1500);
+            } catch (e) { }
+        };
     </script>
 </body>
 </html>

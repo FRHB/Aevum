@@ -82,6 +82,83 @@ public class BookingWizardEngine
         return ServiceRateCategory.PerSession;
     }
 
+    public static string GetRateQuantityLabel(string? rateType)
+    {
+        var category = ClassifyRateType(rateType);
+        if (category == ServiceRateCategory.PerHour)
+            return "Hours Quantity *";
+        if (category == ServiceRateCategory.PerSession)
+            return "Session Quantity *";
+
+        var norm = (rateType ?? string.Empty).Trim();
+        if (norm.Contains("multi", StringComparison.OrdinalIgnoreCase))
+            return "Service Quantity *";
+        if (norm.Contains("picture", StringComparison.OrdinalIgnoreCase) || norm.Contains("photo", StringComparison.OrdinalIgnoreCase))
+            return "Pictures Quantity *";
+        if (norm.Contains("single", StringComparison.OrdinalIgnoreCase) || norm.Contains("shot", StringComparison.OrdinalIgnoreCase))
+            return "Shots Quantity *";
+
+        return "Service Quantity *";
+    }
+
+    public static string GetRateQuantityPlaceholder(string? rateType)
+    {
+        var category = ClassifyRateType(rateType);
+        if (category == ServiceRateCategory.PerHour)
+            return "Hours";
+        if (category == ServiceRateCategory.PerSession)
+            return "Sessions";
+
+        var norm = (rateType ?? string.Empty).Trim();
+        if (norm.Contains("multi", StringComparison.OrdinalIgnoreCase))
+            return "Qty (depends on service)";
+        if (norm.Contains("picture", StringComparison.OrdinalIgnoreCase) || norm.Contains("photo", StringComparison.OrdinalIgnoreCase))
+            return "Pictures";
+        if (norm.Contains("single", StringComparison.OrdinalIgnoreCase) || norm.Contains("shot", StringComparison.OrdinalIgnoreCase))
+            return "Shots";
+
+        return "Qty (depends on service)";
+    }
+
+    public static string GetRateBillingSummary(string? rateType, int quantity)
+    {
+        var qty = Math.Max(1, quantity);
+        var category = ClassifyRateType(rateType);
+        if (category == ServiceRateCategory.PerHour)
+            return $"Billed per hour. Contributes {qty} hr(s) to shoot duration (concurrent max across hourly services).";
+        if (category == ServiceRateCategory.PerSession)
+            return "Per-session rate; duration determined in hours.";
+
+        var norm = (rateType ?? string.Empty).Trim();
+        if (norm.Contains("multi", StringComparison.OrdinalIgnoreCase))
+            return $"Billed based on the service provided ({qty} unit(s)). Set exact Start & End time below.";
+        if (norm.Contains("picture", StringComparison.OrdinalIgnoreCase) || norm.Contains("photo", StringComparison.OrdinalIgnoreCase))
+            return $"Billed per picture ({qty} picture(s)). Set exact Start & End time below.";
+        if (norm.Contains("single", StringComparison.OrdinalIgnoreCase) || norm.Contains("shot", StringComparison.OrdinalIgnoreCase))
+            return $"Billed per single shot ({qty} shot(s)). Set exact Start & End time below.";
+
+        return $"Billed based on the service provided ({qty} unit(s)). Set exact Start & End time below.";
+    }
+
+    public static string GetRateUnitLabel(string? rateType)
+    {
+        var category = ClassifyRateType(rateType);
+        if (category == ServiceRateCategory.PerHour)
+            return "hr(s)";
+        if (category == ServiceRateCategory.PerSession)
+            return "session(s)";
+
+        var norm = (rateType ?? string.Empty).Trim();
+        if (norm.Contains("multi", StringComparison.OrdinalIgnoreCase))
+            return "unit(s)";
+        if (norm.Contains("picture", StringComparison.OrdinalIgnoreCase) || norm.Contains("photo", StringComparison.OrdinalIgnoreCase))
+            return "picture(s)";
+        if (norm.Contains("single", StringComparison.OrdinalIgnoreCase) || norm.Contains("shot", StringComparison.OrdinalIgnoreCase))
+            return "shot(s)";
+
+        return "unit(s)";
+    }
+
     public static ServiceCustomizationItem CreateCustomizationItem(ScheduleServiceOption svc)
     {
         var category = ClassifyRateType(svc.RateType);

@@ -1966,10 +1966,7 @@
             var allApptsRes = await ConsultationApi.GetCustomerAppointmentsAsync();
             if (allApptsRes.IsSuccess && allApptsRes.Value != null && allApptsRes.Value.Count > 0)
             {
-                _customerEventAppointments = allApptsRes.Value
-                    .OrderByDescending(a => a.EventDate)
-                    .ThenByDescending(a => a.EventTime)
-                    .ToList();
+                _customerEventAppointments = MyBookings.OrderCustomerEvents(allApptsRes.Value);
 
                 _awaitingDepositAppointment = _customerEventAppointments.FirstOrDefault(a =>
                     (string.Equals(a.EventStatus, "Pending Payment", StringComparison.OrdinalIgnoreCase) ||

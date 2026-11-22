@@ -447,7 +447,7 @@ BEGIN
         FinalPaymentPaidAt datetime2 NULL,
         CreatedAt datetime2 NOT NULL CONSTRAINT DF_EventAppointment_Created DEFAULT SYSUTCDATETIME(),
         RowVer rowversion, 
-        CONSTRAINT CK_EventAppointment_Status CHECK (EventStatus IN ('Pending','Awaiting_Downpayment','Pending Payment','Ready','In Execution','Preparation','Preparing','Dispatch','Ongoing','On Going','Event Done','Post Event','Pending Verification','Paid Cash Pending Verification','Payment Verification (Cash)','Confirmed','Complete','Completed','Shot','Editing','Delivered','Cancelled','Expired'))
+        CONSTRAINT CK_EventAppointment_Status CHECK (EventStatus IN ('Pending','Pending Agreement','Pending Reservation Fee','Awaiting_Downpayment','Pending Payment','Ready','In Execution','In Progress','Preparation','Preparing','Dispatch','Ongoing','On Going','Event Done','Post Event','Awaiting Settlement','Pending Verification','Paid Cash Pending Verification','Payment Verification (Cash)','Confirmed','Complete','Completed','Shot','Editing','Delivered','Cancelled','Expired'))
     );
 END;
 
@@ -1646,7 +1646,7 @@ BEGIN
         ALTER TABLE dbo.EventAppointment DROP CONSTRAINT CK_EventAppointment_Status;
 
     ALTER TABLE dbo.EventAppointment ADD CONSTRAINT CK_EventAppointment_Status
-        CHECK (EventStatus IN ('Pending','Awaiting_Downpayment','Pending Payment','Ready','In Execution','Preparation','Preparing','Dispatch','Ongoing','On Going','Event Done','Post Event','Pending Verification','Paid Cash Pending Verification','Payment Verification (Cash)','Confirmed','Complete','Completed','Shot','Editing','Delivered','Cancelled','Expired'));
+        CHECK (EventStatus IN ('Pending','Pending Agreement','Pending Reservation Fee','Awaiting_Downpayment','Pending Payment','Ready','In Execution','In Progress','Preparation','Preparing','Dispatch','Ongoing','On Going','Event Done','Post Event','Awaiting Settlement','Pending Verification','Paid Cash Pending Verification','Payment Verification (Cash)','Confirmed','Complete','Completed','Shot','Editing','Delivered','Cancelled','Expired'));
 END;
 GO
 
@@ -2472,3 +2472,179 @@ PRINT 'Hangfire SQL objects installed';
 
 
 GO
+
+/* =====================================================================
+   15. TWO-STAGE CONTRACTS, TERMS VERSIONS, PAYMENT LEDGER & RECEIPTS (IDEMPOTENT)
+   ===================================================================== */
+
+IF OBJECT_ID(N'dbo.EventAppointment', N'U') IS NOT NULL
+BEGIN
+    IF COL_LENGTH(N'dbo.EventAppointment', N'OvertimeAmount') IS NULL
+        ALTER TABLE dbo.EventAppointment ADD OvertimeAmount decimal(18,2) NOT NULL CONSTRAINT DF_EventAppointment_OvertimeAmount DEFAULT 0.00;
+    IF COL_LENGTH(N'dbo.EventAppointment', N'RemainingBalance') IS NULL
+        ALTER TABLE dbo.EventAppointment ADD RemainingBalance decimal(18,2) NOT NULL CONSTRAINT DF_EventAppointment_RemainingBalance DEFAULT 0.00;
+    IF COL_LENGTH(N'dbo.EventAppointment', N'IsDeliverablesUnlocked') IS NULL
+        ALTER TABLE dbo.EventAppointment ADD IsDeliverablesUnlocked bit NOT NULL CONSTRAINT DF_EventAppointment_IsDeliverablesUnlocked DEFAULT 0;
+    IF COL_LENGTH(N'dbo.EventAppointment', N'ContractAcceptedAtUtc') IS NULL
+        ALTER TABLE dbo.EventAppointment ADD ContractAcceptedAtUtc datetime2 NULL;
+END;
+GO
+
+IF OBJECT_ID(N'dbo.TermsVersions', N'U') IS NULL
+BEGIN
+    CREATE TABLE dbo.TermsVersions (
+        TermsVersionId int IDENTITY(1,1) NOT NULL CONSTRAINT PK_TermsVersions PRIMARY KEY,
+        VersionCode nvarchar(30) NOT NULL,
+        Title nvarchar(200) NOT NULL CONSTRAINT DF_TermsVersions_Title DEFAULT 'Standard Terms and Conditions',
+        EffectiveDate date NOT NULL,
+        DeliveryBusinessDays int NOT NULL CONSTRAINT DF_TermsVersions_DeliveryDays DEFAULT 7,
+        OvertimeHourlyRate decimal(18,2) NOT NULL CONSTRAINT DF_TermsVersions_OvertimeRate DEFAULT 1500.00,
+        TermsBodyHtml nvarchar(max) NOT NULL,
+        IsActive bit NOT NULL CONSTRAINT DF_TermsVersions_IsActive DEFAULT 1,
+        CreatedAtUtc datetime2 NOT NULL CONSTRAINT DF_TermsVersions_CreatedAt DEFAULT SYSUTCDATETIME(),
+        CONSTRAINT UQ_TermsVersions_VersionCode UNIQUE (VersionCode)
+    );
+END;
+GO
+
+IF OBJECT_ID(N'dbo.BookingContracts', N'U') IS NULL
+BEGIN
+    CREATE TABLE dbo.BookingContracts (
+        BookingContractId int IDENTITY(1,1) NOT NULL CONSTRAINT PK_BookingContracts PRIMARY KEY,
+        ContractNumber nvarchar(40) NOT NULL,
+        EventAppointmentID nvarchar(30) NOT NULL,
+        NegotiationID nvarchar(30) NULL,
+        CustomerID nvarchar(30) NOT NULL,
+        TermsVersionId int NOT NULL,
+        TermsVersionCode nvarchar(30) NOT NULL,
+        DeliveryBusinessDays int NOT NULL CONSTRAINT DF_BookingContracts_DeliveryDays DEFAULT 7,
+        StudioName nvarchar(200) NOT NULL,
+        StudioAddress nvarchar(500) NOT NULL,
+        StudioPhone nvarchar(100) NOT NULL,
+        StudioEmail nvarchar(200) NOT NULL,
+        ClientName nvarchar(200) NOT NULL,
+        ClientAddress nvarchar(500) NULL,
+        ClientPhone nvarchar(100) NULL,
+        ClientEmail nvarchar(200) NOT NULL,
+        SessionType nvarchar(150) NOT NULL,
+        DateOfShoot date NOT NULL,
+        StartTime time NOT NULL,
+        EndTime time NOT NULL,
+        Venue nvarchar(255) NOT NULL,
+        PackageName nvarchar(255) NOT NULL,
+        PackageInclusions nvarchar(1000) NOT NULL,
+        TotalPackageAmount decimal(18,2) NOT NULL,
+        ReservationFeeAmount decimal(18,2) NOT NULL,
+        RemainingBalanceAmount decimal(18,2) NOT NULL,
+        RepresentativeName nvarchar(200) NOT NULL,
+        ContractStatus nvarchar(30) NOT NULL CONSTRAINT DF_BookingContracts_Status DEFAULT 'PendingAcceptance',
+        AcceptedAtUtc datetime2 NULL,
+        ClientIpAddress nvarchar(100) NULL,
+        UserAgent nvarchar(500) NULL,
+        ClickwrapReference nvarchar(100) NULL,
+        RenderedContractHtml nvarchar(max) NOT NULL,
+        PdfBucketName nvarchar(100) NULL,
+        PdfObjectKey nvarchar(500) NULL,
+        PdfUri nvarchar(1000) NULL,
+        CreatedAtUtc datetime2 NOT NULL CONSTRAINT DF_BookingContracts_CreatedAt DEFAULT SYSUTCDATETIME(),
+        UpdatedAtUtc datetime2 NOT NULL CONSTRAINT DF_BookingContracts_UpdatedAt DEFAULT SYSUTCDATETIME(),
+        CONSTRAINT UQ_BookingContracts_ContractNumber UNIQUE (ContractNumber)
+    );
+    CREATE INDEX IX_BookingContracts_EventAppointmentID ON dbo.BookingContracts (EventAppointmentID);
+END;
+GO
+
+IF OBJECT_ID(N'dbo.BookingContracts', N'U') IS NOT NULL
+   AND OBJECT_ID(N'dbo.EventAppointment', N'U') IS NOT NULL
+   AND OBJECT_ID(N'dbo.FK_BookingContracts_EventAppointment', N'F') IS NULL
+    ALTER TABLE dbo.BookingContracts ADD CONSTRAINT FK_BookingContracts_EventAppointment
+        FOREIGN KEY (EventAppointmentID) REFERENCES dbo.EventAppointment(EventAppointmentID) ON DELETE CASCADE;
+IF OBJECT_ID(N'dbo.BookingContracts', N'U') IS NOT NULL
+   AND OBJECT_ID(N'dbo.TermsVersions', N'U') IS NOT NULL
+   AND OBJECT_ID(N'dbo.FK_BookingContracts_TermsVersions', N'F') IS NULL
+    ALTER TABLE dbo.BookingContracts ADD CONSTRAINT FK_BookingContracts_TermsVersions
+        FOREIGN KEY (TermsVersionId) REFERENCES dbo.TermsVersions(TermsVersionId) ON DELETE NO ACTION;
+GO
+
+IF OBJECT_ID(N'dbo.BookingPayments', N'U') IS NULL
+BEGIN
+    CREATE TABLE dbo.BookingPayments (
+        BookingPaymentId int IDENTITY(1,1) NOT NULL CONSTRAINT PK_BookingPayments PRIMARY KEY,
+        EventAppointmentID nvarchar(30) NOT NULL,
+        BookingContractId int NULL,
+        PaymentStage nvarchar(30) NOT NULL,
+        PaymentMethod nvarchar(50) NOT NULL,
+        Amount decimal(18,2) NOT NULL,
+        OvertimeAmount decimal(18,2) NOT NULL CONSTRAINT DF_BookingPayments_Overtime DEFAULT 0.00,
+        GatewayReferenceId nvarchar(150) NOT NULL,
+        ExternalReference nvarchar(150) NULL,
+        Status nvarchar(30) NOT NULL CONSTRAINT DF_BookingPayments_Status DEFAULT 'Paid',
+        PaidAtUtc datetime2 NOT NULL CONSTRAINT DF_BookingPayments_PaidAt DEFAULT SYSUTCDATETIME(),
+        VerifiedByEmployeeID nvarchar(30) NULL,
+        Notes nvarchar(1000) NULL,
+        CreatedAtUtc datetime2 NOT NULL CONSTRAINT DF_BookingPayments_CreatedAt DEFAULT SYSUTCDATETIME(),
+        CONSTRAINT CK_BookingPayments_Stage CHECK (PaymentStage IN ('ReservationFee', 'FinalSettlement'))
+    );
+    CREATE INDEX IX_BookingPayments_Event_Stage ON dbo.BookingPayments (EventAppointmentID, PaymentStage);
+END;
+GO
+
+IF OBJECT_ID(N'dbo.BookingPayments', N'U') IS NOT NULL
+   AND OBJECT_ID(N'dbo.EventAppointment', N'U') IS NOT NULL
+   AND OBJECT_ID(N'dbo.FK_BookingPayments_EventAppointment', N'F') IS NULL
+    ALTER TABLE dbo.BookingPayments ADD CONSTRAINT FK_BookingPayments_EventAppointment
+        FOREIGN KEY (EventAppointmentID) REFERENCES dbo.EventAppointment(EventAppointmentID) ON DELETE CASCADE;
+IF OBJECT_ID(N'dbo.BookingPayments', N'U') IS NOT NULL
+   AND OBJECT_ID(N'dbo.BookingContracts', N'U') IS NOT NULL
+   AND OBJECT_ID(N'dbo.FK_BookingPayments_BookingContract', N'F') IS NULL
+    ALTER TABLE dbo.BookingPayments ADD CONSTRAINT FK_BookingPayments_BookingContract
+        FOREIGN KEY (BookingContractId) REFERENCES dbo.BookingContracts(BookingContractId) ON DELETE NO ACTION;
+GO
+
+IF OBJECT_ID(N'dbo.BookingReceipts', N'U') IS NULL
+BEGIN
+    CREATE TABLE dbo.BookingReceipts (
+        BookingReceiptId int IDENTITY(1,1) NOT NULL CONSTRAINT PK_BookingReceipts PRIMARY KEY,
+        ReceiptNumber nvarchar(50) NOT NULL,
+        EventAppointmentID nvarchar(30) NOT NULL,
+        BookingPaymentId int NULL,
+        ReceiptType nvarchar(40) NOT NULL,
+        TotalContractCharges decimal(18,2) NOT NULL,
+        Stage1PaidAmount decimal(18,2) NOT NULL CONSTRAINT DF_BookingReceipts_Stage1 DEFAULT 0.00,
+        OvertimeAddOnAmount decimal(18,2) NOT NULL CONSTRAINT DF_BookingReceipts_Overtime DEFAULT 0.00,
+        Stage2PaidAmount decimal(18,2) NOT NULL CONSTRAINT DF_BookingReceipts_Stage2 DEFAULT 0.00,
+        RemainingBalanceDue decimal(18,2) NOT NULL,
+        PaymentMethod nvarchar(50) NOT NULL,
+        GatewayReferenceId nvarchar(150) NULL,
+        IssuedAtUtc datetime2 NOT NULL CONSTRAINT DF_BookingReceipts_IssuedAt DEFAULT SYSUTCDATETIME(),
+        RenderedReceiptHtml nvarchar(max) NOT NULL,
+        PdfBucketName nvarchar(100) NULL,
+        PdfObjectKey nvarchar(500) NULL,
+        PdfUri nvarchar(1000) NULL,
+        CreatedAtUtc datetime2 NOT NULL CONSTRAINT DF_BookingReceipts_CreatedAt DEFAULT SYSUTCDATETIME(),
+        CONSTRAINT UQ_BookingReceipts_ReceiptNumber UNIQUE (ReceiptNumber),
+        CONSTRAINT UQ_BookingReceipts_Appt_Type UNIQUE (EventAppointmentID, ReceiptType),
+        CONSTRAINT CK_BookingReceipts_Type CHECK (ReceiptType IN ('ReservationAcknowledgment', 'FinalConsolidated'))
+    );
+END;
+GO
+
+IF OBJECT_ID(N'dbo.BookingReceipts', N'U') IS NOT NULL
+   AND OBJECT_ID(N'dbo.EventAppointment', N'U') IS NOT NULL
+   AND OBJECT_ID(N'dbo.FK_BookingReceipts_EventAppointment', N'F') IS NULL
+    ALTER TABLE dbo.BookingReceipts ADD CONSTRAINT FK_BookingReceipts_EventAppointment
+        FOREIGN KEY (EventAppointmentID) REFERENCES dbo.EventAppointment(EventAppointmentID) ON DELETE CASCADE;
+IF OBJECT_ID(N'dbo.BookingReceipts', N'U') IS NOT NULL
+   AND OBJECT_ID(N'dbo.BookingPayments', N'U') IS NOT NULL
+   AND OBJECT_ID(N'dbo.FK_BookingReceipts_BookingPayment', N'F') IS NULL
+    ALTER TABLE dbo.BookingReceipts ADD CONSTRAINT FK_BookingReceipts_BookingPayment
+        FOREIGN KEY (BookingPaymentId) REFERENCES dbo.BookingPayments(BookingPaymentId) ON DELETE NO ACTION;
+GO
+
+IF OBJECT_ID(N'dbo.TermsVersions', N'U') IS NOT NULL
+   AND NOT EXISTS (SELECT 1 FROM dbo.TermsVersions WHERE VersionCode = 'v1.0')
+BEGIN
+    INSERT INTO dbo.TermsVersions (VersionCode, Title, EffectiveDate, DeliveryBusinessDays, OvertimeHourlyRate, TermsBodyHtml, IsActive)
+    VALUES ('v1.0', 'Standard Terms and Conditions', '2026-01-01', 7, 1500.00, '<p>Standard Terms and Conditions v1.0 - Photo Aevum Studio</p>', 1);
+END;
+GO

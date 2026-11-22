@@ -544,10 +544,11 @@ public class AdminManagementService : IAdminManagementService
 
         var fullName = string.Join(" ", new[] { dto.FirstName, dto.MiddleName, dto.LastName }.Where(s => !string.IsNullOrWhiteSpace(s)));
 
-        // Trigger welcome email dispatch with ID, temporary password and onboarding details
+        // Trigger welcome email dispatch with ID, temporary password, onboarding reminder, and Employee Handbook PDF
+        WelcomeEmailDispatchResult emailDispatch;
         try
         {
-            await _emailService.SendAdminWelcomeEmailAsync(
+            emailDispatch = await _emailService.TrySendAdminWelcomeEmailAsync(
                 toEmail: dto.Email.Trim(),
                 adminName: fullName,
                 adminId: adminId,
@@ -557,7 +558,11 @@ public class AdminManagementService : IAdminManagementService
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Failed to dispatch admin welcome email to {Email}. Admin account was preserved.", dto.Email);
+            _logger.LogError(ex, "Failed to dispatch admin welcome email to {Email}. Admin account {AdminId} was preserved.", dto.Email, adminId);
+            emailDispatch = new WelcomeEmailDispatchResult(
+                EmailSent: false,
+                HandbookAttached: false,
+                WarningMessage: "Administrator account was created, but the welcome email and Employee Handbook PDF could not be delivered. Please retry sending credentials.");
         }
 
         return new AdminDto(
@@ -570,7 +575,10 @@ public class AdminManagementService : IAdminManagementService
             Role: targetIsSysAdmin ? "System Admin" : "Admin",
             IsSuperAdmin: targetIsSysAdmin,
             IsFirstLogin: true,
-            Status: "Active");
+            Status: "Active",
+            WelcomeEmailSent: emailDispatch.EmailSent,
+            HandbookAttached: emailDispatch.HandbookAttached,
+            EmailWarning: emailDispatch.WarningMessage);
     }
 
     public async Task<AdminDto> UpdateAdminAsync(
@@ -737,6 +745,16 @@ public class AdminManagementService : IAdminManagementService
         bool isSystemAdmin,
         CancellationToken cancellationToken = default)
     {
+        var result = await ResendAdminCredentialsWithStatusAsync(id, requestingUserId, isSystemAdmin, cancellationToken);
+        return result.EmailSent;
+    }
+
+    public async Task<WelcomeEmailDispatchResult> ResendAdminCredentialsWithStatusAsync(
+        string id,
+        string requestingUserId,
+        bool isSystemAdmin,
+        CancellationToken cancellationToken = default)
+    {
         if (!isSystemAdmin && !requestingUserId.StartsWith("SADM-", StringComparison.OrdinalIgnoreCase))
         {
             throw new UnauthorizedAccessException("Permission Denied: Only a SystemAdmin (SADM-###) is authorized to resend admin credentials.");
@@ -787,15 +805,24 @@ public class AdminManagementService : IAdminManagementService
             actorId: requestingUserId,
             cancellationToken: cancellationToken);
 
-        await _emailService.SendAdminWelcomeEmailAsync(
-            toEmail: admin.Email,
-            adminName: admin.FullName,
-            adminId: trimmedId,
-            temporaryPassword: newTempPassword,
-            role: admin.Role,
-            cancellationToken: cancellationToken);
-
-        return true;
+        try
+        {
+            return await _emailService.TrySendAdminWelcomeEmailAsync(
+                toEmail: admin.Email,
+                adminName: admin.FullName,
+                adminId: trimmedId,
+                temporaryPassword: newTempPassword,
+                role: admin.Role,
+                cancellationToken: cancellationToken);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to resend admin welcome email to {Email} for {AdminId}.", admin.Email, trimmedId);
+            return new WelcomeEmailDispatchResult(
+                EmailSent: false,
+                HandbookAttached: false,
+                WarningMessage: "Credentials were reset, but the welcome email and Employee Handbook PDF could not be delivered. Please verify email settings and retry.");
+        }
     }
 
     private async Task LogHistoryAsync(

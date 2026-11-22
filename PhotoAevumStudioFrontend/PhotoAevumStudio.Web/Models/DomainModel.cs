@@ -129,7 +129,12 @@ public record NewEmployeeRequest(
     string? DepartmentId = null,
     DateTime? BirthDate = null);
 
-public record SaveEmployeeResult(bool Success, string? Error = null);
+public record SaveEmployeeResult(
+    bool Success,
+    string? Error = null,
+    bool WelcomeEmailSent = true,
+    bool HandbookAttached = true,
+    string? EmailWarning = null);
 
 public record RegistrationRequest(
     string FirstName,

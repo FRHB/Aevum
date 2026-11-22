@@ -80,8 +80,9 @@ public sealed class CustomerDropboxClient(
         {
             using var form = new MultipartFormDataContent();
             using var fileContent = new StreamContent(zipStream);
-            fileContent.Headers.ContentType = new MediaTypeHeaderValue(
-                string.IsNullOrWhiteSpace(contentType) ? "application/zip" : contentType);
+            fileContent.Headers.ContentType = MediaTypeHeaderValue.TryParse(contentType, out var parsedMediaType)
+                ? parsedMediaType
+                : new MediaTypeHeaderValue("application/zip");
             form.Add(fileContent, "file", string.IsNullOrWhiteSpace(fileName) ? "event-photos.zip" : fileName);
 
             using var resp = await _http.PostAsync(

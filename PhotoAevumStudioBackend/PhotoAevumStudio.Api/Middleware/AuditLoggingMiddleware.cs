@@ -35,11 +35,9 @@ public class AuditLoggingMiddleware
         }
         finally
         {
-            if (!context.RequestAborted.IsCancellationRequested && AuditedMethods.Contains(context.Request.Method, StringComparer.OrdinalIgnoreCase) &&
-                (context.Request.Path.StartsWithSegments("/api/bookings", StringComparison.OrdinalIgnoreCase) ||
-                 context.Request.Path.StartsWithSegments("/api/equipments", StringComparison.OrdinalIgnoreCase) ||
-                 context.Request.Path.StartsWithSegments("/api/services", StringComparison.OrdinalIgnoreCase) ||
-                 context.Request.Path.StartsWithSegments("/api/management", StringComparison.OrdinalIgnoreCase)))
+            if (!context.RequestAborted.IsCancellationRequested &&
+                AuditedMethods.Contains(context.Request.Method, StringComparer.OrdinalIgnoreCase) &&
+                TryResolveAuditedResource(context.Request.Path, out var resource))
             {
                 try
                 {
@@ -48,14 +46,6 @@ public class AuditLoggingMiddleware
                         ?? "Anonymous";
                     string userEmail = context.User.FindFirstValue(ClaimTypes.Email) ?? "Anonymous";
                     string? userRole = context.User.FindFirstValue(ClaimTypes.Role) ?? context.User.FindFirstValue("role");
-
-                    string resource = "Booking";
-                    if (context.Request.Path.StartsWithSegments("/api/equipments", StringComparison.OrdinalIgnoreCase))
-                        resource = "Equipment";
-                    else if (context.Request.Path.StartsWithSegments("/api/services", StringComparison.OrdinalIgnoreCase))
-                        resource = "Services";
-                    else if (context.Request.Path.StartsWithSegments("/api/management", StringComparison.OrdinalIgnoreCase))
-                        resource = "Management";
 
                     var auditLog = new AuditLog
                     {
@@ -75,5 +65,66 @@ public class AuditLoggingMiddleware
                 }
             }
         }
+    }
+
+    private static bool TryResolveAuditedResource(PathString path, out string resource)
+    {
+        if (path.StartsWithSegments("/api/bookings", StringComparison.OrdinalIgnoreCase))
+        {
+            resource = "Booking";
+            return true;
+        }
+        if (path.StartsWithSegments("/api/equipments", StringComparison.OrdinalIgnoreCase))
+        {
+            resource = "Equipment";
+            return true;
+        }
+        if (path.StartsWithSegments("/api/services", StringComparison.OrdinalIgnoreCase) ||
+            path.StartsWithSegments("/api/additionalservices", StringComparison.OrdinalIgnoreCase) ||
+            path.StartsWithSegments("/api/packages", StringComparison.OrdinalIgnoreCase))
+        {
+            resource = "Services";
+            return true;
+        }
+        if (path.StartsWithSegments("/api/management", StringComparison.OrdinalIgnoreCase) ||
+            path.StartsWithSegments("/api/admins", StringComparison.OrdinalIgnoreCase))
+        {
+            resource = "Management";
+            return true;
+        }
+        if (path.StartsWithSegments("/api/consultations", StringComparison.OrdinalIgnoreCase))
+        {
+            resource = "Consultation";
+            return true;
+        }
+        if (path.StartsWithSegments("/api/payments", StringComparison.OrdinalIgnoreCase))
+        {
+            resource = "Payment";
+            return true;
+        }
+        if (path.StartsWithSegments("/api/leaves", StringComparison.OrdinalIgnoreCase))
+        {
+            resource = "Leave";
+            return true;
+        }
+        if (path.StartsWithSegments("/api/timesheet", StringComparison.OrdinalIgnoreCase))
+        {
+            resource = "Timesheet";
+            return true;
+        }
+        if (path.StartsWithSegments("/api/dropbox", StringComparison.OrdinalIgnoreCase))
+        {
+            resource = "Dropbox";
+            return true;
+        }
+        if (path.StartsWithSegments("/api/upload", StringComparison.OrdinalIgnoreCase) ||
+            path.StartsWithSegments("/api/portfolio", StringComparison.OrdinalIgnoreCase))
+        {
+            resource = "Media";
+            return true;
+        }
+
+        resource = string.Empty;
+        return false;
     }
 }

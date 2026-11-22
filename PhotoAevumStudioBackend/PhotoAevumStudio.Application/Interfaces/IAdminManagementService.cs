@@ -47,4 +47,20 @@ public interface IAdminManagementService
     /// Resends onboarding credentials with a fresh temporary password to the administrator's email.
     /// </summary>
     Task<bool> ResendAdminCredentialsAsync(string id, string requestingUserId, bool isSystemAdmin, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Resends onboarding credentials and Employee Handbook PDF, returning delivery diagnostics.
+    /// </summary>
+    async Task<WelcomeEmailDispatchResult> ResendAdminCredentialsWithStatusAsync(
+        string id,
+        string requestingUserId,
+        bool isSystemAdmin,
+        CancellationToken cancellationToken = default)
+    {
+        var sent = await ResendAdminCredentialsAsync(id, requestingUserId, isSystemAdmin, cancellationToken);
+        return new WelcomeEmailDispatchResult(
+            EmailSent: sent,
+            HandbookAttached: sent,
+            WarningMessage: sent ? null : "Could not deliver administrator credentials email.");
+    }
 }

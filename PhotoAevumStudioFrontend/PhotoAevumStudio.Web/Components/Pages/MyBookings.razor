@@ -75,10 +75,14 @@
                             @if (!_isExpired)
                             {
                                 <div class="flex flex-col gap-2 w-full sm:w-auto">
-                                    <a href="@GetCheckoutUrl(appt)" target="_blank" rel="noopener noreferrer"
+                                    <a href="/payments/@appt.EventAppointmentId"
                                        class="px-4 py-2.5 bg-emerald-700 hover:bg-emerald-800 text-white rounded-lg text-xs font-bold shadow-sm transition-all text-center">
-                                        💳 Pay 15% Deposit (Xendit) &rarr;
+                                        @(appt.ContractAcceptedAtUtc.HasValue ? "💳 Pay 15% Deposit (QR Ph) →" : "📄 Review Contract & Pay Deposit →")
                                     </a>
+                                    <button type="button" @onclick='() => OpenDocsModal(appt.EventAppointmentId, "contract", true)'
+                                            class="px-3 py-1.5 bg-white hover:bg-slate-50 border border-slate-300 text-slate-800 rounded-lg text-[11px] font-bold transition-all">
+                                        Preview Agreement &amp; Terms
+                                    </button>
                                     <div class="flex gap-2">
                                         <button type="button" @onclick="() => SimulatePaymentSuccessAsync(appt.EventAppointmentId)"
                                                 disabled="@_isActionBusy"
@@ -129,12 +133,25 @@
                     </div>
                     <div class="text-right text-xs flex flex-col items-end gap-2">
                         <div>
-                            <div class="text-slate-500">Total: <strong class="text-slate-900">₱@ev.TotalAmount.ToString("N2")</strong></div>
-                            <div class="text-slate-500">Final Balance: <strong class="text-slate-900">₱@ev.FinalBalanceAmount.ToString("N2")</strong></div>
+                            <div class="text-slate-500">Total: <strong class="text-slate-900">₱@((ev.TotalAmount + ev.OvertimeAmount).ToString("N2"))</strong></div>
+                            <div class="text-slate-500">Final Balance: <strong class="text-slate-900">₱@((ev.IsDeliverablesUnlocked ? 0m : (ev.RemainingBalance > 0 ? ev.RemainingBalance : ev.FinalBalanceAmount)).ToString("N2"))</strong></div>
                         </div>
-                        @if (CanCustomerModifyEvent(ev))
-                        {
-                            <div class="flex items-center gap-2">
+                        <div class="flex flex-wrap items-center justify-end gap-2">
+                            <button type="button"
+                                    @onclick='() => OpenDocsModal(ev.EventAppointmentId, "receipts", false)'
+                                    class="px-3 py-1.5 rounded-lg border border-slate-300 bg-white hover:bg-slate-50 text-slate-800 text-xs font-bold transition-colors">
+                                📄 Agreement &amp; Receipts
+                            </button>
+                            @if (!string.IsNullOrWhiteSpace(ev.FinalPaymentReferenceId) && !ev.IsDeliverablesUnlocked &&
+                                 string.Equals(ev.FinalPaymentStatus, "Payment Verification (QR:Pending Payment)", StringComparison.OrdinalIgnoreCase))
+                            {
+                                <a href="/payments/@ev.FinalPaymentReferenceId"
+                                   class="px-3 py-1.5 rounded-lg bg-emerald-700 hover:bg-emerald-800 text-white text-xs font-bold transition-colors">
+                                    Pay Final Balance &rarr;
+                                </a>
+                            }
+                            @if (CanCustomerModifyEvent(ev))
+                            {
                                 <button type="button"
                                         @onclick='() => OpenEventActionModal(ev, "reschedule")'
                                         class="px-3 py-1.5 rounded-lg border border-teal-300 bg-teal-50 hover:bg-teal-100 text-teal-800 text-xs font-bold transition-colors">
@@ -145,8 +162,8 @@
                                         class="px-3 py-1.5 rounded-lg border border-rose-300 bg-rose-50 hover:bg-rose-100 text-rose-800 text-xs font-bold transition-colors">
                                     Cancel
                                 </button>
-                            </div>
-                        }
+                            }
+                        </div>
                     </div>
                 </div>
             }
@@ -239,6 +256,13 @@
                                     CurrentClerkName="@_actionModalClerkName"
                                     OnClose="CloseActionModal"
                                     OnCompleted="HandleCustomerActionCompletedAsync" />
+
+    <BookingContractModal IsOpen="_isDocsModalOpen"
+                          AppointmentId="@_docsModalAppointmentId"
+                          InitialTab="@_docsModalTab"
+                          AllowClickwrapAcceptance="_docsModalAllowAccept"
+                          OnClosed="() => _isDocsModalOpen = false"
+                          OnAccepted="_ => LoadBookingsAsync()" />
 </div>
 
 @code {
@@ -260,6 +284,18 @@
     private bool _isExpired = false;
     private string _countdownDisplay = "30:00";
     private System.Threading.Timer? _countdownTimer;
+    private bool _isDocsModalOpen;
+    private string _docsModalAppointmentId = string.Empty;
+    private string _docsModalTab = "contract";
+    private bool _docsModalAllowAccept;
+
+    private void OpenDocsModal(string appointmentId, string tab, bool allowAccept)
+    {
+        _docsModalAppointmentId = appointmentId;
+        _docsModalTab = tab;
+        _docsModalAllowAccept = allowAccept;
+        _isDocsModalOpen = true;
+    }
 
     protected override void OnInitialized() => Events.Changed += OnBookingsChanged;
 
@@ -310,17 +346,15 @@
         _loading = true;
 
         var result = await Api.GetMyBookingsAsync();
-        if (result.IsSuccess) Bookings = result.Value!.OrderByDescending(b => b.Start).ToList();
+        if (result.IsSuccess && result.Value != null)
+            Bookings = OrderCustomerBookings(result.Value);
 
         try
         {
             var allRes = await ConsultationApi.GetCustomerAppointmentsAsync();
             if (allRes.IsSuccess && allRes.Value != null)
             {
-                _customerEvents = allRes.Value
-                    .OrderByDescending(a => a.EventDate)
-                    .ThenByDescending(a => a.EventTime)
-                    .ToList();
+                _customerEvents = OrderCustomerEvents(allRes.Value);
 
                 _awaitingAppointments = _customerEvents
                     .Where(a => (string.Equals(a.EventStatus, "Pending Payment", StringComparison.OrdinalIgnoreCase) ||
@@ -545,6 +579,22 @@
             _isActionBusy = false;
         }
     }
+
+    public static List<MyBooking> OrderCustomerBookings(IEnumerable<MyBooking> bookings) =>
+        bookings
+            .OrderBy(b => string.Equals(b.Status, "Cancelled", StringComparison.OrdinalIgnoreCase) ? 1 : 0)
+            .ThenByDescending(b => b.CreatedAt ?? b.Start)
+            .ThenByDescending(b => b.AppointmentId)
+            .ThenByDescending(b => b.Start)
+            .ToList();
+
+    public static List<EventAppointmentDto> OrderCustomerEvents(IEnumerable<EventAppointmentDto> events) =>
+        events
+            .OrderBy(e => string.Equals(e.EventStatus, "Cancelled", StringComparison.OrdinalIgnoreCase) ? 1 : 0)
+            .ThenByDescending(e => e.CreatedAt)
+            .ThenByDescending(e => e.EventDate)
+            .ThenByDescending(e => e.EventTime)
+            .ToList();
 
     private void OnBookingsChanged() => _ = InvokeAsync(async () => { await LoadBookingsAsync(); StateHasChanged(); });
 

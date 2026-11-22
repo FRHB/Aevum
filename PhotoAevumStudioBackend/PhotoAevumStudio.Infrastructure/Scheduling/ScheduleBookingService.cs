@@ -204,7 +204,9 @@ public sealed class ScheduleBookingService(
 
         var rows = await db.Appointments.AsNoTracking()
             .Where(a => a.CustomerId == customerId)
-            .OrderByDescending(a => a.SlotDate).ThenByDescending(a => a.SlotStart)
+            .OrderBy(a => a.Status == AppointmentStatus.Cancelled ? 1 : 0)
+            .ThenByDescending(a => a.CreatedAt)
+            .ThenByDescending(a => a.AppointmentId)
             .Select(a => new
             {
                 a.AppointmentId,
@@ -216,6 +218,7 @@ public sealed class ScheduleBookingService(
                 a.Platform,
                 a.MeetingLink,
                 a.EventLocation,
+                a.CreatedAt,
                 Services = a.Services.Select(s => s.ServiceName).ToList()
             })
             .ToListAsync(cancellationToken);
@@ -285,7 +288,8 @@ public sealed class ScheduleBookingService(
                 r.EventLocation,
                 info.ClerkId,
                 info.ClerkName,
-                info.NegotiationId ?? negKey);
+                info.NegotiationId ?? negKey,
+                r.CreatedAt);
         }).ToList();
     }
 

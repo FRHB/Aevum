@@ -90,7 +90,7 @@ public class CustomerDropboxTests
         var config = new ConfigurationBuilder()
             .AddInMemoryCollection(new Dictionary<string, string?>
             {
-                ["Jwt:Key"] = "UnitTest-Super-Secret-Key-With-Enough-Bytes-12345"
+                ["Dropbox:SigningKey"] = "UnitTest-Super-Secret-Key-With-Enough-Bytes-12345"
             })
             .Build();
 
@@ -156,5 +156,36 @@ public class CustomerDropboxTests
 
         Assert.Contains("dbo.sp_GetNextDropboxID", procsSql);
         Assert.Contains("dbo.usp_SyncCustomerDropboxFolders", procsSql);
+    }
+
+    [Fact]
+    public void CustomerDropboxService_HistoryLogInserts_AvoidComputedChangedByAndInvalidCheckValues()
+    {
+        var root = GetRepoRoot();
+        var servicePath = Path.Combine(root, "PhotoAevumStudioBackend", "PhotoAevumStudio.Infrastructure", "Services", "CustomerDropboxService.cs");
+        var source = File.ReadAllText(servicePath);
+
+        Assert.DoesNotContain("'UPLOAD'", source);
+        Assert.DoesNotContain("'AUTO_DELETE'", source);
+        Assert.DoesNotContain("'Staff'", source);
+        Assert.DoesNotContain("ChangedBy,", source);
+        Assert.Contains("'IMAGE_UPLOAD'", source);
+        Assert.Contains("'DELETE'", source);
+        Assert.Contains("ChangedByEmployeeID, ChangedByAdminID", source);
+    }
+
+    [Fact]
+    public async Task R2StorageService_UploadFileAsync_ThrowsClearMessageWhenUnconfigured()
+    {
+        var config = new ConfigurationBuilder().Build();
+        var service = new R2StorageService(config, NullLogger<R2StorageService>.Instance);
+
+        Assert.False(service.IsConfigured);
+
+        using var ms = new MemoryStream(new byte[] { 0x50, 0x4B, 0x03, 0x04 });
+        var ex = await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            service.UploadFileAsync("dropbox", "customers/C1/events/E1/test.zip", ms, "application/zip"));
+
+        Assert.Contains("not configured", ex.Message, StringComparison.OrdinalIgnoreCase);
     }
 }

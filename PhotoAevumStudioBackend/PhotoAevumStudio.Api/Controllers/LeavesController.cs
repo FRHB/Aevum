@@ -12,7 +12,7 @@ namespace PhotoAevumStudio.Api.Controllers;
 
 [ApiController]
 [Route("api/[controller]")]
-[Authorize]
+[Authorize(Policy = "StaffOrAbove")]
 public class LeavesController : ControllerBase
 {
     private readonly ApplicationDbContext _db;
@@ -204,13 +204,41 @@ public class LeavesController : ControllerBase
         }
     }
 
+    private bool IsClerkOrAdminReviewer() =>
+        User.IsInRole(AppRoles.Admin)
+        || User.IsInRole(AppRoles.SystemAdmin)
+        || User.IsInRole(AppRoles.OfficeClerk)
+        || User.IsInRole("OfficeClerk")
+        || User.HasClaim(c => c.Type == ClaimTypes.Role && (c.Value == AppRoles.Admin || c.Value == AppRoles.SystemAdmin || c.Value.Contains("Clerk", StringComparison.OrdinalIgnoreCase)));
+
+    private string? GetAuthenticatedEmployeeId() =>
+        User.FindFirstValue("studio_id")
+        ?? User.FindFirstValue(ClaimTypes.NameIdentifier)
+        ?? User.FindFirstValue("sub");
+
+    private bool MatchesAuthenticatedEmployee(string? targetId)
+    {
+        if (string.IsNullOrWhiteSpace(targetId)) return false;
+        var ids = new[]
+        {
+            User.FindFirstValue("studio_id"),
+            User.FindFirstValue(ClaimTypes.NameIdentifier),
+            User.FindFirstValue("sub")
+        };
+        return ids.Any(i => string.Equals(i, targetId.Trim(), StringComparison.OrdinalIgnoreCase));
+    }
+
     [HttpGet("types")]
     public async Task<IActionResult> GetLeaveTypes([FromQuery] string? employeeId, CancellationToken ct)
     {
-        var targetId = string.IsNullOrWhiteSpace(employeeId)
-            ? (User.FindFirstValue("studio_id") ?? User.FindFirstValue(ClaimTypes.NameIdentifier) ?? "EMP-003")
-            : employeeId.Trim();
+        var callerId = GetAuthenticatedEmployeeId();
+        if (string.IsNullOrWhiteSpace(callerId))
+            return Unauthorized();
 
+        if (!string.IsNullOrWhiteSpace(employeeId) && !IsClerkOrAdminReviewer() && !MatchesAuthenticatedEmployee(employeeId))
+            return Forbid();
+
+        var targetId = string.IsNullOrWhiteSpace(employeeId) ? callerId : employeeId.Trim();
         var profile = await ResolveEmployeeProfileAsync(targetId, null, ct);
 
         var items = LeaveTypes.Catalog
@@ -234,6 +262,9 @@ public class LeavesController : ControllerBase
     [HttpGet("balances/{employeeId}")]
     public async Task<IActionResult> GetLeaveBalances(string employeeId, [FromQuery] int year = 2026, CancellationToken ct = default)
     {
+        if (!IsClerkOrAdminReviewer() && !MatchesAuthenticatedEmployee(employeeId))
+            return Forbid();
+
         if (year <= 0) year = 2026;
         var profile = await ResolveEmployeeProfileAsync(employeeId, null, ct);
         await EnsureClerkLeaveBalancesSeededAsync(profile.EmployeeId, year, profile.IsTitleIExempt, ct);
@@ -319,6 +350,9 @@ public class LeavesController : ControllerBase
         [FromQuery] bool isHalfDay = false,
         CancellationToken ct = default)
     {
+        if (!IsClerkOrAdminReviewer() && !MatchesAuthenticatedEmployee(employeeId))
+            return Forbid();
+
         var profile = await ResolveEmployeeProfileAsync(employeeId, null, ct);
         var calc = PhilippineHolidays.CalculateCountableWorkdays(startDate, endDate, isHalfDay, profile.DaysOff);
         var conflicts = await FindOverlappingEventsAsync(profile.EmployeeId, startDate, endDate, ct);
@@ -361,15 +395,18 @@ public class LeavesController : ControllerBase
             });
         }
 
-        var studioId = dto.EmployeeStudioId;
-        var employeeName = dto.EmployeeName;
+        var callerId = GetAuthenticatedEmployeeId();
+        if (string.IsNullOrWhiteSpace(callerId))
+            return Unauthorized();
 
-        if (string.IsNullOrWhiteSpace(studioId))
-        {
-            studioId = User.FindFirstValue("studio_id")
-                       ?? User.FindFirstValue(ClaimTypes.NameIdentifier)
-                       ?? "EMP-001";
-        }
+        var isPrivileged = IsClerkOrAdminReviewer();
+        if (!isPrivileged && !string.IsNullOrWhiteSpace(dto.EmployeeStudioId) && !MatchesAuthenticatedEmployee(dto.EmployeeStudioId))
+            return Forbid();
+
+        var studioId = isPrivileged && !string.IsNullOrWhiteSpace(dto.EmployeeStudioId)
+            ? dto.EmployeeStudioId.Trim()
+            : callerId;
+        var employeeName = isPrivileged ? dto.EmployeeName : null;
 
         var profile = await ResolveEmployeeProfileAsync(studioId, employeeName, ct);
         if (string.IsNullOrWhiteSpace(employeeName))
@@ -490,12 +527,16 @@ public class LeavesController : ControllerBase
     [HttpGet("my-requests")]
     public async Task<IActionResult> GetMyLeaves([FromQuery] string? employeeId, CancellationToken ct)
     {
-        var targetId = employeeId;
-        if (string.IsNullOrWhiteSpace(targetId))
-        {
-            targetId = User.FindFirstValue("studio_id")
-                       ?? User.FindFirstValue(ClaimTypes.NameIdentifier);
-        }
+        var callerId = GetAuthenticatedEmployeeId();
+        if (string.IsNullOrWhiteSpace(callerId))
+            return Unauthorized();
+
+        if (!string.IsNullOrWhiteSpace(employeeId) && !IsClerkOrAdminReviewer() && !MatchesAuthenticatedEmployee(employeeId))
+            return Forbid();
+
+        var targetId = IsClerkOrAdminReviewer() && !string.IsNullOrWhiteSpace(employeeId)
+            ? employeeId.Trim()
+            : callerId;
 
         var leaves = await _db.EmployeeLeaves
             .Where(l => l.EmployeeStudioId == targetId)
@@ -506,7 +547,7 @@ public class LeavesController : ControllerBase
     }
 
     [HttpGet]
-    [Authorize(Policy = "StaffOrAbove")]
+    [Authorize(Policy = "ClerkOrAdmin")]
     public async Task<IActionResult> GetAllLeaves([FromQuery] string? status, [FromQuery] string? employeeId, CancellationToken ct)
     {
         var query = _db.EmployeeLeaves.AsQueryable();
@@ -564,6 +605,19 @@ public class LeavesController : ControllerBase
         var leave = await _db.EmployeeLeaves.FindAsync([id], ct);
         if (leave == null)
             return NotFound(new { Message = $"Leave #{id} not found." });
+
+        bool isCancellation = !approve && string.Equals(targetStatus, LeaveStatuses.Cancelled, StringComparison.OrdinalIgnoreCase);
+        bool isPending = string.Equals(leave.Status, LeaveStatuses.Pending, StringComparison.OrdinalIgnoreCase);
+        bool isApproved = string.Equals(leave.Status, LeaveStatuses.Approved, StringComparison.OrdinalIgnoreCase);
+
+        if (!isPending && !(isCancellation && isApproved))
+        {
+            return BadRequest(new ProblemDetails
+            {
+                Title = "Invalid Leave State Transition",
+                Detail = $"Leave #{id} is currently '{leave.Status}' and cannot transition to '{(approve ? LeaveStatuses.Approved : targetStatus ?? LeaveStatuses.Rejected)}'."
+            });
+        }
 
         var reviewerId = User.FindFirstValue("studio_id")
                          ?? User.FindFirstValue(ClaimTypes.NameIdentifier)

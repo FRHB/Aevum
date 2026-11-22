@@ -82,7 +82,9 @@ public class ConsultationNegotiationService : IConsultationNegotiationService
 
     private readonly ILogger<ConsultationNegotiationService> _logger;
     private readonly IHttpContextAccessor? _httpContextAccessor;
+    private readonly IBookingDocumentService? _bookingDocuments;
 
+    [Microsoft.Extensions.DependencyInjection.ActivatorUtilitiesConstructor]
     public ConsultationNegotiationService(
         ApplicationDbContext db,
         IGoogleMeetAdapter meetAdapter,
@@ -90,7 +92,8 @@ public class ConsultationNegotiationService : IConsultationNegotiationService
         IEmailService emailService,
         IOptions<XenditSettings> xenditOptions,
         ILogger<ConsultationNegotiationService> logger,
-        IHttpContextAccessor? httpContextAccessor = null)
+        IHttpContextAccessor? httpContextAccessor = null,
+        IBookingDocumentService? bookingDocuments = null)
     {
         _db = db;
         _meetAdapter = meetAdapter;
@@ -99,6 +102,7 @@ public class ConsultationNegotiationService : IConsultationNegotiationService
         _xenditSettings = xenditOptions.Value;
         _logger = logger;
         _httpContextAccessor = httpContextAccessor;
+        _bookingDocuments = bookingDocuments;
     }
 
     private string ResolvePortalBaseUrl()
@@ -1348,6 +1352,14 @@ public class ConsultationNegotiationService : IConsultationNegotiationService
                     ALTER TABLE dbo.EventAppointment ADD DurationMinutes int NOT NULL CONSTRAINT DF_EventAppointment_DurationMinutes DEFAULT 60;
                 IF COL_LENGTH(N'dbo.EventAppointment', N'EventLocation') IS NULL
                     ALTER TABLE dbo.EventAppointment ADD EventLocation nvarchar(255) NULL;
+                IF COL_LENGTH(N'dbo.EventAppointment', N'OvertimeAmount') IS NULL
+                    ALTER TABLE dbo.EventAppointment ADD OvertimeAmount decimal(18,2) NOT NULL CONSTRAINT DF_EventAppointment_OvertimeAmount DEFAULT 0.00;
+                IF COL_LENGTH(N'dbo.EventAppointment', N'RemainingBalance') IS NULL
+                    ALTER TABLE dbo.EventAppointment ADD RemainingBalance decimal(18,2) NOT NULL CONSTRAINT DF_EventAppointment_RemainingBalance DEFAULT 0.00;
+                IF COL_LENGTH(N'dbo.EventAppointment', N'IsDeliverablesUnlocked') IS NULL
+                    ALTER TABLE dbo.EventAppointment ADD IsDeliverablesUnlocked bit NOT NULL CONSTRAINT DF_EventAppointment_IsDeliverablesUnlocked DEFAULT 0;
+                IF COL_LENGTH(N'dbo.EventAppointment', N'ContractAcceptedAtUtc') IS NULL
+                    ALTER TABLE dbo.EventAppointment ADD ContractAcceptedAtUtc datetime2 NULL;
             END;
             IF OBJECT_ID(N'dbo.EventLineItem', N'U') IS NOT NULL
             BEGIN
@@ -1590,11 +1602,14 @@ public class ConsultationNegotiationService : IConsultationNegotiationService
 
 
 
-        var downpaymentAmount = Math.Round(totalAmount * downpaymentPercentage, 2);
+        var downpaymentAmount = request.ReservationFeeAmount.HasValue && request.ReservationFeeAmount.Value > 0
+            ? Math.Round(request.ReservationFeeAmount.Value, 2)
+            : Math.Round(totalAmount * downpaymentPercentage, 2);
 
+        if (downpaymentAmount > totalAmount && totalAmount > 0)
+            throw new InvalidOperationException("Reservation fee cannot exceed the total package amount.");
 
-
-        var finalBalanceAmount = totalAmount - downpaymentAmount;
+        var finalBalanceAmount = Math.Max(0m, totalAmount - downpaymentAmount);
 
 
 
@@ -1842,6 +1857,7 @@ public class ConsultationNegotiationService : IConsultationNegotiationService
                         TotalAmount = @Total,
                         DownpaymentAmount = @Downpayment,
                         FinalBalanceAmount = @FinalBal,
+                        RemainingBalance = CASE WHEN ISNULL(DownpaymentStatus, 'Pending') = 'Paid' THEN @FinalBal ELSE @Total END,
                         EmployeeID = COALESCE(NULLIF(@LeadEmpId, ''), EmployeeID)
                     WHERE EventAppointmentID = @EvtId;";
 
@@ -1881,13 +1897,13 @@ public class ConsultationNegotiationService : IConsultationNegotiationService
                     INSERT INTO dbo.EventAppointment (
                         EventAppointmentID, CustomerID, EmployeeID, EventName, EventDescription, EventLocation,
                         EventDate, EventTime, EventEndTime, DurationMinutes, EventStatus, TotalAmount, DownpaymentAmount,
-                        FinalBalanceAmount, DownpaymentStatus, HoldExpiresAt, LockExpiresAt,
+                        FinalBalanceAmount, RemainingBalance, IsDeliverablesUnlocked, DownpaymentStatus, HoldExpiresAt, LockExpiresAt,
                         XenditExternalId, CreatedAt
                     )
                     VALUES (
                         @EvtId, @CustId, NULLIF(@LeadEmpId, ''), @Name, @Desc, @Location,
                         @Date, @Time, @EndTime, @DurationMinutes, 'Pending Payment', @Total, @Downpayment,
-                        @FinalBal, 'Pending', @ExpiresAt, @ExpiresAt,
+                        @FinalBal, @Total, 0, 'Pending', @ExpiresAt, @ExpiresAt,
                         @ExternalId, SYSUTCDATETIME()
                     );";
 
@@ -2044,6 +2060,23 @@ public class ConsultationNegotiationService : IConsultationNegotiationService
                 await nCmd.ExecuteNonQueryAsync(cancellationToken);
             }
 
+            if (_bookingDocuments is BookingDocumentService docSvc)
+            {
+                await docSvc.GenerateOrUpdateDraftContractOnConnectionAsync(
+                    conn,
+                    tx,
+                    appointmentId,
+                    new ConfigureBookingContractRequest
+                    {
+                        TotalPackageAmount = totalAmount,
+                        ReservationFeeAmount = downpaymentAmount,
+                        PackageInclusions = request.PackageInclusions,
+                        DeliveryBusinessDays = request.DeliveryBusinessDays,
+                        RepresentativeName = request.RepresentativeName
+                    },
+                    cancellationToken);
+            }
+
 
 
 
@@ -2163,10 +2196,22 @@ public class ConsultationNegotiationService : IConsultationNegotiationService
                 ea.FinalPaymentPaidAt,
                 ea.EventEndTime,
                 ISNULL(ea.DurationMinutes, 60) AS DurationMinutes,
-                ea.EventLocation
+                ea.EventLocation,
+                ISNULL(ea.OvertimeAmount, 0) AS OvertimeAmount,
+                ISNULL(ea.RemainingBalance, 0) AS RemainingBalance,
+                ISNULL(ea.IsDeliverablesUnlocked, 0) AS IsDeliverablesUnlocked,
+                ea.ContractAcceptedAtUtc,
+                bc.ContractNumber,
+                bc.TermsVersionCode
             FROM dbo.EventAppointment ea
             LEFT JOIN dbo.Customer c ON c.CustomerID = ea.CustomerID
             LEFT JOIN dbo.BookingNegotiation bn ON bn.EventAppointmentID = ea.EventAppointmentID
+            OUTER APPLY (
+                SELECT TOP 1 ContractNumber, TermsVersionCode
+                FROM dbo.BookingContracts
+                WHERE EventAppointmentID = ea.EventAppointmentID
+                ORDER BY BookingContractId DESC
+            ) bc
             WHERE ea.EventAppointmentID = @EvtId;
 
             SELECT ee.EmployeeID,
@@ -2289,6 +2334,12 @@ public class ConsultationNegotiationService : IConsultationNegotiationService
                 EventLocation = reader.FieldCount > 28 && !reader.IsDBNull(28) && !string.IsNullOrWhiteSpace(reader.GetString(28))
                     ? reader.GetString(28)
                     : "Studio A (Main Hall)",
+                OvertimeAmount = reader.FieldCount > 29 && !reader.IsDBNull(29) ? reader.GetDecimal(29) : 0m,
+                RemainingBalance = reader.FieldCount > 30 && !reader.IsDBNull(30) ? reader.GetDecimal(30) : 0m,
+                IsDeliverablesUnlocked = reader.FieldCount > 31 && !reader.IsDBNull(31) && reader.GetBoolean(31),
+                ContractAcceptedAtUtc = reader.FieldCount > 32 && !reader.IsDBNull(32) ? reader.GetDateTime(32) : null,
+                ContractNumber = reader.FieldCount > 33 && !reader.IsDBNull(33) ? reader.GetString(33) : null,
+                TermsVersionCode = reader.FieldCount > 34 && !reader.IsDBNull(34) ? reader.GetString(34) : null,
                 PrepBufferMinutes = 120,
                 PostBufferMinutes = 60
             };
@@ -2467,216 +2518,112 @@ public class ConsultationNegotiationService : IConsultationNegotiationService
         => VerifyDownpaymentAsync(appointmentId, invoiceId, null, cancellationToken);
 
     public async Task<EventAppointmentDto> VerifyDownpaymentAsync(
-
-
-
         string appointmentId,
-
-
-
         string? invoiceId = null, string? paymentChannel = null, CancellationToken cancellationToken = default)
-
-
-
     {
-
-
-
         var appt = await GetAppointmentByIdAsync(appointmentId, cancellationToken);
-
-
-
         if (appt == null)
-
-
-
             throw new KeyNotFoundException($"Event appointment {appointmentId} not found.");
-        // QR bookings are confirmed only by the validated Xendit webhook; never self-verify them (the mock status fallback would otherwise mark them paid).
-        if (appt.EventStatus == "Pending Payment")
+
+        // Idempotency: already paid downpayment should not re-verify or insert duplicate transactions
+        if (string.Equals(appt.DownpaymentStatus, "Paid", StringComparison.OrdinalIgnoreCase))
             return appt;
-var invId = invoiceId ?? appt.XenditInvoiceId ?? $"inv_mock_{appointmentId}";
 
+        if (string.Equals(appt.EventStatus, "Cancelled", StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(appt.EventStatus, "Expired", StringComparison.OrdinalIgnoreCase))
+        {
+            throw new InvalidOperationException($"Appointment {appointmentId} is {appt.EventStatus} and cannot be confirmed.");
+        }
 
+        // QR bookings without an invoice are confirmed only by the validated Xendit QR webhook.
+        if (appt.EventStatus == "Pending Payment" &&
+            (string.IsNullOrWhiteSpace(appt.XenditInvoiceId) || appt.XenditInvoiceId.StartsWith("qr_", StringComparison.OrdinalIgnoreCase)))
+        {
+            return appt;
+        }
+
+        if (!string.IsNullOrWhiteSpace(invoiceId) &&
+            !string.IsNullOrWhiteSpace(appt.XenditInvoiceId) &&
+            !string.Equals(invoiceId.Trim(), appt.XenditInvoiceId.Trim(), StringComparison.OrdinalIgnoreCase))
+        {
+            throw new InvalidOperationException("Invoice ID does not match the invoice issued for this appointment.");
+        }
+
+        var invId = !string.IsNullOrWhiteSpace(invoiceId) ? invoiceId.Trim() : appt.XenditInvoiceId;
+        if (string.IsNullOrWhiteSpace(invId))
+        {
+            throw new InvalidOperationException("No Xendit invoice ID is associated with this appointment.");
+        }
 
         var statusResult = await _xenditPaymentService.CheckPaymentStatusAsync(invId, cancellationToken);
 
-
-
-
-
-
-
-        if (statusResult.Status.Equals("paid", StringComparison.OrdinalIgnoreCase) ||
-
-
-
-            statusResult.Status.Equals("settled", StringComparison.OrdinalIgnoreCase))
-
-
-
+        if ((statusResult.Status.Equals("paid", StringComparison.OrdinalIgnoreCase) ||
+             statusResult.Status.Equals("settled", StringComparison.OrdinalIgnoreCase)) &&
+            (string.IsNullOrWhiteSpace(statusResult.ExternalId) ||
+             string.Equals(statusResult.ExternalId, appointmentId, StringComparison.OrdinalIgnoreCase)) &&
+            (string.IsNullOrWhiteSpace(statusResult.Currency) ||
+             string.Equals(statusResult.Currency, "PHP", StringComparison.OrdinalIgnoreCase)) &&
+            (appt.DownpaymentAmount <= 0 || statusResult.Amount >= appt.DownpaymentAmount))
         {
-
-
-
             await using var conn = await OpenConnectionAsync(cancellationToken);
-
-
-
-
-
-
-
             var txnId = await GetNextIdAsync(conn, "dbo.PaymentTransactions", "PaymentTransactionID", "TXN-", cancellationToken);
 
-
-
-
-
-
-
             await using var tx = conn.BeginTransaction();
-
-
-
             try
-
-
-
             {
-
-
-
                 const string updateSql = @"
-
-
-
                     UPDATE dbo.EventAppointment
-
-
-
                     SET EventStatus = 'Confirmed',
-
-
-
                         LockExpiresAt = NULL,
+                        DownpaymentStatus = 'Paid',
+                        DownpaymentPaidAt = ISNULL(DownpaymentPaidAt, SYSUTCDATETIME()),
+                        RemainingBalance = FinalBalanceAmount
+                    WHERE EventAppointmentID = @EvtId
+                      AND ISNULL(DownpaymentStatus, 'Pending') <> 'Paid'
+                      AND ISNULL(EventStatus, '') NOT IN ('Cancelled', 'Expired');
 
-
-
-                        DownpaymentStatus = 'Paid'
-
-
-
-                    WHERE EventAppointmentID = @EvtId;
-
-                    IF OBJECT_ID(N'dbo.BookingNegotiation', N'U') IS NOT NULL
+                    IF @@ROWCOUNT > 0
                     BEGIN
-                        UPDATE dbo.BookingNegotiation
-                        SET NegotiationStatus = 'Appointment Booked',
-                            EventAppointmentID = COALESCE(EventAppointmentID, @EvtId)
-                        WHERE EventAppointmentID = @EvtId;
-                    END;
+                        IF OBJECT_ID(N'dbo.BookingNegotiation', N'U') IS NOT NULL
+                        BEGIN
+                            UPDATE dbo.BookingNegotiation
+                            SET NegotiationStatus = 'Appointment Booked',
+                                EventAppointmentID = COALESCE(EventAppointmentID, @EvtId)
+                            WHERE EventAppointmentID = @EvtId;
+                        END;
 
-
-
-
-
-
-
-                    INSERT INTO dbo.PaymentTransactions (
-
-
-
-                        PaymentTransactionID, EventAppointmentID, PaymentType,
-
-
-
-                        PaymentMethod, Amount, Status, ExternalReference,
-
-
-
-                        XenditInvoiceId, XenditPaymentId, XenditPaymentChannel, CreatedAt
-
-
-
-                    )
-
-
-
-                    VALUES (
-
-
-
-                        @TxnId, @EvtId, 'Downpayment_15',
-
-
-
-                        @Method, @Amount, 'Paid', @Ref,
-
-
-
-                        @XenditInvId, @XenditPayId, @XenditChannel, SYSUTCDATETIME()
-
-
-
-                    );
-
-
-
-
-
-
-
-                    IF OBJECT_ID(N'dbo.HistoryLog', N'U') IS NOT NULL
-
-
-
-                    BEGIN
-
-
-
-                        INSERT INTO dbo.HistoryLog (
-
-
-
-                            ActionType, EntityName, EntityID, ActionDetails,
-
-
-
-                            EventAppointmentID, ChangedByType, LoggedAt
-
-
-
+                        IF NOT EXISTS (
+                            SELECT 1 FROM dbo.PaymentTransactions
+                            WHERE EventAppointmentID = @EvtId
+                              AND PaymentType = 'Downpayment_15'
+                              AND Status = 'Paid'
                         )
+                        BEGIN
+                            INSERT INTO dbo.PaymentTransactions (
+                                PaymentTransactionID, EventAppointmentID, PaymentType,
+                                PaymentMethod, Amount, Status, ExternalReference,
+                                XenditInvoiceId, XenditPaymentId, XenditPaymentChannel, CreatedAt
+                            )
+                            VALUES (
+                                @TxnId, @EvtId, 'Downpayment_15',
+                                @Method, @Amount, 'Paid', @Ref,
+                                @XenditInvId, @XenditPayId, @XenditChannel, SYSUTCDATETIME()
+                            );
+                        END;
 
-
-
-                        VALUES (
-
-
-
-                            'STATUS_CHANGE', 'EventAppointment', @EvtId,
-
-
-
-                            '15% Downpayment verified and paid via Xendit. Appointment confirmed.',
-
-
-
-                            @EvtId, 'System', SYSUTCDATETIME()
-
-
-
-                        );
-
-
-
+                        IF OBJECT_ID(N'dbo.HistoryLog', N'U') IS NOT NULL
+                        BEGIN
+                            INSERT INTO dbo.HistoryLog (
+                                ActionType, EntityName, EntityID, ActionDetails,
+                                EventAppointmentID, ChangedByType, LoggedAt
+                            )
+                            VALUES (
+                                'STATUS_CHANGE', 'EventAppointment', @EvtId,
+                                '15% Downpayment verified and paid via Xendit. Appointment confirmed.',
+                                @EvtId, 'System', SYSUTCDATETIME()
+                            );
+                        END;
                     END;";
-
-
-
-
-
-
 
                 var channel = !string.IsNullOrWhiteSpace(paymentChannel)
                     ? paymentChannel
@@ -2686,53 +2633,33 @@ var invId = invoiceId ?? appt.XenditInvoiceId ?? $"inv_mock_{appointmentId}";
                     ? $"Xendit_{channel}"
                     : (statusResult.PaymentMethod ?? "Xendit");
 
-
-
-
-
-
-
                 await using var cmd = new SqlCommand(updateSql, conn, tx);
-
-
-
                 cmd.Parameters.AddWithValue("@TxnId", txnId);
-
-
-
                 cmd.Parameters.AddWithValue("@EvtId", appointmentId);
-
-
-
                 cmd.Parameters.AddWithValue("@Method", paymentMethod);
-
-
-
                 cmd.Parameters.AddWithValue("@Amount", appt.DownpaymentAmount);
-
-
-
                 cmd.Parameters.AddWithValue("@Ref", statusResult.InvoiceId);
-
-
-
                 cmd.Parameters.AddWithValue("@XenditInvId", (object?)statusResult.InvoiceId ?? DBNull.Value);
-
-
-
                 cmd.Parameters.AddWithValue("@XenditPayId", (object?)statusResult.InvoiceId ?? DBNull.Value);
-
-
-
                 cmd.Parameters.AddWithValue("@XenditChannel", (object?)channel ?? DBNull.Value);
 
-
-
-
-
-
-
                 await cmd.ExecuteNonQueryAsync(cancellationToken);
+                if (_bookingDocuments != null)
+                {
+                    await _bookingDocuments.RecordStagePaymentAndReceiptAsync(
+                        conn,
+                        tx,
+                        appointmentId,
+                        "ReservationFee",
+                        paymentMethod,
+                        appt.DownpaymentAmount,
+                        0m,
+                        statusResult.InvoiceId ?? appointmentId,
+                        appointmentId,
+                        null,
+                        "Stage 1 Reservation Fee via Xendit Invoice",
+                        cancellationToken);
+                }
                 await tx.CommitAsync(cancellationToken);
             }
             catch
@@ -2743,6 +2670,18 @@ var invId = invoiceId ?? appt.XenditInvoiceId ?? $"inv_mock_{appointmentId}";
 
             appt = await GetAppointmentByIdOnConnectionAsync(conn, appointmentId, cancellationToken) ?? appt;
             await conn.CloseAsync();
+
+            if (_bookingDocuments != null)
+            {
+                try
+                {
+                    await _bookingDocuments.FinalizeStageDocumentsAndEmailAsync(appointmentId, "ReservationAcknowledgment", cancellationToken);
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogWarning(ex, "Failed to finalize/email Stage 1 PDFs for {AppointmentId}", appointmentId);
+                }
+            }
 
             // Sync with assigned employee calendars and notify customer
             try
@@ -2785,10 +2724,15 @@ var invId = invoiceId ?? appt.XenditInvoiceId ?? $"inv_mock_{appointmentId}";
     {
         await using var conn = await OpenConnectionAsync(cancellationToken);
 
+        // Cap total hold extension to at most 120 minutes from CreatedAt (prevents infinite hold renewal)
         const string sql = @"
             UPDATE dbo.EventAppointment
             SET HoldExpiresAt = DATEADD(minute, 30, SYSUTCDATETIME())
-            WHERE EventAppointmentID = @EvtId AND DownpaymentStatus = 'Pending' AND EventStatus <> 'Pending Payment';";
+            WHERE EventAppointmentID = @EvtId
+              AND DownpaymentStatus = 'Pending'
+              AND EventStatus IN ('Pending', 'Awaiting_Downpayment', 'Pending Payment', 'Rescheduled')
+              AND (HoldExpiresAt IS NULL OR HoldExpiresAt > SYSUTCDATETIME())
+              AND DATEDIFF(minute, CreatedAt, SYSUTCDATETIME()) <= 90;";
 
         await using var cmd = new SqlCommand(sql, conn);
         cmd.Parameters.AddWithValue("@EvtId", appointmentId);
@@ -4094,7 +4038,10 @@ var invId = invoiceId ?? appt.XenditInvoiceId ?? $"inv_mock_{appointmentId}";
 
 
 
-        var finalBalance = appt.FinalBalanceAmount + request.SurchargeAmount;
+        var overtimeTotal = request.SurchargeAmount > 0
+            ? Math.Round(request.SurchargeAmount, 2)
+            : Math.Round(request.ExtraHours * request.HourlyRate, 2);
+        var finalBalance = appt.FinalBalanceAmount + overtimeTotal;
 
         var isQr = request.PaymentMethod.Contains("QR", StringComparison.OrdinalIgnoreCase)
                 || request.PaymentMethod.Contains("Xendit", StringComparison.OrdinalIgnoreCase);
@@ -4202,7 +4149,9 @@ var invId = invoiceId ?? appt.XenditInvoiceId ?? $"inv_mock_{appointmentId}";
             const string updEvt = @"
                 UPDATE dbo.EventAppointment
                 SET EventStatus = @NewStatus,
+                    OvertimeAmount = ISNULL(OvertimeAmount, 0) + @OtTotal,
                     FinalBalanceAmount = @FinalBal,
+                    RemainingBalance = @FinalBal,
                     FinalPaymentMethod = @FinalMethod,
                     FinalPaymentStatus = @FinalStatus,
                     FinalQrString = CASE WHEN @IsQr = 1 THEN @FinalQr ELSE FinalQrString END,
@@ -4238,6 +4187,7 @@ var invId = invoiceId ?? appt.XenditInvoiceId ?? $"inv_mock_{appointmentId}";
             await using var cmd = new SqlCommand(updEvt, conn, tx);
             cmd.Parameters.AddWithValue("@TxnId", txnId);
             cmd.Parameters.AddWithValue("@EvtId", request.EventAppointmentId);
+            cmd.Parameters.AddWithValue("@OtTotal", overtimeTotal);
             cmd.Parameters.AddWithValue("@FinalBal", finalBalance);
             cmd.Parameters.AddWithValue("@NewStatus", isQr ? "Pending Payment" : "Payment Verification (Cash)");
             cmd.Parameters.AddWithValue("@FinalMethod", normalizedMethod);
@@ -4983,33 +4933,33 @@ var invId = invoiceId ?? appt.XenditInvoiceId ?? $"inv_mock_{appointmentId}";
         if (appt == null)
             throw new KeyNotFoundException($"Event appointment {appointmentId} not found.");
 
+        var allowedSourceStatuses = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+        {
+            "Pending Payment", "Pending", "Awaiting_Downpayment", "Rescheduled"
+        };
+        if (!allowedSourceStatuses.Contains(appt.EventStatus ?? string.Empty))
+        {
+            throw new InvalidOperationException(
+                $"Appointment {appointmentId} is in status '{appt.EventStatus}' and cannot transition via payment status update.");
+        }
+
         if (string.Equals(request.Status, "Deal_Won", StringComparison.OrdinalIgnoreCase) ||
             string.Equals(request.Status, "Appointment Booked", StringComparison.OrdinalIgnoreCase))
         {
-            await using var connWon = await OpenConnectionAsync(cancellationToken);
-            await using var cmdWon = connWon.CreateCommand();
-            cmdWon.CommandText = @"
-                UPDATE dbo.EventAppointment
-                SET EventStatus = 'Confirmed',
-                    DownpaymentStatus = 'Paid',
-                    DownpaymentPaidAt = ISNULL(DownpaymentPaidAt, SYSUTCDATETIME()),
-                    LockExpiresAt = NULL,
-                    HoldExpiresAt = NULL
-                WHERE EventAppointmentID = @EvtId;
+            // Never mark a booking Confirmed/Paid without verified Xendit invoice/webhook confirmation.
+            var invoiceId = appt.XenditInvoiceId;
+            if (string.IsNullOrWhiteSpace(invoiceId) || invoiceId.StartsWith("qr_", StringComparison.OrdinalIgnoreCase))
+            {
+                throw new InvalidOperationException(
+                    "Booking confirmation requires verified payment confirmation via Xendit webhook.");
+            }
 
-                IF OBJECT_ID(N'dbo.BookingNegotiation', N'U') IS NOT NULL
-                BEGIN
-                    UPDATE dbo.BookingNegotiation
-                    SET NegotiationStatus = 'Appointment Booked',
-                        EventAppointmentID = COALESCE(EventAppointmentID, @EvtId)
-                    WHERE EventAppointmentID = @EvtId OR NegotiationID = @NegId;
-                END";
-            cmdWon.Parameters.AddWithValue("@EvtId", appointmentId);
-            cmdWon.Parameters.AddWithValue("@NegId", (object?)appt.NegotiationId ?? DBNull.Value);
-            await cmdWon.ExecuteNonQueryAsync(cancellationToken);
-
-            var invoiceId = appt.XenditInvoiceId ?? $"inv_sim_{appointmentId}_{Guid.NewGuid():N[..6]}";
             var updated = await VerifyDownpaymentAsync(appointmentId, invoiceId, request.PaymentMethod ?? "QR Ph", cancellationToken);
+            if (!string.Equals(updated.DownpaymentStatus, "Paid", StringComparison.OrdinalIgnoreCase))
+            {
+                throw new InvalidOperationException(
+                    "Payment has not been confirmed by Xendit yet.");
+            }
             return updated;
         }
 
@@ -5017,6 +4967,10 @@ var invId = invoiceId ?? appt.XenditInvoiceId ?? $"inv_mock_{appointmentId}";
 
         if (string.Equals(request.Status, "Deal_Lost", StringComparison.OrdinalIgnoreCase))
         {
+            if (string.Equals(appt.DownpaymentStatus, "Paid", StringComparison.OrdinalIgnoreCase))
+            {
+                throw new InvalidOperationException("Cannot mark a booking as Deal_Lost after downpayment has been paid.");
+            }
             await using var cmdLost = conn.CreateCommand();
             cmdLost.CommandText = @"
                 IF OBJECT_ID(N'dbo.EventEmployee', N'U') IS NOT NULL
@@ -6920,7 +6874,9 @@ var invId = invoiceId ?? appt.XenditInvoiceId ?? $"inv_mock_{appointmentId}";
                 UPDATE dbo.EventAppointment
                 SET EventStatus = 'Completed',
                     FinalPaymentStatus = 'Paid',
-                    FinalPaymentPaidAt = COALESCE(FinalPaymentPaidAt, SYSUTCDATETIME())
+                    FinalPaymentPaidAt = COALESCE(FinalPaymentPaidAt, SYSUTCDATETIME()),
+                    RemainingBalance = 0.00,
+                    IsDeliverablesUnlocked = 1
                 WHERE EventAppointmentID = @EvtId;
 
                 IF @@ROWCOUNT = 0
@@ -6939,14 +6895,38 @@ var invId = invoiceId ?? appt.XenditInvoiceId ?? $"inv_mock_{appointmentId}";
 
                 IF OBJECT_ID(N'dbo.HistoryLog', N'U') IS NOT NULL
                 BEGIN
+                    DECLARE @EmpActor nvarchar(30) = NULL;
+                    DECLARE @AdmActor nvarchar(30) = NULL;
+                    DECLARE @ActorType nvarchar(20) = 'Admin';
+
+                    IF NULLIF(@VerifierId, '') IS NOT NULL
+                    BEGIN
+                        IF OBJECT_ID(N'dbo.Employees', N'U') IS NOT NULL
+                           AND EXISTS (SELECT 1 FROM dbo.Employees WHERE EmployeeID = @VerifierId)
+                        BEGIN
+                            SET @EmpActor = @VerifierId;
+                            SET @ActorType = 'Employee';
+                        END
+                        ELSE IF OBJECT_ID(N'dbo.Admin', N'U') IS NOT NULL
+                           AND EXISTS (SELECT 1 FROM dbo.Admin WHERE AdminID = @VerifierId)
+                        BEGIN
+                            SET @AdmActor = @VerifierId;
+                            SET @ActorType = 'Admin';
+                        END
+                        ELSE IF @VerifierId LIKE 'SADM-%'
+                            SET @ActorType = 'SystemAdmin';
+                        ELSE IF @VerifierId LIKE 'EMP-%' OR @VerifierId LIKE 'CLK-%'
+                            SET @ActorType = 'Employee';
+                    END;
+
                     INSERT INTO dbo.HistoryLog (
                         ActionType, EntityName, EntityID, ActionDetails,
-                        EventAppointmentID, ChangedByType, ChangedBy, LoggedAt
+                        EventAppointmentID, ChangedByType, ChangedByEmployeeID, ChangedByAdminID, LoggedAt
                     )
                     VALUES (
-                        'APPROVAL', 'CashRemittance', @EvtId,
+                        'STATUS_CHANGE', 'CashRemittance', @EvtId,
                         @ActionDetails,
-                        @EvtId, 'Admin', @VerifierId, SYSUTCDATETIME()
+                        @EvtId, @ActorType, @EmpActor, @AdmActor, SYSUTCDATETIME()
                     );
                 END;";
 
@@ -6959,6 +6939,36 @@ var invId = invoiceId ?? appt.XenditInvoiceId ?? $"inv_mock_{appointmentId}";
                         ? $"Cash verified by {verifierName ?? verifierId}. Employee event workflow finalized as Completed."
                         : notes);
                 await cmd.ExecuteNonQueryAsync(cancellationToken);
+            }
+
+            if (_bookingDocuments != null)
+            {
+                decimal finalPaid = 0m, otAmt = 0m;
+                const string amtSql = "SELECT ISNULL(FinalBalanceAmount, 0), ISNULL(OvertimeAmount, 0) FROM dbo.EventAppointment WHERE EventAppointmentID = @EvtId;";
+                await using (var aCmd = new SqlCommand(amtSql, conn, tx))
+                {
+                    aCmd.Parameters.AddWithValue("@EvtId", appointmentId);
+                    await using var ar = await aCmd.ExecuteReaderAsync(cancellationToken);
+                    if (await ar.ReadAsync(cancellationToken))
+                    {
+                        finalPaid = ar.GetDecimal(0);
+                        otAmt = ar.GetDecimal(1);
+                    }
+                }
+
+                await _bookingDocuments.RecordStagePaymentAndReceiptAsync(
+                    conn,
+                    tx,
+                    appointmentId,
+                    "FinalSettlement",
+                    "Cash (Team Leader Verified)",
+                    finalPaid,
+                    otAmt,
+                    $"CASH-{appointmentId}",
+                    appointmentId,
+                    verifierId,
+                    notes,
+                    cancellationToken);
             }
 
             await tx.CommitAsync(cancellationToken);
@@ -7005,6 +7015,18 @@ var invId = invoiceId ?? appt.XenditInvoiceId ?? $"inv_mock_{appointmentId}";
         catch (Exception ex)
         {
             _logger.LogWarning(ex, "Could not sync EF Core Payments remittance status for {AppointmentId}", appointmentId);
+        }
+
+        if (_bookingDocuments != null)
+        {
+            try
+            {
+                await _bookingDocuments.FinalizeStageDocumentsAndEmailAsync(appointmentId, "FinalConsolidated", cancellationToken);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Failed to finalize/email Final Consolidated Receipt PDF for {AppointmentId}", appointmentId);
+            }
         }
 
         return (await GetAppointmentByIdOnConnectionAsync(conn, appointmentId, cancellationToken))!;

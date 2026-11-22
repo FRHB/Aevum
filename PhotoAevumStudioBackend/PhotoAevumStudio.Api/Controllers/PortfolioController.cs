@@ -333,7 +333,23 @@ public class PortfolioController : ControllerBase
         var actorId = User.FindFirstValue("studio_id") ?? User.FindFirstValue(ClaimTypes.NameIdentifier) ?? "Admin";
         await _sqlAuthService.LogActivityAsync("UPDATE", "Portfolio", id, $"Updated portfolio {portfolio.PortfolioName} ({id})", "Admin", actorId, cancellationToken);
 
-        return Ok(portfolio);
+        return Ok(new
+        {
+            portfolio.PortfolioId,
+            portfolio.PortfolioName,
+            portfolio.PortfolioDescription,
+            portfolio.CategoryID,
+            portfolio.IsFeatured,
+            portfolio.HighlightImageFileName,
+            portfolio.CreatedAt,
+            Images = (portfolio.Images ?? new List<PortfolioImage>()).Select(img => new
+            {
+                img.Id,
+                img.FileName,
+                Url = ResolvePortfolioImageUrl(img),
+                img.UploadedAt
+            }).ToList()
+        });
     }
 
     [HttpPatch("{id}/toggle-feature")]

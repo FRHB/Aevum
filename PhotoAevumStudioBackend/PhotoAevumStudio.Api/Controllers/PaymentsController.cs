@@ -1,8 +1,11 @@
 using System.Security.Claims;
+using System.Security.Cryptography;
+using System.Text;
 
 using Microsoft.AspNetCore.Authorization;
 
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.RateLimiting;
 
 using Microsoft.Extensions.Options;
 
@@ -43,38 +46,75 @@ public class PaymentsController : ControllerBase
     private readonly IPaymentNotifier _notifier;
     private readonly IConfiguration _configuration;
     private readonly IHttpClientFactory _httpClientFactory;
+    private readonly IWebHostEnvironment? _env;
 
 
 
     public PaymentsController(
-
         IConsultationNegotiationService consultationService,
-
         IPaymentService paymentService,
-
         IOptions<XenditSettings> xenditOptions,
-
         ILogger<PaymentsController> logger,
         IPendingPaymentService pendingPayments,
         IPaymentNotifier notifier,
         IConfiguration configuration,
         IHttpClientFactory httpClientFactory)
-
+        : this(consultationService, paymentService, xenditOptions, logger, pendingPayments, notifier, configuration, httpClientFactory, null)
     {
+    }
 
+    [Microsoft.Extensions.DependencyInjection.ActivatorUtilitiesConstructor]
+    public PaymentsController(
+        IConsultationNegotiationService consultationService,
+        IPaymentService paymentService,
+        IOptions<XenditSettings> xenditOptions,
+        ILogger<PaymentsController> logger,
+        IPendingPaymentService pendingPayments,
+        IPaymentNotifier notifier,
+        IConfiguration configuration,
+        IHttpClientFactory httpClientFactory,
+        IWebHostEnvironment? env)
+    {
         _consultationService = consultationService;
-
         _paymentService = paymentService;
-
         _xenditSettings = xenditOptions.Value;
-
         _logger = logger;
         _pendingPayments = pendingPayments;
         _notifier = notifier;
         _configuration = configuration;
         _httpClientFactory = httpClientFactory;
-
+        _env = env;
     }
+
+    private bool IsClerkOrAdmin() =>
+        User?.Identity?.IsAuthenticated == true && (
+            User.IsInRole(AppRoles.Admin) ||
+            User.IsInRole(AppRoles.SystemAdmin) ||
+            User.IsInRole("System Admin") ||
+            User.IsInRole(AppRoles.OfficeClerk) ||
+            User.IsInRole("OfficeClerk") ||
+            (User.FindFirst("studio_id")?.Value?.StartsWith("CLK-", StringComparison.OrdinalIgnoreCase) ?? false));
+
+    private bool IsStudioStaff() =>
+        IsClerkOrAdmin() || (User?.Identity?.IsAuthenticated == true && User.IsInRole(AppRoles.Employee));
+
+    private string[] GetCallerIdentifiers() =>
+        User?.Identity?.IsAuthenticated == true
+            ? new[]
+              {
+                  User.FindFirstValue("studio_id"),
+                  User.FindFirstValue(ClaimTypes.NameIdentifier),
+                  User.FindFirstValue("sub")
+              }
+              .Where(x => !string.IsNullOrWhiteSpace(x))
+              .Select(x => x!)
+              .Distinct(StringComparer.OrdinalIgnoreCase)
+              .ToArray()
+            : Array.Empty<string>();
+
+    private bool MatchesCaller(string? targetId) =>
+        !string.IsNullOrWhiteSpace(targetId) &&
+        GetCallerIdentifiers().Any(id => string.Equals(id, targetId.Trim(), StringComparison.OrdinalIgnoreCase));
 
 
 
@@ -112,7 +152,17 @@ public class PaymentsController : ControllerBase
 
     {
 
-        var userId = User.FindFirstValue(ClaimTypes.NameIdentifier) ?? User.FindFirstValue("sub") ?? string.Empty;
+        var userId = User.FindFirstValue("studio_id")
+                     ?? User.FindFirstValue(ClaimTypes.NameIdentifier)
+                     ?? User.FindFirstValue("sub")
+                     ?? string.Empty;
+
+        if (!IsClerkOrAdmin() && !string.IsNullOrWhiteSpace(request.EventAppointmentId))
+        {
+            var appt = await _consultationService.GetAppointmentByIdAsync(request.EventAppointmentId, cancellationToken);
+            if (appt != null && !MatchesCaller(appt.CustomerId))
+                return Forbid();
+        }
 
         var result = await _paymentService.SubmitCustomerPaymentAsync(request, userId, cancellationToken);
 
@@ -128,7 +178,7 @@ public class PaymentsController : ControllerBase
 
     [HttpPost("log-employee-cash")]
 
-    [Authorize(Roles = $"{AppRoles.Employee},{AppRoles.Admin}")]
+    [Authorize(Roles = $"{AppRoles.Employee},{AppRoles.OfficeClerk},{AppRoles.Admin},{AppRoles.SystemAdmin}")]
 
     public async Task<IActionResult> LogEmployeeCash(
 
@@ -138,25 +188,29 @@ public class PaymentsController : ControllerBase
 
     {
 
-        var empId = User.FindFirstValue(ClaimTypes.NameIdentifier) ?? User.FindFirstValue("sub") ?? request.EmployeeId;
+        var empId = User.FindFirstValue("studio_id")
+                    ?? User.FindFirstValue(ClaimTypes.NameIdentifier)
+                    ?? User.FindFirstValue("sub")
+                    ?? string.Empty;
 
-        var empName = User.FindFirstValue("full_name") ?? User.FindFirstValue(ClaimTypes.Name) ?? request.EmployeeName;
+        if (string.IsNullOrWhiteSpace(empId))
+            return Unauthorized();
 
+        var empName = User.FindFirstValue("full_name")
+                      ?? User.FindFirstValue(ClaimTypes.Name)
+                      ?? empId;
 
+        var isAdmin = User.IsInRole(AppRoles.Admin) || User.IsInRole(AppRoles.SystemAdmin);
+        var effectiveEmpId = isAdmin && !string.IsNullOrWhiteSpace(request.EmployeeId) ? request.EmployeeId : empId;
+        var effectiveEmpName = isAdmin && !string.IsNullOrWhiteSpace(request.EmployeeName) ? request.EmployeeName : empName;
 
         var fullRequest = request with
-
         {
-
-            EmployeeId = string.IsNullOrWhiteSpace(request.EmployeeId) ? empId : request.EmployeeId,
-
-            EmployeeName = string.IsNullOrWhiteSpace(request.EmployeeName) ? empName : request.EmployeeName
-
+            EmployeeId = effectiveEmpId,
+            EmployeeName = effectiveEmpName
         };
 
-
-
-        var result = await _paymentService.LogEmployeeCashCollectionAsync(fullRequest, empId, cancellationToken);
+        var result = await _paymentService.LogEmployeeCashCollectionAsync(fullRequest, effectiveEmpId, cancellationToken);
 
         return Ok(result);
 
@@ -182,7 +236,7 @@ public class PaymentsController : ControllerBase
 
     {
 
-        var adminId = User.FindFirstValue(ClaimTypes.NameIdentifier) ?? User.FindFirstValue("sub") ?? request?.AdminId ?? "Admin";
+        var adminId = User.FindFirstValue("studio_id") ?? User.FindFirstValue(ClaimTypes.NameIdentifier) ?? User.FindFirstValue("sub") ?? request?.AdminId ?? "Admin";
 
         var adminName = User.FindFirstValue("full_name") ?? User.FindFirstValue(ClaimTypes.Name) ?? request?.AdminName ?? "System Administrator";
 
@@ -201,6 +255,20 @@ public class PaymentsController : ControllerBase
             catch (Exception ex)
             {
                 _logger.LogWarning(ex, "Customer Dropbox folder auto-generation failed after remittance approval for {AppointmentId}", result.EventAppointmentId);
+            }
+
+            try
+            {
+                await _notifier.EventStatusChangedAsync(
+                    result.EventAppointmentId,
+                    "Completed",
+                    "Paid",
+                    null,
+                    cancellationToken);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "SignalR EventStatusChanged broadcast failed after remittance approval for {AppointmentId}", result.EventAppointmentId);
             }
         }
 
@@ -231,89 +299,62 @@ public class PaymentsController : ControllerBase
 
 
     // GET api/payments/employee-ledger
-
     [HttpGet("employee-ledger")]
-
-    [Authorize(Roles = $"{AppRoles.Employee},{AppRoles.Admin}")]
-
+    [Authorize(Roles = $"{AppRoles.Employee},{AppRoles.OfficeClerk},{AppRoles.Admin},{AppRoles.SystemAdmin}")]
     public async Task<IActionResult> GetEmployeeLedger(
-
         [FromQuery] string? employeeId,
-
         CancellationToken cancellationToken)
-
     {
+        var currentEmpId = User.FindFirstValue("studio_id")
+                           ?? User.FindFirstValue(ClaimTypes.NameIdentifier)
+                           ?? User.FindFirstValue("sub")
+                           ?? string.Empty;
 
-        var currentEmpId = User.FindFirstValue(ClaimTypes.NameIdentifier) ?? User.FindFirstValue("sub") ?? string.Empty;
-
-        var targetEmpId = !string.IsNullOrWhiteSpace(employeeId) && User.IsInRole(AppRoles.Admin)
-
+        var isAdmin = User.IsInRole(AppRoles.Admin) || User.IsInRole(AppRoles.SystemAdmin);
+        var targetEmpId = !string.IsNullOrWhiteSpace(employeeId) && isAdmin
             ? employeeId
-
             : currentEmpId;
 
-
-
         var list = await _paymentService.GetEmployeeLedgerAsync(targetEmpId, cancellationToken);
-
         return Ok(list);
-
     }
-
-
 
     // GET api/payments/history
-
     [HttpGet("history")]
-
-    [Authorize(Roles = $"{AppRoles.Admin},{AppRoles.SystemAdmin},{AppRoles.Employee},{AppRoles.OfficeClerk}")]
-
+    [Authorize(Policy = "ClerkOrAdmin")]
     public async Task<IActionResult> GetAllPayments(CancellationToken cancellationToken)
-
     {
-
         var list = await _paymentService.GetAllPaymentsAsync(cancellationToken);
-
         return Ok(list);
-
     }
-
-
 
     // GET api/payments/booking/{bookingId}
-
     [HttpGet("booking/{bookingId:int}")]
-
-    [Authorize]
-
+    [Authorize(Policy = "ClerkOrAdmin")]
     public async Task<IActionResult> GetPaymentsByBooking(int bookingId, CancellationToken cancellationToken)
-
     {
-
         var list = await _paymentService.GetPaymentsByBookingAsync(bookingId, cancellationToken);
-
         return Ok(list);
-
     }
 
-
-
     // GET api/payments/appointment/{id}
-
     [HttpGet("appointment/{id}")]
-
     [Authorize]
-
     public async Task<IActionResult> GetAppointment(string id, CancellationToken cancellationToken)
-
     {
-
         var appt = await _consultationService.GetAppointmentByIdAsync(id, cancellationToken);
-
         if (appt == null) return NotFound(new { message = $"Appointment {id} not found." });
 
-        return Ok(appt);
+        if (!IsClerkOrAdmin())
+        {
+            var isOwner = MatchesCaller(appt.CustomerId);
+            var isAssignedEmployee = User.IsInRole(AppRoles.Employee) &&
+                                     appt.AssignedEmployees.Any(e => MatchesCaller(e.EmployeeId));
+            if (!isOwner && !isAssignedEmployee)
+                return Forbid();
+        }
 
+        return Ok(appt);
     }
 
 
@@ -332,26 +373,29 @@ public class PaymentsController : ControllerBase
 
     {
 
-        var isStaffOrAdmin = User.IsInRole(AppRoles.Admin) || 
+        if (IsClerkOrAdmin())
+        {
+            var allList = await _consultationService.GetAppointmentsAsync(null, status, cancellationToken);
+            return Ok(allList);
+        }
 
-                             User.IsInRole(AppRoles.SystemAdmin) || 
+        if (User.IsInRole(AppRoles.Employee))
+        {
+            var callerIds = GetCallerIdentifiers();
+            var allList = await _consultationService.GetAppointmentsAsync(null, status, cancellationToken);
+            var assigned = allList.Where(a => a.AssignedEmployees.Any(e =>
+                callerIds.Any(cid => string.Equals(cid, e.EmployeeId, StringComparison.OrdinalIgnoreCase)))).ToList();
+            return Ok(assigned);
+        }
 
-                             User.IsInRole(AppRoles.Employee) || 
+        var userId = User.FindFirstValue("studio_id")
+                     ?? User.FindFirstValue(ClaimTypes.NameIdentifier)
+                     ?? User.FindFirstValue("sub");
 
-                             User.IsInRole(AppRoles.OfficeClerk) ||
-
-                             User.IsInRole("OfficeClerk");
-
-
-
-        var userId = isStaffOrAdmin ? null : (User.FindFirstValue(ClaimTypes.NameIdentifier) ?? User.FindFirstValue("sub") ?? User.FindFirstValue("studio_id"));
-
-        if (string.IsNullOrWhiteSpace(userId)) userId = null;
-
-
+        if (string.IsNullOrWhiteSpace(userId))
+            return Unauthorized();
 
         var list = await _consultationService.GetAppointmentsAsync(userId, status, cancellationToken);
-
         return Ok(list);
 
     }
@@ -421,8 +465,8 @@ public class PaymentsController : ControllerBase
     // Instant verification upon return from Xendit checkout
 
     [HttpPost("verify-downpayment/{appointmentId}")]
-
-    [Authorize(Roles = $"{AppRoles.Customer},{AppRoles.Admin},{AppRoles.SystemAdmin},{AppRoles.Employee},{AppRoles.OfficeClerk}")]
+    [EnableRateLimiting("PaymentPolicy")]
+    [Authorize(Roles = $"{AppRoles.Customer},{AppRoles.Admin},{AppRoles.SystemAdmin},{AppRoles.OfficeClerk}")]
 
     public async Task<IActionResult> VerifyDownpayment(
 
@@ -435,12 +479,23 @@ public class PaymentsController : ControllerBase
         CancellationToken cancellationToken)
 
     {
+        var appt = await _consultationService.GetAppointmentByIdAsync(appointmentId, cancellationToken);
+        if (appt == null) return NotFound(new { message = $"Appointment {appointmentId} not found." });
+
+        if (!IsClerkOrAdmin() && !MatchesCaller(appt.CustomerId))
+            return Forbid();
 
         var targetId = !string.IsNullOrWhiteSpace(invoiceId) ? invoiceId : sessionId;
 
-        var updated = await _consultationService.VerifyDownpaymentAsync(appointmentId, targetId, cancellationToken);
-
-        return Ok(updated);
+        try
+        {
+            var updated = await _consultationService.VerifyDownpaymentAsync(appointmentId, targetId, cancellationToken);
+            return Ok(updated);
+        }
+        catch (InvalidOperationException ex)
+        {
+            return BadRequest(new { message = ex.Message });
+        }
 
     }
 
@@ -451,8 +506,8 @@ public class PaymentsController : ControllerBase
     // Customer requests a 30-minute hold extension
 
     [HttpPost("request-extension/{appointmentId}")]
-
-    [Authorize(Roles = $"{AppRoles.Customer},{AppRoles.Admin},{AppRoles.SystemAdmin},{AppRoles.Employee},{AppRoles.OfficeClerk}")]
+    [EnableRateLimiting("PaymentPolicy")]
+    [Authorize(Roles = $"{AppRoles.Customer},{AppRoles.Admin},{AppRoles.SystemAdmin},{AppRoles.OfficeClerk}")]
 
     public async Task<IActionResult> RequestExtension(
 
@@ -461,10 +516,15 @@ public class PaymentsController : ControllerBase
         CancellationToken cancellationToken)
 
     {
+        var appt = await _consultationService.GetAppointmentByIdAsync(appointmentId, cancellationToken);
+        if (appt == null) return NotFound(new { message = $"Appointment {appointmentId} not found." });
+
+        if (!IsClerkOrAdmin() && !MatchesCaller(appt.CustomerId))
+            return Forbid();
 
         var success = await _consultationService.RequestExtensionAsync(appointmentId, cancellationToken);
 
-        if (!success) return BadRequest(new { message = "Could not extend hold. Appointment may not be in pending downpayment state." });
+        if (!success) return BadRequest(new { message = "Could not extend hold. Appointment may have reached its extension limit or is no longer in pending downpayment state." });
 
         return Ok(new { success = true, appointmentId, message = "Hold extended by 30 minutes." });
 
@@ -895,11 +955,11 @@ public class PaymentsController : ControllerBase
 
     // POST api/payments/simulate-webhook/{appointmentId}
 
-    // Triggers simulated Xendit webhook callback to verify payment, settle downpayment, and send customer confirmation email
+    // Triggers simulated Xendit webhook callback to verify payment, settle downpayment, and send customer confirmation email (non-production only)
 
     [HttpPost("simulate-webhook/{appointmentId}")]
 
-    [AllowAnonymous]
+    [Authorize(Roles = $"{AppRoles.Customer},{AppRoles.Admin},{AppRoles.SystemAdmin},{AppRoles.OfficeClerk},{AppRoles.Employee}")]
 
     public async Task<IActionResult> SimulateWebhook(
 
@@ -907,12 +967,24 @@ public class PaymentsController : ControllerBase
         [FromQuery] string? paymentMethod,
         CancellationToken cancellationToken)
     {
-        // Dev-only shortcut: never available once a real Xendit secret key is configured.
+        // Strictly disabled in Production regardless of Xendit key configuration
+        if (_env != null && _env.IsProduction())
+            return NotFound();
+
         if (!IsMockXendit())
             return NotFound();
 
         if (appointmentId.EndsWith("-FINAL", StringComparison.OrdinalIgnoreCase))
         {
+            var baseId = appointmentId[..^"-FINAL".Length];
+            if (User?.Identity?.IsAuthenticated == true && !IsClerkOrAdmin())
+            {
+                var baseAppt = await _consultationService.GetAppointmentByIdAsync(baseId, cancellationToken);
+                if (baseAppt == null) return NotFound(new { message = $"Appointment {baseId} not found." });
+                if (!MatchesCaller(baseAppt.CustomerId) && !baseAppt.AssignedEmployees.Any(e => MatchesCaller(e.EmployeeId)))
+                    return Forbid();
+            }
+
             var finalConf = await _pendingPayments.ConfirmByReferenceAsync(appointmentId, null, null, "QRPH", cancellationToken);
             if (finalConf != null)
             {
@@ -925,6 +997,10 @@ public class PaymentsController : ControllerBase
         var appt = await _consultationService.GetAppointmentByIdAsync(appointmentId, cancellationToken);
         if (appt == null)
             return NotFound(new { message = $"Appointment {appointmentId} not found." });
+
+        if (User?.Identity?.IsAuthenticated == true && !IsClerkOrAdmin() && !MatchesCaller(appt.CustomerId))
+            return Forbid();
+
         if (appt.EventStatus == "Pending Payment")
         {
             var confirmation = await _pendingPayments.ConfirmByReferenceAsync(appointmentId, null, null, "QRPH", cancellationToken);
@@ -932,8 +1008,6 @@ public class PaymentsController : ControllerBase
                 await HandlePostPaymentConfirmationAsync(confirmation, appointmentId, "QRPH", cancellationToken);
             return Ok(await _consultationService.GetAppointmentByIdAsync(appointmentId, cancellationToken));
         }
-
-
 
         var invoiceId = appt.XenditInvoiceId ?? $"inv_sim_{appointmentId}_{Guid.NewGuid():N[..6]}";
 
@@ -949,14 +1023,25 @@ public class PaymentsController : ControllerBase
     }
 
     // POST api/payments/{appointmentId}/update-status
-    // Dynamically updates booking status during payment flow (e.g. Deal_Won, Deal_Lost, Rescheduled)
+    // Updates booking status during payment flow (Deal_Lost, Rescheduled). Deal_Won requires verified payment.
     [HttpPost("{appointmentId}/update-status")]
-    [AllowAnonymous]
+    [EnableRateLimiting("PaymentPolicy")]
+    [Authorize(Roles = $"{AppRoles.Customer},{AppRoles.Admin},{AppRoles.SystemAdmin},{AppRoles.OfficeClerk}")]
     public async Task<IActionResult> UpdateBookingStatus(
         string appointmentId,
         [FromBody] UpdatePaymentBookingStatusRequest request,
         CancellationToken cancellationToken)
     {
+        if (request == null || string.IsNullOrWhiteSpace(request.Status))
+            return BadRequest(new { message = "Status is required." });
+
+        var appt = await _consultationService.GetAppointmentByIdAsync(appointmentId, cancellationToken);
+        if (appt == null)
+            return NotFound(new { message = $"Event appointment {appointmentId} not found." });
+
+        if (User?.Identity?.IsAuthenticated == true && !IsClerkOrAdmin() && !MatchesCaller(appt.CustomerId))
+            return Forbid();
+
         try
         {
             var updated = await _consultationService.UpdateBookingStatusFromPaymentAsync(appointmentId, request, cancellationToken);
@@ -970,10 +1055,14 @@ public class PaymentsController : ControllerBase
         {
             return BadRequest(new { message = ex.Message });
         }
+        catch (ArgumentException ex)
+        {
+            return BadRequest(new { message = ex.Message });
+        }
         catch (Exception ex)
         {
             _logger.LogError(ex, "Failed to update booking status for appointment {AppointmentId}", appointmentId);
-            return StatusCode(500, new { message = ex.Message });
+            return StatusCode(500, new { message = "An error occurred while updating booking status." });
         }
     }
 
@@ -1001,51 +1090,44 @@ public class PaymentsController : ControllerBase
 
         {
 
-            var configuredToken = _xenditSettings.WebhookToken;
+            var configuredToken = _configuration["XENDIT_CALLBACK_TOKEN"]
+                ?? _xenditSettings.WebhookToken
+                ?? _configuration["XenditSettings:WebhookToken"];
 
-            if (!string.IsNullOrWhiteSpace(configuredToken))
-
+            if (string.IsNullOrWhiteSpace(configuredToken))
             {
-
-                if (string.IsNullOrWhiteSpace(callbackToken) ||
-
-                    !string.Equals(callbackToken, configuredToken, StringComparison.Ordinal))
-
-                {
-
-                    _logger.LogWarning("Rejected Xendit callback with invalid or missing x-callback-token header.");
-
-                    return Unauthorized(new { message = "Invalid callback token." });
-
-                }
-
+                _logger.LogError("Xendit WebhookToken is not configured; rejecting webhook.");
+                return StatusCode(StatusCodes.Status503ServiceUnavailable, new { message = "Webhook not configured." });
             }
 
-
+            var suppliedBytes = Encoding.UTF8.GetBytes(callbackToken ?? string.Empty);
+            var expectedBytes = Encoding.UTF8.GetBytes(configuredToken);
+            if (suppliedBytes.Length != expectedBytes.Length ||
+                !CryptographicOperations.FixedTimeEquals(suppliedBytes, expectedBytes))
+            {
+                _logger.LogWarning("Rejected Xendit callback with invalid or missing x-callback-token header.");
+                return Unauthorized(new { message = "Invalid callback token." });
+            }
 
             _logger.LogInformation("Processing Xendit callback: Invoice {InvoiceId}, ExternalId {ExternalId}, Status {Status}, Amount {Amount}",
-
                 payload.Id, payload.ExternalId, payload.Status, payload.Amount);
 
-
-
             if (string.IsNullOrWhiteSpace(payload.ExternalId))
-
             {
-
                 _logger.LogWarning("Xendit webhook payload missing external_id.");
-
                 return BadRequest(new { message = "external_id is required." });
-
             }
 
-
-
             if (payload.Status.Equals("PAID", StringComparison.OrdinalIgnoreCase) ||
-
                 payload.Status.Equals("SETTLED", StringComparison.OrdinalIgnoreCase))
-
             {
+                if (!string.IsNullOrWhiteSpace(payload.Currency) &&
+                    !string.Equals(payload.Currency, "PHP", StringComparison.OrdinalIgnoreCase))
+                {
+                    _logger.LogWarning("Rejected Xendit callback for {ExternalId}: unexpected currency {Currency}.",
+                        payload.ExternalId, payload.Currency);
+                    return BadRequest(new { message = "Unsupported currency." });
+                }
 
                 // Active Channel: Restrict automated webhook verification strictly to the QR Ph / E-Wallet channel
                 var allowedChannels = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
@@ -1062,6 +1144,14 @@ public class PaymentsController : ControllerBase
                     return BadRequest(new { message = "Payment channel not supported. Reservation fee must be paid via QR Ph or supported E-Wallet." });
                 }
 
+                var booking = await _pendingPayments.GetQrPaymentAsync(payload.ExternalId, cancellationToken);
+                if (booking != null && payload.Amount > 0 && payload.Amount < booking.Amount)
+                {
+                    _logger.LogWarning("Xendit invoice callback for {ExternalId} paid {Paid} < required {Required}; rejecting.",
+                        payload.ExternalId, payload.Amount, booking.Amount);
+                    return Ok(new { status = "AMOUNT_MISMATCH" });
+                }
+
                 var confirmed = await _pendingPayments.ConfirmByReferenceAsync(
                     payload.ExternalId, payload.Id, payload.Amount > 0 ? payload.Amount : null, channel, cancellationToken);
                 if (confirmed != null)
@@ -1072,18 +1162,11 @@ public class PaymentsController : ControllerBase
                 {
                     await _consultationService.VerifyDownpaymentAsync(payload.ExternalId, payload.Id, channel, cancellationToken);
                 }
-
             }
-
             else if (payload.Status.Equals("EXPIRED", StringComparison.OrdinalIgnoreCase))
-
             {
-
                 await _consultationService.HandlePaymentExpiredAsync(payload.ExternalId, payload.Id, cancellationToken);
-
             }
-
-
 
             return Ok(new { status = "SUCCESS", invoice_id = payload.Id });
 
@@ -1103,17 +1186,36 @@ public class PaymentsController : ControllerBase
 
     // POST api/payments/simulate-qr/{externalId}
     // POST api/payment/simulate-qr/{externalId}
-    // Dev/test only: asks Xendit to simulate a QR payment. The secret key stays server-side.
+    // Non-production only: asks Xendit to simulate a QR payment. The secret key stays server-side.
     [HttpPost("simulate-qr/{externalId}")]
     [HttpPost("/api/payment/simulate-qr/{externalId}")]
-    [AllowAnonymous]
+    [Authorize(Roles = $"{AppRoles.Customer},{AppRoles.Admin},{AppRoles.SystemAdmin},{AppRoles.OfficeClerk},{AppRoles.Employee}")]
     public async Task<IActionResult> SimulateQrPayment(
         string externalId,
         [FromQuery] decimal? amount,
         CancellationToken cancellationToken)
     {
+        if (_env != null && _env.IsProduction())
+            return NotFound();
+
         if (string.IsNullOrWhiteSpace(externalId))
             return BadRequest(new { message = "externalId is required." });
+
+        if (User?.Identity?.IsAuthenticated == true && !IsClerkOrAdmin())
+        {
+            var lookupId = externalId.EndsWith("-FINAL", StringComparison.OrdinalIgnoreCase)
+                ? externalId[..^"-FINAL".Length]
+                : externalId;
+            var ownerAppt = await _consultationService.GetAppointmentByIdAsync(lookupId, cancellationToken);
+            if (ownerAppt != null)
+            {
+                var isOwner = MatchesCaller(ownerAppt.CustomerId);
+                var isAssignedCrew = User.IsInRole(AppRoles.Employee) &&
+                                     ownerAppt.AssignedEmployees.Any(e => MatchesCaller(e.EmployeeId));
+                if (!isOwner && !isAssignedCrew)
+                    return Forbid();
+            }
+        }
 
         var key = _xenditSettings.SecretKey;
         if (string.IsNullOrWhiteSpace(key) || key.Contains("mock", StringComparison.OrdinalIgnoreCase))
@@ -1225,11 +1327,11 @@ public class PaymentsController : ControllerBase
             return Ok(new { status = "SIMULATED", externalId, qrId = resolvedQrId, xenditStatus = finalStatus });
         }
 
+        _logger.LogWarning("Xendit QR simulation failed with status {StatusCode} for {ExternalId}: {Body}", finalStatus, externalId, responseBody);
         return StatusCode(StatusCodes.Status502BadGateway, new
         {
             message = "Xendit rejected the QR payment simulation.",
-            xenditStatus = finalStatus,
-            detail = responseBody
+            xenditStatus = finalStatus
         });
     }
 
@@ -1307,6 +1409,20 @@ public class PaymentsController : ControllerBase
 
         try
         {
+            var docs = HttpContext?.RequestServices.GetService<IBookingDocumentService>();
+            if (docs != null)
+            {
+                var receiptType = confirmation.IsFinalPayment ? "FinalConsolidated" : "ReservationAcknowledgment";
+                await docs.FinalizeStageDocumentsAndEmailAsync(confirmation.AppointmentId, receiptType, cancellationToken);
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "PDF generation/email dispatch failed for {AppointmentId}", confirmation.AppointmentId);
+        }
+
+        try
+        {
             await _notifier.PaymentCompletedAsync(confirmation.AppointmentId, cancellationToken);
             if (!string.Equals(referenceId, confirmation.AppointmentId, StringComparison.OrdinalIgnoreCase))
             {
@@ -1349,8 +1465,9 @@ public class PaymentsController : ControllerBase
         if (!isStaff && !callerIds.Any(i => string.Equals(i, info.CustomerId, StringComparison.OrdinalIgnoreCase)))
             return NotFound(new { message = "Booking not found." });
 
-        // Only an unpaid, still-locked booking exposes its QR.
-        if (info.EventStatus != "Pending Payment") info.QrString = null;
+        // Only an unpaid, still-locked booking exposes its QR (and Stage 1 requires clickwrap contract acceptance for customers).
+        if (info.EventStatus != "Pending Payment" || (!isStaff && !info.IsFinalPayment && !info.ContractAccepted))
+            info.QrString = null;
         return Ok(info);
     }
 
@@ -1359,6 +1476,7 @@ public class PaymentsController : ControllerBase
     // (the phone has no login session). Exposes no customer id, QR payload or contact details.
     [HttpGet("qr/{appointmentId}/public")]
     [AllowAnonymous]
+    [EnableRateLimiting("PaymentPolicy")]
     public async Task<IActionResult> GetPublicQrPayment(string appointmentId, CancellationToken cancellationToken)
     {
         var info = await _pendingPayments.GetQrPaymentAsync(appointmentId, cancellationToken);

@@ -1,11 +1,15 @@
 using System.Reflection;
+using System.Security.Claims;
+using System.Security.Cryptography;
+using System.Text;
+using System.Threading.RateLimiting;
 using FluentValidation;
-using Hangfire;
-using Serilog;
 using FluentValidation.AspNetCore;
+using Hangfire;
 using InfisicalConfiguration;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.HttpOverrides;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.EntityFrameworkCore;
@@ -16,20 +20,18 @@ using PhotoAevumStudio.Application.Entities;
 using PhotoAevumStudio.Application.Interfaces;
 using PhotoAevumStudio.Infrastructure.Data;
 using PhotoAevumStudio.Infrastructure.Services;
-using System.Security.Claims;
-using System.Text;
-using System.Threading.RateLimiting;
+using Serilog;
 
 var builder = WebApplication.CreateBuilder(args);
 
-// Fetch local Infisical auth keys from appsettings or environment variables
+// Fetch Infisical auth keys from appsettings, user secrets, or environment variables
 var infisicalClientId = builder.Configuration["Infisical:ClientId"]?.Trim();
 var infisicalClientSecret = builder.Configuration["Infisical:ClientSecret"]?.Trim();
-var infisicalProjectId = builder.Configuration["Infisical:ProjectId"]?.Trim() ?? "26fb5dcd-e66c-4054-8dab-7cac8519bdee";
+var infisicalProjectId = builder.Configuration["Infisical:ProjectId"]?.Trim() ?? string.Empty;
 var infisicalEnvironment = builder.Configuration["Infisical:Environment"]?.Trim() ?? "dev";
 
 // Only connect to Infisical if the keys are present (prevents crashes in environments without Infisical)
-if (!string.IsNullOrEmpty(infisicalClientId) && !string.IsNullOrEmpty(infisicalClientSecret))
+if (!string.IsNullOrEmpty(infisicalClientId) && !string.IsNullOrEmpty(infisicalClientSecret) && !string.IsNullOrEmpty(infisicalProjectId))
 {
     try
     {
@@ -43,6 +45,10 @@ if (!string.IsNullOrEmpty(infisicalClientId) && !string.IsNullOrEmpty(infisicalC
     }
     catch (Exception ex)
     {
+        if (builder.Environment.IsProduction())
+        {
+            throw new InvalidOperationException("Failed to load secrets from Infisical in Production.", ex);
+        }
         Console.Error.WriteLine($"[Startup Warning] Infisical secret fetch failed; falling back to local configuration: {ex.Message}");
     }
     var normalizedSecrets = builder.Configuration.AsEnumerable()
@@ -83,10 +89,26 @@ builder.Services.AddValidatorsFromAssemblyContaining<PhotoAevumStudio.Applicatio
 
 // ── Database ─────────────────────────────────────────────────────────────────
 
-var connectionString = SqlResilienceHelper.NormalizeConnectionString(builder.Configuration.GetConnectionString("DefaultConnection"));
+var connectionString = SqlResilienceHelper.NormalizeConnectionString(
+    builder.Configuration.GetConnectionString("DefaultConnection")
+    ?? builder.Configuration["ConnectionStrings__DefaultConnection"]
+    ?? Environment.GetEnvironmentVariable("AEVUM_DB_CONNECTION"));
+
 if (string.IsNullOrWhiteSpace(connectionString))
 {
-    connectionString = SqlResilienceHelper.NormalizeConnectionString("Server=db77602.public.databaseasp.net; Database=db77602; User Id=db77602; Password=G!r7cB8#Z5_d; Encrypt=True; TrustServerCertificate=True; MultipleActiveResultSets=True;");
+    if (builder.Environment.IsEnvironment("Testing"))
+    {
+        connectionString = "Server=(localdb)\\mssqllocaldb;Database=PhotoAevumStudio_Test;Trusted_Connection=True;MultipleActiveResultSets=True;";
+        builder.Configuration["ConnectionStrings:DefaultConnection"] = connectionString;
+    }
+    else
+    {
+        throw new InvalidOperationException(
+            "ConnectionStrings:DefaultConnection is not configured. Provide it via environment variables, Infisical, or dotnet user-secrets.");
+    }
+}
+else
+{
     builder.Configuration["ConnectionStrings:DefaultConnection"] = connectionString;
 }
 
@@ -118,11 +140,19 @@ builder.Services.AddIdentity<ApplicationUser, IdentityRole>(options =>
 
 // ── JWT Authentication ────────────────────────────────────────────────────────
 
-var jwtKey = builder.Configuration["Jwt:Key"];
+var jwtKey = builder.Configuration["Jwt:Key"] ?? builder.Configuration["Jwt__Key"];
 if (string.IsNullOrWhiteSpace(jwtKey) || jwtKey.Length < 32)
 {
-    jwtKey = "PhotoAevumStudio-Dev-Fallback-Secret-Key-2026-Minimum32Chars!";
-    builder.Configuration["Jwt:Key"] = jwtKey;
+    if (builder.Environment.IsDevelopment() || builder.Environment.IsEnvironment("Testing"))
+    {
+        // Ephemeral random signing key for local dev/testing when Jwt:Key is not explicitly configured
+        jwtKey = Convert.ToBase64String(RandomNumberGenerator.GetBytes(32));
+        builder.Configuration["Jwt:Key"] = jwtKey;
+    }
+    else
+    {
+        throw new InvalidOperationException("Jwt:Key must be configured with at least 32 characters.");
+    }
 }
 
 var jwtIssuer = builder.Configuration["Jwt:Issuer"]
@@ -185,8 +215,13 @@ builder.Services.AddAuthorization(o =>
         .RequireAssertion(c => !MustChange(c)));
 
     o.AddPolicy("ClerkOrAdmin", p => p
-        .RequireRole(AppRoles.Admin, AppRoles.SystemAdmin, AppRoles.OfficeClerk)
-        .RequireAssertion(c => !MustChange(c)));
+        .RequireAssertion(c => !MustChange(c) && (
+            c.User.IsInRole(AppRoles.Admin) ||
+            c.User.IsInRole(AppRoles.SystemAdmin) ||
+            c.User.IsInRole("System Admin") ||
+            c.User.IsInRole(AppRoles.OfficeClerk) ||
+            c.User.IsInRole("OfficeClerk") ||
+            (c.User.FindFirst("studio_id")?.Value?.StartsWith("CLK-", StringComparison.OrdinalIgnoreCase) ?? false))));
 });
 // ── CORS — allow the Blazor frontend origin ───────────────────────────────────
 
@@ -194,69 +229,80 @@ builder.Services.AddCors(options =>
 {
     options.AddPolicy("BlazorFrontend", policy =>
     {
+        var isDevOrTest = builder.Environment.IsDevelopment() || builder.Environment.IsEnvironment("Testing");
+
         var configuredOrigins = builder.Configuration
             .GetSection("Cors:AllowedOrigins")
             .Get<string[]>() ?? Array.Empty<string>();
 
-        var defaultOrigins = new[]
+        var productionOrigins = new[]
         {
-            "http://photoaevum.tryasp.net",
-            "https://photoaevum.tryasp.net",
-            "http://site104417.siteasp.net",
-            "https://site104417.siteasp.net",
-            "http://api-photoaevum.tryasp.net",
-            "https://api-photoaevum.tryasp.net",
-            "http://site104421.siteasp.net",
-            "https://site104421.siteasp.net",
             "https://photoaevumstudio.com",
-            "http://photoaevumstudio.com",
+            "https://www.photoaevumstudio.com",
+            "https://photoaevum.tryasp.net",
+            "https://site104417.siteasp.net",
+            "https://api-photoaevum.tryasp.net",
+            "https://site104421.siteasp.net",
             "https://site98282.siteasp.net",
-            "http://site98282.siteasp.net",
-            "https://site96971.siteasp.net",
-            "http://site96971.siteasp.net",
-            "https://localhost:7128",
-            "http://localhost:5181",
-            "https://localhost:7001",
-            "http://localhost:5000",
-            "https://localhost:5001"
+            "https://site96971.siteasp.net"
         };
 
-        // The configured public BaseUrl (live domain / ngrok tunnel) is always an allowed origin.
-        var baseUrlOrigin = Uri.TryCreate(builder.Configuration["BaseUrl"], UriKind.Absolute, out var baseUri)
+        var devOrigins = isDevOrTest
+            ? new[]
+            {
+                "https://localhost:7128",
+                "http://localhost:5181",
+                "https://localhost:7001",
+                "http://localhost:5000",
+                "https://localhost:5001"
+            }
+            : Array.Empty<string>();
+
+        // The configured public BaseUrl is allowed (HTTPS in production, HTTP/HTTPS in dev).
+        var baseUrlOrigin = Uri.TryCreate(builder.Configuration["BaseUrl"], UriKind.Absolute, out var baseUri) &&
+                            (isDevOrTest || baseUri.Scheme == Uri.UriSchemeHttps)
             ? new[] { baseUri.GetLeftPart(UriPartial.Authority) }
             : Array.Empty<string>();
 
-        var allOrigins = configuredOrigins.Concat(defaultOrigins).Concat(baseUrlOrigin).Distinct(StringComparer.OrdinalIgnoreCase).ToArray();
+        var allOrigins = configuredOrigins
+            .Concat(productionOrigins)
+            .Concat(devOrigins)
+            .Concat(baseUrlOrigin)
+            .Where(o => Uri.TryCreate(o, UriKind.Absolute, out var u) &&
+                        (isDevOrTest || u.Scheme == Uri.UriSchemeHttps))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToArray();
 
         policy.WithOrigins(allOrigins)
               .AllowAnyHeader()
               .AllowAnyMethod()
               .SetIsOriginAllowed(origin =>
               {
+                  if (!Uri.TryCreate(origin, UriKind.Absolute, out var uri))
+                      return false;
+
+                  if (!isDevOrTest && uri.Scheme != Uri.UriSchemeHttps)
+                      return false;
+
                   if (allOrigins.Contains(origin, StringComparer.OrdinalIgnoreCase))
                       return true;
 
-                  if (Uri.TryCreate(origin, UriKind.Absolute, out var uri))
-                  {
-                      if (uri.Host.Equals("localhost", StringComparison.OrdinalIgnoreCase)
-                          || uri.Host.Equals("127.0.0.1", StringComparison.OrdinalIgnoreCase))
-                          return true;
+                  if (uri.Host.Equals("photoaevumstudio.com", StringComparison.OrdinalIgnoreCase) ||
+                      uri.Host.EndsWith(".photoaevumstudio.com", StringComparison.OrdinalIgnoreCase))
+                      return true;
 
-                      if (uri.Host.EndsWith(".tryasp.net", StringComparison.OrdinalIgnoreCase)
-                          || uri.Host.EndsWith(".siteasp.net", StringComparison.OrdinalIgnoreCase)
-                          || uri.Host.EndsWith("photoaevumstudio.com", StringComparison.OrdinalIgnoreCase))
-                          return true;
+                  if (isDevOrTest &&
+                      (uri.Host.Equals("localhost", StringComparison.OrdinalIgnoreCase)
+                       || uri.Host.Equals("127.0.0.1", StringComparison.OrdinalIgnoreCase)
+                       || uri.Host.EndsWith(".ngrok-free.app", StringComparison.OrdinalIgnoreCase)
+                       || uri.Host.EndsWith(".ngrok-free.dev", StringComparison.OrdinalIgnoreCase)
+                       || uri.Host.EndsWith(".ngrok.app", StringComparison.OrdinalIgnoreCase)
+                       || uri.Host.EndsWith(".ngrok.io", StringComparison.OrdinalIgnoreCase)
+                       || uri.Host.StartsWith("192.168.", StringComparison.OrdinalIgnoreCase)
+                       || uri.Host.StartsWith("10.", StringComparison.OrdinalIgnoreCase)
+                       || uri.Host.StartsWith("172.", StringComparison.OrdinalIgnoreCase)))
+                      return true;
 
-                      if (builder.Environment.IsDevelopment() &&
-                          (uri.Host.EndsWith(".ngrok-free.app", StringComparison.OrdinalIgnoreCase)
-                            || uri.Host.EndsWith(".ngrok-free.dev", StringComparison.OrdinalIgnoreCase)
-                            || uri.Host.EndsWith(".ngrok.app", StringComparison.OrdinalIgnoreCase)
-                            || uri.Host.EndsWith(".ngrok.io", StringComparison.OrdinalIgnoreCase)
-                            || uri.Host.StartsWith("192.168.", StringComparison.OrdinalIgnoreCase)
-                           || uri.Host.StartsWith("10.", StringComparison.OrdinalIgnoreCase)
-                           || uri.Host.StartsWith("172.", StringComparison.OrdinalIgnoreCase)))
-                          return true;
-                  }
                   return false;
               });
     });
@@ -289,6 +335,7 @@ builder.Services.AddScoped<IStorageProvider, LocalStorageProvider>();
 builder.Services.AddScoped<IEquipmentTypeService, EquipmentTypeService>();
 builder.Services.Configure<PhotoAevumStudio.Application.Models.GoogleMeetSettings>(builder.Configuration.GetSection("GoogleMeetSettings"));
 builder.Services.Configure<PhotoAevumStudio.Application.Models.XenditSettings>(builder.Configuration.GetSection("XenditSettings"));
+builder.Services.Configure<PhotoAevumStudio.Application.StudioProfileSettings>(builder.Configuration.GetSection(PhotoAevumStudio.Application.StudioProfileSettings.SectionName));
 // Public base URL of the customer portal (live domain, LAN IP or ngrok tunnel). Used for emails and QR links so they never point at localhost on a live server.
 builder.Services.PostConfigure<PhotoAevumStudio.Application.Models.XenditSettings>(s =>
 {
@@ -363,11 +410,16 @@ builder.Services.Configure<PhotoAevumStudio.Application.Models.EmailConfig>(opti
     if (int.TryParse(mtPortStr, out int mPort) && mPort > 0) options.Fallback.Port = mPort;
     else if (options.Fallback.Port <= 0) options.Fallback.Port = 587;
 });
+builder.Services.AddScoped<PhotoAevumStudio.Application.Interfaces.IOnboardingDocumentService, PhotoAevumStudio.Infrastructure.Services.OnboardingDocumentService>();
+builder.Services.Configure<PhotoAevumStudio.Application.Models.OnboardingDocumentsSettings>(
+    builder.Configuration.GetSection(PhotoAevumStudio.Application.Models.OnboardingDocumentsSettings.SectionName));
 builder.Services.AddScoped<PhotoAevumStudio.Infrastructure.Services.EmailService>();
 builder.Services.AddScoped<PhotoAevumStudio.Application.Interfaces.IEmailService>(sp => sp.GetRequiredService<PhotoAevumStudio.Infrastructure.Services.EmailService>());
 builder.Services.AddScoped<PhotoAevumStudio.Application.Interfaces.IBookingNotificationService>(sp => sp.GetRequiredService<PhotoAevumStudio.Infrastructure.Services.EmailService>());
 builder.Services.AddScoped<PhotoAevumStudio.Application.Interfaces.ISqlAuthService, PhotoAevumStudio.Infrastructure.Services.SqlAuthService>();
 builder.Services.AddScoped<PhotoAevumStudio.Application.Interfaces.IR2StorageService, PhotoAevumStudio.Infrastructure.Services.R2StorageService>();
+builder.Services.AddSingleton<PhotoAevumStudio.Application.Interfaces.IDocumentPdfService, PhotoAevumStudio.Infrastructure.Services.DocumentPdfService>();
+builder.Services.AddScoped<PhotoAevumStudio.Application.Interfaces.IBookingDocumentService, PhotoAevumStudio.Infrastructure.Services.BookingDocumentService>();
 builder.Services.AddScoped<PhotoAevumStudio.Application.Interfaces.IDataArchiveService, PhotoAevumStudio.Infrastructure.Services.DataArchiveService>();
 builder.Services.AddScoped<PhotoAevumStudio.Application.Interfaces.ICustomerDropboxService, PhotoAevumStudio.Infrastructure.Services.CustomerDropboxService>();
 builder.Services.AddScoped<PhotoAevumStudio.Application.Interfaces.IStudioAnalyticsService, PhotoAevumStudio.Infrastructure.Services.StudioAnalyticsService>();
@@ -407,7 +459,13 @@ builder.Services.AddSingleton<IMeetingLinkService, PhotoAevumStudio.Infrastructu
 
 // ═════════════════════════════════════════════════════════════════════════════
 
-// 1. Configure Rate Limiting
+// 1. Configure Forwarded Headers & Rate Limiting
+builder.Services.Configure<ForwardedHeadersOptions>(options =>
+{
+    options.ForwardedHeaders = ForwardedHeaders.XForwardedFor | ForwardedHeaders.XForwardedProto;
+    options.ForwardLimit = 1;
+});
+
 builder.Services.AddRateLimiter(options =>
 {
     options.AddPolicy("LoginPolicy", context =>
@@ -417,6 +475,16 @@ builder.Services.AddRateLimiter(options =>
         {
             Window = TimeSpan.FromMinutes(1),
             PermitLimit = 5,
+            QueueLimit = 0
+        });
+    });
+    options.AddPolicy("PaymentPolicy", context =>
+    {
+        var ip = context.Connection.RemoteIpAddress?.ToString() ?? "unknown";
+        return System.Threading.RateLimiting.RateLimitPartition.GetFixedWindowLimiter(ip, _ => new System.Threading.RateLimiting.FixedWindowRateLimiterOptions
+        {
+            Window = TimeSpan.FromMinutes(1),
+            PermitLimit = 20,
             QueueLimit = 0
         });
     });
@@ -462,11 +530,31 @@ app.UseExceptionHandler(errorApp =>
 
 // ── Pipeline ──────────────────────────────────────────────────────────────────
 
+app.UseForwardedHeaders();
+
 if (app.Environment.IsDevelopment())
     app.MapOpenApi();
 
 if (!app.Environment.IsEnvironment("Testing"))
     app.UseHttpsRedirection();
+
+app.Use(async (ctx, next) =>
+{
+    ctx.Response.Headers["X-Content-Type-Options"] = "nosniff";
+    ctx.Response.Headers["X-Frame-Options"] = "DENY";
+    ctx.Response.Headers["Referrer-Policy"] = "strict-origin-when-cross-origin";
+    ctx.Response.Headers["Permissions-Policy"] = "camera=(), microphone=(), geolocation=()";
+
+    if (ctx.Request.Path.StartsWithSegments("/private-photos", StringComparison.OrdinalIgnoreCase) ||
+        ctx.Request.Path.StartsWithSegments("/storage", StringComparison.OrdinalIgnoreCase))
+    {
+        ctx.Response.StatusCode = StatusCodes.Status404NotFound;
+        return;
+    }
+
+    await next();
+});
+
 app.UseResponseCompression();
 app.UseStaticFiles();
 app.UseCors("BlazorFrontend");
@@ -499,8 +587,14 @@ app.Use(async (ctx, next) =>
 app.UseAuthorization();
 app.UseMiddleware<PhotoAevumStudio.Api.Middleware.AuditLoggingMiddleware>();
 app.MapControllers();
-// Hangfire dashboard: default filter restricts access to local requests only.
-app.MapHangfireDashboard("/hangfire");
+// Hangfire dashboard: restricted to authenticated Admin/SystemAdmin (or local requests in Development only).
+app.MapHangfireDashboard("/hangfire", new Hangfire.DashboardOptions
+{
+    Authorization = new Hangfire.Dashboard.IDashboardAuthorizationFilter[]
+    {
+        new HangfireAdminAuthorizationFilter(app.Environment.IsDevelopment())
+    }
+});
 app.MapHub<PhotoAevumStudio.Api.Hubs.PaymentHub>(PhotoAevumStudio.Api.Hubs.PaymentHub.Route);
 
 var informationalVersion = System.Reflection.Assembly.GetExecutingAssembly()
@@ -580,6 +674,8 @@ await using (var scope = app.Services.CreateAsyncScope())
 
             var dropboxService = scope.ServiceProvider.GetRequiredService<ICustomerDropboxService>();
             await dropboxService.EnsureSchemaAsync();
+            var documentService = scope.ServiceProvider.GetRequiredService<IBookingDocumentService>();
+            await documentService.EnsureSchemaAsync();
             var analyticsService = scope.ServiceProvider.GetRequiredService<IStudioAnalyticsService>();
             await analyticsService.EnsureSchemaAsync();
             RecurringJob.AddOrUpdate<ICustomerDropboxService>(
@@ -599,6 +695,32 @@ await using (var scope = app.Services.CreateAsyncScope())
 }
 
 app.Run();
+
+sealed class HangfireAdminAuthorizationFilter(bool allowLocalInDev) : Hangfire.Dashboard.IDashboardAuthorizationFilter
+{
+    public bool Authorize(Hangfire.Dashboard.DashboardContext context)
+    {
+        var http = (context as Hangfire.Dashboard.AspNetCoreDashboardContext)?.HttpContext;
+        if (http == null)
+        {
+            return false;
+        }
+
+        if (http.User?.Identity?.IsAuthenticated == true &&
+            (http.User.IsInRole(AppRoles.Admin) || http.User.IsInRole(AppRoles.SystemAdmin)))
+        {
+            return true;
+        }
+
+        if (allowLocalInDev && http.Connection.RemoteIpAddress != null &&
+            System.Net.IPAddress.IsLoopback(http.Connection.RemoteIpAddress))
+        {
+            return true;
+        }
+
+        return false;
+    }
+}
 
 
 

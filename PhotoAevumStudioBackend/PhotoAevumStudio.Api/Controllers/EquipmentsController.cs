@@ -1,4 +1,5 @@
 using System.Data;
+using System.Security.Claims;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Data.SqlClient;
@@ -12,6 +13,7 @@ namespace PhotoAevumStudio.Api.Controllers;
 
 [ApiController]
 [Route("api/[controller]")]
+[Authorize(Policy = "StaffOrAbove")]
 public class EquipmentsController : ControllerBase
 {
     private readonly ApplicationDbContext _db;
@@ -69,7 +71,6 @@ public class EquipmentsController : ControllerBase
     /// Strictly read-only; does not advance or lock the sequence.
     /// </summary>
     [HttpGet("next-id")]
-    [AllowAnonymous] // Allow wizard preview to query without friction
     public async Task<ActionResult<NextEquipmentIdResponseDto>> GetNextEquipmentId(CancellationToken ct)
     {
         try
@@ -185,7 +186,7 @@ public class EquipmentsController : ControllerBase
         catch (Exception ex)
         {
             _logger.LogError(ex, "Failed to fetch equipment catalog from SQL database.");
-            return StatusCode(500, new { message = "Failed to fetch equipment list.", error = ex.Message });
+            return StatusCode(500, new { message = "Failed to fetch equipment list." });
         }
 
         return Ok(list);
@@ -239,7 +240,7 @@ public class EquipmentsController : ControllerBase
         catch (Exception ex)
         {
             _logger.LogError(ex, "Error fetching equipment with ID {EquipmentId}", id);
-            return StatusCode(500, new { message = "Error querying equipment record.", error = ex.Message });
+            return StatusCode(500, new { message = "Error querying equipment record." });
         }
     }
 
@@ -249,7 +250,7 @@ public class EquipmentsController : ControllerBase
     /// uploads the image to Cloudflare R2 (or local disk fallback), and stores the key/path in the database.
     /// </summary>
     [HttpPost]
-    [Authorize(Policy = "StaffOrAbove")]
+    [Authorize(Policy = "ClerkOrAdmin")]
     [Consumes("multipart/form-data")]
     public async Task<IActionResult> CreateEquipment(
         [FromForm] CreateEquipmentRequestDto dto,
@@ -321,8 +322,16 @@ public class EquipmentsController : ControllerBase
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Failed to save uploaded equipment image.");
-                return StatusCode(500, new { message = "Could not save uploaded image to storage.", error = ex.Message });
+                return StatusCode(500, new { message = "Could not save uploaded image to storage." });
             }
+        }
+
+        var actorId = User.FindFirstValue("studio_id")
+                      ?? User.FindFirstValue(System.Security.Claims.ClaimTypes.NameIdentifier)
+                      ?? User.Identity?.Name;
+        if (string.IsNullOrWhiteSpace(actorId))
+        {
+            return Unauthorized(new { message = "Authenticated staff identity is required." });
         }
 
         // 2. Atomic Database Insertion with Concurrency-Safe ID Generation
@@ -341,7 +350,7 @@ public class EquipmentsController : ControllerBase
             cmd.Parameters.AddWithValue("@EquipmentTypeID", dto.EquipmentType.Trim());
             cmd.Parameters.AddWithValue("@SerialNo", (object?)dto.SerialNo?.Trim() ?? DBNull.Value);
             cmd.Parameters.AddWithValue("@ImagePath", (object?)relativeWebPath ?? DBNull.Value);
-            cmd.Parameters.AddWithValue("@CreatedByAdminID", User?.Identity?.Name ?? "ADM-001");
+            cmd.Parameters.AddWithValue("@CreatedByAdminID", actorId);
 
             var outputIdParam = new SqlParameter("@AssignedEquipmentID", SqlDbType.NVarChar, 30)
             {
@@ -430,7 +439,7 @@ public class EquipmentsController : ControllerBase
             }
 
             _logger.LogError(ex, "Unexpected error registering equipment.");
-            return StatusCode(500, new { message = "An error occurred while creating the equipment record.", error = ex.Message });
+            return StatusCode(500, new { message = "An error occurred while creating the equipment record." });
         }
     }
 

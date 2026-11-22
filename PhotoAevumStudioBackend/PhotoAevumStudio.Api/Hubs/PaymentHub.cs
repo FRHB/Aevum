@@ -51,7 +51,12 @@ public class PaymentHub : Hub
         if (user == null || !IsStudioStaff(user))
             throw new HubException("Not authorized for staff updates.");
 
-        return Groups.AddToGroupAsync(Context.ConnectionId, StaffGroupName(employeeId.Trim()));
+        var normalizedEmployeeId = employeeId.Trim();
+        var isClerkOrAdmin = user.IsInRole(AppRoles.Admin) || user.IsInRole(AppRoles.SystemAdmin) || user.IsInRole(AppRoles.OfficeClerk);
+        if (!isClerkOrAdmin && !MatchesUserIdentifier(user, normalizedEmployeeId))
+            throw new HubException("Not authorized for this employee channel.");
+
+        return Groups.AddToGroupAsync(Context.ConnectionId, StaffGroupName(normalizedEmployeeId));
     }
 
     public Task LeaveStaff(string employeeId)

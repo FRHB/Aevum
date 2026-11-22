@@ -756,7 +756,7 @@ else if (!string.IsNullOrWhiteSpace(teamLeaderErrorMessage))
                 @* Balance Breakdown *@
                 <div class="bg-slate-900 text-white rounded-xl p-4 flex items-center justify-between">
                     <div>
-                        <div class="text-[10px] uppercase font-bold text-slate-400">Base Remaining 75%</div>
+                        <div class="text-[10px] uppercase font-bold text-slate-400">Base Remaining Balance</div>
                         <div class="font-mono text-sm font-bold text-slate-300">₱@baseRemainingBalance.ToString("N2")</div>
                         <div class="text-[10px] text-amber-400 mt-1">+ Overtime &amp; Surcharges: ₱@totalSurcharges.ToString("N2")</div>
                     </div>
@@ -802,7 +802,7 @@ else if (!string.IsNullOrWhiteSpace(teamLeaderErrorMessage))
                     var previewConfirmUrl = ResolveQrConfirmUrl($"{selectedFinishEvent.Id}-FINAL");
                     <div class="p-4 rounded-xl border border-teal-200 bg-teal-50/50 text-center space-y-2">
                         <div class="text-xs font-bold text-teal-900">QR Final Payment Preview &amp; Customer Email</div>
-                        <div class="w-36 h-36 mx-auto bg-white border border-teal-200 rounded-lg p-2 shadow-xs flex items-center justify-center">
+                        <div class="w-36 h-36 mx-auto bg-white border border-teal-200 rounded-lg p-2 shadow-xs flex items-center justify-center overflow-hidden [&_svg]:w-full [&_svg]:h-full [&_svg]:block">
                             @((MarkupString)BuildQrSvg(previewConfirmUrl))
                         </div>
                         <p class="text-[11px] text-slate-600">
@@ -876,7 +876,8 @@ else if (!string.IsNullOrWhiteSpace(teamLeaderErrorMessage))
         hourlyRate = 1500m;
         extraSurcharges = 0m;
         overtimeNotes = string.Empty;
-        baseRemainingBalance = Math.Round(ev.EstimatedPrice * 0.85m, 2);
+        var matchedTl = teamLeaderEvents.FirstOrDefault(t => string.Equals(t.EventAppointmentId, ev.Id, StringComparison.OrdinalIgnoreCase));
+        baseRemainingBalance = matchedTl is { FinalBalanceAmount: > 0 } ? matchedTl.FinalBalanceAmount : Math.Round(ev.EstimatedPrice * 0.85m, 2);
         selectedPaymentMethod = "Cash_OnHand";
         finishModalError = null;
         RecalculateSettlement();
@@ -1390,7 +1391,12 @@ else if (!string.IsNullOrWhiteSpace(teamLeaderErrorMessage))
     {
         using var generator = new QRCodeGenerator();
         using var data = generator.CreateQrCode(payload, QRCodeGenerator.ECCLevel.M);
-        return new SvgQRCode(data).GetGraphic(5);
+        return new SvgQRCode(data).GetGraphic(
+            5,
+            System.Drawing.Color.Black,
+            System.Drawing.Color.White,
+            drawQuietZones: true,
+            sizingMode: SvgQRCode.SizingMode.ViewBoxAttribute);
     }
 
     private void HandleEquipmentStateChanged()

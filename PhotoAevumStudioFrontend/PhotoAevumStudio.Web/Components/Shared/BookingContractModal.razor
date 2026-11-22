@@ -1,0 +1,294 @@
+@using PhotoAevumStudio.Web.Models
+@using PhotoAevumStudio.Web.Services
+@inject IConsultationClient ConsultationApi
+@inject IJSRuntime JS
+
+@if (IsOpen)
+{
+    <div class="fixed inset-0 z-[250] flex items-center justify-center p-4 sm:p-6 bg-slate-900/75 backdrop-blur-xs" role="dialog" aria-modal="true">
+        <div class="bg-white rounded-2xl shadow-2xl border border-slate-200 w-full max-w-4xl max-h-[90vh] flex flex-col overflow-hidden">
+
+            <div class="px-6 py-4 border-b border-slate-200 bg-slate-50 flex items-center justify-between">
+                <div>
+                    <div class="flex items-center gap-2">
+                        <span class="px-2 py-0.5 rounded bg-slate-900 text-white text-[10px] font-bold uppercase tracking-wider">Booking Documents</span>
+                        @if (_bundle?.Contract != null)
+                        {
+                            <span class="font-mono text-xs font-bold text-slate-600">@_bundle.Contract.ContractNumber</span>
+                            <span class="px-2 py-0.5 rounded-full text-[10px] font-bold @(_bundle.Contract.IsAccepted ? "bg-emerald-100 text-emerald-800" : "bg-amber-100 text-amber-800")">
+                                @(_bundle.Contract.IsAccepted ? "✓ Accepted" : "Pending Acceptance")
+                            </span>
+                        }
+                    </div>
+                    <h2 class="text-base font-black text-slate-900 mt-1">Services Agreement, Standard Terms &amp; Receipts (#@AppointmentId)</h2>
+                </div>
+                <button type="button" @onclick="CloseAsync" class="p-2 text-slate-400 hover:text-slate-700 font-bold">✕</button>
+            </div>
+
+            <div class="px-6 pt-3 border-b border-slate-200 flex flex-wrap gap-2 bg-white">
+                <button type="button" @onclick='() => _tab = "contract"'
+                        class="px-3 py-2 text-xs font-bold border-b-2 transition-colors @(_tab == "contract" ? "border-slate-900 text-slate-900" : "border-transparent text-slate-500 hover:text-slate-800")">
+                    Services Agreement
+                </button>
+                <button type="button" @onclick='() => _tab = "terms"'
+                        class="px-3 py-2 text-xs font-bold border-b-2 transition-colors @(_tab == "terms" ? "border-slate-900 text-slate-900" : "border-transparent text-slate-500 hover:text-slate-800")">
+                    Standard Terms (@(_bundle?.TermsVersion?.VersionCode ?? "v1.0"))
+                </button>
+                <button type="button" @onclick='() => _tab = "receipts"'
+                        class="px-3 py-2 text-xs font-bold border-b-2 transition-colors @(_tab == "receipts" ? "border-slate-900 text-slate-900" : "border-transparent text-slate-500 hover:text-slate-800")">
+                    Payment Ledger &amp; Receipts (@(_bundle?.Receipts.Count ?? 0))
+                </button>
+            </div>
+
+            <div class="p-6 overflow-y-auto flex-1 bg-slate-50/50 space-y-4">
+                @if (_loading)
+                {
+                    <div class="py-12 text-center text-xs text-slate-500">Loading booking documents&hellip;</div>
+                }
+                else if (!string.IsNullOrWhiteSpace(_error))
+                {
+                    <div class="p-4 rounded-xl bg-rose-50 border border-rose-200 text-rose-800 text-xs font-semibold">@_error</div>
+                }
+                else if (_bundle != null)
+                {
+                    if (_tab == "contract")
+                    {
+                        <div class="flex flex-wrap items-center justify-between gap-2">
+                            <div class="text-xs text-slate-600">
+                                @if (_bundle.Contract?.IsAccepted == true)
+                                {
+                                    <span>Accepted on <strong>@_bundle.Contract.AcceptedAtUtc?.ToString("yyyy-MM-dd HH:mm:ss") UTC</strong> (IP: @_bundle.Contract.ClientIpAddress)</span>
+                                }
+                                else
+                                {
+                                    <span>Awaiting customer clickwrap acceptance before reservation payment.</span>
+                                }
+                            </div>
+                            <button type="button" @onclick="DownloadContractPdfAsync" disabled="@_busy"
+                                    class="px-3 py-1.5 rounded-lg bg-slate-900 hover:bg-black text-white text-xs font-bold">
+                                ⬇ Download Agreement PDF
+                            </button>
+                        </div>
+
+                        <div class="bg-white border border-slate-200 rounded-xl p-5 shadow-xs overflow-x-auto">
+                            @((MarkupString)(_bundle.Contract?.RenderedContractHtml ?? "<p>Contract preview unavailable.</p>"))
+                        </div>
+
+                        @if (AllowClickwrapAcceptance && _bundle.Contract != null && !_bundle.Contract.IsAccepted)
+                        {
+                            <div class="bg-amber-50 border border-amber-200 rounded-xl p-4 space-y-3 text-xs">
+                                <div class="font-bold text-amber-900 uppercase tracking-wider">Electronic Clickwrap Acceptance</div>
+                                <label class="flex items-start gap-2.5 cursor-pointer">
+                                    <input type="checkbox" @bind="_agreeAgreement" class="mt-0.5" />
+                                    <span>I have reviewed and agree to the <strong>Photo Studio Services Agreement</strong>, including the two-stage payment schedule and deliverable release gate.</span>
+                                </label>
+                                <label class="flex items-start gap-2.5 cursor-pointer">
+                                    <input type="checkbox" @bind="_agreeTerms" class="mt-0.5" />
+                                    <span>I have read and accept the <strong>Standard Terms and Conditions (@(_bundle.TermsVersion?.VersionCode ?? "v1.0"))</strong>.</span>
+                                </label>
+                                <button type="button" @onclick="SubmitAcceptanceAsync"
+                                        disabled="@(_busy || !_agreeAgreement || !_agreeTerms)"
+                                        class="px-4 py-2 rounded-lg bg-emerald-700 hover:bg-emerald-800 disabled:opacity-50 text-white text-xs font-bold">
+                                    @(_busy ? "Recording Acceptance..." : "✓ Accept Agreement & Terms")
+                                </button>
+                            </div>
+                        }
+                    }
+                    else if (_tab == "terms")
+                    {
+                        <div class="flex justify-end">
+                            <button type="button" @onclick="DownloadTermsPdfAsync" disabled="@_busy"
+                                    class="px-3 py-1.5 rounded-lg bg-slate-900 hover:bg-black text-white text-xs font-bold">
+                                ⬇ Download Terms PDF
+                            </button>
+                        </div>
+                        <div class="bg-white border border-slate-200 rounded-xl p-5 shadow-xs overflow-x-auto">
+                            @((MarkupString)(_bundle.TermsVersion?.TermsBodyHtml ?? "<p>Terms unavailable.</p>"))
+                        </div>
+                    }
+                    else if (_tab == "receipts")
+                    {
+                        <div class="grid grid-cols-1 sm:grid-cols-3 gap-3 text-xs">
+                            <div class="bg-white border border-slate-200 rounded-xl p-3">
+                                <div class="text-slate-500">Total Contracted Charges</div>
+                                <div class="font-mono font-black text-base text-slate-900">₱@((_bundle.TotalPackageAmount + _bundle.OvertimeAmount).ToString("N2"))</div>
+                            </div>
+                            <div class="bg-white border border-slate-200 rounded-xl p-3">
+                                <div class="text-slate-500">Remaining Balance Due</div>
+                                <div class="font-mono font-black text-base @(_bundle.RemainingBalance <= 0 ? "text-emerald-700" : "text-amber-700")">
+                                    ₱@_bundle.RemainingBalance.ToString("N2")
+                                </div>
+                            </div>
+                            <div class="bg-white border border-slate-200 rounded-xl p-3">
+                                <div class="text-slate-500">Deliverables Gate</div>
+                                <div class="font-bold text-sm @(_bundle.IsDeliverablesUnlocked ? "text-emerald-700" : "text-rose-700")">
+                                    @(_bundle.IsDeliverablesUnlocked ? "✓ Unlocked" : "🔒 Locked Until Paid in Full")
+                                </div>
+                            </div>
+                        </div>
+
+                        @if (!_bundle.Receipts.Any())
+                        {
+                            <div class="bg-white border border-slate-200 rounded-xl p-6 text-center text-xs text-slate-500">
+                                No payment receipts have been issued yet. Receipts are generated automatically upon Stage 1 Reservation Fee and Stage 2 Final Settlement confirmation.
+                            </div>
+                        }
+                        else
+                        {
+                            @foreach (var rec in _bundle.Receipts)
+                            {
+                                <div class="bg-white border border-slate-200 rounded-xl p-4 space-y-3 shadow-xs">
+                                    <div class="flex flex-wrap items-center justify-between gap-2">
+                                        <div>
+                                            <span class="font-mono text-xs font-bold text-slate-900">@rec.ReceiptNumber</span>
+                                            <span class="ml-2 px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-800">@rec.ReceiptType</span>
+                                            <div class="text-[11px] text-slate-500 mt-0.5">
+                                                Issued @rec.IssuedAtUtc.ToString("MMM dd, yyyy HH:mm") UTC &bull; @rec.PaymentMethod &bull; Ref: @rec.GatewayReferenceId
+                                            </div>
+                                        </div>
+                                        <button type="button" @onclick="() => DownloadReceiptPdfAsync(rec.ReceiptType)" disabled="@_busy"
+                                                class="px-3 py-1.5 rounded-lg bg-slate-900 hover:bg-black text-white text-xs font-bold">
+                                            ⬇ Download Receipt PDF
+                                        </button>
+                                    </div>
+                                    <div class="border-t border-slate-100 pt-3 overflow-x-auto">
+                                        @((MarkupString)rec.RenderedReceiptHtml)
+                                    </div>
+                                </div>
+                            }
+                        }
+                    }
+                }
+            </div>
+
+            <div class="px-6 py-3 border-t border-slate-200 bg-white flex justify-end">
+                <button type="button" @onclick="CloseAsync" class="px-4 py-2 rounded-lg border border-slate-300 text-xs font-bold text-slate-700 hover:bg-slate-50">
+                    Close
+                </button>
+            </div>
+        </div>
+    </div>
+}
+
+@code {
+    [Parameter] public bool IsOpen { get; set; }
+    [Parameter] public string AppointmentId { get; set; } = string.Empty;
+    [Parameter] public string InitialTab { get; set; } = "contract";
+    [Parameter] public bool AllowClickwrapAcceptance { get; set; }
+    [Parameter] public EventCallback OnClosed { get; set; }
+    [Parameter] public EventCallback<BookingContractDto> OnAccepted { get; set; }
+
+    private BookingDocumentsBundleDto? _bundle;
+    private string _tab = "contract";
+    private bool _loading;
+    private bool _busy;
+    private bool _agreeAgreement;
+    private bool _agreeTerms;
+    private string? _error;
+    private string? _loadedAppointmentId;
+
+    protected override async Task OnParametersSetAsync()
+    {
+        if (!IsOpen || string.IsNullOrWhiteSpace(AppointmentId)) return;
+        if (!string.Equals(_loadedAppointmentId, AppointmentId, StringComparison.OrdinalIgnoreCase) || _bundle == null)
+        {
+            _tab = string.IsNullOrWhiteSpace(InitialTab) ? "contract" : InitialTab;
+            await LoadAsync();
+        }
+    }
+
+    private async Task LoadAsync()
+    {
+        _loading = true;
+        _error = null;
+        _loadedAppointmentId = AppointmentId;
+        var res = await ConsultationApi.GetBookingDocumentsAsync(AppointmentId);
+        if (res.IsSuccess && res.Value != null)
+        {
+            _bundle = res.Value;
+        }
+        else
+        {
+            _error = res.Error?.Message ?? "Unable to load booking documents.";
+        }
+        _loading = false;
+    }
+
+    private async Task SubmitAcceptanceAsync()
+    {
+        if (_bundle?.Contract == null) return;
+        _busy = true;
+        _error = null;
+        var res = await ConsultationApi.AcceptContractAsync(AppointmentId, new AcceptContractRequest
+        {
+            AgreeToServicesAgreement = _agreeAgreement,
+            AgreeToStandardTerms = _agreeTerms,
+            TermsVersionId = _bundle.TermsVersion?.TermsVersionId
+        });
+        _busy = false;
+
+        if (!res.IsSuccess || res.Value == null)
+        {
+            _error = res.Error?.Message ?? "Failed to record contract acceptance.";
+            return;
+        }
+
+        await LoadAsync();
+        if (OnAccepted.HasDelegate)
+            await OnAccepted.InvokeAsync(res.Value);
+    }
+
+    private async Task DownloadContractPdfAsync()
+    {
+        _busy = true;
+        var res = await ConsultationApi.DownloadContractPdfAsync(AppointmentId);
+        _busy = false;
+        if (res.IsSuccess && res.Value != null)
+        {
+            await JS.InvokeVoidAsync("aevumDownloadBase64", $"Services-Agreement-{AppointmentId}.pdf", Convert.ToBase64String(res.Value), "application/pdf");
+        }
+        else
+        {
+            _error = res.Error?.Message ?? "Failed to download Agreement PDF.";
+        }
+    }
+
+    private async Task DownloadTermsPdfAsync()
+    {
+        _busy = true;
+        var res = await ConsultationApi.DownloadTermsPdfAsync();
+        _busy = false;
+        if (res.IsSuccess && res.Value != null)
+        {
+            var ver = _bundle?.TermsVersion?.VersionCode ?? "v1.0";
+            await JS.InvokeVoidAsync("aevumDownloadBase64", $"Standard-Terms-{ver}.pdf", Convert.ToBase64String(res.Value), "application/pdf");
+        }
+        else
+        {
+            _error = res.Error?.Message ?? "Failed to download Terms PDF.";
+        }
+    }
+
+    private async Task DownloadReceiptPdfAsync(string receiptType)
+    {
+        _busy = true;
+        var res = await ConsultationApi.DownloadReceiptPdfAsync(AppointmentId, receiptType);
+        _busy = false;
+        if (res.IsSuccess && res.Value != null)
+        {
+            await JS.InvokeVoidAsync("aevumDownloadBase64", $"{receiptType}-{AppointmentId}.pdf", Convert.ToBase64String(res.Value), "application/pdf");
+        }
+        else
+        {
+            _error = res.Error?.Message ?? "Failed to download Receipt PDF.";
+        }
+    }
+
+    private async Task CloseAsync()
+    {
+        _loadedAppointmentId = null;
+        _bundle = null;
+        if (OnClosed.HasDelegate)
+            await OnClosed.InvokeAsync();
+    }
+}

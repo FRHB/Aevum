@@ -19,6 +19,7 @@ public class EmailService : IEmailService, IBookingNotificationService
     private readonly ILogger<EmailService> _logger;
     private readonly Func<ISmtpClient> _smtpClientFactory;
     private readonly IHttpContextAccessor? _httpContextAccessor;
+    private readonly IOnboardingDocumentService? _onboardingDocumentService;
 
     public EmailServerSettings Primary => _emailConfig.Primary;
     public EmailServerSettings Fallback => _emailConfig.Fallback;
@@ -26,18 +27,28 @@ public class EmailService : IEmailService, IBookingNotificationService
 
     // Primary constructor used by Dependency Injection
     [ActivatorUtilitiesConstructor]
-    public EmailService(IOptions<EmailConfig> emailConfig, ILogger<EmailService> logger, IHttpContextAccessor? httpContextAccessor = null)
-        : this(emailConfig, logger, () => new SmtpClient(), httpContextAccessor)
+    public EmailService(
+        IOptions<EmailConfig> emailConfig,
+        ILogger<EmailService> logger,
+        IHttpContextAccessor? httpContextAccessor = null,
+        IOnboardingDocumentService? onboardingDocumentService = null)
+        : this(emailConfig, logger, () => new SmtpClient(), httpContextAccessor, onboardingDocumentService)
     {
     }
 
     // Factory-injected constructor for testing EmailConfig & failover behavior
-    public EmailService(IOptions<EmailConfig> emailConfig, ILogger<EmailService> logger, Func<ISmtpClient> smtpClientFactory, IHttpContextAccessor? httpContextAccessor = null)
+    public EmailService(
+        IOptions<EmailConfig> emailConfig,
+        ILogger<EmailService> logger,
+        Func<ISmtpClient> smtpClientFactory,
+        IHttpContextAccessor? httpContextAccessor = null,
+        IOnboardingDocumentService? onboardingDocumentService = null)
     {
         ArgumentNullException.ThrowIfNull(emailConfig);
         _logger = logger ?? NullLogger<EmailService>.Instance;
         _smtpClientFactory = smtpClientFactory ?? (() => new SmtpClient());
         _httpContextAccessor = httpContextAccessor;
+        _onboardingDocumentService = onboardingDocumentService;
 
         var config = emailConfig.Value ?? new EmailConfig();
         _emailConfig = new EmailConfig
@@ -321,7 +332,19 @@ public class EmailService : IEmailService, IBookingNotificationService
 
     public async Task<bool> TrySendEmailAsync(string toEmail, string subject, string body, bool isHtml = true, CancellationToken cancellationToken = default)
     {
-        var outcome = await DeliverAsync(toEmail, subject, body, isHtml, cancellationToken);
+        var outcome = await DeliverAsync(toEmail, subject, body, isHtml, null, cancellationToken);
+        return outcome == SendOutcome.Sent;
+    }
+
+    public async Task<bool> TrySendEmailWithAttachmentsAsync(
+        string toEmail,
+        string subject,
+        string body,
+        IReadOnlyList<EmailAttachment> attachments,
+        bool isHtml = true,
+        CancellationToken cancellationToken = default)
+    {
+        var outcome = await DeliverAsync(toEmail, subject, body, isHtml, attachments, cancellationToken);
         return outcome == SendOutcome.Sent;
     }
 
@@ -331,7 +354,10 @@ public class EmailService : IEmailService, IBookingNotificationService
         return settings.IsConfigured;
     }
 
-    private async Task<SendOutcome> DeliverAsync(string toEmail, string subject, string body, bool isHtml, CancellationToken ct)
+    private Task<SendOutcome> DeliverAsync(string toEmail, string subject, string body, bool isHtml, CancellationToken ct) =>
+        DeliverAsync(toEmail, subject, body, isHtml, null, ct);
+
+    private async Task<SendOutcome> DeliverAsync(string toEmail, string subject, string body, bool isHtml, IReadOnlyList<EmailAttachment>? attachments, CancellationToken ct)
     {
         body = ReplaceLocalhostUrls(body);
         var primary = _emailConfig.Primary;
@@ -354,7 +380,7 @@ public class EmailService : IEmailService, IBookingNotificationService
         {
             try
             {
-                await SendViaProviderAsync(primary, "Gmail", toEmail, subject, body, isHtml, ct);
+                await SendViaProviderAsync(primary, "Gmail", toEmail, subject, body, isHtml, attachments, ct);
                 _logger.LogInformation("Email sent successfully via Primary SMTP (Gmail) to {ToEmail}", toEmail);
                 return SendOutcome.Sent;
             }
@@ -392,7 +418,7 @@ public class EmailService : IEmailService, IBookingNotificationService
             try
             {
                 _logger.LogInformation("Dispatching fallback email via Secondary SMTP (Mailtrap) to {ToEmail}.", toEmail);
-                await SendViaProviderAsync(fallback, "Mailtrap", toEmail, subject, body, isHtml, ct);
+                await SendViaProviderAsync(fallback, "Mailtrap", toEmail, subject, body, isHtml, attachments, ct);
                 _logger.LogInformation("Email sent successfully via Secondary SMTP (Mailtrap) to {ToEmail}", toEmail);
                 return SendOutcome.Sent;
             }
@@ -421,6 +447,7 @@ public class EmailService : IEmailService, IBookingNotificationService
         string subject,
         string body,
         bool isHtml,
+        IReadOnlyList<EmailAttachment>? attachments,
         CancellationToken ct)
     {
         var message = new MimeMessage();
@@ -451,6 +478,17 @@ public class EmailService : IEmailService, IBookingNotificationService
         {
             bodyBuilder.TextBody = body;
         }
+
+        if (attachments != null && attachments.Count > 0)
+        {
+            foreach (var att in attachments)
+            {
+                if (att.Content == null || att.Content.Length == 0) continue;
+                var ctParsed = ContentType.Parse(string.IsNullOrWhiteSpace(att.ContentType) ? "application/pdf" : att.ContentType);
+                bodyBuilder.Attachments.Add(att.FileName, att.Content, ctParsed);
+            }
+        }
+
         message.Body = bodyBuilder.ToMessageBody();
 
         using var client = _smtpClientFactory();
@@ -553,74 +591,32 @@ public class EmailService : IEmailService, IBookingNotificationService
         string role,
         CancellationToken cancellationToken = default)
     {
-        var subject = "Welcome to Photo Aevum Studio – Administrator Credentials";
+        await TrySendAdminWelcomeEmailAsync(toEmail, adminName, adminId, temporaryPassword, role, cancellationToken);
+    }
 
-        var body = $@"
-<!DOCTYPE html>
-<html>
-<head>
-  <meta charset='utf-8'>
-  <style>
-    body {{ font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; background-color: #f8fafc; color: #1e293b; margin: 0; padding: 24px; }}
-    .card {{ max-width: 600px; margin: 0 auto; background: #ffffff; border-radius: 12px; border: 1px solid #e2e8f0; overflow: hidden; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.05); }}
-    .header {{ background: #0f172a; padding: 28px 24px; text-align: center; color: #ffffff; }}
-    .header h1 {{ margin: 0; font-size: 20px; font-weight: 700; letter-spacing: 0.05em; text-transform: uppercase; }}
-    .header p {{ margin: 6px 0 0; font-size: 13px; color: #94a3b8; }}
-    .content {{ padding: 28px 24px; }}
-    .greeting {{ font-size: 16px; font-weight: 600; margin-bottom: 12px; }}
-    .info-box {{ background: #f1f5f9; border-radius: 8px; border: 1px solid #cbd5e1; padding: 18px; margin: 20px 0; }}
-    .row {{ display: flex; justify-content: space-between; padding: 8px 0; border-bottom: 1px solid #e2e8f0; font-size: 13px; }}
-    .row:last-child {{ border-bottom: none; }}
-    .label {{ color: #64748b; font-weight: 500; }}
-    .val {{ color: #0f172a; font-weight: 700; font-family: monospace; }}
-    .instructions {{ font-size: 13px; line-height: 1.6; color: #475569; }}
-    .alert-pill {{ display: inline-block; background: #fef3c7; color: #92400e; padding: 6px 12px; border-radius: 6px; font-size: 12px; font-weight: 600; margin: 12px 0; }}
-    .footer {{ background: #f8fafc; border-top: 1px solid #e2e8f0; padding: 16px 24px; text-align: center; font-size: 11px; color: #94a3b8; }}
-  </style>
-</head>
-<body>
-  <div class='card'>
-    <div class='header'>
-      <h1>Photo Aevum Studio</h1>
-      <p>Management Portal &bull; System Onboarding</p>
-    </div>
-    <div class='content'>
-      <div class='greeting'>Hello {WebUtility.HtmlEncode(adminName)},</div>
-      <p class='instructions'>
-        An administrator account has been provisioned for you at Photo Aevum Studio. Below are your assigned credentials and access details.
-      </p>
-
-      <div class='info-box'>
-        <div class='row'>
-          <span class='label'>Assigned Role:</span>
-          <span class='val' style='font-family: inherit;'>{WebUtility.HtmlEncode(role)}</span>
-        </div>
-        <div class='row'>
-          <span class='label'>Admin ID:</span>
-          <span class='val'>{WebUtility.HtmlEncode(adminId)}</span>
-        </div>
-        <div class='row'>
-          <span class='label'>Temporary Password:</span>
-          <span class='val' style='color: #0369a1;'>{WebUtility.HtmlEncode(temporaryPassword)}</span>
-        </div>
-      </div>
-
-      <div class='alert-pill'>
-        Important: Initial Password Change Required
-      </div>
-      <p class='instructions'>
-        For security compliance, you must change this temporary password upon your first login. You will not have access to studio data until this security step is completed.
-      </p>
-    </div>
-    <div class='footer'>
-      Photo Aevum Studio &bull; Confidential Administrative Notification &bull; Do not share your temporary credentials.
-    </div>
-  </div>
-</body>
-</html>";
-
-        _logger.LogInformation("Dispatching onboarding credentials email to {Email} for {AdminId} ({Role}).", toEmail, adminId, role);
-        await SendEmailAsync(toEmail, subject, body, isHtml: true, cancellationToken);
+    public Task<WelcomeEmailDispatchResult> TrySendAdminWelcomeEmailAsync(
+        string toEmail,
+        string adminName,
+        string adminId,
+        string temporaryPassword,
+        string role,
+        CancellationToken cancellationToken = default)
+    {
+        var displayRole = string.IsNullOrWhiteSpace(role) ? "Admin" : role.Trim();
+        return SendOnboardingWelcomeEmailAsync(
+            toEmail: toEmail,
+            recipientName: adminName,
+            accountId: adminId,
+            temporaryPassword: temporaryPassword,
+            assignedRole: displayRole,
+            subject: "Welcome to Photo Aevum Studio – Administrator Credentials",
+            portalSubtitle: "Management Portal &bull; System Onboarding",
+            introText: "An administrator account has been provisioned for you at Photo Aevum Studio. Below are your assigned credentials and onboarding instructions.",
+            idLabel: "Admin ID",
+            passwordLabel: "Temporary Password",
+            firstLoginGuidance: "For security compliance, please change your password on first login. You will not have full access to studio data until this security step is completed.",
+            footerText: "Photo Aevum Studio &bull; Confidential Administrative Notification &bull; Do not share your temporary credentials.",
+            cancellationToken: cancellationToken);
     }
 
     public async Task SendEmployeeWelcomeEmailAsync(
@@ -631,8 +627,97 @@ public class EmailService : IEmailService, IBookingNotificationService
         CancellationToken cancellationToken = default,
         string assignedRole = "Employee")
     {
+        await TrySendEmployeeWelcomeEmailAsync(toEmail, employeeName, employeeId, initialPassword, cancellationToken, assignedRole);
+    }
+
+    public Task<WelcomeEmailDispatchResult> TrySendEmployeeWelcomeEmailAsync(
+        string toEmail,
+        string employeeName,
+        string employeeId,
+        string initialPassword,
+        CancellationToken cancellationToken = default,
+        string assignedRole = "Employee")
+    {
         var displayRole = string.IsNullOrWhiteSpace(assignedRole) ? "Employee" : assignedRole.Trim();
-        var subject = "Welcome to Photo Aevum Studio – Employee Credentials";
+        return SendOnboardingWelcomeEmailAsync(
+            toEmail: toEmail,
+            recipientName: employeeName,
+            accountId: employeeId,
+            temporaryPassword: initialPassword,
+            assignedRole: displayRole,
+            subject: "Welcome to Photo Aevum Studio – Employee Credentials",
+            portalSubtitle: "Staff Portal &bull; Employee Onboarding",
+            introText: "Your employee account has been created at Photo Aevum Studio. Below are your assigned credentials and onboarding instructions.",
+            idLabel: "Employee ID",
+            passwordLabel: "Initial Password",
+            firstLoginGuidance: "For security compliance, please change your password on first login before accessing your staff portal.",
+            footerText: "Photo Aevum Studio &bull; Confidential Staff Notification &bull; Do not share your credentials.",
+            cancellationToken: cancellationToken);
+    }
+
+    private async Task<WelcomeEmailDispatchResult> SendOnboardingWelcomeEmailAsync(
+        string toEmail,
+        string recipientName,
+        string accountId,
+        string temporaryPassword,
+        string assignedRole,
+        string subject,
+        string portalSubtitle,
+        string introText,
+        string idLabel,
+        string passwordLabel,
+        string firstLoginGuidance,
+        string footerText,
+        CancellationToken cancellationToken)
+    {
+        OnboardingDocumentResult? handbookResult = null;
+        if (_onboardingDocumentService != null)
+        {
+            try
+            {
+                handbookResult = await _onboardingDocumentService.GetEmployeeHandbookAsync(cancellationToken);
+            }
+            catch (OperationCanceledException)
+            {
+                throw;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Unexpected error retrieving Employee Handbook PDF for onboarding email to {Email}.", toEmail);
+                handbookResult = new OnboardingDocumentResult(false, null, null, "Failed to retrieve the Employee Handbook PDF.");
+            }
+        }
+        else
+        {
+            handbookResult = new OnboardingDocumentResult(false, null, null, "Onboarding document service is not configured.");
+        }
+
+        var attachments = new List<EmailAttachment>();
+        string handbookDeliveryHtml;
+        if (handbookResult.Found && handbookResult.Attachment != null)
+        {
+            attachments.Add(handbookResult.Attachment);
+            handbookDeliveryHtml = $@"
+              <p class='handbook-meta'>
+                <strong>Attached Document:</strong> <code>{WebUtility.HtmlEncode(handbookResult.Attachment.FileName)}</code> (PDF)
+              </p>";
+        }
+        else if (handbookResult.Found && !string.IsNullOrWhiteSpace(handbookResult.DownloadUrl))
+        {
+            var encodedUrl = WebUtility.HtmlEncode(handbookResult.DownloadUrl);
+            handbookDeliveryHtml = $@"
+              <p class='handbook-meta'>
+                <strong>Download Link (Time-Limited):</strong>
+                <a href='{encodedUrl}' style='color:#0369a1;font-weight:600;text-decoration:underline;'>Download Employee Handbook &amp; Operations Manual (PDF)</a>
+              </p>";
+        }
+        else
+        {
+            handbookDeliveryHtml = @"
+              <p class='handbook-meta' style='color:#92400e;'>
+                <strong>Document Note:</strong> The Employee Handbook &amp; Operations Manual PDF could not be attached automatically. Please request a copy from HR or Studio Management.
+              </p>";
+        }
 
         var body = $@"
 <!DOCTYPE html>
@@ -648,12 +733,16 @@ public class EmailService : IEmailService, IBookingNotificationService
     .content {{ padding: 28px 24px; }}
     .greeting {{ font-size: 16px; font-weight: 600; margin-bottom: 12px; }}
     .info-box {{ background: #f1f5f9; border-radius: 8px; border: 1px solid #cbd5e1; padding: 18px; margin: 20px 0; }}
-    .row {{ display: flex; justify-content: space-between; padding: 8px 0; border-bottom: 1px solid #e2e8f0; font-size: 13px; }}
+    .row {{ display: flex; justify-content: space-between; gap: 12px; padding: 8px 0; border-bottom: 1px solid #e2e8f0; font-size: 13px; }}
     .row:last-child {{ border-bottom: none; }}
     .label {{ color: #64748b; font-weight: 500; }}
-    .val {{ color: #0f172a; font-weight: 700; font-family: monospace; }}
+    .val {{ color: #0f172a; font-weight: 700; font-family: monospace; text-align: right; }}
     .instructions {{ font-size: 13px; line-height: 1.6; color: #475569; }}
     .alert-pill {{ display: inline-block; background: #fef3c7; color: #92400e; padding: 6px 12px; border-radius: 6px; font-size: 12px; font-weight: 600; margin: 12px 0; }}
+    .handbook-box {{ background: #f8fafc; border: 1px solid #cbd5e1; border-left: 4px solid #0f172a; border-radius: 8px; padding: 16px 18px; margin: 20px 0 0; }}
+    .handbook-title {{ font-size: 14px; font-weight: 700; color: #0f172a; margin: 0 0 6px; }}
+    .handbook-meta {{ font-size: 12px; color: #334155; margin: 6px 0; line-height: 1.5; }}
+    .handbook-list {{ margin: 10px 0 0; padding-left: 18px; font-size: 12px; color: #475569; line-height: 1.6; }}
     .footer {{ background: #f8fafc; border-top: 1px solid #e2e8f0; padding: 16px 24px; text-align: center; font-size: 11px; color: #94a3b8; }}
   </style>
 </head>
@@ -661,26 +750,30 @@ public class EmailService : IEmailService, IBookingNotificationService
   <div class='card'>
     <div class='header'>
       <h1>Photo Aevum Studio</h1>
-      <p>Staff Portal &bull; Employee Onboarding</p>
+      <p>{portalSubtitle}</p>
     </div>
     <div class='content'>
-      <div class='greeting'>Hello {WebUtility.HtmlEncode(employeeName)},</div>
+      <div class='greeting'>Hello {WebUtility.HtmlEncode(recipientName)},</div>
       <p class='instructions'>
-        Your employee account has been created at Photo Aevum Studio. Below are your assigned credentials and access details.
+        {WebUtility.HtmlEncode(introText)}
       </p>
 
       <div class='info-box'>
         <div class='row'>
+          <span class='label'>Email / Username:</span>
+          <span class='val' style='font-family: inherit;'>{WebUtility.HtmlEncode(toEmail)}</span>
+        </div>
+        <div class='row'>
           <span class='label'>Assigned Role:</span>
-          <span class='val' style='font-family: inherit;'>{WebUtility.HtmlEncode(displayRole)}</span>
+          <span class='val' style='font-family: inherit;'>{WebUtility.HtmlEncode(assignedRole)}</span>
         </div>
         <div class='row'>
-          <span class='label'>Employee ID:</span>
-          <span class='val'>{WebUtility.HtmlEncode(employeeId)}</span>
+          <span class='label'>{WebUtility.HtmlEncode(idLabel)}:</span>
+          <span class='val'>{WebUtility.HtmlEncode(accountId)}</span>
         </div>
         <div class='row'>
-          <span class='label'>Initial Password:</span>
-          <span class='val' style='color: #0369a1;'>{WebUtility.HtmlEncode(initialPassword)}</span>
+          <span class='label'>{WebUtility.HtmlEncode(passwordLabel)}:</span>
+          <span class='val' style='color: #0369a1;'>{WebUtility.HtmlEncode(temporaryPassword)}</span>
         </div>
       </div>
 
@@ -688,17 +781,61 @@ public class EmailService : IEmailService, IBookingNotificationService
         Important: Initial Password Change Required
       </div>
       <p class='instructions'>
-        For security compliance, you must change this initial password upon your first login.
+        {WebUtility.HtmlEncode(firstLoginGuidance)}
       </p>
+
+      <div class='handbook-box'>
+        <div class='handbook-title'>PHOTO AEVUM-STUDIO Employee Handbook &amp; Operations Manual</div>
+        <p class='handbook-meta'>
+          Approved by <strong>Studio Director Jay Anne D. Dingas</strong> &bull; Confidential — Internal Use Only
+        </p>
+        {handbookDeliveryHtml}
+        <ul class='handbook-list'>
+          <li><strong>Workplace Policies &amp; Studio Operations:</strong> Review the code of conduct, attendance, punctuality, uniform/ID badge, and operational standards.</li>
+          <li><strong>Confidentiality &amp; NDA Rules:</strong> Strictly safeguard internal studio matters, communications, client galleries, raw footage, and intellectual property.</li>
+          <li><strong>Equipment Accountability:</strong> Maintain proper handling, safekeeping, and timely return of all Company cameras, lenses, lighting, storage media, and checked-out studio gear.</li>
+          <li><strong>Employee Acknowledgment:</strong> Sign and return the <strong>Employee Acknowledgment</strong> section (Page 4) to HR / Studio Management upon completing your onboarding review.</li>
+        </ul>
+      </div>
     </div>
     <div class='footer'>
-      Photo Aevum Studio &bull; Confidential Staff Notification &bull; Do not share your credentials.
+      {footerText}
     </div>
   </div>
 </body>
 </html>";
 
-        _logger.LogInformation("Dispatching onboarding credentials email to {Email} for Employee {EmployeeId} ({AssignedRole}).", toEmail, employeeId, displayRole);
-        await SendEmailAsync(toEmail, subject, body, isHtml: true, cancellationToken);
+        _logger.LogInformation(
+            "Dispatching onboarding credentials email to {Email} for {AccountId} ({Role}). HandbookAttached={HandbookReady}",
+            toEmail, accountId, assignedRole, handbookResult.Found);
+
+        var outcome = await DeliverAsync(
+            toEmail,
+            subject,
+            body,
+            isHtml: true,
+            attachments: attachments.Count > 0 ? attachments : null,
+            ct: cancellationToken);
+
+        bool handbookDelivered = handbookResult.Found && (handbookResult.Attachment != null || !string.IsNullOrWhiteSpace(handbookResult.DownloadUrl));
+
+        if (outcome != SendOutcome.Sent)
+        {
+            var warning = handbookDelivered
+                ? $"Account created, but the welcome email and Employee Handbook PDF could not be delivered ({outcome}). Please check email delivery configuration and retry."
+                : $"Account created, but the welcome email could not be delivered ({outcome}) and the Employee Handbook PDF could not be retrieved ({handbookResult.ErrorMessage ?? "unavailable"}).";
+
+            _logger.LogWarning("Onboarding email delivery did not succeed for {AccountId} ({Email}): {Warning}", accountId, toEmail, warning);
+            return new WelcomeEmailDispatchResult(EmailSent: false, HandbookAttached: false, WarningMessage: warning);
+        }
+
+        if (!handbookDelivered)
+        {
+            var partialWarning = $"Welcome email was sent to {toEmail}, but the Employee Handbook PDF could not be attached ({handbookResult.ErrorMessage ?? "file unavailable"}). Please retry once the handbook file is available.";
+            _logger.LogWarning("Onboarding email sent without Employee Handbook PDF for {AccountId} ({Email}): {Warning}", accountId, toEmail, partialWarning);
+            return new WelcomeEmailDispatchResult(EmailSent: true, HandbookAttached: false, WarningMessage: partialWarning);
+        }
+
+        return new WelcomeEmailDispatchResult(EmailSent: true, HandbookAttached: true, WarningMessage: null);
     }
 }

@@ -26,10 +26,30 @@ public class ConsultationsController : ControllerBase
         _notifier = notifier;
     }
 
+    private bool IsClerkOrAdmin() =>
+        User.IsInRole(AppRoles.Admin) ||
+        User.IsInRole(AppRoles.SystemAdmin) ||
+        User.IsInRole("System Admin") ||
+        User.IsInRole(AppRoles.OfficeClerk) ||
+        User.IsInRole("OfficeClerk") ||
+        (User.FindFirst("studio_id")?.Value?.StartsWith("CLK-", StringComparison.OrdinalIgnoreCase) ?? false);
+
+    private string[] GetCallerIdentifiers() =>
+        new[]
+        {
+            User.FindFirstValue("studio_id"),
+            User.FindFirstValue(ClaimTypes.NameIdentifier),
+            User.FindFirstValue("sub")
+        }
+        .Where(x => !string.IsNullOrWhiteSpace(x))
+        .Select(x => x!)
+        .Distinct(StringComparer.OrdinalIgnoreCase)
+        .ToArray();
+
     // POST api/consultations/schedule
     // Customer schedules a new consultation call
     [HttpPost("schedule")]
-    [Authorize(Roles = $"{AppRoles.Customer},{AppRoles.Admin},{AppRoles.SystemAdmin},{AppRoles.Employee},{AppRoles.OfficeClerk}")]
+    [Authorize(Roles = $"{AppRoles.Customer},{AppRoles.Admin},{AppRoles.SystemAdmin},{AppRoles.OfficeClerk}")]
     public async Task<IActionResult> Schedule(
         [FromBody] CreateConsultationRequest request,
         CancellationToken cancellationToken)
@@ -39,9 +59,22 @@ public class ConsultationsController : ControllerBase
             return BadRequest(new { message = "You must read and agree to the PhotoAevum Studio Data Privacy Policy and Terms before scheduling a consultation." });
         }
 
-        if (string.IsNullOrWhiteSpace(request.CustomerId))
+        if (!IsClerkOrAdmin())
         {
-            var userId = User.FindFirstValue(ClaimTypes.NameIdentifier) ?? User.FindFirstValue("sub") ?? string.Empty;
+            var userId = User.FindFirstValue("studio_id")
+                         ?? User.FindFirstValue(ClaimTypes.NameIdentifier)
+                         ?? User.FindFirstValue("sub")
+                         ?? string.Empty;
+            if (string.IsNullOrWhiteSpace(userId))
+                return Unauthorized();
+            request.CustomerId = userId;
+        }
+        else if (string.IsNullOrWhiteSpace(request.CustomerId))
+        {
+            var userId = User.FindFirstValue("studio_id")
+                         ?? User.FindFirstValue(ClaimTypes.NameIdentifier)
+                         ?? User.FindFirstValue("sub")
+                         ?? string.Empty;
             request.CustomerId = userId;
         }
 
@@ -60,7 +93,7 @@ public class ConsultationsController : ControllerBase
     // GET api/consultations
     // Clerk / Admin gets negotiations inbox
     [HttpGet]
-    [Authorize(Roles = $"{AppRoles.Admin},{AppRoles.SystemAdmin},{AppRoles.Employee},{AppRoles.OfficeClerk}")]
+    [Authorize(Policy = "ClerkOrAdmin")]
     public async Task<IActionResult> GetAll(
         [FromQuery] string? clerkEmployeeId,
         [FromQuery] string? status,
@@ -79,13 +112,24 @@ public class ConsultationsController : ControllerBase
     {
         var result = await _consultationService.GetNegotiationByIdAsync(id, cancellationToken);
         if (result == null) return NotFound(new { message = $"Consultation {id} not found." });
+
+        if (!IsClerkOrAdmin())
+        {
+            var callerIds = GetCallerIdentifiers();
+            var isCustomerOwner = callerIds.Any(cid => string.Equals(cid, result.CustomerId, StringComparison.OrdinalIgnoreCase));
+            var isAssignedClerk = User.IsInRole(AppRoles.Employee) &&
+                                  callerIds.Any(cid => string.Equals(cid, result.EmployeeId, StringComparison.OrdinalIgnoreCase));
+            if (!isCustomerOwner && !isAssignedClerk)
+                return Forbid();
+        }
+
         return Ok(result);
     }
 
     // POST api/consultations/{id}/outcome
     // Clerk updates consultation deal outcome
     [HttpPost("{id}/outcome")]
-    [Authorize(Roles = $"{AppRoles.Admin},{AppRoles.SystemAdmin},{AppRoles.Employee},{AppRoles.OfficeClerk}")]
+    [Authorize(Policy = "ClerkOrAdmin")]
     public async Task<IActionResult> UpdateOutcome(
         string id,
         [FromBody] UpdateNegotiationOutcomeRequest request,
@@ -107,7 +151,7 @@ public class ConsultationsController : ControllerBase
     // POST api/consultations/{id}/create-event
     // Clerk executes 4-step wizard to create EventAppointment
     [HttpPost("{id}/create-event")]
-    [Authorize(Roles = $"{AppRoles.Admin},{AppRoles.SystemAdmin},{AppRoles.Employee},{AppRoles.OfficeClerk}")]
+    [Authorize(Policy = "ClerkOrAdmin")]
     public async Task<IActionResult> CreateEvent(
         string id,
         [FromBody] CreateEventAppointmentFromNegotiationRequest request,

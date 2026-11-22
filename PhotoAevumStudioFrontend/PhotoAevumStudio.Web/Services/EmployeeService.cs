@@ -492,11 +492,59 @@ public class EmployeeService : IEmployeeService
 
 
 
+        bool welcomeEmailSent = false;
+
+        bool handbookAttached = false;
+
+        string? emailWarning = null;
+
+
+
         try
 
         {
 
-            await _http.PostAsJsonAsync("api/auth/register", apiPayload, cancellationToken);
+            var apiResponse = await _http.PostAsJsonAsync("api/auth/register", apiPayload, cancellationToken);
+
+            if (apiResponse.IsSuccessStatusCode)
+
+            {
+
+                try
+
+                {
+
+                    var payload = await apiResponse.Content.ReadFromJsonAsync<System.Text.Json.JsonElement>(cancellationToken: cancellationToken);
+
+                    welcomeEmailSent = payload.TryGetProperty("welcomeEmailSent", out var wes) && wes.ValueKind == System.Text.Json.JsonValueKind.True;
+
+                    handbookAttached = payload.TryGetProperty("handbookAttached", out var ha) && ha.ValueKind == System.Text.Json.JsonValueKind.True;
+
+                    if (payload.TryGetProperty("emailWarning", out var ew) && ew.ValueKind == System.Text.Json.JsonValueKind.String)
+
+                        emailWarning = ew.GetString();
+
+                }
+
+                catch
+
+                {
+
+                    welcomeEmailSent = true;
+
+                    handbookAttached = true;
+
+                }
+
+            }
+
+            else
+
+            {
+
+                emailWarning = $"Employee account was saved, but the backend email service returned HTTP {(int)apiResponse.StatusCode} and could not send the welcome email and Employee Handbook PDF. Please retry sending the welcome email.";
+
+            }
 
         }
 
@@ -505,6 +553,8 @@ public class EmployeeService : IEmployeeService
         {
 
             // API call failed, attempt database fallback
+
+            emailWarning = "Employee account was saved via database fallback, but the backend email service could not be reached to send the welcome email and Employee Handbook PDF. Please retry sending the welcome email.";
 
         }
 
@@ -610,7 +660,12 @@ public class EmployeeService : IEmployeeService
 
             await PersistEmployeeDaysOffAsync(r.EmployeeId, r.DaysOff, cancellationToken);
 
-            return new SaveEmployeeResult(true);
+            return new SaveEmployeeResult(
+                Success: true,
+                Error: null,
+                WelcomeEmailSent: welcomeEmailSent,
+                HandbookAttached: handbookAttached,
+                EmailWarning: emailWarning);
 
         }
 
@@ -950,6 +1005,45 @@ public class EmployeeService : IEmployeeService
         catch (Exception ex)
         {
             return (false, $"Failed to reset password: {ex.Message}");
+        }
+    }
+
+    public async Task<SaveEmployeeResult> ResendEmployeeWelcomeEmailAsync(string employeeId, CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrWhiteSpace(employeeId))
+            return new SaveEmployeeResult(false, "Employee ID is required.", false, false, "Employee ID is required.");
+
+        var cleanId = employeeId.Trim().ToUpperInvariant();
+        try
+        {
+            await _tokenStore.GetTokenAsync(cancellationToken);
+            var response = await _http.PostAsync($"api/management/employees/{Uri.EscapeDataString(cleanId)}/resend-welcome", null, cancellationToken);
+            if (response.IsSuccessStatusCode)
+            {
+                var payload = await response.Content.ReadFromJsonAsync<System.Text.Json.JsonElement>(cancellationToken: cancellationToken);
+                bool emailSent = payload.TryGetProperty("emailSent", out var es) && es.ValueKind == System.Text.Json.JsonValueKind.True;
+                bool handbookAttached = payload.TryGetProperty("handbookAttached", out var ha) && ha.ValueKind == System.Text.Json.JsonValueKind.True;
+                string? warning = payload.TryGetProperty("warning", out var w) && w.ValueKind == System.Text.Json.JsonValueKind.String ? w.GetString() : null;
+                string? message = payload.TryGetProperty("message", out var m) && m.ValueKind == System.Text.Json.JsonValueKind.String ? m.GetString() : null;
+                if (!emailSent && string.IsNullOrWhiteSpace(warning))
+                    warning = message ?? "Could not deliver welcome email and Employee Handbook PDF.";
+                return new SaveEmployeeResult(emailSent && handbookAttached, emailSent ? warning : (warning ?? message), emailSent, handbookAttached, warning);
+            }
+
+            if (response.StatusCode is System.Net.HttpStatusCode.Forbidden or System.Net.HttpStatusCode.Unauthorized)
+                return new SaveEmployeeResult(false, "Unauthorized: Only Administrators can resend employee welcome emails.", false, false, "Unauthorized.");
+
+            var errBody = await response.Content.ReadFromJsonAsync<Microsoft.AspNetCore.Mvc.ProblemDetails>(cancellationToken: cancellationToken);
+            var detail = errBody?.Detail ?? $"Failed to resend welcome email (HTTP {(int)response.StatusCode}).";
+            return new SaveEmployeeResult(false, detail, false, false, detail);
+        }
+        catch (OperationCanceledException)
+        {
+            return new SaveEmployeeResult(false, "Operation was cancelled.", false, false, "Operation was cancelled.");
+        }
+        catch (Exception ex)
+        {
+            return new SaveEmployeeResult(false, $"Failed to resend welcome email: {ex.Message}", false, false, ex.Message);
         }
     }
 

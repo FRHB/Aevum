@@ -44,6 +44,10 @@ public class ApplicationDbContext : IdentityDbContext<ApplicationUser>
     public DbSet<ArchiveIndex> ArchiveIndices => Set<ArchiveIndex>();
     public DbSet<CustomerDropbox> CustomerDropboxes => Set<CustomerDropbox>();
     public DbSet<StudioAnalyticsAction> StudioAnalyticsActions => Set<StudioAnalyticsAction>();
+    public DbSet<TermsVersion> TermsVersions => Set<TermsVersion>();
+    public DbSet<BookingContract> BookingContracts => Set<BookingContract>();
+    public DbSet<BookingPayment> BookingPayments => Set<BookingPayment>();
+    public DbSet<BookingReceipt> BookingReceipts => Set<BookingReceipt>();
 
     protected override void OnModelCreating(ModelBuilder builder)
     {
@@ -329,6 +333,116 @@ public class ApplicationDbContext : IdentityDbContext<ApplicationUser>
             e.Property(a => a.AppliedByName).HasMaxLength(200).IsRequired();
             e.Property(a => a.AppliedAtUtc).HasDefaultValueSql("SYSUTCDATETIME()");
             e.Property(a => a.Status).HasMaxLength(40).IsRequired().HasDefaultValue("Applied");
+        });
+
+        // ── TermsVersions ────────────────────────────────────────────────────
+        builder.Entity<TermsVersion>(e =>
+        {
+            e.ToTable("TermsVersions", "dbo");
+            e.HasKey(t => t.TermsVersionId);
+            e.Property(t => t.VersionCode).HasMaxLength(30).IsRequired();
+            e.Property(t => t.Title).HasMaxLength(200).IsRequired();
+            e.Property(t => t.OvertimeHourlyRate).HasColumnType("decimal(18,2)");
+            e.Property(t => t.TermsBodyHtml).IsRequired();
+            e.Property(t => t.CreatedAtUtc).HasDefaultValueSql("SYSUTCDATETIME()");
+            e.HasIndex(t => t.VersionCode).IsUnique();
+        });
+
+        // ── BookingContracts ─────────────────────────────────────────────────
+        builder.Entity<BookingContract>(e =>
+        {
+            e.ToTable("BookingContracts", "dbo");
+            e.HasKey(c => c.BookingContractId);
+            e.Property(c => c.ContractNumber).HasMaxLength(40).IsRequired();
+            e.Property(c => c.EventAppointmentId).HasColumnName("EventAppointmentID").HasMaxLength(30).IsRequired();
+            e.Property(c => c.NegotiationId).HasColumnName("NegotiationID").HasMaxLength(30);
+            e.Property(c => c.CustomerId).HasColumnName("CustomerID").HasMaxLength(30).IsRequired();
+            e.Property(c => c.TermsVersionCode).HasMaxLength(30).IsRequired();
+            e.Property(c => c.StudioName).HasMaxLength(200).IsRequired();
+            e.Property(c => c.StudioAddress).HasMaxLength(500).IsRequired();
+            e.Property(c => c.StudioPhone).HasMaxLength(100).IsRequired();
+            e.Property(c => c.StudioEmail).HasMaxLength(200).IsRequired();
+            e.Property(c => c.ClientName).HasMaxLength(200).IsRequired();
+            e.Property(c => c.ClientAddress).HasMaxLength(500);
+            e.Property(c => c.ClientPhone).HasMaxLength(100);
+            e.Property(c => c.ClientEmail).HasMaxLength(200).IsRequired();
+            e.Property(c => c.SessionType).HasMaxLength(150).IsRequired();
+            e.Property(c => c.Venue).HasMaxLength(255).IsRequired();
+            e.Property(c => c.PackageName).HasMaxLength(255).IsRequired();
+            e.Property(c => c.PackageInclusions).HasMaxLength(1000).IsRequired();
+            e.Property(c => c.TotalPackageAmount).HasColumnType("decimal(18,2)");
+            e.Property(c => c.ReservationFeeAmount).HasColumnType("decimal(18,2)");
+            e.Property(c => c.RemainingBalanceAmount).HasColumnType("decimal(18,2)");
+            e.Property(c => c.RepresentativeName).HasMaxLength(200).IsRequired();
+            e.Property(c => c.ContractStatus).HasMaxLength(30).IsRequired().HasDefaultValue("PendingAcceptance");
+            e.Property(c => c.ClientIpAddress).HasMaxLength(100);
+            e.Property(c => c.UserAgent).HasMaxLength(500);
+            e.Property(c => c.ClickwrapReference).HasMaxLength(100);
+            e.Property(c => c.RenderedContractHtml).IsRequired();
+            e.Property(c => c.PdfBucketName).HasMaxLength(100);
+            e.Property(c => c.PdfObjectKey).HasMaxLength(500);
+            e.Property(c => c.PdfUri).HasMaxLength(1000);
+            e.Property(c => c.CreatedAtUtc).HasDefaultValueSql("SYSUTCDATETIME()");
+            e.Property(c => c.UpdatedAtUtc).HasDefaultValueSql("SYSUTCDATETIME()");
+            e.HasIndex(c => c.ContractNumber).IsUnique();
+            e.HasIndex(c => c.EventAppointmentId);
+            e.HasOne(c => c.TermsVersion)
+             .WithMany()
+             .HasForeignKey(c => c.TermsVersionId)
+             .OnDelete(DeleteBehavior.NoAction);
+        });
+
+        // ── BookingPayments ──────────────────────────────────────────────────
+        builder.Entity<BookingPayment>(e =>
+        {
+            e.ToTable("BookingPayments", "dbo");
+            e.HasKey(p => p.BookingPaymentId);
+            e.Property(p => p.EventAppointmentId).HasColumnName("EventAppointmentID").HasMaxLength(30).IsRequired();
+            e.Property(p => p.PaymentStage).HasMaxLength(30).IsRequired();
+            e.Property(p => p.PaymentMethod).HasMaxLength(50).IsRequired();
+            e.Property(p => p.Amount).HasColumnType("decimal(18,2)");
+            e.Property(p => p.OvertimeAmount).HasColumnType("decimal(18,2)");
+            e.Property(p => p.GatewayReferenceId).HasMaxLength(150).IsRequired();
+            e.Property(p => p.ExternalReference).HasMaxLength(150);
+            e.Property(p => p.Status).HasMaxLength(30).IsRequired().HasDefaultValue("Paid");
+            e.Property(p => p.PaidAtUtc).HasDefaultValueSql("SYSUTCDATETIME()");
+            e.Property(p => p.VerifiedByEmployeeId).HasColumnName("VerifiedByEmployeeID").HasMaxLength(30);
+            e.Property(p => p.Notes).HasMaxLength(1000);
+            e.Property(p => p.CreatedAtUtc).HasDefaultValueSql("SYSUTCDATETIME()");
+            e.HasIndex(p => new { p.EventAppointmentId, p.PaymentStage });
+            e.HasOne(p => p.BookingContract)
+             .WithMany()
+             .HasForeignKey(p => p.BookingContractId)
+             .OnDelete(DeleteBehavior.NoAction);
+        });
+
+        // ── BookingReceipts ──────────────────────────────────────────────────
+        builder.Entity<BookingReceipt>(e =>
+        {
+            e.ToTable("BookingReceipts", "dbo");
+            e.HasKey(r => r.BookingReceiptId);
+            e.Property(r => r.ReceiptNumber).HasMaxLength(50).IsRequired();
+            e.Property(r => r.EventAppointmentId).HasColumnName("EventAppointmentID").HasMaxLength(30).IsRequired();
+            e.Property(r => r.ReceiptType).HasMaxLength(40).IsRequired();
+            e.Property(r => r.TotalContractCharges).HasColumnType("decimal(18,2)");
+            e.Property(r => r.Stage1PaidAmount).HasColumnType("decimal(18,2)");
+            e.Property(r => r.OvertimeAddOnAmount).HasColumnType("decimal(18,2)");
+            e.Property(r => r.Stage2PaidAmount).HasColumnType("decimal(18,2)");
+            e.Property(r => r.RemainingBalanceDue).HasColumnType("decimal(18,2)");
+            e.Property(r => r.PaymentMethod).HasMaxLength(50).IsRequired();
+            e.Property(r => r.GatewayReferenceId).HasMaxLength(150);
+            e.Property(r => r.IssuedAtUtc).HasDefaultValueSql("SYSUTCDATETIME()");
+            e.Property(r => r.RenderedReceiptHtml).IsRequired();
+            e.Property(r => r.PdfBucketName).HasMaxLength(100);
+            e.Property(r => r.PdfObjectKey).HasMaxLength(500);
+            e.Property(r => r.PdfUri).HasMaxLength(1000);
+            e.Property(r => r.CreatedAtUtc).HasDefaultValueSql("SYSUTCDATETIME()");
+            e.HasIndex(r => r.ReceiptNumber).IsUnique();
+            e.HasIndex(r => new { r.EventAppointmentId, r.ReceiptType }).IsUnique();
+            e.HasOne(r => r.BookingPayment)
+             .WithMany()
+             .HasForeignKey(r => r.BookingPaymentId)
+             .OnDelete(DeleteBehavior.NoAction);
         });
     }
 }

@@ -41,7 +41,19 @@
     </div>
 
     <!-- Notification Banner -->
-    <SystemMessage Message="@notificationMessage" Severity="success" Mode="banner" OnDismiss="() => notificationMessage = null" />
+    <SystemMessage Message="@notificationMessage" Severity="@notificationSeverity" Mode="banner" OnDismiss="() => { notificationMessage = null; retryTargetAdmin = null; }" />
+
+    @if (retryTargetAdmin != null && notificationSeverity == "warning")
+    {
+        <div class="flex items-center justify-between gap-3 px-4 py-2.5 bg-amber-50 border border-amber-200 rounded-xl text-xs text-amber-900">
+            <span>Retry sending the welcome email and Employee Handbook PDF for <strong>@retryTargetAdmin.FullName</strong> (@retryTargetAdmin.Id):</span>
+            <button type="button"
+                    @onclick="() => ResendCredentialsAsync(retryTargetAdmin)"
+                    class="px-3 py-1.5 rounded-lg bg-amber-600 hover:bg-amber-700 text-white font-semibold text-xs transition-colors cursor-pointer">
+                Retry Welcome Email &amp; Handbook
+            </button>
+        </div>
+    }
 
     <!-- Role Status Notice for Regular Admins -->
     @if (!isSystemAdmin && !isLoading)
@@ -297,7 +309,7 @@
 </div>
 
 <!-- Add Admin Wizard Modal -->
-<AddAdminWizard @bind-IsOpen="isWizardOpen" OnSaved="HandleAdminSaved" />
+<AddAdminWizard @bind-IsOpen="isWizardOpen" OnSavedWithResult="HandleAdminSavedWithResult" OnSaved="HandleAdminSaved" />
 
 <!-- Edit Admin Modal -->
 <EditAdminModal @bind-IsOpen="isEditModalOpen" Admin="selectedAdmin" OnSaved="HandleAdminSaved" />
@@ -309,6 +321,9 @@
     private bool isSystemAdmin = false;
     private string currentUserId = string.Empty;
     private string? notificationMessage;
+    private string notificationSeverity = "success";
+    private AdminViewModel? retryTargetAdmin;
+    private SaveAdminResult? lastAdminWizardResult;
 
     private string searchQuery = string.Empty;
     private string selectedRoleFilter = "All";
@@ -406,9 +421,26 @@
         isEditModalOpen = true;
     }
 
+    private void HandleAdminSavedWithResult(SaveAdminResult result)
+    {
+        lastAdminWizardResult = result;
+        retryTargetAdmin = (!result.WelcomeEmailSent || !result.HandbookAttached) ? result.Admin : null;
+    }
+
     private async Task HandleAdminSaved()
     {
-        notificationMessage = "Administrator saved successfully and directory updated. Welcome email dispatched.";
+        if (lastAdminWizardResult is { } res && (!res.WelcomeEmailSent || !res.HandbookAttached || !string.IsNullOrWhiteSpace(res.EmailWarning)))
+        {
+            notificationSeverity = "warning";
+            notificationMessage = res.EmailWarning ?? "Administrator saved, but the welcome email or Employee Handbook PDF could not be delivered.";
+        }
+        else
+        {
+            notificationSeverity = "success";
+            notificationMessage = "Administrator saved successfully and directory updated. Welcome email and Employee Handbook PDF dispatched.";
+            retryTargetAdmin = null;
+        }
+        lastAdminWizardResult = null;
         await LoadAdminsAsync();
         StateHasChanged();
     }
@@ -418,18 +450,30 @@
         try
         {
             var res = await AdminService.ResendCredentialsAsync(admin.Id, _cts?.Token ?? CancellationToken.None);
-            if (res.Success)
+            if (res.WelcomeEmailSent && res.HandbookAttached)
             {
-                notificationMessage = $"Credentials successfully resent to {admin.FullName} ({admin.Email}).";
+                notificationSeverity = "success";
+                notificationMessage = $"Welcome email with credentials and Employee Handbook PDF successfully sent to {admin.FullName} ({admin.Email}).";
+                retryTargetAdmin = null;
+            }
+            else if (res.WelcomeEmailSent)
+            {
+                notificationSeverity = "warning";
+                notificationMessage = res.EmailWarning ?? $"Credentials emailed to {admin.FullName}, but the Employee Handbook PDF could not be attached.";
+                retryTargetAdmin = admin;
             }
             else
             {
-                notificationMessage = $"Failed to resend credentials: {res.ErrorMessage}";
+                notificationSeverity = "warning";
+                notificationMessage = $"Failed to deliver welcome email/handbook: {res.EmailWarning ?? res.ErrorMessage}";
+                retryTargetAdmin = admin;
             }
         }
         catch (Exception ex)
         {
+            notificationSeverity = "warning";
             notificationMessage = $"Error resending credentials: {ex.Message}";
+            retryTargetAdmin = admin;
         }
         StateHasChanged();
     }

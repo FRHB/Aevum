@@ -21,6 +21,7 @@ public class R2StorageService : IR2StorageService
     public string ServicesBucket { get; }
     public string ArchiveBucket { get; }
     public string DropboxBucket { get; }
+    public string DocumentsBucket { get; }
     public bool IsConfigured => _isConfigured;
 
     private static string? FirstNonEmpty(params string?[] values)
@@ -86,6 +87,10 @@ public class R2StorageService : IR2StorageService
                             configuration["CloudflareR2:Buckets:Dropbox"],
                             configuration["CloudflareR2__Buckets__Dropbox"])
                         ?? "dropbox";
+        DocumentsBucket = FirstNonEmpty(
+                              configuration["CloudflareR2:Buckets:Documents"],
+                              configuration["CloudflareR2__Buckets__Documents"])
+                          ?? "documents";
 
         _isConfigured = !string.IsNullOrWhiteSpace(accessKey) 
                         && !string.IsNullOrWhiteSpace(secretKey) 
@@ -99,7 +104,9 @@ public class R2StorageService : IR2StorageService
             {
                 ServiceURL = serviceUrl,
                 ForcePathStyle = true,
-                AuthenticationRegion = "auto"
+                AuthenticationRegion = "auto",
+                RequestChecksumCalculation = RequestChecksumCalculation.WHEN_REQUIRED,
+                ResponseChecksumValidation = ResponseChecksumValidation.WHEN_REQUIRED
             };
             _s3Client = new AmazonS3Client(credentials, s3Config);
         }
@@ -114,8 +121,8 @@ public class R2StorageService : IR2StorageService
         if (string.IsNullOrWhiteSpace(bucketName))
             throw new ArgumentException("Bucket name cannot be null or empty.", nameof(bucketName));
 
-        if (_s3Client == null)
-            throw new InvalidOperationException("AmazonS3Client is not initialized.");
+        if (!_isConfigured || _s3Client == null)
+            throw new InvalidOperationException("Cloudflare R2 storage is not configured (missing AccessKey/SecretKey).");
 
         var normalizedBucket = bucketName.Trim();
 
@@ -149,8 +156,8 @@ public class R2StorageService : IR2StorageService
         if (fileStream == null)
             throw new ArgumentNullException(nameof(fileStream));
 
-        if (_s3Client == null)
-            throw new InvalidOperationException("AmazonS3Client is not initialized.");
+        if (!_isConfigured || _s3Client == null)
+            throw new InvalidOperationException("Cloudflare R2 storage is not configured (missing AccessKey/SecretKey).");
 
         var targetBucket = bucketName.Trim();
         var normalizedKey = objectKey.Trim().TrimStart('/');
@@ -188,8 +195,8 @@ public class R2StorageService : IR2StorageService
         if (string.IsNullOrWhiteSpace(objectKey))
             throw new ArgumentException("Object key cannot be null or empty.", nameof(objectKey));
 
-        if (_s3Client == null)
-            throw new InvalidOperationException("AmazonS3Client is not initialized.");
+        if (!_isConfigured || _s3Client == null)
+            throw new InvalidOperationException("Cloudflare R2 storage is not configured (missing AccessKey/SecretKey).");
 
         var getRequest = new GetObjectRequest
         {
@@ -390,7 +397,9 @@ public class R2StorageService : IR2StorageService
                     ResponseHeaderOverrides = new ResponseHeaderOverrides
                     {
                         ContentDisposition = $"attachment; filename=\"{safeName}\"",
-                        ContentType = "application/zip"
+                        ContentType = safeName.EndsWith(".pdf", StringComparison.OrdinalIgnoreCase)
+                            ? "application/pdf"
+                            : "application/zip"
                     }
                 };
                 var presigned = _s3Client.GetPreSignedURL(request);

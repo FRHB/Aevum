@@ -9,21 +9,44 @@ public class LocalStorageProvider : IStorageProvider
 
     public LocalStorageProvider()
     {
-        // For phase 4 we use local disk
-        _storageDirectory = Path.Combine(Directory.GetCurrentDirectory(), "wwwroot", "private-photos");
+        // Store private photos outside wwwroot so they cannot be served anonymously as static files
+        _storageDirectory = Path.Combine(Directory.GetCurrentDirectory(), "App_Data", "private-photos");
         if (!Directory.Exists(_storageDirectory))
         {
             Directory.CreateDirectory(_storageDirectory);
         }
-        
-        // This should normally come from configuration
+
         _baseUrl = "/api/photos/download";
+    }
+
+    private string ResolveSafePath(string fileNameOrIdentifier)
+    {
+        var safeFileName = Path.GetFileName(fileNameOrIdentifier?.Trim() ?? string.Empty);
+        if (string.IsNullOrWhiteSpace(safeFileName) ||
+            safeFileName.Contains("..", StringComparison.Ordinal) ||
+            safeFileName != fileNameOrIdentifier?.Trim())
+        {
+            throw new ArgumentException("Invalid file identifier.", nameof(fileNameOrIdentifier));
+        }
+
+        var fullRoot = Path.GetFullPath(_storageDirectory);
+        if (!fullRoot.EndsWith(Path.DirectorySeparatorChar))
+            fullRoot += Path.DirectorySeparatorChar;
+
+        var fullPath = Path.GetFullPath(Path.Combine(fullRoot, safeFileName));
+        if (!fullPath.StartsWith(fullRoot, StringComparison.OrdinalIgnoreCase))
+            throw new UnauthorizedAccessException("Path traversal detected.");
+
+        return fullPath;
     }
 
     public async Task<string> UploadFileAsync(string fileName, Stream stream, string contentType, CancellationToken cancellationToken = default)
     {
-        var uniqueFileName = $"{Guid.NewGuid()}_{fileName}";
-        var filePath = Path.Combine(_storageDirectory, uniqueFileName);
+        var cleanOriginal = Path.GetFileName(fileName?.Trim() ?? "upload.bin");
+        if (string.IsNullOrWhiteSpace(cleanOriginal))
+            cleanOriginal = "upload.bin";
+        var uniqueFileName = $"{Guid.NewGuid()}_{cleanOriginal}";
+        var filePath = ResolveSafePath(uniqueFileName);
 
         using var fileStream = new FileStream(filePath, FileMode.Create, FileAccess.Write);
         await stream.CopyToAsync(fileStream, cancellationToken);
@@ -33,7 +56,7 @@ public class LocalStorageProvider : IStorageProvider
 
     public Task DeleteFileAsync(string fileIdentifier, CancellationToken cancellationToken = default)
     {
-        var filePath = Path.Combine(_storageDirectory, fileIdentifier);
+        var filePath = ResolveSafePath(fileIdentifier);
         if (File.Exists(filePath))
         {
             File.Delete(filePath);
@@ -43,7 +66,7 @@ public class LocalStorageProvider : IStorageProvider
 
     public Task<string> GetSecureUrlAsync(string fileIdentifier, TimeSpan? expiry = null, CancellationToken cancellationToken = default)
     {
-        // For a true private gallery, we return a URL to a controller endpoint that validates the user's JWT
-        return Task.FromResult($"{_baseUrl}/{fileIdentifier}");
+        var safeIdentifier = Path.GetFileName(fileIdentifier?.Trim() ?? string.Empty);
+        return Task.FromResult($"{_baseUrl}/{Uri.EscapeDataString(safeIdentifier)}");
     }
 }

@@ -11,6 +11,7 @@
 @inject IWebHostEnvironment Env
 @inject IConfiguration Config
 @inject NavigationManager Nav
+@inject IJSRuntime JS
 @rendermode InteractiveServer
 @attribute [Authorize(Roles = "Customer,Admin,SystemAdmin,System Admin,Super Admin,Employee,Office Clerk")]
 
@@ -42,6 +43,16 @@
             <p class="mt-3 text-xs text-slate-600">
                 @_info.EventDate.ToString("MMMM dd, yyyy") at @DateTime.Today.Add(_info.EventTime).ToString("h:mm tt")
             </p>
+            <div class="mt-5 flex flex-wrap justify-center gap-2.5">
+                <button type="button" @onclick="DownloadAgreementPdfAsync" disabled="@_docBusy"
+                        class="px-4 py-2 rounded-xl border border-slate-300 bg-white hover:bg-slate-50 text-slate-800 text-xs font-bold">
+                    ⬇ Signed Agreement PDF
+                </button>
+                <button type="button" @onclick="() => DownloadReceiptPdfAsync(_info.IsFinalPayment ? FinalReceiptType : Stage1ReceiptType)" disabled="@_docBusy"
+                        class="px-4 py-2 rounded-xl bg-slate-900 hover:bg-black text-white text-xs font-bold">
+                    ⬇ @(_info.IsFinalPayment ? "Final Consolidated Receipt PDF" : "Reservation Receipt PDF")
+                </button>
+            </div>
             <a href="/my/bookings" class="inline-block mt-6 px-5 py-2.5 rounded-xl bg-emerald-700 text-white text-sm font-bold">View My Bookings</a>
         </div>
     }
@@ -53,6 +64,63 @@
                 The reservation fee for <strong>@_info.EventName</strong> (#@_info.AppointmentId) was not received in time,
                 so the booking was cancelled and the time slot released. Please contact the studio to book again.
             </p>
+        </div>
+    }
+    else if (!_info.IsFinalPayment && !_info.ContractAccepted)
+    {
+        <div class="mt-8 rounded-2xl border border-slate-200 bg-white p-6 sm:p-8 shadow-sm space-y-5">
+            <div>
+                <span class="px-2.5 py-0.5 rounded bg-slate-900 text-white text-[10px] font-bold uppercase tracking-wider">Step 1 of 2 &bull; Review &amp; Accept Agreement</span>
+                <h1 class="text-xl font-black text-slate-900 mt-2">Photo Studio Services Agreement &amp; Terms</h1>
+                <p class="text-xs text-slate-500 mt-1">
+                    Please review your booking contract and our Standard Terms &amp; Conditions (@(_docsBundle?.TermsVersion?.VersionCode ?? "v1.0")) before unlocking the Reservation Fee QR payment.
+                </p>
+            </div>
+
+            @if (!string.IsNullOrWhiteSpace(_docError))
+            {
+                <div class="p-3 rounded-xl bg-rose-50 border border-rose-200 text-rose-800 text-xs font-semibold">@_docError</div>
+            }
+
+            <div class="flex gap-2 border-b border-slate-200">
+                <button type="button" @onclick='() => _docTab = "agreement"'
+                        class="px-3 py-2 text-xs font-bold border-b-2 @(_docTab == "agreement" ? "border-slate-900 text-slate-900" : "border-transparent text-slate-500")">
+                    Services Agreement
+                </button>
+                <button type="button" @onclick='() => _docTab = "terms"'
+                        class="px-3 py-2 text-xs font-bold border-b-2 @(_docTab == "terms" ? "border-slate-900 text-slate-900" : "border-transparent text-slate-500")">
+                    Standard Terms (@(_docsBundle?.TermsVersion?.VersionCode ?? "v1.0"))
+                </button>
+            </div>
+
+            <div class="max-h-96 overflow-y-auto border border-slate-200 rounded-xl p-4 bg-slate-50/40">
+                @if (_docTab == "agreement")
+                {
+                    @((MarkupString)(_docsBundle?.Contract?.RenderedContractHtml ?? "<p class='text-xs text-slate-500'>Loading agreement...</p>"))
+                }
+                else
+                {
+                    @((MarkupString)(_docsBundle?.TermsVersion?.TermsBodyHtml ?? "<p class='text-xs text-slate-500'>Loading terms...</p>"))
+                }
+            </div>
+
+            <div class="bg-amber-50 border border-amber-200 rounded-xl p-4 space-y-2.5 text-xs">
+                <label class="flex items-start gap-2.5 cursor-pointer">
+                    <input type="checkbox" @bind="_agreeAgreement" class="mt-0.5" />
+                    <span>I have reviewed and agree to the <strong>Photo Studio Services Agreement</strong> (Reservation Fee: <strong>₱@_info.Amount.ToString("N2")</strong>).</span>
+                </label>
+                <label class="flex items-start gap-2.5 cursor-pointer">
+                    <input type="checkbox" @bind="_agreeTerms" class="mt-0.5" />
+                    <span>I have read and accept the <strong>Standard Terms and Conditions (@(_docsBundle?.TermsVersion?.VersionCode ?? "v1.0"))</strong>.</span>
+                </label>
+            </div>
+
+            <button type="button"
+                    @onclick="AcceptAgreementAndProceedAsync"
+                    disabled="@(_docBusy || !_agreeAgreement || !_agreeTerms)"
+                    class="w-full py-3 rounded-xl bg-slate-900 hover:bg-black disabled:opacity-50 text-white text-sm font-bold transition-colors">
+                @(_docBusy ? "Recording Electronic Acceptance..." : "Accept Agreement & Proceed to Reservation Payment →")
+            </button>
         </div>
     }
     else
@@ -142,13 +210,22 @@
 @code {
     [Parameter] public string AppointmentId { get; set; } = string.Empty;
 
+    private const string Stage1ReceiptType = "ReservationAcknowledgment";
+    private const string FinalReceiptType = "FinalConsolidated";
+
     private QrPaymentInfoDto? _info;
+    private BookingDocumentsBundleDto? _docsBundle;
     private string? _qrSvg;
     private string? _qrConfirmUrl;
     private bool _loading = true;
     private bool _paid;
     private bool _expired;
     private bool _busy;
+    private bool _docBusy;
+    private bool _agreeAgreement;
+    private bool _agreeTerms;
+    private string _docTab = "agreement";
+    private string? _docError;
     private bool _hubConnected;
     private bool _isMockQr;
     private string _countdown = "--:--";
@@ -179,6 +256,10 @@
             StateHasChanged();
         }
     }
+    private string BaseAppointmentId => AppointmentId.EndsWith("-FINAL", StringComparison.OrdinalIgnoreCase)
+        ? AppointmentId[..^"-FINAL".Length]
+        : AppointmentId;
+
     private async Task LoadAsync()
     {
         var res = await ConsultationApi.GetQrPaymentAsync(AppointmentId);
@@ -187,7 +268,14 @@
         _qrConfirmUrl = null;
         _isMockQr = false;
 
-        if (_info is { EventStatus: "Pending Payment" })
+        if (_info != null)
+        {
+            var docsRes = await ConsultationApi.GetBookingDocumentsAsync(BaseAppointmentId);
+            if (docsRes.IsSuccess && docsRes.Value != null)
+                _docsBundle = docsRes.Value;
+        }
+
+        if (_info is { EventStatus: "Pending Payment" } && (_info.IsFinalPayment || _info.ContractAccepted))
         {
             var configuredBase = Config["BaseUrl"]?.Trim();
             // When the page is currently opened on a non-localhost domain/tunnel (e.g. ngrok or live domain),
@@ -340,5 +428,49 @@
     {
         _timer?.Dispose();
         await PaymentHub.StopAsync();
+    }
+
+    private async Task AcceptAgreementAndProceedAsync()
+    {
+        _docBusy = true;
+        _docError = null;
+        var res = await ConsultationApi.AcceptContractAsync(BaseAppointmentId, new AcceptContractRequest
+        {
+            AgreeToServicesAgreement = _agreeAgreement,
+            AgreeToStandardTerms = _agreeTerms,
+            TermsVersionId = _docsBundle?.TermsVersion?.TermsVersionId
+        });
+        _docBusy = false;
+
+        if (!res.IsSuccess)
+        {
+            _docError = res.Error?.Message ?? "Failed to record contract acceptance.";
+            return;
+        }
+
+        await LoadAsync();
+        StateHasChanged();
+    }
+
+    private async Task DownloadAgreementPdfAsync()
+    {
+        _docBusy = true;
+        var res = await ConsultationApi.DownloadContractPdfAsync(BaseAppointmentId);
+        _docBusy = false;
+        if (res.IsSuccess && res.Value != null)
+        {
+            await JS.InvokeVoidAsync("aevumDownloadBase64", $"Services-Agreement-{BaseAppointmentId}.pdf", Convert.ToBase64String(res.Value), "application/pdf");
+        }
+    }
+
+    private async Task DownloadReceiptPdfAsync(string receiptType)
+    {
+        _docBusy = true;
+        var res = await ConsultationApi.DownloadReceiptPdfAsync(BaseAppointmentId, receiptType);
+        _docBusy = false;
+        if (res.IsSuccess && res.Value != null)
+        {
+            await JS.InvokeVoidAsync("aevumDownloadBase64", $"{receiptType}-{BaseAppointmentId}.pdf", Convert.ToBase64String(res.Value), "application/pdf");
+        }
     }
 }

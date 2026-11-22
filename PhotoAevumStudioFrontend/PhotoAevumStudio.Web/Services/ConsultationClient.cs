@@ -247,6 +247,49 @@ public sealed class ConsultationClient(
     public Task<ApiResult<CustomerAppointmentActionResultDto>> CustomerRescheduleAppointmentAsync(string appointmentId, CustomerRescheduleAppointmentRequest request, CancellationToken ct = default) =>
         SendAsync<CustomerAppointmentActionResultDto>(() => _http.PostAsJsonAsync($"api/payments/customer-appointments/{Uri.EscapeDataString(appointmentId)}/reschedule", request, ct), ct);
 
+    public Task<ApiResult<TermsVersionDto>> GetActiveTermsAsync(CancellationToken ct = default) =>
+        SendAsync<TermsVersionDto>(() => _http.GetAsync("api/contracts/terms/active", ct), ct);
+
+    public Task<ApiResult<BookingDocumentsBundleDto>> GetBookingDocumentsAsync(string appointmentId, CancellationToken ct = default) =>
+        SendAsync<BookingDocumentsBundleDto>(() => _http.GetAsync($"api/contracts/{Uri.EscapeDataString(appointmentId)}", ct), ct);
+
+    public Task<ApiResult<BookingContractDto>> ConfigureBookingContractAsync(string appointmentId, ConfigureBookingContractRequest request, CancellationToken ct = default) =>
+        SendAsync<BookingContractDto>(() => _http.PostAsJsonAsync($"api/contracts/{Uri.EscapeDataString(appointmentId)}/configure", request, ct), ct);
+
+    public Task<ApiResult<BookingContractDto>> AcceptContractAsync(string appointmentId, AcceptContractRequest request, CancellationToken ct = default) =>
+        SendAsync<BookingContractDto>(() => _http.PostAsJsonAsync($"api/contracts/{Uri.EscapeDataString(appointmentId)}/accept", request, ct), ct);
+
+    public Task<ApiResult<byte[]>> DownloadContractPdfAsync(string appointmentId, CancellationToken ct = default) =>
+        SendBytesAsync(() => _http.GetAsync($"api/contracts/{Uri.EscapeDataString(appointmentId)}/pdf", ct), ct);
+
+    public Task<ApiResult<byte[]>> DownloadReceiptPdfAsync(string appointmentId, string receiptType, CancellationToken ct = default) =>
+        SendBytesAsync(() => _http.GetAsync($"api/contracts/{Uri.EscapeDataString(appointmentId)}/receipts/{Uri.EscapeDataString(receiptType)}/pdf", ct), ct);
+
+    public Task<ApiResult<byte[]>> DownloadTermsPdfAsync(CancellationToken ct = default) =>
+        SendBytesAsync(() => _http.GetAsync("api/contracts/terms/pdf", ct), ct);
+
+    private async Task<ApiResult<byte[]>> SendBytesAsync(Func<Task<HttpResponseMessage>> send, CancellationToken ct)
+    {
+        try
+        {
+            await tokenStore.GetTokenAsync(ct);
+            using var response = await send();
+            if (response.IsSuccessStatusCode)
+            {
+                var bytes = await response.Content.ReadAsByteArrayAsync(ct);
+                return ApiResult<byte[]>.Ok(bytes);
+            }
+
+            var detail = await ReadProblemDetailAsync(response, ct);
+            return ApiResult<byte[]>.Fail(ApiErrorKind.Server, detail ?? "Unable to download PDF document.");
+        }
+        catch (Exception ex)
+        {
+            logger.LogWarning(ex, "PDF download request failed.");
+            return ApiResult<byte[]>.Fail(ApiErrorKind.Network, "Connection failed.");
+        }
+    }
+
 
 
 

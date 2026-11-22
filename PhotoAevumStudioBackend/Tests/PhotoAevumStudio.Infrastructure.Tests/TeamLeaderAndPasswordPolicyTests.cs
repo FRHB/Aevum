@@ -435,4 +435,41 @@ public class TeamLeaderAndPasswordPolicyTests
         Assert.Contains("Sudden sick absence", removedHtml);
         Assert.Contains("EVT-300", removedHtml);
     }
+
+    [Fact]
+    public void CashVerificationSqlAndAuth_AvoidComputedChangedBy_SupportBothAdminAndOfficeClerk()
+    {
+        var dir = new DirectoryInfo(AppContext.BaseDirectory);
+        while (dir is not null && !File.Exists(Path.Combine(dir.FullName, "PhotoAevumStudio.slnx")))
+        {
+            dir = dir.Parent;
+        }
+        var root = dir?.FullName ?? throw new DirectoryNotFoundException("Could not locate repository root.");
+
+        var consultationService = File.ReadAllText(Path.Combine(root, "PhotoAevumStudioBackend", "PhotoAevumStudio.Infrastructure", "Services", "ConsultationNegotiationService.cs"));
+        var verifyStart = consultationService.IndexOf("public async Task<EventAppointmentDto> VerifyCashSettlementAsync", StringComparison.Ordinal);
+        var verifyEnd = consultationService.IndexOf("public async Task<CustomerAppointmentActionResultDto> CustomerCancelAppointmentAsync", verifyStart, StringComparison.Ordinal);
+        var verifySection = consultationService[verifyStart..verifyEnd];
+
+        Assert.DoesNotContain("'APPROVAL'", verifySection);
+        Assert.DoesNotContain("ChangedBy,", verifySection);
+        Assert.Contains("'STATUS_CHANGE'", verifySection);
+        Assert.Contains("ChangedByEmployeeID, ChangedByAdminID", verifySection);
+
+        var paymentService = File.ReadAllText(Path.Combine(root, "PhotoAevumStudioBackend", "PhotoAevumStudio.Infrastructure", "Services", "PaymentService.cs"));
+        Assert.DoesNotContain("'APPROVAL'", paymentService);
+        Assert.DoesNotContain("ChangedBy,", paymentService);
+        Assert.Contains("ChangedByEmployeeID, ChangedByAdminID", paymentService);
+
+        var storedProcs = File.ReadAllText(Path.Combine(root, "PhotoAevumStudioBackend", "database", "PhotoAevumStudioStoredProcedures.sql"));
+        var procStart = storedProcs.IndexOf("CREATE OR ALTER PROCEDURE dbo.usp_VerifyCashPayment", StringComparison.Ordinal);
+        var procSection = storedProcs[procStart..];
+        Assert.DoesNotContain("'APPROVAL'", procSection);
+        Assert.DoesNotContain("ChangedBy,", procSection);
+        Assert.Contains("ChangedByEmployeeID, ChangedByAdminID", procSection);
+
+        var authService = File.ReadAllText(Path.Combine(root, "PhotoAevumStudioBackend", "PhotoAevumStudio.Infrastructure", "Services", "SqlAuthService.cs"));
+        Assert.Contains("CLK-", authService);
+        Assert.Contains("LIKE '%CLERK%'", authService);
+    }
 }

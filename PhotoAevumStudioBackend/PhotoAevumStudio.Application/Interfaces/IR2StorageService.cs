@@ -8,6 +8,7 @@ public interface IR2StorageService
     string ServicesBucket { get; }
     string ArchiveBucket { get; }
     string DropboxBucket { get; }
+    string DocumentsBucket => "documents";
     bool IsConfigured { get; }
 
     Task CreateBucketIfNotExistsAsync(string bucketName);

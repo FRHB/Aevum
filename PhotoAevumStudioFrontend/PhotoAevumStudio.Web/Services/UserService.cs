@@ -38,6 +38,8 @@ using Microsoft.Data.SqlClient;
 
 using Microsoft.Extensions.Configuration;
 
+using System.Security.Cryptography;
+using Org.BouncyCastle.Crypto.Generators;
 using PhotoAevumStudio.Web.Models;
 
 
@@ -50,7 +52,12 @@ public class UserService : IUserService
 
 {
 
-	private const string DefaultLocalConnectionString = "Server=db77602.public.databaseasp.net; Database=db77602; User Id=db77602; Password=G!r7cB8#Z5_d; Encrypt=True; TrustServerCertificate=True; MultipleActiveResultSets=True;";
+	private static string GenerateHashedPlaceholderPassword()
+	{
+		var temp = EmployeeCredentialGenerator.GenerateInitialPassword(16);
+		var salt = RandomNumberGenerator.GetBytes(16);
+		return OpenBsdBCrypt.Generate("2a", temp.ToCharArray(), salt, 11);
+	}
 
 
 
@@ -218,7 +225,9 @@ public class UserService : IUserService
 	{
 		_connectionString = FirstNonEmpty(
 			configuration?.GetConnectionString("DefaultConnection"),
-			configuration?["ConnectionStrings__DefaultConnection"]) ?? DefaultLocalConnectionString;
+			configuration?["ConnectionStrings__DefaultConnection"],
+			Environment.GetEnvironmentVariable("AEVUM_DB_CONNECTION"),
+			Environment.GetEnvironmentVariable("AEVUM_TEST_DB_CONNECTION")) ?? string.Empty;
 		_httpClientFactory = httpClientFactory;
 		_env = env;
 
@@ -411,11 +420,10 @@ public class UserService : IUserService
 
 
 	private SqlConnection CreateConnection()
-
 	{
-
+		if (string.IsNullOrWhiteSpace(_connectionString))
+			throw new InvalidOperationException("ConnectionStrings:DefaultConnection is not configured.");
 		return SqlResilienceHelper.CreateConnection(_connectionString);
-
 	}
 
 
@@ -758,6 +766,11 @@ public class UserService : IUserService
 
 		}
 
+		if (!IsEmailUnique(admin.Email, admin.Id))
+		{
+			throw new InvalidOperationException("This email address is already registered under another account role. Please use a different email.");
+		}
+
 		var (value, text, value2) = SplitFullName(admin.Name);
 
 		using SqlConnection sqlConnection = CreateConnection();
@@ -765,19 +778,8 @@ public class UserService : IUserService
 		sqlConnection.Open();
 
 		if (GetAdminById(admin.Id) != null)
-
 		{
-
 			throw new InvalidOperationException("An admin with ID '" + admin.Id + "' already exists.");
-
-		}
-
-		if (!IsEmailUnique(admin.Email, admin.Id))
-
-		{
-
-			throw new InvalidOperationException("This email address is already registered under another account role. Please use a different email.");
-
 		}
 
 		bool isSysAdminRole = admin.Id.StartsWith("SADM-", StringComparison.OrdinalIgnoreCase) 
@@ -826,7 +828,7 @@ public class UserService : IUserService
 
 			sysInsertCmd.Parameters.AddWithValue("@Email", value3);
 
-			sysInsertCmd.Parameters.AddWithValue("@Password", "AxiomBit@2026");
+			sysInsertCmd.Parameters.AddWithValue("@Password", GenerateHashedPlaceholderPassword());
 
 			sysInsertCmd.ExecuteNonQuery();
 
@@ -868,7 +870,7 @@ public class UserService : IUserService
 
 			}
 
-			sqlCommand2.Parameters.AddWithValue("@Password", "AxiomBit@2026");
+			sqlCommand2.Parameters.AddWithValue("@Password", GenerateHashedPlaceholderPassword());
 
 			sqlCommand2.ExecuteNonQuery();
 
@@ -1298,20 +1300,14 @@ public class UserService : IUserService
 
 		ArgumentNullException.ThrowIfNull(employee, "employee");
 
-		if (GetEmployeeById(employee.Id) != null)
-
+		if (!IsEmailUnique(employee.Email, employee.Id))
 		{
-
-			throw new InvalidOperationException("An employee with ID '" + employee.Id + "' already exists.");
-
+			throw new InvalidOperationException("This email address is already registered under another account role. Please use a different email.");
 		}
 
-		if (!IsEmailUnique(employee.Email, employee.Id))
-
+		if (GetEmployeeById(employee.Id) != null)
 		{
-
-			throw new InvalidOperationException("This email address is already registered under another account role. Please use a different email.");
-
+			throw new InvalidOperationException("An employee with ID '" + employee.Id + "' already exists.");
 		}
 
 		var (value, text, value2) = SplitFullName(employee.Name);
@@ -1390,7 +1386,7 @@ public class UserService : IUserService
 
 			sqlCommand.Parameters.AddWithValue("@Email", string.IsNullOrWhiteSpace(employee.Email) ? (employee.Id.ToLowerInvariant() + "@photoaevum.studio") : employee.Email);
 
-			sqlCommand.Parameters.AddWithValue("@Password", "AxiomBit@2026");
+			sqlCommand.Parameters.AddWithValue("@Password", GenerateHashedPlaceholderPassword());
 
 			sqlCommand.Parameters.AddWithValue("@Address", (object?)employee.Address?.Trim() ?? DBNull.Value);
 
@@ -1751,20 +1747,14 @@ public class UserService : IUserService
 
 		ArgumentNullException.ThrowIfNull(customer, "customer");
 
-		if (GetCustomerById(customer.Id) != null)
-
+		if (!IsEmailUnique(customer.Email, customer.Id))
 		{
-
-			throw new InvalidOperationException("A customer with ID '" + customer.Id + "' already exists.");
-
+			throw new InvalidOperationException("This email address is already registered under another account role. Please use a different email.");
 		}
 
-		if (!IsEmailUnique(customer.Email, customer.Id))
-
+		if (GetCustomerById(customer.Id) != null)
 		{
-
-			throw new InvalidOperationException("This email address is already registered under another account role. Please use a different email.");
-
+			throw new InvalidOperationException("A customer with ID '" + customer.Id + "' already exists.");
 		}
 
 		var (value, text, value2) = SplitFullName(customer.Name);
@@ -1787,7 +1777,7 @@ public class UserService : IUserService
 
 		sqlCommand.Parameters.AddWithValue("@Phone", string.IsNullOrWhiteSpace(customer.Phone) ? ((IConvertible)DBNull.Value) : ((IConvertible)customer.Phone));
 
-		sqlCommand.Parameters.AddWithValue("@Password", "AxiomBit@2026");
+		sqlCommand.Parameters.AddWithValue("@Password", GenerateHashedPlaceholderPassword());
 
 		sqlCommand.ExecuteNonQuery();
 

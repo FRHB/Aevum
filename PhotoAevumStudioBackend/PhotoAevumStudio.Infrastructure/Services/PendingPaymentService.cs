@@ -18,11 +18,17 @@ public class PendingPaymentService : IPendingPaymentService
 
     private readonly ApplicationDbContext _db;
     private readonly ILogger<PendingPaymentService> _logger;
+    private readonly IBookingDocumentService? _bookingDocuments;
 
-    public PendingPaymentService(ApplicationDbContext db, ILogger<PendingPaymentService> logger)
+    [Microsoft.Extensions.DependencyInjection.ActivatorUtilitiesConstructor]
+    public PendingPaymentService(
+        ApplicationDbContext db,
+        ILogger<PendingPaymentService> logger,
+        IBookingDocumentService? bookingDocuments = null)
     {
         _db = db;
         _logger = logger;
+        _bookingDocuments = bookingDocuments;
     }
 
     // ---- DDL (each entry is its own batch; CREATE OR ALTER PROCEDURE must be alone) ----
@@ -240,12 +246,14 @@ public class PendingPaymentService : IPendingPaymentService
                     SET EventStatus = 'Completed',
                         FinalPaymentStatus = 'Payment Verification (QR:Paid)',
                         FinalPaymentPaidAt = SYSUTCDATETIME(),
+                        RemainingBalance = 0.00,
+                        IsDeliverablesUnlocked = 1,
                         LockExpiresAt = NULL,
                         HoldExpiresAt = NULL
                     OUTPUT inserted.EventAppointmentID, inserted.CustomerID, inserted.FinalBalanceAmount
                     WHERE (EventAppointmentID = @BaseId OR FinalPaymentReferenceId = @Ref)
                       AND ISNULL(FinalPaymentStatus, 'Pending') NOT IN ('Paid', 'Payment Verification (QR:Paid)')
-                      AND EventStatus IN ('Pending Payment', 'Event Done', 'Post Event', 'Pending Verification', 'Paid Cash Pending Verification', 'Payment Verification (Cash)', 'Ongoing', 'On Going', 'In Execution', 'Ready', 'Dispatch', 'Preparation', 'Preparing', 'Confirmed');";
+                      AND EventStatus IN ('Pending Payment', 'Event Done', 'Post Event', 'Awaiting Settlement', 'Pending Verification', 'Paid Cash Pending Verification', 'Payment Verification (Cash)', 'Ongoing', 'On Going', 'In Progress', 'In Execution', 'Ready', 'Dispatch', 'Preparation', 'Preparing', 'Confirmed');";
 
                 string? finalApptId = null, finalCustId = null;
                 decimal finalBal = 0m;
@@ -308,6 +316,23 @@ public class PendingPaymentService : IPendingPaymentService
                     cmd.Parameters.AddWithValue("@QrId", (object?)qrId ?? DBNull.Value);
                     cmd.Parameters.AddWithValue("@Channel", (object?)channel ?? DBNull.Value);
                     await cmd.ExecuteNonQueryAsync(ct);
+                }
+
+                if (_bookingDocuments != null)
+                {
+                    await _bookingDocuments.RecordStagePaymentAndReceiptAsync(
+                        conn,
+                        tx,
+                        finalApptId,
+                        "FinalSettlement",
+                        string.IsNullOrWhiteSpace(channel) ? "Xendit QR" : $"Xendit {channel}",
+                        effectivePaid,
+                        0m,
+                        qrId ?? referenceId,
+                        referenceId,
+                        null,
+                        null,
+                        ct);
                 }
 
                 await tx.CommitAsync(ct);
@@ -381,6 +406,23 @@ public class PendingPaymentService : IPendingPaymentService
                 await cmd.ExecuteNonQueryAsync(ct);
             }
 
+            if (_bookingDocuments != null)
+            {
+                await _bookingDocuments.RecordStagePaymentAndReceiptAsync(
+                    conn,
+                    tx,
+                    apptId,
+                    "ReservationFee",
+                    string.IsNullOrWhiteSpace(channel) ? "Xendit QR" : $"Xendit {channel}",
+                    amount ?? fee,
+                    0m,
+                    qrId ?? referenceId,
+                    referenceId,
+                    null,
+                    "Stage 1 Reservation Fee via Xendit QR",
+                    ct);
+            }
+
             await tx.CommitAsync(ct);
             return new PaymentConfirmation(apptId, custId!, amount ?? fee);
         }
@@ -414,11 +456,17 @@ public class PendingPaymentService : IPendingPaymentService
         var (baseApptId, isFinalBySuffix) = ParseReference(appointmentId);
         await using var conn = await OpenAsync(ct);
         const string sql = @"
-            SELECT TOP 1 EventAppointmentID, CustomerID, EventName, EventDate, EventTime, EventStatus,
-                   DownpaymentAmount, QrString, LockExpiresAt,
-                   FinalBalanceAmount, FinalQrString, FinalPaymentStatus, FinalPaymentReferenceId
-            FROM dbo.EventAppointment
-            WHERE FinalPaymentReferenceId = @Id OR EventAppointmentID = @BaseId;";
+            SELECT TOP 1 ea.EventAppointmentID, ea.CustomerID, ea.EventName, ea.EventDate, ea.EventTime, ea.EventStatus,
+                   ea.DownpaymentAmount, ea.QrString, ea.LockExpiresAt,
+                   ea.FinalBalanceAmount, ea.FinalQrString, ea.FinalPaymentStatus, ea.FinalPaymentReferenceId,
+                   CASE
+                       WHEN OBJECT_ID(N'dbo.BookingContracts', N'U') IS NULL THEN CAST(1 AS bit)
+                       WHEN NOT EXISTS (SELECT 1 FROM dbo.BookingContracts bc WHERE bc.EventAppointmentID = ea.EventAppointmentID) THEN CAST(1 AS bit)
+                       WHEN EXISTS (SELECT 1 FROM dbo.BookingContracts bc WHERE bc.EventAppointmentID = ea.EventAppointmentID AND bc.AcceptedAtUtc IS NOT NULL) THEN CAST(1 AS bit)
+                       ELSE CAST(0 AS bit)
+                   END AS ContractAccepted
+            FROM dbo.EventAppointment ea
+            WHERE ea.FinalPaymentReferenceId = @Id OR ea.EventAppointmentID = @BaseId;";
         await using var cmd = new SqlCommand(sql, conn);
         cmd.Parameters.AddWithValue("@Id", appointmentId);
         cmd.Parameters.AddWithValue("@BaseId", baseApptId);
@@ -462,7 +510,8 @@ public class PendingPaymentService : IPendingPaymentService
             Amount = r.GetDecimal(6),
             QrString = r.IsDBNull(7) ? null : r.GetString(7),
             LockExpiresAt = r.IsDBNull(8) ? null : r.GetDateTime(8),
-            IsFinalPayment = false
+            IsFinalPayment = false,
+            ContractAccepted = r.FieldCount > 13 && !r.IsDBNull(13) ? r.GetBoolean(13) : true
         };
     }
 }

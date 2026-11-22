@@ -95,6 +95,7 @@
     private string? _error;
 
     private HttpClient Api => HttpFactory.CreateClient("AevumApi.Anonymous");
+    private HttpClient AuthorizedApi => HttpFactory.CreateClient("AevumApi.Authorized");
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
@@ -124,18 +125,11 @@
         _error = null;
         try
         {
-            using var res = await Api.PostAsync($"api/payments/simulate-qr/{Uri.EscapeDataString(AppointmentId)}", null);
+            using var res = await AuthorizedApi.PostAsync($"api/payments/simulate-qr/{Uri.EscapeDataString(AppointmentId)}", null);
             if (!res.IsSuccessStatusCode)
             {
-                // Fallback for older API builds when Xendit returns 410 INACTIVE_QR_CODE (already simulated once)
-                // or when the webhook could not reach the server: mark the booking confirmed via update-status.
-                var fallbackBody = JsonContent.Create(new { Status = "Deal_Won", PaymentMethod = "QR Ph" });
-                using var fallbackRes = await Api.PostAsync($"api/payments/{Uri.EscapeDataString(AppointmentId)}/update-status", fallbackBody);
-                if (!fallbackRes.IsSuccessStatusCode)
-                {
-                    _error = await ReadMessageAsync(res) ?? "Payment could not be completed. Please try again.";
-                    return;
-                }
+                _error = await ReadMessageAsync(res) ?? "Payment could not be completed. Please sign in and try again.";
+                return;
             }
 
             // Wait briefly for the booking to flip to Confirmed or Completed (for Final Balance).
@@ -145,19 +139,6 @@
                 _paid = _info?.EventStatus == "Confirmed" || _info?.EventStatus == "Shot" || _info?.EventStatus == "Complete" || _info?.EventStatus == "Completed";
                 if (_paid) break;
                 await Task.Delay(1000);
-            }
-
-            if (!_paid && !(_info?.IsFinalPayment ?? false) && !AppointmentId.EndsWith("-FINAL", StringComparison.OrdinalIgnoreCase))
-            {
-                // If Xendit accepted the simulation (200 OK) but the webhook hasn't reached the API yet,
-                // finalize the booking status so the user sees immediate confirmation.
-                var fallbackBody = JsonContent.Create(new { Status = "Deal_Won", PaymentMethod = "QR Ph" });
-                using var fallbackRes = await Api.PostAsync($"api/payments/{Uri.EscapeDataString(AppointmentId)}/update-status", fallbackBody);
-                if (fallbackRes.IsSuccessStatusCode)
-                {
-                    await LoadAsync();
-                    _paid = _info?.EventStatus == "Confirmed" || _info?.EventStatus == "Shot" || _info?.EventStatus == "Complete" || _info?.EventStatus == "Completed" || true;
-                }
             }
 
             StateHasChanged();

@@ -39,4 +39,19 @@ public interface IConsultationClient
     Task<ApiResult<EventAppointmentDto>> UpdateBookingStatusAsync(string appointmentId, UpdatePaymentBookingStatusRequest request, CancellationToken ct = default);
     Task<ApiResult<CustomerAppointmentActionResultDto>> CustomerCancelAppointmentAsync(string appointmentId, CustomerCancelAppointmentRequest? request = null, CancellationToken ct = default);
     Task<ApiResult<CustomerAppointmentActionResultDto>> CustomerRescheduleAppointmentAsync(string appointmentId, CustomerRescheduleAppointmentRequest request, CancellationToken ct = default);
+
+    Task<ApiResult<TermsVersionDto>> GetActiveTermsAsync(CancellationToken ct = default) =>
+        Task.FromResult(new ApiResult<TermsVersionDto>(null, new ApiError(default, "Not implemented.")));
+    Task<ApiResult<BookingDocumentsBundleDto>> GetBookingDocumentsAsync(string appointmentId, CancellationToken ct = default) =>
+        Task.FromResult(new ApiResult<BookingDocumentsBundleDto>(null, new ApiError(default, "Not implemented.")));
+    Task<ApiResult<BookingContractDto>> ConfigureBookingContractAsync(string appointmentId, ConfigureBookingContractRequest request, CancellationToken ct = default) =>
+        Task.FromResult(new ApiResult<BookingContractDto>(null, new ApiError(default, "Not implemented.")));
+    Task<ApiResult<BookingContractDto>> AcceptContractAsync(string appointmentId, AcceptContractRequest request, CancellationToken ct = default) =>
+        Task.FromResult(new ApiResult<BookingContractDto>(null, new ApiError(default, "Not implemented.")));
+    Task<ApiResult<byte[]>> DownloadContractPdfAsync(string appointmentId, CancellationToken ct = default) =>
+        Task.FromResult(new ApiResult<byte[]>(null, new ApiError(default, "Not implemented.")));
+    Task<ApiResult<byte[]>> DownloadReceiptPdfAsync(string appointmentId, string receiptType, CancellationToken ct = default) =>
+        Task.FromResult(new ApiResult<byte[]>(null, new ApiError(default, "Not implemented.")));
+    Task<ApiResult<byte[]>> DownloadTermsPdfAsync(CancellationToken ct = default) =>
+        Task.FromResult(new ApiResult<byte[]>(null, new ApiError(default, "Not implemented.")));
 }

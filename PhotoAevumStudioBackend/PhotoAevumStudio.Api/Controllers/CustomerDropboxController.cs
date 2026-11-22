@@ -1,6 +1,8 @@
 using System.Security.Claims;
+using Amazon.S3;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.Data.SqlClient;
 using PhotoAevumStudio.Application;
 using PhotoAevumStudio.Application.Auth;
 using PhotoAevumStudio.Application.Interfaces;
@@ -202,6 +204,26 @@ public class CustomerDropboxController : ControllerBase
         catch (InvalidOperationException ex)
         {
             return BadRequest(new ProblemDetails { Title = "Upload rejected", Detail = ex.Message, Status = 400 });
+        }
+        catch (AmazonS3Exception ex)
+        {
+            _logger.LogError(ex, "Cloudflare R2 upload failed for event {EventId} (Status: {StatusCode}, Code: {ErrorCode}).", eventAppointmentId, ex.StatusCode, ex.ErrorCode);
+            return StatusCode(StatusCodes.Status502BadGateway, new ProblemDetails
+            {
+                Title = "Cloudflare R2 upload failed",
+                Detail = $"R2 storage rejected the upload ({ex.ErrorCode ?? ex.StatusCode.ToString()}): {ex.Message}",
+                Status = 502
+            });
+        }
+        catch (SqlException ex)
+        {
+            _logger.LogError(ex, "Database error saving CustomerDropbox metadata for event {EventId}.", eventAppointmentId);
+            return StatusCode(StatusCodes.Status500InternalServerError, new ProblemDetails
+            {
+                Title = "Database error",
+                Detail = "Failed to save uploaded ZIP archive metadata.",
+                Status = 500
+            });
         }
     }
 

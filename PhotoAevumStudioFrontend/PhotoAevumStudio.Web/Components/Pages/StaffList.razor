@@ -36,7 +36,20 @@
     <SystemMessage Message="@feedbackMessage"
                    Severity="@feedbackType"
                    Mode="banner"
-                   OnDismiss="() => feedbackMessage = null" />
+                   OnDismiss="() => { feedbackMessage = null; retryWelcomeEmployeeId = null; }" />
+
+    @if (!string.IsNullOrWhiteSpace(retryWelcomeEmployeeId) && feedbackType == "warning")
+    {
+        <div class="flex items-center justify-between gap-3 px-4 py-2.5 bg-amber-50 border border-amber-200 rounded-xl text-xs text-amber-900">
+            <span>Retry sending the welcome email and Employee Handbook PDF for <strong>@(retryWelcomeEmployeeName ?? retryWelcomeEmployeeId)</strong> (@retryWelcomeEmployeeId):</span>
+            <button type="button"
+                    @onclick="RetryPendingWelcomeEmailAsync"
+                    disabled="@isRetryingWelcomeEmail"
+                    class="px-3 py-1.5 rounded-lg bg-amber-600 hover:bg-amber-700 text-white font-semibold text-xs transition-colors disabled:opacity-50 cursor-pointer">
+                @(isRetryingWelcomeEmail ? "Retrying..." : "Retry Welcome Email & Handbook")
+            </button>
+        </div>
+    }
 
     <!-- Quick Stats Cards -->
     <div class="grid grid-cols-1 sm:grid-cols-3 gap-4">
@@ -284,7 +297,7 @@
 <!-- Add / Edit Employee Wizard Modal -->
 @if (!EffectiveReadOnly)
 {
-    <AddEmployeeWizard @bind-IsOpen="isWizardOpen" OnSaved="HandleEmployeeSaved" />
+    <AddEmployeeWizard @bind-IsOpen="isWizardOpen" OnSavedWithResult="HandleEmployeeSavedWithResult" OnSaved="HandleEmployeeSaved" />
     <AddEmployeeWizard @bind-IsOpen="isEditWizardOpen" IsEditMode="true" EditEmployee="selectedEmployeeForEdit" OnSaved="HandleEmployeeSaved" />
     
     <!-- Action Confirmation Modal for Archive, Restore, and Delete -->
@@ -322,7 +335,11 @@
     private bool isResettingPassword = false;
     private int _currentPage = 1;
     private string? feedbackMessage;
-    private string feedbackType = "success"; // "success", "error", "info"
+    private string feedbackType = "success"; // "success", "error", "warning", "info"
+    private string? retryWelcomeEmployeeId;
+    private string? retryWelcomeEmployeeName;
+    private bool isRetryingWelcomeEmail;
+    private (string EmployeeId, string FullName, string Email, SaveEmployeeResult Result)? lastEmployeeSaveResult;
 
     private bool CanResetStaffPassword =>
         EmployeeRoleHelper.IsAdmin(_currentUser) || EmployeeRoleHelper.IsSystemAdmin(_currentUser);
@@ -570,13 +587,60 @@
         }
     }
 
+    private void HandleEmployeeSavedWithResult((string EmployeeId, string FullName, string Email, SaveEmployeeResult Result) payload)
+    {
+        lastEmployeeSaveResult = payload;
+    }
+
     private async Task HandleEmployeeSaved()
     {
         await RefreshCountsAsync();
         await LoadEmployeesAsync();
-        feedbackType = "success";
-        feedbackMessage = "Staff directory updated successfully.";
+        if (lastEmployeeSaveResult is { } saved && (!saved.Result.WelcomeEmailSent || !saved.Result.HandbookAttached || !string.IsNullOrWhiteSpace(saved.Result.EmailWarning)))
+        {
+            feedbackType = "warning";
+            feedbackMessage = saved.Result.EmailWarning ?? $"Employee {saved.EmployeeId} was created, but the welcome email or Employee Handbook PDF could not be delivered.";
+            retryWelcomeEmployeeId = saved.EmployeeId;
+            retryWelcomeEmployeeName = saved.FullName;
+        }
+        else
+        {
+            feedbackType = "success";
+            feedbackMessage = "Staff directory updated successfully.";
+            retryWelcomeEmployeeId = null;
+            retryWelcomeEmployeeName = null;
+        }
+        lastEmployeeSaveResult = null;
         StateHasChanged();
+    }
+
+    private async Task RetryPendingWelcomeEmailAsync()
+    {
+        if (string.IsNullOrWhiteSpace(retryWelcomeEmployeeId) || isRetryingWelcomeEmail) return;
+        isRetryingWelcomeEmail = true;
+        StateHasChanged();
+
+        try
+        {
+            var res = await Employees.ResendEmployeeWelcomeEmailAsync(retryWelcomeEmployeeId, _cts?.Token ?? CancellationToken.None);
+            if (res.WelcomeEmailSent && res.HandbookAttached)
+            {
+                feedbackType = "success";
+                feedbackMessage = $"Welcome email and Employee Handbook PDF successfully sent to {retryWelcomeEmployeeName ?? retryWelcomeEmployeeId}.";
+                retryWelcomeEmployeeId = null;
+                retryWelcomeEmployeeName = null;
+            }
+            else
+            {
+                feedbackType = "warning";
+                feedbackMessage = res.EmailWarning ?? res.Error ?? "Retry failed to deliver welcome email and Employee Handbook PDF.";
+            }
+        }
+        finally
+        {
+            isRetryingWelcomeEmail = false;
+            StateHasChanged();
+        }
     }
 
     public void Dispose()

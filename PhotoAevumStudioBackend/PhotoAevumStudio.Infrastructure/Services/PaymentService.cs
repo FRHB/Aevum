@@ -256,7 +256,7 @@ public class PaymentService : IPaymentService
         await EnsureSchemaOnceAsync(ct);
 
         var list = await _db.Payments.AsNoTracking()
-            .Where(p => p.EmployeeId == employeeId || p.Channel == PaymentChannel.Cash)
+            .Where(p => p.EmployeeId == employeeId)
             .OrderByDescending(p => p.CreatedAt)
             .ToListAsync(ct);
 
@@ -471,14 +471,38 @@ public class PaymentService : IPaymentService
 
                 IF OBJECT_ID(N'dbo.HistoryLog', N'U') IS NOT NULL
                 BEGIN
+                    DECLARE @EmpActor nvarchar(30) = NULL;
+                    DECLARE @AdmActor nvarchar(30) = NULL;
+                    DECLARE @ActorType nvarchar(20) = 'Admin';
+
+                    IF NULLIF(@AdminId, '') IS NOT NULL
+                    BEGIN
+                        IF OBJECT_ID(N'dbo.Employees', N'U') IS NOT NULL
+                           AND EXISTS (SELECT 1 FROM dbo.Employees WHERE EmployeeID = @AdminId)
+                        BEGIN
+                            SET @EmpActor = @AdminId;
+                            SET @ActorType = 'Employee';
+                        END
+                        ELSE IF OBJECT_ID(N'dbo.Admin', N'U') IS NOT NULL
+                           AND EXISTS (SELECT 1 FROM dbo.Admin WHERE AdminID = @AdminId)
+                        BEGIN
+                            SET @AdmActor = @AdminId;
+                            SET @ActorType = 'Admin';
+                        END
+                        ELSE IF @AdminId LIKE 'SADM-%'
+                            SET @ActorType = 'SystemAdmin';
+                        ELSE IF @AdminId LIKE 'EMP-%' OR @AdminId LIKE 'CLK-%'
+                            SET @ActorType = 'Employee';
+                    END;
+
                     INSERT INTO dbo.HistoryLog (
                         ActionType, EntityName, EntityID, ActionDetails,
-                        EventAppointmentID, ChangedByType, ChangedBy, LoggedAt
+                        EventAppointmentID, ChangedByType, ChangedByEmployeeID, ChangedByAdminID, LoggedAt
                     )
                     VALUES (
-                        'APPROVAL', 'CashRemittance', CAST(@PaymentId AS nvarchar(30)),
-                        'Admin ' + @AdminId + ' approved cash remittance. Employee status cleared.',
-                        @EvtId, 'Admin', @AdminId, SYSUTCDATETIME()
+                        'STATUS_CHANGE', 'CashRemittance', CAST(@PaymentId AS nvarchar(30)),
+                        'Cash remittance verified by ' + @AdminId + '. Employee status cleared.',
+                        @EvtId, @ActorType, @EmpActor, @AdmActor, SYSUTCDATETIME()
                     );
                 END;";
 

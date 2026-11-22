@@ -373,4 +373,75 @@ public class BookingScheduleBufferAndDealWizardTests
         // Only the 3-hour per-hour add-on contributes to shoot duration (180 mins), not the 4 pictures or 2 multi-shot bundles
         Assert.Equal(180, BookingWizardEngine.ComputeCombinedShootDurationMinutes(selections));
     }
+
+    [Fact]
+    public void BookingWizardEngine_RateTypeLabelsAndPlaceholders_GeneralizeMultiShotAndKeepPerHour()
+    {
+        Assert.Equal("Hours Quantity *", BookingWizardEngine.GetRateQuantityLabel("per hour"));
+        Assert.Contains("Billed per hour", BookingWizardEngine.GetRateBillingSummary("per hour", 2));
+        Assert.Equal("hr(s)", BookingWizardEngine.GetRateUnitLabel("per hour"));
+
+        Assert.Equal("Service Quantity *", BookingWizardEngine.GetRateQuantityLabel("multi-shot"));
+        Assert.Equal("Qty (depends on service)", BookingWizardEngine.GetRateQuantityPlaceholder("multi-shot"));
+        var multiShotSummary = BookingWizardEngine.GetRateBillingSummary("multi-shot", 1);
+        Assert.Contains("based on the service provided", multiShotSummary);
+        Assert.DoesNotContain("Billed per shot / picture", multiShotSummary);
+        Assert.Equal("unit(s)", BookingWizardEngine.GetRateUnitLabel("multi-shot"));
+
+        Assert.Equal("Pictures Quantity *", BookingWizardEngine.GetRateQuantityLabel("per picture"));
+        Assert.Equal("picture(s)", BookingWizardEngine.GetRateUnitLabel("per picture"));
+
+        Assert.Equal("Shots Quantity *", BookingWizardEngine.GetRateQuantityLabel("per single shot"));
+        Assert.Equal("shot(s)", BookingWizardEngine.GetRateUnitLabel("per single shot"));
+    }
+
+    [Fact]
+    public void MyBookings_OrderCustomerBookings_PlacesLatestActiveBookingOnTop()
+    {
+        var olderCancelledFutureSlot = new MyBooking(
+            AppointmentId: 11,
+            ServiceTitle: "Photo Enhancement, Professional Headshot",
+            Date: new DateOnly(2026, 11, 24),
+            SlotStart: new TimeOnly(16, 0),
+            SlotEnd: new TimeOnly(17, 0),
+            Status: "Cancelled",
+            TotalPrice: 1250m,
+            Platform: "Zoom",
+            MeetingLink: null,
+            EventLocation: null,
+            CreatedAt: new DateTime(2026, 11, 20, 10, 0, 0, DateTimeKind.Utc));
+
+        var oldestConfirmed = new MyBooking(
+            AppointmentId: 10,
+            ServiceTitle: "Individual Portrait",
+            Date: new DateOnly(2026, 11, 20),
+            SlotStart: new TimeOnly(13, 0),
+            SlotEnd: new TimeOnly(14, 0),
+            Status: "Confirmed",
+            TotalPrice: 1500m,
+            Platform: "InStudio",
+            MeetingLink: null,
+            EventLocation: "SM Fairview",
+            CreatedAt: new DateTime(2026, 11, 19, 9, 0, 0, DateTimeKind.Utc));
+
+        var latestConfirmed = new MyBooking(
+            AppointmentId: 12,
+            ServiceTitle: "Individual Portrait",
+            Date: new DateOnly(2026, 11, 23),
+            SlotStart: new TimeOnly(15, 0),
+            SlotEnd: new TimeOnly(16, 0),
+            Status: "Confirmed",
+            TotalPrice: 1500m,
+            Platform: "GoogleMeet",
+            MeetingLink: "https://meet.google.com/abc-defg-hij",
+            EventLocation: null,
+            CreatedAt: new DateTime(2026, 11, 22, 11, 0, 0, DateTimeKind.Utc));
+
+        var ordered = PhotoAevumStudio.Web.Components.Pages.MyBookings.OrderCustomerBookings(
+            new[] { olderCancelledFutureSlot, oldestConfirmed, latestConfirmed });
+
+        Assert.Equal(12, ordered[0].AppointmentId);
+        Assert.Equal(10, ordered[1].AppointmentId);
+        Assert.Equal(11, ordered[2].AppointmentId);
+    }
 }

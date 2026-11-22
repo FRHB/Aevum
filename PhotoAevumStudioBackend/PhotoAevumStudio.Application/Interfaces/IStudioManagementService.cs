@@ -12,6 +12,12 @@ public interface IStudioManagementService
     Task<(bool Success, string Message)> ResetEmployeePasswordToInitialAsync(string employeeId, string? requestingAdminId = null, CancellationToken cancellationToken = default) =>
         Task.FromResult((false, "Password reset is not implemented."));
 
+    Task<(bool Success, bool EmailSent, bool HandbookAttached, string Message, string? Warning)> ResendEmployeeWelcomeEmailAsync(
+        string employeeId,
+        string? requestingAdminId = null,
+        CancellationToken cancellationToken = default) =>
+        Task.FromResult((false, false, false, "Resend welcome email is not implemented.", (string?)"Resend welcome email is not implemented."));
+
     // Departments
     Task<IReadOnlyList<DepartmentDto>> GetDepartmentsAsync(CancellationToken cancellationToken = default);
     Task<string> GetNextDepartmentIdAsync(CancellationToken cancellationToken = default);

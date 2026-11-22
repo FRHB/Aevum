@@ -81,7 +81,7 @@ public class ServicesController : ControllerBase
     /// Handles multipart/form-data upload to create a new Main Service with an image.
     /// </summary>
     [HttpPost]
-    [Authorize(Policy = "StaffOrAbove")]
+    [Authorize(Policy = "ClerkOrAdmin")]
     [Consumes("multipart/form-data")]
     public async Task<IActionResult> Create([FromForm] CreateServiceFormRequest request, CancellationToken ct)
     {
@@ -98,22 +98,21 @@ public class ServicesController : ControllerBase
                 return BadRequest(new { Message = "Image size exceeds the 5MB maximum limit." });
             }
 
-            var allowedMimeTypes = new[] { "image/jpeg", "image/jpg", "image/png", "image/webp" };
-            var contentType = request.Image.ContentType.ToLowerInvariant();
-            if (!allowedMimeTypes.Contains(contentType))
-            {
-                return BadRequest(new { Message = "Unsupported image format. Allowed: JPG, PNG, WEBP." });
-            }
-
             using var memoryStream = new MemoryStream();
             await request.Image.CopyToAsync(memoryStream, ct);
             imageBytes = memoryStream.ToArray();
-            mimeType = request.Image.ContentType;
+            if (!TryDetectImageContentType(imageBytes, out var verifiedMimeType))
+            {
+                return BadRequest(new { Message = "Unsupported or invalid image signature. Allowed: JPG, PNG, WEBP." });
+            }
+            mimeType = verifiedMimeType;
         }
 
-        string? adminId = User.FindFirstValue("studio_id") 
-                          ?? User.FindFirstValue(ClaimTypes.NameIdentifier) 
-                          ?? "Admin";
+        string? adminId = User.FindFirstValue("studio_id")
+                          ?? User.FindFirstValue(ClaimTypes.NameIdentifier)
+                          ?? User.FindFirstValue(ClaimTypes.Name);
+        if (string.IsNullOrWhiteSpace(adminId))
+            return Unauthorized();
 
         var dto = new CreateServiceDto(
             Name: request.Name.Trim(),
@@ -135,7 +134,7 @@ public class ServicesController : ControllerBase
         catch (Exception ex)
         {
             _logger.LogError(ex, "Error creating main service {ServiceName}", request.Name);
-            return StatusCode(StatusCodes.Status500InternalServerError, new { Message = ex.Message });
+            return StatusCode(StatusCodes.Status500InternalServerError, new { Message = "An error occurred while creating the service." });
         }
     }
 
@@ -166,7 +165,7 @@ public class ServicesController : ControllerBase
     /// Adds or updates a rate configuration for a service.
     /// </summary>
     [HttpPost("{serviceId}/rates")]
-    [Authorize(Policy = "StaffOrAbove")]
+    [Authorize(Policy = "ClerkOrAdmin")]
     public async Task<IActionResult> SetServiceRate(string serviceId, [FromBody] SetServiceRateDto dto, CancellationToken ct)
     {
         var success = await _service.AddOrUpdateServiceRateAsync(serviceId, dto.RateTypeId, dto.RateAmount, ct);
@@ -174,5 +173,33 @@ public class ServicesController : ControllerBase
         return success
             ? Ok(new { Message = "Rate updated successfully." })
             : BadRequest(new { Message = "Failed to update service rate." });
+    }
+
+    private static bool TryDetectImageContentType(byte[] bytes, out string contentType)
+    {
+        contentType = string.Empty;
+        if (bytes.Length >= 8 &&
+            bytes[0] == 0x89 && bytes[1] == 0x50 && bytes[2] == 0x4E && bytes[3] == 0x47 &&
+            bytes[4] == 0x0D && bytes[5] == 0x0A && bytes[6] == 0x1A && bytes[7] == 0x0A)
+        {
+            contentType = "image/png";
+            return true;
+        }
+
+        if (bytes.Length >= 3 && bytes[0] == 0xFF && bytes[1] == 0xD8 && bytes[2] == 0xFF)
+        {
+            contentType = "image/jpeg";
+            return true;
+        }
+
+        if (bytes.Length >= 12 &&
+            bytes[0] == (byte)'R' && bytes[1] == (byte)'I' && bytes[2] == (byte)'F' && bytes[3] == (byte)'F' &&
+            bytes[8] == (byte)'W' && bytes[9] == (byte)'E' && bytes[10] == (byte)'B' && bytes[11] == (byte)'P')
+        {
+            contentType = "image/webp";
+            return true;
+        }
+
+        return false;
     }
 }

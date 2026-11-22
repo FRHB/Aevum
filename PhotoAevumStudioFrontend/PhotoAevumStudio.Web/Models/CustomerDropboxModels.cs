@@ -20,6 +20,9 @@ public class CustomerDropboxFolderItem
     public DateTime ExpiresAt { get; set; }
     public int DaysRemaining { get; set; }
     public string CountdownLabel { get; set; } = string.Empty;
+    public decimal RemainingBalance { get; set; }
+    public bool IsDeliverablesUnlocked { get; set; } = true;
+    public string? LockReason { get; set; }
 
     public bool HasFile => string.Equals(DropboxStatus, "Uploaded", StringComparison.OrdinalIgnoreCase)
                            && !string.IsNullOrWhiteSpace(OriginalFileName);

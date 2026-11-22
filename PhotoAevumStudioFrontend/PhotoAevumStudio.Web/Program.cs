@@ -7,14 +7,14 @@ using PhotoAevumStudio.Web.Services;
 
 var builder = WebApplication.CreateBuilder(args);
 
-// Fetch Infisical auth keys from appsettings or environment variables
+// Fetch Infisical auth keys from appsettings, user secrets, or environment variables
 var infisicalClientId = builder.Configuration["Infisical:ClientId"]?.Trim();
 var infisicalClientSecret = builder.Configuration["Infisical:ClientSecret"]?.Trim();
-var infisicalProjectId = builder.Configuration["Infisical:ProjectId"]?.Trim() ?? "26fb5dcd-e66c-4054-8dab-7cac8519bdee";
+var infisicalProjectId = builder.Configuration["Infisical:ProjectId"]?.Trim() ?? string.Empty;
 var infisicalEnvironment = builder.Configuration["Infisical:Environment"]?.Trim() ?? "dev";
 
 // Only connect to Infisical if the keys are present
-if (!string.IsNullOrEmpty(infisicalClientId) && !string.IsNullOrEmpty(infisicalClientSecret))
+if (!string.IsNullOrEmpty(infisicalClientId) && !string.IsNullOrEmpty(infisicalClientSecret) && !string.IsNullOrEmpty(infisicalProjectId))
 {
     try
     {
@@ -40,6 +40,10 @@ if (!string.IsNullOrEmpty(infisicalClientId) && !string.IsNullOrEmpty(infisicalC
     }
     catch (Exception ex)
     {
+        if (builder.Environment.IsProduction())
+        {
+            throw new InvalidOperationException("Failed to load secrets from Infisical in Production.", ex);
+        }
         Console.Error.WriteLine($"[Startup Warning] Infisical secret fetch failed in Frontend; falling back to local configuration: {ex.Message}");
     }
 }
@@ -109,24 +113,26 @@ if (!apiBaseUrl.EndsWith("/"))
     apiBaseUrl += "/";
 }
 
-HttpMessageHandler CreateBypassSslHandler() => new HttpClientHandler
-{
-    ServerCertificateCustomValidationCallback = HttpClientHandler.DangerousAcceptAnyServerCertificateValidator
-};
+HttpMessageHandler CreateApiHttpHandler() => builder.Environment.IsDevelopment()
+    ? new HttpClientHandler
+    {
+        ServerCertificateCustomValidationCallback = HttpClientHandler.DangerousAcceptAnyServerCertificateValidator
+    }
+    : new HttpClientHandler();
 
 builder.Services.AddHttpClient("AevumApi", client =>
     client.BaseAddress = new Uri(apiBaseUrl))
     .AddHttpMessageHandler<AuthHttpHandler>()
-    .ConfigurePrimaryHttpMessageHandler(CreateBypassSslHandler);
+    .ConfigurePrimaryHttpMessageHandler(CreateApiHttpHandler);
 
 builder.Services.AddHttpClient("AevumApi.Authorized", client =>
     client.BaseAddress = new Uri(apiBaseUrl))
     .AddHttpMessageHandler<AuthHttpHandler>()
-    .ConfigurePrimaryHttpMessageHandler(CreateBypassSslHandler);
+    .ConfigurePrimaryHttpMessageHandler(CreateApiHttpHandler);
 
 builder.Services.AddHttpClient("AevumApi.Anonymous", client =>
     client.BaseAddress = new Uri(apiBaseUrl))
-    .ConfigurePrimaryHttpMessageHandler(CreateBypassSslHandler);
+    .ConfigurePrimaryHttpMessageHandler(CreateApiHttpHandler);
 
 var app = builder.Build();
 
@@ -141,6 +147,9 @@ app.UseHttpsRedirection();
 app.UseAntiforgery();
 app.Use(async (context, next) =>
 {
+    context.Response.Headers["X-Content-Type-Options"] = "nosniff";
+    context.Response.Headers["X-Frame-Options"] = "SAMEORIGIN";
+    context.Response.Headers["Referrer-Policy"] = "strict-origin-when-cross-origin";
     if (HttpMethods.IsGet(context.Request.Method) || HttpMethods.IsHead(context.Request.Method))
     {
         context.Response.OnStarting(() =>

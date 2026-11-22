@@ -695,4 +695,27 @@ public class SidebarPasswordCalendarAndTeamLeaderTests
         Assert.NotNull(fulfillMethod);
         Assert.NotNull(suddenAbsMethod);
     }
+
+    [Fact]
+    public void TeamLeaderActiveEventPill_QrPaymentLayout_UsesViewBoxAndResponsiveNonOverlappingContainer()
+    {
+        var root = GetRepositoryRoot();
+        var pillRazor = File.ReadAllText(Path.Combine(root, "PhotoAevumStudioFrontend", "PhotoAevumStudio.Web", "Components", "Shared", "TeamLeaderActiveEventPill.razor"));
+
+        Assert.Contains("SvgQRCode.SizingMode.ViewBoxAttribute", pillRazor);
+        Assert.Contains("[&_svg]:w-full [&_svg]:h-full", pillRazor);
+        Assert.Contains("overflow-hidden", pillRazor);
+        Assert.Contains("shrink-0", pillRazor);
+
+        using var qrGen = new QRCodeGenerator();
+        using var qrData = qrGen.CreateQrCode("https://photoaevum.studio/checkout/confirm/EVT-0016-FINAL", QRCodeGenerator.ECCLevel.M);
+        var svg = new SvgQRCode(qrData).GetGraphic(
+            5,
+            System.Drawing.Color.Black,
+            System.Drawing.Color.White,
+            drawQuietZones: true,
+            sizingMode: SvgQRCode.SizingMode.ViewBoxAttribute);
+
+        Assert.Contains("viewBox=", svg);
+    }
 }

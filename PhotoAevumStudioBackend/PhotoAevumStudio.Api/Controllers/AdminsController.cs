@@ -274,8 +274,19 @@ public class AdminsController : ControllerBase
 
         try
         {
-            var sent = await _adminService.ResendAdminCredentialsAsync(id, requesterId, isSystemAdmin, ct);
-            return Ok(new { success = sent, message = $"Credentials successfully resent to administrator '{id}'." });
+            var dispatch = await _adminService.ResendAdminCredentialsWithStatusAsync(id, requesterId, isSystemAdmin, ct);
+            var message = dispatch.EmailSent && dispatch.HandbookAttached
+                ? $"Welcome email with credentials and Employee Handbook PDF successfully sent to administrator '{id}'."
+                : (dispatch.WarningMessage ?? $"Credentials were reset for administrator '{id}', but email delivery reported a warning.");
+
+            return Ok(new
+            {
+                success = dispatch.EmailSent,
+                emailSent = dispatch.EmailSent,
+                handbookAttached = dispatch.HandbookAttached,
+                message,
+                warning = dispatch.WarningMessage
+            });
         }
         catch (UnauthorizedAccessException ex)
         {

@@ -177,7 +177,14 @@ public class ScheduleService : IScheduleService
     {
         _useInMemory = configuration is null;
         _connectionString = configuration?.GetConnectionString("DefaultConnection")
-            ?? "Server=db77602.public.databaseasp.net; Database=db77602; User Id=db77602; Password=G!r7cB8#Z5_d; Encrypt=True; TrustServerCertificate=True; MultipleActiveResultSets=True;";
+            ?? configuration?["ConnectionStrings__DefaultConnection"]
+            ?? Environment.GetEnvironmentVariable("AEVUM_DB_CONNECTION")
+            ?? string.Empty;
+
+        if (!_useInMemory && string.IsNullOrWhiteSpace(_connectionString))
+        {
+            throw new InvalidOperationException("ConnectionStrings:DefaultConnection is not configured.");
+        }
 
         if (_useInMemory)
         {

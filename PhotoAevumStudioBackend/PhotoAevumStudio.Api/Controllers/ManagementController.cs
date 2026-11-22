@@ -77,6 +77,32 @@ public class ManagementController : ControllerBase
         return Ok(new { Success = true, Message = message, EmployeeId = employeeId });
     }
 
+    [HttpPost("employees/{employeeId}/resend-welcome")]
+    [Authorize(Policy = "AdminOrAbove")]
+    public async Task<IActionResult> ResendEmployeeWelcomeEmail(string employeeId, CancellationToken ct)
+    {
+        var adminId = User.FindFirstValue("studio_id")
+                      ?? User.FindFirstValue(ClaimTypes.NameIdentifier)
+                      ?? User.Identity?.Name
+                      ?? "Admin";
+
+        var (success, emailSent, handbookAttached, message, warning) =
+            await _service.ResendEmployeeWelcomeEmailAsync(employeeId, adminId, ct);
+
+        if (!success)
+            return BadRequest(new { Success = false, EmailSent = false, HandbookAttached = false, Message = message, Warning = warning });
+
+        return Ok(new
+        {
+            Success = emailSent,
+            EmailSent = emailSent,
+            HandbookAttached = handbookAttached,
+            Message = message,
+            Warning = warning,
+            EmployeeId = employeeId
+        });
+    }
+
     [HttpGet("departments")]
     public async Task<IActionResult> GetDepartments(CancellationToken ct)
     {
@@ -85,6 +111,7 @@ public class ManagementController : ControllerBase
     }
 
     [HttpGet("departments/next-id")]
+    [Authorize(Policy = "ClerkOrAdmin")]
     public async Task<IActionResult> GetNextDepartmentId(CancellationToken ct)
     {
         var nextId = await _service.GetNextDepartmentIdAsync(ct);
@@ -92,12 +119,15 @@ public class ManagementController : ControllerBase
     }
 
     [HttpPost("departments")]
+    [Authorize(Policy = "AdminOrAbove")]
     public async Task<IActionResult> CreateDepartment([FromBody] CreateDepartmentDto dto, CancellationToken ct)
     {
         if (dto == null || string.IsNullOrWhiteSpace(dto.DepartmentName))
             return BadRequest(new { Message = "Department name is required." });
 
-        var adminId = User.FindFirst("studio_id")?.Value ?? User.Identity?.Name ?? "Admin";
+        var adminId = User.FindFirst("studio_id")?.Value ?? User.Identity?.Name;
+        if (string.IsNullOrWhiteSpace(adminId))
+            return Unauthorized();
         try
         {
             var created = await _service.CreateDepartmentAsync(dto, adminId, ct);
@@ -175,17 +205,60 @@ public class ManagementController : ControllerBase
         return File(detail.Image, detail.MimeType ?? "image/jpeg");
     }
 
+    private static bool TryValidateCatalogImage(byte[]? bytes, string? requestedMime, out string validatedMime, out string error)
+    {
+        validatedMime = "image/jpeg";
+        error = string.Empty;
+
+        if (bytes == null || bytes.Length == 0)
+        {
+            error = "Image bytes are required.";
+            return false;
+        }
+
+        if (bytes.Length > 10 * 1024 * 1024)
+        {
+            error = "Image exceeds maximum allowed size of 10 MB.";
+            return false;
+        }
+
+        if (bytes.Length >= 3 && bytes[0] == 0xFF && bytes[1] == 0xD8 && bytes[2] == 0xFF)
+        {
+            validatedMime = "image/jpeg";
+            return true;
+        }
+
+        if (bytes.Length >= 8 && bytes[0] == 0x89 && bytes[1] == 0x50 && bytes[2] == 0x4E && bytes[3] == 0x47)
+        {
+            validatedMime = "image/png";
+            return true;
+        }
+
+        if (bytes.Length >= 12 && bytes[0] == 0x52 && bytes[1] == 0x49 && bytes[2] == 0x46 && bytes[3] == 0x46 &&
+            bytes[8] == 0x57 && bytes[9] == 0x45 && bytes[10] == 0x42 && bytes[11] == 0x50)
+        {
+            validatedMime = "image/webp";
+            return true;
+        }
+
+        error = "Invalid image content. Only JPEG, PNG, and WebP signatures are allowed.";
+        return false;
+    }
+
     /// <summary>
     /// Uploads and attaches an image to a service.
     /// </summary>
     [HttpPost("services/{id}/image")]
+    [Authorize(Policy = "ClerkOrAdmin")]
     public async Task<IActionResult> UploadServiceImage(string id, [FromBody] UpdateServiceImageRequest request, CancellationToken ct)
     {
-        if (request?.ImageBytes is null || request.ImageBytes.Length == 0)
-            return BadRequest("Image bytes are required.");
+        if (!TryValidateCatalogImage(request?.ImageBytes, request?.MimeType, out var validatedMime, out var error))
+            return BadRequest(error);
 
         string? adminId = User.FindFirstValue("studio_id") ?? User.FindFirstValue(ClaimTypes.NameIdentifier);
-        var success = await _service.UpdateServiceImageAsync(id, request.ImageBytes, request.MimeType, adminId, ct);
+        if (string.IsNullOrWhiteSpace(adminId)) return Unauthorized();
+
+        var success = await _service.UpdateServiceImageAsync(id, request!.ImageBytes, validatedMime, adminId, ct);
         return Ok(new { Success = success, Message = "Service image updated successfully." });
     }
 
@@ -218,13 +291,16 @@ public class ManagementController : ControllerBase
     }
 
     [HttpPost("additional-services/{id}/image")]
+    [Authorize(Policy = "ClerkOrAdmin")]
     public async Task<IActionResult> UploadAdditionalServiceImage(string id, [FromBody] UpdateServiceImageRequest request, CancellationToken ct)
     {
-        if (request?.ImageBytes is null || request.ImageBytes.Length == 0)
-            return BadRequest("Image bytes are required.");
+        if (!TryValidateCatalogImage(request?.ImageBytes, request?.MimeType, out var validatedMime, out var error))
+            return BadRequest(error);
 
         string? adminId = User.FindFirstValue("studio_id") ?? User.FindFirstValue(ClaimTypes.NameIdentifier);
-        var success = await _service.UpdateAdditionalServiceImageAsync(id, request.ImageBytes, request.MimeType, adminId, ct);
+        if (string.IsNullOrWhiteSpace(adminId)) return Unauthorized();
+
+        var success = await _service.UpdateAdditionalServiceImageAsync(id, request!.ImageBytes, validatedMime, adminId, ct);
         return Ok(new { Success = success, Message = "Additional service image updated successfully." });
     }
 
@@ -257,19 +333,23 @@ public class ManagementController : ControllerBase
     }
 
     [HttpPost("combo-packages/{id}/image")]
+    [Authorize(Policy = "ClerkOrAdmin")]
     public async Task<IActionResult> UploadComboPackageImage(string id, [FromBody] UpdateServiceImageRequest request, CancellationToken ct)
     {
-        if (request?.ImageBytes is null || request.ImageBytes.Length == 0)
-            return BadRequest("Image bytes are required.");
+        if (!TryValidateCatalogImage(request?.ImageBytes, request?.MimeType, out var validatedMime, out var error))
+            return BadRequest(error);
 
         string? adminId = User.FindFirstValue("studio_id") ?? User.FindFirstValue(ClaimTypes.NameIdentifier);
-        var success = await _service.UpdateComboPackageImageAsync(id, request.ImageBytes, request.MimeType, adminId, ct);
+        if (string.IsNullOrWhiteSpace(adminId)) return Unauthorized();
+
+        var success = await _service.UpdateComboPackageImageAsync(id, request!.ImageBytes, validatedMime, adminId, ct);
         return Ok(new { Success = success, Message = "Combo package image updated successfully." });
     }
 
     // ── History Logs (SystemAdmin has full access) ────────────────────────────
 
     [HttpGet("history-logs")]
+    [Authorize(Policy = "ClerkOrAdmin")]
     public async Task<IActionResult> GetHistoryLogs([FromQuery] int top = 100, CancellationToken ct = default)
     {
         string? requestingUserId = User.FindFirstValue("studio_id")

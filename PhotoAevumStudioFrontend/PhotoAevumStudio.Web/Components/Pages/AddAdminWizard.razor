@@ -330,18 +330,53 @@
                                 </div>
                             </div>
 
-                            <!-- Success Message Banner -->
-                            <div class="p-3.5 bg-emerald-50 border border-emerald-200 rounded-xl text-xs text-emerald-800 text-left max-w-md mx-auto flex items-start gap-3 shadow-xs" role="status">
-                                <svg class="w-5 h-5 text-emerald-600 shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
-                                </svg>
-                                <div>
-                                    <p class="font-bold text-emerald-900">Email Notification Dispatched</p>
-                                    <p class="text-[11px] text-emerald-700 mt-0.5">
-                                        An automated onboarding email has been sent to <strong>@model.Email</strong> containing their generated Admin ID (<strong>@model.GeneratedId</strong>) and initial temporary password.
-                                    </p>
+                            <!-- Email Delivery Status Banner -->
+                            @if (welcomeEmailSent && handbookAttached)
+                            {
+                                <div class="p-3.5 bg-emerald-50 border border-emerald-200 rounded-xl text-xs text-emerald-800 text-left max-w-md mx-auto flex items-start gap-3 shadow-xs" role="status">
+                                    <svg class="w-5 h-5 text-emerald-600 shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
+                                    </svg>
+                                    <div>
+                                        <p class="font-bold text-emerald-900">Welcome Email &amp; Employee Handbook Sent</p>
+                                        <p class="text-[11px] text-emerald-700 mt-0.5">
+                                            An onboarding email has been sent to <strong>@model.Email</strong> containing their Admin ID (<strong>@model.GeneratedId</strong>), temporary password, and the attached <strong>Employee Handbook &amp; Operations Manual (PDF)</strong>.
+                                        </p>
+                                    </div>
                                 </div>
-                            </div>
+                            }
+                            else
+                            {
+                                <div class="p-3.5 bg-amber-50 border border-amber-300 rounded-xl text-xs text-amber-900 text-left max-w-md mx-auto space-y-2.5 shadow-xs" role="alert">
+                                    <div class="flex items-start gap-3">
+                                        <svg class="w-5 h-5 text-amber-600 shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z" />
+                                        </svg>
+                                        <div>
+                                            <p class="font-bold text-amber-950">Account Created — Email / Handbook Delivery Warning</p>
+                                            <p class="text-[11px] text-amber-800 mt-0.5">
+                                                @(string.IsNullOrWhiteSpace(emailWarning) ? "The administrator account was created, but the welcome email or Employee Handbook PDF could not be delivered." : emailWarning)
+                                            </p>
+                                        </div>
+                                    </div>
+                                    <div class="flex justify-end">
+                                        <button type="button"
+                                                @onclick="RetryEmailAsync"
+                                                disabled="@isRetryingEmail"
+                                                class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-amber-600 hover:bg-amber-700 text-white text-[11px] font-semibold transition-colors disabled:opacity-50 cursor-pointer">
+                                            @if (isRetryingEmail)
+                                            {
+                                                <span class="w-3 h-3 border-2 border-white/30 border-t-white rounded-full animate-spin"></span>
+                                                <span>Retrying...</span>
+                                            }
+                                            else
+                                            {
+                                                <span>Retry Welcome Email &amp; Handbook</span>
+                                            }
+                                        </button>
+                                    </div>
+                                </div>
+                            }
                         </div>
                     }
 
@@ -417,6 +452,7 @@
     [Parameter] public bool IsOpen { get; set; }
     [Parameter] public EventCallback<bool> IsOpenChanged { get; set; }
     [Parameter] public EventCallback OnSaved { get; set; }
+    [Parameter] public EventCallback<SaveAdminResult> OnSavedWithResult { get; set; }
     [Parameter] public EventCallback OnCancel { get; set; }
 
     private const string InputClass =
@@ -447,6 +483,11 @@
     private bool saveSuccess = false;
     private string? successMessage;
     private string? saveError;
+    private bool welcomeEmailSent = true;
+    private bool handbookAttached = true;
+    private string? emailWarning;
+    private bool isRetryingEmail = false;
+    private SaveAdminResult? lastSaveResult;
     private bool showPassword = false;
     private bool copiedPassword = false;
 
@@ -478,6 +519,11 @@
         saveError = null;
         saveSuccess = false;
         successMessage = null;
+        welcomeEmailSent = true;
+        handbookAttached = true;
+        emailWarning = null;
+        isRetryingEmail = false;
+        lastSaveResult = null;
         showPassword = false;
         copiedPassword = false;
     }
@@ -545,8 +591,14 @@
             {
                 isSaving = false;
                 saveSuccess = true;
+                lastSaveResult = result;
+                welcomeEmailSent = result.WelcomeEmailSent;
+                handbookAttached = result.HandbookAttached;
+                emailWarning = result.EmailWarning;
                 currentStep = 4;
-                successMessage = $"Administrator account created! Credentials have been emailed to {model.Email}.";
+                successMessage = welcomeEmailSent && handbookAttached
+                    ? $"Administrator account created! Credentials and Employee Handbook PDF have been emailed to {model.Email}."
+                    : $"Administrator account created, with email delivery warning: {emailWarning}";
                 StateHasChanged();
             }
             else
@@ -562,8 +614,45 @@
         }
     }
 
+    private async Task RetryEmailAsync()
+    {
+        if (isRetryingEmail || string.IsNullOrWhiteSpace(model.GeneratedId)) return;
+        isRetryingEmail = true;
+        StateHasChanged();
+
+        try
+        {
+            var retry = await AdminService.ResendCredentialsAsync(model.GeneratedId, _cts?.Token ?? CancellationToken.None);
+            welcomeEmailSent = retry.WelcomeEmailSent;
+            handbookAttached = retry.HandbookAttached;
+            emailWarning = retry.EmailWarning ?? (retry.Success ? null : retry.ErrorMessage);
+            lastSaveResult = new SaveAdminResult(
+                Success: true,
+                ErrorMessage: null,
+                Admin: lastSaveResult?.Admin,
+                WelcomeEmailSent: welcomeEmailSent,
+                HandbookAttached: handbookAttached,
+                EmailWarning: emailWarning);
+        }
+        catch (Exception ex)
+        {
+            welcomeEmailSent = false;
+            handbookAttached = false;
+            emailWarning = $"Retry failed: {ex.Message}";
+        }
+        finally
+        {
+            isRetryingEmail = false;
+            StateHasChanged();
+        }
+    }
+
     private async Task CompleteAndCloseAsync()
     {
+        if (OnSavedWithResult.HasDelegate && lastSaveResult != null)
+        {
+            await OnSavedWithResult.InvokeAsync(lastSaveResult);
+        }
         await OnSaved.InvokeAsync();
         InitializeContext();
         await IsOpenChanged.InvokeAsync(false);

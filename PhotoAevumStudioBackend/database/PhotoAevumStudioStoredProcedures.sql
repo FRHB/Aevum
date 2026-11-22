@@ -2762,7 +2762,9 @@ BEGIN
         UPDATE dbo.EventAppointment
         SET EventStatus = 'Completed',
             FinalPaymentStatus = 'Paid',
-            FinalPaymentPaidAt = COALESCE(FinalPaymentPaidAt, SYSUTCDATETIME())
+            FinalPaymentPaidAt = COALESCE(FinalPaymentPaidAt, SYSUTCDATETIME()),
+            RemainingBalance = 0.00,
+            IsDeliverablesUnlocked = 1
         WHERE EventAppointmentID = @EventAppointmentID;
 
         IF @@ROWCOUNT = 0
@@ -2783,14 +2785,36 @@ BEGIN
 
         IF OBJECT_ID(N'dbo.HistoryLog', N'U') IS NOT NULL
         BEGIN
+            DECLARE @EmpActor nvarchar(30) = NULL;
+            DECLARE @AdmActor nvarchar(30) = NULL;
+            DECLARE @ActorType nvarchar(20) = CASE
+                WHEN @VerifierRole IN ('Employee', 'Office Clerk', 'OfficeClerk') THEN 'Employee'
+                WHEN @VerifierRole IN ('SystemAdmin', 'System Admin') THEN 'SystemAdmin'
+                WHEN @VerifierRole IN ('Admin', 'Customer', 'System') THEN @VerifierRole
+                ELSE 'Admin'
+            END;
+
+            IF OBJECT_ID(N'dbo.Employees', N'U') IS NOT NULL
+               AND EXISTS (SELECT 1 FROM dbo.Employees WHERE EmployeeID = @VerifierID)
+            BEGIN
+                SET @EmpActor = @VerifierID;
+                SET @ActorType = 'Employee';
+            END
+            ELSE IF OBJECT_ID(N'dbo.Admin', N'U') IS NOT NULL
+               AND EXISTS (SELECT 1 FROM dbo.Admin WHERE AdminID = @VerifierID)
+            BEGIN
+                SET @AdmActor = @VerifierID;
+                SET @ActorType = 'Admin';
+            END;
+
             INSERT INTO dbo.HistoryLog (
                 ActionType, EntityName, EntityID, ActionDetails,
-                EventAppointmentID, ChangedByType, ChangedBy, LoggedAt
+                EventAppointmentID, ChangedByType, ChangedByEmployeeID, ChangedByAdminID, LoggedAt
             )
             VALUES (
-                'APPROVAL', 'CashRemittance', @EventAppointmentID,
+                'STATUS_CHANGE', 'CashRemittance', @EventAppointmentID,
                 COALESCE(@Notes, 'Cash payment verified by ' + @VerifierID + '. Event workflow finalized as Completed.'),
-                @EventAppointmentID, @VerifierRole, @VerifierID, SYSUTCDATETIME()
+                @EventAppointmentID, @ActorType, @EmpActor, @AdmActor, SYSUTCDATETIME()
             );
         END
 

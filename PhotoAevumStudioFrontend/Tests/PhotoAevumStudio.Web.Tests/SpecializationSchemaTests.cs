@@ -9,7 +9,8 @@ namespace PhotoAevumStudio.Web.Tests;
 
 public class SpecializationSchemaTests
 {
-    private const string ConnectionString = "Server=db77602.public.databaseasp.net; Database=db77602; User Id=db77602; Password=G!r7cB8#Z5_d; Encrypt=True; TrustServerCertificate=True; MultipleActiveResultSets=True;";
+    private static string? ConnectionString =>
+        Environment.GetEnvironmentVariable("AEVUM_TEST_DB_CONNECTION");
 
     [Fact]
     public void EmployeeSpecialization_Model_ContainsRequiredColumns()
@@ -42,6 +43,9 @@ public class SpecializationSchemaTests
     [Fact]
     public void UserService_GetSpecializationLookups_ExecutesSuccessfullyWithoutInvalidColumnErrors()
     {
+        if (string.IsNullOrWhiteSpace(ConnectionString))
+            return;
+
         var userService = new UserService();
         var lookups = userService.GetSpecializationLookups();
         Assert.NotNull(lookups);
@@ -50,6 +54,9 @@ public class SpecializationSchemaTests
     [Fact]
     public async Task ApplicationDbContext_LinqQuery_ExecutesSuccessfullyAgainstDatabase()
     {
+        if (string.IsNullOrWhiteSpace(ConnectionString))
+            return;
+
         var options = new DbContextOptionsBuilder<ApplicationDbContext>()
             .UseSqlServer(ConnectionString)
             .Options;
@@ -69,6 +76,9 @@ public class SpecializationSchemaTests
     [Fact]
     public async Task RawQuery_SelectingSpecializationColumns_Succeeds()
     {
+        if (string.IsNullOrWhiteSpace(ConnectionString))
+            return;
+
         await using var conn = new SqlConnection(ConnectionString);
         await conn.OpenAsync();
 
@@ -93,6 +103,9 @@ public class SpecializationSchemaTests
     [Fact]
     public async Task ApplicationDbContext_EmployeesQuery_ExecutesSuccessfullyAgainstDatabase()
     {
+        if (string.IsNullOrWhiteSpace(ConnectionString))
+            return;
+
         var options = new DbContextOptionsBuilder<ApplicationDbContext>()
             .UseSqlServer(ConnectionString)
             .Options;
@@ -111,6 +124,9 @@ public class SpecializationSchemaTests
     [Fact]
     public async Task RawQuery_SelectingEmployeeColumns_Succeeds()
     {
+        if (string.IsNullOrWhiteSpace(ConnectionString))
+            return;
+
         await using var conn = new SqlConnection(ConnectionString);
         await conn.OpenAsync();
 
@@ -134,6 +150,9 @@ public class SpecializationSchemaTests
     [Fact]
     public void EmployeeSpecializations_And_Lookups_ExecuteSuccessfully()
     {
+        if (string.IsNullOrWhiteSpace(ConnectionString))
+            return;
+
         var userService = new UserService();
         var lookups = userService.GetSpecializationLookups();
         Assert.NotNull(lookups);

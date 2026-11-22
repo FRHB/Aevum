@@ -71,6 +71,10 @@ public class CreateEventAppointmentFromNegotiationRequest
     public List<string> EmployeeIds { get; set; } = new();
     public string TeamLeaderEmployeeId { get; set; } = string.Empty;
     public List<string> EquipmentIds { get; set; } = new();
+    public decimal? ReservationFeeAmount { get; set; }
+    public string? PackageInclusions { get; set; }
+    public int? DeliveryBusinessDays { get; set; }
+    public string? RepresentativeName { get; set; }
 }
 
 public class UpdateAppointmentRosterRequest
@@ -106,6 +110,12 @@ public class EventAppointmentDto
     public decimal TotalAmount { get; set; }
     public decimal DownpaymentAmount { get; set; }
     public decimal FinalBalanceAmount { get; set; }
+    public decimal OvertimeAmount { get; set; }
+    public decimal RemainingBalance { get; set; }
+    public bool IsDeliverablesUnlocked { get; set; }
+    public string? ContractNumber { get; set; }
+    public string? TermsVersionCode { get; set; }
+    public DateTime? ContractAcceptedAtUtc { get; set; }
     public string DownpaymentStatus { get; set; } = "Pending";
     public DateTime? HoldExpiresAt { get; set; }
     public DateTime? LockExpiresAt { get; set; }

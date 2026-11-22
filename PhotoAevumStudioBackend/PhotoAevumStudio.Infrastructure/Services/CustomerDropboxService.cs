@@ -318,7 +318,20 @@ public class CustomerDropboxService : ICustomerDropboxService
                    cd.FileSizeBytes,
                    cd.EventCompletedAt,
                    cd.UploadedAt,
-                   cd.ExpiresAt
+                   cd.ExpiresAt,
+                   CASE
+                       WHEN ISNULL(ea.IsDeliverablesUnlocked, 0) = 1 AND ISNULL(ea.RemainingBalance, 0) <= 0 THEN CAST(0 AS decimal(18,2))
+                       WHEN ea.FinalPaymentStatus IN ('Paid', 'Payment Verification (QR:Paid)') AND ISNULL(ea.RemainingBalance, 0) <= 0 THEN CAST(0 AS decimal(18,2))
+                       WHEN ISNULL(ea.RemainingBalance, 0) > 0 THEN ea.RemainingBalance
+                       WHEN ea.FinalBalanceAmount > 0 AND ISNULL(ea.FinalPaymentStatus, '') NOT IN ('Paid', 'Payment Verification (QR:Paid)') THEN ea.FinalBalanceAmount
+                       ELSE CAST(0 AS decimal(18,2))
+                   END AS EffectiveRemainingBalance,
+                   CASE
+                       WHEN ISNULL(ea.IsDeliverablesUnlocked, 0) = 1 AND ISNULL(ea.RemainingBalance, 0) <= 0 THEN CAST(1 AS bit)
+                       WHEN ea.FinalPaymentStatus IN ('Paid', 'Payment Verification (QR:Paid)') AND ISNULL(ea.RemainingBalance, 0) <= 0 THEN CAST(1 AS bit)
+                       WHEN ISNULL(ea.TotalAmount, 0) <= 0 AND ea.EventStatus IN ('Completed', 'Complete', 'Delivered') THEN CAST(1 AS bit)
+                       ELSE CAST(0 AS bit)
+                   END AS DeliverablesUnlocked
             FROM dbo.CustomerDropbox cd
             INNER JOIN dbo.EventAppointment ea ON ea.EventAppointmentID = cd.EventAppointmentID
             LEFT JOIN dbo.Customer c ON c.CustomerID = cd.CustomerID
@@ -479,20 +492,7 @@ public class CustomerDropboxService : ICustomerDropboxService
                     DropboxStatus = 'Uploaded',
                     UploadedAt = SYSUTCDATETIME(),
                     UploadedByEmployeeID = NULLIF(@UploadedBy, '')
-                WHERE DropboxID = @DropboxId;
-
-                IF OBJECT_ID(N'dbo.HistoryLog', N'U') IS NOT NULL
-                BEGIN
-                    INSERT INTO dbo.HistoryLog (
-                        ActionType, EntityName, EntityID, ActionDetails,
-                        EventAppointmentID, CustomerID, ChangedBy, ChangedByType, LoggedAt
-                    )
-                    VALUES (
-                        'UPLOAD', 'CustomerDropbox', @DropboxId,
-                        'Uploaded customer gallery ZIP (' + @FileName + ') to Cloudflare R2.',
-                        @EvtId, @CustId, NULLIF(@UploadedBy, ''), 'Staff', SYSUTCDATETIME()
-                    );
-                END;";
+                WHERE DropboxID = @DropboxId;";
 
             await using (var upd = new SqlCommand(updateSql, conn))
             {
@@ -503,9 +503,62 @@ public class CustomerDropboxService : ICustomerDropboxService
                 upd.Parameters.AddWithValue("@ContentType", resolvedContentType);
                 upd.Parameters.AddWithValue("@UploadedBy", uploadedByEmployeeId ?? string.Empty);
                 upd.Parameters.AddWithValue("@DropboxId", dropboxId!);
-                upd.Parameters.AddWithValue("@EvtId", eventAppointmentId.Trim());
-                upd.Parameters.AddWithValue("@CustId", customerId!);
                 await upd.ExecuteNonQueryAsync(ct);
+            }
+
+            try
+            {
+                const string historySql = @"
+                    IF OBJECT_ID(N'dbo.HistoryLog', N'U') IS NOT NULL
+                    BEGIN
+                        DECLARE @EmpActor nvarchar(30) = NULL;
+                        DECLARE @AdmActor nvarchar(30) = NULL;
+                        DECLARE @ActorType nvarchar(20) = 'System';
+
+                        IF NULLIF(@UploadedBy, '') IS NOT NULL
+                        BEGIN
+                            IF OBJECT_ID(N'dbo.Employees', N'U') IS NOT NULL
+                               AND EXISTS (SELECT 1 FROM dbo.Employees WHERE EmployeeID = @UploadedBy)
+                            BEGIN
+                                SET @EmpActor = @UploadedBy;
+                                SET @ActorType = 'Employee';
+                            END
+                            ELSE IF OBJECT_ID(N'dbo.Admin', N'U') IS NOT NULL
+                               AND EXISTS (SELECT 1 FROM dbo.Admin WHERE AdminID = @UploadedBy)
+                            BEGIN
+                                SET @AdmActor = @UploadedBy;
+                                SET @ActorType = 'Admin';
+                            END
+                            ELSE IF @UploadedBy LIKE 'SADM-%'
+                                SET @ActorType = 'SystemAdmin';
+                            ELSE IF @UploadedBy LIKE 'ADM-%'
+                                SET @ActorType = 'Admin';
+                            ELSE IF @UploadedBy LIKE 'EMP-%' OR @UploadedBy LIKE 'CLK-%'
+                                SET @ActorType = 'Employee';
+                        END;
+
+                        INSERT INTO dbo.HistoryLog (
+                            ActionType, EntityName, EntityID, ActionDetails,
+                            EventAppointmentID, CustomerID, ChangedByType, ChangedByEmployeeID, ChangedByAdminID, LoggedAt
+                        )
+                        VALUES (
+                            'IMAGE_UPLOAD', 'CustomerDropbox', @DropboxId,
+                            'Uploaded customer gallery ZIP (' + @FileName + ') to Cloudflare R2.',
+                            @EvtId, @CustId, @ActorType, @EmpActor, @AdmActor, SYSUTCDATETIME()
+                        );
+                    END;";
+
+                await using var histCmd = new SqlCommand(historySql, conn);
+                histCmd.Parameters.AddWithValue("@DropboxId", dropboxId!);
+                histCmd.Parameters.AddWithValue("@FileName", safeName);
+                histCmd.Parameters.AddWithValue("@EvtId", eventAppointmentId.Trim());
+                histCmd.Parameters.AddWithValue("@CustId", customerId!);
+                histCmd.Parameters.AddWithValue("@UploadedBy", uploadedByEmployeeId ?? string.Empty);
+                await histCmd.ExecuteNonQueryAsync(ct);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Non-fatal HistoryLog write skipped after CustomerDropbox ZIP upload {DropboxId}.", dropboxId);
             }
 
             const string readBackSql = @"
@@ -645,7 +698,19 @@ public class CustomerDropboxService : ICustomerDropboxService
 
     private string ComputeHmac(string payload)
     {
-        var key = _configuration["Jwt:Key"] ?? "PhotoAevumStudio-Dev-Fallback-Secret-Key-2026-Minimum32Chars!";
+        // Use dedicated Dropbox signing key (never share Jwt:Key or a hardcoded fallback secret)
+        var key = _configuration["Dropbox:SigningKey"]
+            ?? _configuration["Dropbox__SigningKey"]
+            ?? _configuration["CloudflareR2:DropboxSigningKey"]
+            ?? _configuration["CloudflareR2__DropboxSigningKey"]
+            ?? Environment.GetEnvironmentVariable("DROPBOX_SIGNING_KEY");
+
+        if (string.IsNullOrWhiteSpace(key) || key.Length < 32)
+        {
+            throw new InvalidOperationException(
+                "Dropbox:SigningKey must be configured with at least 32 characters.");
+        }
+
         using var hmac = new HMACSHA256(Encoding.UTF8.GetBytes(key));
         var hash = hmac.ComputeHash(Encoding.UTF8.GetBytes(payload));
         return Convert.ToHexString(hash);
@@ -665,10 +730,18 @@ public class CustomerDropboxService : ICustomerDropboxService
 
         const string sql = @"
             SELECT TOP 1
-                   DropboxID, EventAppointmentID, CustomerID, BucketName, R2ObjectKey,
-                   OriginalFileName, FileSizeBytes, ContentType, DropboxStatus, ExpiresAt
-            FROM dbo.CustomerDropbox
-            WHERE DropboxID = @DropboxId;";
+                   cd.DropboxID, cd.EventAppointmentID, cd.CustomerID, cd.BucketName, cd.R2ObjectKey,
+                   cd.OriginalFileName, cd.FileSizeBytes, cd.ContentType, cd.DropboxStatus, cd.ExpiresAt,
+                   ea.EventStatus,
+                   ISNULL(ea.TotalAmount, 0) AS TotalAmount,
+                   ISNULL(ea.OvertimeAmount, 0) AS OvertimeAmount,
+                   ISNULL(ea.FinalBalanceAmount, 0) AS FinalBalanceAmount,
+                   ISNULL(ea.RemainingBalance, 0) AS RemainingBalance,
+                   ea.FinalPaymentStatus,
+                   ISNULL(ea.IsDeliverablesUnlocked, 0) AS IsDeliverablesUnlocked
+            FROM dbo.CustomerDropbox cd
+            LEFT JOIN dbo.EventAppointment ea ON ea.EventAppointmentID = cd.EventAppointmentID
+            WHERE cd.DropboxID = @DropboxId;";
 
         await using var cmd = new SqlCommand(sql, conn);
         cmd.Parameters.AddWithValue("@DropboxId", dropboxId.Trim());
@@ -702,6 +775,33 @@ public class CustomerDropboxService : ICustomerDropboxService
 
         if (!string.Equals(status, DropboxStatuses.Uploaded, StringComparison.OrdinalIgnoreCase) || string.IsNullOrWhiteSpace(key))
             throw new InvalidOperationException("No ZIP archive has been uploaded to this Dropbox folder yet.");
+
+        // Server-side Deliverable Release Gate: remaining balance must be <= 0 and final settlement verified
+        var evtStatus = r.FieldCount > 10 && !r.IsDBNull(10) ? r.GetString(10) : string.Empty;
+        var totalAmt = r.FieldCount > 11 && !r.IsDBNull(11) ? r.GetDecimal(11) : 0m;
+        var finalBalAmt = r.FieldCount > 13 && !r.IsDBNull(13) ? r.GetDecimal(13) : 0m;
+        var remainingBal = r.FieldCount > 14 && !r.IsDBNull(14) ? r.GetDecimal(14) : 0m;
+        var finalPayStatus = r.FieldCount > 15 && !r.IsDBNull(15) ? r.GetString(15) : null;
+        var unlockedFlag = r.FieldCount > 16 && !r.IsDBNull(16) && r.GetBoolean(16);
+
+        var finalSettled = string.Equals(finalPayStatus, "Paid", StringComparison.OrdinalIgnoreCase)
+                           || string.Equals(finalPayStatus, "Payment Verification (QR:Paid)", StringComparison.OrdinalIgnoreCase);
+
+        if (remainingBal > 0m || (!unlockedFlag && !finalSettled && (totalAmt > 0m || finalBalAmt > 0m)))
+        {
+            var owed = remainingBal > 0m ? remainingBal : finalBalAmt;
+            throw new InvalidOperationException(
+                owed > 0m
+                    ? $"Deliverables are locked until your remaining balance of PHP {owed:N2} is settled in full (0.00 balance due)."
+                    : "Deliverables are locked until final settlement is verified and completed.");
+        }
+
+        if (string.Equals(evtStatus, "Paid Cash Pending Verification", StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(evtStatus, "Payment Verification (Cash)", StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(evtStatus, "Pending Payment", StringComparison.OrdinalIgnoreCase))
+        {
+            throw new InvalidOperationException("Deliverables are locked until final settlement verification is complete.");
+        }
 
         return (dbDropboxId, evtId, ownerCustomerId, bucket, key, fileName, fileSize, contentType, expiresAt);
     }
@@ -757,7 +857,7 @@ public class CustomerDropboxService : ICustomerDropboxService
                         EventAppointmentID, CustomerID, ChangedByType, LoggedAt
                     )
                     VALUES (
-                        'AUTO_DELETE', 'CustomerDropbox', @DropboxId,
+                        'DELETE', 'CustomerDropbox', @DropboxId,
                         'Automatically deleted expired customer Dropbox ZIP from Cloudflare R2 and removed database record after 30 days.',
                         @EvtId, @CustId, 'System', SYSUTCDATETIME()
                     );
@@ -787,6 +887,9 @@ public class CustomerDropboxService : ICustomerDropboxService
         var completedAt = DateTime.SpecifyKind(r.GetDateTime(13), DateTimeKind.Utc);
         DateTime? uploadedAt = r.IsDBNull(14) ? null : DateTime.SpecifyKind(r.GetDateTime(14), DateTimeKind.Utc);
 
+        var remBal = r.FieldCount > 16 && !r.IsDBNull(16) ? r.GetDecimal(16) : 0m;
+        var unlocked = r.FieldCount > 17 && !r.IsDBNull(17) ? r.GetBoolean(17) : remBal <= 0m;
+
         return new CustomerDropboxFolderDto
         {
             DropboxId = r.GetString(0),
@@ -806,7 +909,10 @@ public class CustomerDropboxService : ICustomerDropboxService
             UploadedAt = uploadedAt,
             ExpiresAt = expiresAt,
             DaysRemaining = DropboxCountdownHelper.ComputeDaysRemaining(expiresAt, nowUtc),
-            CountdownLabel = DropboxCountdownHelper.FormatCountdownLabel(expiresAt, nowUtc)
+            CountdownLabel = DropboxCountdownHelper.FormatCountdownLabel(expiresAt, nowUtc),
+            RemainingBalance = remBal,
+            IsDeliverablesUnlocked = unlocked,
+            LockReason = unlocked ? null : $"Locked until remaining balance of PHP {remBal:N2} is settled in full."
         };
     }
 

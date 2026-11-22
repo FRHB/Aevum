@@ -4,8 +4,8 @@ services:
     environment:
       - ACCEPT_EULA=Y
     ports:
-      - "5341:80"
+      - "127.0.0.1:5341:80"
   metabase:
     image: metabase/metabase
     ports:
-      - "3000:3000"
+      - "127.0.0.1:3000:3000"

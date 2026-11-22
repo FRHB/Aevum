@@ -1,4 +1,6 @@
 using System.Data;
+using System.Security.Cryptography;
+using System.Text;
 using Microsoft.Data.SqlClient;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
@@ -71,11 +73,31 @@ public class SqlAuthService : ISqlAuthService
                 var fullName = string.Join(" ", new[] { first, middle, last }.Where(s => !string.IsNullOrWhiteSpace(s)));
                 var email = !string.IsNullOrWhiteSpace(storedEmail) ? storedEmail.Trim() : $"{sysId.ToLowerInvariant()}@photoaevum.studio";
 
+                await sysReader.CloseAsync();
+
                 var authUser = new AuthUser(sysId, AppRoles.SystemAdmin, fullName, email, storedPassword, false);
 
                 bool match = VerifyPasswordFlexible(password, storedPassword, allowPlainText: true);
                 if (match)
                 {
+                    if (!storedPassword.StartsWith("$2", StringComparison.Ordinal))
+                    {
+                        try
+                        {
+                            var upgradedHash = BCrypt.Net.BCrypt.HashPassword(password.Trim());
+                            const string upgradeSql = "UPDATE dbo.SystemAdmin SET PasswordHash = @Hash WHERE SystemAdminID = @SysId;";
+                            await using var upgradeCmd = new SqlCommand(upgradeSql, conn);
+                            upgradeCmd.Parameters.AddWithValue("@Hash", upgradedHash);
+                            upgradeCmd.Parameters.AddWithValue("@SysId", sysId);
+                            await upgradeCmd.ExecuteNonQueryAsync(cancellationToken);
+                            _logger.LogInformation("Upgraded legacy password to BCrypt hash for System Admin {SystemAdminId}.", sysId);
+                        }
+                        catch (Exception ex)
+                        {
+                            _logger.LogWarning(ex, "Failed to auto-upgrade password hash for System Admin {SystemAdminId}.", sysId);
+                        }
+                    }
+
                     _logger.LogInformation("Successful login for System Admin {SystemAdminId}.", sysId);
                     return new AuthValidationResult(Success: true, RequiresPasswordChange: false, User: authUser, IsFirstLogin: false);
                 }
@@ -180,7 +202,9 @@ public class SqlAuthService : ISqlAuthService
                 await reader.CloseAsync();
 
                 // Check specialization in join table for Office Clerk role
-                string assignedRole = AppRoles.Employee;
+                string assignedRole = empId.StartsWith("CLK-", StringComparison.OrdinalIgnoreCase)
+                    ? AppRoles.OfficeClerk
+                    : AppRoles.Employee;
                 const string clerkCheckSql = @"
                     IF OBJECT_ID(N'dbo.EmployeeJointSpecialization', N'U') IS NOT NULL
                        AND OBJECT_ID(N'dbo.EmployeeSpecialization', N'U') IS NOT NULL
@@ -189,7 +213,7 @@ public class SqlAuthService : ISqlAuthService
                         FROM dbo.EmployeeJointSpecialization ejs
                         JOIN dbo.EmployeeSpecialization es ON ejs.SpecializationID = es.SpecializationID
                         WHERE ejs.EmployeeID = @EmpId
-                          AND (UPPER(LTRIM(RTRIM(COALESCE(NULLIF(es.SpecializationName, ''), es.Specialization)))) = 'OFFICE CLERK');
+                          AND UPPER(LTRIM(RTRIM(COALESCE(NULLIF(es.SpecializationName, ''), es.Specialization, '')))) LIKE '%CLERK%';
                     END
                     ELSE
                     BEGIN
@@ -362,7 +386,7 @@ public class SqlAuthService : ISqlAuthService
                 updateCmd.Parameters.AddWithValue("@SystemAdminID", sysId);
                 await updateCmd.ExecuteNonQueryAsync(cancellationToken);
 
-                await TrySyncAspNetUsersAsync(conn, sysId, newHashed, cancellationToken);
+                await TrySyncAspNetUsersAsync(conn, sysId, newHashed, cancellationToken, _logger);
                 await LogActivityAsync("PASSWORD_CHANGE", "SystemAdmin", sysId, "System Admin password updated successfully", AppRoles.SystemAdmin, sysId, cancellationToken);
 
                 _logger.LogInformation("System Admin {SystemAdminId} successfully updated password.", sysId);
@@ -418,13 +442,13 @@ public class SqlAuthService : ISqlAuthService
                     {
                         await spCmd.ExecuteNonQueryAsync(cancellationToken);
                     }
-                    catch
+                    catch (Exception ex)
                     {
-                        // Stored procedure invocation fallback
+                        _logger.LogWarning(ex, "Stored procedure sp_CompleteAdminFirstLogin fallback triggered for {AdminId}.", adminId);
                     }
                 }
 
-                await TrySyncAspNetUsersAsync(conn, adminId, newHashed, cancellationToken);
+                await TrySyncAspNetUsersAsync(conn, adminId, newHashed, cancellationToken, _logger);
                 await LogActivityAsync("PASSWORD_CHANGE", "Admin", adminId, "Admin password updated successfully", "Admin", adminId, cancellationToken);
 
                 _logger.LogInformation("Admin {AdminId} successfully completed password change.", adminId);
@@ -486,13 +510,13 @@ public class SqlAuthService : ISqlAuthService
                     {
                         await spCmd.ExecuteNonQueryAsync(cancellationToken);
                     }
-                    catch
+                    catch (Exception ex)
                     {
-                        // Fallback
+                        _logger.LogWarning(ex, "Stored procedure sp_CompleteEmployeeFirstLogin fallback triggered for {EmpId}.", empId);
                     }
                 }
 
-                await TrySyncAspNetUsersAsync(conn, empId, newHashed, cancellationToken);
+                await TrySyncAspNetUsersAsync(conn, empId, newHashed, cancellationToken, _logger);
                 await LogActivityAsync("PASSWORD_CHANGE", "Employee", empId, "Employee password updated successfully", "Employee", empId, cancellationToken);
 
                 _logger.LogInformation("Employee {EmployeeId} successfully completed password change.", empId);
@@ -534,7 +558,7 @@ public class SqlAuthService : ISqlAuthService
                 updateCmd.Parameters.AddWithValue("@CustomerID", custId);
                 await updateCmd.ExecuteNonQueryAsync(cancellationToken);
 
-                await TrySyncAspNetUsersAsync(conn, custId, newHashed, cancellationToken);
+                await TrySyncAspNetUsersAsync(conn, custId, newHashed, cancellationToken, _logger);
                 await LogActivityAsync("PASSWORD_CHANGE", "Customer", custId, "Customer password updated successfully", "Customer", custId, cancellationToken);
 
                 _logger.LogInformation("Customer {CustomerId} successfully updated password.", custId);
@@ -965,10 +989,10 @@ public class SqlAuthService : ISqlAuthService
             cmd.Parameters.AddWithValue("@CustomerID", customerId);
             if (await cmd.ExecuteNonQueryAsync(cancellationToken) > 0)
             {
-                await TrySyncAspNetUsersAsync(conn, customerId, hashedPassword, cancellationToken);
+                await TrySyncAspNetUsersAsync(conn, customerId, hashedPassword, cancellationToken, _logger);
                 if (!string.IsNullOrWhiteSpace(customerEmail))
                 {
-                    await TrySyncAspNetUsersAsync(conn, customerEmail, hashedPassword, cancellationToken);
+                    await TrySyncAspNetUsersAsync(conn, customerEmail, hashedPassword, cancellationToken, _logger);
                 }
                 await LogActivityAsync("PASSWORD_RESET", "Customer", customerId, "Customer password reset with verification code", "Customer", customerId, cancellationToken);
                 _logger.LogInformation("Customer {CustomerId} password reset successfully.", customerId);
@@ -1006,9 +1030,9 @@ public class SqlAuthService : ISqlAuthService
 
             await cmd.ExecuteNonQueryAsync(cancellationToken);
         }
-        catch
+        catch (Exception ex)
         {
-            // History logging failure is non-fatal
+            _logger.LogWarning(ex, "Failed to write activity history log for {ActionType} on {EntityId}.", actionType, entityId);
         }
     }
 
@@ -1177,7 +1201,8 @@ public class SqlAuthService : ISqlAuthService
         SqlConnection conn,
         string userIdentifier,
         string? passwordHash,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        ILogger? logger = null)
     {
         try
         {
@@ -1206,9 +1231,9 @@ public class SqlAuthService : ISqlAuthService
             cmd.Parameters.AddWithValue("@PasswordHash", (object?)passwordHash ?? DBNull.Value);
             await cmd.ExecuteNonQueryAsync(cancellationToken);
         }
-        catch
+        catch (Exception ex)
         {
-            // Best effort identity sync
+            logger?.LogWarning(ex, "Best-effort AspNetUsers sync failed for {UserIdentifier}.", userIdentifier);
         }
     }
 
@@ -1220,30 +1245,17 @@ public class SqlAuthService : ISqlAuthService
         var cleanProvided = provided.Trim();
         var cleanStored = storedHash.Trim();
 
+        if (!cleanStored.StartsWith("$2", StringComparison.Ordinal))
+            return false;
+
         try
         {
-            if (BCrypt.Net.BCrypt.Verify(cleanProvided, cleanStored))
-                return true;
+            return BCrypt.Net.BCrypt.Verify(cleanProvided, cleanStored);
         }
         catch
         {
+            return false;
         }
-
-        if (string.Equals(cleanProvided, cleanStored, StringComparison.Ordinal))
-            return true;
-
-        if ((cleanProvided == "AxiomBit_2026" || cleanProvided == "AxiomBit@2026") &&
-            (cleanStored.StartsWith("$2a$") || cleanStored.StartsWith("$2b$") || cleanStored == "AxiomBit_2026" || cleanStored == "AxiomBit@2026"))
-        {
-            try
-            {
-                if (BCrypt.Net.BCrypt.Verify("AxiomBit_2026", cleanStored) || BCrypt.Net.BCrypt.Verify("AxiomBit@2026", cleanStored))
-                    return true;
-            }
-            catch { }
-        }
-
-        return false;
     }
 
     private static bool VerifyPasswordFlexible(string provided, string stored, bool allowPlainText)
@@ -1254,17 +1266,25 @@ public class SqlAuthService : ISqlAuthService
         var cleanProvided = provided.Trim();
         var cleanStored = stored.Trim();
 
-        try
+        if (cleanStored.StartsWith("$2", StringComparison.Ordinal))
         {
-            if (BCrypt.Net.BCrypt.Verify(cleanProvided, cleanStored))
-                return true;
-        }
-        catch
-        {
+            try
+            {
+                return BCrypt.Net.BCrypt.Verify(cleanProvided, cleanStored);
+            }
+            catch
+            {
+                return false;
+            }
         }
 
-        if (allowPlainText && string.Equals(cleanStored, cleanProvided, StringComparison.Ordinal))
-            return true;
+        if (allowPlainText)
+        {
+            var providedBytes = Encoding.UTF8.GetBytes(cleanProvided);
+            var storedBytes = Encoding.UTF8.GetBytes(cleanStored);
+            return providedBytes.Length == storedBytes.Length &&
+                   CryptographicOperations.FixedTimeEquals(providedBytes, storedBytes);
+        }
 
         return false;
     }

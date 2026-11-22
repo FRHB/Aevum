@@ -20,7 +20,9 @@ public class PhotoService : IPhotoService
         var query = _context.Photos.AsQueryable();
         if (!string.IsNullOrEmpty(customerId))
         {
-            query = query.Where(p => p.Booking != null && p.Booking.CustomerId == customerId);
+            query = query.Where(p => p.Booking != null
+                                     && p.Booking.CustomerId == customerId
+                                     && p.Booking.RemainingBalance <= 0m);
         }
 
 		return await query

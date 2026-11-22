@@ -204,7 +204,15 @@ public class AdditionalServiceWizardTests
         {
             ControllerContext = new Microsoft.AspNetCore.Mvc.ControllerContext
             {
-                HttpContext = new Microsoft.AspNetCore.Http.DefaultHttpContext()
+                HttpContext = new Microsoft.AspNetCore.Http.DefaultHttpContext
+                {
+                    User = new System.Security.Claims.ClaimsPrincipal(
+                        new System.Security.Claims.ClaimsIdentity(new[]
+                        {
+                            new System.Security.Claims.Claim("studio_id", "ADM-001"),
+                            new System.Security.Claims.Claim(System.Security.Claims.ClaimTypes.Role, "Admin")
+                        }, "TestAuth"))
+                }
             }
         };
 

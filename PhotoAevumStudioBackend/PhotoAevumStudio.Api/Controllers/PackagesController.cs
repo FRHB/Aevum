@@ -196,7 +196,7 @@ public class PackagesController : ControllerBase
         catch (Exception ex)
         {
             _logger.LogError(ex, "Failed to create Combo Package: {Message}", ex.Message);
-            return StatusCode(StatusCodes.Status500InternalServerError, new { Message = $"An error occurred while creating the package: {ex.Message}" });
+            return StatusCode(StatusCodes.Status500InternalServerError, new { Message = "An error occurred while creating the package." });
         }
     }
 

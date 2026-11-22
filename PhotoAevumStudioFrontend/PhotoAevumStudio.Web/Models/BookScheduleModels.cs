@@ -115,7 +115,8 @@ public sealed record MyBooking(
     string? EventLocation,
     string? AssignedClerkId = null,
     string? AssignedClerkName = null,
-    string? NegotiationId = null)
+    string? NegotiationId = null,
+    DateTime? CreatedAt = null)
 {
     public DateTime Start => Date.ToDateTime(SlotStart);
     public decimal DepositFee => Math.Round(TotalPrice * 0.15m, 2);

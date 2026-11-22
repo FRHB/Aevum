@@ -75,7 +75,7 @@ public static class EmployeeCredentialGenerator
         const string upperChars   = "ABCDEFGHJKLMNPQRSTUVWXYZ";
         const string lowerChars   = "abcdefghijkmnopqrstuvwxyz";
         const string digitChars   = "23456789";
-        const string specialChars = "!@#$%^&*?";
+        const string specialChars = "@#$%&";
 
         var passwordChars = new char[length];
 

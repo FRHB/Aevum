@@ -103,4 +103,10 @@ public class EditAdminModel
         string.Join(" ", new[] { FirstName, MiddleName, LastName }.Where(s => !string.IsNullOrWhiteSpace(s)));
 }
 
-public record SaveAdminResult(bool Success, string? ErrorMessage = null, AdminViewModel? Admin = null);
+public record SaveAdminResult(
+    bool Success,
+    string? ErrorMessage = null,
+    AdminViewModel? Admin = null,
+    bool WelcomeEmailSent = true,
+    bool HandbookAttached = true,
+    string? EmailWarning = null);

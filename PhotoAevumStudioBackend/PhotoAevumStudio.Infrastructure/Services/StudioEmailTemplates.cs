@@ -1694,4 +1694,83 @@ public static class StudioEmailTemplates
         return WrapLayout(preview, badge, "#d97706", title, content);
     }
 
+    public static string ReservationAcknowledgmentEmail(
+        string clientName,
+        string appointmentId,
+        string sessionType,
+        DateOnly eventDate,
+        TimeOnly startTime,
+        TimeOnly endTime,
+        string venue,
+        string receiptNumber,
+        decimal totalPackageAmount,
+        decimal reservationFeePaid,
+        decimal remainingBalanceDue,
+        string termsVersionCode)
+    {
+        var preview = $"Booking Confirmed (#{appointmentId}). Attached: Signed Services Agreement & Reservation Receipt {receiptNumber}.";
+        var content = $@"
+<p style=""margin:0 0 16px;color:{TextSecondary};font-size:14px;line-height:1.6;"">
+  Dear <strong>{WebUtility.HtmlEncode(clientName)}</strong>,
+</p>
+<p style=""margin:0 0 18px;color:{TextSecondary};font-size:14px;line-height:1.6;"">
+  Thank you! Your Stage 1 Reservation Fee has been received and your date is now locked in. Please find attached your signed <strong>Photo Studio Services Agreement</strong> (Terms {WebUtility.HtmlEncode(termsVersionCode)}) and <strong>Reservation Acknowledgment Receipt ({WebUtility.HtmlEncode(receiptNumber)})</strong>.
+</p>
+<table width=""100%"" cellpadding=""0"" cellspacing=""0"" style=""background-color:#f8fafc;border:1px solid {BorderColor};border-radius:10px;margin:0 0 18px;"">
+  <tr>
+    <td style=""padding:14px 16px;font-size:13px;color:{TextPrimary};"">
+      <div><strong>Booking Reference:</strong> #{WebUtility.HtmlEncode(appointmentId)}</div>
+      <div style=""margin-top:4px;""><strong>Session:</strong> {WebUtility.HtmlEncode(sessionType)}</div>
+      <div style=""margin-top:4px;""><strong>Date &amp; Time:</strong> {eventDate:dddd, MMMM d, yyyy} &bull; {startTime:h:mm tt} &ndash; {endTime:h:mm tt}</div>
+      <div style=""margin-top:4px;""><strong>Location / Venue:</strong> {WebUtility.HtmlEncode(venue)}</div>
+      <div style=""margin-top:8px;padding-top:8px;border-top:1px solid {BorderColor};"">
+        <strong>Total Package Fee:</strong> PHP {totalPackageAmount:N2}<br/>
+        <strong style=""color:#059669;"">Stage 1 Reservation Fee Paid:</strong> PHP {reservationFeePaid:N2}<br/>
+        <strong>Remaining Balance (Due Upon Event Completion):</strong> PHP {remainingBalanceDue:N2}
+      </div>
+    </td>
+  </tr>
+</table>";
+
+        return WrapLayout(preview, "Stage 1 Confirmed", AccentEmerald, $"Reservation Confirmed (#{appointmentId})", content);
+    }
+
+    public static string FinalSettlementReceiptEmail(
+        string clientName,
+        string appointmentId,
+        string sessionType,
+        DateOnly eventDate,
+        string receiptNumber,
+        decimal totalContractCharges,
+        decimal stage1Paid,
+        decimal overtimeAmount,
+        decimal stage2Paid,
+        int deliveryBusinessDays)
+    {
+        var preview = $"Paid in Full (#{appointmentId}). Attached: Final Consolidated Receipt {receiptNumber}.";
+        var content = $@"
+<p style=""margin:0 0 16px;color:{TextSecondary};font-size:14px;line-height:1.6;"">
+  Dear <strong>{WebUtility.HtmlEncode(clientName)}</strong>,
+</p>
+<p style=""margin:0 0 18px;color:{TextSecondary};font-size:14px;line-height:1.6;"">
+  Your account for <strong>{WebUtility.HtmlEncode(sessionType)}</strong> (#{WebUtility.HtmlEncode(appointmentId)}) on {eventDate:MMMM d, yyyy} is now settled in full (<strong>PHP 0.00 balance due</strong>). Your final edited photographs are queued for delivery within <strong>{deliveryBusinessDays} business days</strong>.
+</p>
+<table width=""100%"" cellpadding=""0"" cellspacing=""0"" style=""background-color:#f0fdf4;border:1px solid #bbf7d0;border-radius:10px;margin:0 0 18px;"">
+  <tr>
+    <td style=""padding:14px 16px;font-size:13px;color:#065f46;"">
+      <div><strong>Final Receipt No.:</strong> {WebUtility.HtmlEncode(receiptNumber)}</div>
+      <div style=""margin-top:4px;""><strong>Total Contract Charges (incl. PHP {overtimeAmount:N2} overtime/add-ons):</strong> PHP {totalContractCharges:N2}</div>
+      <div style=""margin-top:4px;""><strong>Stage 1 Reservation Fee Paid:</strong> &minus; PHP {stage1Paid:N2}</div>
+      <div style=""margin-top:4px;""><strong>Stage 2 Final Settlement Paid:</strong> &minus; PHP {stage2Paid:N2}</div>
+      <div style=""margin-top:6px;font-weight:700;"">Remaining Balance Due: PHP 0.00 (PAID IN FULL &bull; DELIVERABLES UNLOCKED)</div>
+    </td>
+  </tr>
+</table>
+<p style=""margin:0;color:{TextSecondary};font-size:13px;"">
+  Please find your <strong>Final Consolidated Payment Receipt</strong> PDF attached for your records.
+</p>";
+
+        return WrapLayout(preview, "Paid in Full", AccentEmerald, $"Final Consolidated Receipt (#{appointmentId})", content);
+    }
+
 }

@@ -18,12 +18,12 @@ if APPSETTINGS_PATH.exists():
     except Exception as e:
         print(f"[Config Warning] Failed reading appsettings.json: {e}")
 
-# Infisical Parameters
+# Infisical Parameters (must be supplied via environment variables or local ignored config)
 INFISICAL_CONFIG = APPSETTINGS_DATA.get("Infisical", {})
-INFISICAL_CLIENT_ID = os.getenv("INFISICAL_CLIENT_ID", INFISICAL_CONFIG.get("ClientId", "0f2e5849-86fb-4880-ac55-d1b6ae8552f9"))
-INFISICAL_CLIENT_SECRET = os.getenv("INFISICAL_CLIENT_SECRET", INFISICAL_CONFIG.get("ClientSecret", "773cdc3cb3a6bc33efc4fad0c63288ed6452f7d0b78b30fc52646ec87f45fa65"))
-INFISICAL_PROJECT_ID = os.getenv("INFISICAL_PROJECT_ID", INFISICAL_CONFIG.get("ProjectId", "26fb5dcd-e66c-4054-8dab-7cac8519bdee"))
-INFISICAL_ENVIRONMENT = os.getenv("INFISICAL_ENVIRONMENT", INFISICAL_CONFIG.get("Environment", "dev"))
+INFISICAL_CLIENT_ID = os.getenv("INFISICAL_CLIENT_ID") or INFISICAL_CONFIG.get("ClientId") or ""
+INFISICAL_CLIENT_SECRET = os.getenv("INFISICAL_CLIENT_SECRET") or INFISICAL_CONFIG.get("ClientSecret") or ""
+INFISICAL_PROJECT_ID = os.getenv("INFISICAL_PROJECT_ID") or INFISICAL_CONFIG.get("ProjectId") or ""
+INFISICAL_ENVIRONMENT = os.getenv("INFISICAL_ENVIRONMENT") or INFISICAL_CONFIG.get("Environment") or "dev"
 INFISICAL_BASE_URL = os.getenv("INFISICAL_BASE_URL", "https://app.infisical.com")
 
 # Live MonsterASP URLs
@@ -45,6 +45,11 @@ def fetch_infisical_secrets(force_refresh: bool = False) -> Dict[str, str]:
     global _SECRETS_CACHE
     if _SECRETS_CACHE is not None and not force_refresh:
         return _SECRETS_CACHE
+
+    if not INFISICAL_CLIENT_ID or not INFISICAL_CLIENT_SECRET or not INFISICAL_PROJECT_ID:
+        raise RuntimeError(
+            "Missing Infisical credentials. Set INFISICAL_CLIENT_ID, INFISICAL_CLIENT_SECRET, and INFISICAL_PROJECT_ID environment variables."
+        )
 
     login_url = f"{INFISICAL_BASE_URL}/api/v1/auth/universal-auth/login"
     login_payload = {
@@ -107,11 +112,16 @@ def get_sql_connection():
     if not preferred_driver:
         raise RuntimeError(f"No suitable SQL Server ODBC driver found. Available: {available_drivers}")
 
-    # Parse raw connection string from appsettings
-    server = "db77602.public.databaseasp.net"
-    database = "db77602"
-    uid = "db77602"
-    pwd = "G!r7cB8#Z5_d"
+    # Read DB connection parameters from environment variables or Infisical secrets
+    server = os.getenv("AEVUM_DB_SERVER", "")
+    database = os.getenv("AEVUM_DB_NAME", "")
+    uid = os.getenv("AEVUM_DB_USER", "")
+    pwd = os.getenv("AEVUM_DB_PASSWORD", "")
+
+    if not (server and database and uid and pwd):
+        raise RuntimeError(
+            "Database credentials not configured. Set AEVUM_DB_SERVER, AEVUM_DB_NAME, AEVUM_DB_USER, and AEVUM_DB_PASSWORD environment variables."
+        )
 
     conn_str = (
         f"DRIVER={{{preferred_driver}}};"
@@ -120,7 +130,7 @@ def get_sql_connection():
         f"UID={uid};"
         f"PWD={pwd};"
         "Encrypt=yes;"
-        "TrustServerCertificate=yes;"
+        "TrustServerCertificate=no;"
         "Connection Timeout=30;"
     )
 

@@ -10,6 +10,8 @@ public interface IEmployeeService
     Task<IReadOnlyList<string>> GetSpecializationsAsync(CancellationToken cancellationToken = default);
     Task<IReadOnlyList<SpecializationLookupItem>> GetSpecializationLookupsAsync(CancellationToken cancellationToken = default);
     Task<SaveEmployeeResult> CreateEmployeeAsync(NewEmployeeRequest request, CancellationToken cancellationToken = default);
+    Task<SaveEmployeeResult> ResendEmployeeWelcomeEmailAsync(string employeeId, CancellationToken cancellationToken = default) =>
+        Task.FromResult(new SaveEmployeeResult(false, "Resend welcome email is not configured.", false, false, "Resend welcome email is not configured."));
     Task<SaveEmployeeResult> UpdateEmployeeAsync(NewEmployeeRequest request, CancellationToken cancellationToken = default);
     Task<bool> ArchiveEmployeeAsync(string employeeId, CancellationToken cancellationToken = default);
     Task<bool> RestoreEmployeeAsync(string employeeId, CancellationToken cancellationToken = default);

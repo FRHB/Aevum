@@ -28,6 +28,13 @@ public class XenditPaymentService : IXenditPaymentService
         _httpContextAccessor = httpContextAccessor;
     }
 
+    private static bool IsProductionEnvironment()
+    {
+        var envName = Environment.GetEnvironmentVariable("ASPNETCORE_ENVIRONMENT")
+                      ?? Environment.GetEnvironmentVariable("DOTNET_ENVIRONMENT");
+        return string.Equals(envName, "Production", StringComparison.OrdinalIgnoreCase);
+    }
+
     private string ResolveBaseUrl()
     {
         var configured = _settings.CustomerPortalBaseUrl?.Trim();
@@ -88,74 +95,71 @@ public class XenditPaymentService : IXenditPaymentService
         if (!string.IsNullOrWhiteSpace(_settings.SecretKey) &&
             !_settings.SecretKey.Contains("mock", StringComparison.OrdinalIgnoreCase))
         {
-            try
+            var requestBody = new
             {
-                var requestBody = new
+                external_id = externalId,
+                amount = amount,
+                description = description,
+                invoice_duration = holdDurationSeconds,
+                customer = new
                 {
-                    external_id = externalId,
-                    amount = amount,
-                    description = description,
-                    invoice_duration = holdDurationSeconds,
-                    customer = new
-                    {
-                        given_names = string.IsNullOrWhiteSpace(customerName) ? "Valued Client" : customerName,
-                        email = customerEmail
-                    },
-                    payer_email = customerEmail,
-                    currency = "PHP",
-                    payment_methods = allowedPaymentMethods,
-                    success_redirect_url = successUrl,
-                    failure_redirect_url = failureUrl
-                };
+                    given_names = string.IsNullOrWhiteSpace(customerName) ? "Valued Client" : customerName,
+                    email = customerEmail
+                },
+                payer_email = customerEmail,
+                currency = "PHP",
+                payment_methods = allowedPaymentMethods,
+                success_redirect_url = successUrl,
+                failure_redirect_url = failureUrl
+            };
 
-                using var request = new HttpRequestMessage(HttpMethod.Post, "https://api.xendit.co/v2/invoices")
-                {
-                    Content = new StringContent(JsonSerializer.Serialize(requestBody), Encoding.UTF8, "application/json")
-                };
-
-                var authValue = Convert.ToBase64String(Encoding.UTF8.GetBytes($"{_settings.SecretKey}:"));
-                request.Headers.Authorization = new AuthenticationHeaderValue("Basic", authValue);
-
-                var response = await _httpClient.SendAsync(request, cancellationToken);
-                if (response.IsSuccessStatusCode)
-                {
-                    var responseJson = await response.Content.ReadAsStringAsync(cancellationToken);
-                    using var doc = JsonDocument.Parse(responseJson);
-                    var root = doc.RootElement;
-                    var invoiceId = root.GetProperty("id").GetString() ?? $"inv_{Guid.NewGuid():N}";
-                    var invoiceUrl = root.GetProperty("invoice_url").GetString() ?? $"{_settings.InvoiceBaseUrl.TrimEnd('/')}/{invoiceId}";
-                    var status = root.TryGetProperty("status", out var sProp) ? (sProp.GetString() ?? "PENDING") : "PENDING";
-
-                    _logger.LogInformation("Xendit invoice created successfully: {InvoiceId} ({ExternalId}) for ₱{Amount:N2}",
-                        invoiceId, externalId, amount);
-
-                    return new XenditInvoiceResult
-                    {
-                        InvoiceId = invoiceId,
-                        ExternalId = externalId,
-                        InvoiceUrl = invoiceUrl,
-                        Status = status,
-                        Amount = amount
-                    };
-                }
-                else
-                {
-                    var errContent = await response.Content.ReadAsStringAsync(cancellationToken);
-                    _logger.LogWarning("Xendit API returned {StatusCode}: {Error}. Falling back to sandbox invoice simulator.",
-                        response.StatusCode, errContent);
-                }
-            }
-            catch (Exception ex)
+            using var request = new HttpRequestMessage(HttpMethod.Post, "https://api.xendit.co/v2/invoices")
             {
-                _logger.LogWarning(ex, "Failed to call live Xendit API. Falling back to sandbox simulation.");
+                Content = new StringContent(JsonSerializer.Serialize(requestBody), Encoding.UTF8, "application/json")
+            };
+
+            var authValue = Convert.ToBase64String(Encoding.UTF8.GetBytes($"{_settings.SecretKey}:"));
+            request.Headers.Authorization = new AuthenticationHeaderValue("Basic", authValue);
+
+            var response = await _httpClient.SendAsync(request, cancellationToken);
+            if (!response.IsSuccessStatusCode)
+            {
+                var errContent = await response.Content.ReadAsStringAsync(cancellationToken);
+                _logger.LogError("Xendit API returned {StatusCode}: {Error}. Failing closed without mock invoice fallback.",
+                    response.StatusCode, errContent);
+                throw new InvalidOperationException("Unable to create payment invoice with Xendit. Please try again.");
             }
+
+            var responseJson = await response.Content.ReadAsStringAsync(cancellationToken);
+            using var doc = JsonDocument.Parse(responseJson);
+            var root = doc.RootElement;
+            var invoiceId = root.GetProperty("id").GetString() ?? throw new InvalidOperationException("Xendit did not return an invoice id.");
+            var invoiceUrl = root.GetProperty("invoice_url").GetString() ?? $"{_settings.InvoiceBaseUrl.TrimEnd('/')}/{invoiceId}";
+            var status = root.TryGetProperty("status", out var sProp) ? (sProp.GetString() ?? "PENDING") : "PENDING";
+
+            _logger.LogInformation("Xendit invoice created successfully: {InvoiceId} ({ExternalId}) for ₱{Amount:N2}",
+                invoiceId, externalId, amount);
+
+            return new XenditInvoiceResult
+            {
+                InvoiceId = invoiceId,
+                ExternalId = externalId,
+                InvoiceUrl = invoiceUrl,
+                Status = status,
+                Amount = amount
+            };
         }
 
-        // Sandbox / Fallback simulated invoice
+        if (IsProductionEnvironment())
+        {
+            throw new InvalidOperationException("Xendit SecretKey is not configured for production.");
+        }
+
+        // Non-production mock invoice (explicitly gated out of Production)
         var mockInvoiceId = $"inv_mock_{Guid.NewGuid():N}";
         var mockInvoiceUrl = $"{_settings.InvoiceBaseUrl.TrimEnd('/')}/{mockInvoiceId}?ext_id={Uri.EscapeDataString(externalId)}&amt={amount}";
 
-        _logger.LogInformation("Generated sandbox Xendit invoice {InvoiceId} for external ID {ExternalId} (₱{Amount:N2})",
+        _logger.LogInformation("Generated non-production mock Xendit invoice {InvoiceId} for external ID {ExternalId} (₱{Amount:N2})",
             mockInvoiceId, externalId, amount);
 
         return new XenditInvoiceResult
@@ -172,54 +176,71 @@ public class XenditPaymentService : IXenditPaymentService
         string invoiceId,
         CancellationToken cancellationToken = default)
     {
-        if (!string.IsNullOrWhiteSpace(_settings.SecretKey) &&
-            !_settings.SecretKey.Contains("mock", StringComparison.OrdinalIgnoreCase) &&
-            !invoiceId.StartsWith("inv_mock_", StringComparison.OrdinalIgnoreCase))
+        if (string.IsNullOrWhiteSpace(invoiceId) ||
+            string.IsNullOrWhiteSpace(_settings.SecretKey) ||
+            _settings.SecretKey.Contains("mock", StringComparison.OrdinalIgnoreCase) ||
+            invoiceId.StartsWith("inv_mock_", StringComparison.OrdinalIgnoreCase) ||
+            invoiceId.StartsWith("inv_sim_", StringComparison.OrdinalIgnoreCase))
         {
-            try
+            _logger.LogWarning("Xendit status check for {InvoiceId} failed closed (missing/mock key or mock invoice ID).", invoiceId);
+            return new XenditPaymentStatusResult
             {
-                using var request = new HttpRequestMessage(HttpMethod.Get, $"https://api.xendit.co/v2/invoices/{invoiceId}");
-                var authValue = Convert.ToBase64String(Encoding.UTF8.GetBytes($"{_settings.SecretKey}:"));
-                request.Headers.Authorization = new AuthenticationHeaderValue("Basic", authValue);
-
-                var response = await _httpClient.SendAsync(request, cancellationToken);
-                if (response.IsSuccessStatusCode)
-                {
-                    var json = await response.Content.ReadAsStringAsync(cancellationToken);
-                    using var doc = JsonDocument.Parse(json);
-                    var root = doc.RootElement;
-                    var status = root.TryGetProperty("status", out var sProp) ? (sProp.GetString() ?? "PENDING") : "PENDING";
-                    var extId = root.TryGetProperty("external_id", out var extProp) ? (extProp.GetString() ?? invoiceId) : invoiceId;
-                    var amount = root.TryGetProperty("amount", out var aProp) ? aProp.GetDecimal() : 0m;
-                    var paymentMethod = root.TryGetProperty("payment_method", out var pmProp) ? (pmProp.GetString() ?? "XENDIT") : "XENDIT";
-                    var paymentChannel = root.TryGetProperty("payment_channel", out var pcProp) ? pcProp.GetString() : null;
-
-                    return new XenditPaymentStatusResult
-                    {
-                        InvoiceId = invoiceId,
-                        ExternalId = extId,
-                        Status = status,
-                        Amount = amount,
-                        PaymentMethod = paymentMethod,
-                        PaymentChannel = paymentChannel
-                    };
-                }
-            }
-            catch (Exception ex)
-            {
-                _logger.LogWarning(ex, "Failed to check Xendit invoice status online for {InvoiceId}", invoiceId);
-            }
+                InvoiceId = invoiceId ?? string.Empty,
+                ExternalId = string.Empty,
+                Status = "UNVERIFIED",
+                Amount = 0m,
+                Currency = string.Empty,
+                PaymentMethod = "XENDIT"
+            };
         }
 
-        // Default sandbox: immediately verified as PAID upon manual check
+        try
+        {
+            using var request = new HttpRequestMessage(HttpMethod.Get, $"https://api.xendit.co/v2/invoices/{Uri.EscapeDataString(invoiceId)}");
+            var authValue = Convert.ToBase64String(Encoding.UTF8.GetBytes($"{_settings.SecretKey}:"));
+            request.Headers.Authorization = new AuthenticationHeaderValue("Basic", authValue);
+
+            var response = await _httpClient.SendAsync(request, cancellationToken);
+            if (response.IsSuccessStatusCode)
+            {
+                var json = await response.Content.ReadAsStringAsync(cancellationToken);
+                using var doc = JsonDocument.Parse(json);
+                var root = doc.RootElement;
+                var status = root.TryGetProperty("status", out var sProp) ? (sProp.GetString() ?? "PENDING") : "PENDING";
+                var extId = root.TryGetProperty("external_id", out var extProp) ? (extProp.GetString() ?? string.Empty) : string.Empty;
+                var amount = root.TryGetProperty("amount", out var aProp) && aProp.ValueKind == JsonValueKind.Number ? aProp.GetDecimal() : 0m;
+                var currency = root.TryGetProperty("currency", out var cProp) ? (cProp.GetString() ?? string.Empty) : string.Empty;
+                var paymentMethod = root.TryGetProperty("payment_method", out var pmProp) ? (pmProp.GetString() ?? "XENDIT") : "XENDIT";
+                var paymentChannel = root.TryGetProperty("payment_channel", out var pcProp) ? pcProp.GetString() : null;
+
+                return new XenditPaymentStatusResult
+                {
+                    InvoiceId = invoiceId,
+                    ExternalId = extId,
+                    Status = status,
+                    Amount = amount,
+                    Currency = currency,
+                    PaymentMethod = paymentMethod,
+                    PaymentChannel = paymentChannel
+                };
+            }
+
+            _logger.LogWarning("Xendit invoice status check for {InvoiceId} returned HTTP {StatusCode}; failing closed.", invoiceId, (int)response.StatusCode);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Failed to check Xendit invoice status online for {InvoiceId}; failing closed.", invoiceId);
+        }
+
+        // Fail closed: never return PAID on HTTP failures or exceptions
         return new XenditPaymentStatusResult
         {
             InvoiceId = invoiceId,
-            ExternalId = invoiceId,
-            Status = "PAID",
+            ExternalId = string.Empty,
+            Status = "UNVERIFIED",
             Amount = 0m,
-            PaymentMethod = "QRPH",
-            PaymentChannel = "QRPH"
+            Currency = string.Empty,
+            PaymentMethod = "XENDIT"
         };
     }
 
@@ -227,55 +248,74 @@ public class XenditPaymentService : IXenditPaymentService
         string externalId,
         CancellationToken cancellationToken = default)
     {
-        if (!string.IsNullOrWhiteSpace(_settings.SecretKey) &&
-            !_settings.SecretKey.Contains("mock", StringComparison.OrdinalIgnoreCase))
+        if (string.IsNullOrWhiteSpace(externalId) ||
+            string.IsNullOrWhiteSpace(_settings.SecretKey) ||
+            _settings.SecretKey.Contains("mock", StringComparison.OrdinalIgnoreCase))
         {
-            try
+            _logger.LogWarning("Xendit external_id status check for {ExternalId} failed closed (missing/mock key).", externalId);
+            return new XenditPaymentStatusResult
             {
-                using var request = new HttpRequestMessage(HttpMethod.Get, $"https://api.xendit.co/v2/invoices?external_id={Uri.EscapeDataString(externalId)}");
-                var authValue = Convert.ToBase64String(Encoding.UTF8.GetBytes($"{_settings.SecretKey}:"));
-                request.Headers.Authorization = new AuthenticationHeaderValue("Basic", authValue);
-
-                var response = await _httpClient.SendAsync(request, cancellationToken);
-                if (response.IsSuccessStatusCode)
-                {
-                    var json = await response.Content.ReadAsStringAsync(cancellationToken);
-                    using var doc = JsonDocument.Parse(json);
-                    if (doc.RootElement.ValueKind == JsonValueKind.Array && doc.RootElement.GetArrayLength() > 0)
-                    {
-                        var latest = doc.RootElement[0];
-                        var invId = latest.GetProperty("id").GetString() ?? string.Empty;
-                        var status = latest.TryGetProperty("status", out var sProp) ? (sProp.GetString() ?? "PENDING") : "PENDING";
-                        var amount = latest.TryGetProperty("amount", out var aProp) ? aProp.GetDecimal() : 0m;
-                        var paymentMethod = latest.TryGetProperty("payment_method", out var pmProp) ? (pmProp.GetString() ?? "XENDIT") : "XENDIT";
-                        var paymentChannel = latest.TryGetProperty("payment_channel", out var pcProp) ? pcProp.GetString() : null;
-
-                        return new XenditPaymentStatusResult
-                        {
-                            InvoiceId = invId,
-                            ExternalId = externalId,
-                            Status = status,
-                            Amount = amount,
-                            PaymentMethod = paymentMethod,
-                            PaymentChannel = paymentChannel
-                        };
-                    }
-                }
-            }
-            catch (Exception ex)
-            {
-                _logger.LogWarning(ex, "Failed to query Xendit invoice by externalId {ExternalId}", externalId);
-            }
+                InvoiceId = string.Empty,
+                ExternalId = externalId ?? string.Empty,
+                Status = "UNVERIFIED",
+                Amount = 0m,
+                Currency = string.Empty,
+                PaymentMethod = "XENDIT"
+            };
         }
 
+        try
+        {
+            using var request = new HttpRequestMessage(HttpMethod.Get, $"https://api.xendit.co/v2/invoices?external_id={Uri.EscapeDataString(externalId)}");
+            var authValue = Convert.ToBase64String(Encoding.UTF8.GetBytes($"{_settings.SecretKey}:"));
+            request.Headers.Authorization = new AuthenticationHeaderValue("Basic", authValue);
+
+            var response = await _httpClient.SendAsync(request, cancellationToken);
+            if (response.IsSuccessStatusCode)
+            {
+                var json = await response.Content.ReadAsStringAsync(cancellationToken);
+                using var doc = JsonDocument.Parse(json);
+                if (doc.RootElement.ValueKind == JsonValueKind.Array && doc.RootElement.GetArrayLength() > 0)
+                {
+                    var latest = doc.RootElement[0];
+                    var invId = latest.TryGetProperty("id", out var idProp) ? (idProp.GetString() ?? string.Empty) : string.Empty;
+                    var status = latest.TryGetProperty("status", out var sProp) ? (sProp.GetString() ?? "PENDING") : "PENDING";
+                    var amount = latest.TryGetProperty("amount", out var aProp) && aProp.ValueKind == JsonValueKind.Number ? aProp.GetDecimal() : 0m;
+                    var currency = latest.TryGetProperty("currency", out var cProp) ? (cProp.GetString() ?? string.Empty) : string.Empty;
+                    var paymentMethod = latest.TryGetProperty("payment_method", out var pmProp) ? (pmProp.GetString() ?? "XENDIT") : "XENDIT";
+                    var paymentChannel = latest.TryGetProperty("payment_channel", out var pcProp) ? pcProp.GetString() : null;
+
+                    return new XenditPaymentStatusResult
+                    {
+                        InvoiceId = invId,
+                        ExternalId = externalId,
+                        Status = status,
+                        Amount = amount,
+                        Currency = currency,
+                        PaymentMethod = paymentMethod,
+                        PaymentChannel = paymentChannel
+                    };
+                }
+            }
+            else
+            {
+                _logger.LogWarning("Xendit invoice lookup by externalId {ExternalId} returned HTTP {StatusCode}; failing closed.", externalId, (int)response.StatusCode);
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Failed to query Xendit invoice by externalId {ExternalId}; failing closed.", externalId);
+        }
+
+        // Fail closed
         return new XenditPaymentStatusResult
         {
-            InvoiceId = $"inv_mock_{Guid.NewGuid():N}",
+            InvoiceId = string.Empty,
             ExternalId = externalId,
-            Status = "PAID",
+            Status = "UNVERIFIED",
             Amount = 0m,
-            PaymentMethod = "QRPH",
-            PaymentChannel = "QRPH"
+            Currency = string.Empty,
+            PaymentMethod = "XENDIT"
         };
     }
 
@@ -290,7 +330,12 @@ public class XenditPaymentService : IXenditPaymentService
 
         if (isMock)
         {
-            // Development only: no live key configured. Encodes the full confirmation URL so mobile / webcam scanners open ConfirmPayment.razor.
+            if (IsProductionEnvironment())
+            {
+                throw new InvalidOperationException("Xendit SecretKey is not configured for production.");
+            }
+
+            // Development/Testing only: no live key configured. Encodes the full confirmation URL so mobile / webcam scanners open ConfirmPayment.razor.
             var confirmUrl = $"{ResolveBaseUrl()}/checkout/confirm/{Uri.EscapeDataString(referenceId)}";
             _logger.LogWarning("Xendit SecretKey is not configured; generated MOCK QR URL {ConfirmUrl} for {ReferenceId}.", confirmUrl, referenceId);
             return new XenditQrResult

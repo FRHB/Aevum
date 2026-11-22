@@ -3150,10 +3150,7 @@ public class StudioManagementService : IStudioManagementService
         if (string.IsNullOrWhiteSpace(dbEmpId))
             return (false, $"Staff member '{cleanEmpId}' was not found.");
 
-        var initialPassword = PhotoAevumStudio.Application.Utils.EmployeeCredentialGenerator.GenerateInitialPassword(
-            lastName,
-            birthDate?.Year ?? birthYear,
-            dbEmpId);
+        var initialPassword = PhotoAevumStudio.Application.Utils.EmployeeCredentialGenerator.GenerateInitialPassword(12);
         var hashedPassword = BCrypt.Net.BCrypt.HashPassword(initialPassword);
 
         const string updateSql = @"
@@ -3216,5 +3213,150 @@ public class StudioManagementService : IStudioManagementService
         }
 
         return (true, $"Password for {dbEmpId} has been reset to their initial creation password. A notification email has been sent and they will be prompted to change it on next login.");
+    }
+
+    public async Task<(bool Success, bool EmailSent, bool HandbookAttached, string Message, string? Warning)> ResendEmployeeWelcomeEmailAsync(
+        string employeeId,
+        string? requestingAdminId = null,
+        CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrWhiteSpace(employeeId))
+            return (false, false, false, "Employee ID is required.", "Employee ID is required.");
+
+        var cleanEmpId = employeeId.Trim().ToUpperInvariant();
+        await using var conn = SqlResilienceHelper.CreateConnection(GetConnectionString());
+        await conn.OpenAsync(cancellationToken);
+
+        const string lookupSql = @"
+            SELECT TOP 1
+                EmployeeID,
+                EmployeeFirstName,
+                EmployeeLastName,
+                EmployeeEmail
+            FROM dbo.Employees
+            WHERE UPPER(LTRIM(RTRIM(EmployeeID))) = @EmpId;";
+
+        string? dbEmpId = null;
+        string firstName = string.Empty;
+        string lastName = string.Empty;
+        string? email = null;
+
+        await using (var cmd = new SqlCommand(lookupSql, conn))
+        {
+            cmd.Parameters.AddWithValue("@EmpId", cleanEmpId);
+            await using var reader = await cmd.ExecuteReaderAsync(cancellationToken);
+            if (await reader.ReadAsync(cancellationToken))
+            {
+                dbEmpId = reader.GetString(0).Trim();
+                firstName = reader.IsDBNull(1) ? string.Empty : reader.GetString(1).Trim();
+                lastName = reader.IsDBNull(2) ? string.Empty : reader.GetString(2).Trim();
+                email = reader.IsDBNull(3) ? null : reader.GetString(3).Trim();
+            }
+        }
+
+        if (string.IsNullOrWhiteSpace(dbEmpId))
+            return (false, false, false, $"Staff member '{cleanEmpId}' was not found.", $"Staff member '{cleanEmpId}' was not found.");
+
+        if (string.IsNullOrWhiteSpace(email))
+            return (false, false, false, $"Staff member '{dbEmpId}' does not have a valid email address.", "Employee email address is missing.");
+
+        var specializations = new List<string>();
+        const string specSql = @"
+            IF OBJECT_ID(N'dbo.EmployeeJointSpecialization', N'U') IS NOT NULL
+               AND OBJECT_ID(N'dbo.EmployeeSpecialization', N'U') IS NOT NULL
+            BEGIN
+                SELECT s.SpecializationName
+                FROM dbo.EmployeeJointSpecialization js
+                INNER JOIN dbo.EmployeeSpecialization s ON js.SpecializationID = s.SpecializationID
+                WHERE UPPER(LTRIM(RTRIM(js.EmployeeID))) = @EmpId
+                  AND s.SpecializationName IS NOT NULL;
+            END";
+        await using (var specCmd = new SqlCommand(specSql, conn))
+        {
+            specCmd.Parameters.AddWithValue("@EmpId", dbEmpId);
+            await using var specReader = await specCmd.ExecuteReaderAsync(cancellationToken);
+            while (await specReader.ReadAsync(cancellationToken))
+            {
+                var specName = specReader.IsDBNull(0) ? null : specReader.GetString(0).Trim();
+                if (!string.IsNullOrWhiteSpace(specName))
+                    specializations.Add(specName);
+            }
+        }
+
+        var initialPassword = PhotoAevumStudio.Application.Utils.EmployeeCredentialGenerator.GenerateInitialPassword(12);
+        var hashedPassword = BCrypt.Net.BCrypt.HashPassword(initialPassword);
+
+        const string updateSql = @"
+            UPDATE dbo.Employees
+            SET EmployeePassword = @Hash,
+                isFirstLogin = 1
+            WHERE UPPER(LTRIM(RTRIM(EmployeeID))) = @EmpId;
+
+            IF OBJECT_ID(N'dbo.AspNetUsers', N'U') IS NOT NULL
+            BEGIN
+                UPDATE dbo.AspNetUsers
+                SET PasswordHash = @Hash,
+                    MustChangePassword = 1
+                WHERE UPPER(LTRIM(RTRIM(StudioId))) = @EmpId
+                   OR UPPER(LTRIM(RTRIM(UserName))) = @EmpId
+                   OR (@Email IS NOT NULL AND UPPER(LTRIM(RTRIM(Email))) = UPPER(@Email));
+            END;
+
+            IF OBJECT_ID(N'dbo.HistoryLog', N'U') IS NOT NULL
+            BEGIN
+                DECLARE @ActorType nvarchar(20) = CASE WHEN @AdminId LIKE 'SADM-%' THEN 'SystemAdmin' ELSE 'Admin' END;
+                IF OBJECT_ID(N'dbo.sp_AddHistoryLog', N'P') IS NOT NULL
+                BEGIN
+                    EXEC dbo.sp_AddHistoryLog
+                        @ActionType = 'WELCOME_EMAIL_RESEND',
+                        @EntityName = 'Employee',
+                        @EntityID = @EmpId,
+                        @ActionDetails = @Details,
+                        @ChangedByType = @ActorType,
+                        @ActorID = @AdminId;
+                END
+                ELSE
+                BEGIN
+                    INSERT INTO dbo.HistoryLog (ActionType, EntityName, EntityID, ActionDetails, ChangedByType, LoggedAt)
+                    VALUES ('WELCOME_EMAIL_RESEND', 'Employee', @EmpId, @Details, @ActorType, SYSUTCDATETIME());
+                END
+            END;";
+
+        await using (var updCmd = new SqlCommand(updateSql, conn))
+        {
+            updCmd.Parameters.AddWithValue("@EmpId", dbEmpId);
+            updCmd.Parameters.AddWithValue("@Hash", hashedPassword);
+            updCmd.Parameters.AddWithValue("@Email", email);
+            updCmd.Parameters.AddWithValue("@AdminId", string.IsNullOrWhiteSpace(requestingAdminId) ? DBNull.Value : requestingAdminId.Trim());
+            updCmd.Parameters.AddWithValue("@Details", $"Re-issued onboarding credentials and resent welcome email with Employee Handbook PDF for {dbEmpId}.");
+            await updCmd.ExecuteNonQueryAsync(cancellationToken);
+        }
+
+        if (_emailService == null)
+        {
+            const string noEmailMsg = "Credentials were updated, but the email service is unavailable.";
+            return (true, false, false, noEmailMsg, noEmailMsg);
+        }
+
+        var fullName = string.Join(" ", new[] { firstName, lastName }.Where(s => !string.IsNullOrWhiteSpace(s)));
+        if (string.IsNullOrWhiteSpace(fullName)) fullName = dbEmpId;
+        var assignedRole = specializations.Count > 0 ? string.Join(", ", specializations) : "Employee";
+
+        var dispatch = await _emailService.TrySendEmployeeWelcomeEmailAsync(
+            toEmail: email,
+            employeeName: fullName,
+            employeeId: dbEmpId,
+            initialPassword: initialPassword,
+            cancellationToken: cancellationToken,
+            assignedRole: assignedRole);
+
+        if (dispatch.EmailSent && dispatch.HandbookAttached)
+        {
+            return (true, true, true, $"Welcome email and Employee Handbook PDF sent to {email} for {dbEmpId}.", null);
+        }
+
+        return (true, dispatch.EmailSent, dispatch.HandbookAttached,
+            dispatch.WarningMessage ?? "Welcome email delivery completed with a warning.",
+            dispatch.WarningMessage);
     }
 }

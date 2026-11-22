@@ -181,8 +181,14 @@ public class AdminService : IAdminService
             var response = await _http.PostAsJsonAsync("api/management/admins", payload, cancellationToken);
             if (response.IsSuccessStatusCode)
             {
-                var created = await response.Content.ReadFromJsonAsync<AdminViewModel>(cancellationToken: cancellationToken);
-                return new SaveAdminResult(true, null, created);
+                var created = await response.Content.ReadFromJsonAsync<AdminCreateApiResult>(cancellationToken: cancellationToken);
+                return new SaveAdminResult(
+                    Success: true,
+                    ErrorMessage: null,
+                    Admin: created,
+                    WelcomeEmailSent: created?.WelcomeEmailSent ?? true,
+                    HandbookAttached: created?.HandbookAttached ?? true,
+                    EmailWarning: created?.EmailWarning);
             }
 
             var problem = await response.Content.ReadFromJsonAsync<ProblemDetails>(cancellationToken: cancellationToken);
@@ -220,7 +226,13 @@ public class AdminService : IAdminService
                     IsSuperAdmin = model.IsSystemAdmin,
                     Status = "Active"
                 };
-                return new SaveAdminResult(true, null, createdVm);
+                return new SaveAdminResult(
+                    Success: true,
+                    ErrorMessage: null,
+                    Admin: createdVm,
+                    WelcomeEmailSent: false,
+                    HandbookAttached: false,
+                    EmailWarning: "Administrator account was created via database fallback, but the backend email service was unreachable so the welcome email and Employee Handbook PDF were not sent. Please retry sending credentials.");
             }
             catch (Exception dbEx)
             {
@@ -314,17 +326,31 @@ public class AdminService : IAdminService
             var response = await _http.PostAsync($"api/management/admins/{Uri.EscapeDataString(id)}/resend-credentials", null, cancellationToken);
             if (response.IsSuccessStatusCode)
             {
-                return new SaveAdminResult(true, null);
+                var payload = await response.Content.ReadFromJsonAsync<ResendCredentialsApiResult>(cancellationToken: cancellationToken);
+                bool emailSent = payload?.EmailSent ?? payload?.Success ?? true;
+                bool handbookAttached = payload?.HandbookAttached ?? emailSent;
+                string? warning = payload?.Warning;
+                if (!emailSent && string.IsNullOrWhiteSpace(warning))
+                {
+                    warning = payload?.Message ?? "Failed to deliver welcome email and Employee Handbook PDF.";
+                }
+                return new SaveAdminResult(
+                    Success: emailSent && handbookAttached,
+                    ErrorMessage: emailSent ? warning : (warning ?? payload?.Message),
+                    Admin: null,
+                    WelcomeEmailSent: emailSent,
+                    HandbookAttached: handbookAttached,
+                    EmailWarning: warning);
             }
 
             var problem = await response.Content.ReadFromJsonAsync<ProblemDetails>(cancellationToken: cancellationToken);
-            return new SaveAdminResult(false, problem?.Detail ?? $"Failed to resend credentials (HTTP {response.StatusCode}).");
+            return new SaveAdminResult(false, problem?.Detail ?? $"Failed to resend credentials (HTTP {response.StatusCode}).", null, false, false, problem?.Detail);
         }
         catch (Exception ex)
         {
             if (cancellationToken.IsCancellationRequested) return new SaveAdminResult(false, "Operation was canceled.");
             _logger.LogError(ex, "Failed to call API to resend admin credentials for {AdminId}.", id);
-            return new SaveAdminResult(false, ex.Message);
+            return new SaveAdminResult(false, ex.Message, null, false, false, ex.Message);
         }
     }
 
@@ -340,4 +366,18 @@ public class AdminService : IAdminService
     }
 
     private sealed record NextAdminIdApiResult(string NextId, string Role);
+
+    private sealed class AdminCreateApiResult : AdminViewModel
+    {
+        public bool WelcomeEmailSent { get; set; } = true;
+        public bool HandbookAttached { get; set; } = true;
+        public string? EmailWarning { get; set; }
+    }
+
+    private sealed record ResendCredentialsApiResult(
+        bool Success,
+        bool? EmailSent,
+        bool? HandbookAttached,
+        string? Message,
+        string? Warning);
 }

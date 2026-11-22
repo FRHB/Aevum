@@ -13,7 +13,10 @@ public record AdminDto(
     string Role,
     bool IsSuperAdmin,
     bool IsFirstLogin,
-    string Status = "Active");
+    string Status = "Active",
+    bool WelcomeEmailSent = true,
+    bool HandbookAttached = true,
+    string? EmailWarning = null);
 
 /// <summary>
 /// DTO for creating a new administrator via the wizard workflow.

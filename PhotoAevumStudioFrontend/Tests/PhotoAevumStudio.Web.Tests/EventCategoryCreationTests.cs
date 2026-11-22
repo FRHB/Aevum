@@ -15,8 +15,9 @@ namespace PhotoAevumStudio.Web.Tests;
 
 public class EventCategoryCreationTests
 {
-    private const string ConnectionString =
-        "Server=db77602.public.databaseasp.net; Database=db77602; User Id=db77602; Password=G!r7cB8#Z5_d; Encrypt=True; TrustServerCertificate=True; MultipleActiveResultSets=True;";
+    private static string ConnectionString =>
+        Environment.GetEnvironmentVariable("AEVUM_TEST_DB_CONNECTION")
+        ?? "Server=localhost;Database=Dummy;Trusted_Connection=True;";
 
     // ══════════════════════════════════════════════════════════════════════════
     // 1. Entity Framework Core Model & Relationship Configuration Tests
@@ -148,6 +149,9 @@ public class EventCategoryCreationTests
     [Fact]
     public async Task StudioManagementService_CreateCategoryAsync_AutomaticallyAssignsAssociations()
     {
+        if (string.IsNullOrWhiteSpace(Environment.GetEnvironmentVariable("AEVUM_TEST_DB_CONNECTION")))
+            return; // Integration test skipped when AEVUM_TEST_DB_CONNECTION is not set
+
         var options = new DbContextOptionsBuilder<ApplicationDbContext>()
             .UseSqlServer(ConnectionString)
             .Options;

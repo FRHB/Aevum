@@ -172,12 +172,9 @@
                 (!string.IsNullOrEmpty(result.Role) && (result.Role.Contains("Employee", StringComparison.OrdinalIgnoreCase) || result.Role.Contains("Staff", StringComparison.OrdinalIgnoreCase) || result.Role.Contains("Clerk", StringComparison.OrdinalIgnoreCase))) ||
                 (!string.IsNullOrEmpty(loginModel.UserId) && (loginModel.UserId.StartsWith("EMP-", StringComparison.OrdinalIgnoreCase) || loginModel.UserId.StartsWith("CLK-", StringComparison.OrdinalIgnoreCase)));
 
-            if (!string.IsNullOrWhiteSpace(returnUrl) &&
-                !returnUrl.StartsWith("http://", StringComparison.OrdinalIgnoreCase) &&
-                !returnUrl.StartsWith("https://", StringComparison.OrdinalIgnoreCase) &&
-                !returnUrl.StartsWith("//", StringComparison.Ordinal))
+            if (IsSafeLocalReturnUrl(returnUrl))
             {
-                NavManager.NavigateTo("/" + returnUrl.TrimStart('/'));
+                NavManager.NavigateTo(returnUrl!);
                 return;
             }
 
@@ -212,6 +209,23 @@
             || trimmed.StartsWith("EMP-", StringComparison.OrdinalIgnoreCase)
             || trimmed.StartsWith("CLK-", StringComparison.OrdinalIgnoreCase)
             || trimmed.EndsWith("@photoaevum.studio", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static bool IsSafeLocalReturnUrl(string? url)
+    {
+        if (string.IsNullOrWhiteSpace(url))
+            return false;
+
+        var trimmed = url.Trim();
+        if (!trimmed.StartsWith("/", StringComparison.Ordinal) ||
+            trimmed.StartsWith("//", StringComparison.Ordinal) ||
+            trimmed.StartsWith("/\\", StringComparison.Ordinal) ||
+            trimmed.Contains('\\'))
+        {
+            return false;
+        }
+
+        return Uri.TryCreate(trimmed, UriKind.Relative, out _);
     }
 
     public class LoginCredentials

@@ -170,7 +170,10 @@ public class FormsAndSecurityTests
     [Fact]
     public void Profile_EnrichesFromUserService_ForAdmin()
     {
-        const string connStr = "Server=db77602.public.databaseasp.net; Database=db77602; User Id=db77602; Password=G!r7cB8#Z5_d; Encrypt=True; TrustServerCertificate=True; MultipleActiveResultSets=True;";
+        var connStr = Environment.GetEnvironmentVariable("AEVUM_TEST_DB_CONNECTION");
+        if (string.IsNullOrWhiteSpace(connStr))
+            return; // Integration test skipped when AEVUM_TEST_DB_CONNECTION is not set
+
         string adminId = $"SADM-{Random.Shared.Next(800, 999)}";
 
         void CleanupSuperAdmin()
@@ -212,6 +215,9 @@ public class FormsAndSecurityTests
     [Fact]
     public void Profile_EnrichesFromUserService_ForEmployee()
     {
+        if (string.IsNullOrWhiteSpace(Environment.GetEnvironmentVariable("AEVUM_TEST_DB_CONNECTION")))
+            return; // Integration test skipped when AEVUM_TEST_DB_CONNECTION is not set
+
         var userService = new UserService();
         const string empId = "EMP-998";
         userService.DeleteEmployee(empId);
@@ -513,12 +519,18 @@ public class FormsAndSecurityTests
     [Fact]
     public void Infisical_FetchSecrets_SuccessfullyRetrievesAndMapsKeys()
     {
+        var clientId = Environment.GetEnvironmentVariable("INFISICAL_CLIENT_ID");
+        var clientSecret = Environment.GetEnvironmentVariable("INFISICAL_CLIENT_SECRET");
+        var projectId = Environment.GetEnvironmentVariable("INFISICAL_PROJECT_ID");
+        if (string.IsNullOrWhiteSpace(clientId) || string.IsNullOrWhiteSpace(clientSecret) || string.IsNullOrWhiteSpace(projectId))
+            return; // Integration test skipped when Infisical credentials are not provided via environment variables
+
         var config = new Microsoft.Extensions.Configuration.ConfigurationBuilder()
             .AddInfisical(new InfisicalConfiguration.InfisicalConfigBuilder()
-                .SetProjectId("26fb5dcd-e66c-4054-8dab-7cac8519bdee")
-                .SetEnvironment("dev")
+                .SetProjectId(projectId)
+                .SetEnvironment(Environment.GetEnvironmentVariable("INFISICAL_ENVIRONMENT") ?? "dev")
                 .SetAuth(new InfisicalConfiguration.InfisicalAuthBuilder()
-                    .SetUniversalAuth("0f2e5849-86fb-4880-ac55-d1b6ae8552f9", "773cdc3cb3a6bc33efc4fad0c63288ed6452f7d0b78b30fc52646ec87f45fa65")
+                    .SetUniversalAuth(clientId, clientSecret)
                     .Build())
                 .Build())
             .Build();

@@ -11,7 +11,7 @@ namespace PhotoAevumStudio.Api.Controllers;
 
 [ApiController]
 [Route("api/[controller]")]
-[Authorize]
+[Authorize(Policy = "StaffOrAbove")]
 public class TimesheetController : ControllerBase
 {
     private readonly ApplicationDbContext _db;
@@ -116,6 +116,8 @@ public class TimesheetController : ControllerBase
     public async Task<IActionResult> GetStatus([FromQuery] string? employeeId, CancellationToken ct)
     {
         var targetId = ResolveTargetId(employeeId);
+        if (string.IsNullOrWhiteSpace(targetId))
+            return Unauthorized();
         var phtNow = GetPhtNow();
         var today = DateOnly.FromDateTime(phtNow);
 
@@ -167,6 +169,8 @@ public class TimesheetController : ControllerBase
     public async Task<IActionResult> ClockIn([FromBody] ClockInOutRequestDto dto, CancellationToken ct)
     {
         var targetId = ResolveTargetId(dto.EmployeeStudioId);
+        if (string.IsNullOrWhiteSpace(targetId))
+            return Unauthorized();
         var phtNow = GetPhtNow();
         var today = DateOnly.FromDateTime(phtNow);
 
@@ -241,6 +245,8 @@ public class TimesheetController : ControllerBase
     public async Task<IActionResult> ClockOut([FromBody] ClockInOutRequestDto dto, CancellationToken ct)
     {
         var targetId = ResolveTargetId(dto.EmployeeStudioId);
+        if (string.IsNullOrWhiteSpace(targetId))
+            return Unauthorized();
         var phtNow = GetPhtNow();
 
         var openRecord = await _db.EmployeeTimesheets
@@ -356,6 +362,8 @@ public class TimesheetController : ControllerBase
         }
 
         var targetId = ResolveTargetId(employeeId);
+        if (string.IsNullOrWhiteSpace(targetId))
+            return Unauthorized();
         var history = await _db.EmployeeTimesheets
             .Where(t => t.EmployeeStudioId == targetId)
             .OrderByDescending(t => t.ClockIn)
@@ -472,15 +480,14 @@ public class TimesheetController : ControllerBase
         || User.IsInRole("OfficeClerk")
         || User.HasClaim(c => c.Type == ClaimTypes.Role && (c.Value == "Admin" || c.Value == "SystemAdmin" || c.Value.Contains("Clerk", StringComparison.OrdinalIgnoreCase)));
 
-    private string ResolveTargetId(string? candidateId)
+    private string? ResolveTargetId(string? candidateId)
     {
         if (IsClerkOrAdmin() && !string.IsNullOrWhiteSpace(candidateId))
-            return candidateId;
+            return candidateId.Trim();
 
         return User.FindFirstValue("studio_id")
                ?? User.FindFirstValue(ClaimTypes.NameIdentifier)
-               ?? User.FindFirstValue("sub")
-               ?? "EMP-001";
+               ?? User.FindFirstValue("sub");
     }
 }
 

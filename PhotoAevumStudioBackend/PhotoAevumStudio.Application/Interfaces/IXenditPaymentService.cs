@@ -13,8 +13,9 @@ public class XenditPaymentStatusResult
 {
     public string InvoiceId { get; set; } = string.Empty;
     public string ExternalId { get; set; } = string.Empty;
-    public string Status { get; set; } = "PAID"; // 'PAID', 'PENDING', 'EXPIRED', 'SETTLED'
+    public string Status { get; set; } = "PENDING"; // 'PAID', 'PENDING', 'EXPIRED', 'SETTLED', 'UNVERIFIED'
     public decimal Amount { get; set; }
+    public string Currency { get; set; } = string.Empty;
     public string PaymentMethod { get; set; } = "XENDIT";
     public string? PaymentChannel { get; set; }
 }

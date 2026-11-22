@@ -26,6 +26,7 @@ public class QrPaymentInfoDto
     public string? QrString { get; set; }
     public DateTime? LockExpiresAt { get; set; }
     public bool IsFinalPayment { get; set; }
+    public bool ContractAccepted { get; set; } = true;
 }
 
 public interface IPendingPaymentService

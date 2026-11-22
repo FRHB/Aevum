@@ -118,6 +118,7 @@ public class AdditionalServicesController : ControllerBase
     /// Gets all Additional Services (Add-Ons) summary items.
     /// </summary>
     [HttpGet]
+    [AllowAnonymous]
     [OutputCache(PolicyName = "CatalogCache")]
     [ProducesResponseType(typeof(IReadOnlyList<ServiceSummaryDto>), StatusCodes.Status200OK)]
     public async Task<IActionResult> GetAll(CancellationToken ct)
@@ -130,6 +131,7 @@ public class AdditionalServicesController : ControllerBase
     /// Gets specific Additional Service details including image availability.
     /// </summary>
     [HttpGet("{id}")]
+    [AllowAnonymous]
     [ProducesResponseType(typeof(ServiceDetailDto), StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
     public async Task<IActionResult> GetById(string id, CancellationToken ct)
@@ -162,7 +164,7 @@ public class AdditionalServicesController : ControllerBase
     /// Securely processes the multipart/form-data upload stream and triggers atomic ADD-#### generation.
     /// </summary>
     [HttpPost]
-    [Authorize(Policy = "StaffOrAbove")]
+    [Authorize(Policy = "ClerkOrAdmin")]
     [Consumes("multipart/form-data")]
     [ProducesResponseType(typeof(AdditionalServiceResponseDto), StatusCodes.Status201Created)]
     [ProducesResponseType(typeof(ValidationProblemDetails), StatusCodes.Status400BadRequest)]
@@ -230,11 +232,19 @@ public class AdditionalServicesController : ControllerBase
             }
         }
 
-        // 2. Resolve requesting identity
+        // 2. Resolve requesting identity (never fall back to a hardcoded admin ID)
         string? requestingAdminId = User.FindFirstValue("studio_id")
                                    ?? User.FindFirstValue(ClaimTypes.NameIdentifier)
-                                   ?? User.FindFirstValue(ClaimTypes.Name)
-                                   ?? "ADM-001";
+                                   ?? User.FindFirstValue(ClaimTypes.Name);
+
+        if (string.IsNullOrWhiteSpace(requestingAdminId))
+        {
+            return Unauthorized(new ProblemDetails
+            {
+                Title = "Authentication Required",
+                Detail = "Authenticated staff identity is required."
+            });
+        }
 
         // 3. Atomically persist via backend Stored Procedure & SQL Sequence
         try
@@ -265,7 +275,7 @@ public class AdditionalServicesController : ControllerBase
             return StatusCode(StatusCodes.Status500InternalServerError, new ProblemDetails
             {
                 Title = "Persistence Failure",
-                Detail = $"Failed to create Add-On service: {ex.Message}"
+                Detail = "Failed to create Add-On service."
             });
         }
     }
@@ -274,6 +284,7 @@ public class AdditionalServicesController : ControllerBase
     /// Updates an existing Additional Service (Add-On), including RateType and optional image.
     /// </summary>
     [HttpPut("{id}")]
+    [Authorize(Policy = "ClerkOrAdmin")]
     [Consumes("multipart/form-data")]
     [ProducesResponseType(typeof(AdditionalServiceResponseDto), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
@@ -331,8 +342,16 @@ public class AdditionalServicesController : ControllerBase
 
         string? requestingAdminId = User.FindFirstValue("studio_id")
                                    ?? User.FindFirstValue(ClaimTypes.NameIdentifier)
-                                   ?? User.FindFirstValue(ClaimTypes.Name)
-                                   ?? "ADM-001";
+                                   ?? User.FindFirstValue(ClaimTypes.Name);
+
+        if (string.IsNullOrWhiteSpace(requestingAdminId))
+        {
+            return Unauthorized(new ProblemDetails
+            {
+                Title = "Authentication Required",
+                Detail = "Authenticated staff identity is required."
+            });
+        }
 
         var effectiveRateType = string.IsNullOrWhiteSpace(request.RateType) ? "per hour" : request.RateType.Trim();
         var dto = new UpdateAdditionalServiceDto(

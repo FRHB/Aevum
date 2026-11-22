@@ -808,14 +808,8 @@
 
         try
         {
-            // Update booking status to Deal_Won with QR payment
-            var req = new UpdatePaymentBookingStatusRequest
-            {
-                Status = "Deal_Won",
-                PaymentMethod = _selectedChannelName
-            };
-
-            var res = await ConsultationApi.UpdateBookingStatusAsync(_appointment.EventAppointmentId, req);
+            // Trigger dev-only simulated webhook payment confirmation
+            var res = await ConsultationApi.SimulateWebhookPaymentAsync(_appointment.EventAppointmentId, _selectedChannelName);
             if (res.IsSuccess && res.Value != null)
             {
                 ScheduleService.InvalidateCache();

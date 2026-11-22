@@ -1531,7 +1531,7 @@
                                 <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-1 pb-2 border-b border-slate-200">
                                     <div>
                                         <span class="text-xs font-bold text-slate-900">Chosen Service Customization &amp; Rate Configuration</span>
-                                        <p class="text-[11px] text-slate-500">Adjust hours or shot/picture quantities. Combined hourly services run concurrently (max duration: @GetCombinedShootDurationText()).</p>
+                                        <p class="text-[11px] text-slate-500">Adjust hours or service quantities. Combined hourly services run concurrently (max duration: @GetCombinedShootDurationText()).</p>
                                     </div>
                                     <span class="text-[11px] font-bold px-2.5 py-1 rounded-full bg-slate-900 text-white self-start sm:self-auto">
                                         Shoot Duration: @GetCombinedShootDurationText()
@@ -1557,8 +1557,9 @@
                                                 @if (item.RateCategory == ServiceRateCategory.PerHour)
                                                 {
                                                     <div>
-                                                        <label class="block text-[11px] font-bold text-slate-600 mb-1">Hours Quantity *</label>
+                                                        <label class="block text-[11px] font-bold text-slate-600 mb-1">@BookingWizardEngine.GetRateQuantityLabel(item.RateType)</label>
                                                         <input type="number" min="1" max="24"
+                                                               placeholder="@BookingWizardEngine.GetRateQuantityPlaceholder(item.RateType)"
                                                                value="@item.Quantity"
                                                                @onchange="e => UpdateServiceQuantity(item.ServicesId, e.Value)"
                                                                class="w-full px-2.5 py-1.5 bg-slate-50 border border-slate-300 rounded-lg text-xs font-bold text-slate-900 focus:outline-none focus:ring-1 focus:ring-slate-900" />
@@ -1570,8 +1571,9 @@
                                                 else if (item.RateCategory == ServiceRateCategory.PerSession)
                                                 {
                                                     <div>
-                                                        <label class="block text-[11px] font-bold text-slate-600 mb-1">Session Quantity *</label>
+                                                        <label class="block text-[11px] font-bold text-slate-600 mb-1">@BookingWizardEngine.GetRateQuantityLabel(item.RateType)</label>
                                                         <input type="number" min="1" max="10"
+                                                               placeholder="@BookingWizardEngine.GetRateQuantityPlaceholder(item.RateType)"
                                                                value="@item.Quantity"
                                                                @onchange="e => UpdateServiceQuantity(item.ServicesId, e.Value)"
                                                                class="w-full px-2.5 py-1.5 bg-slate-50 border border-slate-300 rounded-lg text-xs font-bold text-slate-900 focus:outline-none focus:ring-1 focus:ring-slate-900" />
@@ -1579,6 +1581,7 @@
                                                     <div>
                                                         <label class="block text-[11px] font-bold text-slate-600 mb-1">Session Duration (Hours) *</label>
                                                         <input type="number" min="1" max="24"
+                                                               placeholder="Hours"
                                                                value="@item.DurationHours"
                                                                @onchange="e => UpdateServiceDurationHours(item.ServicesId, e.Value)"
                                                                class="w-full px-2.5 py-1.5 bg-slate-50 border border-slate-300 rounded-lg text-xs font-bold text-slate-900 focus:outline-none focus:ring-1 focus:ring-slate-900" />
@@ -1590,14 +1593,15 @@
                                                 else
                                                 {
                                                     <div>
-                                                        <label class="block text-[11px] font-bold text-slate-600 mb-1">Pictures / Shots Quantity *</label>
+                                                        <label class="block text-[11px] font-bold text-slate-600 mb-1">@BookingWizardEngine.GetRateQuantityLabel(item.RateType)</label>
                                                         <input type="number" min="1" max="500"
+                                                               placeholder="@BookingWizardEngine.GetRateQuantityPlaceholder(item.RateType)"
                                                                value="@item.Quantity"
                                                                @onchange="e => UpdateServiceQuantity(item.ServicesId, e.Value)"
                                                                class="w-full px-2.5 py-1.5 bg-slate-50 border border-slate-300 rounded-lg text-xs font-bold text-slate-900 focus:outline-none focus:ring-1 focus:ring-slate-900" />
                                                     </div>
                                                     <div class="sm:col-span-2 text-[11px] text-slate-500 pb-1.5">
-                                                        Billed per shot / picture (<strong>@item.Quantity</strong> unit(s)). Set exact Start &amp; End time below.
+                                                        @BookingWizardEngine.GetRateBillingSummary(item.RateType, item.Quantity)
                                                     </div>
                                                 }
                                             </div>
@@ -1609,7 +1613,7 @@
                                                            checked="@item.IsConfirmed"
                                                            @onchange="e => ToggleServiceConfirmation(item.ServicesId, (bool)(e.Value ?? false))"
                                                            class="rounded text-emerald-700 focus:ring-0" />
-                                                    <span>Confirm <strong>@item.Name</strong> (@item.Quantity @(item.RateCategory == ServiceRateCategory.PerHour ? "hr(s)" : item.RateCategory == ServiceRateCategory.PerShot ? "shot(s)/pic(s)" : "session(s)") &bull; ₱@item.LineTotal.ToString("N2"))</span>
+                                                    <span>Confirm <strong>@item.Name</strong> (@item.Quantity @BookingWizardEngine.GetRateUnitLabel(item.RateType) &bull; ₱@item.LineTotal.ToString("N2"))</span>
                                                 </label>
                                                 @if (item.IsConfirmed)
                                                 {
@@ -1992,9 +1996,25 @@
                                     <span class="font-mono text-sm">₱@CalculateWizardDownpayment().ToString("N2")</span>
                                 </div>
                                 <div class="flex justify-between py-1 text-slate-500">
-                                    <span>Balance Due Upon Completion (85%):</span>
+                                    <span>Balance Due Upon Completion (Stage 2):</span>
                                     <span class="font-mono">₱@((CalculateWizardTotal() - CalculateWizardDownpayment()).ToString("N2"))</span>
                                 </div>
+                            </div>
+                        </div>
+
+                        <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 bg-white border border-slate-200 rounded-xl p-4 text-xs">
+                            <div>
+                                <label class="block font-bold text-slate-700 mb-1">Stage 1 Reservation Fee Override (₱)</label>
+                                <input type="number" min="0" step="100" @bind="_wizardReservationFeeOverride"
+                                       placeholder="@Math.Round(CalculateWizardTotal() * 0.15m, 2).ToString("0.00")"
+                                       class="w-full px-3 py-2 border border-slate-300 rounded-lg font-mono text-xs" />
+                                <span class="text-[10px] text-slate-400">Leave blank for default 15% reservation fee.</span>
+                            </div>
+                            <div>
+                                <label class="block font-bold text-slate-700 mb-1">Image Delivery Window (Business Days)</label>
+                                <input type="number" min="1" max="90" @bind="_wizardDeliveryDays"
+                                       class="w-full px-3 py-2 border border-slate-300 rounded-lg font-mono text-xs" />
+                                <span class="text-[10px] text-slate-400">Embedded in Services Agreement &amp; Receipts.</span>
                             </div>
                         </div>
 
@@ -2171,6 +2191,13 @@
                                     </a>
                                 </div>
                                 <div class="flex items-center gap-2 shrink-0">
+                                    @if (!string.IsNullOrWhiteSpace(_wizardCreatedAppointmentId))
+                                    {
+                                        <button type="button" @onclick="() => _isContractPreviewOpen = true"
+                                                class="px-3 py-1.5 bg-slate-900 hover:bg-black rounded-lg text-white font-bold text-xs">
+                                            📄 Preview Agreement &amp; Terms
+                                        </button>
+                                    }
                                     <a href="@(GetWizardCheckoutUrl())" target="_blank" class="px-3 py-1.5 bg-slate-200 hover:bg-slate-300 rounded-lg text-slate-800 font-bold text-xs">
                                         Open ↗
                                     </a>
@@ -2246,6 +2273,12 @@
         </div>
     </div>
 }
+
+<BookingContractModal IsOpen="_isContractPreviewOpen"
+                      AppointmentId="@(_wizardCreatedAppointmentId ?? string.Empty)"
+                      InitialTab="contract"
+                      AllowClickwrapAcceptance="false"
+                      OnClosed="() => _isContractPreviewOpen = false" />
 
 @* ── Consultation Reschedule Modal ────────────────────────────────────────── *@
 @if (_isRescheduleModalOpen && _selectedNegotiation != null)
@@ -3573,6 +3606,9 @@
 
 
     private string _wizardPaymentMethod = "QR Ph";
+    private decimal? _wizardReservationFeeOverride;
+    private int _wizardDeliveryDays = 7;
+    private bool _isContractPreviewOpen;
 
 
 
@@ -3714,6 +3750,9 @@
 
         _wizardEventLocation = "Studio A (Main Hall)";
         _wizardPaymentMethod = "QR Ph";
+        _wizardReservationFeeOverride = null;
+        _wizardDeliveryDays = 7;
+        _isContractPreviewOpen = false;
         _wizardCreatedAppointmentId = null;
         _wizardInvoiceUrl = null;
         _wizardHoldExpiresAt = DateTime.UtcNow.AddMinutes(30);
@@ -3884,7 +3923,9 @@
                 }).ToList(),
                 EmployeeIds = _selectedEmployeeIds.ToList(),
                 TeamLeaderEmployeeId = _teamLeaderId,
-                EquipmentIds = _selectedEquipmentIds.ToList()
+                EquipmentIds = _selectedEquipmentIds.ToList(),
+                ReservationFeeAmount = _wizardReservationFeeOverride is > 0 ? _wizardReservationFeeOverride : null,
+                DeliveryBusinessDays = _wizardDeliveryDays > 0 ? _wizardDeliveryDays : 7
             };
 
             var res = await ConsultationApi.CreateEventAppointmentAsync(_selectedNegotiation.NegotiationId, req);
@@ -4419,7 +4460,10 @@
             .Sum(s => s.Price);
     }
 
-    private decimal CalculateWizardDownpayment() => Math.Round(CalculateWizardTotal() * 0.15m, 2);
+    private decimal CalculateWizardDownpayment() =>
+        _wizardReservationFeeOverride is > 0
+            ? Math.Round(_wizardReservationFeeOverride.Value, 2)
+            : Math.Round(CalculateWizardTotal() * 0.15m, 2);
 
 
 
