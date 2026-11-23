@@ -28,6 +28,20 @@ public sealed class ScheduleController(IScheduleBookingService schedule, ILogger
     public Task<IActionResult> GetAvailability([FromQuery] int year, [FromQuery] int month, [FromQuery] string? clerkId, CancellationToken ct) =>
         Handle(async () => Ok(await schedule.GetMonthAvailabilityAsync(year, month, clerkId, ct)));
 
+    /// <summary>
+    /// Per-day shoot availability (8:00 AM - 8:00 PM with 2h prep / 1h post buffers and dispatchable crew checks)
+    /// for the Deal-Won Event Setup Wizard calendar.
+    /// </summary>
+    [HttpGet("availability/shoot-month")]
+    [Authorize(Policy = "ClerkOrAdmin")]
+    public Task<IActionResult> GetShootMonthAvailability(
+        [FromQuery] int year,
+        [FromQuery] int month,
+        [FromQuery] int durationMinutes = 60,
+        [FromQuery] string? excludeAppointmentId = null,
+        CancellationToken ct = default) =>
+        Handle(async () => Ok(await schedule.GetShootMonthAvailabilityAsync(year, month, durationMinutes, excludeAppointmentId, ct)));
+
     /// <summary>Open slots for one date, limited to the studio windows (9-11 AM, 1-5 PM).</summary>
     [HttpGet("availability/day")]
     [AllowAnonymous]

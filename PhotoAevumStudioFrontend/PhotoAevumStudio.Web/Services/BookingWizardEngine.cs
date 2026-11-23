@@ -47,6 +47,12 @@ public sealed record BufferedTimeWindow(TimeSpan PrepStart, TimeSpan EventStart,
     public TimeSpan PostDuration => PostEnd - EventEnd;
 }
 
+public sealed record ShootScheduleValidationResult(
+    bool IsValid,
+    string? ErrorMessage,
+    int AvailableCrewCount,
+    BufferedTimeWindow BufferedWindow);
+
 public sealed class ScheduleServiceItem
 {
     public string Id { get; set; } = string.Empty;
@@ -61,8 +67,10 @@ public sealed class ScheduleServiceItem
 /// </summary>
 public class BookingWizardEngine
 {
-    public static readonly TimeSpan PrepBuffer = TimeSpan.FromHours(2);
-    public static readonly TimeSpan PostBuffer = TimeSpan.FromHours(1);
+    public static readonly TimeSpan PrepBuffer = TimeSpan.FromMinutes(ShootAvailabilityCore.PrepBufferMinutes);
+    public static readonly TimeSpan PostBuffer = TimeSpan.FromMinutes(ShootAvailabilityCore.PostBufferMinutes);
+    public static readonly TimeSpan OperatingStart = TimeSpan.FromMinutes(ShootAvailabilityCore.OperatingStartMinutes);
+    public static readonly TimeSpan OperatingEnd = TimeSpan.FromMinutes(ShootAvailabilityCore.OperatingEndMinutes);
     private static readonly TimeSpan EndOfDayCap = new(23, 59, 59);
 
     public static ServiceRateCategory ClassifyRateType(string? rateType)
@@ -207,27 +215,15 @@ public class BookingWizardEngine
     public static bool WindowsOverlap(TimeSpan aStart, TimeSpan aEnd, TimeSpan bStart, TimeSpan bEnd) =>
         aStart < bEnd && bStart < aEnd;
 
-    public static bool IsEmployeeOnDayOff(EmployeeViewModel emp, DateTime date)
-    {
-        var dayName = date.DayOfWeek.ToString();
-        if (!string.IsNullOrWhiteSpace(emp.DaysOff))
-        {
-            var days = emp.DaysOff.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
-            if (days.Any(d => string.Equals(d, dayName, StringComparison.OrdinalIgnoreCase)))
-                return true;
-        }
-
-        if (emp.SelectedDaysOff != null && emp.SelectedDaysOff.Any(d => string.Equals(d, dayName, StringComparison.OrdinalIgnoreCase)))
-            return true;
-
-        return false;
-    }
+    public static bool IsEmployeeOnDayOff(EmployeeViewModel emp, DateTime date) =>
+        ShootAvailabilityCore.IsDayOff(emp.DaysOff, emp.SelectedDaysOff, date.DayOfWeek);
 
     public static bool IsEmployeeAssignedToBooking(EmployeeViewModel emp, EventBookingModel booking)
     {
-        if (booking.AssignedCrewIds != null &&
-            booking.AssignedCrewIds.Any(id => string.Equals(id, emp.EmployeeId, StringComparison.OrdinalIgnoreCase)))
-            return true;
+        if (booking.AssignedCrewIds != null && booking.AssignedCrewIds.Count > 0)
+        {
+            return booking.AssignedCrewIds.Any(id => string.Equals(id, emp.EmployeeId, StringComparison.OrdinalIgnoreCase));
+        }
 
         if (!string.IsNullOrWhiteSpace(booking.AssignedPhotographer))
         {
@@ -256,7 +252,7 @@ public class BookingWizardEngine
         {
             foreach (var b in bookings)
             {
-                if (b.Date.Date != date.Date) continue;
+                if (b.IsConsultation || b.Date.Date != date.Date) continue;
                 if (!string.IsNullOrWhiteSpace(excludeAppointmentId) &&
                     string.Equals(b.Id, excludeAppointmentId, StringComparison.OrdinalIgnoreCase)) continue;
                 if (IsInactiveStatus(b.Status)) continue;
@@ -273,7 +269,8 @@ public class BookingWizardEngine
             {
                 if (neg.Appointment != null &&
                     neg.Appointment.EventDate.ToDateTime(TimeOnly.MinValue).Date == date.Date &&
-                    !IsInactiveStatus(neg.Appointment.EventStatus))
+                    !IsInactiveStatus(neg.Appointment.EventStatus) &&
+                    !IsInactiveStatus(neg.NegotiationStatus))
                 {
                     if (!string.IsNullOrWhiteSpace(excludeAppointmentId) &&
                         string.Equals(neg.Appointment.EventAppointmentId, excludeAppointmentId, StringComparison.OrdinalIgnoreCase))
@@ -448,6 +445,213 @@ public class BookingWizardEngine
         }
 
         return available;
+    }
+
+    public static int CountShootBookingsOnDate(
+        DateTime date,
+        IEnumerable<EventBookingModel>? bookings,
+        IEnumerable<ConsultationNegotiationDto>? negotiations,
+        string? excludeAppointmentId = null)
+    {
+        var seenEventIds = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        int count = 0;
+
+        if (bookings != null)
+        {
+            foreach (var b in bookings)
+            {
+                if (b.IsConsultation || b.Date.Date != date.Date || IsInactiveStatus(b.Status)) continue;
+                if (!string.IsNullOrWhiteSpace(excludeAppointmentId) &&
+                    string.Equals(b.Id, excludeAppointmentId, StringComparison.OrdinalIgnoreCase)) continue;
+
+                count++;
+                if (!string.IsNullOrWhiteSpace(b.Id))
+                    seenEventIds.Add(b.Id);
+            }
+        }
+
+        if (negotiations != null)
+        {
+            var targetDate = DateOnly.FromDateTime(date);
+            foreach (var neg in negotiations)
+            {
+                var appt = neg.Appointment;
+                if (appt == null || appt.EventDate != targetDate) continue;
+                if (IsInactiveStatus(appt.EventStatus) || IsInactiveStatus(neg.NegotiationStatus)) continue;
+                if (!string.IsNullOrWhiteSpace(excludeAppointmentId) &&
+                    string.Equals(appt.EventAppointmentId, excludeAppointmentId, StringComparison.OrdinalIgnoreCase)) continue;
+                if (!string.IsNullOrWhiteSpace(appt.EventAppointmentId) && seenEventIds.Contains(appt.EventAppointmentId))
+                    continue;
+
+                count++;
+                if (!string.IsNullOrWhiteSpace(appt.EventAppointmentId))
+                    seenEventIds.Add(appt.EventAppointmentId);
+            }
+        }
+
+        return count;
+    }
+
+    public static ShootDayAvailability EvaluateDayAvailability(
+        DateTime date,
+        int shootDurationMinutes,
+        IEnumerable<EmployeeViewModel>? employees,
+        IEnumerable<EventBookingModel>? bookings,
+        IEnumerable<ConsultationNegotiationDto>? negotiations,
+        IEnumerable<LeaveItemViewModel>? approvedLeaves = null,
+        string? excludeAppointmentId = null)
+    {
+        var normalizedDuration = shootDurationMinutes <= 0
+            ? ShootAvailabilityCore.MinimumShootDurationMinutes
+            : Math.Max(ShootAvailabilityCore.MinimumShootDurationMinutes, shootDurationMinutes);
+
+        var bookedCount = CountShootBookingsOnDate(date, bookings, negotiations, excludeAppointmentId);
+        var crewBusyLists = BuildEligibleCrewBusyLists(date, employees, bookings, negotiations, approvedLeaves, excludeAppointmentId);
+
+        var eval = ShootAvailabilityCore.EvaluateDay(
+            normalizedDuration,
+            hasBookings: bookedCount > 0,
+            bookedEventCount: bookedCount,
+            crewBusyLists);
+
+        var status = eval.StatusCode switch
+        {
+            ShootAvailabilityCore.StatusBookingsAvailable => ShootDayStatus.BookingsAvailable,
+            ShootAvailabilityCore.StatusFullyBooked => ShootDayStatus.FullyBooked,
+            _ => ShootDayStatus.Free
+        };
+
+        var ranges = eval.FeasibleStartRanges
+            .Select(r => new ShootTimeRange(
+                TimeOnly.FromTimeSpan(TimeSpan.FromMinutes(r.MinStartMin)),
+                TimeOnly.FromTimeSpan(TimeSpan.FromMinutes(r.MaxStartMin))))
+            .ToList();
+
+        var quickSlots = eval.QuickSlots
+            .Select(q => new ShootQuickSlot(
+                TimeOnly.FromTimeSpan(TimeSpan.FromMinutes(q.StartMin)),
+                TimeOnly.FromTimeSpan(TimeSpan.FromMinutes(q.EndMin)),
+                TimeOnly.FromTimeSpan(TimeSpan.FromMinutes(q.PrepStartMin)),
+                TimeOnly.FromTimeSpan(TimeSpan.FromMinutes(q.PostEndMin)),
+                q.AvailableCrewCount))
+            .ToList();
+
+        return new ShootDayAvailability(
+            DateOnly.FromDateTime(date),
+            status,
+            eval.HasBookings,
+            eval.BookedEventCount,
+            eval.EligibleCrewCount,
+            ranges,
+            quickSlots);
+    }
+
+    public static ShootMonthAvailability EvaluateMonthAvailability(
+        int year,
+        int month,
+        int shootDurationMinutes,
+        IEnumerable<EmployeeViewModel>? employees,
+        IEnumerable<EventBookingModel>? bookings,
+        IEnumerable<ConsultationNegotiationDto>? negotiations,
+        IEnumerable<LeaveItemViewModel>? approvedLeaves = null,
+        string? excludeAppointmentId = null)
+    {
+        var normalizedDuration = shootDurationMinutes <= 0
+            ? ShootAvailabilityCore.MinimumShootDurationMinutes
+            : Math.Max(ShootAvailabilityCore.MinimumShootDurationMinutes, shootDurationMinutes);
+
+        var daysInMonth = DateTime.DaysInMonth(year, month);
+        var days = new List<ShootDayAvailability>(daysInMonth);
+        for (int day = 1; day <= daysInMonth; day++)
+        {
+            var dt = new DateTime(year, month, day);
+            days.Add(EvaluateDayAvailability(dt, normalizedDuration, employees, bookings, negotiations, approvedLeaves, excludeAppointmentId));
+        }
+
+        return new ShootMonthAvailability(year, month, normalizedDuration, days);
+    }
+
+    public static ShootScheduleValidationResult ValidateScheduleSelection(
+        DateTime date,
+        TimeSpan eventStart,
+        TimeSpan eventEnd,
+        int requiredDurationMinutes,
+        IEnumerable<EmployeeViewModel>? employees,
+        IEnumerable<EventBookingModel>? bookings,
+        IEnumerable<ConsultationNegotiationDto>? negotiations,
+        IEnumerable<LeaveItemViewModel>? approvedLeaves = null,
+        string? excludeAppointmentId = null)
+    {
+        var buffered = ComputeBufferedWindow(eventStart, eventEnd);
+        if (eventEnd <= eventStart)
+        {
+            return new ShootScheduleValidationResult(
+                false,
+                "Please choose a valid shoot date and minute-level start/end time (end time must be after start time).",
+                0,
+                buffered);
+        }
+
+        if (eventStart < OperatingStart || eventEnd > OperatingEnd)
+        {
+            return new ShootScheduleValidationResult(
+                false,
+                "Shoot time must be within studio operating hours (8:00 AM – 8:00 PM).",
+                0,
+                buffered);
+        }
+
+        var startMin = ShootAvailabilityCore.ToStartMinutes(eventStart);
+        var endMin = ShootAvailabilityCore.ToEndMinutes(eventEnd);
+        var crewBusyLists = BuildEligibleCrewBusyLists(date, employees, bookings, negotiations, approvedLeaves, excludeAppointmentId);
+
+        var outcome = ShootAvailabilityCore.ValidateWindow(
+            startMin,
+            endMin,
+            requiredDurationMinutes,
+            crewBusyLists.Count,
+            crewBusyLists);
+
+        return new ShootScheduleValidationResult(outcome.IsValid, outcome.ErrorMessage, outcome.AvailableCrewCount, buffered);
+    }
+
+    public static string FormatFeasibleOperatingWindows(IReadOnlyList<ShootTimeRange> feasibleStartRanges, int shootDurationMinutes)
+    {
+        if (feasibleStartRanges == null || feasibleStartRanges.Count == 0)
+            return "None available";
+
+        var dur = Math.Max(ShootAvailabilityCore.MinimumShootDurationMinutes, shootDurationMinutes);
+        return string.Join(" • ", feasibleStartRanges.Select(r =>
+        {
+            var startTs = r.Start.ToTimeSpan();
+            var maxEndTs = r.End.ToTimeSpan().Add(TimeSpan.FromMinutes(dur));
+            if (maxEndTs > OperatingEnd) maxEndTs = OperatingEnd;
+            return $"{FormatTime(startTs)} – {FormatTime(maxEndTs)}";
+        }));
+    }
+
+    private static List<IReadOnlyList<ShootAvailabilityCore.ShootTimeInterval>> BuildEligibleCrewBusyLists(
+        DateTime date,
+        IEnumerable<EmployeeViewModel>? employees,
+        IEnumerable<EventBookingModel>? bookings,
+        IEnumerable<ConsultationNegotiationDto>? negotiations,
+        IEnumerable<LeaveItemViewModel>? approvedLeaves,
+        string? excludeAppointmentId)
+    {
+        var result = new List<IReadOnlyList<ShootAvailabilityCore.ShootTimeInterval>>();
+        foreach (var emp in FilterDispatchableCrew(employees))
+        {
+            if (GetEmployeeBlockReason(emp, date, approvedLeaves) != null)
+                continue;
+
+            var busy = GetEmployeeBusyIntervals(emp, date, bookings, negotiations, excludeAppointmentId)
+                .Select(b => new ShootAvailabilityCore.ShootTimeInterval(
+                    ShootAvailabilityCore.ToStartMinutes(b.BlockedStart),
+                    ShootAvailabilityCore.ToEndMinutes(b.BlockedEnd)));
+            result.Add(ShootAvailabilityCore.MergeBusyIntervals(busy));
+        }
+
+        return result;
     }
 
     public static HashSet<string> GetBookedEquipmentIdsForDate(

@@ -1,6 +1,10 @@
 using System;
 using System.Collections.Generic;
+using System.IO;
 using System.Linq;
+using System.Reflection;
+using Microsoft.AspNetCore.Authorization;
+using PhotoAevumStudio.Api.Controllers;
 using PhotoAevumStudio.Infrastructure.Scheduling;
 using PhotoAevumStudio.Web.Components.Pages;
 using PhotoAevumStudio.Web.Models;
@@ -443,5 +447,204 @@ public class BookingScheduleBufferAndDealWizardTests
         Assert.Equal(12, ordered[0].AppointmentId);
         Assert.Equal(10, ordered[1].AppointmentId);
         Assert.Equal(11, ordered[2].AppointmentId);
+    }
+
+    [Fact]
+    public void BookingWizardEngine_DayStatus_FreeVsYellowVsRed_HandlesConsultationsTightGapsAndZeroCrew()
+    {
+        var wednesday = new DateTime(2026, 11, 25);
+        var sunday = new DateTime(2026, 11, 29);
+
+        var emp1 = new EmployeeViewModel { EmployeeId = "EMP-001", FirstName = "Elena", LastName = "Rostova", Status = "Active", DaysOff = "Sunday" };
+        var clerk = new EmployeeViewModel { EmployeeId = "CLK-001", FirstName = "Clara", LastName = "Reyes", Role = "Office Clerk", Status = "Active", DaysOff = "Monday" };
+        var staff = new[] { emp1, clerk };
+
+        // 1. Consultation-only day (IsConsultation = true) -> Free (no dot)
+        var consultationOnly = new List<EventBookingModel>
+        {
+            new()
+            {
+                Id = "NEG-0001",
+                Date = wednesday,
+                StartTime = new TimeSpan(10, 0, 0),
+                EndTime = new TimeSpan(10, 30, 0),
+                Status = "Pending_Call",
+                IsConsultation = true,
+                AssignedCrewIds = new List<string> { "CLK-001" }
+            }
+        };
+        var freeDay = BookingWizardEngine.EvaluateDayAvailability(wednesday, 60, staff, consultationOnly, null);
+        Assert.Equal(ShootDayStatus.Free, freeDay.Status);
+        Assert.False(freeDay.HasBookings);
+        Assert.Equal(12, freeDay.QuickSlots.Count);
+
+        // 2. Minute-level off-hour middle gap: 08:15-09:15 (post 10:15) + 16:15-18:00 (prep 14:15) -> exact 12:15 PM - 1:15 PM fits!
+        var minuteGapBookings = new List<EventBookingModel>
+        {
+            new() { Id = "EVT-1", Date = wednesday, StartTime = new TimeSpan(8, 15, 0), EndTime = new TimeSpan(9, 15, 0), Status = "Confirmed", AssignedCrewIds = new List<string> { "EMP-001" } },
+            new() { Id = "EVT-2", Date = wednesday, StartTime = new TimeSpan(16, 15, 0), EndTime = new TimeSpan(18, 0, 0), Status = "Confirmed", AssignedCrewIds = new List<string> { "EMP-001" } }
+        };
+        var yellowMinuteDay = BookingWizardEngine.EvaluateDayAvailability(wednesday, 60, staff, minuteGapBookings, null);
+        Assert.Equal(ShootDayStatus.BookingsAvailable, yellowMinuteDay.Status);
+        Assert.True(yellowMinuteDay.HasBookings);
+        Assert.Contains(yellowMinuteDay.QuickSlots, s => s.Start == new TimeOnly(12, 15) && s.End == new TimeOnly(13, 15));
+
+        // 3. Tight middle gap lacking buffer time: 08:00-09:30 (post 10:30) + 16:00-18:00 (prep 14:00) -> 3h30m gap < 4h -> Red
+        var tightGapBookings = new List<EventBookingModel>
+        {
+            new() { Id = "EVT-1", Date = wednesday, StartTime = new TimeSpan(8, 0, 0), EndTime = new TimeSpan(9, 30, 0), Status = "Confirmed", AssignedCrewIds = new List<string> { "EMP-001" } },
+            new() { Id = "EVT-2", Date = wednesday, StartTime = new TimeSpan(16, 0, 0), EndTime = new TimeSpan(18, 0, 0), Status = "Confirmed", AssignedCrewIds = new List<string> { "EMP-001" } }
+        };
+        var redTightDay = BookingWizardEngine.EvaluateDayAvailability(wednesday, 60, staff, tightGapBookings, null);
+        Assert.Equal(ShootDayStatus.FullyBooked, redTightDay.Status);
+        Assert.Empty(redTightDay.QuickSlots);
+
+        // 4. Zero-crew cases: Sunday Day Off & Approved Leave -> Red
+        var sundayRed = BookingWizardEngine.EvaluateDayAvailability(sunday, 60, staff, null, null);
+        Assert.Equal(ShootDayStatus.FullyBooked, sundayRed.Status);
+        Assert.Equal(0, sundayRed.EligibleCrewCount);
+
+        var leaves = new List<LeaveItemViewModel>
+        {
+            new() { EmployeeStudioId = "EMP-001", Status = "Approved", StartDate = DateOnly.FromDateTime(wednesday), EndDate = DateOnly.FromDateTime(wednesday) }
+        };
+        var leaveRed = BookingWizardEngine.EvaluateDayAvailability(wednesday, 60, staff, null, null, leaves);
+        Assert.Equal(ShootDayStatus.FullyBooked, leaveRed.Status);
+        Assert.Equal(0, leaveRed.EligibleCrewCount);
+    }
+
+    [Fact]
+    public void BookingWizardEngine_ValidateScheduleSelection_PreventsTightMiddleGap_OutOfHours_AndInsufficientDuration()
+    {
+        var wednesday = new DateTime(2026, 11, 25);
+        var emp1 = new EmployeeViewModel { EmployeeId = "EMP-001", FirstName = "Elena", LastName = "Rostova", Status = "Active", DaysOff = "Sunday" };
+        var staff = new[] { emp1 };
+        var bookings = new List<EventBookingModel>
+        {
+            new() { Id = "EVT-1", Date = wednesday, StartTime = new TimeSpan(8, 0, 0), EndTime = new TimeSpan(9, 30, 0), Status = "Confirmed", AssignedCrewIds = new List<string> { "EMP-001" } },
+            new() { Id = "EVT-2", Date = wednesday, StartTime = new TimeSpan(16, 0, 0), EndTime = new TimeSpan(18, 0, 0), Status = "Confirmed", AssignedCrewIds = new List<string> { "EMP-001" } }
+        };
+
+        // Middle gap 12:00 PM - 1:00 PM lacks 2h prep / 1h post buffers
+        var gapCheck = BookingWizardEngine.ValidateScheduleSelection(
+            wednesday, new TimeSpan(12, 0, 0), new TimeSpan(13, 0, 0), 60, staff, bookings, null);
+        Assert.False(gapCheck.IsValid);
+        Assert.Contains("buffer", gapCheck.ErrorMessage, StringComparison.OrdinalIgnoreCase);
+
+        // Outside operating hours (8 AM - 8 PM) even on an empty day
+        var earlyCheck = BookingWizardEngine.ValidateScheduleSelection(
+            wednesday, new TimeSpan(7, 30, 0), new TimeSpan(8, 30, 0), 60, staff, null, null);
+        Assert.False(earlyCheck.IsValid);
+        Assert.Contains("8:00 AM", earlyCheck.ErrorMessage);
+
+        var lateCheck = BookingWizardEngine.ValidateScheduleSelection(
+            wednesday, new TimeSpan(19, 15, 0), new TimeSpan(20, 15, 0), 60, staff, null, null);
+        Assert.False(lateCheck.IsValid);
+        Assert.Contains("8:00 PM", lateCheck.ErrorMessage);
+
+        // Shorter than required service duration (e.g. 2h service selected, user enters 1h)
+        var shortCheck = BookingWizardEngine.ValidateScheduleSelection(
+            wednesday, new TimeSpan(10, 0, 0), new TimeSpan(11, 0, 0), 120, staff, null, null);
+        Assert.False(shortCheck.IsValid);
+        Assert.Contains("120 min", shortCheck.ErrorMessage);
+
+        // Valid 8:00 AM - 9:00 AM and 7:00 PM - 8:00 PM boundaries on open day
+        Assert.True(BookingWizardEngine.ValidateScheduleSelection(wednesday, new TimeSpan(8, 0, 0), new TimeSpan(9, 0, 0), 60, staff, null, null).IsValid);
+        Assert.True(BookingWizardEngine.ValidateScheduleSelection(wednesday, new TimeSpan(19, 0, 0), new TimeSpan(20, 0, 0), 60, staff, null, null).IsValid);
+    }
+
+    [Fact]
+    public void BookingNegotiations_SuccessWizard_UsesFreeYellowRedDayStatuses_AndBlocksInvalidMiddleGap()
+    {
+        var page = new BookingNegotiations();
+        var baseDate = DateTime.Today.AddDays(7);
+        // Ensure deterministic non-Sunday test dates
+        if (baseDate.DayOfWeek == DayOfWeek.Sunday) baseDate = baseDate.AddDays(1);
+        var freeDate = baseDate;
+        var yellowDate = baseDate.AddDays(1);
+        if (yellowDate.DayOfWeek == DayOfWeek.Sunday) yellowDate = yellowDate.AddDays(1);
+        var redDate = yellowDate.AddDays(1);
+        if (redDate.DayOfWeek == DayOfWeek.Sunday) redDate = redDate.AddDays(1);
+
+        var employeesField = typeof(BookingNegotiations).GetField("_availableEmployees", BindingFlags.NonPublic | BindingFlags.Instance);
+        var bookingsField = typeof(BookingNegotiations).GetField("_studioBookings", BindingFlags.NonPublic | BindingFlags.Instance);
+        var servicesField = typeof(BookingNegotiations).GetField("_serviceSelections", BindingFlags.NonPublic | BindingFlags.Instance);
+        var selectedServicesField = typeof(BookingNegotiations).GetField("_selectedServiceIds", BindingFlags.NonPublic | BindingFlags.Instance);
+        var eventNameField = typeof(BookingNegotiations).GetField("_wizardEventName", BindingFlags.NonPublic | BindingFlags.Instance);
+        var locationField = typeof(BookingNegotiations).GetField("_wizardEventLocation", BindingFlags.NonPublic | BindingFlags.Instance);
+        var eventDateField = typeof(BookingNegotiations).GetField("_wizardEventDate", BindingFlags.NonPublic | BindingFlags.Instance);
+        var eventTimeField = typeof(BookingNegotiations).GetField("_wizardEventTime", BindingFlags.NonPublic | BindingFlags.Instance);
+        var eventEndTimeField = typeof(BookingNegotiations).GetField("_wizardEventEndTime", BindingFlags.NonPublic | BindingFlags.Instance);
+        var wizardErrorField = typeof(BookingNegotiations).GetField("_wizardError", BindingFlags.NonPublic | BindingFlags.Instance);
+        var wizardStepField = typeof(BookingNegotiations).GetField("_wizardStep", BindingFlags.NonPublic | BindingFlags.Instance);
+        var nextStepMethod = typeof(BookingNegotiations).GetMethod("NextWizardStep", BindingFlags.NonPublic | BindingFlags.Instance);
+
+        var crew = new List<EmployeeViewModel>
+        {
+            new() { EmployeeId = "EMP-001", FirstName = "Elena", LastName = "Rostova", Status = "Active", DaysOff = "Sunday" }
+        };
+        var bookings = new List<EventBookingModel>
+        {
+            // Yellow day: 1 booking 09:00-10:00 (still has 1:00 PM - 8:00 PM open)
+            new() { Id = "EVT-Y1", Date = yellowDate, StartTime = new TimeSpan(9, 0, 0), EndTime = new TimeSpan(10, 0, 0), Status = "Confirmed", AssignedCrewIds = new List<string> { "EMP-001" } },
+            // Red day: tight middle gap 10:30-14:00 (insufficient for 1h + 2h prep + 1h post)
+            new() { Id = "EVT-R1", Date = redDate, StartTime = new TimeSpan(8, 0, 0), EndTime = new TimeSpan(9, 30, 0), Status = "Confirmed", AssignedCrewIds = new List<string> { "EMP-001" } },
+            new() { Id = "EVT-R2", Date = redDate, StartTime = new TimeSpan(16, 0, 0), EndTime = new TimeSpan(18, 0, 0), Status = "Confirmed", AssignedCrewIds = new List<string> { "EMP-001" } }
+        };
+        var selections = new List<ServiceCustomizationItem>
+        {
+            new() { ServicesId = "SRV-0001", Name = "Portrait", RateType = "Per Hour", UnitPrice = 2000m, Quantity = 1, DurationHours = 1, IsConfirmed = true }
+        };
+
+        employeesField?.SetValue(page, crew);
+        bookingsField?.SetValue(page, bookings);
+        servicesField?.SetValue(page, selections);
+        selectedServicesField?.SetValue(page, new HashSet<string> { "SRV-0001" });
+
+        Assert.Equal(ShootDayStatus.Free, page.GetWizardDayAvailability(freeDate).Status);
+        Assert.Equal(ShootDayStatus.BookingsAvailable, page.GetWizardDayAvailability(yellowDate).Status);
+        Assert.Equal(ShootDayStatus.FullyBooked, page.GetWizardDayAvailability(redDate).Status);
+
+        // Attempting NextWizardStep in tight middle gap on redDate must fail and stay on step 1
+        wizardStepField?.SetValue(page, 1);
+        eventNameField?.SetValue(page, "Test Shoot");
+        locationField?.SetValue(page, "Studio A");
+        eventDateField?.SetValue(page, redDate);
+        eventTimeField?.SetValue(page, redDate.Date.AddHours(12));
+        eventEndTimeField?.SetValue(page, redDate.Date.AddHours(13));
+
+        nextStepMethod?.Invoke(page, null);
+        Assert.Equal(1, (int)wizardStepField!.GetValue(page)!);
+        Assert.False(string.IsNullOrWhiteSpace(wizardErrorField?.GetValue(page) as string));
+
+        // Picking a feasible quick-pick slot on yellowDate allows advancing to step 2
+        var yellowAvail = page.GetWizardDayAvailability(yellowDate);
+        Assert.NotEmpty(yellowAvail.QuickSlots);
+        var selectQuickSlotMethod = typeof(BookingNegotiations).GetMethod("SelectWizardQuickSlot", BindingFlags.NonPublic | BindingFlags.Instance);
+        // Set date to yellowDate and invoke SelectWizardQuickSlot on its first feasible slot (1:00 PM - 2:00 PM)
+        eventDateField?.SetValue(page, yellowDate);
+        eventTimeField?.SetValue(page, yellowDate.Date.Add(yellowAvail.QuickSlots[0].Start.ToTimeSpan()));
+        eventEndTimeField?.SetValue(page, yellowDate.Date.Add(yellowAvail.QuickSlots[0].End.ToTimeSpan()));
+        Assert.True(page.ValidateWizardScheduleSelection().IsValid);
+        nextStepMethod?.Invoke(page, null);
+        Assert.Equal(2, (int)wizardStepField.GetValue(page)!);
+
+        // Verify ScheduleController endpoint policy and BookingNegotiations calendar legend/dots markup
+        var controllerMethod = typeof(ScheduleController).GetMethod(nameof(ScheduleController.GetShootMonthAvailability));
+        Assert.NotNull(controllerMethod);
+        var authAttr = controllerMethod!.GetCustomAttribute<AuthorizeAttribute>();
+        Assert.NotNull(authAttr);
+        Assert.Equal("ClerkOrAdmin", authAttr!.Policy);
+
+        var dir = new DirectoryInfo(AppContext.BaseDirectory);
+        while (dir != null && !File.Exists(Path.Combine(dir.FullName, "PhotoAevumStudio.slnx")))
+            dir = dir.Parent;
+        Assert.NotNull(dir);
+
+        var negRazor = File.ReadAllText(Path.Combine(dir!.FullName, "PhotoAevumStudioFrontend", "PhotoAevumStudio.Web", "Components", "Pages", "BookingNegotiations.razor"));
+        Assert.Contains("Bookings • Slots Available", negRazor);
+        Assert.Contains("Fully Booked 8 AM–8 PM", negRazor);
+        Assert.Contains("data-day-status=\"yellow\"", negRazor);
+        Assert.Contains("data-day-status=\"red\"", negRazor);
     }
 }
