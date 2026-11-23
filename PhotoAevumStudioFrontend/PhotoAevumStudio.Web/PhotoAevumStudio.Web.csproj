@@ -5,7 +5,12 @@
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
     <BlazorDisableThrowNavigationException>true</BlazorDisableThrowNavigationException>
+    <DefineConstants>$(DefineConstants);WEB_STANDALONE</DefineConstants>
   </PropertyGroup>
+
+  <ItemGroup>
+    <Compile Include="..\..\PhotoAevumStudioBackend\PhotoAevumStudio.Application\Scheduling\ShootAvailabilityCore.cs" Link="Services\ShootAvailabilityCore.cs" />
+  </ItemGroup>
 
   <ItemGroup>
     <PackageReference Include="AWSSDK.S3" Version="4.0.104.6" />

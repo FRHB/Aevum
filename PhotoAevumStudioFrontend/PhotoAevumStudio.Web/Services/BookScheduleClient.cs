@@ -9,6 +9,7 @@ public interface IBookScheduleClient
     Task<ApiResult<IReadOnlyList<ScheduleServiceOption>>> GetServicesAsync(CancellationToken ct = default);
     Task<ApiResult<IReadOnlyList<OfficeClerkOption>>> GetOfficeClerksAsync(CancellationToken ct = default);
     Task<ApiResult<MonthAvailability>> GetAvailabilityAsync(int year, int month, string? clerkId = null, CancellationToken ct = default);
+    Task<ApiResult<ShootMonthAvailability>> GetShootMonthAvailabilityAsync(int year, int month, int durationMinutes = 60, string? excludeAppointmentId = null, CancellationToken ct = default);
     Task<ApiResult<DayAvailability>> GetDayAvailabilityAsync(DateOnly date, string? clerkId = null, CancellationToken ct = default);
     Task<ApiResult<AvailabilityCheckResult>> CheckAvailabilityAsync(DateOnly date, TimeOnly? time = null, CancellationToken ct = default);
     Task<ApiResult<MeetingLinkPreview>> PreviewMeetingLinkAsync(MeetingPlatform platform, DateOnly date, TimeOnly slotStart, CancellationToken ct = default);
@@ -41,6 +42,15 @@ public sealed class BookScheduleClient(IHttpClientFactory httpClientFactory, ITo
             ? $"api/schedule/availability?year={year}&month={month}"
             : $"api/schedule/availability?year={year}&month={month}&clerkId={Uri.EscapeDataString(clerkId)}";
         return SendAsync<MonthAvailability>(() => _http.GetAsync(url, ct), ct);
+    }
+
+    public Task<ApiResult<ShootMonthAvailability>> GetShootMonthAvailabilityAsync(int year, int month, int durationMinutes = 60, string? excludeAppointmentId = null, CancellationToken ct = default)
+    {
+        var dur = Math.Max(60, durationMinutes);
+        var url = string.IsNullOrWhiteSpace(excludeAppointmentId)
+            ? $"api/schedule/availability/shoot-month?year={year}&month={month}&durationMinutes={dur}"
+            : $"api/schedule/availability/shoot-month?year={year}&month={month}&durationMinutes={dur}&excludeAppointmentId={Uri.EscapeDataString(excludeAppointmentId)}";
+        return SendAsync<ShootMonthAvailability>(() => _http.GetAsync(url, ct), ct);
     }
 
     public Task<ApiResult<DayAvailability>> GetDayAvailabilityAsync(DateOnly date, string? clerkId = null, CancellationToken ct = default)

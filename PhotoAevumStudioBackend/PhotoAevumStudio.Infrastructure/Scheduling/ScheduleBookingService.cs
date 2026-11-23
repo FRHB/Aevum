@@ -134,6 +134,31 @@ public sealed class ScheduleBookingService(
         return new MonthAvailabilityDto(year, month, days);
     }
 
+    public async Task<ShootMonthAvailabilityDto> GetShootMonthAvailabilityAsync(
+        int year,
+        int month,
+        int durationMinutes = 60,
+        string? excludeAppointmentId = null,
+        CancellationToken cancellationToken = default)
+    {
+        if (year is < 2000 or > 2100 || month is < 1 or > 12)
+            throw new ScheduleValidationException("Invalid month requested.");
+
+        var normalizedDuration = durationMinutes <= 0
+            ? ShootAvailabilityCore.MinimumShootDurationMinutes
+            : Math.Max(ShootAvailabilityCore.MinimumShootDurationMinutes, durationMinutes);
+
+        var first = new DateOnly(year, month, 1);
+        var last = first.AddMonths(1).AddDays(-1);
+        var normalizedExcludeId = string.IsNullOrWhiteSpace(excludeAppointmentId) ? null : excludeAppointmentId.Trim();
+
+        var crew = await GetDispatchableShootCrewAsync(cancellationToken);
+        var leaves = await GetApprovedLeavesRangeAsync(first, last, cancellationToken);
+        var shootEvents = await GetShootEventsRangeAsync(first, last, normalizedExcludeId, cancellationToken);
+
+        return EvaluateShootMonthAvailability(year, month, normalizedDuration, crew, leaves, shootEvents);
+    }
+
     public async Task<DayAvailabilityDto> GetDayAvailabilityAsync(DateOnly date, string? clerkId = null, CancellationToken cancellationToken = default)
     {
         var taken = (await db.Appointments.AsNoTracking()
@@ -917,9 +942,344 @@ public sealed class ScheduleBookingService(
 
     public sealed record ClerkSummary(string EmployeeId, string DaysOff, string FullName);
     public sealed record CrewMemberSummary(string EmployeeId, string DaysOff, bool IsPhotographer, bool IsVideographer);
+    public sealed record ShootCrewMemberSummary(string EmployeeId, string DaysOff);
+    public sealed record ShootEventSummary(
+        string EventAppointmentId,
+        DateOnly EventDate,
+        TimeSpan StartTime,
+        TimeSpan EndTime,
+        IReadOnlyList<string> AssignedEmployeeIds);
     public sealed record LeaveSummary(string EmployeeStudioId, DateOnly StartDate, DateOnly EndDate);
     public sealed record EventSummary(string EmployeeId, DateOnly EventDate, TimeOnly EventTime);
     public sealed record ConsultationSummary(string EmployeeId, DateOnly ConsultationDate, TimeOnly ConsultationTime);
+
+    public static ShootMonthAvailabilityDto EvaluateShootMonthAvailability(
+        int year,
+        int month,
+        int durationMinutes,
+        IReadOnlyList<ShootCrewMemberSummary> crew,
+        IReadOnlyList<LeaveSummary> leaves,
+        IReadOnlyList<ShootEventSummary> shootEvents)
+    {
+        var normalizedDuration = durationMinutes <= 0
+            ? ShootAvailabilityCore.MinimumShootDurationMinutes
+            : Math.Max(ShootAvailabilityCore.MinimumShootDurationMinutes, durationMinutes);
+
+        var first = new DateOnly(year, month, 1);
+        var daysInMonth = DateTime.DaysInMonth(year, month);
+        var days = new List<ShootDayAvailabilityDto>(daysInMonth);
+
+        for (int i = 0; i < daysInMonth; i++)
+        {
+            var date = first.AddDays(i);
+            days.Add(EvaluateShootDayAvailability(date, normalizedDuration, crew, leaves, shootEvents));
+        }
+
+        return new ShootMonthAvailabilityDto(year, month, normalizedDuration, days);
+    }
+
+    public static ShootDayAvailabilityDto EvaluateShootDayAvailability(
+        DateOnly date,
+        int durationMinutes,
+        IReadOnlyList<ShootCrewMemberSummary> crew,
+        IReadOnlyList<LeaveSummary> leaves,
+        IReadOnlyList<ShootEventSummary> shootEvents)
+    {
+        var dayEvents = shootEvents.Where(e => e.EventDate == date).ToList();
+        var eligibleCrewBusy = new List<IReadOnlyList<ShootAvailabilityCore.ShootTimeInterval>>();
+
+        foreach (var member in crew)
+        {
+            if (member.EmployeeId.StartsWith("CLK-", StringComparison.OrdinalIgnoreCase))
+                continue;
+
+            if (ShootAvailabilityCore.IsDayOff(member.DaysOff, null, date.DayOfWeek))
+                continue;
+
+            if (leaves.Any(l =>
+                string.Equals(l.EmployeeStudioId, member.EmployeeId, StringComparison.OrdinalIgnoreCase) &&
+                date >= l.StartDate && date <= l.EndDate))
+                continue;
+
+            var memberEvents = dayEvents
+                .Where(ev => ev.AssignedEmployeeIds.Any(id => string.Equals(id, member.EmployeeId, StringComparison.OrdinalIgnoreCase)))
+                .Select(ev =>
+                {
+                    var sMin = ShootAvailabilityCore.ToStartMinutes(ev.StartTime);
+                    var effectiveEnd = ev.EndTime > ev.StartTime ? ev.EndTime : ev.StartTime.Add(TimeSpan.FromHours(1));
+                    var eMin = ShootAvailabilityCore.ToEndMinutes(effectiveEnd);
+                    return new ShootAvailabilityCore.ShootTimeInterval(sMin, eMin);
+                });
+
+            eligibleCrewBusy.Add(ShootAvailabilityCore.BufferAndMergeEvents(memberEvents));
+        }
+
+        var eval = ShootAvailabilityCore.EvaluateDay(
+            durationMinutes,
+            hasBookings: dayEvents.Count > 0,
+            bookedEventCount: dayEvents.Count,
+            eligibleCrewBusy);
+
+        var status = eval.StatusCode switch
+        {
+            ShootAvailabilityCore.StatusBookingsAvailable => ShootDayStatus.BookingsAvailable,
+            ShootAvailabilityCore.StatusFullyBooked => ShootDayStatus.FullyBooked,
+            _ => ShootDayStatus.Free
+        };
+
+        var ranges = eval.FeasibleStartRanges
+            .Select(r => new ShootTimeRangeDto(
+                TimeOnly.FromTimeSpan(TimeSpan.FromMinutes(r.MinStartMin)),
+                TimeOnly.FromTimeSpan(TimeSpan.FromMinutes(r.MaxStartMin))))
+            .ToList();
+
+        var quickSlots = eval.QuickSlots
+            .Select(q => new ShootQuickSlotDto(
+                TimeOnly.FromTimeSpan(TimeSpan.FromMinutes(q.StartMin)),
+                TimeOnly.FromTimeSpan(TimeSpan.FromMinutes(q.EndMin)),
+                TimeOnly.FromTimeSpan(TimeSpan.FromMinutes(q.PrepStartMin)),
+                TimeOnly.FromTimeSpan(TimeSpan.FromMinutes(q.PostEndMin)),
+                q.AvailableCrewCount))
+            .ToList();
+
+        return new ShootDayAvailabilityDto(
+            date,
+            status,
+            eval.HasBookings,
+            eval.BookedEventCount,
+            eval.EligibleCrewCount,
+            ranges,
+            quickSlots);
+    }
+
+    private async Task<List<ShootCrewMemberSummary>> GetDispatchableShootCrewAsync(CancellationToken ct)
+    {
+        var conn = db.Database.GetDbConnection();
+        if (conn.State != ConnectionState.Open) await conn.OpenAsync(ct);
+
+        bool hasEmployeesTable = false;
+        bool hasDaysOff = false;
+        bool hasStatusCol = false;
+        bool hasSpecializationsCol = false;
+        bool hasJointSpecs = false;
+
+        await using (var metaCmd = conn.CreateCommand())
+        {
+            metaCmd.CommandText = @"
+                SELECT
+                    CASE WHEN OBJECT_ID(N'dbo.Employees', N'U') IS NOT NULL THEN 1 ELSE 0 END,
+                    CASE WHEN COL_LENGTH(N'dbo.Employees', N'DaysOff') IS NOT NULL THEN 1 ELSE 0 END,
+                    CASE WHEN COL_LENGTH(N'dbo.Employees', N'Status') IS NOT NULL THEN 1 ELSE 0 END,
+                    CASE WHEN COL_LENGTH(N'dbo.Employees', N'Specializations') IS NOT NULL THEN 1 ELSE 0 END,
+                    CASE WHEN OBJECT_ID(N'dbo.EmployeeJointSpecialization', N'U') IS NOT NULL
+                          AND OBJECT_ID(N'dbo.EmployeeSpecialization', N'U') IS NOT NULL THEN 1 ELSE 0 END;";
+            await using var metaReader = await metaCmd.ExecuteReaderAsync(ct);
+            if (await metaReader.ReadAsync(ct))
+            {
+                hasEmployeesTable = metaReader.GetInt32(0) == 1;
+                hasDaysOff = metaReader.GetInt32(1) == 1;
+                hasStatusCol = metaReader.GetInt32(2) == 1;
+                hasSpecializationsCol = metaReader.GetInt32(3) == 1;
+                hasJointSpecs = metaReader.GetInt32(4) == 1;
+            }
+        }
+
+        if (!hasEmployeesTable) return [];
+
+        var daysOffSelect = hasDaysOff ? "ISNULL(e.DaysOff, 'Sunday')" : "'Sunday'";
+        var empSpecsSelect = hasSpecializationsCol ? "ISNULL(e.Specializations, '')" : "''";
+        var activePredicate = hasStatusCol
+            ? "(UPPER(ISNULL(e.EmployeeStatus, 'Active')) IN ('ACTIVE', 'CLOCK-IN (DUTY)', 'CLOCK-OUT (OFF DUTY)') OR UPPER(ISNULL(e.Status, '')) = 'ACTIVE') AND UPPER(ISNULL(e.EmployeeStatus, 'Active')) NOT IN ('INACTIVE', 'ARCHIVE', 'ARCHIVED', 'DELETED')"
+            : "UPPER(ISNULL(e.EmployeeStatus, 'Active')) IN ('ACTIVE', 'CLOCK-IN (DUTY)', 'CLOCK-OUT (OFF DUTY)')";
+
+        var sql = hasJointSpecs
+            ? $@"
+                SELECT e.EmployeeID,
+                       {daysOffSelect} AS DaysOff,
+                       {empSpecsSelect} AS EmpSpecs,
+                       ISNULL(COALESCE(NULLIF(es.SpecializationName, ''), es.Specialization), '') AS SpecName
+                FROM dbo.Employees e
+                LEFT JOIN dbo.EmployeeJointSpecialization ejs ON e.EmployeeID = ejs.EmployeeID
+                LEFT JOIN dbo.EmployeeSpecialization es ON ejs.SpecializationID = es.SpecializationID
+                WHERE {activePredicate};"
+            : $@"
+                SELECT e.EmployeeID,
+                       {daysOffSelect} AS DaysOff,
+                       {empSpecsSelect} AS EmpSpecs,
+                       '' AS SpecName
+                FROM dbo.Employees e
+                WHERE {activePredicate};";
+
+        var crewMap = new Dictionary<string, (string DaysOff, bool IsClerk)>(StringComparer.OrdinalIgnoreCase);
+
+        await using (var cmd = conn.CreateCommand())
+        {
+            cmd.CommandText = sql;
+            await using var reader = await cmd.ExecuteReaderAsync(ct);
+            while (await reader.ReadAsync(ct))
+            {
+                if (reader.IsDBNull(0)) continue;
+                var empId = reader.GetString(0).Trim();
+                if (string.IsNullOrWhiteSpace(empId)) continue;
+
+                var daysOff = reader.IsDBNull(1) ? "Sunday" : reader.GetString(1);
+                var empSpecs = reader.IsDBNull(2) ? string.Empty : reader.GetString(2);
+                var specName = reader.IsDBNull(3) ? string.Empty : reader.GetString(3);
+
+                bool isClerk = empId.StartsWith("CLK-", StringComparison.OrdinalIgnoreCase)
+                    || empSpecs.Contains("clerk", StringComparison.OrdinalIgnoreCase)
+                    || specName.Contains("clerk", StringComparison.OrdinalIgnoreCase);
+
+                if (crewMap.TryGetValue(empId, out var existing))
+                {
+                    crewMap[empId] = (existing.DaysOff, existing.IsClerk || isClerk);
+                }
+                else
+                {
+                    crewMap[empId] = (daysOff, isClerk);
+                }
+            }
+        }
+
+        return crewMap
+            .Where(kvp => !kvp.Value.IsClerk)
+            .Select(kvp => new ShootCrewMemberSummary(kvp.Key, kvp.Value.DaysOff))
+            .ToList();
+    }
+
+    private async Task<List<ShootEventSummary>> GetShootEventsRangeAsync(
+        DateOnly first,
+        DateOnly last,
+        string? excludeAppointmentId,
+        CancellationToken ct)
+    {
+        var conn = db.Database.GetDbConnection();
+        if (conn.State != ConnectionState.Open) await conn.OpenAsync(ct);
+
+        bool hasEventTable = false;
+        bool hasEventEndTime = false;
+        bool hasDurationMinutes = false;
+        bool hasEventEmployee = false;
+        bool hasNegotiation = false;
+
+        await using (var metaCmd = conn.CreateCommand())
+        {
+            metaCmd.CommandText = @"
+                SELECT
+                    CASE WHEN OBJECT_ID(N'dbo.EventAppointment', N'U') IS NOT NULL THEN 1 ELSE 0 END,
+                    CASE WHEN COL_LENGTH(N'dbo.EventAppointment', N'EventEndTime') IS NOT NULL THEN 1 ELSE 0 END,
+                    CASE WHEN COL_LENGTH(N'dbo.EventAppointment', N'DurationMinutes') IS NOT NULL THEN 1 ELSE 0 END,
+                    CASE WHEN OBJECT_ID(N'dbo.EventEmployee', N'U') IS NOT NULL THEN 1 ELSE 0 END,
+                    CASE WHEN OBJECT_ID(N'dbo.BookingNegotiation', N'U') IS NOT NULL THEN 1 ELSE 0 END;";
+            await using var metaReader = await metaCmd.ExecuteReaderAsync(ct);
+            if (await metaReader.ReadAsync(ct))
+            {
+                hasEventTable = metaReader.GetInt32(0) == 1;
+                hasEventEndTime = metaReader.GetInt32(1) == 1;
+                hasDurationMinutes = metaReader.GetInt32(2) == 1;
+                hasEventEmployee = metaReader.GetInt32(3) == 1;
+                hasNegotiation = metaReader.GetInt32(4) == 1;
+            }
+        }
+
+        if (!hasEventTable) return [];
+
+        var endTimeCol = hasEventEndTime ? "ea.EventEndTime" : "CAST(NULL AS time)";
+        var durCol = hasDurationMinutes ? "ISNULL(ea.DurationMinutes, 60)" : "CAST(60 AS int)";
+        var negFilter = hasNegotiation
+            ? "AND NOT EXISTS (SELECT 1 FROM dbo.BookingNegotiation bn WHERE bn.EventAppointmentID = ea.EventAppointmentID AND bn.NegotiationStatus IN ('Deal_Lost', 'Cancelled'))"
+            : string.Empty;
+
+        var sql = hasEventEmployee
+            ? $@"
+                SELECT ea.EventAppointmentID,
+                       ea.EventDate,
+                       ea.EventTime,
+                       {endTimeCol} AS EventEndTime,
+                       {durCol} AS DurationMinutes,
+                       ea.EmployeeID AS LeadEmployeeID,
+                       ee.EmployeeID AS CrewEmployeeID
+                FROM dbo.EventAppointment ea
+                LEFT JOIN dbo.EventEmployee ee ON ee.EventAppointmentID = ea.EventAppointmentID
+                WHERE ea.EventDate >= @First AND ea.EventDate <= @Last
+                  AND ISNULL(ea.EventStatus, '') NOT IN ('Cancelled', 'Expired')
+                  AND (@ExcludeEvtId IS NULL OR ea.EventAppointmentID <> @ExcludeEvtId)
+                  {negFilter};"
+            : $@"
+                SELECT ea.EventAppointmentID,
+                       ea.EventDate,
+                       ea.EventTime,
+                       {endTimeCol} AS EventEndTime,
+                       {durCol} AS DurationMinutes,
+                       ea.EmployeeID AS LeadEmployeeID,
+                       CAST(NULL AS nvarchar(30)) AS CrewEmployeeID
+                FROM dbo.EventAppointment ea
+                WHERE ea.EventDate >= @First AND ea.EventDate <= @Last
+                  AND ISNULL(ea.EventStatus, '') NOT IN ('Cancelled', 'Expired')
+                  AND (@ExcludeEvtId IS NULL OR ea.EventAppointmentID <> @ExcludeEvtId)
+                  {negFilter};";
+
+        var byEvent = new Dictionary<string, (DateOnly Date, TimeSpan Start, TimeSpan End, HashSet<string> CrewIds)>(StringComparer.OrdinalIgnoreCase);
+
+        await using (var cmd = conn.CreateCommand())
+        {
+            cmd.CommandText = sql;
+
+            var pFirst = cmd.CreateParameter();
+            pFirst.ParameterName = "@First";
+            pFirst.Value = first.ToDateTime(TimeOnly.MinValue);
+            cmd.Parameters.Add(pFirst);
+
+            var pLast = cmd.CreateParameter();
+            pLast.ParameterName = "@Last";
+            pLast.Value = last.ToDateTime(TimeOnly.MinValue);
+            cmd.Parameters.Add(pLast);
+
+            var pExclude = cmd.CreateParameter();
+            pExclude.ParameterName = "@ExcludeEvtId";
+            pExclude.Value = (object?)excludeAppointmentId ?? DBNull.Value;
+            cmd.Parameters.Add(pExclude);
+
+            await using var reader = await cmd.ExecuteReaderAsync(ct);
+            while (await reader.ReadAsync(ct))
+            {
+                if (reader.IsDBNull(0) || reader.IsDBNull(1) || reader.IsDBNull(2)) continue;
+                var evtId = reader.GetString(0).Trim();
+                var evtDate = DateOnly.FromDateTime(reader.GetDateTime(1));
+                var startSpan = reader.GetFieldValue<TimeSpan>(2);
+                var dbEndSpan = reader.IsDBNull(3) ? (TimeSpan?)null : reader.GetFieldValue<TimeSpan>(3);
+                var durMins = reader.IsDBNull(4) ? 60 : Math.Max(15, reader.GetInt32(4));
+                var leadEmp = reader.IsDBNull(5) ? null : reader.GetString(5).Trim();
+                var crewEmp = reader.IsDBNull(6) ? null : reader.GetString(6).Trim();
+
+                var endSpan = dbEndSpan.HasValue && dbEndSpan.Value > startSpan
+                    ? dbEndSpan.Value
+                    : startSpan.Add(TimeSpan.FromMinutes(durMins));
+                if (endSpan > new TimeSpan(23, 59, 59))
+                    endSpan = new TimeSpan(23, 59, 59);
+
+                if (!byEvent.TryGetValue(evtId, out var entry))
+                {
+                    entry = (evtDate, startSpan, endSpan, new HashSet<string>(StringComparer.OrdinalIgnoreCase));
+                    byEvent[evtId] = entry;
+                }
+
+                if (!string.IsNullOrWhiteSpace(leadEmp))
+                    entry.CrewIds.Add(leadEmp);
+                if (!string.IsNullOrWhiteSpace(crewEmp))
+                    entry.CrewIds.Add(crewEmp);
+            }
+        }
+
+        return byEvent
+            .Select(kvp => new ShootEventSummary(
+                kvp.Key,
+                kvp.Value.Date,
+                kvp.Value.Start,
+                kvp.Value.End,
+                kvp.Value.CrewIds.ToList()))
+            .ToList();
+    }
 
     private async Task<List<ClerkSummary>> GetActiveClerksDataAsync(CancellationToken ct)
     {

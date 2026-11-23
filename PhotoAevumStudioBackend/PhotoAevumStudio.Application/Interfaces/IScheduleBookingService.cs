@@ -10,6 +10,8 @@ public interface IScheduleBookingService
 
     Task<MonthAvailabilityDto> GetMonthAvailabilityAsync(int year, int month, string? clerkId = null, CancellationToken cancellationToken = default);
 
+    Task<ShootMonthAvailabilityDto> GetShootMonthAvailabilityAsync(int year, int month, int durationMinutes = 60, string? excludeAppointmentId = null, CancellationToken cancellationToken = default);
+
     /// <summary>Mock link shown on the Confirm step; reused on booking if still valid.</summary>
     Task<MeetingLinkDto> PreviewMeetingLinkAsync(MeetingPlatform platform, DateOnly date, TimeOnly slotStart, CancellationToken cancellationToken = default);
 

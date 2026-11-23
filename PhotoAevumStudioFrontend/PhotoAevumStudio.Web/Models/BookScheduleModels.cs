@@ -44,6 +44,38 @@ public sealed record DayAvailability(DateOnly Date, IReadOnlyList<SlotAvailabili
 
 public sealed record MonthAvailability(int Year, int Month, IReadOnlyList<DayAvailability> Days);
 
+[JsonConverter(typeof(JsonStringEnumConverter<ShootDayStatus>))]
+public enum ShootDayStatus
+{
+    Free = 0,
+    BookingsAvailable = 1,
+    FullyBooked = 2
+}
+
+public sealed record ShootTimeRange(TimeOnly Start, TimeOnly End);
+
+public sealed record ShootQuickSlot(
+    TimeOnly Start,
+    TimeOnly End,
+    TimeOnly PrepStart,
+    TimeOnly PostEnd,
+    int AvailableCrewCount);
+
+public sealed record ShootDayAvailability(
+    DateOnly Date,
+    ShootDayStatus Status,
+    bool HasBookings,
+    int BookedEventCount,
+    int EligibleCrewCount,
+    IReadOnlyList<ShootTimeRange> FeasibleStartRanges,
+    IReadOnlyList<ShootQuickSlot> QuickSlots);
+
+public sealed record ShootMonthAvailability(
+    int Year,
+    int Month,
+    int DurationMinutes,
+    IReadOnlyList<ShootDayAvailability> Days);
+
 public sealed record CrewSlotStatus(
     TimeOnly Start,
     TimeOnly End,

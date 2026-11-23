@@ -1651,14 +1651,19 @@
                                 </div>
 
                                 <div class="sm:col-span-2 space-y-3">
+                                    @{
+                                        var requiredMinutes = GetWizardRequiredDurationMinutes();
+                                        var selectedDayAvail = GetWizardDayAvailability(_wizardEventDate);
+                                        var scheduleValidation = ValidateWizardScheduleSelection();
+                                    }
                                     <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-1 pb-1 border-b border-slate-200">
                                         <div>
                                             <label class="block text-xs font-bold text-slate-800">Choose Shoot Date &amp; Exact Minute-Level Time *</label>
-                                            <p class="text-[11px] text-slate-500">Pick a date on the calendar and set exact minute-level start/end times (e.g., 9:15 AM, 1:35 PM). Overlapping times are allowed when different crews are available.</p>
+                                            <p class="text-[11px] text-slate-500">Studio operating hours: 8:00 AM – 8:00 PM. Overlapping times are allowed when different crews are available across the full 2h prep + shoot + 1h post window.</p>
                                         </div>
                                         @if (_wizardEventDate > DateTime.MinValue)
                                         {
-                                            <div class="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-emerald-50 border border-emerald-200 text-emerald-800 text-xs font-bold shadow-xs shrink-0">
+                                            <div class="inline-flex items-center gap-1.5 px-3 py-1 rounded-full @(scheduleValidation.IsValid ? "bg-emerald-50 border-emerald-200 text-emerald-800" : "bg-rose-50 border-rose-200 text-rose-800") border text-xs font-bold shadow-xs shrink-0">
                                                 <span>🗓️ @_wizardEventDate.ToString("MMM d, yyyy") &bull; @BookingWizardEngine.FormatTime(_wizardEventTime.TimeOfDay) – @BookingWizardEngine.FormatTime(_wizardEventEndTime.TimeOfDay)</span>
                                             </div>
                                         }
@@ -1689,39 +1694,95 @@
                                                         var dayDate = new DateTime(_wizardCalendarMonth.Year, _wizardCalendarMonth.Month, day);
                                                         var isSelected = _wizardEventDate.Date == dayDate.Date;
                                                         var isPast = dayDate.Date < DateTime.Today;
-                                                        var hasEvents = HasBookedEventsOnDate(dayDate);
+                                                        var dayAvail = !isPast ? GetWizardDayAvailability(dayDate) : null;
+                                                        var dayStatus = dayAvail?.Status ?? ShootDayStatus.Free;
+                                                        var dayTitle = isPast
+                                                            ? "Past date"
+                                                            : dayStatus switch
+                                                            {
+                                                                ShootDayStatus.BookingsAvailable => $"Bookings • Slots available ({BookingWizardEngine.FormatFeasibleOperatingWindows(dayAvail!.FeasibleStartRanges, requiredMinutes)})",
+                                                                ShootDayStatus.FullyBooked => "Fully Booked (8:00 AM – 8:00 PM) — no feasible slots or crew available",
+                                                                _ => "Free — all slots available (8:00 AM – 8:00 PM)"
+                                                            };
 
                                                         <button type="button"
                                                                 disabled="@isPast"
+                                                                title="@dayTitle"
                                                                 @onclick="() => SelectWizardDate(dayDate)"
                                                                 class="h-8 w-full rounded-lg text-xs flex flex-col items-center justify-center relative transition-all @(isSelected ? "bg-slate-900 text-white font-bold shadow-xs scale-105" : (isPast ? "text-slate-300 cursor-not-allowed" : "hover:bg-slate-100 text-slate-700 font-medium"))">
                                                             <span>@day</span>
-                                                            @if (hasEvents && !isSelected)
+                                                            @if (!isPast && dayStatus == ShootDayStatus.BookingsAvailable)
                                                             {
-                                                                <span class="w-1.5 h-1.5 rounded-full bg-rose-500 absolute bottom-0.5"></span>
+                                                                <span class="w-1.5 h-1.5 rounded-full bg-amber-400 absolute bottom-0.5" data-day-status="yellow"></span>
+                                                            }
+                                                            else if (!isPast && dayStatus == ShootDayStatus.FullyBooked)
+                                                            {
+                                                                <span class="w-1.5 h-1.5 rounded-full bg-rose-500 absolute bottom-0.5" data-day-status="red"></span>
                                                             }
                                                         </button>
                                                     }
                                                 </div>
                                             </div>
 
-                                            <div class="pt-3 border-t border-slate-100 mt-3 flex items-center justify-between text-[10px] text-slate-500">
-                                                <span class="flex items-center gap-1"><span class="w-2 h-2 rounded-full bg-rose-500 inline-block"></span> Has Bookings</span>
+                                            <div class="pt-3 border-t border-slate-100 mt-3 flex flex-wrap items-center justify-between gap-x-2.5 gap-y-1 text-[10px] text-slate-500">
+                                                <span class="flex items-center gap-1"><span class="w-2 h-2 rounded-full border border-slate-300 bg-white inline-block"></span> Free</span>
+                                                <span class="flex items-center gap-1"><span class="w-2 h-2 rounded-full bg-amber-400 inline-block"></span> Bookings • Slots Available</span>
+                                                <span class="flex items-center gap-1"><span class="w-2 h-2 rounded-full bg-rose-500 inline-block"></span> Fully Booked 8 AM–8 PM</span>
                                                 <span class="flex items-center gap-1"><span class="w-2 h-2 rounded-full bg-slate-900 inline-block"></span> Selected</span>
                                             </div>
                                         </div>
 
                                         <!-- Minute-Level Time Selector & Buffer Visualization (Right Column) -->
                                         <div class="lg:col-span-7 bg-white p-3.5 rounded-xl border border-slate-200 shadow-xs flex flex-col space-y-3">
-                                            <div class="flex items-center justify-between pb-2 border-b border-slate-100">
+                                            <div class="flex items-center justify-between pb-2 border-b border-slate-100 gap-2">
                                                 <div>
                                                     <span class="text-xs font-bold text-slate-800">Time &amp; Buffer Window for @_wizardEventDate.ToString("ddd, MMM d, yyyy")</span>
-                                                    <p class="text-[10px] text-slate-500">Minute-level precision enabled (e.g. 9:15 AM, 1:35 PM, 2:35 PM).</p>
+                                                    <p class="text-[10px] text-slate-500">8:00 AM – 8:00 PM operating hours &bull; Min shoot: @(requiredMinutes / 60)h@(requiredMinutes % 60 > 0 ? $" {requiredMinutes % 60}m" : "")</p>
                                                 </div>
-                                                <span class="text-[10px] font-bold px-2 py-0.5 rounded bg-slate-100 text-slate-700">
+                                                <span class="text-[10px] font-bold px-2 py-0.5 rounded bg-slate-100 text-slate-700 shrink-0">
                                                     2h Prep + Shoot + 1h Post
                                                 </span>
                                             </div>
+
+                                            @* Feasible Available Slots & Windows Panel *@
+                                            @if (selectedDayAvail.Status == ShootDayStatus.FullyBooked)
+                                            {
+                                                <div class="p-2.5 rounded-xl bg-rose-50 border border-rose-200 text-rose-800 text-[11px] font-semibold">
+                                                    🔴 <strong>Fully Booked (8:00 AM – 8:00 PM):</strong>
+                                                    @(selectedDayAvail.EligibleCrewCount == 0
+                                                        ? "Zero dispatchable shoot crew is available on this date (day off or approved leave). Please pick another date."
+                                                        : "Remaining gaps lack enough contiguous time for the shoot plus 2h prep / 1h post buffers or available crew. Please pick another date or adjust service duration.")
+                                                </div>
+                                            }
+                                            else if (selectedDayAvail.QuickSlots.Count > 0)
+                                            {
+                                                var isYellowDay = selectedDayAvail.Status == ShootDayStatus.BookingsAvailable;
+                                                <div class="p-2.5 rounded-xl border @(isYellowDay ? "bg-amber-50/70 border-amber-200" : "bg-slate-50 border-slate-200") space-y-2">
+                                                    <div class="flex flex-wrap items-center justify-between gap-1">
+                                                        <span class="text-[10px] font-bold uppercase tracking-wider @(isYellowDay ? "text-amber-900" : "text-slate-600")">
+                                                            @(isYellowDay ? "🟡 Available Slots (Verified w/ 2h Prep + 1h Post & Crew)" : "Quick-Pick Open Slots (8:00 AM – 8:00 PM)")
+                                                        </span>
+                                                        <span class="text-[10px] font-semibold @(isYellowDay ? "text-amber-800" : "text-slate-500")">
+                                                            Windows: @BookingWizardEngine.FormatFeasibleOperatingWindows(selectedDayAvail.FeasibleStartRanges, requiredMinutes)
+                                                        </span>
+                                                    </div>
+                                                    <div class="flex flex-wrap gap-1.5 max-h-24 overflow-y-auto">
+                                                        @foreach (var qSlot in selectedDayAvail.QuickSlots)
+                                                        {
+                                                            var slotStartSpan = qSlot.Start.ToTimeSpan();
+                                                            var slotEndSpan = qSlot.End.ToTimeSpan();
+                                                            var isChosenSlot = _wizardEventTime.TimeOfDay == slotStartSpan && _wizardEventEndTime.TimeOfDay == slotEndSpan;
+                                                            <button type="button"
+                                                                    @onclick="() => SelectWizardQuickSlot(qSlot)"
+                                                                    title="Buffered block: @BookingWizardEngine.FormatTime(qSlot.PrepStart.ToTimeSpan()) – @BookingWizardEngine.FormatTime(qSlot.PostEnd.ToTimeSpan()) (@qSlot.AvailableCrewCount crew free)"
+                                                                    class="px-2 py-1 rounded-lg border text-[10px] font-bold transition-all cursor-pointer @(isChosenSlot ? "bg-slate-900 text-white border-slate-900 shadow-xs" : "bg-white text-slate-800 border-slate-300 hover:border-slate-900 hover:bg-slate-100")">
+                                                                @BookingWizardEngine.FormatTime(slotStartSpan) – @BookingWizardEngine.FormatTime(slotEndSpan)
+                                                                <span class="opacity-70 font-normal ml-0.5">(@qSlot.AvailableCrewCount)</span>
+                                                            </button>
+                                                        }
+                                                    </div>
+                                                </div>
+                                            }
 
                                             @* Minute-level Start & End Time inputs *@
                                             <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
@@ -1729,6 +1790,8 @@
                                                     <label class="block text-[11px] font-bold text-slate-700 mb-1">Event Start Time (Minute Precision) *</label>
                                                     <input type="time"
                                                            step="60"
+                                                           min="08:00"
+                                                           max="20:00"
                                                            value="@_wizardEventTime.ToString("HH:mm")"
                                                            @onchange="OnWizardStartTimeChanged"
                                                            class="w-full px-2.5 py-1.5 bg-white border border-slate-300 rounded-lg text-xs font-bold text-slate-900 focus:outline-none focus:ring-1 focus:ring-slate-900" />
@@ -1738,6 +1801,8 @@
                                                     <label class="block text-[11px] font-bold text-slate-700 mb-1">Event End Time (Minute Precision) *</label>
                                                     <input type="time"
                                                            step="60"
+                                                           min="08:00"
+                                                           max="20:00"
                                                            value="@_wizardEventEndTime.ToString("HH:mm")"
                                                            @onchange="OnWizardEndTimeChanged"
                                                            class="w-full px-2.5 py-1.5 bg-white border border-slate-300 rounded-lg text-xs font-bold text-slate-900 focus:outline-none focus:ring-1 focus:ring-slate-900" />
@@ -1767,17 +1832,17 @@
                                                 </div>
                                             </div>
 
-                                            @* Crew Availability Indicator for the combined window *@
-                                            @if (availableCrews.Count > 0)
+                                            @* Schedule & Crew Availability Validation Indicator *@
+                                            @if (scheduleValidation.IsValid)
                                             {
                                                 <div class="p-2.5 rounded-xl bg-emerald-50 border border-emerald-200 text-emerald-900 text-[11px] font-semibold flex items-center justify-between">
-                                                    <span>✓ <strong>@availableCrews.Count</strong> crew member(s) available for combined window (@BookingWizardEngine.FormatTime(bufferedWindow.PrepStart) – @BookingWizardEngine.FormatTime(bufferedWindow.PostEnd)).</span>
+                                                    <span>✓ <strong>@scheduleValidation.AvailableCrewCount</strong> crew member(s) available for combined window (@BookingWizardEngine.FormatTime(bufferedWindow.PrepStart) – @BookingWizardEngine.FormatTime(bufferedWindow.PostEnd)).</span>
                                                 </div>
                                             }
                                             else
                                             {
                                                 <div class="p-2.5 rounded-xl bg-rose-50 border border-rose-200 text-rose-800 text-[11px] font-semibold">
-                                                    ⚠️ No crew available for this combined Prep + Event + Post window (@BookingWizardEngine.FormatTime(bufferedWindow.PrepStart) – @BookingWizardEngine.FormatTime(bufferedWindow.PostEnd)). Please adjust time or date.
+                                                    ⚠️ @scheduleValidation.ErrorMessage
                                                 </div>
                                             }
 
@@ -2667,6 +2732,9 @@
     private List<EquipmentReservationModel> _equipmentReservations = new();
     private List<LeaveItemViewModel> _approvedLeaves = new();
     private List<ServiceCustomizationItem> _serviceSelections = new();
+    private ShootMonthAvailability? _serverShootMonth;
+    private (int Year, int Month, int DurationMinutes, string? ExcludeAppointmentId)? _serverShootMonthKey;
+    private int _shootMonthLoadSeq;
 
     public enum SlotStatusType
     {
@@ -2795,15 +2863,104 @@
         return result;
     }
 
-    private bool HasBookedEventsOnDate(DateTime date)
+    private int GetWizardRequiredDurationMinutes() =>
+        BookingWizardEngine.ComputeCombinedShootDurationMinutes(_serviceSelections);
+
+    public ShootDayAvailability GetWizardDayAvailability(DateTime date)
     {
-        if (_studioBookings != null && _studioBookings.Any(b => b.Date.Date == date.Date && !string.Equals(b.Status, "Cancelled", StringComparison.OrdinalIgnoreCase) && !string.Equals(b.Status, "Deal_Lost", StringComparison.OrdinalIgnoreCase)))
-            return true;
+        var requiredMinutes = GetWizardRequiredDurationMinutes();
+        var dateOnly = DateOnly.FromDateTime(date);
+        if (_serverShootMonth != null &&
+            _serverShootMonthKey is { } key &&
+            key.Year == date.Year &&
+            key.Month == date.Month &&
+            key.DurationMinutes == requiredMinutes &&
+            string.Equals(key.ExcludeAppointmentId, _wizardCreatedAppointmentId, StringComparison.OrdinalIgnoreCase))
+        {
+            var serverDay = _serverShootMonth.Days.FirstOrDefault(d => d.Date == dateOnly);
+            if (serverDay != null)
+                return serverDay;
+        }
 
-        if (_negotiations != null && _negotiations.Any(n => (n.Appointment != null && n.Appointment.EventDate.ToDateTime(TimeOnly.MinValue).Date == date.Date && !string.Equals(n.Appointment.EventStatus, "Cancelled", StringComparison.OrdinalIgnoreCase)) || (n.ConsultationDate.ToDateTime(TimeOnly.MinValue).Date == date.Date && !string.Equals(n.NegotiationStatus, "Cancelled", StringComparison.OrdinalIgnoreCase) && !string.Equals(n.NegotiationStatus, "Deal_Lost", StringComparison.OrdinalIgnoreCase))))
-            return true;
+        return BookingWizardEngine.EvaluateDayAvailability(
+            date,
+            requiredMinutes,
+            _availableEmployees,
+            _studioBookings,
+            _negotiations,
+            _approvedLeaves,
+            _wizardCreatedAppointmentId);
+    }
 
-        return false;
+    public ShootScheduleValidationResult ValidateWizardScheduleSelection()
+    {
+        var requiredMinutes = GetWizardRequiredDurationMinutes();
+        var validation = BookingWizardEngine.ValidateScheduleSelection(
+            _wizardEventDate,
+            _wizardEventTime.TimeOfDay,
+            _wizardEventEndTime.TimeOfDay,
+            requiredMinutes,
+            _availableEmployees,
+            _studioBookings,
+            _negotiations,
+            _approvedLeaves,
+            _wizardCreatedAppointmentId);
+
+        if (validation.IsValid &&
+            _serverShootMonth != null &&
+            _serverShootMonthKey is { } key &&
+            key.Year == _wizardEventDate.Year &&
+            key.Month == _wizardEventDate.Month &&
+            key.DurationMinutes == requiredMinutes &&
+            string.Equals(key.ExcludeAppointmentId, _wizardCreatedAppointmentId, StringComparison.OrdinalIgnoreCase))
+        {
+            var serverDay = _serverShootMonth.Days.FirstOrDefault(d => d.Date == DateOnly.FromDateTime(_wizardEventDate));
+            if (serverDay != null)
+            {
+                var startTimeOnly = TimeOnly.FromTimeSpan(_wizardEventTime.TimeOfDay);
+                if (serverDay.Status == ShootDayStatus.FullyBooked ||
+                    !serverDay.FeasibleStartRanges.Any(r => startTimeOnly >= r.Start && startTimeOnly <= r.End))
+                {
+                    return validation with
+                    {
+                        IsValid = false,
+                        AvailableCrewCount = 0,
+                        ErrorMessage = $"No crew is available for {BookingWizardEngine.FormatTime(_wizardEventTime.TimeOfDay)} – {BookingWizardEngine.FormatTime(_wizardEventEndTime.TimeOfDay)} (including 2h prep and 1h post-event buffers). Please select an available slot or another date."
+                    };
+                }
+            }
+        }
+
+        return validation;
+    }
+
+    private void InvalidateServerShootMonth()
+    {
+        _serverShootMonth = null;
+        _serverShootMonthKey = null;
+    }
+
+    private async Task RefreshWizardShootAvailabilityAsync()
+    {
+        if (ScheduleApi == null) return;
+
+        var year = _wizardCalendarMonth.Year;
+        var month = _wizardCalendarMonth.Month;
+        var durationMinutes = GetWizardRequiredDurationMinutes();
+        var excludeId = _wizardCreatedAppointmentId;
+        var seq = ++_shootMonthLoadSeq;
+
+        try
+        {
+            var res = await ScheduleApi.GetShootMonthAvailabilityAsync(year, month, durationMinutes, excludeId);
+            if (seq == _shootMonthLoadSeq && res.IsSuccess && res.Value != null)
+            {
+                _serverShootMonth = res.Value;
+                _serverShootMonthKey = (year, month, durationMinutes, excludeId);
+                try { await InvokeAsync(StateHasChanged); } catch { }
+            }
+        }
+        catch { }
     }
 
     private List<EventBookingModel> GetDayBookingsForReference(DateTime date)
@@ -2822,8 +2979,30 @@
     private void SelectWizardDate(DateTime date)
     {
         _wizardEventDate = date;
+        _wizardError = null;
         _wizardEventTime = date.Date.Add(_wizardEventTime.TimeOfDay);
         SyncWizardEndTimeFromSelections();
+
+        var dayAvail = GetWizardDayAvailability(date);
+        var currentValidation = ValidateWizardScheduleSelection();
+        if (!currentValidation.IsValid && dayAvail.QuickSlots.Count > 0)
+        {
+            var firstSlot = dayAvail.QuickSlots[0];
+            _wizardEventTime = date.Date.Add(firstSlot.Start.ToTimeSpan());
+            _wizardEventEndTime = date.Date.Add(firstSlot.End.ToTimeSpan());
+            _isEndTimeManuallyOverridden = false;
+        }
+
+        PruneUnavailableCrewAndEquipment();
+        StateHasChanged();
+    }
+
+    private void SelectWizardQuickSlot(ShootQuickSlot slot)
+    {
+        _wizardError = null;
+        _wizardEventTime = _wizardEventDate.Date.Add(slot.Start.ToTimeSpan());
+        _wizardEventEndTime = _wizardEventDate.Date.Add(slot.End.ToTimeSpan());
+        _isEndTimeManuallyOverridden = false;
         PruneUnavailableCrewAndEquipment();
         StateHasChanged();
     }
@@ -2832,6 +3011,7 @@
     {
         if (TimeSpan.TryParse(e.Value?.ToString(), out var parsed))
         {
+            _wizardError = null;
             _wizardEventTime = _wizardEventDate.Date.Add(parsed);
             _isEndTimeManuallyOverridden = false;
             SyncWizardEndTimeFromSelections();
@@ -2843,6 +3023,7 @@
     {
         if (TimeSpan.TryParse(e.Value?.ToString(), out var parsed))
         {
+            _wizardError = null;
             _wizardEventEndTime = _wizardEventDate.Date.Add(parsed);
             _isEndTimeManuallyOverridden = true;
             PruneUnavailableCrewAndEquipment();
@@ -2869,14 +3050,18 @@
         return span.Minutes > 0 ? $"{(int)span.TotalHours}h {span.Minutes}m" : $"{(int)span.TotalHours}h";
     }
 
-    private void PrevWizardMonth()
+    private async Task PrevWizardMonth()
     {
         _wizardCalendarMonth = _wizardCalendarMonth.AddMonths(-1);
+        InvalidateServerShootMonth();
+        await RefreshWizardShootAvailabilityAsync();
     }
 
-    private void NextWizardMonth()
+    private async Task NextWizardMonth()
     {
         _wizardCalendarMonth = _wizardCalendarMonth.AddMonths(1);
+        InvalidateServerShootMonth();
+        await RefreshWizardShootAvailabilityAsync();
     }
 
     private static string FormatTimeSpan(TimeSpan ts) => BookingWizardEngine.FormatTime(ts);
@@ -3732,7 +3917,7 @@
 
 
 
-    private void OpenEventWizard()
+    private async Task OpenEventWizard()
     {
         if (_selectedNegotiation == null) return;
 
@@ -3746,6 +3931,7 @@
         _wizardEventTime = _wizardEventDate.Date.AddHours(14);
         _isEndTimeManuallyOverridden = false;
 
+        InvalidateServerShootMonth();
         RefreshStudioScheduleCache();
 
         _wizardEventLocation = "Studio A (Main Hall)";
@@ -3773,6 +3959,14 @@
 
         SyncWizardEndTimeFromSelections(force: true);
 
+        var initialDayAvail = GetWizardDayAvailability(_wizardEventDate);
+        if (!ValidateWizardScheduleSelection().IsValid && initialDayAvail.QuickSlots.Count > 0)
+        {
+            var firstSlot = initialDayAvail.QuickSlots[0];
+            _wizardEventTime = _wizardEventDate.Date.Add(firstSlot.Start.ToTimeSpan());
+            _wizardEventEndTime = _wizardEventDate.Date.Add(firstSlot.End.ToTimeSpan());
+        }
+
         var availCrews = GetAvailableWizardCrews();
         if (availCrews.Count > 0)
         {
@@ -3788,6 +3982,20 @@
 
         StartCountdownTimer();
         _isWizardOpen = true;
+
+        try
+        {
+            if (EmployeeService != null)
+            {
+                var emps = await EmployeeService.GetEmployeesAsync();
+                _availableEmployees = emps.Where(e => e.Status == "Active").ToList();
+                var leaves = await EmployeeService.GetAllLeavesAsync("Approved");
+                _approvedLeaves = leaves.ToList();
+            }
+        }
+        catch { }
+
+        await RefreshWizardShootAvailabilityAsync();
     }
 
     private void CloseEventWizard()
@@ -3823,6 +4031,14 @@
             if (_wizardEventDate == DateTime.MinValue || _wizardEventTime == default || _wizardEventEndTime <= _wizardEventTime)
             {
                 _wizardError = "Please choose a valid shoot date and minute-level start/end time.";
+                return;
+            }
+
+            var scheduleValidation = ValidateWizardScheduleSelection();
+            if (!scheduleValidation.IsValid)
+            {
+                _wizardError = scheduleValidation.ErrorMessage
+                    ?? "Selected shoot time is not available. Please adjust the time or date.";
                 return;
             }
 
@@ -3938,7 +4154,9 @@
                 _wizardPaymentStatus = res.Value.DownpaymentStatus;
 
                 // Immediately sync pending appointment to Events Calendar
+                InvalidateServerShootMonth();
                 RefreshStudioScheduleCache();
+                _ = RefreshWizardShootAvailabilityAsync();
 
                 await DisplayToast("Appointment created (Awaiting Reserve Fee Payment), payment email dispatched, and synced to Events Calendar.");
                 _wizardStep = 5;
@@ -4383,6 +4601,8 @@
 
         SyncWizardEndTimeFromSelections();
         PruneUnavailableCrewAndEquipment();
+        InvalidateServerShootMonth();
+        _ = RefreshWizardShootAvailabilityAsync();
     }
 
     private void UpdateServiceQuantity(string serviceId, object? rawVal)
@@ -4396,6 +4616,8 @@
                 item.DurationHours = item.Quantity;
             SyncWizardEndTimeFromSelections();
             PruneUnavailableCrewAndEquipment();
+            InvalidateServerShootMonth();
+            _ = RefreshWizardShootAvailabilityAsync();
         }
     }
 
@@ -4408,6 +4630,8 @@
             item.DurationHours = Math.Clamp(hrs, 1, 24);
             SyncWizardEndTimeFromSelections();
             PruneUnavailableCrewAndEquipment();
+            InvalidateServerShootMonth();
+            _ = RefreshWizardShootAvailabilityAsync();
         }
     }
 
