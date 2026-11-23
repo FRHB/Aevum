@@ -126,6 +126,50 @@
         </div>
     }
 
+    <!-- Pending Password Reset Requests Banner (Admin Verification) -->
+    @if (!EffectiveReadOnly && pendingPasswordResets.Count > 0)
+    {
+        <div class="bg-amber-50 border border-amber-200 rounded-xl p-4 space-y-3 shadow-xs">
+            <div class="flex items-center justify-between">
+                <div class="flex items-center gap-2 text-xs font-bold text-amber-900 uppercase tracking-wider">
+                    <span>🔑 Pending Password Reset Requests (@pendingPasswordResets.Count)</span>
+                </div>
+                <span class="text-[11px] text-amber-700">Verifying resets the employee's password to their initial password and sends an email.</span>
+            </div>
+            <div class="divide-y divide-amber-200/70 bg-white rounded-lg border border-amber-200">
+                @foreach (var req in pendingPasswordResets)
+                {
+                    <div class="p-3 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs">
+                        <div>
+                            <div class="font-bold text-slate-900">@(req.EmployeeName ?? req.EmployeeId) <span class="font-mono text-slate-500">(@req.EmployeeId)</span></div>
+                            <div class="text-slate-600">
+                                Requested @req.RequestedAt.ToLocalTime().ToString("MMM dd, yyyy hh:mm tt")
+                                @if (!string.IsNullOrWhiteSpace(req.Reason))
+                                {
+                                    <span> · Reason: <em>@req.Reason</em></span>
+                                }
+                            </div>
+                        </div>
+                        <div class="flex items-center gap-2 shrink-0">
+                            <button type="button"
+                                    disabled="@isProcessingAction"
+                                    @onclick="() => ApprovePasswordResetAsync(req)"
+                                    class="px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white font-semibold cursor-pointer disabled:opacity-50">
+                                Verify & Reset Password
+                            </button>
+                            <button type="button"
+                                    disabled="@isProcessingAction"
+                                    @onclick="() => RejectPasswordResetAsync(req)"
+                                    class="px-3 py-1.5 rounded-lg bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 font-semibold cursor-pointer disabled:opacity-50">
+                                Reject
+                            </button>
+                        </div>
+                    </div>
+                }
+            </div>
+        </div>
+    }
+
     <!-- Staff Table View -->
     <div class="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
         <div class="overflow-x-auto">
@@ -451,6 +495,10 @@
                 ? await Employees.GetArchivedEmployeesAsync(_cts?.Token ?? CancellationToken.None)
                 : await Employees.GetEmployeesAsync(includeArchived: false, _cts?.Token ?? CancellationToken.None);
             employees = data?.ToList() ?? new List<EmployeeViewModel>();
+            if (!EffectiveReadOnly)
+            {
+                pendingPasswordResets = (await Employees.GetPendingPasswordResetRequestsAsync(_cts?.Token ?? CancellationToken.None)).ToList();
+            }
         }
         catch (OperationCanceledException)
         {
@@ -463,6 +511,46 @@
         finally
         {
             isLoading = false;
+        }
+    }
+
+    private List<EmployeePasswordResetRequestDto> pendingPasswordResets = new();
+
+    private async Task ApprovePasswordResetAsync(EmployeePasswordResetRequestDto req)
+    {
+        if (isProcessingAction) return;
+        isProcessingAction = true;
+        try
+        {
+            var adminId = _currentUser?.FindFirst("studio_id")?.Value ?? _currentUser?.Identity?.Name ?? "ADM-001";
+            var adminName = _currentUser?.FindFirst("full_name")?.Value ?? _currentUser?.Identity?.Name ?? adminId;
+            var (ok, msg) = await Employees.ApprovePasswordResetRequestAsync(req.RequestId, adminId, adminName, _cts?.Token ?? CancellationToken.None);
+            feedbackType = ok ? "success" : "error";
+            feedbackMessage = msg;
+            await LoadEmployeesAsync();
+        }
+        finally
+        {
+            isProcessingAction = false;
+        }
+    }
+
+    private async Task RejectPasswordResetAsync(EmployeePasswordResetRequestDto req)
+    {
+        if (isProcessingAction) return;
+        isProcessingAction = true;
+        try
+        {
+            var adminId = _currentUser?.FindFirst("studio_id")?.Value ?? _currentUser?.Identity?.Name ?? "ADM-001";
+            var adminName = _currentUser?.FindFirst("full_name")?.Value ?? _currentUser?.Identity?.Name ?? adminId;
+            var (ok, msg) = await Employees.RejectPasswordResetRequestAsync(req.RequestId, adminId, adminName, "Declined by Administrator", _cts?.Token ?? CancellationToken.None);
+            feedbackType = ok ? "success" : "error";
+            feedbackMessage = msg;
+            await LoadEmployeesAsync();
+        }
+        finally
+        {
+            isProcessingAction = false;
         }
     }
 

@@ -1,6 +1,7 @@
 @using PhotoAevumStudio.Web.Models
 @using PhotoAevumStudio.Web.Services
 @inject IAuthService AuthService
+@inject IEmployeeService EmployeeService
 
 @if (IsLoading)
 {
@@ -142,55 +143,106 @@ else
         <div class="modal-header">
             <div class="modal-title">
                 <i class="fa-solid fa-key"></i>
-                <h3>Security & Password</h3>
+                <h3>@(RequireAdminResetApproval ? "Request Password Reset" : "Security & Password")</h3>
             </div>
             <button type="button" class="close-btn" id="closePassModal" @onclick="ClosePasswordModal">&times;</button>
         </div>
 
-        <p class="modal-description">
-            Enter your current password to set a new one.
-        </p>
-
-        @if (!string.IsNullOrWhiteSpace(passwordErrorMessage))
+        @if (RequireAdminResetApproval)
         {
-            <div class="form-error">
-                <i class="fa-solid fa-circle-exclamation"></i> @passwordErrorMessage
-            </div>
-        }
+            <p class="modal-description">
+                Employee password changes require Administrator verification. When approved, your password will be reset to your initial password and emailed to you.
+            </p>
 
-        <form id="passwordForm" @onsubmit="HandleUpdatePassword" @onsubmit:preventDefault="true">
-            <div class="form-group">
-                <label>Current Password</label>
-                <div class="input-wrapper">
-                    <i class="fa-solid fa-lock"></i>
-                    <input type="password" class="form-input" placeholder="••••••••••••" @bind="passwordForm.CurrentPassword" required />
+            @if (!string.IsNullOrWhiteSpace(passwordErrorMessage))
+            {
+                <div class="form-error">
+                    <i class="fa-solid fa-circle-exclamation"></i> @passwordErrorMessage
                 </div>
-            </div>
+            }
 
-            <div class="form-group">
-                <label>New Password</label>
-                <div class="input-wrapper">
-                    <i class="fa-solid fa-shield-halved"></i>
-                    <input type="password" class="form-input" placeholder="8–30 characters" maxlength="30" @bind="passwordForm.NewPassword" @bind:event="oninput" required />
+            @if (latestResetRequest != null && string.Equals(latestResetRequest.Status, "Pending", StringComparison.OrdinalIgnoreCase))
+            {
+                <div class="p-3 rounded-lg border border-amber-200 bg-amber-50 text-amber-800 text-xs space-y-1">
+                    <div class="font-bold">⏳ Request Pending Admin Verification</div>
+                    <div>Submitted: @latestResetRequest.RequestedAt.ToLocalTime().ToString("MMM dd, yyyy hh:mm tt")</div>
+                    @if (!string.IsNullOrWhiteSpace(latestResetRequest.Reason))
+                    {
+                        <div>Reason: @latestResetRequest.Reason</div>
+                    }
                 </div>
-                @if (PasswordChecklistSlot is not null)
+            }
+            else
+            {
+                @if (latestResetRequest != null && string.Equals(latestResetRequest.Status, "Rejected", StringComparison.OrdinalIgnoreCase))
                 {
-                    @PasswordChecklistSlot(passwordForm.NewPassword)
+                    <div class="p-3 rounded-lg border border-rose-200 bg-rose-50 text-rose-700 text-xs mb-3">
+                        <div class="font-bold">Previous Request Rejected</div>
+                        @if (!string.IsNullOrWhiteSpace(latestResetRequest.RejectionReason))
+                        {
+                            <div>Reason: @latestResetRequest.RejectionReason</div>
+                        }
+                    </div>
                 }
-            </div>
 
-            <div class="form-group">
-                <label>Confirm New Password</label>
-                <div class="input-wrapper">
-                    <i class="fa-solid fa-check-double"></i>
-                    <input type="password" class="form-input" placeholder="Re-enter new password" maxlength="30" @bind="passwordForm.ConfirmPassword" required />
+                <form id="passwordResetRequestForm" @onsubmit="HandleSubmitPasswordResetRequest" @onsubmit:preventDefault="true">
+                    <div class="form-group">
+                        <label>Reason for Password Reset (Optional)</label>
+                        <textarea class="form-input" rows="3" placeholder="e.g. Forgot password or security precaution" @bind="resetRequestReason"></textarea>
+                    </div>
+                    <button type="submit" class="modal-action-btn" id="submitPasswordResetRequestBtn" disabled="@isUpdatingPassword">
+                        @(isUpdatingPassword ? "Submitting Request..." : "Request Password Reset")
+                    </button>
+                </form>
+            }
+        }
+        else
+        {
+            <p class="modal-description">
+                Enter your current password to set a new one.
+            </p>
+
+            @if (!string.IsNullOrWhiteSpace(passwordErrorMessage))
+            {
+                <div class="form-error">
+                    <i class="fa-solid fa-circle-exclamation"></i> @passwordErrorMessage
                 </div>
-            </div>
+            }
 
-            <button type="submit" class="modal-action-btn" id="updatePasswordBtn" disabled="@isUpdatingPassword">
-                @(isUpdatingPassword ? "Updating Password..." : "Update Password")
-            </button>
-        </form>
+            <form id="passwordForm" @onsubmit="HandleUpdatePassword" @onsubmit:preventDefault="true">
+                <div class="form-group">
+                    <label>Current Password</label>
+                    <div class="input-wrapper">
+                        <i class="fa-solid fa-lock"></i>
+                        <input type="password" class="form-input" placeholder="••••••••••••" @bind="passwordForm.CurrentPassword" required />
+                    </div>
+                </div>
+
+                <div class="form-group">
+                    <label>New Password</label>
+                    <div class="input-wrapper">
+                        <i class="fa-solid fa-shield-halved"></i>
+                        <input type="password" class="form-input" placeholder="8–30 characters" maxlength="30" @bind="passwordForm.NewPassword" @bind:event="oninput" required />
+                    </div>
+                    @if (PasswordChecklistSlot is not null)
+                    {
+                        @PasswordChecklistSlot(passwordForm.NewPassword)
+                    }
+                </div>
+
+                <div class="form-group">
+                    <label>Confirm New Password</label>
+                    <div class="input-wrapper">
+                        <i class="fa-solid fa-check-double"></i>
+                        <input type="password" class="form-input" placeholder="Re-enter new password" maxlength="30" @bind="passwordForm.ConfirmPassword" required />
+                    </div>
+                </div>
+
+                <button type="submit" class="modal-action-btn" id="updatePasswordBtn" disabled="@isUpdatingPassword">
+                    @(isUpdatingPassword ? "Updating Password..." : "Update Password")
+                </button>
+            </form>
+        }
     </div>
 </div>
 
@@ -205,6 +257,7 @@ else
     [Parameter] public List<Permission> UserPermissions { get; set; } = new();
     [Parameter] public bool IsLoading { get; set; }
     [Parameter] public bool RequireAuthenticatedUser { get; set; }
+    [Parameter] public bool RequireAdminResetApproval { get; set; }
     [Parameter] public string EmptyStateTitle { get; set; } = "No Active Profile";
     [Parameter] public string EmptyStateMessage { get; set; } = "Please sign in to view your profile.";
     [Parameter] public string ThirdAttributeLabel { get; set; } = "Member Since";
@@ -219,15 +272,54 @@ else
     private bool isUpdatingPassword = false;
     private string passwordErrorMessage = string.Empty;
     private PasswordFormState passwordForm = new();
+    private EmployeePasswordResetRequestDto? latestResetRequest;
+    private string resetRequestReason = string.Empty;
 
     private void OpenPermissionsModal() => showPermsModal = true;
     private void ClosePermissionsModal() => showPermsModal = false;
 
-    private void OpenPasswordModal()
+    private async Task OpenPasswordModal()
     {
         passwordForm = new();
         passwordErrorMessage = string.Empty;
+        resetRequestReason = string.Empty;
+        if (RequireAdminResetApproval && !string.IsNullOrWhiteSpace(CurrentUser.Id))
+        {
+            latestResetRequest = await EmployeeService.GetMyLatestPasswordResetRequestAsync(CurrentUser.Id);
+        }
         showPassModal = true;
+    }
+
+    private async Task HandleSubmitPasswordResetRequest()
+    {
+        if (isUpdatingPassword) return;
+        isUpdatingPassword = true;
+        passwordErrorMessage = string.Empty;
+        StateHasChanged();
+
+        try
+        {
+            var (ok, msg) = await EmployeeService.SubmitPasswordResetRequestAsync(
+                CurrentUser.Id,
+                CurrentUser.FullName,
+                CurrentUser.Email,
+                resetRequestReason);
+            if (ok)
+            {
+                latestResetRequest = await EmployeeService.GetMyLatestPasswordResetRequestAsync(CurrentUser.Id);
+                showPassModal = false;
+                await DisplayToast(msg);
+            }
+            else
+            {
+                passwordErrorMessage = msg;
+            }
+        }
+        finally
+        {
+            isUpdatingPassword = false;
+            StateHasChanged();
+        }
     }
 
     private void ClosePasswordModal() => showPassModal = false;

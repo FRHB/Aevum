@@ -46,11 +46,12 @@ public class SqlAuthService : ISqlAuthService
             BEGIN
                 IF COL_LENGTH(N'dbo.SystemAdmin', N'Email') IS NOT NULL
                     EXEC sp_executesql
-                        N'SELECT SystemAdminID, FirstName, LastName, MiddleName, PasswordHash, Email FROM dbo.SystemAdmin WHERE UPPER(SystemAdminID) = UPPER(@UserId) OR UPPER(SystemAdminID) = UPPER(@CandidateAdminId) OR UPPER(LTRIM(RTRIM(ISNULL(Email, '''')))) = UPPER(@UserId);',
+                        N'SELECT SystemAdminID, FirstName, LastName, MiddleName, PasswordHash, Email, CASE WHEN COL_LENGTH(N''dbo.SystemAdmin'', N''isFirstLogin'') IS NOT NULL THEN ISNULL(isFirstLogin, 0) ELSE CAST(0 AS bit) END AS isFirstLogin FROM dbo.SystemAdmin WHERE UPPER(SystemAdminID) = UPPER(@UserId) OR UPPER(SystemAdminID) = UPPER(@CandidateAdminId) OR UPPER(LTRIM(RTRIM(ISNULL(Email, '''')))) = UPPER(@UserId);',
                         N'@UserId nvarchar(255), @CandidateAdminId nvarchar(255)',
                         @UserId = @UserId, @CandidateAdminId = @CandidateAdminId;
                 ELSE
-                    SELECT SystemAdminID, FirstName, LastName, MiddleName, PasswordHash, NULL AS Email
+                    SELECT SystemAdminID, FirstName, LastName, MiddleName, PasswordHash, NULL AS Email,
+                           CASE WHEN COL_LENGTH(N'dbo.SystemAdmin', N'isFirstLogin') IS NOT NULL THEN ISNULL(isFirstLogin, 0) ELSE CAST(0 AS bit) END AS isFirstLogin
                     FROM dbo.SystemAdmin
                     WHERE UPPER(SystemAdminID) = UPPER(@UserId)
                        OR UPPER(SystemAdminID) = UPPER(@CandidateAdminId);
@@ -69,13 +70,14 @@ public class SqlAuthService : ISqlAuthService
                 var middle = sysReader.IsDBNull(sysReader.GetOrdinal("MiddleName")) ? null : sysReader.GetString(sysReader.GetOrdinal("MiddleName"));
                 var storedPassword = sysReader.GetString(sysReader.GetOrdinal("PasswordHash"));
                 var storedEmail = sysReader.IsDBNull(sysReader.GetOrdinal("Email")) ? null : sysReader.GetString(sysReader.GetOrdinal("Email"));
+                var isFirstLogin = !sysReader.IsDBNull(sysReader.GetOrdinal("isFirstLogin")) && sysReader.GetBoolean(sysReader.GetOrdinal("isFirstLogin"));
 
                 var fullName = string.Join(" ", new[] { first, middle, last }.Where(s => !string.IsNullOrWhiteSpace(s)));
                 var email = !string.IsNullOrWhiteSpace(storedEmail) ? storedEmail.Trim() : $"{sysId.ToLowerInvariant()}@photoaevum.studio";
 
                 await sysReader.CloseAsync();
 
-                var authUser = new AuthUser(sysId, AppRoles.SystemAdmin, fullName, email, storedPassword, false);
+                var authUser = new AuthUser(sysId, AppRoles.SystemAdmin, fullName, email, storedPassword, isFirstLogin);
 
                 bool match = VerifyPasswordFlexible(password, storedPassword, allowPlainText: true);
                 if (match)
@@ -98,8 +100,8 @@ public class SqlAuthService : ISqlAuthService
                         }
                     }
 
-                    _logger.LogInformation("Successful login for System Admin {SystemAdminId}.", sysId);
-                    return new AuthValidationResult(Success: true, RequiresPasswordChange: false, User: authUser, IsFirstLogin: false);
+                    _logger.LogInformation("Successful login for System Admin {SystemAdminId} (FirstLogin={IsFirstLogin}).", sysId, isFirstLogin);
+                    return new AuthValidationResult(Success: true, RequiresPasswordChange: isFirstLogin, User: authUser, IsFirstLogin: isFirstLogin);
                 }
                 else
                 {
@@ -378,9 +380,15 @@ public class SqlAuthService : ISqlAuthService
                 string newHashed = BCrypt.Net.BCrypt.HashPassword(newPassword);
 
                 const string updateSysSql = @"
-                    UPDATE dbo.SystemAdmin
-                    SET PasswordHash = @NewPassword
-                    WHERE SystemAdminID = @SystemAdminID;";
+                    IF COL_LENGTH(N'dbo.SystemAdmin', N'isFirstLogin') IS NOT NULL
+                        UPDATE dbo.SystemAdmin
+                        SET PasswordHash = @NewPassword,
+                            isFirstLogin = 0
+                        WHERE SystemAdminID = @SystemAdminID;
+                    ELSE
+                        UPDATE dbo.SystemAdmin
+                        SET PasswordHash = @NewPassword
+                        WHERE SystemAdminID = @SystemAdminID;";
                 await using var updateCmd = new SqlCommand(updateSysSql, conn);
                 updateCmd.Parameters.AddWithValue("@NewPassword", newHashed);
                 updateCmd.Parameters.AddWithValue("@SystemAdminID", sysId);

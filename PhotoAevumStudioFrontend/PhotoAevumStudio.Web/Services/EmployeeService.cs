@@ -2301,6 +2301,237 @@ public class EmployeeService : IEmployeeService
 
 
 
+    private static async Task EnsurePasswordResetRequestTableAsync(SqlConnection conn, CancellationToken ct)
+    {
+        const string ddl = @"
+            IF OBJECT_ID(N'dbo.EmployeePasswordResetRequest', N'U') IS NULL
+            BEGIN
+                CREATE TABLE dbo.EmployeePasswordResetRequest (
+                    RequestID int IDENTITY(1,1) NOT NULL PRIMARY KEY,
+                    EmployeeID nvarchar(30) NOT NULL,
+                    EmployeeName nvarchar(200) NULL,
+                    EmployeeEmail nvarchar(255) NULL,
+                    Reason nvarchar(500) NULL,
+                    Status nvarchar(30) NOT NULL CONSTRAINT DF_EmpPwdResetReq_Status DEFAULT 'Pending',
+                    ReviewedByAdminID nvarchar(30) NULL,
+                    ReviewedByName nvarchar(200) NULL,
+                    RejectionReason nvarchar(500) NULL,
+                    RequestedAt datetime2 NOT NULL CONSTRAINT DF_EmpPwdResetReq_RequestedAt DEFAULT SYSUTCDATETIME(),
+                    ReviewedAt datetime2 NULL
+                );
+            END;";
+        await using var cmd = new SqlCommand(ddl, conn);
+        await cmd.ExecuteNonQueryAsync(ct);
+    }
+
+    public async Task<EmployeePasswordResetRequestDto?> GetMyLatestPasswordResetRequestAsync(string employeeId, CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrWhiteSpace(employeeId)) return null;
+        try
+        {
+            await using var conn = SqlResilienceHelper.CreateConnection(_connectionString);
+            await conn.OpenAsync(cancellationToken);
+            await EnsurePasswordResetRequestTableAsync(conn, cancellationToken);
+
+            const string sql = @"
+                SELECT TOP 1 RequestID, EmployeeID, EmployeeName, EmployeeEmail, Reason, Status,
+                       ReviewedByAdminID, ReviewedByName, RejectionReason, RequestedAt, ReviewedAt
+                FROM dbo.EmployeePasswordResetRequest
+                WHERE UPPER(EmployeeID) = UPPER(@EmpId)
+                ORDER BY RequestedAt DESC, RequestID DESC;";
+            await using var cmd = new SqlCommand(sql, conn);
+            cmd.Parameters.AddWithValue("@EmpId", employeeId.Trim());
+            await using var r = await cmd.ExecuteReaderAsync(cancellationToken);
+            if (!await r.ReadAsync(cancellationToken)) return null;
+            return new EmployeePasswordResetRequestDto(
+                r.GetInt32(0),
+                r.GetString(1),
+                r.IsDBNull(2) ? null : r.GetString(2),
+                r.IsDBNull(3) ? null : r.GetString(3),
+                r.IsDBNull(4) ? null : r.GetString(4),
+                r.GetString(5),
+                r.IsDBNull(6) ? null : r.GetString(6),
+                r.IsDBNull(7) ? null : r.GetString(7),
+                r.IsDBNull(8) ? null : r.GetString(8),
+                r.GetDateTime(9),
+                r.IsDBNull(10) ? null : r.GetDateTime(10));
+        }
+        catch { return null; }
+    }
+
+    public async Task<(bool Success, string Message)> SubmitPasswordResetRequestAsync(
+        string employeeId, string? employeeName, string? employeeEmail, string? reason, CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrWhiteSpace(employeeId))
+            return (false, "Employee ID is required.");
+
+        var cleanId = employeeId.Trim().ToUpperInvariant();
+        try
+        {
+            await using var conn = SqlResilienceHelper.CreateConnection(_connectionString);
+            await conn.OpenAsync(cancellationToken);
+            await EnsurePasswordResetRequestTableAsync(conn, cancellationToken);
+
+            const string checkSql = @"
+                SELECT COUNT(1) FROM dbo.EmployeePasswordResetRequest
+                WHERE UPPER(EmployeeID) = @EmpId AND Status = N'Pending';";
+            await using (var chk = new SqlCommand(checkSql, conn))
+            {
+                chk.Parameters.AddWithValue("@EmpId", cleanId);
+                var existing = Convert.ToInt32(await chk.ExecuteScalarAsync(cancellationToken));
+                if (existing > 0)
+                    return (false, "You already have a pending password reset request awaiting Admin verification.");
+            }
+
+            const string insSql = @"
+                INSERT INTO dbo.EmployeePasswordResetRequest (EmployeeID, EmployeeName, EmployeeEmail, Reason, Status, RequestedAt)
+                VALUES (@EmpId, @Name, @Email, @Reason, N'Pending', SYSUTCDATETIME());
+
+                IF OBJECT_ID(N'dbo.HistoryLog', N'U') IS NOT NULL
+                BEGIN
+                    INSERT INTO dbo.HistoryLog (ActionType, EntityName, EntityID, ChangedByType, ActionDetails, LoggedAt)
+                    VALUES (N'PASSWORD_RESET_REQUEST', N'Employee', @EmpId, N'Employee', N'Submitted password reset request for Admin verification.', SYSUTCDATETIME());
+                END;";
+            await using (var cmd = new SqlCommand(insSql, conn))
+            {
+                cmd.Parameters.AddWithValue("@EmpId", cleanId);
+                cmd.Parameters.AddWithValue("@Name", string.IsNullOrWhiteSpace(employeeName) ? DBNull.Value : employeeName.Trim());
+                cmd.Parameters.AddWithValue("@Email", string.IsNullOrWhiteSpace(employeeEmail) ? DBNull.Value : employeeEmail.Trim());
+                cmd.Parameters.AddWithValue("@Reason", string.IsNullOrWhiteSpace(reason) ? DBNull.Value : reason.Trim());
+                await cmd.ExecuteNonQueryAsync(cancellationToken);
+            }
+
+            return (true, "Password reset request submitted. An Administrator will verify and reset your password to your initial password.");
+        }
+        catch (Exception ex)
+        {
+            return (false, $"Unable to submit password reset request: {ex.Message}");
+        }
+    }
+
+    public async Task<IReadOnlyList<EmployeePasswordResetRequestDto>> GetPendingPasswordResetRequestsAsync(CancellationToken cancellationToken = default)
+    {
+        var list = new List<EmployeePasswordResetRequestDto>();
+        try
+        {
+            await using var conn = SqlResilienceHelper.CreateConnection(_connectionString);
+            await conn.OpenAsync(cancellationToken);
+            await EnsurePasswordResetRequestTableAsync(conn, cancellationToken);
+
+            const string sql = @"
+                SELECT r.RequestID, r.EmployeeID,
+                       COALESCE(NULLIF(LTRIM(RTRIM(r.EmployeeName)), N''), LTRIM(RTRIM(CONCAT(e.EmployeeFirstName, N' ', e.EmployeeLastName))), r.EmployeeID) AS EmpName,
+                       COALESCE(NULLIF(LTRIM(RTRIM(r.EmployeeEmail)), N''), e.EmployeeEmail) AS EmpEmail,
+                       r.Reason, r.Status, r.ReviewedByAdminID, r.ReviewedByName, r.RejectionReason, r.RequestedAt, r.ReviewedAt
+                FROM dbo.EmployeePasswordResetRequest r
+                LEFT JOIN dbo.Employees e ON UPPER(e.EmployeeID) = UPPER(r.EmployeeID)
+                WHERE r.Status = N'Pending'
+                ORDER BY r.RequestedAt ASC, r.RequestID ASC;";
+            await using var cmd = new SqlCommand(sql, conn);
+            await using var rd = await cmd.ExecuteReaderAsync(cancellationToken);
+            while (await rd.ReadAsync(cancellationToken))
+            {
+                list.Add(new EmployeePasswordResetRequestDto(
+                    rd.GetInt32(0),
+                    rd.GetString(1),
+                    rd.IsDBNull(2) ? null : rd.GetString(2),
+                    rd.IsDBNull(3) ? null : rd.GetString(3),
+                    rd.IsDBNull(4) ? null : rd.GetString(4),
+                    rd.GetString(5),
+                    rd.IsDBNull(6) ? null : rd.GetString(6),
+                    rd.IsDBNull(7) ? null : rd.GetString(7),
+                    rd.IsDBNull(8) ? null : rd.GetString(8),
+                    rd.GetDateTime(9),
+                    rd.IsDBNull(10) ? null : rd.GetDateTime(10)));
+            }
+        }
+        catch { }
+        return list;
+    }
+
+    public async Task<(bool Success, string Message)> ApprovePasswordResetRequestAsync(
+        int requestId, string adminId, string? adminName, CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            string? targetEmpId = null;
+            await using (var conn = SqlResilienceHelper.CreateConnection(_connectionString))
+            {
+                await conn.OpenAsync(cancellationToken);
+                await EnsurePasswordResetRequestTableAsync(conn, cancellationToken);
+                const string findSql = "SELECT EmployeeID FROM dbo.EmployeePasswordResetRequest WHERE RequestID = @Id AND Status = N'Pending';";
+                await using var findCmd = new SqlCommand(findSql, conn);
+                findCmd.Parameters.AddWithValue("@Id", requestId);
+                var scalar = await findCmd.ExecuteScalarAsync(cancellationToken);
+                targetEmpId = scalar == null || scalar == DBNull.Value ? null : Convert.ToString(scalar);
+            }
+
+            if (string.IsNullOrWhiteSpace(targetEmpId))
+                return (false, "Pending password reset request was not found.");
+
+            // Reset employee password to initial password (LastName + BirthYear + E###) and send email
+            var (resetOk, resetMsg) = await ResetEmployeePasswordAsync(targetEmpId, cancellationToken);
+            if (!resetOk)
+                return (false, resetMsg);
+
+            await using (var conn = SqlResilienceHelper.CreateConnection(_connectionString))
+            {
+                await conn.OpenAsync(cancellationToken);
+                const string updSql = @"
+                    UPDATE dbo.EmployeePasswordResetRequest
+                    SET Status = N'Approved',
+                        ReviewedByAdminID = @AdminId,
+                        ReviewedByName = @AdminName,
+                        ReviewedAt = SYSUTCDATETIME()
+                    WHERE RequestID = @Id;";
+                await using var updCmd = new SqlCommand(updSql, conn);
+                updCmd.Parameters.AddWithValue("@Id", requestId);
+                updCmd.Parameters.AddWithValue("@AdminId", string.IsNullOrWhiteSpace(adminId) ? DBNull.Value : adminId.Trim());
+                updCmd.Parameters.AddWithValue("@AdminName", string.IsNullOrWhiteSpace(adminName) ? DBNull.Value : adminName.Trim());
+                await updCmd.ExecuteNonQueryAsync(cancellationToken);
+            }
+
+            return (true, resetMsg);
+        }
+        catch (Exception ex)
+        {
+            return (false, $"Unable to approve password reset request: {ex.Message}");
+        }
+    }
+
+    public async Task<(bool Success, string Message)> RejectPasswordResetRequestAsync(
+        int requestId, string adminId, string? adminName, string? rejectionReason, CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            await using var conn = SqlResilienceHelper.CreateConnection(_connectionString);
+            await conn.OpenAsync(cancellationToken);
+            await EnsurePasswordResetRequestTableAsync(conn, cancellationToken);
+
+            const string sql = @"
+                UPDATE dbo.EmployeePasswordResetRequest
+                SET Status = N'Rejected',
+                    ReviewedByAdminID = @AdminId,
+                    ReviewedByName = @AdminName,
+                    RejectionReason = @Reason,
+                    ReviewedAt = SYSUTCDATETIME()
+                WHERE RequestID = @Id AND Status = N'Pending';";
+            await using var cmd = new SqlCommand(sql, conn);
+            cmd.Parameters.AddWithValue("@Id", requestId);
+            cmd.Parameters.AddWithValue("@AdminId", string.IsNullOrWhiteSpace(adminId) ? DBNull.Value : adminId.Trim());
+            cmd.Parameters.AddWithValue("@AdminName", string.IsNullOrWhiteSpace(adminName) ? DBNull.Value : adminName.Trim());
+            cmd.Parameters.AddWithValue("@Reason", string.IsNullOrWhiteSpace(rejectionReason) ? DBNull.Value : rejectionReason.Trim());
+            var rows = await cmd.ExecuteNonQueryAsync(cancellationToken);
+            return rows > 0
+                ? (true, "Password reset request rejected.")
+                : (false, "Pending password reset request was not found.");
+        }
+        catch (Exception ex)
+        {
+            return (false, $"Unable to reject password reset request: {ex.Message}");
+        }
+    }
+
     private class ProblemDetails
 
     {

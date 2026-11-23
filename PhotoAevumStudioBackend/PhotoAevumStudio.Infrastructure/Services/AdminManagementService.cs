@@ -400,9 +400,9 @@ public class AdminManagementService : IAdminManagementService
             throw new InvalidOperationException("Account 'SADM-001' is locked and reserved.");
         }
 
-        // Generate temporary password if not passed
+        // Generate initial password if not passed (LastName + BirthYear + A### / S###)
         string temporaryPassword = string.IsNullOrWhiteSpace(dto.TemporaryPassword)
-            ? AdminCredentialGenerator.GenerateTemporaryPassword(12)
+            ? AdminCredentialGenerator.GenerateInitialPassword(dto.LastName, dto.BirthYear, adminId)
             : dto.TemporaryPassword.Trim();
 
         await using var conn = CreateConnection();
@@ -481,6 +481,7 @@ public class AdminManagementService : IAdminManagementService
                 spCmd.Parameters.AddWithValue("@AdminEmail", dto.Email.Trim());
                 spCmd.Parameters.AddWithValue("@AdminPassword", hashedPassword);
                 spCmd.Parameters.AddWithValue("@RequestingUserID", requestingUserId.Trim());
+                spCmd.Parameters.AddWithValue("@BirthYear", (object?)dto.BirthYear ?? DBNull.Value);
 
                 await spCmd.ExecuteNonQueryAsync(cancellationToken);
             }
@@ -496,16 +497,20 @@ public class AdminManagementService : IAdminManagementService
                         BEGIN
                             IF NOT EXISTS (SELECT 1 FROM dbo.SystemAdmin WHERE SystemAdminID = @AdminID)
                             BEGIN
+                                IF COL_LENGTH(N'dbo.SystemAdmin', N'isFirstLogin') IS NULL
+                                    ALTER TABLE dbo.SystemAdmin ADD isFirstLogin bit NOT NULL CONSTRAINT DF_SystemAdmin_isFirstLogin DEFAULT 0;
+                                IF COL_LENGTH(N'dbo.SystemAdmin', N'BirthYear') IS NULL
+                                    ALTER TABLE dbo.SystemAdmin ADD BirthYear int NULL;
                                 IF COL_LENGTH(N'dbo.SystemAdmin', N'Email') IS NOT NULL
                                 BEGIN
-                                    EXEC sp_executesql N'INSERT INTO dbo.SystemAdmin (SystemAdminID, FirstName, LastName, MiddleName, Email, PasswordHash, CreatedAt) VALUES (@AdminID, @AdminFirstName, @AdminLastName, @AdminMiddleName, @AdminEmail, @AdminPassword, SYSUTCDATETIME());',
-                                        N'@AdminID nvarchar(50), @AdminFirstName nvarchar(100), @AdminLastName nvarchar(100), @AdminMiddleName nvarchar(100), @AdminEmail nvarchar(255), @AdminPassword nvarchar(255)',
-                                        @AdminID = @AdminID, @AdminFirstName = @AdminFirstName, @AdminLastName = @AdminLastName, @AdminMiddleName = @AdminMiddleName, @AdminEmail = @AdminEmail, @AdminPassword = @AdminPassword;
+                                    EXEC sp_executesql N'INSERT INTO dbo.SystemAdmin (SystemAdminID, FirstName, LastName, MiddleName, Email, BirthYear, PasswordHash, isFirstLogin, CreatedAt) VALUES (@AdminID, @AdminFirstName, @AdminLastName, @AdminMiddleName, @AdminEmail, @BirthYear, @AdminPassword, 1, SYSUTCDATETIME());',
+                                        N'@AdminID nvarchar(50), @AdminFirstName nvarchar(100), @AdminLastName nvarchar(100), @AdminMiddleName nvarchar(100), @AdminEmail nvarchar(255), @BirthYear int, @AdminPassword nvarchar(255)',
+                                        @AdminID = @AdminID, @AdminFirstName = @AdminFirstName, @AdminLastName = @AdminLastName, @AdminMiddleName = @AdminMiddleName, @AdminEmail = @AdminEmail, @BirthYear = @BirthYear, @AdminPassword = @AdminPassword;
                                 END
                                 ELSE
                                 BEGIN
-                                    INSERT INTO dbo.SystemAdmin (SystemAdminID, FirstName, LastName, MiddleName, PasswordHash, CreatedAt)
-                                    VALUES (@AdminID, @AdminFirstName, @AdminLastName, @AdminMiddleName, @AdminPassword, SYSUTCDATETIME());
+                                    INSERT INTO dbo.SystemAdmin (SystemAdminID, FirstName, LastName, MiddleName, PasswordHash, isFirstLogin, CreatedAt)
+                                    VALUES (@AdminID, @AdminFirstName, @AdminLastName, @AdminMiddleName, @AdminPassword, 1, SYSUTCDATETIME());
                                 END
                             END
                         END
@@ -514,8 +519,10 @@ public class AdminManagementService : IAdminManagementService
                     BEGIN
                         IF NOT EXISTS (SELECT 1 FROM dbo.Admin WHERE AdminID = @AdminID)
                         BEGIN
-                            INSERT INTO dbo.Admin (AdminID, AdminRole, AdminFirstName, AdminLastName, AdminMiddleName, Email, AdminPassword, isFirstLogin)
-                            VALUES (@AdminID, @AdminRole, @AdminFirstName, @AdminLastName, @AdminMiddleName, @AdminEmail, @AdminPassword, 1);
+                            IF COL_LENGTH(N'dbo.Admin', N'BirthYear') IS NULL
+                                ALTER TABLE dbo.Admin ADD BirthYear int NULL;
+                            INSERT INTO dbo.Admin (AdminID, AdminRole, AdminFirstName, AdminLastName, AdminMiddleName, Email, BirthYear, AdminPassword, isFirstLogin)
+                            VALUES (@AdminID, @AdminRole, @AdminFirstName, @AdminLastName, @AdminMiddleName, @AdminEmail, @BirthYear, @AdminPassword, 1);
                         END
                     END";
 
@@ -526,6 +533,7 @@ public class AdminManagementService : IAdminManagementService
                 fbCmd.Parameters.AddWithValue("@AdminLastName", dto.LastName.Trim());
                 fbCmd.Parameters.AddWithValue("@AdminMiddleName", string.IsNullOrWhiteSpace(dto.MiddleName) ? DBNull.Value : dto.MiddleName.Trim());
                 fbCmd.Parameters.AddWithValue("@AdminEmail", dto.Email.Trim());
+                fbCmd.Parameters.AddWithValue("@BirthYear", (object?)dto.BirthYear ?? DBNull.Value);
                 fbCmd.Parameters.AddWithValue("@AdminPassword", hashedPassword);
 
                 await fbCmd.ExecuteNonQueryAsync(cancellationToken);

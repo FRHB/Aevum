@@ -173,7 +173,8 @@ public class AdminService : IAdminService
             model.Email,
             Role = model.IsSystemAdmin ? "SystemAdmin" : "Admin",
             CustomId = model.GeneratedId,
-            TemporaryPassword = model.TemporaryPassword
+            TemporaryPassword = model.TemporaryPassword,
+            model.BirthYear
         };
 
         try

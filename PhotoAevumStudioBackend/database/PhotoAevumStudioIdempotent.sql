@@ -104,10 +104,17 @@ BEGIN
         AdminLastName nvarchar(255) NOT NULL,
         AdminMiddleName nvarchar(255),
         Email nvarchar(255) NULL,
+        BirthYear int NULL,
         AdminPassword nvarchar(255) NOT NULL,
         isFirstLogin bit NOT NULL CONSTRAINT DF_Admin_isFirstLogin DEFAULT 1,
         CreatedAt datetime2 NOT NULL CONSTRAINT DF_Admin_CreatedAt DEFAULT SYSUTCDATETIME()
     );
+END;
+
+IF OBJECT_ID(N'dbo.Admin', N'U') IS NOT NULL
+BEGIN
+    IF COL_LENGTH(N'dbo.Admin', N'BirthYear') IS NULL
+        ALTER TABLE dbo.Admin ADD BirthYear int NULL;
 END;
 
 IF OBJECT_ID(N'dbo.SystemAdmin', N'U') IS NULL
@@ -118,7 +125,9 @@ BEGIN
         LastName nvarchar(255) NOT NULL,
         MiddleName nvarchar(255) NULL,
         Email nvarchar(255) NULL,
+        BirthYear int NULL,
         PasswordHash nvarchar(255) NOT NULL,
+        isFirstLogin bit NOT NULL CONSTRAINT DF_SystemAdmin_isFirstLogin DEFAULT 1,
         CreatedAt datetime2 NOT NULL CONSTRAINT DF_SystemAdmin_CreatedAt DEFAULT SYSUTCDATETIME()
     );
 END;
@@ -127,6 +136,35 @@ IF OBJECT_ID(N'dbo.SystemAdmin', N'U') IS NOT NULL
 BEGIN
     IF COL_LENGTH(N'dbo.SystemAdmin', N'Email') IS NULL
         ALTER TABLE dbo.SystemAdmin ADD Email nvarchar(255) NULL;
+    IF COL_LENGTH(N'dbo.SystemAdmin', N'BirthYear') IS NULL
+        ALTER TABLE dbo.SystemAdmin ADD BirthYear int NULL;
+    IF COL_LENGTH(N'dbo.SystemAdmin', N'isFirstLogin') IS NULL
+        ALTER TABLE dbo.SystemAdmin ADD isFirstLogin bit NOT NULL CONSTRAINT DF_SystemAdmin_isFirstLogin DEFAULT 0;
+END;
+
+IF OBJECT_ID(N'dbo.EmployeePasswordResetRequest', N'U') IS NULL
+BEGIN
+    CREATE TABLE dbo.EmployeePasswordResetRequest (
+        RequestID int IDENTITY(1,1) NOT NULL PRIMARY KEY,
+        EmployeeID nvarchar(30) NOT NULL,
+        EmployeeName nvarchar(200) NULL,
+        EmployeeEmail nvarchar(255) NULL,
+        Reason nvarchar(500) NULL,
+        Status nvarchar(30) NOT NULL CONSTRAINT DF_EmpPwdResetReq_Status DEFAULT 'Pending',
+        ReviewedByAdminID nvarchar(30) NULL,
+        ReviewedByName nvarchar(200) NULL,
+        RejectionReason nvarchar(500) NULL,
+        RequestedAt datetime2 NOT NULL CONSTRAINT DF_EmpPwdResetReq_RequestedAt DEFAULT SYSUTCDATETIME(),
+        ReviewedAt datetime2 NULL
+    );
+END;
+
+IF OBJECT_ID(N'dbo.EmployeePasswordResetRequest', N'U') IS NOT NULL
+   AND OBJECT_ID(N'dbo.Employees', N'U') IS NOT NULL
+   AND OBJECT_ID(N'dbo.FK_EmpPwdResetReq_Employee', N'F') IS NULL
+BEGIN
+    ALTER TABLE dbo.EmployeePasswordResetRequest
+        ADD CONSTRAINT FK_EmpPwdResetReq_Employee FOREIGN KEY (EmployeeID) REFERENCES dbo.Employees(EmployeeID) ON DELETE CASCADE;
 END;
 
 IF OBJECT_ID(N'dbo.EmployeeTimesheets', N'U') IS NULL

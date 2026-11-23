@@ -54,6 +54,9 @@ public class AddAdminWizardModel
     [Required(ErrorMessage = "Role selection is required.")]
     public string Role { get; set; } = "Admin";
 
+    [Range(1940, 2025, ErrorMessage = "Birth Year must be between 1940 and 2025.")]
+    public int? BirthYear { get; set; } = 2000;
+
     /// <summary>
     /// System-assigned read-only ID (e.g. SADM-### or ADM-###).
     /// strictly read-only and assigned by the system, not editable by user.

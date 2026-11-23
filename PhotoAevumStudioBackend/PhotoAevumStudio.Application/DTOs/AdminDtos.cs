@@ -28,7 +28,8 @@ public record CreateAdminDto(
     string Email,
     string Role,
     string? CustomId = null,
-    string? TemporaryPassword = null);
+    string? TemporaryPassword = null,
+    int? BirthYear = null);
 
 /// <summary>
 /// DTO for updating an existing administrator's profile.

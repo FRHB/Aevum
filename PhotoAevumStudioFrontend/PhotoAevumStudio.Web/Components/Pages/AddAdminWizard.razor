@@ -165,6 +165,15 @@
                             </div>
 
                             <div>
+                                <label for="adm-birth-year" class="block text-xs font-semibold uppercase tracking-wider text-slate-700 mb-1.5">
+                                    Birth Year <span class="text-rose-500">*</span>
+                                </label>
+                                <InputNumber id="adm-birth-year" @bind-Value="model.BirthYear" class="@InputClass" placeholder="e.g. 2000" />
+                                <ValidationMessage For="() => model.BirthYear" class="text-xs text-rose-600 mt-1" />
+                                <p class="text-[11px] text-slate-500 mt-1">Used to format the initial password (LastName + BirthYear + @(model.IsSystemAdmin ? "S###" : "A###")).</p>
+                            </div>
+
+                            <div>
                                 <label for="adm-email" class="block text-xs font-semibold uppercase tracking-wider text-slate-700 mb-1.5">
                                     Email Address <span class="text-rose-500">*</span>
                                 </label>
@@ -562,8 +571,8 @@
             var generatedId = await AdminService.GetNextAdminIdAsync(model.Role, _cts?.Token ?? CancellationToken.None);
             model.GeneratedId = generatedId;
 
-            // Generate temporary password
-            model.TemporaryPassword = GenerateTemporaryPassword(12);
+            // Generate formatted initial password: LastName + BirthYear + A### / S###
+            model.TemporaryPassword = EmployeeCredentialGenerator.GenerateInitialPassword(model.LastName, model.BirthYear, generatedId);
 
             // Transition smoothly to Step 3
             currentStep = 3;

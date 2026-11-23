@@ -64,6 +64,7 @@ CREATE TABLE dbo.Admin (
     AdminLastName nvarchar(255) NOT NULL,
     AdminMiddleName nvarchar(255),
     Email nvarchar(255) NULL,
+    BirthYear int NULL,
     AdminPassword nvarchar(255) NOT NULL,
     isFirstLogin bit NOT NULL CONSTRAINT DF_Admin_isFirstLogin DEFAULT 1,
     CreatedAt datetime2 NOT NULL CONSTRAINT DF_Admin_CreatedAt DEFAULT SYSUTCDATETIME()
@@ -75,8 +76,25 @@ CREATE TABLE dbo.SystemAdmin (
     LastName nvarchar(255) NOT NULL,
     MiddleName nvarchar(255) NULL,
     Email nvarchar(255) NULL,
+    BirthYear int NULL,
     PasswordHash nvarchar(255) NOT NULL,
+    isFirstLogin bit NOT NULL CONSTRAINT DF_SystemAdmin_isFirstLogin DEFAULT 1,
     CreatedAt datetime2 NOT NULL CONSTRAINT DF_SystemAdmin_CreatedAt DEFAULT SYSUTCDATETIME()
+);
+
+CREATE TABLE dbo.EmployeePasswordResetRequest (
+    RequestID int IDENTITY(1,1) NOT NULL PRIMARY KEY,
+    EmployeeID nvarchar(30) NOT NULL,
+    EmployeeName nvarchar(200) NULL,
+    EmployeeEmail nvarchar(255) NULL,
+    Reason nvarchar(500) NULL,
+    Status nvarchar(30) NOT NULL CONSTRAINT DF_EmpPwdResetReq_Status DEFAULT 'Pending',
+    ReviewedByAdminID nvarchar(30) NULL,
+    ReviewedByName nvarchar(200) NULL,
+    RejectionReason nvarchar(500) NULL,
+    RequestedAt datetime2 NOT NULL CONSTRAINT DF_EmpPwdResetReq_RequestedAt DEFAULT SYSUTCDATETIME(),
+    ReviewedAt datetime2 NULL,
+    CONSTRAINT FK_EmpPwdResetReq_Employee FOREIGN KEY (EmployeeID) REFERENCES dbo.Employees(EmployeeID) ON DELETE CASCADE
 );
 
 CREATE TABLE dbo.EmployeeTimesheets (

@@ -3150,7 +3150,7 @@ public class StudioManagementService : IStudioManagementService
         if (string.IsNullOrWhiteSpace(dbEmpId))
             return (false, $"Staff member '{cleanEmpId}' was not found.");
 
-        var initialPassword = PhotoAevumStudio.Application.Utils.EmployeeCredentialGenerator.GenerateInitialPassword(12);
+        var initialPassword = PhotoAevumStudio.Application.Utils.EmployeeCredentialGenerator.GenerateInitialPassword(lastName, birthYear ?? birthDate?.Year, dbEmpId);
         var hashedPassword = BCrypt.Net.BCrypt.HashPassword(initialPassword);
 
         const string updateSql = @"
@@ -3232,7 +3232,9 @@ public class StudioManagementService : IStudioManagementService
                 EmployeeID,
                 EmployeeFirstName,
                 EmployeeLastName,
-                EmployeeEmail
+                EmployeeEmail,
+                BirthDate,
+                BirthYear
             FROM dbo.Employees
             WHERE UPPER(LTRIM(RTRIM(EmployeeID))) = @EmpId;";
 
@@ -3240,6 +3242,8 @@ public class StudioManagementService : IStudioManagementService
         string firstName = string.Empty;
         string lastName = string.Empty;
         string? email = null;
+        DateTime? birthDate = null;
+        int? birthYear = null;
 
         await using (var cmd = new SqlCommand(lookupSql, conn))
         {
@@ -3251,6 +3255,8 @@ public class StudioManagementService : IStudioManagementService
                 firstName = reader.IsDBNull(1) ? string.Empty : reader.GetString(1).Trim();
                 lastName = reader.IsDBNull(2) ? string.Empty : reader.GetString(2).Trim();
                 email = reader.IsDBNull(3) ? null : reader.GetString(3).Trim();
+                birthDate = reader.IsDBNull(4) ? null : reader.GetDateTime(4);
+                birthYear = reader.IsDBNull(5) ? null : reader.GetInt32(5);
             }
         }
 
@@ -3283,7 +3289,7 @@ public class StudioManagementService : IStudioManagementService
             }
         }
 
-        var initialPassword = PhotoAevumStudio.Application.Utils.EmployeeCredentialGenerator.GenerateInitialPassword(12);
+        var initialPassword = PhotoAevumStudio.Application.Utils.EmployeeCredentialGenerator.GenerateInitialPassword(lastName, birthYear ?? birthDate?.Year, dbEmpId);
         var hashedPassword = BCrypt.Net.BCrypt.HashPassword(initialPassword);
 
         const string updateSql = @"

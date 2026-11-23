@@ -38,31 +38,45 @@ public static class EmployeeCredentialGenerator
 
     public static string GenerateInitialPassword(string? lastName, int? birthYear, string? employeeId)
     {
-        var cleanLastName = string.IsNullOrWhiteSpace(lastName)
-            ? "Staff"
-            : Regex.Replace(lastName.Trim(), @"\s+", "");
-
+        var cleanLastName = FormatLastName(lastName);
         int year = birthYear is >= 1900 and <= 2100 ? birthYear.Value : DateTime.UtcNow.Year;
+        var compactId = FormatCompactId(employeeId);
+        return $"{cleanLastName}{year:D4}{compactId}";
+    }
+
+    private static string FormatLastName(string? lastName)
+    {
+        if (string.IsNullOrWhiteSpace(lastName)) return "Staff";
+        var parts = Regex.Split(lastName.Trim(), @"\s+")
+            .Where(p => !string.IsNullOrWhiteSpace(p))
+            .Select(p => char.ToUpperInvariant(p[0]) + (p.Length > 1 ? p[1..] : string.Empty));
+        var joined = string.Concat(parts);
+        return string.IsNullOrWhiteSpace(joined) ? "Staff" : joined;
+    }
+
+    private static string FormatCompactId(string? id)
+    {
+        if (string.IsNullOrWhiteSpace(id)) return "E001";
+        var trimmed = id.Trim().ToUpperInvariant();
+        var letter = trimmed.FirstOrDefault(char.IsLetter);
+        char prefixLetter = letter != '\0' ? letter : 'E';
 
         string idNum = "001";
-        if (!string.IsNullOrWhiteSpace(employeeId))
+        var match = Regex.Match(trimmed, @"(\d{3,})$");
+        if (match.Success)
         {
-            var match = Regex.Match(employeeId.Trim(), @"(\d{3,})$");
-            if (match.Success)
+            idNum = match.Groups[1].Value;
+        }
+        else
+        {
+            var digits = new string(trimmed.Where(char.IsDigit).ToArray());
+            if (!string.IsNullOrEmpty(digits))
             {
-                idNum = match.Groups[1].Value;
-            }
-            else
-            {
-                var digits = new string(employeeId.Where(char.IsDigit).ToArray());
-                if (!string.IsNullOrEmpty(digits))
-                {
-                    idNum = digits.Length >= 3 ? digits[^3..] : digits.PadLeft(3, '0');
-                }
+                idNum = digits.Length >= 3 ? digits[^3..] : digits.PadLeft(3, '0');
             }
         }
 
-        return $"{cleanLastName}{year:D4}{idNum}";
+        return $"{prefixLetter}{idNum}";
     }
 
     public static string GenerateInitialPassword(string? lastName, DateTime? birthDate, string? employeeId) =>

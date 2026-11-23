@@ -801,7 +801,7 @@
 
         if (!IsEditMode)
         {
-            model.Password = EmployeeCredentialGenerator.GenerateInitialPassword(12);
+            model.Password = EmployeeCredentialGenerator.GenerateInitialPassword(model.LastName, model.BirthDate, model.EmployeeId);
         }
 
         specError = null;

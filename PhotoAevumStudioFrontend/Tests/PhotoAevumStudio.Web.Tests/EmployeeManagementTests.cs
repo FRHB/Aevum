@@ -83,9 +83,12 @@ public class EmployeeManagementTests
     }
 
     [Theory]
-    [InlineData("Doe", 1995, "EMP-001", "Doe1995001")]
-    [InlineData("Dela Cruz", 2001, "EMP-042", "DelaCruz2001042")]
-    [InlineData("Vance", 1998, "CLK-007", "Vance1998007")]
+    [InlineData("Baclig", 2006, "EMP-001", "Baclig2006E001")]
+    [InlineData("Baclig", 2006, "ADM-001", "Baclig2006A001")]
+    [InlineData("Baclig", 2006, "SADM-101", "Baclig2006S101")]
+    [InlineData("Doe", 1995, "EMP-001", "Doe1995E001")]
+    [InlineData("Dela Cruz", 2001, "EMP-042", "DelaCruz2001E042")]
+    [InlineData("Vance", 1998, "CLK-007", "Vance1998C007")]
     public void GenerateInitialPassword_FormattedStyle_MatchesLastNameBirthYearEmployeeNumber(
         string lastName, int birthYear, string employeeId, string expectedPassword)
     {

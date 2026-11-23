@@ -288,6 +288,14 @@ BEGIN
     SET isFirstLogin = 0,
         AdminPassword = COALESCE(@NewPassword, AdminPassword)
     WHERE AdminID = @AdminID;
+
+    IF OBJECT_ID(N'dbo.SystemAdmin', N'U') IS NOT NULL AND COL_LENGTH(N'dbo.SystemAdmin', N'isFirstLogin') IS NOT NULL
+    BEGIN
+        UPDATE dbo.SystemAdmin
+        SET isFirstLogin = 0,
+            PasswordHash = COALESCE(@NewPassword, PasswordHash)
+        WHERE SystemAdminID = @AdminID;
+    END
 END;
 GO
 
@@ -299,7 +307,8 @@ CREATE OR ALTER PROCEDURE dbo.sp_CreateAdmin
     @AdminMiddleName  nvarchar(255) = NULL,
     @AdminEmail       nvarchar(255) = NULL,
     @AdminPassword    nvarchar(255),
-    @RequestingUserID nvarchar(30)
+    @RequestingUserID nvarchar(30),
+    @BirthYear        int = NULL
 AS
 BEGIN
     SET NOCOUNT ON;
@@ -348,20 +357,32 @@ BEGIN
 
         IF NOT EXISTS (SELECT 1 FROM dbo.Admin WHERE AdminID = @AdminID)
         BEGIN
-            INSERT INTO dbo.Admin (
-                AdminID, AdminRole, AdminFirstName, AdminLastName, AdminMiddleName, Email, AdminPassword, isFirstLogin
-            )
-            VALUES (
-                @AdminID, @AdminRole, @AdminFirstName, @AdminLastName, @AdminMiddleName, @AdminEmail, @AdminPassword, 1
-            );
+            IF COL_LENGTH(N'dbo.Admin', N'BirthYear') IS NOT NULL
+                INSERT INTO dbo.Admin (
+                    AdminID, AdminRole, AdminFirstName, AdminLastName, AdminMiddleName, Email, BirthYear, AdminPassword, isFirstLogin
+                )
+                VALUES (
+                    @AdminID, @AdminRole, @AdminFirstName, @AdminLastName, @AdminMiddleName, @AdminEmail, @BirthYear, @AdminPassword, 1
+                );
+            ELSE
+                INSERT INTO dbo.Admin (
+                    AdminID, AdminRole, AdminFirstName, AdminLastName, AdminMiddleName, Email, AdminPassword, isFirstLogin
+                )
+                VALUES (
+                    @AdminID, @AdminRole, @AdminFirstName, @AdminLastName, @AdminMiddleName, @AdminEmail, @AdminPassword, 1
+                );
         END
 
         IF (@AdminRole = 'SystemAdmin' OR @AdminID LIKE 'SADM-%')
         BEGIN
             IF NOT EXISTS (SELECT 1 FROM dbo.SystemAdmin WHERE SystemAdminID = @AdminID)
             BEGIN
-                INSERT INTO dbo.SystemAdmin (SystemAdminID, FirstName, LastName, MiddleName, Email, PasswordHash, CreatedAt)
-                VALUES (@AdminID, @AdminFirstName, @AdminLastName, @AdminMiddleName, @AdminEmail, @AdminPassword, SYSUTCDATETIME());
+                IF COL_LENGTH(N'dbo.SystemAdmin', N'isFirstLogin') IS NOT NULL AND COL_LENGTH(N'dbo.SystemAdmin', N'BirthYear') IS NOT NULL
+                    INSERT INTO dbo.SystemAdmin (SystemAdminID, FirstName, LastName, MiddleName, Email, BirthYear, PasswordHash, isFirstLogin, CreatedAt)
+                    VALUES (@AdminID, @AdminFirstName, @AdminLastName, @AdminMiddleName, @AdminEmail, @BirthYear, @AdminPassword, 1, SYSUTCDATETIME());
+                ELSE
+                    INSERT INTO dbo.SystemAdmin (SystemAdminID, FirstName, LastName, MiddleName, Email, PasswordHash, CreatedAt)
+                    VALUES (@AdminID, @AdminFirstName, @AdminLastName, @AdminMiddleName, @AdminEmail, @AdminPassword, SYSUTCDATETIME());
             END
         END
 

@@ -72,6 +72,12 @@ public static class AdminCredentialGenerator
     /// - Contains special symbols
     /// - Excludes ambiguous glyphs (O, 0, I, l) to facilitate manual transcription.
     /// </summary>
+    public static string GenerateInitialPassword(string? lastName, int? birthYear, string? adminId) =>
+        EmployeeCredentialGenerator.GenerateInitialPassword(lastName, birthYear, adminId);
+
+    public static string GenerateInitialPassword(string? lastName, DateTime? birthDate, string? adminId) =>
+        EmployeeCredentialGenerator.GenerateInitialPassword(lastName, birthDate?.Year, adminId);
+
     public static string GenerateTemporaryPassword(int length = 12)
     {
         if (length < 8) length = 8;

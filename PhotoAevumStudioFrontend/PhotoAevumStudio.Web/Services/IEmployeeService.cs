@@ -46,4 +46,29 @@ public interface IEmployeeService
     Task<SuddenAbsenceResultViewModel?> MarkSuddenAbsenceAsync(string employeeStudioId, string? employeeName = null, DateOnly? date = null, string? leaveType = null, string? reason = null, CancellationToken cancellationToken = default)
         => Task.FromResult<SuddenAbsenceResultViewModel?>(null);
     Task<bool> UpdateEmployeeDaysOffAsync(string employeeId, string daysOff, CancellationToken cancellationToken = default);
+
+    // ── Employee Password Reset Requests (Admin Verification Flow) ──────────
+    Task<EmployeePasswordResetRequestDto?> GetMyLatestPasswordResetRequestAsync(string employeeId, CancellationToken cancellationToken = default) =>
+        Task.FromResult<EmployeePasswordResetRequestDto?>(null);
+    Task<(bool Success, string Message)> SubmitPasswordResetRequestAsync(string employeeId, string? employeeName, string? employeeEmail, string? reason, CancellationToken cancellationToken = default) =>
+        Task.FromResult((false, "Password reset requests are not configured."));
+    Task<IReadOnlyList<EmployeePasswordResetRequestDto>> GetPendingPasswordResetRequestsAsync(CancellationToken cancellationToken = default) =>
+        Task.FromResult<IReadOnlyList<EmployeePasswordResetRequestDto>>(Array.Empty<EmployeePasswordResetRequestDto>());
+    Task<(bool Success, string Message)> ApprovePasswordResetRequestAsync(int requestId, string adminId, string? adminName, CancellationToken cancellationToken = default) =>
+        Task.FromResult((false, "Password reset approval is not configured."));
+    Task<(bool Success, string Message)> RejectPasswordResetRequestAsync(int requestId, string adminId, string? adminName, string? rejectionReason, CancellationToken cancellationToken = default) =>
+        Task.FromResult((false, "Password reset rejection is not configured."));
 }
+
+public sealed record EmployeePasswordResetRequestDto(
+    int RequestId,
+    string EmployeeId,
+    string? EmployeeName,
+    string? EmployeeEmail,
+    string? Reason,
+    string Status,
+    string? ReviewedByAdminId,
+    string? ReviewedByName,
+    string? RejectionReason,
+    DateTime RequestedAt,
+    DateTime? ReviewedAt);
