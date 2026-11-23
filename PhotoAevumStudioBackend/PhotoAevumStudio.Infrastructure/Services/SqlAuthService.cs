@@ -929,6 +929,9 @@ public class SqlAuthService : ISqlAuthService
         if (string.IsNullOrWhiteSpace(email) || string.IsNullOrWhiteSpace(newPassword))
             return (false, "Email and new password are required.");
 
+        if (PasswordPolicy.Validate(newPassword) is { } pwdError)
+            return (false, pwdError);
+
         await using var conn = CreateConnection();
         await conn.OpenAsync(cancellationToken);
 
@@ -936,9 +939,12 @@ public class SqlAuthService : ISqlAuthService
 
         // Forgot Password / Reset Password is strictly restricted to Customer accounts
         const string findCustSql = @"
-            SELECT TOP 1 CustomerID, CustomerEmail, CustomerStatus
-            FROM dbo.Customer
-            WHERE UPPER(LTRIM(RTRIM(CustomerEmail))) = UPPER(@Email);";
+            IF OBJECT_ID(N'dbo.Customer', N'U') IS NOT NULL
+            BEGIN
+                SELECT TOP 1 CustomerID, CustomerEmail, CustomerStatus
+                FROM dbo.Customer
+                WHERE UPPER(LTRIM(RTRIM(CustomerEmail))) = UPPER(@Email);
+            END";
 
         string? customerId = null;
         string? customerEmail = null;

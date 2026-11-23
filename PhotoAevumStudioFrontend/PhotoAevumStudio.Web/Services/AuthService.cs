@@ -281,6 +281,10 @@ public sealed class AuthService : IAuthService
         {
             return (false, $"Cannot reach the API server: {ex.Message}");
         }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            return (false, "The request was canceled.");
+        }
         catch
         {
             return (false, fallbackError);

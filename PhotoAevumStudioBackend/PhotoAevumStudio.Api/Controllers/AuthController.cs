@@ -25,6 +25,15 @@ public class AuthController : ControllerBase
     private readonly IMemoryCache _cache;
     private readonly IEmailService _emailService;
 
+    private static readonly TimeSpan VerificationCodeExpiry = TimeSpan.FromMinutes(10);
+    private static readonly TimeSpan ResetCodeExpiry = TimeSpan.FromMinutes(10);
+    private static readonly TimeSpan ResetResendCooldown = TimeSpan.FromSeconds(60);
+    private const int MaxVerificationAttempts = 5;
+    private const string GenericResetCodeSentMessage =
+        "If an active customer account is registered with that email address, a 6-digit verification code has been sent.";
+
+    private sealed record CachedHashedCode(byte[] Salt, byte[] Hash);
+
     public AuthController(
         ISqlAuthService sqlAuthService,
         IConfiguration configuration,
@@ -66,8 +75,11 @@ public class AuthController : ControllerBase
         }
 
         var code = RandomNumberGenerator.GetInt32(100000, 1000000).ToString();
-        _cache.Set($"VerificationCode_{normalizedEmail}", code, TimeSpan.FromMinutes(10));
-        _cache.Remove($"VerificationAttempts_{normalizedEmail}");
+        StoreHashedCode(
+            $"VerificationCode_{normalizedEmail}",
+            $"VerificationAttempts_{normalizedEmail}",
+            code,
+            VerificationCodeExpiry);
 
         _logger.LogInformation("Verification code generated for {Email}.", normalizedEmail);
 
@@ -81,6 +93,7 @@ public class AuthController : ControllerBase
         if (!sent)
         {
             _cache.Remove($"VerificationCode_{normalizedEmail}");
+            _cache.Remove($"VerificationAttempts_{normalizedEmail}");
             _logger.LogWarning("Email delivery failed for verification code to {Email}", normalizedEmail);
             return StatusCode(StatusCodes.Status503ServiceUnavailable, new ProblemDetails
             {
@@ -121,13 +134,13 @@ public class AuthController : ControllerBase
     [EnableRateLimiting("LoginPolicy")]
     public IActionResult VerifyCode([FromBody] VerifyCodeRequest request)
     {
-        var normalizedEmail = request.Email?.Trim().ToLowerInvariant() ?? string.Empty;
-        var code = request.VerificationCode?.Trim() ?? string.Empty;
+        var normalizedEmail = request?.Email?.Trim().ToLowerInvariant() ?? string.Empty;
+        var code = request?.VerificationCode?.Trim() ?? string.Empty;
 
         if (string.IsNullOrWhiteSpace(normalizedEmail) || string.IsNullOrWhiteSpace(code))
             return BadRequest(new ProblemDetails { Title = "Invalid or expired verification code", Status = 400 });
 
-        if (!VerifyCachedCode($"VerificationCode_{normalizedEmail}", $"VerificationAttempts_{normalizedEmail}", code, invalidateOnMaxAttempts: true))
+        if (!VerifyCachedCode($"VerificationCode_{normalizedEmail}", $"VerificationAttempts_{normalizedEmail}", code, invalidateOnMaxAttempts: true, out _))
         {
             return BadRequest(new ProblemDetails { Title = "Invalid or expired verification code", Status = 400 });
         }
@@ -139,7 +152,7 @@ public class AuthController : ControllerBase
     [EnableRateLimiting("LoginPolicy")]
     public async Task<IActionResult> ForgotPassword([FromBody] SendVerificationRequest request)
     {
-        var normalizedEmail = request.Email?.Trim().ToLowerInvariant() ?? string.Empty;
+        var normalizedEmail = request?.Email?.Trim().ToLowerInvariant() ?? string.Empty;
         if (string.IsNullOrWhiteSpace(normalizedEmail) || !System.Net.Mail.MailAddress.TryCreate(normalizedEmail, out _))
         {
             return BadRequest(new ProblemDetails
@@ -153,23 +166,55 @@ public class AuthController : ControllerBase
         var (isEligible, canonicalEmail, errorMessage, statusCode) =
             await _sqlAuthService.CheckCustomerForgotPasswordEligibilityAsync(normalizedEmail, HttpContext.RequestAborted);
 
-        if (!isEligible)
+        if (!isEligible && statusCode == StatusCodes.Status403Forbidden)
         {
-            return StatusCode(statusCode, new ProblemDetails
+            return StatusCode(StatusCodes.Status403Forbidden, new ProblemDetails
             {
                 Title = "Password recovery unavailable",
                 Detail = errorMessage ?? "Password recovery is only available for customer accounts.",
-                Status = statusCode
+                Status = StatusCodes.Status403Forbidden
             });
+        }
+
+        if (!isEligible && statusCode == StatusCodes.Status400BadRequest)
+        {
+            return BadRequest(new ProblemDetails
+            {
+                Title = "Invalid email address",
+                Detail = errorMessage ?? "Please enter a valid customer email address.",
+                Status = StatusCodes.Status400BadRequest
+            });
+        }
+
+        var cooldownKey = BuildResetCooldownKey(normalizedEmail);
+        if (_cache.TryGetValue(cooldownKey, out DateTimeOffset cooldownUntil) && cooldownUntil > DateTimeOffset.UtcNow)
+        {
+            var remainingSeconds = Math.Max(1, (int)Math.Ceiling((cooldownUntil - DateTimeOffset.UtcNow).TotalSeconds));
+            return StatusCode(StatusCodes.Status429TooManyRequests, new ProblemDetails
+            {
+                Title = "Please wait before requesting another code",
+                Detail = $"Please wait {remainingSeconds} seconds before requesting a new verification code.",
+                Status = StatusCodes.Status429TooManyRequests
+            });
+        }
+
+        if (!isEligible)
+        {
+            // Prevent customer email enumeration while enforcing identical per-email resend cooldown.
+            _cache.Set(cooldownKey, DateTimeOffset.UtcNow.Add(ResetResendCooldown), ResetResendCooldown);
+            _logger.LogInformation("Password reset requested for unregistered customer email {Email}; returning generic response.", normalizedEmail);
+            return Ok(new { Message = GenericResetCodeSentMessage });
         }
 
         var targetEmail = string.IsNullOrWhiteSpace(canonicalEmail) ? normalizedEmail : canonicalEmail.Trim();
         var code = RandomNumberGenerator.GetInt32(100000, 1000000).ToString();
-        _cache.Set($"ResetCode_{normalizedEmail}", code, TimeSpan.FromMinutes(10));
-        _cache.Remove($"ResetAttempts_{normalizedEmail}");
+        var resetCodeKey = BuildResetCodeKey(normalizedEmail);
+        var resetAttemptsKey = BuildResetAttemptsKey(normalizedEmail);
+
+        StoreHashedCode(resetCodeKey, resetAttemptsKey, code, ResetCodeExpiry);
         _logger.LogInformation("Customer password reset code generated for {Email}", normalizedEmail);
 
-        var htmlBody = PhotoAevumStudio.Infrastructure.Services.StudioEmailTemplates.PasswordResetCode(targetEmail, code, 10);
+        var htmlBody = PhotoAevumStudio.Infrastructure.Services.StudioEmailTemplates.PasswordResetCode(targetEmail, code, (int)ResetCodeExpiry.TotalMinutes);
         var sent = await _emailService.TrySendEmailAsync(
             targetEmail,
             "Photo Aevum Studio – Password Reset Code",
@@ -178,7 +223,8 @@ public class AuthController : ControllerBase
 
         if (!sent)
         {
-            _cache.Remove($"ResetCode_{normalizedEmail}");
+            _cache.Remove(resetCodeKey);
+            _cache.Remove(resetAttemptsKey);
             _logger.LogWarning("Email delivery failed for password reset code to {Email}", normalizedEmail);
             return StatusCode(StatusCodes.Status503ServiceUnavailable, new ProblemDetails
             {
@@ -188,7 +234,8 @@ public class AuthController : ControllerBase
             });
         }
 
-        return Ok(new { Message = "A 6-digit verification code has been sent to your email address." });
+        _cache.Set(cooldownKey, DateTimeOffset.UtcNow.Add(ResetResendCooldown), ResetResendCooldown);
+        return Ok(new { Message = GenericResetCodeSentMessage });
     }
 
     [HttpPost("verify-reset-code")]
@@ -196,8 +243,8 @@ public class AuthController : ControllerBase
     [EnableRateLimiting("LoginPolicy")]
     public async Task<IActionResult> VerifyResetCode([FromBody] VerifyCodeRequest request)
     {
-        var normalizedEmail = request.Email?.Trim().ToLowerInvariant() ?? string.Empty;
-        var code = request.VerificationCode?.Trim() ?? string.Empty;
+        var normalizedEmail = request?.Email?.Trim().ToLowerInvariant() ?? string.Empty;
+        var code = request?.VerificationCode?.Trim() ?? string.Empty;
 
         if (string.IsNullOrWhiteSpace(normalizedEmail) || string.IsNullOrWhiteSpace(code))
         {
@@ -209,12 +256,17 @@ public class AuthController : ControllerBase
             });
         }
 
-        if (!VerifyCachedCode($"ResetCode_{normalizedEmail}", $"ResetAttempts_{normalizedEmail}", code, invalidateOnMaxAttempts: true))
+        var resetCodeKey = BuildResetCodeKey(normalizedEmail);
+        var resetAttemptsKey = BuildResetAttemptsKey(normalizedEmail);
+
+        if (!VerifyCachedCode(resetCodeKey, resetAttemptsKey, code, invalidateOnMaxAttempts: true, out var maxAttemptsExceeded))
         {
             return BadRequest(new ProblemDetails
             {
                 Title = "Invalid or expired verification code",
-                Detail = "That verification code doesn't match or has expired. Please try again or request a new one.",
+                Detail = maxAttemptsExceeded
+                    ? "Too many failed verification attempts. Your code has been invalidated; please request a new one."
+                    : "That verification code doesn't match or has expired. Please try again or request a new one.",
                 Status = StatusCodes.Status400BadRequest
             });
         }
@@ -224,7 +276,8 @@ public class AuthController : ControllerBase
 
         if (!isEligible)
         {
-            _cache.Remove($"ResetCode_{normalizedEmail}");
+            _cache.Remove(resetCodeKey);
+            _cache.Remove(resetAttemptsKey);
             return StatusCode(statusCode, new ProblemDetails
             {
                 Title = "Password recovery unavailable",
@@ -241,20 +294,56 @@ public class AuthController : ControllerBase
     [EnableRateLimiting("LoginPolicy")]
     public async Task<IActionResult> ResetPassword([FromBody] ResetPasswordRequest request)
     {
-        var normalizedEmail = request.Email?.Trim().ToLowerInvariant() ?? string.Empty;
-        var code = request.VerificationCode?.Trim() ?? string.Empty;
+        var normalizedEmail = request?.Email?.Trim().ToLowerInvariant() ?? string.Empty;
+        var code = request?.VerificationCode?.Trim() ?? string.Empty;
+        var newPassword = request?.NewPassword ?? string.Empty;
 
-        if (!VerifyCachedCode($"ResetCode_{normalizedEmail}", $"ResetAttempts_{normalizedEmail}", code, invalidateOnMaxAttempts: true))
+        if (string.IsNullOrWhiteSpace(normalizedEmail) || !System.Net.Mail.MailAddress.TryCreate(normalizedEmail, out _))
         {
             return BadRequest(new ProblemDetails
             {
-                Title = "Invalid or expired reset code",
-                Detail = "Your verification code is invalid or has expired. Please request a new one.",
+                Title = "Validation error",
+                Detail = "Please enter a valid customer email address.",
                 Status = StatusCodes.Status400BadRequest
             });
         }
 
-        var (success, message) = await _sqlAuthService.ResetPasswordAsync(normalizedEmail, request.NewPassword, HttpContext.RequestAborted);
+        if (string.IsNullOrWhiteSpace(code))
+        {
+            return BadRequest(new ProblemDetails
+            {
+                Title = "Validation error",
+                Detail = "Verification code is required.",
+                Status = StatusCodes.Status400BadRequest
+            });
+        }
+
+        if (PasswordPolicy.Validate(newPassword) is { } pwdError)
+        {
+            return BadRequest(new ProblemDetails
+            {
+                Title = "Validation error",
+                Detail = pwdError,
+                Status = StatusCodes.Status400BadRequest
+            });
+        }
+
+        var resetCodeKey = BuildResetCodeKey(normalizedEmail);
+        var resetAttemptsKey = BuildResetAttemptsKey(normalizedEmail);
+
+        if (!VerifyCachedCode(resetCodeKey, resetAttemptsKey, code, invalidateOnMaxAttempts: true, out var maxAttemptsExceeded))
+        {
+            return BadRequest(new ProblemDetails
+            {
+                Title = "Invalid or expired reset code",
+                Detail = maxAttemptsExceeded
+                    ? "Too many failed verification attempts. Your reset code has been invalidated; please request a new one."
+                    : "Your verification code is invalid or has expired. Please request a new one.",
+                Status = StatusCodes.Status400BadRequest
+            });
+        }
+
+        var (success, message) = await _sqlAuthService.ResetPasswordAsync(normalizedEmail, newPassword, HttpContext.RequestAborted);
         if (!success)
             return BadRequest(new ProblemDetails
             {
@@ -263,8 +352,8 @@ public class AuthController : ControllerBase
                 Status = StatusCodes.Status400BadRequest
             });
 
-        _cache.Remove($"ResetCode_{normalizedEmail}");
-        _cache.Remove($"ResetAttempts_{normalizedEmail}");
+        _cache.Remove(resetCodeKey);
+        _cache.Remove(resetAttemptsKey);
         RevokeUserSessions(normalizedEmail);
         return Ok(new { Message = "Password has been successfully reset." });
     }
@@ -276,7 +365,7 @@ public class AuthController : ControllerBase
     {
         var normalizedEmail = request.Email?.Trim().ToLowerInvariant() ?? string.Empty;
         var code = request.VerificationCode?.Trim() ?? string.Empty;
-        if (!VerifyCachedCode($"VerificationCode_{normalizedEmail}", $"VerificationAttempts_{normalizedEmail}", code, invalidateOnMaxAttempts: true))
+        if (!VerifyCachedCode($"VerificationCode_{normalizedEmail}", $"VerificationAttempts_{normalizedEmail}", code, invalidateOnMaxAttempts: true, out _))
         {
             return BadRequest(new ProblemDetails { Title = "Invalid or expired verification code", Status = 400 });
         }
@@ -688,15 +777,43 @@ public class AuthController : ControllerBase
         return Ok(new { Success = true, Message = message });
     }
 
-    private bool VerifyCachedCode(string codeCacheKey, string attemptCacheKey, string providedCode, bool invalidateOnMaxAttempts)
-    {
-        if (string.IsNullOrWhiteSpace(providedCode) || !_cache.TryGetValue(codeCacheKey, out string? storedCode) || string.IsNullOrWhiteSpace(storedCode))
-            return false;
+    private static string BuildResetCodeKey(string normalizedEmail) => $"ResetCode_{normalizedEmail}";
+    private static string BuildResetAttemptsKey(string normalizedEmail) => $"ResetAttempts_{normalizedEmail}";
+    private static string BuildResetCooldownKey(string normalizedEmail) => $"ResetCooldown_{normalizedEmail}";
 
-        var expectedBytes = Encoding.UTF8.GetBytes(storedCode.Trim());
-        var actualBytes = Encoding.UTF8.GetBytes(providedCode.Trim());
-        bool matched = expectedBytes.Length == actualBytes.Length &&
-                       CryptographicOperations.FixedTimeEquals(expectedBytes, actualBytes);
+    private void StoreHashedCode(string codeCacheKey, string attemptCacheKey, string code, TimeSpan expiry)
+    {
+        var salt = RandomNumberGenerator.GetBytes(32);
+        var hash = ComputeCodeHash(code, salt);
+        _cache.Set(codeCacheKey, new CachedHashedCode(salt, hash), expiry);
+        _cache.Remove(attemptCacheKey);
+    }
+
+    private static byte[] ComputeCodeHash(string code, byte[] salt)
+    {
+        var codeBytes = Encoding.UTF8.GetBytes(code.Trim());
+        return HMACSHA256.HashData(salt, codeBytes);
+    }
+
+    private bool VerifyCachedCode(
+        string codeCacheKey,
+        string attemptCacheKey,
+        string providedCode,
+        bool invalidateOnMaxAttempts,
+        out bool maxAttemptsExceeded)
+    {
+        maxAttemptsExceeded = false;
+
+        if (string.IsNullOrWhiteSpace(providedCode) ||
+            !_cache.TryGetValue(codeCacheKey, out CachedHashedCode? storedEntry) ||
+            storedEntry is null)
+        {
+            return false;
+        }
+
+        var actualHash = ComputeCodeHash(providedCode, storedEntry.Salt);
+        bool matched = actualHash.Length == storedEntry.Hash.Length &&
+                       CryptographicOperations.FixedTimeEquals(actualHash, storedEntry.Hash);
 
         if (matched)
         {
@@ -707,14 +824,15 @@ public class AuthController : ControllerBase
         if (invalidateOnMaxAttempts)
         {
             int attempts = (_cache.TryGetValue(attemptCacheKey, out int current) ? current : 0) + 1;
-            if (attempts >= 5)
+            if (attempts >= MaxVerificationAttempts)
             {
                 _cache.Remove(codeCacheKey);
                 _cache.Remove(attemptCacheKey);
+                maxAttemptsExceeded = true;
             }
             else
             {
-                _cache.Set(attemptCacheKey, attempts, TimeSpan.FromMinutes(10));
+                _cache.Set(attemptCacheKey, attempts, ResetCodeExpiry);
             }
         }
 
