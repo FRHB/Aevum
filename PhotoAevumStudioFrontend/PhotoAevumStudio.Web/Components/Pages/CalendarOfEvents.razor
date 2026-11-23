@@ -15,6 +15,7 @@
 @inject IEmployeeService EmployeeService
 @inject IJSRuntime JS
 @inject PaymentHubClient PaymentHub
+@inject NavigationManager Nav
 
 <PageTitle>Calendar of Events | Aevum Studio</PageTitle>
 
@@ -92,6 +93,15 @@
 
         <div class="toolbar-right">
             @* Dropdown Filters *@
+            <select value="@_selectedEntryTypeFilter"
+                    @onchange="OnEntryTypeFilterChanged"
+                    aria-label="Filter by entry type"
+                    class="toolbar-select">
+                <option value="">All Entries</option>
+                <option value="consultation">Consultation / Negotiation</option>
+                <option value="event">Event</option>
+            </select>
+
             <select value="@_selectedStatusFilter" @onchange="OnStatusFilterChanged" class="toolbar-select">
                 <option value="">All Statuses</option>
                 <option value="Confirmed">Confirmed</option>
@@ -774,7 +784,9 @@
 @code {
     [CascadingParameter] Task<AuthenticationState>? AuthState { get; set; }
     [SupplyParameterFromQuery(Name = "eventId")] public string? QueryEventId { get; set; }
+    [SupplyParameterFromQuery(Name = "type")] public string? QueryEntryType { get; set; }
     private string? _lastHandledQueryEventId;
+    private string? _lastHandledQueryEntryType;
     private ClaimsPrincipal? _currentUser;
     private string _currentEmployeeName = string.Empty;
     private string _currentEmployeeId = string.Empty;
@@ -782,9 +794,10 @@
     private bool _isOfficeClerk;
     private bool _canManageRoster;
 
-    private ScheduleViewMode _currentView = ScheduleViewMode.Week;
-    private DateTime _selectedDate = DateTime.Today;
+    internal ScheduleViewMode _currentView = ScheduleViewMode.Week;
+    internal DateTime _selectedDate = DateTime.Today;
     private string _searchQuery = string.Empty;
+    private string _selectedEntryTypeFilter = string.Empty;
     private string _selectedStatusFilter = string.Empty;
     private string _selectedServiceTypeFilter = string.Empty;
     private bool _filterOnlyConflicts = false;
@@ -804,18 +817,18 @@
     private List<StudioSpaceResource> StudioSpaces = new();
 
     // In-memory window cache and indexed lookups for $O(1)$ fast rendering
-    private List<EventBookingModel> _loadedBookings = new();
+    internal List<EventBookingModel> _loadedBookings = new();
     private List<EquipmentReservationModel> _equipmentReservations = new();
-    private List<EventBookingModel> _filteredBookings = new();
-    private ILookup<DateTime, EventBookingModel> _bookingsByDateLookup = Enumerable.Empty<EventBookingModel>().ToLookup(b => b.Date.Date);
+    internal List<EventBookingModel> _filteredBookings = new();
+    internal ILookup<DateTime, EventBookingModel> _bookingsByDateLookup = Enumerable.Empty<EventBookingModel>().ToLookup(b => b.Date.Date);
 
     private DateTime? _loadedWindowStart;
     private DateTime? _loadedWindowEnd;
 
-    private int _totalBookingsCount;
-    private int _thisWeekBookingsCount;
-    private double _thisWeekHoursCount;
-    private int _conflictCount;
+    internal int _totalBookingsCount;
+    internal int _thisWeekBookingsCount;
+    internal double _thisWeekHoursCount;
+    internal int _conflictCount;
 
     private System.Threading.Timer? _debounceTimer;
     private System.Threading.Timer? _highlightTimer;
@@ -867,6 +880,104 @@
         _currentEmployeeId = EmployeeRoleHelper.GetCurrentEmployeeId(_currentUser);
 
         StudioSpaces = ScheduleService.GetStudioSpaces();
+    }
+
+    protected override void OnParametersSet()
+    {
+        var rawQueryType = QueryEntryType;
+        if (string.IsNullOrWhiteSpace(rawQueryType))
+        {
+            rawQueryType = TryReadQueryParamFromNav("type");
+        }
+
+        if (!string.Equals(_lastHandledQueryEntryType, rawQueryType, StringComparison.OrdinalIgnoreCase))
+        {
+            _lastHandledQueryEntryType = rawQueryType;
+            var normalized = NormalizeEntryTypeFilter(rawQueryType);
+            if (!string.Equals(_selectedEntryTypeFilter, normalized, StringComparison.Ordinal))
+            {
+                _selectedEntryTypeFilter = normalized;
+                if (_hasLoadedInitialData)
+                {
+                    ApplyFilters();
+                }
+            }
+        }
+    }
+
+    internal static string NormalizeEntryTypeFilter(string? raw)
+    {
+        if (string.IsNullOrWhiteSpace(raw))
+            return string.Empty;
+
+        return raw.Trim().ToLowerInvariant() switch
+        {
+            "consultation" or "consultations" or "negotiation" or "negotiations" or "consultation / negotiation" => "consultation",
+            "event" or "events" => "event",
+            _ => string.Empty
+        };
+    }
+
+    private string? TryReadQueryParamFromNav(string key)
+    {
+        try
+        {
+            if (Nav == null || string.IsNullOrWhiteSpace(Nav.Uri))
+                return null;
+            if (!Uri.TryCreate(Nav.Uri, UriKind.Absolute, out var uri) || string.IsNullOrWhiteSpace(uri.Query))
+                return null;
+
+            foreach (var pair in uri.Query.TrimStart('?').Split('&', StringSplitOptions.RemoveEmptyEntries))
+            {
+                var parts = pair.Split('=', 2);
+                if (parts.Length == 2 && string.Equals(Uri.UnescapeDataString(parts[0]), key, StringComparison.OrdinalIgnoreCase))
+                {
+                    return Uri.UnescapeDataString(parts[1].Replace('+', ' '));
+                }
+            }
+        }
+        catch
+        {
+        }
+
+        return null;
+    }
+
+    internal void SetTestDependencies(
+        IScheduleService scheduleService,
+        IEquipmentService? equipmentService = null,
+        IUserService? userService = null,
+        IEmployeeService? employeeService = null,
+        NavigationManager? nav = null)
+    {
+        ScheduleService = scheduleService;
+        if (equipmentService != null) EquipmentService = equipmentService;
+        if (userService != null) UserService = userService;
+        if (employeeService != null) EmployeeService = employeeService;
+        if (nav != null) Nav = nav;
+    }
+
+    internal Task TriggerInitializedForTestAsync() => OnInitializedAsync();
+    internal void TriggerParametersSetForTest() => OnParametersSet();
+
+    private void SyncEntryTypeQueryParameter()
+    {
+        var nextType = string.IsNullOrEmpty(_selectedEntryTypeFilter) ? null : _selectedEntryTypeFilter;
+        try
+        {
+            if (Nav != null && !string.IsNullOrWhiteSpace(Nav.Uri))
+            {
+                var targetUri = Nav.GetUriWithQueryParameter("type", nextType);
+                if (!string.Equals(Nav.Uri, targetUri, StringComparison.Ordinal))
+                {
+                    Nav.NavigateTo(targetUri, replace: true);
+                }
+            }
+        }
+        catch
+        {
+            // Ignore navigation failures in non-routed / test render contexts
+        }
     }
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
@@ -961,7 +1072,7 @@
         rangeEnd = viewEnd > curWeekSunday ? viewEnd : curWeekSunday;
     }
 
-    private async Task LoadBookingsForCurrentViewAsync(bool forceReload = false)
+    internal async Task LoadBookingsForCurrentViewAsync(bool forceReload = false)
     {
         CalculateCurrentRange(out var rangeStart, out var rangeEnd);
 
@@ -1021,9 +1132,25 @@
         ApplyFilters();
     }
 
-    private void ApplyFilters()
+    internal string SelectedEntryTypeFilter
+    {
+        get => _selectedEntryTypeFilter;
+        set => _selectedEntryTypeFilter = NormalizeEntryTypeFilter(value);
+    }
+
+    internal void ApplyFilters()
     {
         var query = _loadedBookings.AsEnumerable();
+
+        if (!string.IsNullOrEmpty(_selectedEntryTypeFilter))
+        {
+            query = _selectedEntryTypeFilter switch
+            {
+                "consultation" => query.Where(b => b.IsConsultation),
+                "event" => query.Where(b => !b.IsConsultation),
+                _ => query
+            };
+        }
 
         if (!string.IsNullOrWhiteSpace(_searchQuery))
         {
@@ -1056,20 +1183,20 @@
         _filteredBookings = query.ToList();
         _bookingsByDateLookup = _filteredBookings.ToLookup(b => b.Date.Date);
 
-        // Calculate metrics once
+        // Calculate metrics from filtered entries so header counts reflect active entry-type and status filters
         var today = DateTime.Today;
         int diff = (7 + (today.DayOfWeek - DayOfWeek.Monday)) % 7;
         var monday = today.AddDays(-diff);
         var sunday = monday.AddDays(6);
 
-        _totalBookingsCount = _loadedBookings.Count;
-        var thisWeekList = _loadedBookings.Where(b => b.Date.Date >= monday && b.Date.Date <= sunday).ToList();
+        _totalBookingsCount = _filteredBookings.Count;
+        var thisWeekList = _filteredBookings.Where(b => b.Date.Date >= monday && b.Date.Date <= sunday).ToList();
         _thisWeekBookingsCount = thisWeekList.Count;
         _thisWeekHoursCount = thisWeekList.Sum(b => b.DurationHours);
-        _conflictCount = _loadedBookings.Count(b => b.HasConflict);
+        _conflictCount = _filteredBookings.Count(b => b.HasConflict);
     }
 
-    private List<EventBookingModel> GetBookingsForDate(DateTime date) =>
+    internal List<EventBookingModel> GetBookingsForDate(DateTime date) =>
         _bookingsByDateLookup[date.Date].OrderBy(b => b.StartTime).ToList();
 
     private void OnSearchInput(ChangeEventArgs e)
@@ -1092,7 +1219,14 @@
         ApplyFilters();
     }
 
-    private void OnStatusFilterChanged(ChangeEventArgs e)
+    internal void OnEntryTypeFilterChanged(ChangeEventArgs e)
+    {
+        _selectedEntryTypeFilter = NormalizeEntryTypeFilter(e.Value?.ToString());
+        SyncEntryTypeQueryParameter();
+        ApplyFilters();
+    }
+
+    internal void OnStatusFilterChanged(ChangeEventArgs e)
     {
         _selectedStatusFilter = e.Value?.ToString() ?? string.Empty;
         ApplyFilters();
@@ -1109,8 +1243,9 @@
         }
     }
 
-    private bool HasActiveFilters =>
+    internal bool HasActiveFilters =>
         !string.IsNullOrEmpty(_searchQuery) ||
+        !string.IsNullOrEmpty(_selectedEntryTypeFilter) ||
         !string.IsNullOrEmpty(_selectedStatusFilter) ||
         !string.IsNullOrEmpty(_selectedServiceTypeFilter) ||
         _filterOnlyConflicts ||
@@ -1176,7 +1311,7 @@
 
     private IEnumerable<StudioSpaceResource> FilteredStudioSpaces => StudioSpaces;
 
-    private async Task SetViewMode(ScheduleViewMode mode)
+    internal async Task SetViewMode(ScheduleViewMode mode)
     {
         if (mode != ScheduleViewMode.Day)
         {
@@ -1494,13 +1629,15 @@
         ApplyFilters();
     }
 
-    private void ClearFilters()
+    internal void ClearFilters()
     {
         _searchQuery = string.Empty;
+        _selectedEntryTypeFilter = string.Empty;
         _selectedStatusFilter = string.Empty;
         _selectedServiceTypeFilter = string.Empty;
         _filterOnlyConflicts = false;
         _filterOnlyEquipmentFix = false;
+        SyncEntryTypeQueryParameter();
         ApplyFilters();
     }
 
