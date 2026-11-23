@@ -224,9 +224,9 @@
                 isError = true;
             }
         }
-        catch (Exception ex)
+        catch (Exception)
         {
-            statusMessage = $"Error: {ex.Message}";
+            statusMessage = $"Unable to delete '{emp.FullName}' right now. Please try again or contact support.";
             isError = true;
         }
     }
@@ -249,9 +249,9 @@
                 isError = true;
             }
         }
-        catch (Exception ex)
+        catch (Exception)
         {
-            statusMessage = $"Error: {ex.Message}";
+            statusMessage = $"Unable to delete '{emp.FullName}' right now. Please try again or contact support.";
             isError = true;
         }
     }

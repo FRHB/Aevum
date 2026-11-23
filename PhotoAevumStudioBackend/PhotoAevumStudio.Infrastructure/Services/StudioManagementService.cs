@@ -3359,4 +3359,260 @@ public class StudioManagementService : IStudioManagementService
             dispatch.WarningMessage ?? "Welcome email delivery completed with a warning.",
             dispatch.WarningMessage);
     }
+
+    public async Task<bool> SetCatalogItemArchivedAsync(
+        string kind,
+        string id,
+        bool archive,
+        string? requestingAdminId = null,
+        CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrWhiteSpace(id)) return false;
+        var cleanId = id.Trim();
+        var normKind = (kind ?? string.Empty).Trim().ToLowerInvariant();
+        if (normKind is not ("service" or "package" or "addon" or "category"))
+            return false;
+
+        await using var conn = new SqlConnection(_db.Database.GetConnectionString()!);
+        await conn.OpenAsync(cancellationToken);
+
+        var sql = normKind switch
+        {
+            "service" => @"
+                IF COL_LENGTH(N'dbo.Services', N'IsArchived') IS NULL
+                    ALTER TABLE dbo.Services ADD IsArchived bit NOT NULL CONSTRAINT DF_Services_IsArchived DEFAULT 0;
+                IF COL_LENGTH(N'dbo.Services', N'ArchivedAt') IS NULL
+                    ALTER TABLE dbo.Services ADD ArchivedAt datetime2 NULL;
+                UPDATE dbo.Services
+                SET IsArchived = @Archive,
+                    ArchivedAt = CASE WHEN @Archive = 1 THEN SYSUTCDATETIME() ELSE NULL END
+                WHERE UPPER(ServicesID) = UPPER(@Id);",
+            "package" => @"
+                IF COL_LENGTH(N'dbo.ComboPackage', N'IsArchived') IS NULL
+                    ALTER TABLE dbo.ComboPackage ADD IsArchived bit NOT NULL CONSTRAINT DF_ComboPackage_IsArchived DEFAULT 0;
+                IF COL_LENGTH(N'dbo.ComboPackage', N'ArchivedAt') IS NULL
+                    ALTER TABLE dbo.ComboPackage ADD ArchivedAt datetime2 NULL;
+                UPDATE dbo.ComboPackage
+                SET IsArchived = @Archive,
+                    ArchivedAt = CASE WHEN @Archive = 1 THEN SYSUTCDATETIME() ELSE NULL END
+                WHERE UPPER(ComboPackageID) = UPPER(@Id);",
+            "addon" => @"
+                IF COL_LENGTH(N'dbo.AdditionalServices', N'IsArchived') IS NULL
+                    ALTER TABLE dbo.AdditionalServices ADD IsArchived bit NOT NULL CONSTRAINT DF_AdditionalServices_IsArchived DEFAULT 0;
+                IF COL_LENGTH(N'dbo.AdditionalServices', N'ArchivedAt') IS NULL
+                    ALTER TABLE dbo.AdditionalServices ADD ArchivedAt datetime2 NULL;
+                UPDATE dbo.AdditionalServices
+                SET IsArchived = @Archive,
+                    ArchivedAt = CASE WHEN @Archive = 1 THEN SYSUTCDATETIME() ELSE NULL END
+                WHERE UPPER(AdditionalServicesID) = UPPER(@Id);",
+            _ => @"
+                IF COL_LENGTH(N'dbo.ServiceCategory', N'Status') IS NULL
+                    ALTER TABLE dbo.ServiceCategory ADD Status nvarchar(30) NOT NULL CONSTRAINT DF_ServiceCategory_Status DEFAULT 'Active';
+                IF COL_LENGTH(N'dbo.ServiceCategory', N'IsArchived') IS NULL
+                    ALTER TABLE dbo.ServiceCategory ADD IsArchived bit NOT NULL CONSTRAINT DF_ServiceCategory_IsArchived DEFAULT 0;
+                IF COL_LENGTH(N'dbo.ServiceCategory', N'ArchivedAt') IS NULL
+                    ALTER TABLE dbo.ServiceCategory ADD ArchivedAt datetime2 NULL;
+                UPDATE dbo.ServiceCategory
+                SET IsArchived = @Archive,
+                    Status = CASE WHEN @Archive = 1 THEN N'Archived' ELSE N'Active' END,
+                    ArchivedAt = CASE WHEN @Archive = 1 THEN SYSUTCDATETIME() ELSE NULL END
+                WHERE UPPER(ServiceCategoryID) = UPPER(@Id);"
+        };
+
+        await using var cmd = new SqlCommand(sql, conn);
+        cmd.Parameters.AddWithValue("@Id", cleanId);
+        cmd.Parameters.AddWithValue("@Archive", archive ? 1 : 0);
+        var rows = await cmd.ExecuteNonQueryAsync(cancellationToken);
+
+        if (rows > 0 && archive && normKind is "service" or "package" or "addon")
+        {
+            const string unfeatureSql = @"
+                IF OBJECT_ID(N'dbo.FeaturedService', N'U') IS NOT NULL
+                    DELETE FROM dbo.FeaturedService
+                    WHERE UPPER(ServicesID) = UPPER(@Id)
+                       OR UPPER(AdditionalServicesID) = UPPER(@Id)
+                       OR UPPER(ComboPackageID) = UPPER(@Id);";
+            await using var ufCmd = new SqlCommand(unfeatureSql, conn);
+            ufCmd.Parameters.AddWithValue("@Id", cleanId);
+            try { await ufCmd.ExecuteNonQueryAsync(cancellationToken); } catch { }
+        }
+
+        if (rows > 0)
+        {
+            const string logSql = @"
+                IF OBJECT_ID(N'dbo.HistoryLog', N'U') IS NOT NULL
+                BEGIN
+                    INSERT INTO dbo.HistoryLog (ActionType, EntityName, EntityID, ChangedByType, ActionDetails, LoggedAt)
+                    VALUES (@Action, @Entity, @Id, N'Admin', @Details, SYSUTCDATETIME());
+                END";
+            await using var logCmd = new SqlCommand(logSql, conn);
+            logCmd.Parameters.AddWithValue("@Action", archive ? "ARCHIVE" : "RESTORE");
+            logCmd.Parameters.AddWithValue("@Entity", normKind);
+            logCmd.Parameters.AddWithValue("@Id", cleanId);
+            logCmd.Parameters.AddWithValue("@Details", $"{(archive ? "Archived" : "Restored")} {normKind} '{cleanId}'.");
+            try { await logCmd.ExecuteNonQueryAsync(cancellationToken); } catch { }
+        }
+
+        return rows > 0;
+    }
+
+    public async Task<(bool Success, string Message)> DeleteCatalogItemWithSnapshotAsync(
+        string kind,
+        string id,
+        string? requestingAdminId = null,
+        CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrWhiteSpace(id))
+            return (false, "Item ID is required.");
+
+        var cleanId = id.Trim();
+        var normKind = (kind ?? string.Empty).Trim().ToLowerInvariant();
+        if (normKind is not ("service" or "package" or "addon" or "category"))
+            return (false, "Unsupported catalog item type.");
+
+        await using var conn = new SqlConnection(_db.Database.GetConnectionString()!);
+        await conn.OpenAsync(cancellationToken);
+
+        // Ensure EventLineItem snapshot columns and relaxed CHECK constraint exist
+        const string ensureSnapshotSchema = @"
+            IF OBJECT_ID(N'dbo.EventLineItem', N'U') IS NOT NULL
+            BEGIN
+                IF COL_LENGTH(N'dbo.EventLineItem', N'ServiceNameSnapshot') IS NULL
+                    ALTER TABLE dbo.EventLineItem ADD ServiceNameSnapshot nvarchar(255) NULL;
+                IF COL_LENGTH(N'dbo.EventLineItem', N'ServiceKindSnapshot') IS NULL
+                    ALTER TABLE dbo.EventLineItem ADD ServiceKindSnapshot nvarchar(30) NULL;
+                IF OBJECT_ID(N'dbo.CK_EventLineItem_ExactlyOne', N'C') IS NOT NULL
+                    ALTER TABLE dbo.EventLineItem DROP CONSTRAINT CK_EventLineItem_ExactlyOne;
+                ALTER TABLE dbo.EventLineItem ADD CONSTRAINT CK_EventLineItem_ExactlyOne CHECK (
+                    ((CASE WHEN ServicesID IS NOT NULL THEN 1 ELSE 0 END) +
+                     (CASE WHEN AdditionalServicesID IS NOT NULL THEN 1 ELSE 0 END) +
+                     (CASE WHEN ComboPackageID IS NOT NULL THEN 1 ELSE 0 END) = 1)
+                    OR (ServicesID IS NULL AND AdditionalServicesID IS NULL AND ComboPackageID IS NULL AND ServiceNameSnapshot IS NOT NULL));
+            END;";
+        await using (var schemaCmd = new SqlCommand(ensureSnapshotSchema, conn))
+        {
+            await schemaCmd.ExecuteNonQueryAsync(cancellationToken);
+        }
+
+        await using var tx = (SqlTransaction)await conn.BeginTransactionAsync(cancellationToken);
+        try
+        {
+            string? itemName = null;
+            var selectNameSql = normKind switch
+            {
+                "service" => "SELECT ServiceName FROM dbo.Services WHERE UPPER(ServicesID) = UPPER(@Id);",
+                "package" => "SELECT ComboPackageName FROM dbo.ComboPackage WHERE UPPER(ComboPackageID) = UPPER(@Id);",
+                "addon" => "SELECT AdditionalServiceName FROM dbo.AdditionalServices WHERE UPPER(AdditionalServicesID) = UPPER(@Id);",
+                _ => "SELECT ServiceCategoryName FROM dbo.ServiceCategory WHERE UPPER(ServiceCategoryID) = UPPER(@Id);"
+            };
+
+            await using (var nameCmd = new SqlCommand(selectNameSql, conn, tx))
+            {
+                nameCmd.Parameters.AddWithValue("@Id", cleanId);
+                var scalar = await nameCmd.ExecuteScalarAsync(cancellationToken);
+                itemName = scalar == null || scalar == DBNull.Value ? null : Convert.ToString(scalar);
+            }
+
+            if (itemName == null)
+            {
+                await tx.RollbackAsync(cancellationToken);
+                return (false, $"Item '{cleanId}' was not found.");
+            }
+
+            if (normKind is "service" or "package" or "addon")
+            {
+                var fkCol = normKind switch
+                {
+                    "service" => "ServicesID",
+                    "package" => "ComboPackageID",
+                    _ => "AdditionalServicesID"
+                };
+                var kindLabel = normKind switch
+                {
+                    "service" => "Service",
+                    "package" => "Combo Package",
+                    _ => "Add-on"
+                };
+
+                var snapshotSql = $@"
+                    IF OBJECT_ID(N'dbo.EventLineItem', N'U') IS NOT NULL
+                    BEGIN
+                        UPDATE dbo.EventLineItem
+                        SET ServiceNameSnapshot = COALESCE(ServiceNameSnapshot, @ItemName),
+                            ServiceKindSnapshot = COALESCE(ServiceKindSnapshot, @KindLabel),
+                            {fkCol} = NULL
+                        WHERE UPPER({fkCol}) = UPPER(@Id);
+                    END
+                    IF OBJECT_ID(N'dbo.ComboPackageJoin', N'U') IS NOT NULL
+                        DELETE FROM dbo.ComboPackageJoin WHERE UPPER({fkCol}) = UPPER(@Id);
+                    IF OBJECT_ID(N'dbo.ServiceCategoryJoins', N'U') IS NOT NULL
+                        DELETE FROM dbo.ServiceCategoryJoins WHERE UPPER({fkCol}) = UPPER(@Id);
+                    IF OBJECT_ID(N'dbo.FeaturedService', N'U') IS NOT NULL
+                        DELETE FROM dbo.FeaturedService WHERE UPPER({fkCol}) = UPPER(@Id);";
+
+                await using (var snapCmd = new SqlCommand(snapshotSql, conn, tx))
+                {
+                    snapCmd.Parameters.AddWithValue("@Id", cleanId);
+                    snapCmd.Parameters.AddWithValue("@ItemName", itemName);
+                    snapCmd.Parameters.AddWithValue("@KindLabel", kindLabel);
+                    await snapCmd.ExecuteNonQueryAsync(cancellationToken);
+                }
+
+                if (normKind == "service")
+                {
+                    const string rateSql = @"
+                        IF OBJECT_ID(N'dbo.ServiceRate', N'U') IS NOT NULL
+                            DELETE FROM dbo.ServiceRate WHERE UPPER(ServicesID) = UPPER(@Id);";
+                    await using var rateCmd = new SqlCommand(rateSql, conn, tx);
+                    rateCmd.Parameters.AddWithValue("@Id", cleanId);
+                    await rateCmd.ExecuteNonQueryAsync(cancellationToken);
+                }
+            }
+            else
+            {
+                const string catJoinSql = @"
+                    IF OBJECT_ID(N'dbo.ServiceCategoryJoins', N'U') IS NOT NULL
+                        DELETE FROM dbo.ServiceCategoryJoins WHERE UPPER(ServiceCategoryID) = UPPER(@Id);";
+                await using var catJoinCmd = new SqlCommand(catJoinSql, conn, tx);
+                catJoinCmd.Parameters.AddWithValue("@Id", cleanId);
+                await catJoinCmd.ExecuteNonQueryAsync(cancellationToken);
+            }
+
+            var delSql = normKind switch
+            {
+                "service" => "DELETE FROM dbo.Services WHERE UPPER(ServicesID) = UPPER(@Id);",
+                "package" => "DELETE FROM dbo.ComboPackage WHERE UPPER(ComboPackageID) = UPPER(@Id);",
+                "addon" => "DELETE FROM dbo.AdditionalServices WHERE UPPER(AdditionalServicesID) = UPPER(@Id);",
+                _ => "DELETE FROM dbo.ServiceCategory WHERE UPPER(ServiceCategoryID) = UPPER(@Id);"
+            };
+
+            await using (var delCmd = new SqlCommand(delSql, conn, tx))
+            {
+                delCmd.Parameters.AddWithValue("@Id", cleanId);
+                await delCmd.ExecuteNonQueryAsync(cancellationToken);
+            }
+
+            const string logSql = @"
+                IF OBJECT_ID(N'dbo.HistoryLog', N'U') IS NOT NULL
+                BEGIN
+                    INSERT INTO dbo.HistoryLog (ActionType, EntityName, EntityID, ChangedByType, ActionDetails, LoggedAt)
+                    VALUES (N'DELETE', @Entity, @Id, N'Admin', @Details, SYSUTCDATETIME());
+                END";
+            await using (var logCmd = new SqlCommand(logSql, conn, tx))
+            {
+                logCmd.Parameters.AddWithValue("@Entity", normKind);
+                logCmd.Parameters.AddWithValue("@Id", cleanId);
+                logCmd.Parameters.AddWithValue("@Details", $"Permanently deleted {normKind} '{itemName}' ({cleanId}) with EventLineItem snapshot.");
+                await logCmd.ExecuteNonQueryAsync(cancellationToken);
+            }
+
+            await tx.CommitAsync(cancellationToken);
+            return (true, $"'{itemName}' was permanently deleted. Existing event and ledger history remains preserved.");
+        }
+        catch (Exception ex)
+        {
+            await tx.RollbackAsync(cancellationToken);
+            return (false, $"Unable to delete {normKind} '{cleanId}': {ex.Message}");
+        }
+    }
 }

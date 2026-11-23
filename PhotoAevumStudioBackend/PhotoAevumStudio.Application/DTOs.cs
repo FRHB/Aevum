@@ -13,7 +13,9 @@ public record ServiceSummaryDto(
     bool HasImage,
     string RateType = "per hour",
     string? ImageFileName = null,
-    string? ImageUrl = null);
+    string? ImageUrl = null,
+    bool IsArchived = false,
+    DateTime? ArchivedAt = null);
 
 public record ServiceDetailDto(
     string Id,

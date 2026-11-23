@@ -398,4 +398,37 @@ public class AdditionalServicesController : ControllerBase
 
         return true;
     }
+
+    [HttpPost("{id}/archive")]
+    [Authorize(Roles = "Admin,SystemAdmin")]
+    public async Task<IActionResult> ArchiveAdditionalService(string id, CancellationToken ct)
+    {
+        var adminId = User.FindFirstValue("studio_id") ?? User.FindFirstValue(ClaimTypes.Name);
+        var ok = await _service.SetCatalogItemArchivedAsync("addon", id, true, adminId, ct);
+        if (!ok) return NotFound(new { Message = $"Additional Service '{id}' was not found." });
+        if (_outputCache != null) await _outputCache.EvictByTagAsync("catalog", ct);
+        return Ok(new { Archived = true, Id = id });
+    }
+
+    [HttpPost("{id}/restore")]
+    [Authorize(Roles = "Admin,SystemAdmin")]
+    public async Task<IActionResult> RestoreAdditionalService(string id, CancellationToken ct)
+    {
+        var adminId = User.FindFirstValue("studio_id") ?? User.FindFirstValue(ClaimTypes.Name);
+        var ok = await _service.SetCatalogItemArchivedAsync("addon", id, false, adminId, ct);
+        if (!ok) return NotFound(new { Message = $"Additional Service '{id}' was not found." });
+        if (_outputCache != null) await _outputCache.EvictByTagAsync("catalog", ct);
+        return Ok(new { Archived = false, Id = id });
+    }
+
+    [HttpDelete("{id}")]
+    [Authorize(Roles = "Admin,SystemAdmin")]
+    public async Task<IActionResult> DeleteAdditionalService(string id, CancellationToken ct)
+    {
+        var adminId = User.FindFirstValue("studio_id") ?? User.FindFirstValue(ClaimTypes.Name);
+        var (ok, message) = await _service.DeleteCatalogItemWithSnapshotAsync("addon", id, adminId, ct);
+        if (!ok) return BadRequest(new { Message = message });
+        if (_outputCache != null) await _outputCache.EvictByTagAsync("catalog", ct);
+        return Ok(new { Deleted = true, Id = id, Message = message });
+    }
 }

@@ -240,7 +240,9 @@ BEGIN
         ComboPackageImage varbinary(max) NULL,
         ComboPackageImageMimeType nvarchar(100) NULL CONSTRAINT DF_ComboPackage_MimeType DEFAULT 'image/jpeg',
         ImageFileName nvarchar(500) NULL,
-        ImageUrl nvarchar(500) NULL
+        ImageUrl nvarchar(500) NULL,
+        IsArchived bit NOT NULL CONSTRAINT DF_ComboPackage_IsArchived DEFAULT 0,
+        ArchivedAt datetime2 NULL
     );
 END;
 
@@ -252,6 +254,10 @@ BEGIN
         ALTER TABLE dbo.ComboPackage ADD ImageFileName nvarchar(500) NULL;
     IF COL_LENGTH(N'dbo.ComboPackage', N'ImageUrl') IS NULL
         ALTER TABLE dbo.ComboPackage ADD ImageUrl nvarchar(500) NULL;
+    IF COL_LENGTH(N'dbo.ComboPackage', N'IsArchived') IS NULL
+        ALTER TABLE dbo.ComboPackage ADD IsArchived bit NOT NULL CONSTRAINT DF_ComboPackage_IsArchived DEFAULT 0;
+    IF COL_LENGTH(N'dbo.ComboPackage', N'ArchivedAt') IS NULL
+        ALTER TABLE dbo.ComboPackage ADD ArchivedAt datetime2 NULL;
 END;
 
 IF OBJECT_ID(N'dbo.AdditionalServices', N'U') IS NULL
@@ -267,6 +273,8 @@ BEGIN
         AdditionalServiceImageMimeType nvarchar(100) NULL CONSTRAINT DF_AdditionalServices_MimeType DEFAULT 'image/jpeg',
         ImageFileName nvarchar(500) NULL,
         ImageUrl nvarchar(500) NULL,
+        IsArchived bit NOT NULL CONSTRAINT DF_AdditionalServices_IsArchived DEFAULT 0,
+        ArchivedAt datetime2 NULL,
         CreatedAt datetime2 NOT NULL CONSTRAINT DF_AdditionalServices_CreatedAt DEFAULT SYSUTCDATETIME()
     );
 END;
@@ -279,6 +287,10 @@ BEGIN
         ALTER TABLE dbo.AdditionalServices ADD ImageFileName nvarchar(500) NULL;
     IF COL_LENGTH(N'dbo.AdditionalServices', N'ImageUrl') IS NULL
         ALTER TABLE dbo.AdditionalServices ADD ImageUrl nvarchar(500) NULL;
+    IF COL_LENGTH(N'dbo.AdditionalServices', N'IsArchived') IS NULL
+        ALTER TABLE dbo.AdditionalServices ADD IsArchived bit NOT NULL CONSTRAINT DF_AdditionalServices_IsArchived DEFAULT 0;
+    IF COL_LENGTH(N'dbo.AdditionalServices', N'ArchivedAt') IS NULL
+        ALTER TABLE dbo.AdditionalServices ADD ArchivedAt datetime2 NULL;
 END;
 
 IF OBJECT_ID(N'dbo.RateType', N'U') IS NULL
@@ -316,6 +328,8 @@ BEGIN
         ServiceImageMimeType nvarchar(100) NULL CONSTRAINT DF_Services_MimeType DEFAULT 'image/jpeg',
         ImageFileName nvarchar(500) NULL,
         ImageUrl nvarchar(500) NULL,
+        IsArchived bit NOT NULL CONSTRAINT DF_Services_IsArchived DEFAULT 0,
+        ArchivedAt datetime2 NULL,
         CreatedAt datetime2 NOT NULL CONSTRAINT DF_Services_CreatedAt DEFAULT SYSUTCDATETIME()
     );
 END;
@@ -328,6 +342,10 @@ BEGIN
         ALTER TABLE dbo.Services ADD ImageFileName nvarchar(500) NULL;
     IF COL_LENGTH(N'dbo.Services', N'ImageUrl') IS NULL
         ALTER TABLE dbo.Services ADD ImageUrl nvarchar(500) NULL;
+    IF COL_LENGTH(N'dbo.Services', N'IsArchived') IS NULL
+        ALTER TABLE dbo.Services ADD IsArchived bit NOT NULL CONSTRAINT DF_Services_IsArchived DEFAULT 0;
+    IF COL_LENGTH(N'dbo.Services', N'ArchivedAt') IS NULL
+        ALTER TABLE dbo.Services ADD ArchivedAt datetime2 NULL;
 END;
 
 IF OBJECT_ID(N'dbo.ServiceRate', N'U') IS NULL
@@ -352,8 +370,21 @@ BEGIN
         ServiceCategoryName nvarchar(255) NOT NULL,
         ServiceCategoryDescription nvarchar(1000) NOT NULL,
         RateTypeID nvarchar(30) NOT NULL CONSTRAINT DF_ServiceCategory_RateTypeID DEFAULT 'RT-0001',
-        RateTypeName nvarchar(50) NOT NULL CONSTRAINT DF_ServiceCategory_RateTypeName DEFAULT 'Per Hour'
+        RateTypeName nvarchar(50) NOT NULL CONSTRAINT DF_ServiceCategory_RateTypeName DEFAULT 'Per Hour',
+        Status nvarchar(30) NOT NULL CONSTRAINT DF_ServiceCategory_Status DEFAULT 'Active',
+        IsArchived bit NOT NULL CONSTRAINT DF_ServiceCategory_IsArchived DEFAULT 0,
+        ArchivedAt datetime2 NULL
     );
+END;
+
+IF OBJECT_ID(N'dbo.ServiceCategory', N'U') IS NOT NULL
+BEGIN
+    IF COL_LENGTH(N'dbo.ServiceCategory', N'Status') IS NULL
+        ALTER TABLE dbo.ServiceCategory ADD Status nvarchar(30) NOT NULL CONSTRAINT DF_ServiceCategory_Status DEFAULT 'Active';
+    IF COL_LENGTH(N'dbo.ServiceCategory', N'IsArchived') IS NULL
+        ALTER TABLE dbo.ServiceCategory ADD IsArchived bit NOT NULL CONSTRAINT DF_ServiceCategory_IsArchived DEFAULT 0;
+    IF COL_LENGTH(N'dbo.ServiceCategory', N'ArchivedAt') IS NULL
+        ALTER TABLE dbo.ServiceCategory ADD ArchivedAt datetime2 NULL;
 END;
 
 IF OBJECT_ID(N'dbo.ServiceCategoryJoins', N'U') IS NULL
@@ -590,10 +621,13 @@ BEGIN
         LineTotal decimal(18,2) NOT NULL CONSTRAINT DF_EventLineItem_LineTotal DEFAULT 0.00,
         RateType nvarchar(50) NULL,
         DurationHours int NULL,
+        ServiceNameSnapshot nvarchar(255) NULL,
+        ServiceKindSnapshot nvarchar(30) NULL,
         CONSTRAINT CK_EventLineItem_ExactlyOne CHECK (
-            (CASE WHEN ServicesID IS NOT NULL THEN 1 ELSE 0 END) +
-            (CASE WHEN AdditionalServicesID IS NOT NULL THEN 1 ELSE 0 END) +
-            (CASE WHEN ComboPackageID IS NOT NULL THEN 1 ELSE 0 END) = 1)
+            ((CASE WHEN ServicesID IS NOT NULL THEN 1 ELSE 0 END) +
+             (CASE WHEN AdditionalServicesID IS NOT NULL THEN 1 ELSE 0 END) +
+             (CASE WHEN ComboPackageID IS NOT NULL THEN 1 ELSE 0 END) = 1)
+            OR (ServicesID IS NULL AND AdditionalServicesID IS NULL AND ComboPackageID IS NULL AND ServiceNameSnapshot IS NOT NULL))
     );
 END;
 
@@ -610,6 +644,17 @@ BEGIN
         ALTER TABLE dbo.EventLineItem ADD RateType nvarchar(50) NULL;
     IF COL_LENGTH(N'dbo.EventLineItem', N'DurationHours') IS NULL
         ALTER TABLE dbo.EventLineItem ADD DurationHours int NULL;
+    IF COL_LENGTH(N'dbo.EventLineItem', N'ServiceNameSnapshot') IS NULL
+        ALTER TABLE dbo.EventLineItem ADD ServiceNameSnapshot nvarchar(255) NULL;
+    IF COL_LENGTH(N'dbo.EventLineItem', N'ServiceKindSnapshot') IS NULL
+        ALTER TABLE dbo.EventLineItem ADD ServiceKindSnapshot nvarchar(30) NULL;
+    IF OBJECT_ID(N'dbo.CK_EventLineItem_ExactlyOne', N'C') IS NOT NULL
+        ALTER TABLE dbo.EventLineItem DROP CONSTRAINT CK_EventLineItem_ExactlyOne;
+    ALTER TABLE dbo.EventLineItem ADD CONSTRAINT CK_EventLineItem_ExactlyOne CHECK (
+        ((CASE WHEN ServicesID IS NOT NULL THEN 1 ELSE 0 END) +
+         (CASE WHEN AdditionalServicesID IS NOT NULL THEN 1 ELSE 0 END) +
+         (CASE WHEN ComboPackageID IS NOT NULL THEN 1 ELSE 0 END) = 1)
+        OR (ServicesID IS NULL AND AdditionalServicesID IS NULL AND ComboPackageID IS NULL AND ServiceNameSnapshot IS NOT NULL));
 END;
 
 IF OBJECT_ID(N'dbo.EmployeeJointSpecialization', N'U') IS NULL

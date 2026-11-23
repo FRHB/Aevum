@@ -574,10 +574,10 @@
             await RefreshCountsAsync();
             await LoadEmployeesAsync();
         }
-        catch (Exception ex)
+        catch (Exception)
         {
             feedbackType = "error";
-            feedbackMessage = $"Error executing {currentActionType.ToLowerInvariant()}: {ex.Message}";
+            feedbackMessage = $"Unable to {currentActionType.ToLowerInvariant()} this employee right now. Please try again or contact support.";
             isActionModalOpen = false;
         }
         finally

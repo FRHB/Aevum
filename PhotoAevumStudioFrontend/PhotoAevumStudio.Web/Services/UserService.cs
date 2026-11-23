@@ -1541,45 +1541,85 @@ public class UserService : IUserService
 	}
 
 	public bool DeleteEmployee(string id)
-
 	{
-
 		if (string.IsNullOrWhiteSpace(id))
-
 		{
-
 			return false;
-
 		}
 
-		using SqlConnection sqlConnection = CreateConnection();
+		try
+		{
+			using SqlConnection sqlConnection = CreateConnection();
+			sqlConnection.Open();
+			using SqlCommand sqlCommand = new SqlCommand(@"
+                SET XACT_ABORT ON;
+                BEGIN TRAN;
 
-		sqlConnection.Open();
+                DECLARE @EmpFullName nvarchar(200) = NULL;
+                SELECT @EmpFullName = LTRIM(RTRIM(CONCAT(FirstName, ' ', LastName)))
+                FROM dbo.Employees
+                WHERE UPPER(EmployeeID) = @Id;
 
-		using SqlCommand sqlCommand = new SqlCommand(@"
+                IF OBJECT_ID(N'dbo.EventCrewReplacementRequest', N'U') IS NOT NULL
+                BEGIN
+                    UPDATE dbo.EventCrewReplacementRequest
+                    SET AbsentEmployeeName = COALESCE(NULLIF(LTRIM(RTRIM(AbsentEmployeeName)), ''), @EmpFullName, AbsentEmployeeID),
+                        AbsentEmployeeID = NULL
+                    WHERE UPPER(AbsentEmployeeID) = @Id;
 
-            IF OBJECT_ID(N'dbo.spDeleteEmployee', N'P') IS NOT NULL
+                    UPDATE dbo.EventCrewReplacementRequest
+                    SET ReplacementEmployeeName = COALESCE(NULLIF(LTRIM(RTRIM(ReplacementEmployeeName)), ''), @EmpFullName, ReplacementEmployeeID),
+                        ReplacementEmployeeID = NULL
+                    WHERE UPPER(ReplacementEmployeeID) = @Id;
 
-                EXEC dbo.spDeleteEmployee @EmployeeID = @Id;
-
-            ELSE IF OBJECT_ID(N'dbo.sp_DeleteEmployee', N'P') IS NOT NULL
-
-                EXEC dbo.sp_DeleteEmployee @EmployeeID = @Id;
-
-            ELSE
-
-            BEGIN
-
-                DELETE FROM dbo.EmployeeJointSpecialization WHERE UPPER(EmployeeID) = @Id;
+                    UPDATE dbo.EventCrewReplacementRequest
+                    SET RequestedByName = COALESCE(NULLIF(LTRIM(RTRIM(RequestedByName)), ''), @EmpFullName, RequestedByEmployeeID),
+                        RequestedByEmployeeID = NULL
+                    WHERE UPPER(RequestedByEmployeeID) = @Id;
+                END
+                IF OBJECT_ID(N'dbo.EventEquipment', N'U') IS NOT NULL
+                    UPDATE dbo.EventEquipment SET TakenByEmployeeID = NULL WHERE UPPER(TakenByEmployeeID) = @Id;
+                IF OBJECT_ID(N'dbo.CustomerDropbox', N'U') IS NOT NULL
+                    UPDATE dbo.CustomerDropbox SET UploadedByEmployeeID = NULL WHERE UPPER(UploadedByEmployeeID) = @Id;
+                IF OBJECT_ID(N'dbo.CustomerDropboxFiles', N'U') IS NOT NULL
+                    UPDATE dbo.CustomerDropboxFiles SET UploadedByEmployeeID = NULL WHERE UPPER(UploadedByEmployeeID) = @Id;
+                IF OBJECT_ID(N'dbo.EventAppointment', N'U') IS NOT NULL
+                    UPDATE dbo.EventAppointment SET EmployeeID = NULL WHERE UPPER(EmployeeID) = @Id;
+                IF OBJECT_ID(N'dbo.BookingNegotiation', N'U') IS NOT NULL
+                    UPDATE dbo.BookingNegotiation SET EmployeeID = NULL WHERE UPPER(EmployeeID) = @Id;
+                IF OBJECT_ID(N'dbo.EventEmployee', N'U') IS NOT NULL
+                    UPDATE dbo.EventEmployee SET EmployeeID = NULL WHERE UPPER(EmployeeID) = @Id;
+                IF OBJECT_ID(N'dbo.EventOvertimeCharges', N'U') IS NOT NULL
+                    UPDATE dbo.EventOvertimeCharges SET LoggedByEmployeeID = NULL WHERE UPPER(LoggedByEmployeeID) = @Id;
+                IF OBJECT_ID(N'dbo.PaymentTransactions', N'U') IS NOT NULL
+                    UPDATE dbo.PaymentTransactions SET ReceivedByEmployeeID = NULL WHERE UPPER(ReceivedByEmployeeID) = @Id;
+                IF OBJECT_ID(N'dbo.HistoryLog', N'U') IS NOT NULL
+                BEGIN
+                    UPDATE dbo.HistoryLog SET EmployeeID = NULL WHERE UPPER(EmployeeID) = @Id;
+                    UPDATE dbo.HistoryLog SET ChangedByEmployeeID = NULL WHERE UPPER(ChangedByEmployeeID) = @Id;
+                END
+                IF OBJECT_ID(N'dbo.EmployeeTimesheets', N'U') IS NOT NULL
+                    DELETE FROM dbo.EmployeeTimesheets WHERE UPPER(EmployeeStudioId) = @Id;
+                IF OBJECT_ID(N'dbo.EmployeeLeaves', N'U') IS NOT NULL
+                    DELETE FROM dbo.EmployeeLeaves WHERE UPPER(EmployeeStudioId) = @Id;
+                IF OBJECT_ID(N'dbo.LeaveBalances', N'U') IS NOT NULL
+                    DELETE FROM dbo.LeaveBalances WHERE UPPER(EmployeeID) = @Id;
+                IF OBJECT_ID(N'dbo.EmployeeJointSpecialization', N'U') IS NOT NULL
+                    DELETE FROM dbo.EmployeeJointSpecialization WHERE UPPER(EmployeeID) = @Id;
+                IF OBJECT_ID(N'dbo.EmployeePasswordResetRequest', N'U') IS NOT NULL
+                    DELETE FROM dbo.EmployeePasswordResetRequest WHERE UPPER(EmployeeID) = @Id;
+                IF OBJECT_ID(N'dbo.AspNetUsers', N'U') IS NOT NULL
+                    DELETE FROM dbo.AspNetUsers WHERE UPPER(UserName) = @Id;
 
                 DELETE FROM dbo.Employees WHERE UPPER(EmployeeID) = @Id;
-
-            END", sqlConnection);
-
-		sqlCommand.Parameters.AddWithValue("@Id", id.Trim().ToUpperInvariant());
-
-		return sqlCommand.ExecuteNonQuery() > 0;
-
+                COMMIT TRAN;", sqlConnection);
+			sqlCommand.Parameters.AddWithValue("@Id", id.Trim().ToUpperInvariant());
+			return sqlCommand.ExecuteNonQuery() > 0;
+		}
+		catch
+		{
+			return false;
+		}
 	}
 
 
@@ -3109,20 +3149,24 @@ public class UserService : IUserService
 
 
 
-	public IReadOnlyList<MainServiceItem> GetMainServicesSummary()
+	public IReadOnlyList<MainServiceItem> GetMainServicesSummary() => GetMainServicesSummary(includeArchived: false);
+
+	public IReadOnlyList<MainServiceItem> GetMainServicesSummary(bool includeArchived)
 	{
 		lock (_catalogCacheLock)
 		{
 			if (_cachedMainServicesSummary.HasValue &&
 				DateTime.UtcNow - _cachedMainServicesSummary.Value.FetchedAt < CatalogCacheDuration)
 			{
-				return _cachedMainServicesSummary.Value.Items.ToList();
+				var cached = _cachedMainServicesSummary.Value.Items;
+				return includeArchived ? cached.ToList() : cached.Where(s => s.IsActive).ToList();
 			}
 		}
 
 		List<MainServiceItem> list = new List<MainServiceItem>();
 		using SqlConnection sqlConnection = CreateConnection();
 		sqlConnection.Open();
+		EnsureCatalogArchiveColumns(sqlConnection);
 		using SqlCommand sqlCommand = new SqlCommand(@"
             IF OBJECT_ID(N'dbo.Services', N'U') IS NOT NULL
             BEGIN
@@ -3133,7 +3177,8 @@ public class UserService : IUserService
                     ISNULL(s.ServicePrice, 0) AS ServicePrice,
                     ISNULL(sc.ServiceCategoryName, 'Portrait Photography') AS ServiceCategoryName,
                     ISNULL(s.RateType, 'per hour') AS RateType,
-                    s.ImageFileName
+                    s.ImageFileName,
+                    ISNULL(s.IsArchived, 0) AS IsArchived
                 FROM dbo.Services s
                 LEFT JOIN (
                     SELECT ServicesID, MIN(ServiceCategoryID) AS ServiceCategoryID
@@ -3155,6 +3200,7 @@ public class UserService : IUserService
 			string category = reader.IsDBNull(4) ? "Portrait Photography" : reader.GetString(4);
 			string rateType = reader.IsDBNull(5) ? "per hour" : reader.GetString(5);
 			string? imageFileName = reader.FieldCount > 6 && !reader.IsDBNull(6) ? reader.GetString(6) : null;
+			bool isArchived = reader.FieldCount > 7 && !reader.IsDBNull(7) && Convert.ToBoolean(reader.GetValue(7));
 			string? imageUrl = null;
 			if (_r2Configured && _r2Client != null && !string.IsNullOrWhiteSpace(imageFileName))
 			{
@@ -3181,7 +3227,7 @@ public class UserService : IUserService
 				BasePrice = price,
 				Description = description,
 				ImageBase64 = imageUrl,
-				Status = "Active",
+				Status = isArchived ? "Archived" : "Active",
 				RateType = rateType
 			});
 		}
@@ -3190,7 +3236,7 @@ public class UserService : IUserService
 		{
 			_cachedMainServicesSummary = (DateTime.UtcNow, list);
 		}
-		return list.ToList();
+		return includeArchived ? list.ToList() : list.Where(s => s.IsActive).ToList();
 	}
 
 
@@ -3213,6 +3259,7 @@ public class UserService : IUserService
 		using SqlConnection sqlConnection = CreateConnection();
 
 		sqlConnection.Open();
+		EnsureCatalogArchiveColumns(sqlConnection);
 
 		using SqlCommand sqlCommand = new SqlCommand(@"
 
@@ -3250,7 +3297,9 @@ public class UserService : IUserService
 
                     ISNULL(sc.RateTypeID, 'RT-0001') AS RateTypeID,
 
-                    ISNULL(sc.RateTypeName, 'Per Hour') AS RateTypeName
+                    ISNULL(sc.RateTypeName, 'Per Hour') AS RateTypeName,
+
+                    CASE WHEN ISNULL(sc.IsArchived, 0) = 1 THEN 'Archived' ELSE ISNULL(sc.Status, 'Active') END AS CategoryStatus
 
                 FROM dbo.ServiceCategory sc
 
@@ -3292,6 +3341,8 @@ public class UserService : IUserService
 
 			string rateTypeName = reader.IsDBNull(6) ? "Per Hour" : reader.GetString(6);
 
+			string categoryStatus = reader.FieldCount > 7 && !reader.IsDBNull(7) ? reader.GetString(7) : "Active";
+
 
 
 			if (!dict.TryGetValue(catId, out var item))
@@ -3312,7 +3363,7 @@ public class UserService : IUserService
 
 					Type = inferredType,
 
-					Status = "Active",
+					Status = categoryStatus,
 
 					IsFeatured = false,
 
@@ -3958,72 +4009,54 @@ public class UserService : IUserService
 
 
 
-	public IReadOnlyList<PackageServiceItem> GetPackageServices()
+	public IReadOnlyList<PackageServiceItem> GetPackageServices() => GetPackageServicesSummary(includeArchived: false);
 
+	public IReadOnlyList<PackageServiceItem> GetPackageServicesSummary() => GetPackageServicesSummary(includeArchived: false);
+
+	public IReadOnlyList<PackageServiceItem> GetPackageServicesSummary(bool includeArchived)
 	{
-
 		lock (_catalogCacheLock)
 		{
 			if (_cachedPackages.HasValue &&
 				DateTime.UtcNow - _cachedPackages.Value.FetchedAt < CatalogCacheDuration)
 			{
-				return _cachedPackages.Value.Items.ToList();
+				var cached = _cachedPackages.Value.Items;
+				return includeArchived ? cached.ToList() : cached.Where(p => p.IsActive).ToList();
 			}
 		}
 
 		List<PackageServiceItem> list = new List<PackageServiceItem>();
-
 		using SqlConnection sqlConnection = CreateConnection();
-
 		sqlConnection.Open();
-
 		EnsureAdditionalAndPackageRateTypeColumns(sqlConnection);
+		EnsureCatalogArchiveColumns(sqlConnection);
 
 		using SqlCommand sqlCommand = new SqlCommand(@"
-
             IF OBJECT_ID(N'dbo.ComboPackage', N'U') IS NOT NULL
-
             BEGIN
-
-                SELECT ComboPackageID, ComboPackageName, ComboPackageDescription, ISNULL(ComboPackagePrice, 0), ISNULL(RateType, 'Per Hour')
-
+                SELECT ComboPackageID, ComboPackageName, ComboPackageDescription, ISNULL(ComboPackagePrice, 0), ISNULL(RateType, 'Per Hour'), ISNULL(IsArchived, 0)
                 FROM dbo.ComboPackage
-
                 ORDER BY ComboPackageID;
-
             END", sqlConnection);
 
 		using SqlDataReader sqlDataReader = sqlCommand.ExecuteReader();
-
 		while (sqlDataReader.Read())
-
 		{
-
 			decimal pkgPrice = sqlDataReader.IsDBNull(3) ? 0m : sqlDataReader.GetDecimal(3);
 			string pkgRateType = sqlDataReader.FieldCount > 4 && !sqlDataReader.IsDBNull(4) ? sqlDataReader.GetString(4) : "per hour";
+			bool isArchived = sqlDataReader.FieldCount > 5 && !sqlDataReader.IsDBNull(5) && Convert.ToBoolean(sqlDataReader.GetValue(5));
 
 			list.Add(new PackageServiceItem
-
 			{
-
 				Code = sqlDataReader.GetString(0),
-
 				Title = sqlDataReader.GetString(1),
-
 				BundleCategory = "Package",
-
 				Inclusions = new List<(string, string)>(),
-
 				Price = pkgPrice > 0 ? $"₱{pkgPrice:N0}" : "₱0",
-
 				Description = (sqlDataReader.IsDBNull(2) ? null : sqlDataReader.GetString(2)),
-
-				Status = "Active",
-
+				Status = isArchived ? "Archived" : "Active",
 				RateType = pkgRateType
-
 			});
-
 		}
 
 		lock (_catalogCacheLock)
@@ -4031,18 +4064,7 @@ public class UserService : IUserService
 			_cachedPackages = (DateTime.UtcNow, list);
 		}
 
-		return list;
-
-	}
-
-
-
-	public IReadOnlyList<PackageServiceItem> GetPackageServicesSummary()
-
-	{
-
-		return GetPackageServices();
-
+		return includeArchived ? list.ToList() : list.Where(p => p.IsActive).ToList();
 	}
 
 	public (byte[]? Image, string? MimeType) GetComboPackageImage(string code)
@@ -5431,75 +5453,56 @@ public class UserService : IUserService
 
 
 
-	public IReadOnlyList<AddOnServiceItem> GetAdditionalServices()
+	public IReadOnlyList<AddOnServiceItem> GetAdditionalServices() => GetAdditionalServicesSummary(includeArchived: false);
 
+	public IReadOnlyList<AddOnServiceItem> GetAdditionalServicesSummary() => GetAdditionalServicesSummary(includeArchived: false);
+
+	public IReadOnlyList<AddOnServiceItem> GetAdditionalServicesSummary(bool includeArchived)
 	{
-
 		lock (_catalogCacheLock)
 		{
 			if (_cachedAddOns.HasValue &&
 				DateTime.UtcNow - _cachedAddOns.Value.FetchedAt < CatalogCacheDuration)
 			{
-				return _cachedAddOns.Value.Items.ToList();
+				var cached = _cachedAddOns.Value.Items;
+				return includeArchived ? cached.ToList() : cached.Where(a => a.IsActive).ToList();
 			}
 		}
 
 		List<AddOnServiceItem> list = new List<AddOnServiceItem>();
-
 		using SqlConnection sqlConnection = CreateConnection();
-
 		sqlConnection.Open();
-
 		EnsureAdditionalAndPackageRateTypeColumns(sqlConnection);
+		EnsureCatalogArchiveColumns(sqlConnection);
 
 		using SqlCommand sqlCommand = new SqlCommand(@"
-
             IF OBJECT_ID(N'dbo.AdditionalServices', N'U') IS NOT NULL
-
             BEGIN
-
-                SELECT AdditionalServicesID, AdditionalServiceName, AdditionalServicesDescription, ISNULL(ServicePrice, 0), ISNULL(RateType, 'Per Hour'), ISNULL(CategoryName, 'Add-On')
-
+                SELECT AdditionalServicesID, AdditionalServiceName, AdditionalServicesDescription, ISNULL(ServicePrice, 0), ISNULL(RateType, 'Per Hour'), ISNULL(CategoryName, 'Add-On'), ISNULL(IsArchived, 0)
                 FROM dbo.AdditionalServices
-
                 ORDER BY AdditionalServicesID;
-
             END", sqlConnection);
 
 		using SqlDataReader sqlDataReader = sqlCommand.ExecuteReader();
-
 		while (sqlDataReader.Read())
-
 		{
-
 			decimal addPrice = sqlDataReader.IsDBNull(3) ? 0m : sqlDataReader.GetDecimal(3);
 			string addRateType = sqlDataReader.FieldCount > 4 && !sqlDataReader.IsDBNull(4) ? sqlDataReader.GetString(4) : "per hour";
 			string addCat = sqlDataReader.FieldCount > 5 && !sqlDataReader.IsDBNull(5) ? sqlDataReader.GetString(5) : "Add-On";
+			bool isArchived = sqlDataReader.FieldCount > 6 && !sqlDataReader.IsDBNull(6) && Convert.ToBoolean(sqlDataReader.GetValue(6));
 
 			list.Add(new AddOnServiceItem
-
 			{
-
 				Code = sqlDataReader.GetString(0),
-
 				Title = sqlDataReader.GetString(1),
-
 				TypeCategory = addCat,
-
 				FilterCategory = addCat,
-
 				PriceText = addPrice > 0 ? $"₱{addPrice:N2}" : "₱0.00",
-
 				CompatibleServices = new List<(string, string)>(),
-
 				Description = (sqlDataReader.IsDBNull(2) ? null : sqlDataReader.GetString(2)),
-
-				Status = "Active",
-
+				Status = isArchived ? "Archived" : "Active",
 				RateType = addRateType
-
 			});
-
 		}
 
 		lock (_catalogCacheLock)
@@ -5507,18 +5510,218 @@ public class UserService : IUserService
 			_cachedAddOns = (DateTime.UtcNow, list);
 		}
 
-		return list;
-
+		return includeArchived ? list.ToList() : list.Where(a => a.IsActive).ToList();
 	}
 
-
-
-	public IReadOnlyList<AddOnServiceItem> GetAdditionalServicesSummary()
-
+	private static void EnsureCatalogArchiveColumns(SqlConnection sqlConnection)
 	{
+		try
+		{
+			using var cmd = new SqlCommand(@"
+                IF OBJECT_ID(N'dbo.Services', N'U') IS NOT NULL
+                BEGIN
+                    IF COL_LENGTH(N'dbo.Services', N'IsArchived') IS NULL
+                        ALTER TABLE dbo.Services ADD IsArchived bit NOT NULL CONSTRAINT DF_Services_IsArchived DEFAULT 0;
+                    IF COL_LENGTH(N'dbo.Services', N'ArchivedAt') IS NULL
+                        ALTER TABLE dbo.Services ADD ArchivedAt datetime2 NULL;
+                END
+                IF OBJECT_ID(N'dbo.ComboPackage', N'U') IS NOT NULL
+                BEGIN
+                    IF COL_LENGTH(N'dbo.ComboPackage', N'IsArchived') IS NULL
+                        ALTER TABLE dbo.ComboPackage ADD IsArchived bit NOT NULL CONSTRAINT DF_ComboPackage_IsArchived DEFAULT 0;
+                    IF COL_LENGTH(N'dbo.ComboPackage', N'ArchivedAt') IS NULL
+                        ALTER TABLE dbo.ComboPackage ADD ArchivedAt datetime2 NULL;
+                END
+                IF OBJECT_ID(N'dbo.AdditionalServices', N'U') IS NOT NULL
+                BEGIN
+                    IF COL_LENGTH(N'dbo.AdditionalServices', N'IsArchived') IS NULL
+                        ALTER TABLE dbo.AdditionalServices ADD IsArchived bit NOT NULL CONSTRAINT DF_AdditionalServices_IsArchived DEFAULT 0;
+                    IF COL_LENGTH(N'dbo.AdditionalServices', N'ArchivedAt') IS NULL
+                        ALTER TABLE dbo.AdditionalServices ADD ArchivedAt datetime2 NULL;
+                END
+                IF OBJECT_ID(N'dbo.ServiceCategory', N'U') IS NOT NULL
+                BEGIN
+                    IF COL_LENGTH(N'dbo.ServiceCategory', N'Status') IS NULL
+                        ALTER TABLE dbo.ServiceCategory ADD Status nvarchar(30) NOT NULL CONSTRAINT DF_ServiceCategory_Status DEFAULT 'Active';
+                    IF COL_LENGTH(N'dbo.ServiceCategory', N'IsArchived') IS NULL
+                        ALTER TABLE dbo.ServiceCategory ADD IsArchived bit NOT NULL CONSTRAINT DF_ServiceCategory_IsArchived DEFAULT 0;
+                    IF COL_LENGTH(N'dbo.ServiceCategory', N'ArchivedAt') IS NULL
+                        ALTER TABLE dbo.ServiceCategory ADD ArchivedAt datetime2 NULL;
+                END", sqlConnection);
+			cmd.ExecuteNonQuery();
+		}
+		catch { }
+	}
 
-		return GetAdditionalServices();
+	public bool SetCatalogItemArchived(string kind, string id, bool archive)
+	{
+		if (string.IsNullOrWhiteSpace(id)) return false;
+		var cleanId = id.Trim();
+		var normKind = (kind ?? string.Empty).Trim().ToLowerInvariant();
+		if (normKind is not ("service" or "package" or "addon" or "category")) return false;
 
+		using SqlConnection sqlConnection = CreateConnection();
+		sqlConnection.Open();
+		EnsureCatalogArchiveColumns(sqlConnection);
+
+		string sql = normKind switch
+		{
+			"service" => @"UPDATE dbo.Services SET IsArchived = @Archive, ArchivedAt = CASE WHEN @Archive = 1 THEN SYSUTCDATETIME() ELSE NULL END WHERE UPPER(ServicesID) = UPPER(@Id);",
+			"package" => @"UPDATE dbo.ComboPackage SET IsArchived = @Archive, ArchivedAt = CASE WHEN @Archive = 1 THEN SYSUTCDATETIME() ELSE NULL END WHERE UPPER(ComboPackageID) = UPPER(@Id);",
+			"addon" => @"UPDATE dbo.AdditionalServices SET IsArchived = @Archive, ArchivedAt = CASE WHEN @Archive = 1 THEN SYSUTCDATETIME() ELSE NULL END WHERE UPPER(AdditionalServicesID) = UPPER(@Id);",
+			_ => @"UPDATE dbo.ServiceCategory SET IsArchived = @Archive, Status = CASE WHEN @Archive = 1 THEN N'Archived' ELSE N'Active' END, ArchivedAt = CASE WHEN @Archive = 1 THEN SYSUTCDATETIME() ELSE NULL END WHERE UPPER(ServiceCategoryID) = UPPER(@Id);"
+		};
+
+		using var cmd = new SqlCommand(sql, sqlConnection);
+		cmd.Parameters.AddWithValue("@Id", cleanId);
+		cmd.Parameters.AddWithValue("@Archive", archive ? 1 : 0);
+		var updated = cmd.ExecuteNonQuery() > 0;
+		if (updated && archive && normKind is "service" or "package" or "addon")
+		{
+			try
+			{
+				using var ufCmd = new SqlCommand(@"
+                    IF OBJECT_ID(N'dbo.FeaturedService', N'U') IS NOT NULL
+                        DELETE FROM dbo.FeaturedService WHERE UPPER(ServicesID) = UPPER(@Id) OR UPPER(AdditionalServicesID) = UPPER(@Id) OR UPPER(ComboPackageID) = UPPER(@Id);", sqlConnection);
+				ufCmd.Parameters.AddWithValue("@Id", cleanId);
+				ufCmd.ExecuteNonQuery();
+			}
+			catch { }
+		}
+		if (updated) InvalidateServiceCatalogCache();
+		return updated;
+	}
+
+	public (bool Success, string Message) DeleteCatalogItemWithSnapshot(string kind, string id)
+	{
+		if (string.IsNullOrWhiteSpace(id)) return (false, "Item ID is required.");
+		var cleanId = id.Trim();
+		var normKind = (kind ?? string.Empty).Trim().ToLowerInvariant();
+		if (normKind is not ("service" or "package" or "addon" or "category"))
+			return (false, "Unsupported catalog item type.");
+
+		try
+		{
+			using SqlConnection sqlConnection = CreateConnection();
+			sqlConnection.Open();
+			using (var schemaCmd = new SqlCommand(@"
+                IF OBJECT_ID(N'dbo.EventLineItem', N'U') IS NOT NULL
+                BEGIN
+                    IF COL_LENGTH(N'dbo.EventLineItem', N'ServiceNameSnapshot') IS NULL
+                        ALTER TABLE dbo.EventLineItem ADD ServiceNameSnapshot nvarchar(255) NULL;
+                    IF COL_LENGTH(N'dbo.EventLineItem', N'ServiceKindSnapshot') IS NULL
+                        ALTER TABLE dbo.EventLineItem ADD ServiceKindSnapshot nvarchar(30) NULL;
+                    IF OBJECT_ID(N'dbo.CK_EventLineItem_ExactlyOne', N'C') IS NOT NULL
+                        ALTER TABLE dbo.EventLineItem DROP CONSTRAINT CK_EventLineItem_ExactlyOne;
+                    ALTER TABLE dbo.EventLineItem ADD CONSTRAINT CK_EventLineItem_ExactlyOne CHECK (
+                        ((CASE WHEN ServicesID IS NOT NULL THEN 1 ELSE 0 END) +
+                         (CASE WHEN AdditionalServicesID IS NOT NULL THEN 1 ELSE 0 END) +
+                         (CASE WHEN ComboPackageID IS NOT NULL THEN 1 ELSE 0 END) = 1)
+                        OR (ServicesID IS NULL AND AdditionalServicesID IS NULL AND ComboPackageID IS NULL AND ServiceNameSnapshot IS NOT NULL));
+                END;", sqlConnection))
+			{
+				schemaCmd.ExecuteNonQuery();
+			}
+
+			using var tx = sqlConnection.BeginTransaction();
+			try
+			{
+				string selectNameSql = normKind switch
+				{
+					"service" => "SELECT ServiceName FROM dbo.Services WHERE UPPER(ServicesID) = UPPER(@Id);",
+					"package" => "SELECT ComboPackageName FROM dbo.ComboPackage WHERE UPPER(ComboPackageID) = UPPER(@Id);",
+					"addon" => "SELECT AdditionalServiceName FROM dbo.AdditionalServices WHERE UPPER(AdditionalServicesID) = UPPER(@Id);",
+					_ => "SELECT ServiceCategoryName FROM dbo.ServiceCategory WHERE UPPER(ServiceCategoryID) = UPPER(@Id);"
+				};
+				string? itemName;
+				using (var nameCmd = new SqlCommand(selectNameSql, sqlConnection, tx))
+				{
+					nameCmd.Parameters.AddWithValue("@Id", cleanId);
+					var scalar = nameCmd.ExecuteScalar();
+					itemName = scalar == null || scalar == DBNull.Value ? null : Convert.ToString(scalar);
+				}
+				if (itemName == null)
+				{
+					tx.Rollback();
+					return (false, $"Item '{cleanId}' was not found.");
+				}
+
+				if (normKind is "service" or "package" or "addon")
+				{
+					var fkCol = normKind switch { "service" => "ServicesID", "package" => "ComboPackageID", _ => "AdditionalServicesID" };
+					var kindLabel = normKind switch { "service" => "Service", "package" => "Combo Package", _ => "Add-on" };
+					using var snapCmd = new SqlCommand($@"
+                        IF OBJECT_ID(N'dbo.EventLineItem', N'U') IS NOT NULL
+                        BEGIN
+                            UPDATE dbo.EventLineItem
+                            SET ServiceNameSnapshot = COALESCE(ServiceNameSnapshot, @ItemName),
+                                ServiceKindSnapshot = COALESCE(ServiceKindSnapshot, @KindLabel),
+                                {fkCol} = NULL
+                            WHERE UPPER({fkCol}) = UPPER(@Id);
+                        END
+                        IF OBJECT_ID(N'dbo.ComboPackageJoin', N'U') IS NOT NULL
+                            DELETE FROM dbo.ComboPackageJoin WHERE UPPER({fkCol}) = UPPER(@Id);
+                        IF OBJECT_ID(N'dbo.ServiceCategoryJoins', N'U') IS NOT NULL
+                            DELETE FROM dbo.ServiceCategoryJoins WHERE UPPER({fkCol}) = UPPER(@Id);
+                        IF OBJECT_ID(N'dbo.FeaturedService', N'U') IS NOT NULL
+                            DELETE FROM dbo.FeaturedService WHERE UPPER({fkCol}) = UPPER(@Id);", sqlConnection, tx);
+					snapCmd.Parameters.AddWithValue("@Id", cleanId);
+					snapCmd.Parameters.AddWithValue("@ItemName", itemName);
+					snapCmd.Parameters.AddWithValue("@KindLabel", kindLabel);
+					snapCmd.ExecuteNonQuery();
+
+					if (normKind == "service")
+					{
+						using var rateCmd = new SqlCommand("IF OBJECT_ID(N'dbo.ServiceRate', N'U') IS NOT NULL DELETE FROM dbo.ServiceRate WHERE UPPER(ServicesID) = UPPER(@Id);", sqlConnection, tx);
+						rateCmd.Parameters.AddWithValue("@Id", cleanId);
+						rateCmd.ExecuteNonQuery();
+					}
+				}
+				else
+				{
+					using var cjCmd = new SqlCommand("IF OBJECT_ID(N'dbo.ServiceCategoryJoins', N'U') IS NOT NULL DELETE FROM dbo.ServiceCategoryJoins WHERE UPPER(ServiceCategoryID) = UPPER(@Id);", sqlConnection, tx);
+					cjCmd.Parameters.AddWithValue("@Id", cleanId);
+					cjCmd.ExecuteNonQuery();
+				}
+
+				string delSql = normKind switch
+				{
+					"service" => "DELETE FROM dbo.Services WHERE UPPER(ServicesID) = UPPER(@Id);",
+					"package" => "DELETE FROM dbo.ComboPackage WHERE UPPER(ComboPackageID) = UPPER(@Id);",
+					"addon" => "DELETE FROM dbo.AdditionalServices WHERE UPPER(AdditionalServicesID) = UPPER(@Id);",
+					_ => "DELETE FROM dbo.ServiceCategory WHERE UPPER(ServiceCategoryID) = UPPER(@Id);"
+				};
+				using (var delCmd = new SqlCommand(delSql, sqlConnection, tx))
+				{
+					delCmd.Parameters.AddWithValue("@Id", cleanId);
+					delCmd.ExecuteNonQuery();
+				}
+
+				using (var logCmd = new SqlCommand(@"
+                    IF OBJECT_ID(N'dbo.HistoryLog', N'U') IS NOT NULL
+                        INSERT INTO dbo.HistoryLog (ActionType, EntityName, EntityID, ChangedByType, ActionDetails, LoggedAt)
+                        VALUES (N'DELETE', @Entity, @Id, N'Admin', @Details, SYSUTCDATETIME());", sqlConnection, tx))
+				{
+					logCmd.Parameters.AddWithValue("@Entity", normKind);
+					logCmd.Parameters.AddWithValue("@Id", cleanId);
+					logCmd.Parameters.AddWithValue("@Details", $"Permanently deleted {normKind} '{itemName}' ({cleanId}) with EventLineItem snapshot.");
+					logCmd.ExecuteNonQuery();
+				}
+
+				tx.Commit();
+				InvalidateServiceCatalogCache();
+				return (true, $"'{itemName}' was permanently deleted. Existing event and ledger history remains preserved.");
+			}
+			catch
+			{
+				tx.Rollback();
+				return (false, "Unable to delete this item right now. Please try again.");
+			}
+		}
+		catch
+		{
+			return (false, "Unable to connect to the database to delete this item.");
+		}
 	}
 
 	public (byte[]? Image, string? MimeType) GetAdditionalServiceImage(string code)

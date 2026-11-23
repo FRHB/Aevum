@@ -934,6 +934,47 @@ public class EmployeeService : IEmployeeService
             await conn.OpenAsync(cancellationToken);
 
             const string cleanupSql = @"
+                SET XACT_ABORT ON;
+                BEGIN TRAN;
+
+                DECLARE @EmpFullName nvarchar(200) = NULL;
+                SELECT @EmpFullName = LTRIM(RTRIM(CONCAT(FirstName, ' ', LastName)))
+                FROM dbo.Employees
+                WHERE UPPER(EmployeeID) = @EmpId;
+
+                IF OBJECT_ID(N'dbo.EventCrewReplacementRequest', N'U') IS NOT NULL
+                BEGIN
+                    UPDATE dbo.EventCrewReplacementRequest
+                    SET AbsentEmployeeName = COALESCE(NULLIF(LTRIM(RTRIM(AbsentEmployeeName)), ''), @EmpFullName, AbsentEmployeeID),
+                        AbsentEmployeeID = NULL
+                    WHERE UPPER(AbsentEmployeeID) = @EmpId;
+
+                    UPDATE dbo.EventCrewReplacementRequest
+                    SET ReplacementEmployeeName = COALESCE(NULLIF(LTRIM(RTRIM(ReplacementEmployeeName)), ''), @EmpFullName, ReplacementEmployeeID),
+                        ReplacementEmployeeID = NULL
+                    WHERE UPPER(ReplacementEmployeeID) = @EmpId;
+
+                    UPDATE dbo.EventCrewReplacementRequest
+                    SET RequestedByName = COALESCE(NULLIF(LTRIM(RTRIM(RequestedByName)), ''), @EmpFullName, RequestedByEmployeeID),
+                        RequestedByEmployeeID = NULL
+                    WHERE UPPER(RequestedByEmployeeID) = @EmpId;
+                END
+                IF OBJECT_ID(N'dbo.EventEquipment', N'U') IS NOT NULL
+                    UPDATE dbo.EventEquipment SET TakenByEmployeeID = NULL WHERE UPPER(TakenByEmployeeID) = @EmpId;
+                IF OBJECT_ID(N'dbo.CustomerDropbox', N'U') IS NOT NULL
+                    UPDATE dbo.CustomerDropbox SET UploadedByEmployeeID = NULL WHERE UPPER(UploadedByEmployeeID) = @EmpId;
+                IF OBJECT_ID(N'dbo.CustomerDropboxFiles', N'U') IS NOT NULL
+                    UPDATE dbo.CustomerDropboxFiles SET UploadedByEmployeeID = NULL WHERE UPPER(UploadedByEmployeeID) = @EmpId;
+                IF OBJECT_ID(N'dbo.EventAppointment', N'U') IS NOT NULL
+                    UPDATE dbo.EventAppointment SET EmployeeID = NULL WHERE UPPER(EmployeeID) = @EmpId;
+                IF OBJECT_ID(N'dbo.BookingNegotiation', N'U') IS NOT NULL
+                    UPDATE dbo.BookingNegotiation SET EmployeeID = NULL WHERE UPPER(EmployeeID) = @EmpId;
+                IF OBJECT_ID(N'dbo.EventEmployee', N'U') IS NOT NULL
+                    UPDATE dbo.EventEmployee SET EmployeeID = NULL WHERE UPPER(EmployeeID) = @EmpId;
+                IF OBJECT_ID(N'dbo.EventOvertimeCharges', N'U') IS NOT NULL
+                    UPDATE dbo.EventOvertimeCharges SET LoggedByEmployeeID = NULL WHERE UPPER(LoggedByEmployeeID) = @EmpId;
+                IF OBJECT_ID(N'dbo.PaymentTransactions', N'U') IS NOT NULL
+                    UPDATE dbo.PaymentTransactions SET ReceivedByEmployeeID = NULL WHERE UPPER(ReceivedByEmployeeID) = @EmpId;
                 IF OBJECT_ID(N'dbo.HistoryLog', N'U') IS NOT NULL
                 BEGIN
                     UPDATE dbo.HistoryLog SET EmployeeID = NULL WHERE UPPER(EmployeeID) = @EmpId;
@@ -943,23 +984,24 @@ public class EmployeeService : IEmployeeService
                     DELETE FROM dbo.EmployeeTimesheets WHERE UPPER(EmployeeStudioId) = @EmpId;
                 IF OBJECT_ID(N'dbo.EmployeeLeaves', N'U') IS NOT NULL
                     DELETE FROM dbo.EmployeeLeaves WHERE UPPER(EmployeeStudioId) = @EmpId;
+                IF OBJECT_ID(N'dbo.LeaveBalances', N'U') IS NOT NULL
+                    DELETE FROM dbo.LeaveBalances WHERE UPPER(EmployeeID) = @EmpId;
                 IF OBJECT_ID(N'dbo.EmployeeJointSpecialization', N'U') IS NOT NULL
                     DELETE FROM dbo.EmployeeJointSpecialization WHERE UPPER(EmployeeID) = @EmpId;
+                IF OBJECT_ID(N'dbo.EmployeePasswordResetRequest', N'U') IS NOT NULL
+                    DELETE FROM dbo.EmployeePasswordResetRequest WHERE UPPER(EmployeeID) = @EmpId;
                 IF OBJECT_ID(N'dbo.AspNetUsers', N'U') IS NOT NULL
                     DELETE FROM dbo.AspNetUsers WHERE UPPER(UserName) = @EmpId;
-                IF OBJECT_ID(N'dbo.spDeleteEmployee', N'P') IS NOT NULL
-                    EXEC dbo.spDeleteEmployee @EmployeeID = @EmpId;
-                ELSE IF OBJECT_ID(N'dbo.sp_DeleteEmployee', N'P') IS NOT NULL
-                    EXEC dbo.sp_DeleteEmployee @EmployeeID = @EmpId;
-                ELSE
-                BEGIN
-                    DELETE FROM dbo.Employees WHERE UPPER(EmployeeID) = @EmpId;
-                END
+
+                DELETE FROM dbo.Employees WHERE UPPER(EmployeeID) = @EmpId;
+
                 IF OBJECT_ID(N'dbo.HistoryLog', N'U') IS NOT NULL
                 BEGIN
                     INSERT INTO dbo.HistoryLog (ActionType, EntityName, EntityID, ChangedByType, ActionDetails, LoggedAt)
                     VALUES ('DELETE', 'Employee', @EmpId, 'Admin', 'Permanently deleted employee', SYSUTCDATETIME());
-                END";
+                END
+
+                COMMIT TRAN;";
 
             await using var cmd = new SqlCommand(cleanupSql, conn);
             cmd.Parameters.AddWithValue("@EmpId", cleanId);

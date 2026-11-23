@@ -48,10 +48,16 @@ public sealed class ScheduleBookingService(
                 schemaCmd.CommandText = @"
                     IF OBJECT_ID(N'dbo.Services', N'U') IS NOT NULL AND COL_LENGTH(N'dbo.Services', N'RateType') IS NULL
                         ALTER TABLE dbo.Services ADD RateType nvarchar(50) NOT NULL CONSTRAINT DF_Services_RateType DEFAULT 'Per Hour';
+                    IF OBJECT_ID(N'dbo.Services', N'U') IS NOT NULL AND COL_LENGTH(N'dbo.Services', N'IsArchived') IS NULL
+                        ALTER TABLE dbo.Services ADD IsArchived bit NOT NULL CONSTRAINT DF_Services_IsArchived DEFAULT 0;
                     IF OBJECT_ID(N'dbo.ComboPackage', N'U') IS NOT NULL AND COL_LENGTH(N'dbo.ComboPackage', N'RateType') IS NULL
                         ALTER TABLE dbo.ComboPackage ADD RateType nvarchar(50) NOT NULL CONSTRAINT DF_ComboPackage_RateType DEFAULT 'Per Hour';
+                    IF OBJECT_ID(N'dbo.ComboPackage', N'U') IS NOT NULL AND COL_LENGTH(N'dbo.ComboPackage', N'IsArchived') IS NULL
+                        ALTER TABLE dbo.ComboPackage ADD IsArchived bit NOT NULL CONSTRAINT DF_ComboPackage_IsArchived DEFAULT 0;
                     IF OBJECT_ID(N'dbo.AdditionalServices', N'U') IS NOT NULL AND COL_LENGTH(N'dbo.AdditionalServices', N'RateType') IS NULL
-                        ALTER TABLE dbo.AdditionalServices ADD RateType nvarchar(50) NOT NULL CONSTRAINT DF_AdditionalServices_RateType DEFAULT 'Per Hour';";
+                        ALTER TABLE dbo.AdditionalServices ADD RateType nvarchar(50) NOT NULL CONSTRAINT DF_AdditionalServices_RateType DEFAULT 'Per Hour';
+                    IF OBJECT_ID(N'dbo.AdditionalServices', N'U') IS NOT NULL AND COL_LENGTH(N'dbo.AdditionalServices', N'IsArchived') IS NULL
+                        ALTER TABLE dbo.AdditionalServices ADD IsArchived bit NOT NULL CONSTRAINT DF_AdditionalServices_IsArchived DEFAULT 0;";
                 await schemaCmd.ExecuteNonQueryAsync(cancellationToken);
             }
             catch { }
@@ -60,12 +66,15 @@ public sealed class ScheduleBookingService(
             cmd.CommandText = @"
                 SELECT ServicesID AS Id, ServiceName AS Name, ISNULL(ServicesDescription, '') AS [Desc], CAST(ServicePrice AS decimal(18,2)) AS Price, ISNULL(RateType, 'Per Hour') AS RateType
                 FROM dbo.Services
+                WHERE ISNULL(IsArchived, 0) = 0
                 UNION ALL
                 SELECT ComboPackageID AS Id, ComboPackageName AS Name, ISNULL(ComboPackageDescription, '') AS [Desc], CAST(ComboPackagePrice AS decimal(18,2)) AS Price, ISNULL(RateType, 'Per Hour') AS RateType
                 FROM dbo.ComboPackage
+                WHERE ISNULL(IsArchived, 0) = 0
                 UNION ALL
                 SELECT AdditionalServicesID AS Id, AdditionalServiceName AS Name, ISNULL(AdditionalServicesDescription, '') AS [Desc], CAST(ServicePrice AS decimal(18,2)) AS Price, ISNULL(RateType, 'Per Hour') AS RateType
                 FROM dbo.AdditionalServices
+                WHERE ISNULL(IsArchived, 0) = 0
                 ORDER BY Name ASC;
             ";
 

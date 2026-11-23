@@ -108,7 +108,7 @@ public sealed class SalesReportService : ISalesReportService
             LEFT JOIN dbo.EventAppointment ea ON ea.EventAppointmentID = pt.EventAppointmentID
             LEFT JOIN dbo.Customer c ON c.CustomerID = ea.CustomerID
             OUTER APPLY (
-                SELECT STRING_AGG(COALESCE(s.ServiceName, cp.ComboPackageName, ads.AdditionalServiceName), N', ') AS Names
+                SELECT STRING_AGG(COALESCE(s.ServiceName, cp.ComboPackageName, ads.AdditionalServiceName, eli.ServiceNameSnapshot), N', ') AS Names
                 FROM dbo.EventLineItem eli
                 LEFT JOIN dbo.Services s ON s.ServicesID = eli.ServicesID
                 LEFT JOIN dbo.ComboPackage cp ON cp.ComboPackageID = eli.ComboPackageID
@@ -383,7 +383,7 @@ public sealed class SalesReportService : ISalesReportService
             while (await r.ReadAsync(ct)) byCategory.Add(new(r.GetString(0), r.GetDecimal(1), r.GetInt32(2)));
 
         var popular = new List<LabeledAmountDto>();
-        await using (var r = await Run("SELECT TOP 5 COALESCE(s.ServiceName, cp.ComboPackageName, ads.AdditionalServiceName, N'Studio Package'), SUM(eli.LineTotal), COUNT(*) " + itemFrom + NotCancelled + " GROUP BY COALESCE(s.ServiceName, cp.ComboPackageName, ads.AdditionalServiceName, N'Studio Package') ORDER BY 3 DESC, 2 DESC;", start, end))
+        await using (var r = await Run("SELECT TOP 5 COALESCE(s.ServiceName, cp.ComboPackageName, ads.AdditionalServiceName, eli.ServiceNameSnapshot, N'Studio Package'), SUM(eli.LineTotal), COUNT(*) " + itemFrom + NotCancelled + " GROUP BY COALESCE(s.ServiceName, cp.ComboPackageName, ads.AdditionalServiceName, eli.ServiceNameSnapshot, N'Studio Package') ORDER BY 3 DESC, 2 DESC;", start, end))
             while (await r.ReadAsync(ct)) popular.Add(new(r.GetString(0), r.GetDecimal(1), r.GetInt32(2)));
 
         // Deposit collection, reconciliation, completion

@@ -1373,6 +1373,10 @@ public class ConsultationNegotiationService : IConsultationNegotiationService
                     ALTER TABLE dbo.EventLineItem ADD RateType nvarchar(50) NULL;
                 IF COL_LENGTH(N'dbo.EventLineItem', N'DurationHours') IS NULL
                     ALTER TABLE dbo.EventLineItem ADD DurationHours int NULL;
+                IF COL_LENGTH(N'dbo.EventLineItem', N'ServiceNameSnapshot') IS NULL
+                    ALTER TABLE dbo.EventLineItem ADD ServiceNameSnapshot nvarchar(255) NULL;
+                IF COL_LENGTH(N'dbo.EventLineItem', N'ServiceKindSnapshot') IS NULL
+                    ALTER TABLE dbo.EventLineItem ADD ServiceKindSnapshot nvarchar(30) NULL;
             END;
             IF OBJECT_ID(N'dbo.EventEmployee', N'U') IS NOT NULL
             BEGIN
@@ -2263,7 +2267,7 @@ public class ConsultationNegotiationService : IConsultationNegotiationService
             ORDER BY CreatedAt DESC;
 
             SELECT COALESCE(eli.ServicesID, eli.ComboPackageID, eli.AdditionalServicesID) AS ServicesID,
-                   COALESCE(s.ServiceName, cp.ComboPackageName, ads.AdditionalServiceName, eli.EventLineItemID) AS ServiceName,
+                   COALESCE(s.ServiceName, cp.ComboPackageName, ads.AdditionalServiceName, eli.ServiceNameSnapshot, eli.EventLineItemID) AS ServiceName,
                    CASE WHEN ISNULL(eli.LineTotal, 0) > 0 THEN eli.LineTotal ELSE COALESCE(s.ServicePrice, cp.ComboPackagePrice, ads.ServicePrice, 0) END AS ServicePrice,
                    ISNULL(eli.Quantity, 1) AS Quantity,
                    CASE WHEN ISNULL(eli.UnitPrice, 0) > 0 THEN eli.UnitPrice ELSE COALESCE(s.ServicePrice, cp.ComboPackagePrice, ads.ServicePrice, 0) END AS UnitPrice,

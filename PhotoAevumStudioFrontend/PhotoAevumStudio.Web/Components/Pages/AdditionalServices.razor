@@ -99,6 +99,11 @@
                        class="w-full px-4 py-2.5 text-sm bg-gray-50/70 border border-gray-200 rounded-lg text-gray-900 placeholder-gray-400 focus:bg-white focus:outline-none focus:ring-2 focus:ring-gray-900" />
             </div>
 
+            <button type="button"
+                    @onclick="ToggleShowArchived"
+                    class="px-3.5 py-2.5 text-xs font-semibold rounded-lg border transition-colors whitespace-nowrap cursor-pointer @(showArchived ? "bg-amber-50 text-amber-800 border-amber-300" : "bg-white text-gray-700 border-gray-200 hover:bg-gray-50")">
+                @(showArchived ? "Viewing Archived" : $"View Archived ({addOns.Count(a => !a.IsActive)})")
+            </button>
             @if (!string.IsNullOrWhiteSpace(searchQuery))
             {
                 <button type="button"
@@ -186,22 +191,31 @@
                                     }
                                 </td>
                                 <td class="py-4 px-6">
-                                    <span class="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200">
-                                        <span class="w-1.5 h-1.5 rounded-full bg-emerald-500"></span>
+                                    <span class="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-semibold border @(addon.IsActive ? "bg-emerald-50 text-emerald-700 border-emerald-200" : "bg-amber-50 text-amber-800 border-amber-200")">
+                                        <span class="w-1.5 h-1.5 rounded-full @(addon.IsActive ? "bg-emerald-500" : "bg-amber-500")"></span>
                                         @addon.Status
                                     </span>
                                 </td>
                                 @if (!EffectiveReadOnly)
                                 {
                                     <td class="py-4 px-6 text-right">
-                                        <button type="button"
-                                                @onclick="() => OpenEditModal(addon)"
-                                                class="inline-flex items-center gap-1.5 px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-800 text-xs font-semibold rounded-lg transition-colors cursor-pointer shadow-xs">
-                                            <svg class="w-3.5 h-3.5 text-slate-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
-                                            </svg>
-                                            Edit
-                                        </button>
+                                        <div class="inline-flex items-center gap-1.5 justify-end">
+                                            <button type="button"
+                                                    @onclick="() => OpenEditModal(addon)"
+                                                    class="inline-flex items-center gap-1.5 px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-800 text-xs font-semibold rounded-lg transition-colors cursor-pointer shadow-xs">
+                                                Edit
+                                            </button>
+                                            <button type="button"
+                                                    @onclick="() => ToggleArchiveAddOn(addon)"
+                                                    class="inline-flex items-center gap-1 px-2.5 py-1.5 text-xs font-semibold rounded-lg border transition-colors cursor-pointer @(addon.IsActive ? "bg-amber-50 text-amber-800 border-amber-200 hover:bg-amber-100" : "bg-emerald-50 text-emerald-700 border-emerald-200 hover:bg-emerald-100")">
+                                                @(addon.IsActive ? "Archive" : "Restore")
+                                            </button>
+                                            <button type="button"
+                                                    @onclick="() => ConfirmDeleteAddOn(addon)"
+                                                    class="inline-flex items-center gap-1 px-2.5 py-1.5 text-xs font-semibold rounded-lg border border-rose-200 bg-rose-50 text-rose-700 hover:bg-rose-100 transition-colors cursor-pointer">
+                                                Delete
+                                            </button>
+                                        </div>
                                     </td>
                                 }
                             </tr>
@@ -237,6 +251,23 @@
 {
     <AddAddOnModal @bind-IsOpen="isCreateModalOpen" OnAddOnCreated="HandleAddOnCreated" />
     <AddAddOnModal @bind-IsOpen="isEditModalOpen" IsEditMode="true" EditItem="selectedEditAddOn" OnAddOnCreated="HandleAddOnUpdated" />
+
+    @if (pendingDeleteAddOn != null)
+    {
+        <div class="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4" role="dialog" aria-modal="true">
+            <div class="bg-white rounded-2xl shadow-xl max-w-md w-full p-6 space-y-4">
+                <h3 class="text-lg font-bold text-gray-900">Permanently Delete Add-On</h3>
+                <p class="text-sm text-gray-600">
+                    Delete <strong>@pendingDeleteAddOn.Title</strong> (<code>@pendingDeleteAddOn.Code</code>)?
+                    Any existing events, contracts, and ledger records will preserve a snapshot of this add-on name and price.
+                </p>
+                <div class="flex justify-end gap-2 pt-2">
+                    <button type="button" @onclick="() => pendingDeleteAddOn = null" class="px-4 py-2 text-xs font-semibold text-gray-700 bg-gray-100 hover:bg-gray-200 rounded-lg cursor-pointer">Cancel</button>
+                    <button type="button" @onclick="ExecuteDeleteAddOnAsync" class="px-4 py-2 text-xs font-semibold text-white bg-rose-600 hover:bg-rose-700 rounded-lg cursor-pointer">Delete Permanently</button>
+                </div>
+            </div>
+        </div>
+    }
 }
 
 @code {
@@ -251,13 +282,49 @@
     private AddOnServiceItem? selectedEditAddOn;
     private string? notificationMessage;
     private string searchQuery = string.Empty;
+    private bool showArchived = false;
+    private AddOnServiceItem? pendingDeleteAddOn;
     private int _currentPage = 1;
     private List<AddOnServiceItem> addOns = new();
 
     private void LoadFromDatabase()
     {
-        addOns = UserService.GetAdditionalServicesSummary().ToList();
+        addOns = UserService.GetAdditionalServicesSummary(includeArchived: true).ToList();
         ApplyFeaturedFlags();
+    }
+
+    private void ToggleShowArchived()
+    {
+        showArchived = !showArchived;
+        _currentPage = 1;
+    }
+
+    private void ToggleArchiveAddOn(AddOnServiceItem addon)
+    {
+        bool archive = addon.IsActive;
+        if (UserService.SetCatalogItemArchived("addon", addon.Code, archive))
+        {
+            if (archive) _featuredCodes.Remove(addon.Code);
+            LoadFromDatabase();
+            notificationMessage = $"Add-On \"{addon.Title}\" ({addon.Code}) {(archive ? "archived" : "restored")}.";
+        }
+    }
+
+    private void ConfirmDeleteAddOn(AddOnServiceItem addon) => pendingDeleteAddOn = addon;
+
+    private async Task ExecuteDeleteAddOnAsync()
+    {
+        if (pendingDeleteAddOn == null) return;
+        var target = pendingDeleteAddOn;
+        pendingDeleteAddOn = null;
+        var (ok, msg) = UserService.DeleteCatalogItemWithSnapshot("addon", target.Code);
+        if (ok)
+        {
+            _featuredCodes.Remove(target.Code);
+            LoadFromDatabase();
+        }
+        notificationMessage = msg;
+        await InvokeAsync(StateHasChanged);
     }
 
     private void OpenCreateModal() => isCreateModalOpen = true;
@@ -287,7 +354,7 @@
     {
         get
         {
-            var result = addOns.AsEnumerable();
+            var result = addOns.Where(a => showArchived ? !a.IsActive : a.IsActive);
             if (!string.IsNullOrWhiteSpace(searchQuery))
             {
                 var q = searchQuery.Trim();
@@ -333,7 +400,7 @@
         }
         _isOfficeClerk = EmployeeRoleHelper.IsOfficeClerk(_currentUser, UserService);
 
-        var dataTask = Task.Run(() => UserService.GetAdditionalServicesSummary().ToList());
+        var dataTask = Task.Run(() => UserService.GetAdditionalServicesSummary(includeArchived: true).ToList());
         var codesTask = ServicesApi.GetFeaturedCodesAsync(FeaturedEntityTypes.AddOn);
         await Task.WhenAll(dataTask, codesTask);
 

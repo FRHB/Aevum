@@ -175,6 +175,39 @@ public class ServicesController : ControllerBase
             : BadRequest(new { Message = "Failed to update service rate." });
     }
 
+    [HttpPost("{id}/archive")]
+    [Authorize(Roles = "Admin,SystemAdmin")]
+    public async Task<IActionResult> ArchiveService(string id, CancellationToken ct)
+    {
+        var adminId = User.FindFirstValue("studio_id") ?? User.FindFirstValue(ClaimTypes.Name);
+        var ok = await _service.SetCatalogItemArchivedAsync("service", id, true, adminId, ct);
+        if (!ok) return NotFound(new { Message = $"Service '{id}' was not found." });
+        if (_outputCache != null) await _outputCache.EvictByTagAsync("catalog", ct);
+        return Ok(new { Archived = true, Id = id });
+    }
+
+    [HttpPost("{id}/restore")]
+    [Authorize(Roles = "Admin,SystemAdmin")]
+    public async Task<IActionResult> RestoreService(string id, CancellationToken ct)
+    {
+        var adminId = User.FindFirstValue("studio_id") ?? User.FindFirstValue(ClaimTypes.Name);
+        var ok = await _service.SetCatalogItemArchivedAsync("service", id, false, adminId, ct);
+        if (!ok) return NotFound(new { Message = $"Service '{id}' was not found." });
+        if (_outputCache != null) await _outputCache.EvictByTagAsync("catalog", ct);
+        return Ok(new { Archived = false, Id = id });
+    }
+
+    [HttpDelete("{id}")]
+    [Authorize(Roles = "Admin,SystemAdmin")]
+    public async Task<IActionResult> DeleteService(string id, CancellationToken ct)
+    {
+        var adminId = User.FindFirstValue("studio_id") ?? User.FindFirstValue(ClaimTypes.Name);
+        var (ok, message) = await _service.DeleteCatalogItemWithSnapshotAsync("service", id, adminId, ct);
+        if (!ok) return BadRequest(new { Message = message });
+        if (_outputCache != null) await _outputCache.EvictByTagAsync("catalog", ct);
+        return Ok(new { Deleted = true, Id = id, Message = message });
+    }
+
     private static bool TryDetectImageContentType(byte[] bytes, out string contentType)
     {
         contentType = string.Empty;

@@ -171,7 +171,16 @@ public interface IUserService
     void UpdateAdditionalServiceImage(string code, byte[] imageBytes, string mimeType, string? requestingAdminId = null);
     Task UpdateAdditionalServiceImageAsync(string code, byte[] imageBytes, string mimeType, string? requestingAdminId = null, CancellationToken ct = default);
     AddOnServiceItem AddAdditionalService(AddOnServiceModel model);
-    bool UpdateAdditionalService(AddOnServiceItem item, string? requestingAdminId = null);
+    bool UpdateAdditionalService(AddOnServiceItem item, string? requestingAdminId = null);
+
+    IReadOnlyList<MainServiceItem> GetMainServicesSummary(bool includeArchived) =>
+        includeArchived ? GetMainServicesSummary() : GetMainServicesSummary().Where(s => s.IsActive).ToList();
+    IReadOnlyList<PackageServiceItem> GetPackageServicesSummary(bool includeArchived) =>
+        includeArchived ? GetPackageServicesSummary() : GetPackageServicesSummary().Where(p => p.IsActive).ToList();
+    IReadOnlyList<AddOnServiceItem> GetAdditionalServicesSummary(bool includeArchived) =>
+        includeArchived ? GetAdditionalServicesSummary() : GetAdditionalServicesSummary().Where(a => a.IsActive).ToList();
+    bool SetCatalogItemArchived(string kind, string id, bool archive) => false;
+    (bool Success, string Message) DeleteCatalogItemWithSnapshot(string kind, string id) => (false, "Not implemented");
 
     // ── Combo Package Wizard (4-Step Workflow) ─────────────────────────────
     Task<string> GetNextComboPackageIdAsync(CancellationToken ct = default);

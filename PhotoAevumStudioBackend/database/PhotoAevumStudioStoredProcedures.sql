@@ -186,7 +186,86 @@ CREATE OR ALTER PROCEDURE dbo.spDeleteEmployee
 AS
 BEGIN
     SET NOCOUNT ON;
+    SET XACT_ABORT ON;
+
+    DECLARE @CleanID nvarchar(30) = UPPER(LTRIM(RTRIM(@EmployeeID)));
+    DECLARE @EmpFullName nvarchar(200) = NULL;
+
+    BEGIN TRAN;
+
+    SELECT @EmpFullName = LTRIM(RTRIM(CONCAT(FirstName, ' ', LastName)))
+    FROM dbo.Employees
+    WHERE UPPER(EmployeeID) = @CleanID;
+
+    IF OBJECT_ID(N'dbo.EventCrewReplacementRequest', N'U') IS NOT NULL
+    BEGIN
+        UPDATE dbo.EventCrewReplacementRequest
+        SET AbsentEmployeeName = COALESCE(NULLIF(LTRIM(RTRIM(AbsentEmployeeName)), ''), @EmpFullName, AbsentEmployeeID),
+            AbsentEmployeeID = NULL
+        WHERE UPPER(AbsentEmployeeID) = @CleanID;
+
+        UPDATE dbo.EventCrewReplacementRequest
+        SET ReplacementEmployeeName = COALESCE(NULLIF(LTRIM(RTRIM(ReplacementEmployeeName)), ''), @EmpFullName, ReplacementEmployeeID),
+            ReplacementEmployeeID = NULL
+        WHERE UPPER(ReplacementEmployeeID) = @CleanID;
+
+        UPDATE dbo.EventCrewReplacementRequest
+        SET RequestedByName = COALESCE(NULLIF(LTRIM(RTRIM(RequestedByName)), ''), @EmpFullName, RequestedByEmployeeID),
+            RequestedByEmployeeID = NULL
+        WHERE UPPER(RequestedByEmployeeID) = @CleanID;
+    END
+
+    IF OBJECT_ID(N'dbo.EventEquipment', N'U') IS NOT NULL
+        UPDATE dbo.EventEquipment SET TakenByEmployeeID = NULL WHERE UPPER(TakenByEmployeeID) = @CleanID;
+
+    IF OBJECT_ID(N'dbo.CustomerDropbox', N'U') IS NOT NULL
+        UPDATE dbo.CustomerDropbox SET UploadedByEmployeeID = NULL WHERE UPPER(UploadedByEmployeeID) = @CleanID;
+
+    IF OBJECT_ID(N'dbo.CustomerDropboxFiles', N'U') IS NOT NULL
+        UPDATE dbo.CustomerDropboxFiles SET UploadedByEmployeeID = NULL WHERE UPPER(UploadedByEmployeeID) = @CleanID;
+
+    IF OBJECT_ID(N'dbo.EventAppointment', N'U') IS NOT NULL
+        UPDATE dbo.EventAppointment SET EmployeeID = NULL WHERE UPPER(EmployeeID) = @CleanID;
+
+    IF OBJECT_ID(N'dbo.BookingNegotiation', N'U') IS NOT NULL
+        UPDATE dbo.BookingNegotiation SET EmployeeID = NULL WHERE UPPER(EmployeeID) = @CleanID;
+
+    IF OBJECT_ID(N'dbo.EventEmployee', N'U') IS NOT NULL
+        UPDATE dbo.EventEmployee SET EmployeeID = NULL WHERE UPPER(EmployeeID) = @CleanID;
+
+    IF OBJECT_ID(N'dbo.EventOvertimeCharges', N'U') IS NOT NULL
+        UPDATE dbo.EventOvertimeCharges SET LoggedByEmployeeID = NULL WHERE UPPER(LoggedByEmployeeID) = @CleanID;
+
+    IF OBJECT_ID(N'dbo.PaymentTransactions', N'U') IS NOT NULL
+        UPDATE dbo.PaymentTransactions SET ReceivedByEmployeeID = NULL WHERE UPPER(ReceivedByEmployeeID) = @CleanID;
+
+    IF OBJECT_ID(N'dbo.HistoryLog', N'U') IS NOT NULL
+    BEGIN
+        UPDATE dbo.HistoryLog SET EmployeeID = NULL WHERE UPPER(EmployeeID) = @CleanID;
+        UPDATE dbo.HistoryLog SET ChangedByEmployeeID = NULL WHERE UPPER(ChangedByEmployeeID) = @CleanID;
+    END
+
+    IF OBJECT_ID(N'dbo.EmployeeTimesheets', N'U') IS NOT NULL
+        DELETE FROM dbo.EmployeeTimesheets WHERE UPPER(EmployeeStudioId) = @CleanID;
+
+    IF OBJECT_ID(N'dbo.EmployeeLeaves', N'U') IS NOT NULL
+        DELETE FROM dbo.EmployeeLeaves WHERE UPPER(EmployeeStudioId) = @CleanID;
+
+    IF OBJECT_ID(N'dbo.LeaveBalances', N'U') IS NOT NULL
+        DELETE FROM dbo.LeaveBalances WHERE UPPER(EmployeeID) = @CleanID;
+
+    IF OBJECT_ID(N'dbo.EmployeeJointSpecialization', N'U') IS NOT NULL
+        DELETE FROM dbo.EmployeeJointSpecialization WHERE UPPER(EmployeeID) = @CleanID;
+
+    IF OBJECT_ID(N'dbo.EmployeePasswordResetRequest', N'U') IS NOT NULL
+        DELETE FROM dbo.EmployeePasswordResetRequest WHERE UPPER(EmployeeID) = @CleanID;
+
+    IF OBJECT_ID(N'dbo.AspNetUsers', N'U') IS NOT NULL
+        DELETE FROM dbo.AspNetUsers WHERE UPPER(UserName) = @CleanID;
+
     DELETE FROM dbo.Employees WHERE EmployeeID = @EmployeeID;
+
+    COMMIT TRAN;
 END;
 GO
 
@@ -195,7 +274,7 @@ CREATE OR ALTER PROCEDURE dbo.sp_DeleteEmployee
 AS
 BEGIN
     SET NOCOUNT ON;
-    DELETE FROM dbo.Employees WHERE EmployeeID = @EmployeeID;
+    EXEC dbo.spDeleteEmployee @EmployeeID = @EmployeeID;
 END;
 GO
 
@@ -1440,6 +1519,7 @@ END;
 GO
 
 CREATE OR ALTER PROCEDURE dbo.sp_GetServicesSummary
+    @IncludeArchived bit = 0
 AS
 BEGIN
     SET NOCOUNT ON;
@@ -1448,8 +1528,11 @@ BEGIN
         CAST(CASE WHEN ServiceImage IS NOT NULL OR ImageFileName IS NOT NULL OR ImageUrl IS NOT NULL THEN 1 ELSE 0 END AS bit) AS HasImage,
         ISNULL(RateType, 'Per Hour') AS RateType,
         ImageFileName,
-        ImageUrl
+        ImageUrl,
+        ISNULL(IsArchived, 0) AS IsArchived,
+        ArchivedAt
     FROM dbo.Services
+    WHERE (@IncludeArchived = 1 OR ISNULL(IsArchived, 0) = 0)
     ORDER BY ServicesID;
 END;
 GO
@@ -1623,6 +1706,7 @@ END;
 GO
 
 CREATE OR ALTER PROCEDURE dbo.sp_GetAdditionalServicesSummary
+    @IncludeArchived bit = 0
 AS
 BEGIN
     SET NOCOUNT ON;
@@ -1632,8 +1716,11 @@ BEGIN
         CAST(CASE WHEN AdditionalServiceImage IS NOT NULL OR ImageFileName IS NOT NULL OR ImageUrl IS NOT NULL THEN 1 ELSE 0 END AS bit) AS HasImage,
         ImageFileName,
         ImageUrl,
-        ISNULL(RateType, 'Per Hour') AS RateType
+        ISNULL(RateType, 'Per Hour') AS RateType,
+        ISNULL(IsArchived, 0) AS IsArchived,
+        ArchivedAt
     FROM dbo.AdditionalServices
+    WHERE (@IncludeArchived = 1 OR ISNULL(IsArchived, 0) = 0)
     ORDER BY AdditionalServicesID;
 END;
 GO
@@ -1724,6 +1811,7 @@ END;
 GO
 
 CREATE OR ALTER PROCEDURE dbo.sp_GetAvailableServicesForBundling
+    @IncludeArchived bit = 0
 AS
 BEGIN
     SET NOCOUNT ON;
@@ -1733,6 +1821,7 @@ BEGIN
         CAST(CASE WHEN s.ServiceImage IS NOT NULL OR s.ImageFileName IS NOT NULL OR s.ImageUrl IS NOT NULL THEN 1 ELSE 0 END AS bit) AS HasImage,
         ISNULL(s.RateType, 'Per Hour') AS RateType
     FROM dbo.Services s
+    WHERE (@IncludeArchived = 1 OR ISNULL(s.IsArchived, 0) = 0)
     UNION ALL
     SELECT 
         a.AdditionalServicesID AS ServiceId, a.AdditionalServiceName AS ServiceName, a.AdditionalServicesDescription AS ServiceDescription,
@@ -1740,6 +1829,7 @@ BEGIN
         CAST(CASE WHEN a.AdditionalServiceImage IS NOT NULL OR a.ImageFileName IS NOT NULL OR a.ImageUrl IS NOT NULL THEN 1 ELSE 0 END AS bit) AS HasImage,
         ISNULL(a.RateType, 'Per Hour') AS RateType
     FROM dbo.AdditionalServices a
+    WHERE (@IncludeArchived = 1 OR ISNULL(a.IsArchived, 0) = 0)
     ORDER BY ServiceType DESC, ServiceName ASC;
 END;
 GO
@@ -1976,6 +2066,7 @@ END;
 GO
 
 CREATE OR ALTER PROCEDURE dbo.sp_GetComboPackagesSummary
+    @IncludeArchived bit = 0
 AS
 BEGIN
     SET NOCOUNT ON;
@@ -1985,8 +2076,11 @@ BEGIN
         CAST(CASE WHEN ComboPackageImage IS NOT NULL OR ImageFileName IS NOT NULL OR ImageUrl IS NOT NULL THEN 1 ELSE 0 END AS bit) AS HasImage,
         ImageFileName,
         ImageUrl,
-        ISNULL(RateType, 'Per Hour') AS RateType
+        ISNULL(RateType, 'Per Hour') AS RateType,
+        ISNULL(IsArchived, 0) AS IsArchived,
+        ArchivedAt
     FROM dbo.ComboPackage
+    WHERE (@IncludeArchived = 1 OR ISNULL(IsArchived, 0) = 0)
     ORDER BY ComboPackageID;
 END;
 GO

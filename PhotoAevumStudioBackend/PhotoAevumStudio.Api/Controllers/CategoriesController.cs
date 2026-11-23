@@ -162,4 +162,37 @@ public class CategoriesController : ControllerBase
             return StatusCode(StatusCodes.Status500InternalServerError, new { Message = ex.Message });
         }
     }
+
+    [HttpPost("{id}/archive")]
+    [Authorize(Roles = "Admin,SystemAdmin")]
+    public async Task<IActionResult> ArchiveCategory(string id, CancellationToken ct)
+    {
+        var adminId = User.FindFirstValue("studio_id") ?? User.FindFirstValue(ClaimTypes.Name);
+        var ok = await _service.SetCatalogItemArchivedAsync("category", id, true, adminId, ct);
+        if (!ok) return NotFound(new { Message = $"Category '{id}' was not found." });
+        if (_outputCache != null) await _outputCache.EvictByTagAsync("catalog", ct);
+        return Ok(new { Archived = true, Id = id });
+    }
+
+    [HttpPost("{id}/restore")]
+    [Authorize(Roles = "Admin,SystemAdmin")]
+    public async Task<IActionResult> RestoreCategory(string id, CancellationToken ct)
+    {
+        var adminId = User.FindFirstValue("studio_id") ?? User.FindFirstValue(ClaimTypes.Name);
+        var ok = await _service.SetCatalogItemArchivedAsync("category", id, false, adminId, ct);
+        if (!ok) return NotFound(new { Message = $"Category '{id}' was not found." });
+        if (_outputCache != null) await _outputCache.EvictByTagAsync("catalog", ct);
+        return Ok(new { Archived = false, Id = id });
+    }
+
+    [HttpDelete("{id}")]
+    [Authorize(Roles = "Admin,SystemAdmin")]
+    public async Task<IActionResult> DeleteCategory(string id, CancellationToken ct)
+    {
+        var adminId = User.FindFirstValue("studio_id") ?? User.FindFirstValue(ClaimTypes.Name);
+        var (ok, message) = await _service.DeleteCatalogItemWithSnapshotAsync("category", id, adminId, ct);
+        if (!ok) return BadRequest(new { Message = message });
+        if (_outputCache != null) await _outputCache.EvictByTagAsync("catalog", ct);
+        return Ok(new { Deleted = true, Id = id, Message = message });
+    }
 }

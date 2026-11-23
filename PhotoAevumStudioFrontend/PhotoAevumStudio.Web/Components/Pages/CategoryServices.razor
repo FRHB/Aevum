@@ -1065,7 +1065,11 @@
 
     private void ToggleCategoryStatus(ServiceCategoryItem category)
     {
-        category.Status = category.Status == "Active" ? "Inactive" : "Active";
-        notificationMessage = $"Category \"{category.Name}\" is now marked as {category.Status}.";
+        bool archive = category.Status == "Active";
+        if (UserService.SetCatalogItemArchived("category", category.Id, archive))
+        {
+            category.Status = archive ? "Archived" : "Active";
+            notificationMessage = $"Category \"{category.Name}\" is now marked as {category.Status}.";
+        }
     }
 }

@@ -226,13 +226,19 @@ public sealed class StudioAnalyticsService : IStudioAnalyticsService
         const string sql = @"
             IF OBJECT_ID(N'dbo.EventLineItem', N'U') IS NOT NULL
             BEGIN
+                IF COL_LENGTH(N'dbo.EventLineItem', N'ServiceNameSnapshot') IS NULL
+                    ALTER TABLE dbo.EventLineItem ADD ServiceNameSnapshot nvarchar(255) NULL;
+                IF COL_LENGTH(N'dbo.EventLineItem', N'ServiceKindSnapshot') IS NULL
+                    ALTER TABLE dbo.EventLineItem ADD ServiceKindSnapshot nvarchar(30) NULL;
+
                 SELECT
                     eli.EventAppointmentID,
                     COALESCE(eli.ServicesID, eli.ComboPackageID, eli.AdditionalServicesID, eli.EventLineItemID) AS ItemId,
-                    COALESCE(s.ServiceName, cp.ComboPackageName, ads.AdditionalServiceName, N'Studio Package') AS ItemName,
+                    COALESCE(s.ServiceName, cp.ComboPackageName, ads.AdditionalServiceName, eli.ServiceNameSnapshot, N'Studio Package') AS ItemName,
                     CASE
                         WHEN eli.ComboPackageID IS NOT NULL THEN N'Combo Package'
                         WHEN eli.AdditionalServicesID IS NOT NULL THEN N'Add-on'
+                        WHEN eli.ServiceKindSnapshot IS NOT NULL THEN eli.ServiceKindSnapshot
                         ELSE N'Service'
                     END AS ItemKind,
                     COALESCE(scCat.CategoryName, N'Uncategorized') AS CategoryName,

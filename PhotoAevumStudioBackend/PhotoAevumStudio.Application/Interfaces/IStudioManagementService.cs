@@ -82,4 +82,17 @@ public interface IStudioManagementService
         string? imageUrl = null,
         CancellationToken cancellationToken = default) =>
         Task.FromResult<ComboPackageCreatedResponseDto?>(null);
+
+    Task<bool> SetCatalogItemArchivedAsync(
+        string kind,
+        string id,
+        bool archive,
+        string? requestingAdminId = null,
+        CancellationToken cancellationToken = default) => Task.FromResult(false);
+
+    Task<(bool Success, string Message)> DeleteCatalogItemWithSnapshotAsync(
+        string kind,
+        string id,
+        string? requestingAdminId = null,
+        CancellationToken cancellationToken = default) => Task.FromResult((false, "Not implemented"));
 }

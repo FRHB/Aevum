@@ -165,7 +165,9 @@ CREATE TABLE dbo.ComboPackage (
     ComboPackageImage varbinary(max) NULL,
     ComboPackageImageMimeType nvarchar(100) NULL CONSTRAINT DF_ComboPackage_MimeType DEFAULT 'image/jpeg',
     ImageFileName nvarchar(500) NULL,
-    ImageUrl nvarchar(500) NULL
+    ImageUrl nvarchar(500) NULL,
+    IsArchived bit NOT NULL CONSTRAINT DF_ComboPackage_IsArchived DEFAULT 0,
+    ArchivedAt datetime2 NULL
 );
 
 CREATE TABLE dbo.AdditionalServices (
@@ -179,6 +181,8 @@ CREATE TABLE dbo.AdditionalServices (
     AdditionalServiceImageMimeType nvarchar(100) NULL CONSTRAINT DF_AdditionalServices_MimeType DEFAULT 'image/jpeg',
     ImageFileName nvarchar(500) NULL,
     ImageUrl nvarchar(500) NULL,
+    IsArchived bit NOT NULL CONSTRAINT DF_AdditionalServices_IsArchived DEFAULT 0,
+    ArchivedAt datetime2 NULL,
     CreatedAt datetime2 NOT NULL CONSTRAINT DF_AdditionalServices_CreatedAt DEFAULT SYSUTCDATETIME()
 );
 
@@ -212,6 +216,8 @@ CREATE TABLE dbo.Services (
     ServiceImageMimeType nvarchar(100) NULL CONSTRAINT DF_Services_MimeType DEFAULT 'image/jpeg',
     ImageFileName nvarchar(500) NULL,
     ImageUrl nvarchar(500) NULL,
+    IsArchived bit NOT NULL CONSTRAINT DF_Services_IsArchived DEFAULT 0,
+    ArchivedAt datetime2 NULL,
     CreatedAt datetime2 NOT NULL CONSTRAINT DF_Services_CreatedAt DEFAULT SYSUTCDATETIME()
 );
 
@@ -232,7 +238,10 @@ CREATE TABLE dbo.ServiceCategory (
     ServiceCategoryName nvarchar(255) NOT NULL,
     ServiceCategoryDescription nvarchar(1000) NOT NULL,
     RateTypeID nvarchar(30) NOT NULL CONSTRAINT DF_ServiceCategory_RateTypeID DEFAULT 'RT-0001',
-    RateTypeName nvarchar(50) NOT NULL CONSTRAINT DF_ServiceCategory_RateTypeName DEFAULT 'Per Hour'
+    RateTypeName nvarchar(50) NOT NULL CONSTRAINT DF_ServiceCategory_RateTypeName DEFAULT 'Per Hour',
+    Status nvarchar(30) NOT NULL CONSTRAINT DF_ServiceCategory_Status DEFAULT 'Active',
+    IsArchived bit NOT NULL CONSTRAINT DF_ServiceCategory_IsArchived DEFAULT 0,
+    ArchivedAt datetime2 NULL
 );
 
 CREATE TABLE dbo.ServiceCategoryJoins (
@@ -386,10 +395,13 @@ CREATE TABLE dbo.EventLineItem (
     LineTotal decimal(18,2) NOT NULL CONSTRAINT DF_EventLineItem_LineTotal DEFAULT 0.00,
     RateType nvarchar(50) NULL,
     DurationHours int NULL,
+    ServiceNameSnapshot nvarchar(255) NULL,
+    ServiceKindSnapshot nvarchar(30) NULL,
     CONSTRAINT CK_EventLineItem_ExactlyOne CHECK (
-        (CASE WHEN ServicesID IS NOT NULL THEN 1 ELSE 0 END) +
-        (CASE WHEN AdditionalServicesID IS NOT NULL THEN 1 ELSE 0 END) +
-        (CASE WHEN ComboPackageID IS NOT NULL THEN 1 ELSE 0 END) = 1)
+        ((CASE WHEN ServicesID IS NOT NULL THEN 1 ELSE 0 END) +
+         (CASE WHEN AdditionalServicesID IS NOT NULL THEN 1 ELSE 0 END) +
+         (CASE WHEN ComboPackageID IS NOT NULL THEN 1 ELSE 0 END) = 1)
+        OR (ServicesID IS NULL AND AdditionalServicesID IS NULL AND ComboPackageID IS NULL AND ServiceNameSnapshot IS NOT NULL))
 );
 
 CREATE TABLE dbo.EmployeeJointSpecialization (

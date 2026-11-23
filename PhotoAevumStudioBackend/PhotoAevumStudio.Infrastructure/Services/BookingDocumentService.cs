@@ -423,7 +423,7 @@ public class BookingDocumentService : IBookingDocumentService
         // Gather line items to format package & inclusions
         const string linesSql = @"
             SELECT
-                COALESCE(s.ServiceName, p.ComboPackageName, a.AdditionalServiceName, 'Studio Service') AS ItemName,
+                COALESCE(s.ServiceName, p.ComboPackageName, a.AdditionalServiceName, eli.ServiceNameSnapshot, 'Studio Service') AS ItemName,
                 eli.Quantity,
                 ISNULL(eli.RateType, 'Per Session') AS RateType,
                 eli.DurationHours

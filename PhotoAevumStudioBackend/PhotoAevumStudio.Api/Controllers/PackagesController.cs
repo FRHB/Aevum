@@ -333,6 +333,39 @@ public class PackagesController : ControllerBase
         if (_outputCache != null) await _outputCache.EvictByTagAsync("catalog", ct);
         return Ok(updated);
     }
+
+    [HttpPost("{id}/archive")]
+    [Authorize(Roles = "Admin,SystemAdmin")]
+    public async Task<IActionResult> ArchivePackage(string id, CancellationToken ct)
+    {
+        var adminId = User.FindFirstValue("studio_id") ?? User.FindFirstValue(ClaimTypes.Name);
+        var ok = await _service.SetCatalogItemArchivedAsync("package", id, true, adminId, ct);
+        if (!ok) return NotFound(new { Message = $"Combo Package '{id}' was not found." });
+        if (_outputCache != null) await _outputCache.EvictByTagAsync("catalog", ct);
+        return Ok(new { Archived = true, Id = id });
+    }
+
+    [HttpPost("{id}/restore")]
+    [Authorize(Roles = "Admin,SystemAdmin")]
+    public async Task<IActionResult> RestorePackage(string id, CancellationToken ct)
+    {
+        var adminId = User.FindFirstValue("studio_id") ?? User.FindFirstValue(ClaimTypes.Name);
+        var ok = await _service.SetCatalogItemArchivedAsync("package", id, false, adminId, ct);
+        if (!ok) return NotFound(new { Message = $"Combo Package '{id}' was not found." });
+        if (_outputCache != null) await _outputCache.EvictByTagAsync("catalog", ct);
+        return Ok(new { Archived = false, Id = id });
+    }
+
+    [HttpDelete("{id}")]
+    [Authorize(Roles = "Admin,SystemAdmin")]
+    public async Task<IActionResult> DeletePackage(string id, CancellationToken ct)
+    {
+        var adminId = User.FindFirstValue("studio_id") ?? User.FindFirstValue(ClaimTypes.Name);
+        var (ok, message) = await _service.DeleteCatalogItemWithSnapshotAsync("package", id, adminId, ct);
+        if (!ok) return BadRequest(new { Message = message });
+        if (_outputCache != null) await _outputCache.EvictByTagAsync("catalog", ct);
+        return Ok(new { Deleted = true, Id = id, Message = message });
+    }
 }
 
 /// <summary>

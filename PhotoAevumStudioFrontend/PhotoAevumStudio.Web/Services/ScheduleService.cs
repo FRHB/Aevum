@@ -599,7 +599,7 @@ public class ScheduleService : IScheduleService
                 ) crewDetails
                 OUTER APPLY (
                     SELECT STUFF((
-                        SELECT ';;' + COALESCE(s.ServiceName, cp.ComboPackageName, ads.AdditionalServiceName, eli.EventLineItemID)
+                        SELECT ';;' + COALESCE(s.ServiceName, cp.ComboPackageName, ads.AdditionalServiceName, eli.ServiceNameSnapshot, eli.EventLineItemID)
                         FROM dbo.EventLineItem eli
                         LEFT JOIN dbo.Services s ON s.ServicesID = eli.ServicesID
                         LEFT JOIN dbo.ComboPackage cp ON cp.ComboPackageID = eli.ComboPackageID
