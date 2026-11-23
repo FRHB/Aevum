@@ -1,10 +1,12 @@
 @page "/admin/portfolio/features"
 @layout AdminLayout
 @rendermode InteractiveServer
+@implements IDisposable
 @attribute [Authorize(Roles = "Admin, SystemAdmin, Super Admin, Office Clerk")]
 @using PhotoAevumStudio.Web.Models
 @using PhotoAevumStudio.Web.Services
 @inject IPortfolioService PortfolioService
+@inject CatalogRefreshNotifier CatalogRefresh
 
 <PageTitle>Featured Portfolio Showcases | Photo Aevum Studio</PageTitle>
 
@@ -177,7 +179,19 @@
 
     protected override async Task OnInitializedAsync()
     {
+        CatalogRefresh.OnCatalogUpdatedAsync += HandleCatalogUpdatedAsync;
         await LoadData();
+    }
+
+    private Task HandleCatalogUpdatedAsync(string _) => InvokeAsync(async () =>
+    {
+        await LoadData();
+        StateHasChanged();
+    });
+
+    public void Dispose()
+    {
+        CatalogRefresh.OnCatalogUpdatedAsync -= HandleCatalogUpdatedAsync;
     }
 
     private async Task LoadData()

@@ -21,6 +21,7 @@ public class PortfolioService : IPortfolioService
     private readonly string _connectionString;
     private readonly IWebHostEnvironment _env;
     private readonly ILogger<PortfolioService>? _logger;
+    private readonly CatalogRefreshNotifier? _catalogRefresh;
     private readonly AmazonS3Client? _r2Client;
     private readonly string _r2BucketName;
     private readonly string _r2PublicBaseUrl;
@@ -36,10 +37,11 @@ public class PortfolioService : IPortfolioService
         return null;
     }
 
-    public PortfolioService(IConfiguration? configuration, IWebHostEnvironment env, ILogger<PortfolioService>? logger = null)
+    public PortfolioService(IConfiguration? configuration, IWebHostEnvironment env, ILogger<PortfolioService>? logger = null, CatalogRefreshNotifier? catalogRefresh = null)
     {
         _env = env;
         _logger = logger;
+        _catalogRefresh = catalogRefresh;
         _connectionString = FirstNonEmpty(
             configuration?.GetConnectionString("DefaultConnection"),
             configuration?["ConnectionStrings__DefaultConnection"],
@@ -786,6 +788,8 @@ public class PortfolioService : IPortfolioService
             }
 
             await LogHistorySafeAsync(conn, "UPDATE", "Portfolio", portfolioId.Trim(), $"Toggled featured status of portfolio '{portName}' to {newFeaturedState}", ct);
+            if (_catalogRefresh != null)
+                await _catalogRefresh.NotifyCatalogUpdatedAsync("Portfolio");
 
             return true;
         }
@@ -1222,6 +1226,7 @@ public class PortfolioService : IPortfolioService
             }
 
             await cmd.ExecuteNonQueryAsync(ct);
+            if (_catalogRefresh != null) await _catalogRefresh.NotifyCatalogUpdatedAsync("Highlights");
             return model;
         }
         catch (Exception ex)
@@ -1241,6 +1246,7 @@ public class PortfolioService : IPortfolioService
             await using var cmd = new SqlCommand("DELETE FROM dbo.HomeHighlights WHERE HighlightID = @ID;", conn);
             cmd.Parameters.AddWithValue("@ID", highlightId.Trim());
             var affected = await cmd.ExecuteNonQueryAsync(ct);
+            if (affected > 0 && _catalogRefresh != null) await _catalogRefresh.NotifyCatalogUpdatedAsync("Highlights");
             return affected > 0;
         }
         catch (Exception ex)
@@ -1260,6 +1266,7 @@ public class PortfolioService : IPortfolioService
             await using var cmd = new SqlCommand("UPDATE dbo.HomeHighlights SET IsActive = ~IsActive, UpdatedAt = SYSUTCDATETIME() WHERE HighlightID = @ID;", conn);
             cmd.Parameters.AddWithValue("@ID", highlightId.Trim());
             var affected = await cmd.ExecuteNonQueryAsync(ct);
+            if (affected > 0 && _catalogRefresh != null) await _catalogRefresh.NotifyCatalogUpdatedAsync("Highlights");
             return affected > 0;
         }
         catch (Exception ex)

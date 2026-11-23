@@ -35,6 +35,8 @@ public sealed class DropboxUploadJob
     public string InputElementId { get; init; } = "zipUploadInput";
     public string? JsFileToken { get; init; }
     public int InputFileIndex { get; init; }
+    public string? UploadedByEmployeeId { get; init; }
+    public string? UploadedByName { get; init; }
     internal string? FallbackJwt { get; set; }
     public long BytesSent { get; set; }
     public int Percent { get; set; }
@@ -59,6 +61,7 @@ public sealed class DropboxBackgroundUploadService
 
     private readonly ITokenStore _tokenStore;
     private readonly DropboxUploadTicketStore _ticketStore;
+    private readonly DropboxActiveUploadRegistry? _activeRegistry;
     private readonly List<DropboxUploadJob> _jobs = new();
     private readonly object _lock = new();
     private readonly SemaphoreSlim _dispatchLock = new(1, 1);
@@ -71,10 +74,12 @@ public sealed class DropboxBackgroundUploadService
 
     public DropboxBackgroundUploadService(
         ITokenStore tokenStore,
-        DropboxUploadTicketStore ticketStore)
+        DropboxUploadTicketStore ticketStore,
+        DropboxActiveUploadRegistry? activeRegistry = null)
     {
         _tokenStore = tokenStore;
         _ticketStore = ticketStore;
+        _activeRegistry = activeRegistry;
     }
 
     public event Action? OnJobsChanged;
@@ -157,10 +162,19 @@ public sealed class DropboxBackgroundUploadService
         CustomerDropboxFolderItem container,
         IReadOnlyList<DropboxQueuedFileRequest> files,
         string inputElementId,
-        IJSRuntime js)
+        IJSRuntime js,
+        string? uploadedByEmployeeId = null,
+        string? uploadedByName = null)
     {
         if (files == null || files.Count == 0)
             return (false, "Please select at least one .zip file.", Array.Empty<DropboxUploadJob>());
+
+        if (_activeRegistry != null &&
+            _activeRegistry.IsUploadingByOther(container.EventAppointmentId, uploadedByEmployeeId, out var activeOther) &&
+            activeOther != null)
+        {
+            return (false, $"Another user ({activeOther.UploadedByName}) is currently uploading to #{container.EventAppointmentId} ({activeOther.Percent}%). Please wait until it finishes.", Array.Empty<DropboxUploadJob>());
+        }
 
         foreach (var file in files)
         {
@@ -198,6 +212,8 @@ public sealed class DropboxBackgroundUploadService
                 InputElementId = inputElementId,
                 JsFileToken = file.JsFileToken,
                 InputFileIndex = file.InputFileIndex,
+                UploadedByEmployeeId = uploadedByEmployeeId,
+                UploadedByName = uploadedByName,
                 FallbackJwt = jwt,
                 BytesSent = 0,
                 Percent = 0,
@@ -276,6 +292,15 @@ public sealed class DropboxBackgroundUploadService
                     nextJob.Status = DropboxUploadJobStatus.Uploading;
                 }
 
+                _activeRegistry?.TryStartOrUpdate(
+                    nextJob.EventAppointmentId,
+                    nextJob.JobId,
+                    nextJob.UploadedByEmployeeId ?? "STAFF",
+                    nextJob.UploadedByName ?? "Another Staff Member",
+                    nextJob.FileName,
+                    0,
+                    "Uploading");
+
                 NotifyChanged();
 
                 try
@@ -315,15 +340,24 @@ public sealed class DropboxBackgroundUploadService
 
     public void ReportProgress(string jobId, long bytesSent, int percent, bool isFinalizing)
     {
+        string? eventId = null;
+        int clampedPct = 0;
+        string statusText = "Uploading";
         lock (_lock)
         {
             var job = _jobs.FirstOrDefault(j => j.JobId == jobId);
             if (job == null || !job.IsTransferring) return;
 
             job.BytesSent = Math.Clamp(bytesSent, 0, job.TotalBytes > 0 ? job.TotalBytes : bytesSent);
-            job.Percent = Math.Clamp(percent, 0, 99);
+            clampedPct = Math.Clamp(percent, 0, 99);
+            job.Percent = clampedPct;
             job.Status = isFinalizing ? DropboxUploadJobStatus.Finalizing : DropboxUploadJobStatus.Uploading;
+            eventId = job.EventAppointmentId;
+            statusText = isFinalizing ? "Finalizing" : "Uploading";
         }
+
+        if (!string.IsNullOrWhiteSpace(eventId))
+            _activeRegistry?.UpdateProgress(eventId, jobId, clampedPct, statusText);
 
         NotifyChanged();
     }
@@ -342,6 +376,8 @@ public sealed class DropboxBackgroundUploadService
             }
         }
 
+        string? completedEventId = null;
+        bool hasMoreForEvent = false;
         lock (_lock)
         {
             var job = _jobs.FirstOrDefault(j => j.JobId == jobId);
@@ -355,7 +391,12 @@ public sealed class DropboxBackgroundUploadService
             job.FallbackJwt = null;
             if (!string.IsNullOrWhiteSpace(job.TicketId))
                 _ticketStore.RemoveTicket(job.TicketId);
+            completedEventId = job.EventAppointmentId;
+            hasMoreForEvent = _jobs.Any(j => j.IsActive && string.Equals(j.EventAppointmentId, completedEventId, StringComparison.OrdinalIgnoreCase));
         }
+
+        if (!string.IsNullOrWhiteSpace(completedEventId) && !hasMoreForEvent)
+            _activeRegistry?.CompleteOrRemove(completedEventId, jobId);
 
         NotifyChanged();
         _ = TryStartNextQueuedJobAsync();
@@ -369,6 +410,8 @@ public sealed class DropboxBackgroundUploadService
 
     private void MarkJobFailedInternal(string jobId, string? error)
     {
+        string? failedEventId = null;
+        bool hasMoreForEvent = false;
         lock (_lock)
         {
             var job = _jobs.FirstOrDefault(j => j.JobId == jobId);
@@ -379,7 +422,12 @@ public sealed class DropboxBackgroundUploadService
             job.FallbackJwt = null;
             if (!string.IsNullOrWhiteSpace(job.TicketId))
                 _ticketStore.RemoveTicket(job.TicketId);
+            failedEventId = job.EventAppointmentId;
+            hasMoreForEvent = _jobs.Any(j => j.IsActive && string.Equals(j.EventAppointmentId, failedEventId, StringComparison.OrdinalIgnoreCase));
         }
+
+        if (!string.IsNullOrWhiteSpace(failedEventId) && !hasMoreForEvent)
+            _activeRegistry?.CompleteOrRemove(failedEventId, jobId);
 
         NotifyChanged();
     }
@@ -391,6 +439,8 @@ public sealed class DropboxBackgroundUploadService
         string? jsFileToken = null;
         bool wasTransferring = false;
 
+        string? canceledEventId = null;
+        bool hasMoreForEvent = false;
         lock (_lock)
         {
             var job = _jobs.FirstOrDefault(j => j.JobId == jobId);
@@ -401,7 +451,12 @@ public sealed class DropboxBackgroundUploadService
             job.Status = DropboxUploadJobStatus.Canceled;
             job.ErrorMessage = "Upload canceled.";
             job.FallbackJwt = null;
+            canceledEventId = job.EventAppointmentId;
+            hasMoreForEvent = _jobs.Any(j => j.IsActive && string.Equals(j.EventAppointmentId, canceledEventId, StringComparison.OrdinalIgnoreCase));
         }
+
+        if (!string.IsNullOrWhiteSpace(canceledEventId) && !hasMoreForEvent)
+            _activeRegistry?.CompleteOrRemove(canceledEventId, jobId);
 
         NotifyChanged();
 

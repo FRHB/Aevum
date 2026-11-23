@@ -14,6 +14,7 @@
 @inject AuthenticationStateProvider AuthStateProvider
 @inject NavigationManager Nav
 @inject DropboxBackgroundUploadService UploadService
+@inject DropboxActiveUploadRegistry ActiveUploadRegistry
 @inject IJSRuntime JS
 
 <PageTitle>Upload Event Customer | Photo Aevum Studio</PageTitle>
@@ -105,7 +106,8 @@ else
         {
             var eventJobs = UploadService.GetJobsForEvent(item.EventAppointmentId);
             var activeJob = UploadService.GetActiveJobForEvent(item.EventAppointmentId);
-            var isRowUploading = activeJob != null && activeJob.IsActive;
+            var isOtherUploading = ActiveUploadRegistry.IsUploadingByOther(item.EventAppointmentId, _currentUploaderId, out var otherActiveUpload);
+            var isRowUploading = (activeJob != null && activeJob.IsActive) || isOtherUploading;
             var queuedCount = eventJobs.Count(j => j.IsQueued);
             var isExpired = item.IsEffectivelyExpired;
             var pillStateClass = isExpired
@@ -115,7 +117,7 @@ else
             <button type="button"
                     role="listitem"
                     @key="item.DropboxId"
-                    disabled="@isExpired"
+                    disabled="@(isExpired || isOtherUploading)"
                     @onclick="() => OpenUploadModal(item)"
                     class="aev-event-pillbox @pillStateClass @(isRowUploading ? "is-uploading" : string.Empty)">
                 <div class="aev-event-pillbox__left">
@@ -145,7 +147,13 @@ else
                     }
                     else
                     {
-                        @if (isRowUploading && activeJob != null)
+                        @if (isOtherUploading && otherActiveUpload != null)
+                        {
+                            <span class="aev-pill-badge aev-pill-badge--uploading" title="@otherActiveUpload.FileName">
+                                <span>⏳ Uploading by @otherActiveUpload.UploadedByName (@otherActiveUpload.Percent%)...</span>
+                            </span>
+                        }
+                        else if (isRowUploading && activeJob != null)
                         {
                             <span class="aev-pill-badge aev-pill-badge--uploading" title="@activeJob.FileName">
                                 @if (queuedCount > 0)
@@ -180,7 +188,13 @@ else
                         <span class="aev-pill-badge aev-pill-badge--days">
                             @item.EffectiveCountdownLabel
                         </span>
-                        @if (isRowUploading && activeJob != null)
+                        @if (isOtherUploading && otherActiveUpload != null)
+                        {
+                            <span class="aev-pill-badge aev-pill-badge--uploading" title="@otherActiveUpload.FileName">
+                                <span>⏳ Uploading by @otherActiveUpload.UploadedByName (@otherActiveUpload.Percent%)...</span>
+                            </span>
+                        }
+                        else if (isRowUploading && activeJob != null)
                         {
                             var rowPct = activeJob.Percent;
                             var rowDashOffset = CircleCircumferenceSm * (1.0 - Math.Clamp(rowPct, 0, 100) / 100.0);
@@ -571,14 +585,26 @@ else
         }
     }
 
+    private string? _currentUploaderId;
+    private string? _currentUploaderName;
+
     protected override async Task OnInitializedAsync()
     {
         UploadService.OnJobsChanged += HandleBackgroundJobsChanged;
+        ActiveUploadRegistry.OnChanged += HandleBackgroundJobsChanged;
 
         var authState = await AuthStateProvider.GetAuthenticationStateAsync();
         var user = authState.User;
         if (user.Identity?.IsAuthenticated == true)
         {
+            _currentUploaderId = user.FindFirst("studio_id")?.Value
+                ?? user.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value
+                ?? user.Identity?.Name;
+            _currentUploaderName = user.FindFirst("full_name")?.Value
+                ?? user.FindFirst(System.Security.Claims.ClaimTypes.Name)?.Value
+                ?? _currentUploaderId
+                ?? "Staff";
+
             var isAdmin = EmployeeRoleHelper.IsAdmin(user) || EmployeeRoleHelper.IsSystemAdmin(user);
             var isClerk = EmployeeRoleHelper.IsOfficeClerk(user, UserService);
             if (!isAdmin && !isClerk)
@@ -750,7 +776,9 @@ else
                 _selectedContainer,
                 batch,
                 "zipUploadInput",
-                JS);
+                JS,
+                _currentUploaderId,
+                _currentUploaderName);
 
             if (!started)
             {
@@ -921,6 +949,7 @@ else
     {
         _disposed = true;
         UploadService.OnJobsChanged -= HandleBackgroundJobsChanged;
+        ActiveUploadRegistry.OnChanged -= HandleBackgroundJobsChanged;
     }
 
     private static string FormatBytes(long bytes)

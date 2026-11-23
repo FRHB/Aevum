@@ -7,6 +7,7 @@ using System.Threading.Tasks;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.OutputCaching;
 using Microsoft.EntityFrameworkCore;
 using PhotoAevumStudio.Application.Entities;
 using PhotoAevumStudio.Infrastructure.Data;
@@ -22,12 +23,14 @@ public class PortfolioController : ControllerBase
     private readonly ApplicationDbContext _db;
     private readonly IR2StorageService _r2Service;
     private readonly ISqlAuthService _sqlAuthService;
+    private readonly IOutputCacheStore? _outputCache;
 
-    public PortfolioController(ApplicationDbContext db, IR2StorageService r2Service, ISqlAuthService sqlAuthService)
+    public PortfolioController(ApplicationDbContext db, IR2StorageService r2Service, ISqlAuthService sqlAuthService, IOutputCacheStore? outputCache = null)
     {
         _db = db;
         _r2Service = r2Service;
         _sqlAuthService = sqlAuthService;
+        _outputCache = outputCache;
     }
 
     // ── Categories ────────────────────────────────────────────────────────────
@@ -365,6 +368,7 @@ public class PortfolioController : ControllerBase
 
         var actorId = User.FindFirstValue("studio_id") ?? User.FindFirstValue(ClaimTypes.NameIdentifier) ?? "Admin";
         await _sqlAuthService.LogActivityAsync("UPDATE", "Portfolio", portfolio.PortfolioId, $"Toggled feature status of {portfolio.PortfolioName} to {portfolio.IsFeatured}", "Admin", actorId, cancellationToken);
+        if (_outputCache != null) await _outputCache.EvictByTagAsync("catalog", cancellationToken);
 
         return Ok(new { portfolio.PortfolioId, portfolio.IsFeatured });
     }

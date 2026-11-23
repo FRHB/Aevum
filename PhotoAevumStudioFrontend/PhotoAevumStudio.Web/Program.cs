@@ -136,6 +136,8 @@ builder.Services.AddScoped<PhotoAevumStudio.Web.Models.BookScheduleState>();
 builder.Services.AddScoped<IBookScheduleClient, BookScheduleClient>();
 builder.Services.AddScoped<IConsultationClient, ConsultationClient>();
 builder.Services.AddSingleton<DropboxUploadTicketStore>();
+builder.Services.AddSingleton<DropboxActiveUploadRegistry>();
+builder.Services.AddSingleton<CatalogRefreshNotifier>();
 builder.Services.AddScoped<DropboxBackgroundUploadService>();
 builder.Services.AddScoped<ICustomerDropboxClient, CustomerDropboxClient>();
 builder.Services.AddScoped<IAnalyticsClient, AnalyticsClient>();

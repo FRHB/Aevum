@@ -1,10 +1,12 @@
 @page "/services"
 @attribute [AllowAnonymous]
 @rendermode InteractiveServer
+@implements IDisposable
 @using PhotoAevumStudio.Web.Models
 @using PhotoAevumStudio.Web.Services
 @inject IUserService UserService
 @inject IServicesApiClient ServicesApi
+@inject CatalogRefreshNotifier CatalogRefresh
 @inject NavigationManager NavigationManager
 
 <PageTitle>Featured Studio Services | Photo Aevum Studio</PageTitle>
@@ -174,6 +176,18 @@
 
     protected override async Task OnInitializedAsync()
     {
+        CatalogRefresh.OnCatalogUpdatedAsync += HandleCatalogUpdatedAsync;
+        await RefreshFeaturedPoolAsync();
+    }
+
+    private Task HandleCatalogUpdatedAsync(string _) => InvokeAsync(async () =>
+    {
+        await RefreshFeaturedPoolAsync();
+        StateHasChanged();
+    });
+
+    private async Task RefreshFeaturedPoolAsync()
+    {
         _loading = true;
         try
         {
@@ -187,6 +201,11 @@
         {
             _loading = false;
         }
+    }
+
+    public void Dispose()
+    {
+        CatalogRefresh.OnCatalogUpdatedAsync -= HandleCatalogUpdatedAsync;
     }
 
     private IEnumerable<FeaturedServiceCard> VisibleServices =>

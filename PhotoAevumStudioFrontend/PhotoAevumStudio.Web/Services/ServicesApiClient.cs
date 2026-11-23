@@ -20,6 +20,7 @@ public class ServicesApiClient : IServicesApiClient
     private readonly string _connectionString;
     private readonly ILogger<ServicesApiClient> _logger;
     private readonly IWebHostEnvironment? _env;
+    private readonly CatalogRefreshNotifier? _catalogRefresh;
     private readonly AmazonS3Client? _r2Client;
     private readonly string _servicesBucket;
     private readonly string _r2PublicBaseUrl;
@@ -40,12 +41,14 @@ public class ServicesApiClient : IServicesApiClient
         ITokenStore tokenStore,
         IConfiguration configuration,
         ILogger<ServicesApiClient> logger,
-        IWebHostEnvironment? env = null)
+        IWebHostEnvironment? env = null,
+        CatalogRefreshNotifier? catalogRefresh = null)
     {
         _http = httpClientFactory.CreateClient("AevumApi.Authorized");
         _tokenStore = tokenStore;
         _logger = logger;
         _env = env;
+        _catalogRefresh = catalogRefresh;
         _connectionString = FirstNonEmpty(
             configuration.GetConnectionString("DefaultConnection"),
             configuration["ConnectionStrings__DefaultConnection"],
@@ -874,6 +877,15 @@ public class ServicesApiClient : IServicesApiClient
     private static readonly object CatalogCacheLock = new();
     private static readonly Dictionary<string, (DateTime FetchedAt, HashSet<string> Codes)> FeaturedCodesCache = new(StringComparer.OrdinalIgnoreCase);
     private static (DateTime FetchedAt, List<PortfolioCategoryDto> Items)? PortfolioCategoriesCache;
+
+    public static void InvalidateFeaturedAndPortfolioCaches()
+    {
+        lock (CatalogCacheLock)
+        {
+            FeaturedCodesCache.Clear();
+            PortfolioCategoriesCache = null;
+        }
+    }
     private static readonly TimeSpan LocalCatalogCacheTtl = TimeSpan.FromSeconds(60);
 
     /// <summary>
@@ -996,6 +1008,14 @@ public class ServicesApiClient : IServicesApiClient
             lock (CatalogCacheLock)
             {
                 FeaturedCodesCache.Remove(entityType);
+            }
+            if (_catalogRefresh != null)
+            {
+                await _catalogRefresh.NotifyCatalogUpdatedAsync(entityType);
+            }
+            else
+            {
+                UserService.InvalidateServiceCatalogCache();
             }
             return true;
         }

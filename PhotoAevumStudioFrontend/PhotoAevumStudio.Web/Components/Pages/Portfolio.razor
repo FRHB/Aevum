@@ -2,10 +2,12 @@
 @page "/staff/portfolio"
 @layout EmployeeLayout
 @rendermode InteractiveServer
+@implements IDisposable
 @attribute [Authorize(Roles = "Employee, Office Clerk, Admin, SystemAdmin, Super Admin")]
 @using PhotoAevumStudio.Web.Models
 @using PhotoAevumStudio.Web.Services
 @inject IPortfolioService PortfolioService
+@inject CatalogRefreshNotifier CatalogRefresh
 
 <PageTitle>Studio Featured Portfolio | Photo Aevum Studio</PageTitle>
 
@@ -174,7 +176,19 @@
 
     protected override async Task OnInitializedAsync()
     {
+        CatalogRefresh.OnCatalogUpdatedAsync += HandleCatalogUpdatedAsync;
         await LoadData();
+    }
+
+    private Task HandleCatalogUpdatedAsync(string _) => InvokeAsync(async () =>
+    {
+        await LoadData();
+        StateHasChanged();
+    });
+
+    public void Dispose()
+    {
+        CatalogRefresh.OnCatalogUpdatedAsync -= HandleCatalogUpdatedAsync;
     }
 
     private async Task LoadData()

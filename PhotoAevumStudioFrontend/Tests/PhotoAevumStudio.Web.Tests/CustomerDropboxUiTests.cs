@@ -268,6 +268,7 @@ public class CustomerDropboxUiTests
         services.AddSingleton<AuthenticationStateProvider>(new StubAuthStateProvider(adminUser));
         services.AddSingleton<NavigationManager, StubNavManager>();
         services.AddSingleton<DropboxUploadTicketStore>();
+        services.AddSingleton<DropboxActiveUploadRegistry>();
         services.AddSingleton(Mock.Of<ITokenStore>());
         services.AddSingleton<DropboxBackgroundUploadService>();
         services.AddSingleton(Mock.Of<IJSRuntime>());

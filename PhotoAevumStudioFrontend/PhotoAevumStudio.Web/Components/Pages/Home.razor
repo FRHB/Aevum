@@ -8,6 +8,7 @@
 @inject IUserService UserService
 @inject IServicesApiClient ServicesApi
 @inject IPortfolioService PortfolioService
+@inject CatalogRefreshNotifier CatalogRefresh
 @inject NavigationManager NavManager
 
 <PageTitle>Photo Aevum Studio | Book Your Session</PageTitle>
@@ -694,6 +695,18 @@
 
     protected override async Task OnInitializedAsync()
     {
+        CatalogRefresh.OnCatalogUpdatedAsync += HandleCatalogUpdatedAsync;
+        await LoadHomeDataAsync();
+    }
+
+    private Task HandleCatalogUpdatedAsync(string _) => InvokeAsync(async () =>
+    {
+        await LoadHomeDataAsync();
+        StateHasChanged();
+    });
+
+    private async Task LoadHomeDataAsync()
+    {
         try
         {
             _faqs = UserService.GetFaqs();
@@ -797,6 +810,7 @@
 
     public void Dispose()
     {
+        CatalogRefresh.OnCatalogUpdatedAsync -= HandleCatalogUpdatedAsync;
         _highlightTimer?.Dispose();
     }
 

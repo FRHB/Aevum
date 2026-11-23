@@ -1,10 +1,12 @@
 @page "/staff/featured-services"
 @layout EmployeeLayout
 @rendermode InteractiveServer
+@implements IDisposable
 @using PhotoAevumStudio.Web.Models
 @using PhotoAevumStudio.Web.Services
 @inject IUserService UserService
 @inject IServicesApiClient ServicesApi
+@inject CatalogRefreshNotifier CatalogRefresh
 @attribute [Authorize(Roles = "Employee,Office Clerk,Admin,SystemAdmin")]
 
 <PageTitle>Featured Services | Photo Aevum Studio</PageTitle>
@@ -93,6 +95,24 @@
 
     protected override async Task OnInitializedAsync()
     {
+        CatalogRefresh.OnCatalogUpdatedAsync += HandleCatalogUpdatedAsync;
+        await LoadFeaturedAsync();
+    }
+
+    private Task HandleCatalogUpdatedAsync(string _) => InvokeAsync(async () =>
+    {
+        await LoadFeaturedAsync();
+        StateHasChanged();
+    });
+
+    public void Dispose()
+    {
+        CatalogRefresh.OnCatalogUpdatedAsync -= HandleCatalogUpdatedAsync;
+    }
+
+    private async Task LoadFeaturedAsync()
+    {
+        _loading = true;
         try
         {
             var mainTask = ServicesApi.GetFeaturedCodesAsync(FeaturedEntityTypes.Main);
