@@ -490,233 +490,139 @@
 
 
                         @foreach (var neg in PagedNegotiations)
-
-
-
                         {
+                            var isCancelledOrLost = IsCancelledOrLostStatus(neg.NegotiationStatus);
+                            var isEventBookedLocked = IsEventBookedLocked(neg);
+                            var isReadOnly = isEventBookedLocked || isCancelledOrLost;
+                            var linkedEventId = ResolveLinkedEventId(neg);
+                            var rowClasses = isReadOnly
+                                ? "bg-slate-100 text-slate-500 border-slate-300 hover:bg-slate-200/60"
+                                : "hover:bg-slate-50/80";
+                            var selectedRowClasses = _selectedNegotiation?.NegotiationId == neg.NegotiationId
+                                ? (isReadOnly ? "ring-1 ring-inset ring-slate-400" : "bg-teal-50/50")
+                                : string.Empty;
 
+                            <tr data-negotiation-id="@neg.NegotiationId"
+                                data-readonly="@(isReadOnly ? "true" : "false")"
+                                class="@rowClasses @selectedRowClasses transition-colors">
 
-
-                            <tr class="hover:bg-slate-50/80 transition-colors @(_selectedNegotiation?.NegotiationId == neg.NegotiationId ? "bg-teal-50/50" : "")">
-
-
-
-                                <td class="px-4 py-3 font-mono font-bold text-slate-900">
-
-
+                                <td class="px-4 py-3 font-mono font-bold @(isReadOnly ? "text-slate-500" : "text-slate-900")">
 
                                     @neg.NegotiationId
 
-
-
-                                    @if (!string.IsNullOrWhiteSpace(neg.EventAppointmentId))
-
-
-
+                                    @if (!string.IsNullOrWhiteSpace(linkedEventId))
                                     {
-
-
-
-                                        <div class="text-[10px] font-mono text-teal-700">↳ @neg.EventAppointmentId</div>
-
-
-
+                                        <div class="text-[10px] font-mono @(isEventBookedLocked ? "text-indigo-700" : "text-slate-400")">↳ @linkedEventId</div>
                                     }
-
-
 
                                 </td>
 
-
-
                                 <td class="px-4 py-3">
 
-
-
-                                    <div class="font-bold text-slate-900">@neg.CustomerName</div>
-
-
+                                    <div class="font-bold @(isReadOnly ? "text-slate-600" : "text-slate-900")">@neg.CustomerName</div>
 
                                     <div class="text-[11px] text-slate-500">@neg.CustomerEmail</div>
 
-
-
                                     @if (!string.IsNullOrWhiteSpace(neg.CustomerPhone))
-
-
-
                                     {
-
-
-
                                         <div class="text-[10px] text-slate-400">@neg.CustomerPhone</div>
-
-
-
                                     }
-
-
 
                                 </td>
 
-
-
                                 <td class="px-4 py-3">
 
-
-
-                                    <div class="font-medium text-slate-900">@neg.ConsultationDate.ToString("MMM dd, yyyy")</div>
-
-
+                                    <div class="font-medium @(isReadOnly ? "text-slate-500" : "text-slate-900")">@neg.ConsultationDate.ToString("MMM dd, yyyy")</div>
 
                                     <div class="text-[11px] text-slate-500">@neg.ConsultationTime.ToString("h:mm tt")</div>
 
-
-
                                 </td>
-
-
 
                                 <td class="px-4 py-3">
 
-
-
-                                    <div class="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[11px] font-semibold bg-slate-100 text-slate-800">
-
-
+                                    <div class="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[11px] font-semibold @(isReadOnly ? "bg-slate-200/80 text-slate-500" : "bg-slate-100 text-slate-800")">
 
                                         <span>👤</span>
 
-
-
                                         <span>@neg.EmployeeName</span>
-
-
 
                                     </div>
 
-
-
                                 </td>
-
-
 
                                 <td class="px-4 py-3">
 
-
-
-                                    <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-[11px] font-bold @GetStatusBadgeClass(neg.NegotiationStatus)">
-
-
-
-                                        @neg.NegotiationStatus.Replace("_", " ")
-
-
-
-                                    </span>
-                                    @if (!string.IsNullOrWhiteSpace(neg.EventAppointmentId))
-                                    {
-                                        <div class="mt-1">
-                                            <a href="/admin/calendar/events?eventId=@neg.EventAppointmentId"
-                                               class="inline-flex items-center gap-1 text-[10px] font-mono font-bold text-indigo-700 hover:underline">
-                                                📅 #@neg.EventAppointmentId →
-                                            </a>
-                                        </div>
-                                    }
-
-
+                                    <div class="flex flex-col items-start gap-1">
+                                        <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-[11px] font-bold @GetStatusBadgeClass(neg.NegotiationStatus)">
+                                            @neg.NegotiationStatus.Replace("_", " ")
+                                        </span>
+                                        @if (isEventBookedLocked)
+                                        {
+                                            <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-slate-100 text-slate-500 border border-slate-300">
+                                                🔒 Read-Only • Event Booked
+                                            </span>
+                                            @if (!string.IsNullOrWhiteSpace(linkedEventId))
+                                            {
+                                                <a href="/admin/calendar/events?eventId=@linkedEventId"
+                                                   class="inline-flex items-center gap-1 text-[10px] font-mono font-bold text-indigo-700 hover:underline">
+                                                    📅 #@linkedEventId →
+                                                </a>
+                                            }
+                                        }
+                                        else if (isCancelledOrLost)
+                                        {
+                                            <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-slate-100 text-slate-500 border border-slate-300">
+                                                🔒 Read-Only • @(string.Equals(neg.NegotiationStatus, "Cancelled", StringComparison.OrdinalIgnoreCase) ? "Cancelled" : "Deal Lost")
+                                            </span>
+                                        }
+                                    </div>
 
                                 </td>
 
-
-
                                 <td class="px-4 py-3">
-
-
 
                                     @if (!string.IsNullOrWhiteSpace(neg.MeetingLink))
-
-
-
                                     {
-
-
-
-                                        <a href="@neg.MeetingLink" target="_blank" rel="noopener noreferrer" 
-
-
-
-                                           class="inline-flex items-center gap-1 px-2.5 py-1 rounded bg-teal-50 hover:bg-teal-100 text-teal-800 font-semibold text-[11px] border border-teal-200 transition-colors">
-
-
-
+                                        <a href="@neg.MeetingLink" target="_blank" rel="noopener noreferrer"
+                                           class="inline-flex items-center gap-1 px-2.5 py-1 rounded font-semibold text-[11px] border transition-colors @(isReadOnly ? "bg-slate-200/70 hover:bg-slate-200 text-slate-500 border-slate-300" : "bg-teal-50 hover:bg-teal-100 text-teal-800 border-teal-200")">
                                             <span>🎥</span>
-
-
-
                                             <span>Google Meet</span>
-
-
-
                                         </a>
-
-
-
                                     }
-
-
-
                                     else
-
-
-
                                     {
-
-
-
                                         <span class="text-slate-400 italic">No link</span>
-
-
-
                                     }
-
-
 
                                 </td>
-
-
 
                                 <td class="px-4 py-3 text-right">
-
-
-
-                                    <button type="button"
-
-
-
-                                            @onclick="() => OpenFloatingPanelAsync(neg)"
-
-
-
-                                            class="px-3 py-1.5 bg-slate-900 hover:bg-black text-white rounded-lg text-xs font-semibold shadow-xs transition-colors">
-
-
-
-                                        Open Details →
-
-
-
-                                    </button>
-
-
-
+                                    <div class="inline-flex items-center justify-end gap-1.5 flex-wrap">
+                                        @if (isEventBookedLocked)
+                                        {
+                                            <button type="button"
+                                                    @onclick="() => OpenBookedEventModalAsync(neg)"
+                                                    class="px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-xs font-bold shadow-xs transition-colors inline-flex items-center gap-1">
+                                                <span>📅</span>
+                                                <span>Booked Event@(!string.IsNullOrWhiteSpace(linkedEventId) ? $" (#{linkedEventId})" : "")</span>
+                                            </button>
+                                        }
+                                        <button type="button"
+                                                @onclick="() => OpenFloatingPanelAsync(neg)"
+                                                class="px-3 py-1.5 rounded-lg text-xs font-semibold shadow-xs transition-colors @(isReadOnly ? "bg-white hover:bg-slate-50 text-slate-600 border border-slate-300" : "bg-slate-900 hover:bg-black text-white")">
+                                            @if (isReadOnly)
+                                            {
+                                                <span>View Details →</span>
+                                            }
+                                            else
+                                            {
+                                                <span>Open Details →</span>
+                                            }
+                                        </button>
+                                    </div>
                                 </td>
 
-
-
                             </tr>
-
-
 
                         }
 
@@ -751,335 +657,132 @@
 
 
 @if (_isPanelOpen && _selectedNegotiation != null)
-
-
-
 {
-
-
+    var isDrawerCancelledOrLost = IsCancelledOrLostStatus(_selectedNegotiation.NegotiationStatus);
+    var isDrawerEventBooked = IsEventBookedLocked(_selectedNegotiation);
+    var isDrawerReadOnly = isDrawerEventBooked || isDrawerCancelledOrLost;
+    var drawerLinkedEventId = ResolveLinkedEventId(_selectedNegotiation);
 
     <div class="fixed inset-0 z-50 flex justify-end bg-black/40 backdrop-blur-xs transition-opacity animate-in fade-in duration-200"
-
-
-
          @onclick="CloseFloatingPanel">
 
-
-
-        <div class="w-full max-w-xl h-full bg-white shadow-2xl flex flex-col justify-between overflow-y-auto"
-
-
-
+        <div data-drawer-readonly="@(isDrawerReadOnly ? "true" : "false")"
+             class="w-full max-w-xl h-full shadow-2xl flex flex-col justify-between overflow-y-auto @(isDrawerReadOnly ? "bg-slate-100 text-slate-500 border-l border-slate-300" : "bg-white")"
              @onclick:stopPropagation="true">
 
-
-
-            
-
-
-
             @* Panel Header *@
-
-
-
-            <div class="px-6 py-4 border-b border-slate-200 flex items-center justify-between bg-slate-50/50">
-
-
-
+            <div class="px-6 py-4 border-b flex items-center justify-between @(isDrawerReadOnly ? "bg-slate-100 text-slate-500 border-slate-300" : "border-slate-200 bg-slate-50/50")">
                 <div>
-
-
-
-                    <div class="flex items-center gap-2">
-
-
-
+                    <div class="flex items-center flex-wrap gap-2">
                         <span class="font-mono text-xs font-extrabold text-slate-500">@_selectedNegotiation.NegotiationId</span>
-
-
-
                         <span class="px-2.5 py-0.5 rounded-full text-[11px] font-bold @GetStatusBadgeClass(_selectedNegotiation.NegotiationStatus)">
-
-
-
                             @_selectedNegotiation.NegotiationStatus.Replace("_", " ")
-
-
-
                         </span>
-
-
-
+                        @if (isDrawerEventBooked)
+                        {
+                            <span class="px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-slate-100 text-slate-500 border border-slate-300">
+                                🔒 Read-Only • Event Booked
+                            </span>
+                        }
+                        else if (isDrawerCancelledOrLost)
+                        {
+                            <span class="px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-slate-100 text-slate-500 border border-slate-300">
+                                🔒 Read-Only • @(string.Equals(_selectedNegotiation.NegotiationStatus, "Cancelled", StringComparison.OrdinalIgnoreCase) ? "Cancelled" : "Deal Lost")
+                            </span>
+                        }
                     </div>
-
-
-
-                    <h2 class="text-lg font-black text-slate-900 mt-1">@_selectedNegotiation.CustomerName</h2>
-
-
-
+                    <h2 class="text-lg font-black mt-1 @(isDrawerReadOnly ? "text-slate-600" : "text-slate-900")">@_selectedNegotiation.CustomerName</h2>
                 </div>
-
-
-
                 <button type="button" @onclick="CloseFloatingPanel" class="p-2 text-slate-400 hover:text-slate-700 rounded-lg">
-
-
-
                     ✕
-
-
-
                 </button>
-
-
-
             </div>
 
-
-
-
-
-
-
             @* Panel Body Content *@
-
-
-
             <div class="p-6 space-y-5 flex-1">
-
-
+                @if (isDrawerReadOnly)
+                {
+                    <div class="rounded-xl border border-slate-300 bg-slate-100 text-slate-500 px-4 py-3 text-xs flex items-center justify-between gap-3 flex-wrap">
+                        <div>
+                            <div class="font-bold text-slate-700">
+                                @(isDrawerEventBooked ? "🔒 Read-Only • Event Booked" : "🔒 Read-Only Consultation")
+                            </div>
+                            <div class="text-[11px] text-slate-500 mt-0.5">
+                                @(isDrawerEventBooked
+                                    ? "Outcome controls are locked because this consultation is connected to a booked event."
+                                    : "This consultation has ended and can no longer be edited.")
+                            </div>
+                        </div>
+                        @if (isDrawerEventBooked)
+                        {
+                            <button type="button"
+                                    @onclick="() => OpenBookedEventModalAsync(_selectedNegotiation)"
+                                    class="px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-xs font-bold shadow-xs transition-colors inline-flex items-center gap-1 shrink-0">
+                                <span>📅</span>
+                                <span>Booked Event@(!string.IsNullOrWhiteSpace(drawerLinkedEventId) ? $" (#{drawerLinkedEventId})" : "")</span>
+                            </button>
+                        }
+                    </div>
+                }
 
                 @* Client Information Box *@
-
-
-
-                <div class="bg-slate-50 rounded-xl border border-slate-200 p-4 space-y-2">
-
-
-
+                <div class="rounded-xl border p-4 space-y-2 @(isDrawerReadOnly ? "bg-slate-100 text-slate-500 border-slate-300" : "bg-slate-50 border-slate-200")">
                     <h3 class="text-xs font-bold uppercase tracking-wider text-slate-500">Client Inquirer Details</h3>
-
-
-
                     <div class="grid grid-cols-2 gap-2 text-xs">
-
-
-
                         <div>
-
-
-
                             <span class="text-slate-400 block text-[10px]">Email</span>
-
-
-
-                            <span class="font-semibold text-slate-900">@_selectedNegotiation.CustomerEmail</span>
-
-
-
+                            <span class="font-semibold @(isDrawerReadOnly ? "text-slate-600" : "text-slate-900")">@_selectedNegotiation.CustomerEmail</span>
                         </div>
-
-
-
                         <div>
-
-
-
                             <span class="text-slate-400 block text-[10px]">Phone</span>
-
-
-
-                            <span class="font-semibold text-slate-900">@(string.IsNullOrWhiteSpace(_selectedNegotiation.CustomerPhone) ? "—" : _selectedNegotiation.CustomerPhone)</span>
-
-
-
+                            <span class="font-semibold @(isDrawerReadOnly ? "text-slate-600" : "text-slate-900")">@(string.IsNullOrWhiteSpace(_selectedNegotiation.CustomerPhone) ? "—" : _selectedNegotiation.CustomerPhone)</span>
                         </div>
-
-
-
                         <div>
-
-
-
                             <span class="text-slate-400 block text-[10px]">Consultation Date</span>
-
-
-
-                            <span class="font-semibold text-slate-900">@_selectedNegotiation.ConsultationDate.ToString("MMMM dd, yyyy")</span>
-
-
-
+                            <span class="font-semibold @(isDrawerReadOnly ? "text-slate-600" : "text-slate-900")">@_selectedNegotiation.ConsultationDate.ToString("MMMM dd, yyyy")</span>
                         </div>
-
-
-
                         <div>
-
-
-
                             <span class="text-slate-400 block text-[10px]">Consultation Time</span>
-
-
-
-                            <span class="font-semibold text-slate-900">@_selectedNegotiation.ConsultationTime.ToString("h:mm tt")</span>
-
-
-
+                            <span class="font-semibold @(isDrawerReadOnly ? "text-slate-600" : "text-slate-900")">@_selectedNegotiation.ConsultationTime.ToString("h:mm tt")</span>
                         </div>
-
-
-
                     </div>
-
-
-
                 </div>
-
-
-
-
-
-
 
                 @* Inquiry Notes Box *@
-
-
-
-                <div class="bg-white rounded-xl border border-slate-200 p-4 space-y-1.5">
-
-
-
+                <div class="rounded-xl border p-4 space-y-1.5 @(isDrawerReadOnly ? "bg-slate-100 text-slate-500 border-slate-300" : "bg-white border-slate-200")">
                     <h3 class="text-xs font-bold uppercase tracking-wider text-slate-500">Client Inquiry &amp; Desired Services</h3>
-
-
-
-                    <p class="text-xs text-slate-700 leading-relaxed whitespace-pre-line">
-
-
-
+                    <p class="text-xs leading-relaxed whitespace-pre-line @(isDrawerReadOnly ? "text-slate-500" : "text-slate-700")">
                         @(string.IsNullOrWhiteSpace(_selectedNegotiation.InquiryNotes) ? "No special inquiry notes specified by client." : _selectedNegotiation.InquiryNotes)
-
-
-
                     </p>
-
-
-
                 </div>
-
-
-
-
-
-
 
                 @* Teleconference Card *@
-
-
-
-                <div class="bg-teal-50/50 rounded-xl border border-teal-200 p-4 space-y-2.5">
-
-
-
+                <div class="rounded-xl border p-4 space-y-2.5 @(isDrawerReadOnly ? "bg-slate-100 text-slate-500 border-slate-300" : "bg-teal-50/50 border-teal-200")">
                     <div class="flex items-center justify-between">
-
-
-
-                        <h3 class="text-xs font-bold uppercase tracking-wider text-teal-800">Online Teleconference Link</h3>
-
-
-
-                        <span class="px-2 py-0.5 rounded text-[10px] font-bold bg-teal-100 text-teal-800">Google Meet</span>
-
-
-
+                        <h3 class="text-xs font-bold uppercase tracking-wider @(isDrawerReadOnly ? "text-slate-500" : "text-teal-800")">Online Teleconference Link</h3>
+                        <span class="px-2 py-0.5 rounded text-[10px] font-bold @(isDrawerReadOnly ? "bg-slate-200 text-slate-600" : "bg-teal-100 text-teal-800")">Google Meet</span>
                     </div>
-
-
-
-                    <div class="text-xs font-mono text-slate-600 bg-white p-2 rounded border border-teal-200 break-all select-all">
-
-
-
+                    <div class="text-xs font-mono p-2 rounded border break-all select-all @(isDrawerReadOnly ? "text-slate-500 bg-slate-50 border-slate-300" : "text-slate-600 bg-white border-teal-200")">
                         @_selectedNegotiation.MeetingLink
-
-
-
                     </div>
-
-
-
                     <a href="@_selectedNegotiation.MeetingLink" target="_blank" rel="noopener noreferrer"
-
-
-
-                       class="inline-flex items-center justify-center gap-2 w-full py-2.5 bg-teal-700 hover:bg-teal-800 text-white rounded-lg text-xs font-bold shadow-xs transition-colors">
-
-
-
+                       class="inline-flex items-center justify-center gap-2 w-full py-2.5 rounded-lg text-xs font-bold shadow-xs transition-colors @(isDrawerReadOnly ? "bg-slate-200 hover:bg-slate-300 text-slate-600" : "bg-teal-700 hover:bg-teal-800 text-white")">
                         <span>🎥</span>
-
-
-
                         <span>Join Online Video Consultation</span>
-
-
-
                     </a>
-
-
-
                 </div>
 
-
-
-
-
-
-
                 @* If Appointment is already booked for this deal *@
-
-
-
                 @if (_selectedNegotiation.Appointment != null)
-
-
-
                 {
-
-
-
-                    <div class="bg-indigo-50/50 rounded-xl border border-indigo-200 p-4 space-y-2">
-
-
-
+                    <div class="bg-indigo-50/50 rounded-xl border border-indigo-200 p-4 space-y-2 text-slate-800">
                         <div class="flex items-center justify-between">
-
-
-
                             <h3 class="text-xs font-bold uppercase tracking-wider text-indigo-800">Executed Event Appointment</h3>
-
-
-
                             <span class="px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-indigo-100 text-indigo-800">
-
-
-
                                 @_selectedNegotiation.Appointment.EventStatus
-
-
-
                             </span>
-
-
-
                         </div>
-
-
-
                         <div class="text-xs font-bold text-slate-900">#@_selectedNegotiation.Appointment.EventAppointmentId - @_selectedNegotiation.Appointment.EventName</div>
-
                         <div class="text-[11px] text-slate-600 mt-1">
                             📅 @_selectedNegotiation.Appointment.EventDate.ToString("MMM d, yyyy") &bull;
                             🕒 @DateTime.Today.Add(_selectedNegotiation.Appointment.EventTime.ToTimeSpan()).ToString("h:mm tt")
@@ -1088,7 +791,6 @@
                                 <span> &bull; 📍 @_selectedNegotiation.Appointment.EventLocation</span>
                             }
                         </div>
-
                         <div class="grid grid-cols-2 gap-2 text-xs text-slate-600 mt-2">
                             <div>Total: <strong>₱@_selectedNegotiation.Appointment.TotalAmount.ToString("N2")</strong></div>
                             <div>15% Deposit: <strong>₱@_selectedNegotiation.Appointment.DownpaymentAmount.ToString("N2")</strong> (@_selectedNegotiation.Appointment.DownpaymentStatus)</div>
@@ -1140,284 +842,104 @@
                             </div>
                         }
 
-
-
                         @if (_selectedNegotiation.Appointment.HoldExpiresAt != null && _selectedNegotiation.Appointment.DownpaymentStatus == "Pending")
-
-
-
                         {
-
-
-
                             <div class="text-[11px] font-semibold text-amber-700 mt-1">
-
-
-
                                 ⏳ Reservation Hold: @_selectedNegotiation.Appointment.HoldExpiresAt.Value.ToLocalTime().ToString("hh:mm tt")
-
-
-
                             </div>
-
-
-
                         }
-
-
-
                     </div>
-
-
-
                 }
-
-
-
             </div>
 
-
-
-
-
-
-
-            @* Panel Bottom Action Footer (The 3 Deal Buttons) *@
-
-
-
-            <div class="p-6 border-t border-slate-200 bg-slate-50/80 space-y-2">
-
-
-
+            @* Panel Bottom Action Footer *@
+            <div class="p-6 border-t space-y-3 @(isDrawerReadOnly ? "bg-slate-100 text-slate-500 border-slate-300" : "border-slate-200 bg-slate-50/80")">
                 <div class="text-[11px] font-bold uppercase tracking-wider text-slate-400 mb-1">Consultation Outcome</div>
 
-
-
-                
-
-
-
-                @if (_selectedNegotiation.NegotiationStatus == "Pending_Call" || _selectedNegotiation.NegotiationStatus == "Rescheduled")
-
-
-
+                @if (!isDrawerReadOnly && (_selectedNegotiation.NegotiationStatus == "Pending_Call" || _selectedNegotiation.NegotiationStatus == "Rescheduled"))
                 {
-
-
-
                     <div class="grid grid-cols-3 gap-2">
-
-
-
                         <button type="button"
-
-
-
                                 @onclick='() => MarkDealOutcomeAsync(_selectedNegotiation.NegotiationId, "Deal_Lost")'
-
-
-
                                 class="py-2.5 px-3 bg-red-100 hover:bg-red-200 text-red-700 text-xs font-bold rounded-lg transition-colors text-center">
-
-
-
                             Failed with Deal
-
-
-
                         </button>
-
-
-
                         <button type="button"
-
-
-
                                 @onclick="OpenRescheduleModal"
-
-
-
                                 class="py-2.5 px-3 bg-amber-100 hover:bg-amber-200 text-amber-800 text-xs font-bold rounded-lg transition-colors text-center">
-
-
-
                             Reschedule
-
-
-
                         </button>
-
-
-
                         <button type="button"
-
-
-
                                 @onclick="OpenEventWizard"
-
-
-
                                 class="py-2.5 px-3 bg-emerald-700 hover:bg-emerald-800 text-white text-xs font-bold rounded-lg shadow-sm transition-colors text-center">
-
-
-
                             Success with Deal
-
-
-
                         </button>
-
-
-
                     </div>
-
-
-
                 }
-
-
-
-                else if (_selectedNegotiation.NegotiationStatus == "Pending Payment")
-
-
-
+                else if (isDrawerEventBooked)
                 {
-
-
-
                     <div class="space-y-3">
-
-
-
-                        <div class="p-3.5 bg-amber-50 border border-amber-200 rounded-xl text-xs text-amber-900 flex items-start justify-between gap-3">
-
-
-
-                            <div>
-
-
-
-                                <div class="font-bold text-amber-950 flex items-center gap-1.5">
-
-
-
-                                    <span>⏳ Deal Outcome: Pending Payment</span>
-
-
-
-                                </div>
-
-
-
-                                <div class="text-[11px] text-amber-800 mt-1">
-
-
-
-                                    Deal succeeded! The slot is held under 1-hour reservation lock. Awaiting 15% reservation fee payment.
-
-
-
-                                </div>
-
-
-
-                            </div>
-
-
-
-                            <span class="px-2 py-0.5 rounded text-[10px] font-bold bg-amber-200 text-amber-900 shrink-0">Pending Payment</span>
-
-
-
-                        </div>
-
-
-
-                        @if (!string.IsNullOrWhiteSpace(_selectedNegotiation.EventAppointmentId))
-
-
-
+                        @if (string.Equals(_selectedNegotiation.NegotiationStatus, "Pending Payment", StringComparison.OrdinalIgnoreCase) ||
+                             string.Equals(_selectedNegotiation.NegotiationStatus, "Pending_Payment", StringComparison.OrdinalIgnoreCase))
                         {
-
-
-
-                            <div class="flex items-center gap-2">
-
-
-
-                                <a href="/payments/@_selectedNegotiation.EventAppointmentId" target="_blank"
-
-
-
-                                   class="px-3.5 py-2 bg-emerald-700 hover:bg-emerald-800 text-white rounded-lg text-xs font-bold transition-all shadow-xs inline-flex items-center gap-1.5">
-
-
-
-                                    <span>📱 View QR Payment / Settle Fee ↗</span>
-
-
-
-                                </a>
-
-
-
+                            <div class="p-3.5 bg-amber-50 border border-amber-200 rounded-xl text-xs text-amber-900 flex items-start justify-between gap-3">
+                                <div>
+                                    <div class="font-bold text-amber-950 flex items-center gap-1.5">
+                                        <span>⏳ Deal Outcome: Pending Payment</span>
+                                    </div>
+                                    <div class="text-[11px] text-amber-800 mt-1">
+                                        Deal succeeded! The slot is held under 1-hour reservation lock. Awaiting 15% reservation fee payment.
+                                    </div>
+                                </div>
+                                <span class="px-2 py-0.5 rounded text-[10px] font-bold bg-amber-200 text-amber-900 shrink-0">Pending Payment</span>
                             </div>
-
-
-
+                        }
+                        else
+                        {
+                            <div class="text-xs text-slate-600 font-medium">
+                                Consultation outcome locked as <strong>@_selectedNegotiation.NegotiationStatus.Replace("_", " ")</strong> (Read-Only • Event Booked).
+                            </div>
                         }
 
+                        <div class="flex flex-wrap items-center gap-2">
+                            <button type="button"
+                                    @onclick="() => OpenBookedEventModalAsync(_selectedNegotiation)"
+                                    class="px-4 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-xs font-bold shadow-sm transition-colors inline-flex items-center gap-1.5">
+                                <span>📅</span>
+                                <span>Booked Event@(!string.IsNullOrWhiteSpace(drawerLinkedEventId) ? $" (#{drawerLinkedEventId})" : "")</span>
+                            </button>
 
+                            @if (!string.IsNullOrWhiteSpace(drawerLinkedEventId))
+                            {
+                                <a href="/admin/calendar/events?eventId=@drawerLinkedEventId"
+                                   class="px-3.5 py-2.5 bg-white hover:bg-slate-50 text-indigo-700 border border-indigo-200 rounded-lg text-xs font-bold transition-colors inline-flex items-center gap-1.5">
+                                    <span>🗓️</span>
+                                    <span>Open in Calendar →</span>
+                                </a>
 
+                                @if (string.Equals(_selectedNegotiation.NegotiationStatus, "Pending Payment", StringComparison.OrdinalIgnoreCase) ||
+                                     string.Equals(_selectedNegotiation.NegotiationStatus, "Pending_Payment", StringComparison.OrdinalIgnoreCase))
+                                {
+                                    <a href="/payments/@drawerLinkedEventId" target="_blank"
+                                       class="px-3.5 py-2.5 bg-emerald-700 hover:bg-emerald-800 text-white rounded-lg text-xs font-bold transition-all shadow-xs inline-flex items-center gap-1.5">
+                                        <span>📱 View QR Payment / Settle Fee ↗</span>
+                                    </a>
+                                }
+                            }
+                        </div>
                     </div>
-
-
-
                 }
-
-
-
                 else
-
-
-
                 {
-
-
-
-                    <div class="text-xs text-slate-600 font-medium">
-
-
-
-                        Consultation outcome finalized as <strong>@_selectedNegotiation.NegotiationStatus.Replace("_", " ")</strong>.
-
-
-
+                    <div class="text-xs text-slate-500 font-medium">
+                        Consultation outcome finalized as <strong>@_selectedNegotiation.NegotiationStatus.Replace("_", " ")</strong> (Read-Only).
                     </div>
-
-
-
                 }
-
-
-
             </div>
-
-
-
-
-
-
 
         </div>
 
-
-
     </div>
-
-
-
 }
 
 
@@ -2639,7 +2161,15 @@
     </div>
 }
 
-
+@* ── CONNECTED BOOKED EVENT OVERVIEW MODAL ─────────────────────────────── *@
+<BookedEventOverviewModal Booking="_bookedEventModalBooking"
+                          CanManageRoster="_canManageRoster"
+                          HidePricing="false"
+                          AllBookings="_studioBookings"
+                          EquipmentReservations="_equipmentReservations"
+                          OnClose="CloseBookedEventModal"
+                          OnRosterUpdated="HandleBookedEventRosterUpdatedAsync"
+                          OnOpenLinkedEvent="OpenLinkedEventByIdAsync" />
 
 @code {
 
@@ -2651,6 +2181,8 @@
 
     private bool _loading = true;
     private string? _loadError;
+    private bool _canManageRoster = true;
+    private EventBookingModel? _bookedEventModalBooking;
 
 
 
@@ -3237,7 +2769,7 @@
 
             }
 
-
+            _canManageRoster = isAdmin || isClerk;
 
         }
 
@@ -3421,12 +2953,60 @@
 
 
 
-    private async Task OpenFloatingPanelAsync(ConsultationNegotiationDto neg)
+    internal EventBookingModel? BookedEventModalBooking => _bookedEventModalBooking;
+    internal ConsultationNegotiationDto? SelectedNegotiation => _selectedNegotiation;
+    internal bool IsPanelOpen => _isPanelOpen;
+    internal bool IsWizardOpen => _isWizardOpen;
+    internal bool IsRescheduleModalOpen => _isRescheduleModalOpen;
+    internal List<ConsultationNegotiationDto> Negotiations { get => _negotiations; set => _negotiations = value; }
+    internal List<EventBookingModel> StudioBookings { get => _studioBookings; set => _studioBookings = value; }
+
+    internal void SetTestDependencies(IConsultationClient? consultationApi = null, IScheduleService? scheduleService = null)
+    {
+        if (consultationApi != null) ConsultationApi = consultationApi;
+        if (scheduleService != null) ScheduleService = scheduleService;
+    }
+
+    internal static bool IsCancelledOrLostStatus(string? status) =>
+        string.Equals(status, "Deal_Lost", StringComparison.OrdinalIgnoreCase) ||
+        string.Equals(status, "Cancelled", StringComparison.OrdinalIgnoreCase);
+
+    internal static bool IsBookedEventStatus(string? status) =>
+        string.Equals(status, "Pending Payment", StringComparison.OrdinalIgnoreCase) ||
+        string.Equals(status, "Pending_Payment", StringComparison.OrdinalIgnoreCase) ||
+        string.Equals(status, "Appointment Booked", StringComparison.OrdinalIgnoreCase) ||
+        string.Equals(status, "Deal_Won", StringComparison.OrdinalIgnoreCase);
+
+    internal static bool IsEventBookedLocked(ConsultationNegotiationDto? neg) =>
+        neg != null &&
+        !IsCancelledOrLostStatus(neg.NegotiationStatus) &&
+        (!string.IsNullOrWhiteSpace(neg.EventAppointmentId) || IsBookedEventStatus(neg.NegotiationStatus));
+
+    internal static bool IsNegotiationReadOnly(ConsultationNegotiationDto? neg) =>
+        neg != null && (IsEventBookedLocked(neg) || IsCancelledOrLostStatus(neg.NegotiationStatus));
+
+    internal string? ResolveLinkedEventId(ConsultationNegotiationDto? neg)
+    {
+        if (neg == null) return null;
+        if (!string.IsNullOrWhiteSpace(neg.EventAppointmentId))
+            return neg.EventAppointmentId.Trim();
+        if (!string.IsNullOrWhiteSpace(neg.Appointment?.EventAppointmentId))
+            return neg.Appointment.EventAppointmentId.Trim();
+
+        var studioMatch = _studioBookings?.FirstOrDefault(b =>
+            !b.IsConsultation &&
+            !string.IsNullOrWhiteSpace(b.LinkedNegotiationId) &&
+            string.Equals(b.LinkedNegotiationId, neg.NegotiationId, StringComparison.OrdinalIgnoreCase));
+
+        return studioMatch?.Id;
+    }
+
+    internal async Task OpenFloatingPanelAsync(ConsultationNegotiationDto neg)
     {
         _selectedNegotiation = neg;
         _isPanelOpen = true;
 
-        if (!string.IsNullOrWhiteSpace(neg.EventAppointmentId))
+        if ((!string.IsNullOrWhiteSpace(neg.EventAppointmentId) || IsEventBookedLocked(neg)) && ConsultationApi != null)
         {
             try
             {
@@ -3442,24 +3022,240 @@
         }
     }
 
-
-
-
-
-
-
-    private void CloseFloatingPanel()
-
-
-
+    internal void CloseFloatingPanel()
     {
-
-
-
         _isPanelOpen = false;
+    }
 
+    internal async Task OpenBookedEventModalAsync(ConsultationNegotiationDto neg)
+    {
+        if (neg == null) return;
+        var resolved = await ResolveBookedEventModelAsync(neg);
+        if (resolved == null)
+        {
+            await DisplayToast("No connected booked event record was found for this consultation yet.");
+            return;
+        }
 
+        _bookedEventModalBooking = resolved;
+    }
 
+    internal void CloseBookedEventModal()
+    {
+        _bookedEventModalBooking = null;
+    }
+
+    private async Task OpenLinkedEventByIdAsync(string eventAppointmentId)
+    {
+        if (string.IsNullOrWhiteSpace(eventAppointmentId)) return;
+        var cleanId = eventAppointmentId.Trim();
+        var matchingNeg = _negotiations.FirstOrDefault(n =>
+            string.Equals(n.EventAppointmentId, cleanId, StringComparison.OrdinalIgnoreCase))
+            ?? new ConsultationNegotiationDto { EventAppointmentId = cleanId };
+        await OpenBookedEventModalAsync(matchingNeg);
+    }
+
+    private async Task HandleBookedEventRosterUpdatedAsync()
+    {
+        var activeEventId = _bookedEventModalBooking?.Id;
+        var activeNeg = _selectedNegotiation;
+
+        RefreshStudioScheduleCache();
+        await LoadNegotiationsAsync();
+
+        if (activeNeg != null)
+        {
+            _selectedNegotiation = _negotiations.FirstOrDefault(n =>
+                string.Equals(n.NegotiationId, activeNeg.NegotiationId, StringComparison.OrdinalIgnoreCase)) ?? activeNeg;
+
+            if (!string.IsNullOrWhiteSpace(_selectedNegotiation.EventAppointmentId) && ConsultationApi != null)
+            {
+                try
+                {
+                    var detailRes = await ConsultationApi.GetNegotiationByIdAsync(_selectedNegotiation.NegotiationId);
+                    if (detailRes is { IsSuccess: true, Value: not null })
+                    {
+                        _selectedNegotiation = detailRes.Value;
+                    }
+                }
+                catch { }
+            }
+        }
+
+        if (!string.IsNullOrWhiteSpace(activeEventId))
+        {
+            _bookedEventModalBooking = FindMatchingStudioBooking(_studioBookings, activeEventId, activeNeg?.NegotiationId)
+                                       ?? _bookedEventModalBooking;
+        }
+    }
+
+    internal async Task<EventBookingModel?> ResolveBookedEventModelAsync(ConsultationNegotiationDto neg)
+    {
+        if (neg == null) return null;
+
+        var linkedEventId = ResolveLinkedEventId(neg);
+
+        // 1. Check already-loaded _studioBookings
+        var match = FindMatchingStudioBooking(_studioBookings, linkedEventId, neg.NegotiationId);
+
+        // 2. Refresh from ScheduleService if not found in local snapshot
+        if (match == null && ScheduleService != null)
+        {
+            try
+            {
+                ScheduleService.InvalidateCache();
+                _studioBookings = ScheduleService.GetEventBookings();
+                _equipmentReservations = ScheduleService.GetEquipmentReservations();
+                match = FindMatchingStudioBooking(_studioBookings, linkedEventId, neg.NegotiationId);
+            }
+            catch { }
+        }
+
+        if (match != null)
+            return match;
+
+        // 3. Fall back to ConsultationApi (and/or neg.Appointment)
+        if (string.IsNullOrWhiteSpace(linkedEventId) && ConsultationApi != null && !string.IsNullOrWhiteSpace(neg.NegotiationId))
+        {
+            try
+            {
+                var detailRes = await ConsultationApi.GetNegotiationByIdAsync(neg.NegotiationId);
+                if (detailRes is { IsSuccess: true, Value: not null })
+                {
+                    if (!string.IsNullOrWhiteSpace(detailRes.Value.EventAppointmentId))
+                        linkedEventId = detailRes.Value.EventAppointmentId.Trim();
+                    if (detailRes.Value.Appointment != null)
+                        return MapAppointmentToEventBookingModel(detailRes.Value.Appointment, detailRes.Value);
+                }
+            }
+            catch { }
+        }
+
+        EventAppointmentDto? appointment = neg.Appointment;
+        if (!string.IsNullOrWhiteSpace(linkedEventId) && ConsultationApi != null)
+        {
+            try
+            {
+                var apptRes = await ConsultationApi.GetAppointmentByIdAsync(linkedEventId);
+                if (apptRes is { IsSuccess: true, Value: not null })
+                {
+                    appointment = apptRes.Value;
+                }
+            }
+            catch { }
+        }
+
+        if (appointment != null)
+            return MapAppointmentToEventBookingModel(appointment, neg);
+
+        if (!string.IsNullOrWhiteSpace(linkedEventId))
+        {
+            return new EventBookingModel
+            {
+                Id = linkedEventId,
+                LinkedNegotiationId = neg.NegotiationId,
+                ClientName = neg.CustomerName,
+                ClientEmail = neg.CustomerEmail,
+                ClientPhone = neg.CustomerPhone,
+                ServiceType = "Booked Event",
+                Date = neg.ConsultationDate.ToDateTime(TimeOnly.MinValue),
+                StartTime = neg.ConsultationTime.ToTimeSpan(),
+                EndTime = neg.ConsultationTime.ToTimeSpan().Add(TimeSpan.FromHours(1)),
+                Status = neg.NegotiationStatus,
+                Notes = neg.InquiryNotes,
+                IsConsultation = false
+            };
+        }
+
+        return null;
+    }
+
+    private static EventBookingModel? FindMatchingStudioBooking(
+        List<EventBookingModel>? bookings,
+        string? linkedEventId,
+        string? negotiationId)
+    {
+        if (bookings == null || bookings.Count == 0)
+            return null;
+
+        if (!string.IsNullOrWhiteSpace(linkedEventId))
+        {
+            var byId = bookings.FirstOrDefault(b =>
+                !b.IsConsultation &&
+                string.Equals(b.Id, linkedEventId, StringComparison.OrdinalIgnoreCase));
+            if (byId != null)
+                return byId;
+        }
+
+        if (!string.IsNullOrWhiteSpace(negotiationId))
+        {
+            var byNeg = bookings.FirstOrDefault(b =>
+                !b.IsConsultation &&
+                string.Equals(b.LinkedNegotiationId, negotiationId, StringComparison.OrdinalIgnoreCase));
+            if (byNeg != null)
+                return byNeg;
+        }
+
+        return null;
+    }
+
+    internal static EventBookingModel MapAppointmentToEventBookingModel(EventAppointmentDto appt, ConsultationNegotiationDto neg)
+    {
+        var startTime = appt.EventTime.ToTimeSpan();
+        var endTime = appt.EventEndTime.HasValue && appt.EventEndTime.Value > appt.EventTime
+            ? appt.EventEndTime.Value.ToTimeSpan()
+            : startTime.Add(TimeSpan.FromMinutes(Math.Max(60, appt.DurationMinutes)));
+        if (endTime > new TimeSpan(23, 59, 0))
+            endTime = new TimeSpan(23, 59, 0);
+
+        var serviceNames = appt.SelectedServices?
+            .Select(s => s.ServiceName)
+            .Where(s => !string.IsNullOrWhiteSpace(s))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList() ?? new List<string>();
+
+        var crewSummaries = appt.AssignedEmployees?
+            .Select(e => new EventCrewSummary(e.EmployeeId, e.EmployeeName, e.Specialization, e.IsTeamLeader))
+            .ToList() ?? new List<EventCrewSummary>();
+
+        var equipmentSummaries = appt.AssignedEquipment?
+            .Select(e => new EventEquipmentSummary(e.EquipmentId, e.EquipmentName, e.EquipmentType, e.EquipmentStatus))
+            .ToList() ?? new List<EventEquipmentSummary>();
+
+        var location = !string.IsNullOrWhiteSpace(appt.EventLocation) ? appt.EventLocation! : "Studio A (Main Hall)";
+
+        return new EventBookingModel
+        {
+            Id = !string.IsNullOrWhiteSpace(appt.EventAppointmentId) ? appt.EventAppointmentId : (neg.EventAppointmentId ?? neg.NegotiationId),
+            LinkedNegotiationId = !string.IsNullOrWhiteSpace(appt.NegotiationId) ? appt.NegotiationId : neg.NegotiationId,
+            StudioSpaceId = "studio-a",
+            StudioSpaceName = location,
+            EventLocation = location,
+            ClientName = !string.IsNullOrWhiteSpace(appt.CustomerName) ? appt.CustomerName : neg.CustomerName,
+            ClientEmail = !string.IsNullOrWhiteSpace(appt.CustomerEmail) ? appt.CustomerEmail : neg.CustomerEmail,
+            ClientPhone = neg.CustomerPhone,
+            ServiceType = serviceNames.Count > 0
+                ? string.Join(", ", serviceNames)
+                : (!string.IsNullOrWhiteSpace(appt.EventName) ? appt.EventName : "Studio Photoshoot"),
+            AssignedServices = serviceNames.Count > 0
+                ? serviceNames
+                : (!string.IsNullOrWhiteSpace(appt.EventName) ? new List<string> { appt.EventName } : new List<string>()),
+            Date = appt.EventDate.ToDateTime(TimeOnly.MinValue),
+            StartTime = startTime,
+            EndTime = endTime,
+            PrepBufferMinutes = appt.PrepBufferMinutes > 0 ? appt.PrepBufferMinutes : 120,
+            PostBufferMinutes = appt.PostBufferMinutes > 0 ? appt.PostBufferMinutes : 60,
+            Status = !string.IsNullOrWhiteSpace(appt.EventStatus) ? appt.EventStatus : neg.NegotiationStatus,
+            EstimatedPrice = appt.TotalAmount,
+            Notes = appt.EventDescription,
+            IsConsultation = false,
+            AssignedCrew = crewSummaries,
+            AssignedCrewIds = crewSummaries.Select(c => c.EmployeeId).ToList(),
+            AssignedPhotographer = crewSummaries.Count > 0 ? string.Join(", ", crewSummaries.Select(c => c.FullName)) : "Unassigned",
+            AssignedEquipment = equipmentSummaries,
+            AssignedEquipmentIds = equipmentSummaries.Select(e => e.EquipmentId).ToList(),
+            AssignedEquipmentNames = equipmentSummaries.Select(e => e.EquipmentName).ToList()
+        };
     }
 
 
@@ -3468,13 +3264,14 @@
 
 
 
-    private async Task MarkDealOutcomeAsync(string negotiationId, string outcome)
-
-
-
+    internal async Task MarkDealOutcomeAsync(string negotiationId, string outcome)
     {
-
-
+        var existing = _negotiations.FirstOrDefault(n => string.Equals(n.NegotiationId, negotiationId, StringComparison.OrdinalIgnoreCase))
+                       ?? (_selectedNegotiation != null && string.Equals(_selectedNegotiation.NegotiationId, negotiationId, StringComparison.OrdinalIgnoreCase) ? _selectedNegotiation : null);
+        if (existing != null && IsNegotiationReadOnly(existing))
+        {
+            return;
+        }
 
         var res = await ConsultationApi.UpdateNegotiationOutcomeAsync(negotiationId, new UpdateNegotiationOutcomeRequest
 
@@ -3560,9 +3357,9 @@
     private IReadOnlyList<DayAvailability> _rescheduleMonthDays = [];
     private List<SlotAvailability> _selectedRescheduleDaySlots = [];
 
-    private async Task OpenRescheduleModal()
+    internal async Task OpenRescheduleModal()
     {
-        if (_selectedNegotiation == null) return;
+        if (_selectedNegotiation == null || IsNegotiationReadOnly(_selectedNegotiation)) return;
 
         _isRescheduleModalOpen = true;
         _rescheduleError = null;
@@ -3917,9 +3714,9 @@
 
 
 
-    private async Task OpenEventWizard()
+    internal async Task OpenEventWizard()
     {
-        if (_selectedNegotiation == null) return;
+        if (_selectedNegotiation == null || IsNegotiationReadOnly(_selectedNegotiation)) return;
 
         _wizardStep = 1;
         _wizardError = null;
