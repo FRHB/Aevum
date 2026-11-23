@@ -55,7 +55,13 @@
                 @if (_pendingCrewReplacementsCount > 0)
                 {
                     <span class="px-2 py-0.5 rounded-full text-[10px] font-bold bg-rose-100 text-rose-900 border border-rose-300 animate-pulse">
-                        🚨 @_pendingCrewReplacementsCount Crew Replacement Request@(_pendingCrewReplacementsCount == 1 ? "" : "s")
+                        🚨 @_pendingCrewReplacementsCount Crew Request@(_pendingCrewReplacementsCount == 1 ? "" : "s")
+                    </span>
+                }
+                @if (_pendingEquipmentRequestsCount > 0)
+                {
+                    <span class="px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-100 text-amber-900 border border-amber-300 animate-pulse">
+                        📦 @_pendingEquipmentRequestsCount Equipment Request@(_pendingEquipmentRequestsCount == 1 ? "" : "s")
                     </span>
                 }
             </div>
@@ -290,8 +296,71 @@
                                         <button type="button"
                                                 disabled="@(_fulfillingRequestId == req.RequestId || string.IsNullOrWhiteSpace(selectedRepId))"
                                                 @onclick="() => FulfillReplacementAsync(ev, req, isAbsentLead)"
-                                                class="md:col-span-3 px-3 py-1.5 rounded-lg bg-slate-900 hover:bg-black disabled:opacity-45 text-white text-xs font-bold">
-                                            @(_fulfillingRequestId == req.RequestId ? "Assigning..." : "Assign Replacement")
+                                                class="md:col-span-2 px-3 py-1.5 rounded-lg bg-slate-900 hover:bg-black disabled:opacity-45 text-white text-xs font-bold">
+                                            @(_fulfillingRequestId == req.RequestId ? "Assigning..." : "Assign")
+                                        </button>
+                                        <button type="button"
+                                                disabled="@(_fulfillingRequestId == req.RequestId)"
+                                                @onclick="() => RejectCrewRequestAsync(ev, req)"
+                                                class="md:col-span-1 px-2 py-1.5 rounded-lg bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 text-xs font-bold">
+                                            Reject
+                                        </button>
+                                    </div>
+                                </div>
+                            }
+                        </div>
+                    }
+
+                    @* ── Pending Equipment Requests from Team Leader (Add / Swap / Verification) ────── *@
+                    @{
+                        var pendingEquipReqs = ev.EquipmentRequests
+                            .Where(r => string.Equals(r.Status, "Pending", StringComparison.OrdinalIgnoreCase))
+                            .ToList();
+                    }
+                    @if (pendingEquipReqs.Any())
+                    {
+                        <div class="rounded-xl border border-amber-300 bg-amber-50/80 p-3.5 space-y-2.5" aria-label="Pending Equipment Requests">
+                            <div class="flex items-center justify-between gap-2 flex-wrap">
+                                <span class="text-xs font-extrabold text-amber-950">
+                                    📦 Team Leader Equipment Verification / Add / Swap Requests
+                                </span>
+                                <span class="text-[11px] text-amber-800 font-semibold">
+                                    Requires Admin / Office Clerk verification
+                                </span>
+                            </div>
+                            @foreach (var eqReq in pendingEquipReqs)
+                            {
+                                <div class="rounded-lg bg-white border border-amber-200 p-3 flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-xs">
+                                    <div>
+                                        <span class="font-bold text-slate-900">@eqReq.RequestType Request</span>
+                                        @if (!string.IsNullOrWhiteSpace(eqReq.CurrentEquipmentName ?? eqReq.CurrentEquipmentId))
+                                        {
+                                            <span> · Current: <strong>@(eqReq.CurrentEquipmentName ?? eqReq.CurrentEquipmentId)</strong></span>
+                                        }
+                                        @if (!string.IsNullOrWhiteSpace(eqReq.RequestedEquipmentName ?? eqReq.RequestedEquipmentId))
+                                        {
+                                            <span> &rarr; Requested: <strong>@(eqReq.RequestedEquipmentName ?? eqReq.RequestedEquipmentId)</strong></span>
+                                        }
+                                        <div class="text-[11px] text-slate-600 mt-0.5">
+                                            Requested by <strong>@(eqReq.RequestedByName ?? "Team Leader")</strong>
+                                            @if (!string.IsNullOrWhiteSpace(eqReq.Reason))
+                                            {
+                                                <span>: <em>@eqReq.Reason</em></span>
+                                            }
+                                        </div>
+                                    </div>
+                                    <div class="flex items-center gap-1.5 shrink-0">
+                                        <button type="button"
+                                                disabled="@(_reviewingEquipRequestId == eqReq.RequestId)"
+                                                @onclick="() => ReviewEquipmentRequestAsync(ev, eqReq, approve: true)"
+                                                class="px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 disabled:opacity-45 text-white text-xs font-bold">
+                                            Approve &amp; Verify
+                                        </button>
+                                        <button type="button"
+                                                disabled="@(_reviewingEquipRequestId == eqReq.RequestId)"
+                                                @onclick="() => ReviewEquipmentRequestAsync(ev, eqReq, approve: false)"
+                                                class="px-3 py-1.5 rounded-lg bg-rose-50 hover:bg-rose-100 border border-rose-200 text-rose-700 text-xs font-bold">
+                                            Reject
                                         </button>
                                     </div>
                                 </div>
@@ -375,6 +444,8 @@
     private int _concurrentActiveCount => _events.Count(e => !IsCompletedStage(e.DisplayStage));
     private int _ongoingCount => _events.Count(e => MatchesStageFilter(e, "Ongoing"));
     private int _pendingCrewReplacementsCount => _events.Sum(e => e.CrewReplacementRequests.Count(r => string.Equals(r.Status, "Pending", StringComparison.OrdinalIgnoreCase)));
+    private int _pendingEquipmentRequestsCount => _events.Sum(e => e.EquipmentRequests.Count(r => string.Equals(r.Status, "Pending", StringComparison.OrdinalIgnoreCase)));
+    private int? _reviewingEquipRequestId;
 
     private int _pendingCashCount => _events.Count(e =>
         !IsCompletedStage(e.DisplayStage) &&
@@ -509,10 +580,73 @@
         }
         else if (string.Equals(msg.EventStatus, "CrewReplacementRequested", StringComparison.OrdinalIgnoreCase))
         {
-            _actionMessage = $"Team Leader requested a replacement crew member for #{msg.AppointmentId}.";
+            _actionMessage = $"Team Leader requested crew support for #{msg.AppointmentId}.";
+        }
+        else if (string.Equals(msg.EventStatus, "EquipmentRequestSubmitted", StringComparison.OrdinalIgnoreCase))
+        {
+            _actionMessage = $"Team Leader submitted an equipment request for #{msg.AppointmentId}.";
         }
         StateHasChanged();
     });
+
+    private async Task ReviewEquipmentRequestAsync(LiveEventOverviewDto ev, EventEquipmentRequestDto req, bool approve)
+    {
+        if (_reviewingEquipRequestId != null) return;
+        _reviewingEquipRequestId = req.RequestId;
+        _errorMessage = null;
+        _actionMessage = null;
+        try
+        {
+            var res = await ConsultationApi.ReviewEquipmentRequestAsync(
+                ev.EventAppointmentId,
+                req.RequestId,
+                new ReviewEquipmentRequestDto
+                {
+                    Approve = approve,
+                    RejectionReason = approve ? null : "Declined by Admin / Office Clerk."
+                });
+            if (res.IsSuccess)
+            {
+                ScheduleService.InvalidateCache();
+                EquipmentService.NotifyStateChanged();
+                _actionMessage = $"Equipment {req.RequestType} request #{req.RequestId} for #{ev.EventAppointmentId} {(approve ? "approved and verified" : "rejected")}.";
+                await RefreshAsync();
+            }
+            else
+            {
+                _errorMessage = res.Error?.Message ?? "Failed to review equipment request.";
+            }
+        }
+        catch (Exception ex) { _errorMessage = ex.Message; }
+        finally { _reviewingEquipRequestId = null; }
+    }
+
+    private async Task RejectCrewRequestAsync(LiveEventOverviewDto ev, EventCrewReplacementRequestDto req)
+    {
+        if (_fulfillingRequestId != null) return;
+        _fulfillingRequestId = req.RequestId;
+        _errorMessage = null;
+        _actionMessage = null;
+        try
+        {
+            var res = await ConsultationApi.RejectCrewReplacementAsync(
+                ev.EventAppointmentId,
+                req.RequestId,
+                new RejectCrewReplacementRequest { RejectionReason = "Declined by Admin / Office Clerk." });
+            if (res.IsSuccess)
+            {
+                ScheduleService.InvalidateCache();
+                _actionMessage = $"Crew request #{req.RequestId} for #{ev.EventAppointmentId} rejected.";
+                await RefreshAsync();
+            }
+            else
+            {
+                _errorMessage = res.Error?.Message ?? "Failed to reject crew request.";
+            }
+        }
+        catch (Exception ex) { _errorMessage = ex.Message; }
+        finally { _fulfillingRequestId = null; }
+    }
 
     public async Task RefreshAsync()
     {

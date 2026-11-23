@@ -886,6 +886,99 @@ public class PaymentsController : ControllerBase
         }
     }
 
+    // POST api/payments/team-leader-events/{appointmentId}/equipment/request
+    [HttpPost("team-leader-events/{appointmentId}/equipment/request")]
+    [Authorize(Roles = $"{AppRoles.Employee},{AppRoles.OfficeClerk},{AppRoles.Admin},{AppRoles.SystemAdmin}")]
+    public async Task<IActionResult> SubmitEquipmentRequest(
+        string appointmentId,
+        [FromBody] SubmitEquipmentRequestDto request,
+        CancellationToken cancellationToken)
+    {
+        var claimEmpId = User.FindFirstValue("studio_id")
+            ?? User.FindFirstValue(ClaimTypes.NameIdentifier)
+            ?? User.FindFirstValue("sub")
+            ?? request.EmployeeId
+            ?? string.Empty;
+        var claimName = User.FindFirstValue("full_name")
+            ?? User.FindFirstValue(ClaimTypes.Name)
+            ?? claimEmpId;
+
+        var isManager = User.IsInRole(AppRoles.Admin) || User.IsInRole(AppRoles.SystemAdmin) || User.IsInRole(AppRoles.OfficeClerk);
+        if (!isManager && (string.IsNullOrWhiteSpace(claimEmpId) || !await _consultationService.IsTeamLeaderForEventAsync(appointmentId, claimEmpId, cancellationToken)))
+        {
+            return Forbid();
+        }
+
+        try
+        {
+            var updated = await _consultationService.SubmitEquipmentRequestAsync(appointmentId, request, claimEmpId, claimName, cancellationToken);
+            try
+            {
+                await _notifier.EventStatusChangedAsync(updated.EventAppointmentId, "EquipmentRequestSubmitted", updated.FinalPaymentStatus, updated.CustomerId, cancellationToken);
+            }
+            catch { }
+            return Ok(updated);
+        }
+        catch (KeyNotFoundException ex) { return NotFound(new { message = ex.Message }); }
+        catch (ArgumentException ex) { return BadRequest(new { message = ex.Message }); }
+        catch (InvalidOperationException ex) { return BadRequest(new { message = ex.Message }); }
+    }
+
+    // POST api/payments/events/{appointmentId}/equipment-requests/{requestId}/review
+    [HttpPost("events/{appointmentId}/equipment-requests/{requestId:int}/review")]
+    [Authorize(Policy = "ClerkOrAdmin")]
+    public async Task<IActionResult> ReviewEquipmentRequest(
+        string appointmentId,
+        int requestId,
+        [FromBody] ReviewEquipmentRequestDto review,
+        CancellationToken cancellationToken)
+    {
+        var reviewerId = User.FindFirstValue("studio_id") ?? User.FindFirstValue(ClaimTypes.NameIdentifier) ?? "CLERK";
+        var reviewerName = User.FindFirstValue("full_name") ?? User.FindFirstValue(ClaimTypes.Name) ?? reviewerId;
+
+        try
+        {
+            var updated = await _consultationService.ReviewEquipmentRequestAsync(appointmentId, requestId, review, reviewerId, reviewerName, cancellationToken);
+            try
+            {
+                await _notifier.EventStatusChangedAsync(updated.EventAppointmentId, "EquipmentRequestReviewed", updated.FinalPaymentStatus, updated.CustomerId, cancellationToken);
+            }
+            catch { }
+            return Ok(updated);
+        }
+        catch (KeyNotFoundException ex) { return NotFound(new { message = ex.Message }); }
+        catch (ArgumentException ex) { return BadRequest(new { message = ex.Message }); }
+        catch (InvalidOperationException ex) { return BadRequest(new { message = ex.Message }); }
+    }
+
+    // POST api/payments/events/{appointmentId}/crew-replacement-requests/{requestId}/reject
+    [HttpPost("events/{appointmentId}/crew-replacement-requests/{requestId:int}/reject")]
+    [Authorize(Policy = "ClerkOrAdmin")]
+    public async Task<IActionResult> RejectCrewReplacement(
+        string appointmentId,
+        int requestId,
+        [FromBody] RejectCrewReplacementRequest request,
+        CancellationToken cancellationToken)
+    {
+        var reviewerId = User.FindFirstValue("studio_id") ?? User.FindFirstValue(ClaimTypes.NameIdentifier) ?? "CLERK";
+        var reviewerName = User.FindFirstValue("full_name") ?? User.FindFirstValue(ClaimTypes.Name) ?? reviewerId;
+
+        try
+        {
+            var updated = await _consultationService.RejectCrewReplacementAsync(appointmentId, requestId, reviewerId, reviewerName, request.RejectionReason, cancellationToken);
+            try
+            {
+                await _notifier.EventStatusChangedAsync(updated.EventAppointmentId, "CrewReplacementRejected", updated.FinalPaymentStatus, updated.CustomerId, cancellationToken);
+                await _notifier.RosterUpdatedAsync(updated.EventAppointmentId, updated.CustomerId, updated.AssignedEmployees.Select(e => e.EmployeeId), cancellationToken);
+            }
+            catch { }
+            return Ok(updated);
+        }
+        catch (KeyNotFoundException ex) { return NotFound(new { message = ex.Message }); }
+        catch (ArgumentException ex) { return BadRequest(new { message = ex.Message }); }
+        catch (InvalidOperationException ex) { return BadRequest(new { message = ex.Message }); }
+    }
+
     // GET api/payments/live-events-overview
     [HttpGet("live-events-overview")]
     [Authorize(Policy = "ClerkOrAdmin")]

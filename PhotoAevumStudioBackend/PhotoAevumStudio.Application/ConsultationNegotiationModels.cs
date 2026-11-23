@@ -131,6 +131,7 @@ public class EventAppointmentDto
     public List<AssignedEmployeeDto> AssignedEmployees { get; set; } = new();
     public List<AssignedEquipmentDto> AssignedEquipment { get; set; } = new();
     public List<EventCrewReplacementRequestDto> CrewReplacementRequests { get; set; } = new();
+    public List<EventEquipmentRequestDto> EquipmentRequests { get; set; } = new();
     public List<EventServiceLineDto> SelectedServices { get; set; } = new();
     public List<EventOvertimeDto> OvertimeCharges { get; set; } = new();
     public List<PaymentTransactionDto> Transactions { get; set; } = new();
@@ -159,11 +160,53 @@ public class EventCrewReplacementRequestDto
     public string? RequestedByName { get; set; }
     public string? Reason { get; set; }
     public string Status { get; set; } = "Pending";
+    public string RequestType { get; set; } = "Replacement"; // "Replacement" | "Additional"
     public string? ReplacementEmployeeId { get; set; }
     public string? ReplacementEmployeeName { get; set; }
     public string? FulfilledBy { get; set; }
     public DateTime? FulfilledAt { get; set; }
+    public string? RejectionReason { get; set; }
     public DateTime CreatedAt { get; set; }
+}
+
+public class EventEquipmentRequestDto
+{
+    public int RequestId { get; set; }
+    public string EventAppointmentId { get; set; } = string.Empty;
+    public string RequestType { get; set; } = "Add"; // "Add" | "Swap" | "Verification"
+    public string? CurrentEquipmentId { get; set; }
+    public string? CurrentEquipmentName { get; set; }
+    public string? RequestedEquipmentId { get; set; }
+    public string? RequestedEquipmentName { get; set; }
+    public string? RequestedByEmployeeId { get; set; }
+    public string? RequestedByName { get; set; }
+    public string? Reason { get; set; }
+    public string Status { get; set; } = "Pending"; // "Pending" | "Approved" | "Rejected"
+    public string? ReviewedByEmployeeId { get; set; }
+    public string? ReviewedByName { get; set; }
+    public string? RejectionReason { get; set; }
+    public DateTime CreatedAt { get; set; }
+    public DateTime? ReviewedAt { get; set; }
+}
+
+public class SubmitEquipmentRequestDto
+{
+    public string RequestType { get; set; } = "Add"; // "Add" | "Swap" | "Verification"
+    public string? CurrentEquipmentId { get; set; }
+    public string? RequestedEquipmentId { get; set; }
+    public string? EmployeeId { get; set; }
+    public string? Reason { get; set; }
+}
+
+public class ReviewEquipmentRequestDto
+{
+    public bool Approve { get; set; } = true;
+    public string? RejectionReason { get; set; }
+}
+
+public class RejectCrewReplacementRequest
+{
+    public string? RejectionReason { get; set; }
 }
 
 public class VerifyCrewDutyRequest
@@ -177,6 +220,7 @@ public class VerifyCrewDutyRequest
 public class RequestCrewReplacementRequest
 {
     public string? AbsentEmployeeId { get; set; }
+    public string RequestType { get; set; } = "Replacement"; // "Replacement" | "Additional"
     public string? Reason { get; set; }
     public string? RequestedByEmployeeId { get; set; }
     public string? RequestedByName { get; set; }

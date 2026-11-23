@@ -167,6 +167,15 @@ public sealed class ConsultationClient(
     public Task<ApiResult<EventAppointmentDto>> FulfillCrewReplacementAsync(string appointmentId, int requestId, FulfillCrewReplacementRequest request, CancellationToken ct = default) =>
         SendAsync<EventAppointmentDto>(() => _http.PostAsJsonAsync($"api/consultations/appointments/{Uri.EscapeDataString(appointmentId)}/crew-replacements/{requestId}/fulfill", request, ct), ct);
 
+    public Task<ApiResult<EventAppointmentDto>> RejectCrewReplacementAsync(string appointmentId, int requestId, RejectCrewReplacementRequest request, CancellationToken ct = default) =>
+        SendAsync<EventAppointmentDto>(() => _http.PostAsJsonAsync($"api/payments/events/{Uri.EscapeDataString(appointmentId)}/crew-replacement-requests/{requestId}/reject", request, ct), ct);
+
+    public Task<ApiResult<EventAppointmentDto>> SubmitEquipmentRequestAsync(string appointmentId, SubmitEquipmentRequestDto request, CancellationToken ct = default) =>
+        SendAsync<EventAppointmentDto>(() => _http.PostAsJsonAsync($"api/payments/team-leader-events/{Uri.EscapeDataString(appointmentId)}/equipment/request", request, ct), ct);
+
+    public Task<ApiResult<EventAppointmentDto>> ReviewEquipmentRequestAsync(string appointmentId, int requestId, ReviewEquipmentRequestDto review, CancellationToken ct = default) =>
+        SendAsync<EventAppointmentDto>(() => _http.PostAsJsonAsync($"api/payments/events/{Uri.EscapeDataString(appointmentId)}/equipment-requests/{requestId}/review", review, ct), ct);
+
     public async Task<ApiResult<IReadOnlyList<LiveEventOverviewDto>>> GetLiveEventsOverviewAsync(CancellationToken ct = default)
     {
         var result = await SendAsync<List<LiveEventOverviewDto>>(() => _http.GetAsync("api/payments/live-events-overview", ct), ct);

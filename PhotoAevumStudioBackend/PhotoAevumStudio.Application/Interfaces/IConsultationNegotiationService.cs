@@ -27,6 +27,12 @@ public interface IConsultationNegotiationService
     Task<EventAppointmentDto> VerifyCrewDutyAsync(string appointmentId, VerifyCrewDutyRequest request, CancellationToken cancellationToken = default);
     Task<EventAppointmentDto> RequestCrewReplacementAsync(string appointmentId, RequestCrewReplacementRequest request, CancellationToken cancellationToken = default);
     Task<EventAppointmentDto> FulfillCrewReplacementAsync(string appointmentId, int requestId, FulfillCrewReplacementRequest request, CancellationToken cancellationToken = default);
+    Task<EventAppointmentDto> RejectCrewReplacementAsync(string appointmentId, int requestId, string reviewerId, string reviewerName, string? rejectionReason, CancellationToken cancellationToken = default) =>
+        throw new NotImplementedException();
+    Task<EventAppointmentDto> SubmitEquipmentRequestAsync(string appointmentId, SubmitEquipmentRequestDto request, string actorId, string actorName, CancellationToken cancellationToken = default) =>
+        throw new NotImplementedException();
+    Task<EventAppointmentDto> ReviewEquipmentRequestAsync(string appointmentId, int requestId, ReviewEquipmentRequestDto review, string reviewerId, string reviewerName, CancellationToken cancellationToken = default) =>
+        throw new NotImplementedException();
     Task<EventAppointmentDto> UpdateBookingStatusFromPaymentAsync(string appointmentId, UpdatePaymentBookingStatusRequest request, CancellationToken cancellationToken = default);
     Task<CustomerAppointmentActionResultDto> CustomerCancelAppointmentAsync(string appointmentId, string customerId, string? reason = null, bool isPrivileged = false, CancellationToken cancellationToken = default);
     Task<CustomerAppointmentActionResultDto> CustomerRescheduleAppointmentAsync(string appointmentId, CustomerRescheduleAppointmentRequest request, string customerId, bool isPrivileged = false, CancellationToken cancellationToken = default);

@@ -365,13 +365,30 @@
 
                                     @if (canEdit)
                                     {
-                                        <button type="button"
-                                                disabled="@(_isBusy || (isEqUnavailable && !eq.IsTaken))"
-                                                title="@(isEqUnavailable && !eq.IsTaken ? $"Cannot verify: equipment is currently {eq.EquipmentStatus}" : "")"
-                                                @onclick="() => ToggleEquipmentVerifiedAsync(ev, eq, !eq.IsTaken)"
-                                                class="px-4 py-1.5 rounded-full text-xs font-bold transition-all shrink-0 disabled:opacity-50 @(eq.IsTaken ? "bg-emerald-600 hover:bg-emerald-700 text-white shadow-2xs" : "bg-white border border-slate-300 hover:border-indigo-500 hover:bg-indigo-50 text-slate-800")">
-                                            @(eq.IsTaken ? "✓ Verified (Got Equipment)" : isEqUnavailable ? $"Unavailable ({eq.EquipmentStatus})" : "Verify Equipment")
-                                        </button>
+                                        <div class="flex flex-wrap items-center gap-1.5 shrink-0">
+                                            <button type="button"
+                                                    disabled="@(_isBusy || (isEqUnavailable && !eq.IsTaken))"
+                                                    title="@(isEqUnavailable && !eq.IsTaken ? $"Cannot verify: equipment is currently {eq.EquipmentStatus}" : "")"
+                                                    @onclick="() => ToggleEquipmentVerifiedAsync(ev, eq, !eq.IsTaken)"
+                                                    class="px-4 py-1.5 rounded-full text-xs font-bold transition-all shrink-0 disabled:opacity-50 @(eq.IsTaken ? "bg-emerald-600 hover:bg-emerald-700 text-white shadow-2xs" : "bg-white border border-slate-300 hover:border-indigo-500 hover:bg-indigo-50 text-slate-800")">
+                                                @(eq.IsTaken ? "✓ Verified (Got Equipment)" : isEqUnavailable ? $"Unavailable ({eq.EquipmentStatus})" : "Verify Equipment")
+                                            </button>
+                                            <button type="button"
+                                                    disabled="@_isBusy"
+                                                    @onclick="() => ToggleSwapEquipmentForm(eq.EquipmentId)"
+                                                    class="px-3 py-1.5 rounded-full border border-amber-300 bg-amber-50 hover:bg-amber-100 text-amber-900 text-[11px] font-bold disabled:opacity-50">
+                                                @(string.Equals(_swappingEquipmentId, eq.EquipmentId, StringComparison.OrdinalIgnoreCase) ? "Cancel Swap" : "Request Swap")
+                                            </button>
+                                            @if (!eq.IsTaken)
+                                            {
+                                                <button type="button"
+                                                        disabled="@_isBusy"
+                                                        @onclick="() => SubmitEquipmentVerificationRequestAsync(ev, eq.EquipmentId)"
+                                                        class="px-3 py-1.5 rounded-full border border-indigo-200 bg-indigo-50 hover:bg-indigo-100 text-indigo-800 text-[11px] font-bold disabled:opacity-50">
+                                                    Request Verification
+                                                </button>
+                                            }
+                                        </div>
                                     }
                                     else
                                     {
@@ -379,6 +396,58 @@
                                             @(eq.IsTaken ? "✓ Verified" : "Pending")
                                         </span>
                                     }
+                                </div>
+                                @if (canEdit && string.Equals(_swappingEquipmentId, eq.EquipmentId, StringComparison.OrdinalIgnoreCase))
+                                {
+                                    <div class="mt-2 pt-2 border-t border-amber-200 grid grid-cols-1 sm:grid-cols-12 gap-2">
+                                        <select @bind="_swapTargetEquipmentId" class="sm:col-span-5 px-3 py-1.5 border border-slate-300 rounded-full text-xs bg-white">
+                                            <option value="">Select replacement equipment...</option>
+                                            @foreach (var avail in availableEquip)
+                                            {
+                                                <option value="@avail.EquipmentID">@avail.EquipmentName (@avail.EquipmentTypeName)</option>
+                                            }
+                                        </select>
+                                        <input type="text" @bind="_swapReason" placeholder="Swap reason (e.g. battery / fault)..." class="sm:col-span-4 px-3 py-1.5 border border-slate-300 rounded-full text-xs bg-white" />
+                                        <button type="button"
+                                                disabled="@(_isBusy || string.IsNullOrWhiteSpace(_swapTargetEquipmentId))"
+                                                @onclick="() => SubmitEquipmentSwapRequestAsync(ev, eq.EquipmentId)"
+                                                class="sm:col-span-3 px-3 py-1.5 rounded-full bg-amber-700 hover:bg-amber-800 disabled:opacity-45 text-white text-xs font-bold">
+                                            Submit Swap Request
+                                        </button>
+                                    </div>
+                                }
+                            }
+                        </div>
+                    }
+
+                    @if (ev.EquipmentRequests.Any())
+                    {
+                        <div class="space-y-1.5 pt-2" aria-label="Equipment Requests Status">
+                            @foreach (var eqReq in ev.EquipmentRequests)
+                            {
+                                var isPend = string.Equals(eqReq.Status, "Pending", StringComparison.OrdinalIgnoreCase);
+                                var isApp = string.Equals(eqReq.Status, "Approved", StringComparison.OrdinalIgnoreCase);
+                                <div class="rounded-xl border px-3 py-2 text-xs flex flex-wrap items-center justify-between gap-2 @(isPend ? "bg-amber-50 border-amber-300 text-amber-950" : isApp ? "bg-emerald-50 border-emerald-200 text-emerald-900" : "bg-rose-50 border-rose-200 text-rose-900")">
+                                    <div>
+                                        <strong>@(isPend ? "⏳" : isApp ? "✓" : "✕") Equipment @eqReq.RequestType Request:</strong>
+                                        @if (!string.IsNullOrWhiteSpace(eqReq.CurrentEquipmentName ?? eqReq.CurrentEquipmentId))
+                                        {
+                                            <span>@(eqReq.CurrentEquipmentName ?? eqReq.CurrentEquipmentId)</span>
+                                        }
+                                        @if (!string.IsNullOrWhiteSpace(eqReq.RequestedEquipmentName ?? eqReq.RequestedEquipmentId))
+                                        {
+                                            <span> &rarr; <strong>@(eqReq.RequestedEquipmentName ?? eqReq.RequestedEquipmentId)</strong></span>
+                                        }
+                                        @if (!string.IsNullOrWhiteSpace(eqReq.Reason))
+                                        {
+                                            <span class="italic text-slate-600 ml-1">(@eqReq.Reason)</span>
+                                        }
+                                        @if (!isPend && !isApp && !string.IsNullOrWhiteSpace(eqReq.RejectionReason))
+                                        {
+                                            <span class="block text-[11px] text-rose-700 font-semibold mt-0.5">Rejection reason: @eqReq.RejectionReason</span>
+                                        }
+                                    </div>
+                                    <span class="font-mono text-[10px] font-bold uppercase">@(isPend ? "Pending Clerk/Admin" : eqReq.Status)</span>
                                 </div>
                             }
                         </div>
@@ -411,7 +480,7 @@
                                         disabled="@(_isBusy || string.IsNullOrWhiteSpace(_selectedAddEquipmentId))"
                                         @onclick="() => AddMoreEquipmentAsync(ev)"
                                         class="sm:col-span-3 px-4 py-2 rounded-full bg-slate-900 hover:bg-black disabled:opacity-45 text-white text-xs font-bold shadow-2xs">
-                                    Add Equipment
+                                    Request Equipment
                                 </button>
                             </div>
                         </div>
@@ -420,7 +489,8 @@
                         var requiresCrewVerification = ev.AssignedEmployees.Count >= 2;
                         var unverifiedCrewCount = ev.AssignedEmployees.Count(c => !c.IsVerified || string.Equals(c.DutyStatus, "Absent", StringComparison.OrdinalIgnoreCase));
                         var pendingReplacementCount = ev.CrewReplacementRequests.Count(r => string.Equals(r.Status, "Pending", StringComparison.OrdinalIgnoreCase));
-                        var crewGateBlocked = requiresCrewVerification && (unverifiedCrewCount > 0 || pendingReplacementCount > 0);
+                        var pendingEquipReqCount = ev.EquipmentRequests.Count(r => string.Equals(r.Status, "Pending", StringComparison.OrdinalIgnoreCase));
+                        var crewGateBlocked = (requiresCrewVerification && (unverifiedCrewCount > 0 || pendingReplacementCount > 0)) || pendingEquipReqCount > 0;
                         <div class="pt-4 border-t border-slate-200 space-y-3" aria-label="Crew Duty Verification and Replacement">
                             <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
                                 <div>
@@ -460,6 +530,15 @@
                                         <span class="px-3 py-1 rounded-full text-[11px] font-bold bg-slate-100 text-slate-600">
                                             Solo Team Lead
                                         </span>
+                                    }
+                                    @if (canEdit)
+                                    {
+                                        <button type="button"
+                                                disabled="@_isBusy"
+                                                @onclick="() => RequestAdditionalCrewAsync(ev)"
+                                                class="px-3 py-1 rounded-full border border-indigo-200 bg-indigo-50 hover:bg-indigo-100 text-indigo-800 text-[11px] font-bold disabled:opacity-50">
+                                            + Request Additional Crew
+                                        </button>
                                     }
                                 </div>
                             </div>
@@ -1145,12 +1224,120 @@
         }
     }
 
+    private string? _swappingEquipmentId;
+    private string _swapTargetEquipmentId = string.Empty;
+    private string _swapReason = string.Empty;
+
+    private void ToggleSwapEquipmentForm(string equipmentId)
+    {
+        if (string.Equals(_swappingEquipmentId, equipmentId, StringComparison.OrdinalIgnoreCase))
+        {
+            _swappingEquipmentId = null;
+        }
+        else
+        {
+            _swappingEquipmentId = equipmentId;
+            _swapTargetEquipmentId = string.Empty;
+            _swapReason = string.Empty;
+        }
+    }
+
+    private async Task SubmitEquipmentSwapRequestAsync(TeamLeaderEventDto ev, string currentEquipmentId)
+    {
+        if (!ev.IsTeamLeader || string.IsNullOrWhiteSpace(_swapTargetEquipmentId)) return;
+        _isBusy = true;
+        _localSuccess = null;
+        _localError = null;
+        try
+        {
+            var res = await ConsultationApi.SubmitEquipmentRequestAsync(ev.EventAppointmentId, new SubmitEquipmentRequestDto
+            {
+                RequestType = "Swap",
+                CurrentEquipmentId = currentEquipmentId,
+                RequestedEquipmentId = _swapTargetEquipmentId,
+                Reason = _swapReason,
+                EmployeeId = EmployeeId
+            });
+            if (res.IsSuccess)
+            {
+                _swappingEquipmentId = null;
+                _swapTargetEquipmentId = string.Empty;
+                _swapReason = string.Empty;
+                _localSuccess = $"Equipment swap request submitted for Admin / Office Clerk verification.";
+                await OnWorkflowUpdated.InvokeAsync();
+            }
+            else
+            {
+                _localError = res.Error?.Message ?? "Failed to submit equipment swap request.";
+            }
+        }
+        catch (Exception ex) { _localError = ex.Message; }
+        finally { _isBusy = false; }
+    }
+
+    private async Task SubmitEquipmentVerificationRequestAsync(TeamLeaderEventDto ev, string currentEquipmentId)
+    {
+        if (!ev.IsTeamLeader) return;
+        _isBusy = true;
+        _localSuccess = null;
+        _localError = null;
+        try
+        {
+            var res = await ConsultationApi.SubmitEquipmentRequestAsync(ev.EventAppointmentId, new SubmitEquipmentRequestDto
+            {
+                RequestType = "Verification",
+                CurrentEquipmentId = currentEquipmentId,
+                Reason = "Team Leader requested equipment verification.",
+                EmployeeId = EmployeeId
+            });
+            if (res.IsSuccess)
+            {
+                _localSuccess = "Equipment verification request sent to Admin / Office Clerk.";
+                await OnWorkflowUpdated.InvokeAsync();
+            }
+            else
+            {
+                _localError = res.Error?.Message ?? "Failed to submit equipment verification request.";
+            }
+        }
+        catch (Exception ex) { _localError = ex.Message; }
+        finally { _isBusy = false; }
+    }
+
+    private async Task RequestAdditionalCrewAsync(TeamLeaderEventDto ev)
+    {
+        if (!ev.IsTeamLeader) return;
+        _isBusy = true;
+        _localSuccess = null;
+        _localError = null;
+        try
+        {
+            var res = await ConsultationApi.RequestCrewReplacementAsync(ev.EventAppointmentId, new RequestCrewReplacementRequest
+            {
+                RequestType = "Additional",
+                Reason = "Team Leader requested additional crew support.",
+                RequestedByEmployeeId = EmployeeId
+            });
+            if (res.IsSuccess)
+            {
+                _localSuccess = $"Additional crew request submitted for #{ev.EventAppointmentId}.";
+                await OnWorkflowUpdated.InvokeAsync();
+            }
+            else
+            {
+                _localError = res.Error?.Message ?? "Failed to submit additional crew request.";
+            }
+        }
+        catch (Exception ex) { _localError = ex.Message; }
+        finally { _isBusy = false; }
+    }
+
     private async Task AddMoreEquipmentAsync(TeamLeaderEventDto ev)
     {
         if (!ev.IsTeamLeader) return;
         if (string.IsNullOrWhiteSpace(_selectedAddEquipmentId))
         {
-            _localError = "Please select an available equipment item to add.";
+            _localError = "Please select an available equipment item to request.";
             return;
         }
 
@@ -1160,10 +1347,11 @@
         try
         {
             var addedId = _selectedAddEquipmentId;
-            var res = await ConsultationApi.AddEventEquipmentAsync(ev.EventAppointmentId, new AddEventEquipmentRequest
+            var res = await ConsultationApi.SubmitEquipmentRequestAsync(ev.EventAppointmentId, new SubmitEquipmentRequestDto
             {
-                EquipmentId = addedId,
-                Notes = _addEquipmentNotes,
+                RequestType = "Add",
+                RequestedEquipmentId = addedId,
+                Reason = _addEquipmentNotes,
                 EmployeeId = EmployeeId
             });
             if (res.IsSuccess)
@@ -1172,12 +1360,12 @@
                 _addEquipmentNotes = string.Empty;
                 ScheduleService.InvalidateCache();
                 EquipmentService.NotifyStateChanged();
-                _localSuccess = $"Added equipment ({addedId}) to #{ev.EventAppointmentId}.";
+                _localSuccess = $"Equipment request ({addedId}) submitted for Admin / Office Clerk verification.";
                 await OnWorkflowUpdated.InvokeAsync();
             }
             else
             {
-                _localError = res.Error?.Message ?? "Failed to add equipment.";
+                _localError = res.Error?.Message ?? "Failed to submit equipment request.";
             }
         }
         catch (Exception ex)

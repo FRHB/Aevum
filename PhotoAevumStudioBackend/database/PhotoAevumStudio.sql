@@ -383,11 +383,31 @@ CREATE TABLE dbo.EventCrewReplacementRequest (
     RequestedByName nvarchar(100) NULL,
     Reason nvarchar(500) NULL,
     Status nvarchar(30) NOT NULL CONSTRAINT DF_CrewRepReq_Status DEFAULT 'Pending',
+    RequestType nvarchar(30) NOT NULL CONSTRAINT DF_CrewRepReq_RequestType DEFAULT 'Replacement',
     ReplacementEmployeeID nvarchar(30) NULL,
     ReplacementEmployeeName nvarchar(100) NULL,
     FulfilledBy nvarchar(100) NULL,
     FulfilledAt datetime2 NULL,
+    RejectionReason nvarchar(500) NULL,
     CreatedAt datetime2 NOT NULL CONSTRAINT DF_CrewRepReq_CreatedAt DEFAULT SYSUTCDATETIME()
+);
+
+CREATE TABLE dbo.EventEquipmentRequest (
+    RequestID int IDENTITY(1,1) NOT NULL PRIMARY KEY,
+    EventAppointmentID nvarchar(30) NOT NULL,
+    RequestType nvarchar(30) NOT NULL, -- 'Add', 'Swap', 'Verification'
+    CurrentEquipmentID nvarchar(30) NULL,
+    RequestedEquipmentID nvarchar(30) NULL,
+    RequestedByEmployeeID nvarchar(30) NULL,
+    RequestedByName nvarchar(100) NULL,
+    Reason nvarchar(500) NULL,
+    Status nvarchar(30) NOT NULL CONSTRAINT DF_EquipReq_Status DEFAULT 'Pending',
+    ReviewedByEmployeeID nvarchar(30) NULL,
+    ReviewedByName nvarchar(100) NULL,
+    RejectionReason nvarchar(500) NULL,
+    CreatedAt datetime2 NOT NULL CONSTRAINT DF_EquipReq_CreatedAt DEFAULT SYSUTCDATETIME(),
+    ReviewedAt datetime2 NULL,
+    CONSTRAINT FK_EventEquipmentRequest_EventAppointment FOREIGN KEY (EventAppointmentID) REFERENCES dbo.EventAppointment(EventAppointmentID) ON DELETE CASCADE
 );
 
 CREATE TABLE dbo.EventEquipment (

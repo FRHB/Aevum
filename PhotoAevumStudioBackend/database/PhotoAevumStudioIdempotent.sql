@@ -602,12 +602,56 @@ BEGIN
         RequestedByName nvarchar(100) NULL,
         Reason nvarchar(500) NULL,
         Status nvarchar(30) NOT NULL CONSTRAINT DF_CrewRepReq_Status DEFAULT 'Pending',
+        RequestType nvarchar(30) NOT NULL CONSTRAINT DF_CrewRepReq_RequestType DEFAULT 'Replacement',
         ReplacementEmployeeID nvarchar(30) NULL,
         ReplacementEmployeeName nvarchar(100) NULL,
         FulfilledBy nvarchar(100) NULL,
         FulfilledAt datetime2 NULL,
+        RejectionReason nvarchar(500) NULL,
         CreatedAt datetime2 NOT NULL CONSTRAINT DF_CrewRepReq_CreatedAt DEFAULT SYSUTCDATETIME()
     );
+END;
+
+IF OBJECT_ID(N'dbo.EventCrewReplacementRequest', N'U') IS NOT NULL
+BEGIN
+    IF COL_LENGTH(N'dbo.EventCrewReplacementRequest', N'RequestType') IS NULL
+        ALTER TABLE dbo.EventCrewReplacementRequest ADD RequestType nvarchar(30) NOT NULL CONSTRAINT DF_CrewRepReq_RequestType DEFAULT 'Replacement';
+    IF COL_LENGTH(N'dbo.EventCrewReplacementRequest', N'RejectionReason') IS NULL
+        ALTER TABLE dbo.EventCrewReplacementRequest ADD RejectionReason nvarchar(500) NULL;
+END;
+
+IF OBJECT_ID(N'dbo.EventEquipmentRequest', N'U') IS NULL
+BEGIN
+    CREATE TABLE dbo.EventEquipmentRequest (
+        RequestID int IDENTITY(1,1) NOT NULL PRIMARY KEY,
+        EventAppointmentID nvarchar(30) NOT NULL,
+        RequestType nvarchar(30) NOT NULL,
+        CurrentEquipmentID nvarchar(30) NULL,
+        RequestedEquipmentID nvarchar(30) NULL,
+        RequestedByEmployeeID nvarchar(30) NULL,
+        RequestedByName nvarchar(100) NULL,
+        Reason nvarchar(500) NULL,
+        Status nvarchar(30) NOT NULL CONSTRAINT DF_EquipReq_Status DEFAULT 'Pending',
+        ReviewedByEmployeeID nvarchar(30) NULL,
+        ReviewedByName nvarchar(100) NULL,
+        RejectionReason nvarchar(500) NULL,
+        CreatedAt datetime2 NOT NULL CONSTRAINT DF_EquipReq_CreatedAt DEFAULT SYSUTCDATETIME(),
+        ReviewedAt datetime2 NULL
+    );
+END;
+
+IF OBJECT_ID(N'dbo.EventEquipmentRequest', N'U') IS NOT NULL
+   AND OBJECT_ID(N'dbo.EventAppointment', N'U') IS NOT NULL
+   AND OBJECT_ID(N'dbo.FK_EventEquipmentRequest_EventAppointment', N'F') IS NULL
+BEGIN
+    ALTER TABLE dbo.EventEquipmentRequest
+        ADD CONSTRAINT FK_EventEquipmentRequest_EventAppointment FOREIGN KEY (EventAppointmentID) REFERENCES dbo.EventAppointment(EventAppointmentID) ON DELETE CASCADE;
+END;
+
+IF OBJECT_ID(N'dbo.EventEquipmentRequest', N'U') IS NOT NULL
+   AND NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = N'IX_EventEquipmentRequest_EventStatus' AND object_id = OBJECT_ID(N'dbo.EventEquipmentRequest'))
+BEGIN
+    CREATE INDEX IX_EventEquipmentRequest_EventStatus ON dbo.EventEquipmentRequest (EventAppointmentID, Status);
 END;
 
 IF OBJECT_ID(N'dbo.EventCrewReplacementRequest', N'U') IS NOT NULL
