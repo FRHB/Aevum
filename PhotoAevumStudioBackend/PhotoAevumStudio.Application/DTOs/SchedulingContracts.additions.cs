@@ -15,7 +15,9 @@ public sealed record MyBookingDto(
     string? AssignedClerkId = null,
     string? AssignedClerkName = null,
     string? NegotiationId = null,
-    DateTime? CreatedAt = null);
+    DateTime? CreatedAt = null,
+    string? NegotiationStatus = null,
+    string? LinkedEventAppointmentId = null);
 
 // ── Application/Interfaces/IScheduleBookingService.cs: add these two members ──
 //

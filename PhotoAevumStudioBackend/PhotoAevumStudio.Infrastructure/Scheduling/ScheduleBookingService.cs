@@ -257,7 +257,7 @@ public sealed class ScheduleBookingService(
             })
             .ToListAsync(cancellationToken);
 
-        var clerkLookup = new Dictionary<string, (string? ClerkId, string? ClerkName, string? NegotiationId)>(StringComparer.OrdinalIgnoreCase);
+        var clerkLookup = new Dictionary<string, (string? ClerkId, string? ClerkName, string? NegotiationId, string? NegotiationStatus, string? LinkedEventAppointmentId)>(StringComparer.OrdinalIgnoreCase);
         if (rows.Count > 0)
         {
             try
@@ -277,7 +277,9 @@ public sealed class ScheduleBookingService(
                                    NULLIF(LTRIM(RTRIM(CONCAT(ISNULL(e.EmployeeFirstName, ''), ' ', ISNULL(e.EmployeeLastName, '')))), ''),
                                    NULLIF(bn.AssignedEmployeeName, ''),
                                    bn.EmployeeID
-                               ) AS ClerkName
+                               ) AS ClerkName,
+                               bn.NegotiationStatus,
+                               bn.EventAppointmentID
                         FROM dbo.BookingNegotiation bn
                         LEFT JOIN dbo.Employees e ON e.EmployeeID = bn.EmployeeID
                         WHERE bn.NegotiationID IN ({pNames});
@@ -296,7 +298,9 @@ public sealed class ScheduleBookingService(
                     var nid = reader.GetString(0);
                     var cid = reader.IsDBNull(1) ? null : reader.GetString(1);
                     var cname = reader.IsDBNull(2) ? null : reader.GetString(2);
-                    clerkLookup[nid] = (cid, cname, nid);
+                    var nstatus = reader.IsDBNull(3) ? null : reader.GetString(3);
+                    var evtId = reader.IsDBNull(4) ? null : reader.GetString(4);
+                    clerkLookup[nid] = (cid, cname, nid, nstatus, evtId);
                 }
             }
             catch (Exception ex)
@@ -323,7 +327,9 @@ public sealed class ScheduleBookingService(
                 info.ClerkId,
                 info.ClerkName,
                 info.NegotiationId ?? negKey,
-                r.CreatedAt);
+                r.CreatedAt,
+                info.NegotiationStatus,
+                info.LinkedEventAppointmentId);
         }).ToList();
     }
 
@@ -353,6 +359,8 @@ public sealed class ScheduleBookingService(
 
             if (string.Equals(entity.Status, AppointmentStatus.Cancelled, StringComparison.OrdinalIgnoreCase))
                 throw new ScheduleValidationException($"Booking #{appointmentId} is already cancelled.");
+
+            await EnsureConsultationCanBeModifiedAsync(negId, "cancel", ct);
 
             var slotDate = entity.SlotDate;
             entity.Status = AppointmentStatus.Cancelled;
@@ -487,6 +495,7 @@ public sealed class ScheduleBookingService(
             throw new ScheduleValidationException($"Cancelled booking #{appointmentId} cannot be rescheduled.");
 
         var negId = $"NEG-{appointmentId:D4}";
+        await EnsureConsultationCanBeModifiedAsync(negId, "reschedule", cancellationToken);
         var originalClerkId = await GetAssignedClerkIdForNegotiationAsync(negId, cancellationToken);
         var clerkCandidates = await GetActiveClerkCandidatesWithRecencyAsync(cancellationToken);
         var leaves = (await GetApprovedLeavesRangeAsync(request.NewDate, request.NewDate, cancellationToken))
@@ -635,6 +644,81 @@ public sealed class ScheduleBookingService(
             RetainedOriginalClerk: selection.RetainedOriginalClerk,
             Status: "Rescheduled",
             Message: message);
+    }
+
+    private static readonly HashSet<string> SucceededNegotiationStatuses = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "Deal_Won",
+        "Appointment Booked",
+        "Pending Payment",
+        "Pending_Payment",
+        "Awaiting_Downpayment",
+        "Confirmed",
+        "Completed",
+        "Complete",
+        "Delivered",
+        "Shot"
+    };
+
+    private static readonly HashSet<string> EndedNegotiationStatuses = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "Deal_Lost",
+        "Cancelled",
+        "Expired"
+    };
+
+    private async Task EnsureConsultationCanBeModifiedAsync(string negId, string actionLabel, CancellationToken ct)
+    {
+        var conn = db.Database.GetDbConnection();
+        if (conn.State != ConnectionState.Open) await conn.OpenAsync(ct);
+
+        string? negStatus = null;
+        string? linkedEventId = null;
+
+        try
+        {
+            await using var cmd = conn.CreateCommand();
+            cmd.Transaction = db.Database.CurrentTransaction?.GetDbTransaction();
+            cmd.CommandText = @"
+                IF OBJECT_ID(N'dbo.BookingNegotiation', N'U') IS NOT NULL
+                BEGIN
+                    SELECT TOP 1 NegotiationStatus, EventAppointmentID
+                    FROM dbo.BookingNegotiation
+                    WHERE NegotiationID = @NegId;
+                END";
+            var p = cmd.CreateParameter();
+            p.ParameterName = "@NegId";
+            p.Value = negId;
+            cmd.Parameters.Add(p);
+
+            await using var reader = await cmd.ExecuteReaderAsync(ct);
+            if (await reader.ReadAsync(ct))
+            {
+                negStatus = reader.IsDBNull(0) ? null : reader.GetString(0);
+                linkedEventId = reader.IsDBNull(1) ? null : reader.GetString(1);
+            }
+        }
+        catch (System.Data.Common.DbException ex) when (
+            ex.Message.Contains("syntax error", StringComparison.OrdinalIgnoreCase) ||
+            ex.Message.Contains("no such table", StringComparison.OrdinalIgnoreCase))
+        {
+            // Bare SQLite unit-test DbContext without BookingNegotiation table
+            return;
+        }
+
+        if (EndedNegotiationStatuses.Contains(negStatus ?? string.Empty))
+        {
+            throw new ScheduleValidationException(
+                $"Consultation ({negId}) is '{negStatus}' and can no longer be modified.");
+        }
+
+        if (!string.IsNullOrWhiteSpace(linkedEventId) ||
+            SucceededNegotiationStatuses.Contains(negStatus ?? string.Empty))
+        {
+            var eventSuffix = string.IsNullOrWhiteSpace(linkedEventId) ? string.Empty : $" (#{linkedEventId})";
+            throw new ScheduleValidationException(
+                $"Consultation ({negId}) negotiation has succeeded and is linked to a booked event{eventSuffix}. You cannot {actionLabel} or change the Google Meet consultation; you may only modify the connected event if it is not completed.");
+        }
     }
 
     private async Task<string?> GetAssignedClerkIdForNegotiationAsync(string negId, CancellationToken ct)

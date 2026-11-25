@@ -730,13 +730,18 @@ BEGIN
         ALTER TABLE dbo.EventLineItem ADD ServiceNameSnapshot nvarchar(255) NULL;
     IF COL_LENGTH(N'dbo.EventLineItem', N'ServiceKindSnapshot') IS NULL
         ALTER TABLE dbo.EventLineItem ADD ServiceKindSnapshot nvarchar(30) NULL;
+
     IF OBJECT_ID(N'dbo.CK_EventLineItem_ExactlyOne', N'C') IS NOT NULL
         ALTER TABLE dbo.EventLineItem DROP CONSTRAINT CK_EventLineItem_ExactlyOne;
-    ALTER TABLE dbo.EventLineItem ADD CONSTRAINT CK_EventLineItem_ExactlyOne CHECK (
-        ((CASE WHEN ServicesID IS NOT NULL THEN 1 ELSE 0 END) +
-         (CASE WHEN AdditionalServicesID IS NOT NULL THEN 1 ELSE 0 END) +
-         (CASE WHEN ComboPackageID IS NOT NULL THEN 1 ELSE 0 END) = 1)
-        OR (ServicesID IS NULL AND AdditionalServicesID IS NULL AND ComboPackageID IS NULL AND ServiceNameSnapshot IS NOT NULL));
+
+    EXEC(N'
+        ALTER TABLE dbo.EventLineItem ADD CONSTRAINT CK_EventLineItem_ExactlyOne CHECK (
+            ((CASE WHEN ServicesID IS NOT NULL THEN 1 ELSE 0 END) +
+             (CASE WHEN AdditionalServicesID IS NOT NULL THEN 1 ELSE 0 END) +
+             (CASE WHEN ComboPackageID IS NOT NULL THEN 1 ELSE 0 END) = 1)
+            OR (ServicesID IS NULL AND AdditionalServicesID IS NULL AND ComboPackageID IS NULL AND ServiceNameSnapshot IS NOT NULL)
+        );
+    ');
 END;
 
 IF OBJECT_ID(N'dbo.EmployeeJointSpecialization', N'U') IS NULL

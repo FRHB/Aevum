@@ -136,6 +136,21 @@
                         </div>
                     }
 
+                    @if (IsCompletedEvent)
+                    {
+                        <div class="rounded-xl border border-emerald-200 bg-emerald-50 text-emerald-900 px-4 py-2.5 text-xs flex items-center gap-2">
+                            <span>🔒</span>
+                            <span><strong>Event Completed</strong> — This event is completed and read-only. No changes can be made.</span>
+                        </div>
+                    }
+                    else if (IsInactiveEvent)
+                    {
+                        <div class="rounded-xl border border-slate-300 bg-slate-100 text-slate-700 px-4 py-2.5 text-xs flex items-center gap-2">
+                            <span>🔒</span>
+                            <span><strong>Read-Only Event</strong> — This event is @Booking.DisplayStatus and can no longer be modified.</span>
+                        </div>
+                    }
+
                     @* ── 1. Core Event Overview Summary Grid ─────────────── *@
                     <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
                         <div class="overview-section-card">
@@ -636,10 +651,16 @@
     private string? _feedbackMessage;
     private bool _feedbackIsError;
 
+    private bool IsCompletedEvent => Booking != null &&
+        (Booking.IsCompleted ||
+         (_appointmentDetail != null && TeamLeaderMonitorSelector.IsCompletedOrInactive(_appointmentDetail) &&
+          !string.Equals(_appointmentDetail.EventStatus, "Cancelled", StringComparison.OrdinalIgnoreCase) &&
+          !string.Equals(_appointmentDetail.EventStatus, "Expired", StringComparison.OrdinalIgnoreCase) &&
+          !string.Equals(_appointmentDetail.EventStatus, "Deal_Lost", StringComparison.OrdinalIgnoreCase)));
+
     private bool IsInactiveEvent => Booking != null &&
-        (string.Equals(Booking.Status, "Cancelled", StringComparison.OrdinalIgnoreCase) ||
-         string.Equals(Booking.Status, "Expired", StringComparison.OrdinalIgnoreCase) ||
-         string.Equals(Booking.Status, "Deal_Lost", StringComparison.OrdinalIgnoreCase));
+        (Booking.IsInactiveOrCompleted ||
+         (_appointmentDetail != null && TeamLeaderMonitorSelector.IsCompletedOrInactive(_appointmentDetail)));
 
     private string EffectiveCustomerName =>
         !string.IsNullOrWhiteSpace(_appointmentDetail?.CustomerName) ? _appointmentDetail!.CustomerName : (Booking?.ClientName ?? string.Empty);
@@ -1070,6 +1091,15 @@
     private async Task SaveRosterChangesAsync()
     {
         if (Booking == null || _isSaving) return;
+
+        if (IsInactiveEvent)
+        {
+            _feedbackIsError = true;
+            _feedbackMessage = IsCompletedEvent
+                ? "Completed events are locked and cannot be modified."
+                : "Inactive events cannot be modified.";
+            return;
+        }
 
         if (_stagedCrew.Count == 0)
         {

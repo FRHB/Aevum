@@ -978,27 +978,87 @@ public class ConsultationNegotiationService : IConsultationNegotiationService
 
 
 
-    public async Task<bool> UpdateNegotiationOutcomeAsync(
-
-
-
-        string negotiationId,
-
-
-
-        UpdateNegotiationOutcomeRequest request,
-
-
-
-        CancellationToken cancellationToken = default)
-
-
-
+    private static readonly HashSet<string> LockedConsultationStatuses = new(StringComparer.OrdinalIgnoreCase)
     {
+        "Deal_Won",
+        "Appointment Booked",
+        "Pending Payment",
+        "Pending_Payment",
+        "Awaiting_Downpayment",
+        "Confirmed",
+        "Completed",
+        "Complete",
+        "Delivered",
+        "Shot",
+        "Deal_Lost",
+        "Cancelled",
+        "Expired"
+    };
 
+    public static void EnsureConsultationOutcomeModifiable(
+        string? negotiationStatus,
+        string? linkedEventId,
+        string negotiationId)
+    {
+        if (!string.IsNullOrWhiteSpace(linkedEventId) ||
+            LockedConsultationStatuses.Contains((negotiationStatus ?? string.Empty).Trim()))
+        {
+            var reason = !string.IsNullOrWhiteSpace(linkedEventId) ||
+                         string.Equals(negotiationStatus, "Deal_Won", StringComparison.OrdinalIgnoreCase) ||
+                         string.Equals(negotiationStatus, "Appointment Booked", StringComparison.OrdinalIgnoreCase) ||
+                         string.Equals(negotiationStatus, "Pending Payment", StringComparison.OrdinalIgnoreCase) ||
+                         string.Equals(negotiationStatus, "Pending_Payment", StringComparison.OrdinalIgnoreCase) ||
+                         string.Equals(negotiationStatus, "Awaiting_Downpayment", StringComparison.OrdinalIgnoreCase)
+                ? $"Consultation {negotiationId} has already succeeded and is connected to a booked event. No Google Meet change, reschedule, or cancellation can happen on the consultation; only the connected event can be changed when not completed."
+                : $"Consultation {negotiationId} is '{negotiationStatus}' and can no longer be modified.";
+            throw new InvalidOperationException(reason);
+        }
+    }
 
+    public static void EnsureEventModifiable(
+        string? eventStatus,
+        string? finalPaymentStatus,
+        string appointmentId,
+        string actionDescription)
+    {
+        var dto = new EventAppointmentDto
+        {
+            EventAppointmentId = appointmentId,
+            EventStatus = eventStatus ?? string.Empty,
+            FinalPaymentStatus = finalPaymentStatus ?? string.Empty
+        };
+        if (TeamLeaderMonitorSelector.IsCompletedOrInactive(dto))
+        {
+            throw new InvalidOperationException(
+                $"Event #{appointmentId} is already completed or inactive ('{eventStatus}'). No changes can be made to {actionDescription}.");
+        }
+    }
 
+    public static void EnsureEventModifiable(EventAppointmentDto appt, string actionDescription) =>
+        EnsureEventModifiable(appt.EventStatus, appt.FinalPaymentStatus, appt.EventAppointmentId, actionDescription);
+
+    public async Task<bool> UpdateNegotiationOutcomeAsync(
+        string negotiationId,
+        UpdateNegotiationOutcomeRequest request,
+        CancellationToken cancellationToken = default)
+    {
         await using var conn = await OpenConnectionAsync(cancellationToken);
+
+        const string checkSql = @"
+            SELECT NegotiationStatus, EventAppointmentID
+            FROM dbo.BookingNegotiation
+            WHERE NegotiationID = @NegId;";
+        await using (var chkCmd = new SqlCommand(checkSql, conn))
+        {
+            chkCmd.Parameters.AddWithValue("@NegId", negotiationId);
+            await using var rdr = await chkCmd.ExecuteReaderAsync(cancellationToken);
+            if (!await rdr.ReadAsync(cancellationToken))
+                return false;
+
+            var currentStatus = rdr.IsDBNull(0) ? null : rdr.GetString(0);
+            var linkedEventId = rdr.IsDBNull(1) ? null : rdr.GetString(1);
+            EnsureConsultationOutcomeModifiable(currentStatus, linkedEventId, negotiationId);
+        }
 
 
 
@@ -4557,9 +4617,10 @@ public class ConsultationNegotiationService : IConsultationNegotiationService
             TimeSpan evtEnd;
             string evtName;
             string evtStatus;
+            string finalPayStatus;
 
             const string evtMetaSql = @"
-                SELECT EventDate, EventTime, EventEndTime, ISNULL(DurationMinutes, 60) AS DurationMinutes, EventName, EventStatus
+                SELECT EventDate, EventTime, EventEndTime, ISNULL(DurationMinutes, 60) AS DurationMinutes, EventName, EventStatus, ISNULL(FinalPaymentStatus, '') AS FinalPaymentStatus
                 FROM dbo.EventAppointment
                 WHERE EventAppointmentID = @EvtId;";
             await using (var mCmd = new SqlCommand(evtMetaSql, conn, tx))
@@ -4576,13 +4637,10 @@ public class ConsultationNegotiationService : IConsultationNegotiationService
                 if (evtEnd <= evtStart) evtEnd = evtStart.Add(TimeSpan.FromMinutes(dur));
                 evtName = mReader.IsDBNull(4) ? appointmentId : mReader.GetString(4);
                 evtStatus = mReader.IsDBNull(5) ? string.Empty : mReader.GetString(5);
+                finalPayStatus = mReader.IsDBNull(6) ? string.Empty : mReader.GetString(6);
             }
 
-            if (string.Equals(evtStatus, "Cancelled", StringComparison.OrdinalIgnoreCase) ||
-                string.Equals(evtStatus, "Expired", StringComparison.OrdinalIgnoreCase))
-            {
-                throw new InvalidOperationException($"Cannot modify crew or equipment for a {evtStatus} event.");
-            }
+            EnsureEventModifiable(evtStatus, finalPayStatus, appointmentId, "crew or equipment");
 
             var newEmpIds = (request.EmployeeIds ?? new List<string>())
                 .Where(id => !string.IsNullOrWhiteSpace(id))
@@ -5384,6 +5442,16 @@ public class ConsultationNegotiationService : IConsultationNegotiationService
         await using var conn = await OpenConnectionAsync(cancellationToken);
         await EnsureGranularEventColumnsAsync(conn, cancellationToken);
 
+        const string existingStatusSql = "SELECT ISNULL(EventStatus, ''), ISNULL(FinalPaymentStatus, '') FROM dbo.EventAppointment WHERE EventAppointmentID = @EvtId;";
+        await using (var esCmd = new SqlCommand(existingStatusSql, conn))
+        {
+            esCmd.Parameters.AddWithValue("@EvtId", appointmentId);
+            await using var esReader = await esCmd.ExecuteReaderAsync(cancellationToken);
+            if (!await esReader.ReadAsync(cancellationToken))
+                throw new KeyNotFoundException($"Event appointment {appointmentId} not found.");
+            EnsureEventModifiable(esReader.GetString(0), esReader.GetString(1), appointmentId, "event status");
+        }
+
         if (string.Equals(normalized, "Dispatch", StringComparison.OrdinalIgnoreCase))
         {
             const string dispatchCheckSql = @"
@@ -5852,6 +5920,7 @@ public class ConsultationNegotiationService : IConsultationNegotiationService
         var existing = await GetAppointmentByIdOnConnectionAsync(conn, appointmentId, cancellationToken);
         if (existing == null)
             throw new KeyNotFoundException($"Event appointment {appointmentId} not found.");
+        EnsureEventModifiable(existing, "equipment status");
 
         await using var tx = (SqlTransaction)await conn.BeginTransactionAsync(cancellationToken);
         try
@@ -6049,7 +6118,8 @@ public class ConsultationNegotiationService : IConsultationNegotiationService
         {
             DateOnly evtDate;
             string evtStatus;
-            const string existsApptSql = "SELECT EventDate, ISNULL(EventStatus, '') FROM dbo.EventAppointment WHERE EventAppointmentID = @EvtId;";
+            string finalPayStatus;
+            const string existsApptSql = "SELECT EventDate, ISNULL(EventStatus, ''), ISNULL(FinalPaymentStatus, '') FROM dbo.EventAppointment WHERE EventAppointmentID = @EvtId;";
             await using (var aCmd = new SqlCommand(existsApptSql, conn, tx))
             {
                 aCmd.Parameters.AddWithValue("@EvtId", appointmentId);
@@ -6058,11 +6128,10 @@ public class ConsultationNegotiationService : IConsultationNegotiationService
                     throw new KeyNotFoundException($"Event appointment {appointmentId} not found.");
                 evtDate = DateOnly.FromDateTime(aReader.GetDateTime(0));
                 evtStatus = aReader.IsDBNull(1) ? string.Empty : aReader.GetString(1);
+                finalPayStatus = aReader.IsDBNull(2) ? string.Empty : aReader.GetString(2);
             }
 
-            if (string.Equals(evtStatus, "Cancelled", StringComparison.OrdinalIgnoreCase) ||
-                string.Equals(evtStatus, "Expired", StringComparison.OrdinalIgnoreCase))
-                throw new InvalidOperationException($"Cannot add equipment to a {evtStatus} event.");
+            EnsureEventModifiable(evtStatus, finalPayStatus, appointmentId, "equipment");
 
             await ValidateEquipmentSameDayAvailableAsync(
                 conn,
@@ -6269,6 +6338,7 @@ public class ConsultationNegotiationService : IConsultationNegotiationService
         var existing = await GetAppointmentByIdOnConnectionAsync(conn, appointmentId, cancellationToken);
         if (existing == null)
             throw new KeyNotFoundException($"Event appointment {appointmentId} not found.");
+        EnsureEventModifiable(existing, "equipment status");
 
         var normalizedDutyStatus = string.Equals(request.DutyStatus?.Trim(), "Absent", StringComparison.OrdinalIgnoreCase)
             ? "Absent"
@@ -6365,6 +6435,7 @@ public class ConsultationNegotiationService : IConsultationNegotiationService
         var existing = await GetAppointmentByIdOnConnectionAsync(conn, appointmentId, cancellationToken);
         if (existing == null)
             throw new KeyNotFoundException($"Event appointment {appointmentId} not found.");
+        EnsureEventModifiable(existing, "equipment status");
 
         var absentId = request.AbsentEmployeeId?.Trim();
         var absentCrew = !string.IsNullOrWhiteSpace(absentId)
@@ -6469,6 +6540,11 @@ public class ConsultationNegotiationService : IConsultationNegotiationService
         await using var conn = await OpenConnectionAsync(cancellationToken);
         await EnsureGranularEventColumnsAsync(conn, cancellationToken);
 
+        var existingEvt = await GetAppointmentByIdOnConnectionAsync(conn, appointmentId, cancellationToken);
+        if (existingEvt == null)
+            throw new KeyNotFoundException($"Event appointment {appointmentId} not found.");
+        EnsureEventModifiable(existingEvt, "crew replacement requests");
+
         await using var tx = (SqlTransaction)await conn.BeginTransactionAsync(cancellationToken);
         try
         {
@@ -6550,6 +6626,7 @@ public class ConsultationNegotiationService : IConsultationNegotiationService
         var existing = await GetAppointmentByIdOnConnectionAsync(conn, appointmentId, cancellationToken);
         if (existing == null)
             throw new KeyNotFoundException($"Event appointment {appointmentId} not found.");
+        EnsureEventModifiable(existing, "equipment status");
 
         if (string.Equals(existing.EventStatus, "Cancelled", StringComparison.OrdinalIgnoreCase) ||
             string.Equals(existing.EventStatus, "Expired", StringComparison.OrdinalIgnoreCase))
@@ -6620,6 +6697,7 @@ public class ConsultationNegotiationService : IConsultationNegotiationService
         var existing = await GetAppointmentByIdOnConnectionAsync(conn, appointmentId, cancellationToken);
         if (existing == null)
             throw new KeyNotFoundException($"Event appointment {appointmentId} not found.");
+        EnsureEventModifiable(existing, "equipment status");
 
         await using var tx = (SqlTransaction)await conn.BeginTransactionAsync(cancellationToken);
         try
@@ -6756,6 +6834,7 @@ public class ConsultationNegotiationService : IConsultationNegotiationService
         var existing = await GetAppointmentByIdOnConnectionAsync(conn, appointmentId, cancellationToken);
         if (existing == null)
             throw new KeyNotFoundException($"Event appointment {appointmentId} not found.");
+        EnsureEventModifiable(existing, "equipment status");
 
         await using var tx = (SqlTransaction)await conn.BeginTransactionAsync(cancellationToken);
         string? absentId = null;
@@ -7416,11 +7495,11 @@ public class ConsultationNegotiationService : IConsultationNegotiationService
         var nonCancellable = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
         {
             "Completed", "Complete", "Shot", "Editing", "Delivered",
-            "Ongoing", "On Going", "In Execution", "Post Event",
+            "Ongoing", "On Going", "In Execution", "Post Event", "Event Done",
             "Paid Cash Pending Verification", "Pending Verification",
-            "Cancelled", "Expired"
+            "Cancelled", "Expired", "Deal_Lost"
         };
-        if (nonCancellable.Contains(appt.EventStatus ?? string.Empty))
+        if (TeamLeaderMonitorSelector.IsCompletedOrInactive(appt) || nonCancellable.Contains(appt.EventStatus ?? string.Empty))
             throw new InvalidOperationException($"Appointment #{appointmentId} is currently '{appt.EventStatus}' and cannot be cancelled.");
 
         await using var tx = (SqlTransaction)await conn.BeginTransactionAsync(cancellationToken);
@@ -7544,7 +7623,7 @@ public class ConsultationNegotiationService : IConsultationNegotiationService
         {
             "Pending", "Pending Payment", "Awaiting_Downpayment", "Confirmed", "Ready", "Preparation", "Preparing"
         };
-        if (!allowedStatuses.Contains(appt.EventStatus ?? string.Empty))
+        if (TeamLeaderMonitorSelector.IsCompletedOrInactive(appt) || !allowedStatuses.Contains(appt.EventStatus ?? string.Empty))
             throw new InvalidOperationException($"Appointment #{appointmentId} is '{appt.EventStatus}' and can no longer be rescheduled.");
 
         var studioNow = GetStudioLocalNow();

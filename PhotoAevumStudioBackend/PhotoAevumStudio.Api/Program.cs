@@ -382,6 +382,36 @@ builder.Services.PostConfigure<PhotoAevumStudio.Application.Models.XenditSetting
         s.CustomerPortalBaseUrl = baseUrl.TrimEnd('/');
 });
 builder.Services.AddScoped<PhotoAevumStudio.Application.Interfaces.IGoogleMeetAdapter, PhotoAevumStudio.Infrastructure.Services.GoogleMeetAdapter>();
+builder.Services.Configure<PhotoAevumStudio.Application.Models.ZoomSettings>(options =>
+{
+    builder.Configuration.GetSection(PhotoAevumStudio.Application.Models.ZoomSettings.SectionName).Bind(options);
+    options.AccountId = FirstNonEmpty(
+        builder.Configuration["ZOOM_ACCOUNT_ID"],
+        builder.Configuration["Zoom:AccountId"],
+        Environment.GetEnvironmentVariable("ZOOM_ACCOUNT_ID")) ?? options.AccountId;
+    options.ClientId = FirstNonEmpty(
+        builder.Configuration["ZOOM_CLIENT_ID"],
+        builder.Configuration["Zoom:ClientId"],
+        Environment.GetEnvironmentVariable("ZOOM_CLIENT_ID")) ?? options.ClientId;
+    options.ClientSecret = FirstNonEmpty(
+        builder.Configuration["ZOOM_CLIENT_SECRET"],
+        builder.Configuration["Zoom:ClientSecret"],
+        Environment.GetEnvironmentVariable("ZOOM_CLIENT_SECRET")) ?? options.ClientSecret;
+    options.WebhookSecretToken = FirstNonEmpty(
+        builder.Configuration["ZOOM_WEBHOOK_SECRET_TOKEN"],
+        builder.Configuration["Zoom:WebhookSecretToken"],
+        Environment.GetEnvironmentVariable("ZOOM_WEBHOOK_SECRET_TOKEN")) ?? options.WebhookSecretToken;
+});
+builder.Services.AddHttpClient("ZoomOAuth", c => c.BaseAddress = new Uri("https://zoom.us/"));
+builder.Services.AddSingleton<IZoomTokenService>(sp => new PhotoAevumStudio.Infrastructure.Services.ZoomTokenService(
+    sp.GetRequiredService<IHttpClientFactory>().CreateClient("ZoomOAuth"),
+    sp.GetRequiredService<Microsoft.Extensions.Options.IOptions<PhotoAevumStudio.Application.Models.ZoomSettings>>(),
+    sp.GetRequiredService<ILogger<PhotoAevumStudio.Infrastructure.Services.ZoomTokenService>>(),
+    sp.GetRequiredService<TimeProvider>()));
+builder.Services.AddHttpClient<IZoomMeetingService, PhotoAevumStudio.Infrastructure.Services.ZoomMeetingService>(c =>
+{
+    c.BaseAddress = new Uri("https://api.zoom.us/v2/");
+});
 builder.Services.AddHttpClient<PhotoAevumStudio.Application.Interfaces.IXenditPaymentService, PhotoAevumStudio.Infrastructure.Services.XenditPaymentService>(c =>
 {
     c.BaseAddress = new Uri("https://api.xendit.co/");
@@ -494,7 +524,7 @@ builder.Services.AddDbContext<PhotoAevumStudio.Infrastructure.Scheduling.Schedul
 builder.Services.Configure<PhotoAevumStudio.Infrastructure.Scheduling.SchedulingOptions>(builder.Configuration.GetSection("Scheduling"));
 builder.Services.AddSingleton(TimeProvider.System);
 builder.Services.AddScoped<IScheduleBookingService, PhotoAevumStudio.Infrastructure.Scheduling.ScheduleBookingService>();
-builder.Services.AddSingleton<IMeetingLinkService, PhotoAevumStudio.Infrastructure.Scheduling.MockMeetingLinkService>();
+builder.Services.AddSingleton<IMeetingLinkService, PhotoAevumStudio.Infrastructure.Scheduling.ZoomAwareMeetingLinkService>();
 
 // ═════════════════════════════════════════════════════════════════════════════
 
@@ -760,9 +790,3 @@ sealed class HangfireAdminAuthorizationFilter(bool allowLocalInDev) : Hangfire.D
         return false;
     }
 }
-
-
-
-
-
-

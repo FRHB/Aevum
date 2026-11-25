@@ -830,6 +830,12 @@
                                         </button>
                                     </div>
                                 }
+                                else if (HasNegotiationSucceeded(booking))
+                                {
+                                    <span class="px-2 py-0.5 rounded bg-slate-100 border border-slate-200 text-[11px] font-semibold text-slate-600">
+                                        🔒 Negotiation Succeeded
+                                    </span>
+                                }
                                 else
                                 {
                                     <span class="text-[11px] text-slate-400">—</span>
@@ -2191,6 +2197,9 @@
 
     private static bool CanCustomerModifyEvent(EventAppointmentDto ev)
     {
+        if (TeamLeaderMonitorSelector.IsCompletedOrInactive(ev))
+            return false;
+
         var display = GetCustomerDisplayStatus(ev);
         if (string.Equals(display, "Completed", StringComparison.OrdinalIgnoreCase) ||
             string.Equals(display, "Complete", StringComparison.OrdinalIgnoreCase) ||
@@ -2207,8 +2216,44 @@
                !raw.Equals("Delivered", StringComparison.OrdinalIgnoreCase);
     }
 
-    private static bool CanCustomerModifyBooking(MyBooking b)
+    private bool HasNegotiationSucceeded(MyBooking b)
     {
+        if (!string.IsNullOrWhiteSpace(b.LinkedEventAppointmentId))
+            return true;
+
+        var negStatus = (b.NegotiationStatus ?? string.Empty).Trim();
+        if (negStatus.Equals("Deal_Won", StringComparison.OrdinalIgnoreCase) ||
+            negStatus.Equals("Appointment Booked", StringComparison.OrdinalIgnoreCase) ||
+            negStatus.Equals("Pending Payment", StringComparison.OrdinalIgnoreCase) ||
+            negStatus.Equals("Pending_Payment", StringComparison.OrdinalIgnoreCase) ||
+            negStatus.Equals("Awaiting_Downpayment", StringComparison.OrdinalIgnoreCase) ||
+            negStatus.Equals("Completed", StringComparison.OrdinalIgnoreCase) ||
+            negStatus.Equals("Complete", StringComparison.OrdinalIgnoreCase) ||
+            negStatus.Equals("Delivered", StringComparison.OrdinalIgnoreCase) ||
+            negStatus.Equals("Shot", StringComparison.OrdinalIgnoreCase))
+        {
+            return true;
+        }
+
+        return !string.IsNullOrWhiteSpace(b.NegotiationId) &&
+               _customerEventAppointments.Any(e =>
+                   string.Equals(e.NegotiationId, b.NegotiationId, StringComparison.OrdinalIgnoreCase) &&
+                   !string.Equals(e.EventStatus, "Cancelled", StringComparison.OrdinalIgnoreCase) &&
+                   !string.Equals(e.EventStatus, "Deal_Lost", StringComparison.OrdinalIgnoreCase) &&
+                   !string.Equals(e.EventStatus, "Expired", StringComparison.OrdinalIgnoreCase));
+    }
+
+    private bool CanCustomerModifyBooking(MyBooking b)
+    {
+        if (HasNegotiationSucceeded(b))
+            return false;
+
+        var negStatus = (b.NegotiationStatus ?? string.Empty).Trim();
+        if (negStatus.Equals("Deal_Lost", StringComparison.OrdinalIgnoreCase) ||
+            negStatus.Equals("Cancelled", StringComparison.OrdinalIgnoreCase) ||
+            negStatus.Equals("Expired", StringComparison.OrdinalIgnoreCase))
+            return false;
+
         var raw = (b.Status ?? string.Empty).Trim();
         return !raw.Equals("Cancelled", StringComparison.OrdinalIgnoreCase) &&
                !raw.Equals("Completed", StringComparison.OrdinalIgnoreCase) &&
