@@ -2,10 +2,28 @@ namespace PhotoAevumStudio.Application.Models;
 
 public class GoogleMeetSettings
 {
+    public const string SectionName = "GoogleMeetSettings";
+
     public string Provider { get; set; } = "Scaffold";
+    public string ClientId { get; set; } = string.Empty;
+    public string ClientSecret { get; set; } = string.Empty;
+    public string RefreshToken { get; set; } = string.Empty;
     public string WorkspaceServiceAccountKeyPath { get; set; } = string.Empty;
+    public string ImpersonatedUserEmail { get; set; } = string.Empty;
+    public string CalendarId { get; set; } = "primary";
+    public int DefaultDurationMinutes { get; set; } = 30;
+    public string TimeZone { get; set; } = "Asia/Manila";
     public string StudioFallbackBaseUrl { get; set; } = "https://meet.google.com/";
     public bool AutoGenerateMeetingCode { get; set; } = true;
+
+    public bool HasOAuthCredentials =>
+        !string.IsNullOrWhiteSpace(ClientId) &&
+        !string.IsNullOrWhiteSpace(ClientSecret) &&
+        !string.IsNullOrWhiteSpace(RefreshToken);
+
+    public bool HasServiceAccountKey =>
+        !string.IsNullOrWhiteSpace(WorkspaceServiceAccountKeyPath) &&
+        File.Exists(WorkspaceServiceAccountKeyPath);
 }
 
 public class XenditSettings

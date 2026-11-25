@@ -381,7 +381,7 @@ builder.Services.PostConfigure<PhotoAevumStudio.Application.Models.XenditSetting
     if (!string.IsNullOrWhiteSpace(baseUrl))
         s.CustomerPortalBaseUrl = baseUrl.TrimEnd('/');
 });
-builder.Services.AddScoped<PhotoAevumStudio.Application.Interfaces.IGoogleMeetAdapter, PhotoAevumStudio.Infrastructure.Services.GoogleMeetAdapter>();
+builder.Services.AddHttpClient<PhotoAevumStudio.Application.Interfaces.IGoogleMeetAdapter, PhotoAevumStudio.Infrastructure.Services.GoogleMeetAdapter>();
 builder.Services.Configure<PhotoAevumStudio.Application.Models.ZoomSettings>(options =>
 {
     builder.Configuration.GetSection(PhotoAevumStudio.Application.Models.ZoomSettings.SectionName).Bind(options);

@@ -16,16 +16,19 @@ public sealed partial class ZoomAwareMeetingLinkService : IMeetingLinkService
     private readonly IZoomMeetingService _zoomMeetingService;
     private readonly ZoomSettings _zoomSettings;
     private readonly ILogger<ZoomAwareMeetingLinkService> _logger;
+    private readonly IGoogleMeetAdapter? _googleMeetAdapter;
     private readonly MockMeetingLinkService _fallback = new();
 
     public ZoomAwareMeetingLinkService(
         IZoomMeetingService zoomMeetingService,
         IOptions<ZoomSettings> zoomOptions,
-        ILogger<ZoomAwareMeetingLinkService> logger)
+        ILogger<ZoomAwareMeetingLinkService> logger,
+        IGoogleMeetAdapter? googleMeetAdapter = null)
     {
         _zoomMeetingService = zoomMeetingService;
         _zoomSettings = zoomOptions.Value;
         _logger = logger;
+        _googleMeetAdapter = googleMeetAdapter;
     }
 
     public async Task<string> CreateMeetingLinkAsync(
@@ -35,6 +38,15 @@ public sealed partial class ZoomAwareMeetingLinkService : IMeetingLinkService
         TimeOnly end,
         CancellationToken cancellationToken = default)
     {
+        if (platform == MeetingPlatform.GoogleMeet && _googleMeetAdapter is not null)
+        {
+            return await _googleMeetAdapter.GenerateMeetingLinkAsync(
+                date,
+                start,
+                "Photo Aevum Studio Consultation",
+                cancellationToken);
+        }
+
         if (platform != MeetingPlatform.Zoom)
         {
             return await _fallback.CreateMeetingLinkAsync(platform, date, start, end, cancellationToken);
@@ -70,9 +82,17 @@ public sealed partial class ZoomAwareMeetingLinkService : IMeetingLinkService
             return RealZoomJoinUrl().IsMatch(link) || _fallback.IsIssuedLink(platform, link);
         }
 
+        if (platform == MeetingPlatform.GoogleMeet)
+        {
+            return RealGoogleMeetUrl().IsMatch(link) || _fallback.IsIssuedLink(platform, link);
+        }
+
         return _fallback.IsIssuedLink(platform, link);
     }
 
     [GeneratedRegex(@"^https://([a-z0-9-]+\.)?zoom\.us/j/\d+", RegexOptions.IgnoreCase)]
     private static partial Regex RealZoomJoinUrl();
+
+    [GeneratedRegex(@"^https://meet\.google\.com/[a-z0-9-]+$", RegexOptions.IgnoreCase)]
+    private static partial Regex RealGoogleMeetUrl();
 }
